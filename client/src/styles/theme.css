@@ -257,6 +257,8 @@ table.data-table th {
   border-bottom: 1px solid var(--border);
 }
 table.data-table td { padding: 5px 8px; vertical-align: middle; }
+table.data-table tr.clickable-row { cursor: pointer; }
+table.data-table tr.clickable-row:hover { background: var(--border-soft); }
 table.data-table input, table.data-table select { font-size: 12.5px; padding: 6px 8px; }
 
 .row-line {

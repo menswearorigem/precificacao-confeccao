@@ -9,6 +9,8 @@ import ListasPage from './pages/ListasPage';
 import TaxasVendaPage from './pages/TaxasVendaPage';
 import CustosIndiretosPage from './pages/CustosIndiretosPage';
 import EmConstrucaoPage from './pages/EmConstrucaoPage';
+import ProdutosListPage from './pages/ProdutosListPage';
+import ProdutoFichaPage from './pages/ProdutoFichaPage';
 
 function RequireAuth({ authed, children }) {
   const location = useLocation();
@@ -36,7 +38,8 @@ export default function App() {
           <RequireAuth authed={authed}>
             <Shell>
               <Routes>
-                <Route path="/produtos" element={<EmConstrucaoPage titulo="Produtos" />} />
+                <Route path="/produtos" element={<ProdutosListPage />} />
+                <Route path="/produtos/:id" element={<ProdutoFichaPage />} />
                 <Route path="/importacao" element={<EmConstrucaoPage titulo="Importação em Massa" />} />
                 <Route path="/simulador" element={<EmConstrucaoPage titulo="Simulador de Cenários" />} />
                 <Route path="/dashboard" element={<EmConstrucaoPage titulo="Dashboard Executivo" />} />
