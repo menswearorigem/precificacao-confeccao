@@ -63,14 +63,29 @@ npm run dev:client
 Acesse http://localhost:5173 (o Vite já faz proxy de `/api` para o
 backend). A senha de login é a que você definiu em `APP_PASSWORD`.
 
-## Status do desenvolvimento
+## Módulos
 
-- [x] Etapa 1 — estrutura do repositório, banco de dados e API base
-      (autenticação, configurações, empresas/regimes tributários, listas
-      editáveis, taxas de venda, custos indiretos)
-- [ ] Etapa 2 — cadastro de produto, materiais, custos industriais, custo
-      total e formação de preço
-- [ ] Etapa 3 — importação em massa
-- [ ] Etapa 4 — simulador de cenários e dashboard executivo
-- [ ] Etapa 5 — kits e ficha técnica
-- [ ] Etapa 6 — ajustes visuais finais + guia de deploy no Render
+1. **Configurações** — metas de margem, limites de alerta, parâmetros de kit
+2. **Empresas** — uma por PJ/regime tributário (Simples Nacional, Lucro
+   Presumido ou Lucro Real), cada produto é associado a uma delas
+3. **Listas** — categorias, marcas, coleções, linhas, materiais, unidades e
+   tipos de custo industrial, editáveis pela interface
+4. **Taxas de venda** e **Custos indiretos** (rateio mensal)
+5. **Produtos** — cadastro, materiais, custos industriais, custo total,
+   formação de preço (markup divisor), indicadores e alertas automáticos,
+   com histórico de precificação salvo a cada gravação
+6. **Importação em massa** — .xlsx (abas Cadastro_Produto/Materiais/
+   Custos_Industriais) ou .csv, com pré-visualização antes de gravar
+7. **Simulador de cenários** — testa ajustes de custo/frete/impostos sem
+   alterar os dados reais
+8. **Dashboard executivo** — KPIs, composição do preço de venda e
+   indicador de faixa de preço
+9. **Kits** — automáticos (2 a 8 peças, Dryfit/Polo/Bermuda) e manuais
+   (combinando referências diferentes)
+10. **Ficha técnica** — busca multi-referência com impressão/exportação
+    em PDF
+
+## Deploy
+
+Veja [`DEPLOY.md`](./DEPLOY.md) para o passo a passo de publicação no
+Render (Web Service + Postgres gerenciado).

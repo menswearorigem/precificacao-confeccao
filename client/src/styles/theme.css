@@ -156,6 +156,7 @@ a { color: inherit; }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 16px 18px;
+  overflow-x: auto;
 }
 
 .card-head {
@@ -246,7 +247,7 @@ input:focus, select:focus, textarea:focus {
 
 /* ---------- tables ---------- */
 
-table.data-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.data-table { width: 100%; min-width: 480px; border-collapse: collapse; font-size: 12.5px; }
 table.data-table th {
   text-align: left;
   font-size: 10.5px;
