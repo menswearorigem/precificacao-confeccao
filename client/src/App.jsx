@@ -11,6 +11,7 @@ import CustosIndiretosPage from './pages/CustosIndiretosPage';
 import EmConstrucaoPage from './pages/EmConstrucaoPage';
 import ProdutosListPage from './pages/ProdutosListPage';
 import ProdutoFichaPage from './pages/ProdutoFichaPage';
+import ImportacaoPage from './pages/ImportacaoPage';
 
 function RequireAuth({ authed, children }) {
   const location = useLocation();
@@ -40,7 +41,7 @@ export default function App() {
               <Routes>
                 <Route path="/produtos" element={<ProdutosListPage />} />
                 <Route path="/produtos/:id" element={<ProdutoFichaPage />} />
-                <Route path="/importacao" element={<EmConstrucaoPage titulo="Importação em Massa" />} />
+                <Route path="/importacao" element={<ImportacaoPage />} />
                 <Route path="/simulador" element={<EmConstrucaoPage titulo="Simulador de Cenários" />} />
                 <Route path="/dashboard" element={<EmConstrucaoPage titulo="Dashboard Executivo" />} />
                 <Route path="/kits" element={<EmConstrucaoPage titulo="Kits" />} />
