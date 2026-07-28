@@ -1,0 +1,49 @@
+const path = require('path');
+const express = require('express');
+
+const { requireAuth } = require('./middleware/auth');
+const authRoutes = require('./routes/auth.routes');
+const configuracoesRoutes = require('./routes/configuracoes.routes');
+const empresasRoutes = require('./routes/empresas.routes');
+const listasRoutes = require('./routes/listas.routes');
+const taxasVendaRoutes = require('./routes/taxasVenda.routes');
+const custosIndiretosRoutes = require('./routes/custosIndiretos.routes');
+
+const CLIENT_DIST = path.join(__dirname, '..', '..', 'client', 'dist');
+
+function createApp() {
+  const app = express();
+
+  app.use(express.json({ limit: '15mb' }));
+
+  app.get('/api/health', (req, res) => {
+    res.json({ ok: true, uptimeSec: Math.round(process.uptime()) });
+  });
+
+  app.use('/api/auth', authRoutes);
+
+  // Todas as rotas de dados abaixo exigem sessão válida.
+  app.use('/api/configuracoes', requireAuth, configuracoesRoutes);
+  app.use('/api/empresas', requireAuth, empresasRoutes);
+  app.use('/api/listas', requireAuth, listasRoutes);
+  app.use('/api/taxas-venda', requireAuth, taxasVendaRoutes);
+  app.use('/api/custos-indiretos', requireAuth, custosIndiretosRoutes);
+
+  // Build do React em produção (um único serviço no Render).
+  app.use(express.static(CLIENT_DIST));
+  app.get(/^(?!\/api).*/, (req, res) => {
+    res.sendFile(path.join(CLIENT_DIST, 'index.html'), (err) => {
+      if (err) res.status(404).send('Build do frontend não encontrado. Rode "npm run build:client".');
+    });
+  });
+
+  // eslint-disable-next-line no-unused-vars
+  app.use((err, req, res, next) => {
+    console.error(err);
+    res.status(500).json({ error: 'Erro interno do servidor.' });
+  });
+
+  return app;
+}
+
+module.exports = createApp;
