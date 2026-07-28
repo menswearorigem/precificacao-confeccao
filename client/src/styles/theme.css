@@ -343,6 +343,16 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
 }
 .login-error { color: var(--danger); font-size: 12.5px; margin-top: 10px; }
 
+/* ---------- impressão da ficha técnica ---------- */
+
+@media print {
+  .shell-header, .shell-nav, .no-print { display: none !important; }
+  .shell-main { background: #fff; }
+  .page-wide { max-width: 100%; padding: 0; }
+  .ficha-page { break-after: page; border: none; box-shadow: none; padding: 0; }
+  .ficha-page:last-child { break-after: auto; }
+}
+
 @media (max-width: 860px) {
   .grid-2 { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }
