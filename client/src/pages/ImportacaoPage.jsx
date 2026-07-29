@@ -14,7 +14,7 @@ export default function ImportacaoPage() {
 
   function handleFileChange(e) {
     const file = e.target.files?.[0];
-    setIsCsv(!!file && !/\.xlsx$/i.test(file.name));
+    setIsCsv(!!file && /\.csv$/i.test(file.name));
     setPreview(null);
     setResultado(null);
     setError('');
@@ -24,7 +24,7 @@ export default function ImportacaoPage() {
     e.preventDefault();
     const file = fileRef.current?.files?.[0];
     if (!file) {
-      setError('Selecione um arquivo .xlsx ou .csv.');
+      setError('Selecione um arquivo .xlsx, .csv ou .pdf.');
       return;
     }
     setLoading(true);
@@ -72,15 +72,16 @@ export default function ImportacaoPage() {
       <h2>Importação em Massa</h2>
       <p className="page-sub">
         Envie um .xlsx com as abas <strong>Cadastro_Produto</strong>, <strong>Materiais</strong> e/ou{' '}
-        <strong>Custos_Industriais</strong> (mesmo formato da planilha original), ou um .csv com uma
-        dessas tabelas por vez. Nada é gravado até você conferir e confirmar.
+        <strong>Custos_Industriais</strong> (mesmo formato da planilha original), um .csv com uma
+        dessas tabelas por vez, ou uma <strong>Ficha de Custo em PDF</strong> (formato Wiki Sistemas/
+        Dinâmica — uma referência por página). Nada é gravado até você conferir e confirmar.
       </p>
 
       <div className="card" style={{ marginBottom: 16 }}>
         <form onSubmit={handlePreview} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div className="field">
-            <span className="field-label">Arquivo (.xlsx ou .csv)</span>
-            <input type="file" accept=".xlsx,.csv" ref={fileRef} onChange={handleFileChange} />
+            <span className="field-label">Arquivo (.xlsx, .csv ou .pdf)</span>
+            <input type="file" accept=".xlsx,.csv,.pdf" ref={fileRef} onChange={handleFileChange} />
           </div>
           {isCsv && (
             <div className="field">

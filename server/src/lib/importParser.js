@@ -109,7 +109,12 @@ function parseCsvTable(buffer, tipo) {
 
 async function parseImportFile({ buffer, filename, csvTipo }) {
   const isXlsx = /\.xlsx$/i.test(filename);
+  const isPdf = /\.pdf$/i.test(filename);
   if (isXlsx) return parseXlsx(buffer);
+  if (isPdf) {
+    const { parsePdfFichaCusto } = require('./pdfFichaCusto');
+    return parsePdfFichaCusto(buffer);
+  }
   return parseCsvTable(buffer, csvTipo);
 }
 
