@@ -16,6 +16,8 @@ import SimuladorPage from './pages/SimuladorPage';
 import DashboardPage from './pages/DashboardPage';
 import KitsPage from './pages/KitsPage';
 import FichaTecnicaPage from './pages/FichaTecnicaPage';
+import EstoquePage from './pages/EstoquePage';
+import BipagemPage from './pages/BipagemPage';
 
 function RequireAuth({ authed, children }) {
   const location = useLocation();
@@ -50,6 +52,8 @@ export default function App() {
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/kits" element={<KitsPage />} />
                 <Route path="/ficha-tecnica" element={<FichaTecnicaPage />} />
+                <Route path="/estoque" element={<EstoquePage />} />
+                <Route path="/estoque/bipagem" element={<BipagemPage />} />
                 <Route path="/configuracoes" element={<ConfiguracoesPage />} />
                 <Route path="/empresas" element={<EmpresasPage />} />
                 <Route path="/listas" element={<ListasPage />} />

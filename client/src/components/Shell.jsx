@@ -2,11 +2,13 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Shirt, Package, Settings, Landmark, Percent, Factory, Upload,
   FlaskConical, LayoutDashboard, Boxes, FileText, LogOut, List as ListIcon,
+  Warehouse,
 } from 'lucide-react';
 import { api } from '../api/client';
 
 const NAV_ITEMS = [
   { to: '/produtos', label: 'Produtos', icon: Package },
+  { to: '/estoque', label: 'Estoque', icon: Warehouse },
   { to: '/importacao', label: 'Importação', icon: Upload },
   { to: '/simulador', label: 'Simulador', icon: FlaskConical },
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
