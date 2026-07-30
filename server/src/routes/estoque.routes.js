@@ -1,8 +1,11 @@
 const express = require('express');
+const multer = require('multer');
 const pool = require('../db/pool');
 const { gerarEan13 } = require('../lib/ean');
+const { parseEstoqueImportFile } = require('../lib/estoqueImportParser');
 
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 async function gerarEanUnico(client) {
   for (let tentativa = 0; tentativa < 10; tentativa += 1) {
@@ -217,6 +220,140 @@ router.get('/movimentos', async (req, res, next) => {
     res.json(rows);
   } catch (err) {
     next(err);
+  }
+});
+
+// ---------- importação em massa de saldo de estoque ----------
+
+router.post('/importacao/preview', upload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+    const linhas = await parseEstoqueImportFile({ buffer: req.file.buffer, filename: req.file.originalname });
+    if (linhas.length === 0) {
+      return res.status(400).json({ error: 'Não encontrei nenhuma linha de estoque reconhecível neste arquivo.' });
+    }
+
+    const { rows: produtosRows } = await pool.query('SELECT id, referencia FROM produtos');
+    const produtoIdPorReferencia = new Map(produtosRows.map((p) => [p.referencia, p.id]));
+
+    const { rows: variantesRows } = await pool.query(
+      `SELECT v.*, p.referencia FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id`
+    );
+    const varianteExistente = new Map(
+      variantesRows.map((v) => [`${v.referencia}::${v.cor}::${v.tamanho}`, v])
+    );
+
+    // Se a mesma combinação (referência+cor+tamanho) aparecer mais de uma vez
+    // no arquivo, fica só a última — é um relatório de saldo (foto do
+    // momento), não faz sentido somar duas leituras da mesma combinação.
+    const porChave = new Map();
+    const erros = [];
+    for (const linha of linhas) {
+      if (!produtoIdPorReferencia.has(linha.referencia)) {
+        erros.push({ linha: linha.linha, motivo: `Referência "${linha.referencia}" não está cadastrada em Produtos — cadastre-a antes de importar o estoque.`, dados: linha });
+        continue;
+      }
+      const chave = `${linha.referencia}::${linha.cor}::${linha.tamanho}`;
+      porChave.set(chave, linha);
+    }
+
+    const criar = [];
+    const atualizar = [];
+    for (const [chave, linha] of porChave.entries()) {
+      const existente = varianteExistente.get(chave);
+      if (existente) {
+        atualizar.push({
+          referencia: linha.referencia,
+          descricao: linha.descricao,
+          cor: linha.cor,
+          tamanho: linha.tamanho,
+          quantidadeAtual: Number(existente.quantidade),
+          quantidadeNova: linha.quantidade,
+          varianteId: existente.id,
+        });
+      } else {
+        criar.push({
+          referencia: linha.referencia,
+          descricao: linha.descricao,
+          cor: linha.cor,
+          tamanho: linha.tamanho,
+          quantidadeNova: linha.quantidade,
+        });
+      }
+    }
+
+    res.json({
+      criar,
+      atualizar,
+      erros,
+      resumo: {
+        variantesCriar: criar.length,
+        variantesAtualizar: atualizar.length,
+        totalErros: erros.length,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/importacao/confirmar', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const body = req.body || {};
+    const criar = body.criar || [];
+    const atualizar = body.atualizar || [];
+
+    const { rows: produtosRows } = await client.query('SELECT id, referencia FROM produtos');
+    const produtoIdPorReferencia = new Map(produtosRows.map((p) => [p.referencia, p.id]));
+
+    await client.query('BEGIN');
+
+    let criados = 0;
+    for (const item of criar) {
+      const produtoId = produtoIdPorReferencia.get(item.referencia);
+      if (!produtoId) continue;
+      const ean = await gerarEanUnico(client);
+      const { rows } = await client.query(
+        `INSERT INTO estoque_variantes (produto_id, cor, tamanho, ean, quantidade)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (produto_id, cor, tamanho) DO NOTHING RETURNING id`,
+        [produtoId, item.cor, item.tamanho, ean, item.quantidadeNova]
+      );
+      if (rows.length > 0 && Number(item.quantidadeNova) !== 0) {
+        await client.query(
+          `INSERT INTO estoque_movimentos (variante_id, tipo, quantidade, quantidade_resultante, motivo)
+           VALUES ($1, 'importacao', $2, $2, 'Importação de saldo de estoque')`,
+          [rows[0].id, item.quantidadeNova]
+        );
+      }
+      if (rows.length > 0) criados += 1;
+    }
+
+    let atualizados = 0;
+    for (const item of atualizar) {
+      const delta = Number(item.quantidadeNova) - Number(item.quantidadeAtual);
+      await client.query(
+        'UPDATE estoque_variantes SET quantidade = $1, updated_at = now() WHERE id = $2',
+        [item.quantidadeNova, item.varianteId]
+      );
+      if (delta !== 0) {
+        await client.query(
+          `INSERT INTO estoque_movimentos (variante_id, tipo, quantidade, quantidade_resultante, motivo)
+           VALUES ($1, 'importacao', $2, $3, 'Importação de saldo de estoque')`,
+          [item.varianteId, delta, item.quantidadeNova]
+        );
+      }
+      atualizados += 1;
+    }
+
+    await client.query('COMMIT');
+    res.json({ criados, atualizados });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
   }
 });
 

@@ -18,6 +18,7 @@ import KitsPage from './pages/KitsPage';
 import FichaTecnicaPage from './pages/FichaTecnicaPage';
 import EstoquePage from './pages/EstoquePage';
 import BipagemPage from './pages/BipagemPage';
+import EstoqueImportacaoPage from './pages/EstoqueImportacaoPage';
 
 function RequireAuth({ authed, children }) {
   const location = useLocation();
@@ -54,6 +55,7 @@ export default function App() {
                 <Route path="/ficha-tecnica" element={<FichaTecnicaPage />} />
                 <Route path="/estoque" element={<EstoquePage />} />
                 <Route path="/estoque/bipagem" element={<BipagemPage />} />
+                <Route path="/estoque/importacao" element={<EstoqueImportacaoPage />} />
                 <Route path="/configuracoes" element={<ConfiguracoesPage />} />
                 <Route path="/empresas" element={<EmpresasPage />} />
                 <Route path="/listas" element={<ListasPage />} />

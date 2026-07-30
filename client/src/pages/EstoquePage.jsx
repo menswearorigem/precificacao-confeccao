@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Search, Barcode } from 'lucide-react';
+import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Search, Barcode, Upload } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { Field } from '../components/ui';
@@ -115,7 +115,10 @@ export default function EstoquePage() {
           <h2>Estoque</h2>
           <p className="page-sub">Controle de estoque por variante (referência + cor + tamanho), com EAN próprio para bipagem.</p>
         </div>
-        <Link to="/estoque/bipagem" className="btn btn-primary"><Barcode size={14} /> Bipagem</Link>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Link to="/estoque/importacao" className="btn btn-ghost"><Upload size={14} /> Importar saldo</Link>
+          <Link to="/estoque/bipagem" className="btn btn-primary"><Barcode size={14} /> Bipagem</Link>
+        </div>
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
