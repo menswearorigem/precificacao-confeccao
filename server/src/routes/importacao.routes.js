@@ -9,11 +9,39 @@ const produtosRoutes = require('./produtos.routes');
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+// Quando a mesma referência aparece mais de uma vez no arquivo (ex.: duas
+// páginas de uma Ficha de Custo em PDF com o mesmo código por engano), não
+// dá pra saber qual ocorrência é a "certa" — em vez de misturar os
+// materiais/custos das duas, rejeitamos os itens dessa referência inteira
+// e pedimos pra corrigir o arquivo.
+function separarItensDeReferenciasDuplicadas(rows, referenciasDuplicadas, motivoBase) {
+  const ok = [];
+  const erros = [];
+  rows.forEach((row, idx) => {
+    if (referenciasDuplicadas.has(row.referencia)) {
+      erros.push({ linha: idx + 2, motivo: `${motivoBase} "${row.referencia}" aparece mais de uma vez no arquivo — corrija antes de importar.`, dados: row });
+    } else {
+      ok.push(row);
+    }
+  });
+  return { ok, erros };
+}
+
 async function buildPreview(parsed) {
   const { rows: existingRows } = await pool.query('SELECT referencia FROM produtos');
   const existingRefs = new Set(existingRows.map((r) => r.referencia));
 
   const produtos = validarProdutos(parsed.produtos, existingRefs);
+
+  const contagemReferencias = new Map();
+  for (const p of parsed.produtos) {
+    const ref = (p.referencia || '').trim();
+    if (!ref) continue;
+    contagemReferencias.set(ref, (contagemReferencias.get(ref) || 0) + 1);
+  }
+  const referenciasDuplicadas = new Set(
+    Array.from(contagemReferencias.entries()).filter(([, n]) => n > 1).map(([ref]) => ref)
+  );
 
   const referenciasValidas = new Set([
     ...existingRefs,
@@ -21,20 +49,25 @@ async function buildPreview(parsed) {
     ...produtos.atualizar.map((p) => p.referencia),
   ]);
 
+  const materiaisSeparados = separarItensDeReferenciasDuplicadas(parsed.materiais, referenciasDuplicadas, 'Referência');
+  const custosSeparados = separarItensDeReferenciasDuplicadas(parsed.custosIndustriais, referenciasDuplicadas, 'Referência');
+
   const materiais = validarItensPorReferencia(
-    parsed.materiais,
+    materiaisSeparados.ok,
     referenciasValidas,
     'material',
     'Material',
     ['quantidade', 'valor_unitario']
   );
+  materiais.erros.push(...materiaisSeparados.erros);
   const custosIndustriais = validarItensPorReferencia(
-    parsed.custosIndustriais,
+    custosSeparados.ok,
     referenciasValidas,
     'tipo',
     'Tipo de custo industrial',
     ['valor']
   );
+  custosIndustriais.erros.push(...custosSeparados.erros);
 
   return {
     produtos: { criar: produtos.criar, atualizar: produtos.atualizar, erros: produtos.erros },
