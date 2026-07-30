@@ -13,6 +13,7 @@ const importacaoRoutes = require('./routes/importacao.routes');
 const simulacaoRoutes = require('./routes/simulacao.routes');
 const kitsRoutes = require('./routes/kits.routes');
 const fichaTecnicaRoutes = require('./routes/fichaTecnica.routes');
+const estoqueRoutes = require('./routes/estoque.routes');
 
 const CLIENT_DIST = path.join(__dirname, '..', '..', 'client', 'dist');
 
@@ -38,6 +39,7 @@ function createApp() {
   app.use('/api/simulacao', requireAuth, simulacaoRoutes);
   app.use('/api/kits', requireAuth, kitsRoutes);
   app.use('/api/ficha-tecnica', requireAuth, fichaTecnicaRoutes);
+  app.use('/api/estoque', requireAuth, estoqueRoutes);
 
   // Build do React em produção (um único serviço no Render).
   app.use(express.static(CLIENT_DIST));
