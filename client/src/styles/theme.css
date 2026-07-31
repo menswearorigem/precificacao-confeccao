@@ -354,6 +354,25 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
   .ficha-page:last-child { break-after: auto; }
 }
 
+/* ---------- ficha de estoque: grade de tabelas por cor ---------- */
+
+.ficha-estoque-cores {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.ficha-estoque-cor { break-inside: avoid; }
+.ficha-estoque-cor .card-head { margin-bottom: 4px; }
+.ficha-estoque-cor .data-table { min-width: 0; }
+.ficha-estoque-cor .data-table th, .ficha-estoque-cor .data-table td { padding: 3px 6px; }
+
+@media print {
+  .ficha-estoque-cores { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+  .ficha-estoque-cor { font-size: 11px; }
+  .ficha-estoque-cor .card-head { font-size: 11.5px; }
+}
+
 @media (max-width: 860px) {
   .grid-2 { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }

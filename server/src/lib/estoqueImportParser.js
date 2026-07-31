@@ -180,4 +180,39 @@ async function parseEstoqueImportFile({ buffer, filename }) {
   return parseEstoqueCsv(buffer);
 }
 
-module.exports = { parseEstoqueImportFile };
+// ---------- CSV de EAN externo (ex.: "relListaProd" do Wiki Sistemas) ----------
+// Cabeçalhos esperados: REF, COR, TAM, EAN EXTERNO (as outras colunas são ignoradas).
+
+function parseEanExternoCsv(buffer) {
+  const text = decodeTexto(buffer);
+  const aoa = parseCsv(text);
+  if (aoa.length === 0) return [];
+
+  const header = aoa[0].map((h) => normalizeHeader(h));
+  const idxRef = header.findIndex((h) => h === 'ref');
+  const idxCor = header.findIndex((h) => h === 'cor');
+  const idxTam = header.findIndex((h) => h === 'tam');
+  const idxEan = header.findIndex((h) => h.includes('ean'));
+
+  if (idxRef === -1 || idxCor === -1 || idxTam === -1 || idxEan === -1) {
+    throw new Error('Não reconheci as colunas esperadas (REF, COR, TAM, EAN EXTERNO) neste CSV.');
+  }
+
+  const rows = [];
+  for (let i = 1; i < aoa.length; i += 1) {
+    const linha = aoa[i];
+    const referencia = (linha[idxRef] || '').trim();
+    const ean = (linha[idxEan] || '').trim();
+    if (!referencia || !ean) continue;
+    rows.push({
+      linha: i + 1,
+      referencia,
+      cor: (linha[idxCor] || '').trim(),
+      tamanho: (linha[idxTam] || '').trim(),
+      ean,
+    });
+  }
+  return rows;
+}
+
+module.exports = { parseEstoqueImportFile, parseEanExternoCsv };

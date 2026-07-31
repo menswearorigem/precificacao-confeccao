@@ -24,4 +24,14 @@ function gerarEan13() {
   return doze + check;
 }
 
-module.exports = { gerarEan13, digitoVerificadorEan13 };
+// Verifica se já existe um EAN externo mapeado (importado antes de a
+// variante existir) para essa combinação referência+cor+tamanho.
+async function buscarEanMapeado(client, referencia, cor, tamanho) {
+  const { rows } = await client.query(
+    'SELECT ean FROM estoque_ean_mapeamento WHERE referencia = $1 AND cor = $2 AND tamanho = $3',
+    [referencia, cor || '', tamanho || '']
+  );
+  return rows[0]?.ean || null;
+}
+
+module.exports = { gerarEan13, digitoVerificadorEan13, buscarEanMapeado };

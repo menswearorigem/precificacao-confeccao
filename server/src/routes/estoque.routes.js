@@ -1,8 +1,8 @@
 const express = require('express');
 const multer = require('multer');
 const pool = require('../db/pool');
-const { gerarEan13 } = require('../lib/ean');
-const { parseEstoqueImportFile } = require('../lib/estoqueImportParser');
+const { gerarEan13, buscarEanMapeado } = require('../lib/ean');
+const { parseEstoqueImportFile, parseEanExternoCsv } = require('../lib/estoqueImportParser');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -14,6 +14,17 @@ async function gerarEanUnico(client) {
     if (rows.length === 0) return ean;
   }
   throw new Error('Não foi possível gerar um EAN único, tente novamente.');
+}
+
+// Decide o EAN de uma variante nova, nessa ordem de prioridade:
+// 1) EAN informado explicitamente na hora (ex.: tela de cadastro manual)
+// 2) EAN externo já mapeado pra essa referência+cor+tamanho (importado antes)
+// 3) gera um EAN novo
+async function resolverEan(client, referencia, cor, tamanho, eanFornecido) {
+  if (eanFornecido && eanFornecido.trim()) return eanFornecido.trim();
+  const mapeado = await buscarEanMapeado(client, referencia, cor, tamanho);
+  if (mapeado) return mapeado;
+  return gerarEanUnico(client);
 }
 
 function variantesQuery(where = '', values = []) {
@@ -64,7 +75,12 @@ router.post('/variantes', async (req, res, next) => {
     const body = req.body || {};
     if (!body.produto_id) return res.status(400).json({ error: 'produto_id é obrigatório.' });
     await client.query('BEGIN');
-    const ean = body.ean && body.ean.trim() ? body.ean.trim() : await gerarEanUnico(client);
+    const { rows: produtoRows } = await client.query('SELECT referencia FROM produtos WHERE id = $1', [body.produto_id]);
+    if (produtoRows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Produto não encontrado.' });
+    }
+    const ean = await resolverEan(client, produtoRows[0].referencia, body.cor || '', body.tamanho || '', body.ean);
     const { rows } = await client.query(
       `INSERT INTO estoque_variantes (produto_id, cor, tamanho, ean, quantidade)
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
@@ -313,7 +329,7 @@ router.post('/importacao/confirmar', async (req, res, next) => {
     for (const item of criar) {
       const produtoId = produtoIdPorReferencia.get(item.referencia);
       if (!produtoId) continue;
-      const ean = await gerarEanUnico(client);
+      const ean = await resolverEan(client, item.referencia, item.cor, item.tamanho);
       const { rows } = await client.query(
         `INSERT INTO estoque_variantes (produto_id, cor, tamanho, ean, quantidade)
          VALUES ($1, $2, $3, $4, $5)
@@ -354,6 +370,198 @@ router.post('/importacao/confirmar', async (req, res, next) => {
     next(err);
   } finally {
     client.release();
+  }
+});
+
+// ---------- vínculo de EAN externo (manual + importação em lote) ----------
+
+router.put('/variantes/:id/ean', async (req, res, next) => {
+  try {
+    const ean = (req.body?.ean || '').trim();
+    if (!ean) return res.status(400).json({ error: 'ean é obrigatório.' });
+    const { rowCount } = await pool.query(
+      'UPDATE estoque_variantes SET ean = $1, updated_at = now() WHERE id = $2',
+      [ean, req.params.id]
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Variante não encontrada.' });
+    const { rows } = await variantesQuery('WHERE v.id = $1', [req.params.id]);
+    res.json(rows[0]);
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Esse EAN já está em uso por outra variante.' });
+    }
+    next(err);
+  }
+});
+
+// Aceita vários arquivos de uma vez (upload.array). Cada linha do(s)
+// arquivo(s) é REF + COR + TAM + EAN EXTERNO. Se a variante já existe,
+// aplica o EAN na hora; senão, guarda o vínculo pra aplicar automaticamente
+// quando a variante for criada depois (manual ou por importação de saldo).
+router.post('/ean-mapeamento/preview', upload.array('files', 10), async (req, res, next) => {
+  try {
+    if (!req.files || req.files.length === 0) return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+
+    const porChave = new Map();
+    const errosArquivo = [];
+    for (const file of req.files) {
+      try {
+        const linhas = parseEanExternoCsv(file.buffer);
+        for (const linha of linhas) {
+          const chave = `${linha.referencia}::${linha.cor}::${linha.tamanho}`;
+          porChave.set(chave, { ...linha, arquivo: file.originalname });
+        }
+      } catch (err) {
+        errosArquivo.push({ linha: null, motivo: `${file.originalname}: ${err.message}`, dados: {} });
+      }
+    }
+
+    const { rows: variantesRows } = await pool.query(
+      `SELECT v.*, p.referencia FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id`
+    );
+    const varianteExistente = new Map(variantesRows.map((v) => [`${v.referencia}::${v.cor}::${v.tamanho}`, v]));
+    const eanEmUsoPor = new Map(variantesRows.map((v) => [v.ean, `${v.referencia} ${v.cor} ${v.tamanho}`]));
+
+    const aplicarImediato = [];
+    const guardarParaDepois = [];
+    const erros = [...errosArquivo];
+
+    for (const [chave, linha] of porChave.entries()) {
+      const existente = varianteExistente.get(chave);
+      const usadoPor = eanEmUsoPor.get(linha.ean);
+      if (usadoPor && !(existente && existente.ean === linha.ean)) {
+        erros.push({ linha: linha.linha, motivo: `O EAN "${linha.ean}" já está em uso por outra variante (${usadoPor}).`, dados: linha });
+        continue;
+      }
+      if (existente) {
+        if (existente.ean === linha.ean) continue; // já está certo, nada a fazer
+        aplicarImediato.push({
+          referencia: linha.referencia,
+          cor: linha.cor,
+          tamanho: linha.tamanho,
+          eanAtual: existente.ean,
+          eanNovo: linha.ean,
+          varianteId: existente.id,
+        });
+      } else {
+        guardarParaDepois.push({ referencia: linha.referencia, cor: linha.cor, tamanho: linha.tamanho, ean: linha.ean });
+      }
+    }
+
+    res.json({
+      aplicarImediato,
+      guardarParaDepois,
+      erros,
+      resumo: {
+        aplicarImediato: aplicarImediato.length,
+        guardarParaDepois: guardarParaDepois.length,
+        totalErros: erros.length,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/ean-mapeamento/confirmar', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const body = req.body || {};
+    const aplicarImediato = body.aplicarImediato || [];
+    const guardarParaDepois = body.guardarParaDepois || [];
+
+    await client.query('BEGIN');
+
+    let aplicados = 0;
+    for (const item of aplicarImediato) {
+      await client.query('UPDATE estoque_variantes SET ean = $1, updated_at = now() WHERE id = $2', [item.eanNovo, item.varianteId]);
+      aplicados += 1;
+    }
+
+    let guardados = 0;
+    for (const item of guardarParaDepois) {
+      await client.query(
+        `INSERT INTO estoque_ean_mapeamento (referencia, cor, tamanho, ean)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (referencia, cor, tamanho) DO UPDATE SET ean = EXCLUDED.ean`,
+        [item.referencia, item.cor, item.tamanho, item.ean]
+      );
+      guardados += 1;
+    }
+
+    await client.query('COMMIT');
+    res.json({ aplicados, guardados });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Um dos EANs já está em uso por outra variante ou mapeamento.' });
+    }
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+router.get('/ean-mapeamento', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM estoque_ean_mapeamento ORDER BY referencia, cor, tamanho');
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/ean-mapeamento/:id', async (req, res, next) => {
+  try {
+    const { rowCount } = await pool.query('DELETE FROM estoque_ean_mapeamento WHERE id = $1', [req.params.id]);
+    if (rowCount === 0) return res.status(404).json({ error: 'Mapeamento não encontrado.' });
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------- ficha de estoque (impressão) ----------
+// Uma referência por página, variantes agrupadas por cor — pensado pra
+// conferência física de estoque (uma folha por referência).
+router.get('/ficha', async (req, res, next) => {
+  try {
+    const referencias = String(req.query.referencias || '')
+      .split(',')
+      .map((r) => r.trim())
+      .filter(Boolean)
+      .slice(0, 20);
+    if (referencias.length === 0) return res.json([]);
+
+    const { rows: produtos } = await pool.query(
+      `SELECT id, referencia, codigo, descricao, categoria, marca FROM produtos WHERE referencia = ANY($1)`,
+      [referencias]
+    );
+
+    const fichas = [];
+    for (const produto of produtos) {
+      const { rows: variantes } = await pool.query(
+        `SELECT cor, tamanho, ean, quantidade FROM estoque_variantes WHERE produto_id = $1 AND ativo = true ORDER BY cor, tamanho`,
+        [produto.id]
+      );
+      const porCor = new Map();
+      for (const v of variantes) {
+        if (!porCor.has(v.cor)) porCor.set(v.cor, []);
+        porCor.get(v.cor).push(v);
+      }
+      const cores = Array.from(porCor.entries()).map(([cor, itens]) => ({
+        cor,
+        itens,
+        totalCor: itens.reduce((soma, it) => soma + Number(it.quantidade), 0),
+      }));
+      const totalGeral = cores.reduce((soma, c) => soma + c.totalCor, 0);
+      fichas.push({ produto, cores, totalGeral });
+    }
+    fichas.sort((a, b) => referencias.indexOf(a.produto.referencia) - referencias.indexOf(b.produto.referencia));
+
+    res.json(fichas);
+  } catch (err) {
+    next(err);
   }
 });
 

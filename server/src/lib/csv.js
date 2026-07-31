@@ -1,6 +1,20 @@
-// Parser de CSV simples (lida com aspas, vírgulas dentro de campos e
+// Parser de CSV simples (lida com aspas, delimitador dentro de campos e
 // aspas escapadas ""), sem dependência externa.
-function parseCsv(text) {
+
+// Detecta o delimitador de verdade a partir da primeira linha do arquivo.
+// Importante usar SÓ UM delimitador (não vírgula-ou-ponto-e-vírgula ao
+// mesmo tempo): vários relatórios usam ";" como separador de coluna E ","
+// como separador decimal (ex.: "0,3000") — tratar os dois como separador
+// de coluna bagunça todas as colunas depois do primeiro número.
+function detectarDelimitador(text) {
+  const primeiraLinha = text.split(/\r\n|\r|\n/, 1)[0] || '';
+  const pontoVirgula = (primeiraLinha.match(/;/g) || []).length;
+  const virgula = (primeiraLinha.match(/,/g) || []).length;
+  return pontoVirgula >= virgula ? ';' : ',';
+}
+
+function parseCsv(text, delimitador) {
+  const delim = delimitador || detectarDelimitador(text);
   const rows = [];
   let row = [];
   let field = '';
@@ -22,7 +36,7 @@ function parseCsv(text) {
       }
     } else if (ch === '"') {
       inQuotes = true;
-    } else if (ch === ',' || ch === ';') {
+    } else if (ch === delim) {
       row.push(field);
       field = '';
     } else if (ch === '\n') {
@@ -41,4 +55,4 @@ function parseCsv(text) {
   return rows.filter((r) => r.some((c) => String(c).trim() !== ''));
 }
 
-module.exports = { parseCsv };
+module.exports = { parseCsv, detectarDelimitador };

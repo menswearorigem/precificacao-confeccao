@@ -1,8 +1,59 @@
 import { useEffect, useState } from 'react';
-import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Search, Barcode, Upload } from 'lucide-react';
+import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Search, Barcode, Upload, Pencil, Check, X, Tags, Printer } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { Field } from '../components/ui';
+
+function EanEditavel({ variante, onFeito }) {
+  const [editando, setEditando] = useState(false);
+  const [valor, setValor] = useState(variante.ean);
+  const [erro, setErro] = useState('');
+  const [salvando, setSalvando] = useState(false);
+
+  function iniciar() {
+    setValor(variante.ean);
+    setErro('');
+    setEditando(true);
+  }
+
+  async function salvar() {
+    setSalvando(true);
+    setErro('');
+    try {
+      await api.put(`/estoque/variantes/${variante.id}/ean`, { ean: valor });
+      setEditando(false);
+      onFeito();
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  if (!editando) {
+    return (
+      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span className="mono">{variante.ean}</span>
+        <button className="icon-btn" title="Substituir EAN" onClick={iniciar}><Pencil size={12} /></button>
+      </span>
+    );
+  }
+
+  return (
+    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <input
+        className="mono"
+        autoFocus
+        value={valor}
+        onChange={(e) => setValor(e.target.value)}
+        style={{ width: 130 }}
+      />
+      <button className="icon-btn" title="Salvar" disabled={salvando} onClick={salvar} style={{ color: 'var(--success)' }}><Check size={13} /></button>
+      <button className="icon-btn" title="Cancelar" disabled={salvando} onClick={() => setEditando(false)}><X size={13} /></button>
+      {erro && <span className="login-error" style={{ marginLeft: 4 }}>{erro}</span>}
+    </span>
+  );
+}
 
 function NovaVarianteForm({ produtoId, onCriada }) {
   const [cor, setCor] = useState('');
@@ -115,8 +166,10 @@ export default function EstoquePage() {
           <h2>Estoque</h2>
           <p className="page-sub">Controle de estoque por variante (referência + cor + tamanho), com EAN próprio para bipagem.</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <Link to="/estoque/ean" className="btn btn-ghost"><Tags size={14} /> Importar EAN</Link>
           <Link to="/estoque/importacao" className="btn btn-ghost"><Upload size={14} /> Importar saldo</Link>
+          <Link to="/estoque/ficha" className="btn btn-ghost"><Printer size={14} /> Ficha de estoque</Link>
           <Link to="/estoque/bipagem" className="btn btn-primary"><Barcode size={14} /> Bipagem</Link>
         </div>
       </div>
@@ -140,7 +193,7 @@ export default function EstoquePage() {
                   <td>{v.descricao}</td>
                   <td>{v.cor}</td>
                   <td>{v.tamanho}</td>
-                  <td className="mono">{v.ean}</td>
+                  <td><EanEditavel variante={v} onFeito={() => handleBuscar({ preventDefault: () => {} })} /></td>
                   <td className="mono">{v.quantidade}</td>
                 </tr>
               ))}
@@ -169,7 +222,7 @@ export default function EstoquePage() {
                   <tr key={v.id}>
                     <td>{v.cor}</td>
                     <td>{v.tamanho}</td>
-                    <td className="mono">{v.ean}</td>
+                    <td><EanEditavel variante={v} onFeito={() => loadVariantes(produtoId)} /></td>
                     <td className="mono" style={{ fontWeight: 700 }}>{v.quantidade}</td>
                     <td><MovimentoInline variante={v} onFeito={() => loadVariantes(produtoId)} /></td>
                     <td><button className="icon-btn" onClick={() => removerVariante(v.id)}><Trash2 size={13} /></button></td>
