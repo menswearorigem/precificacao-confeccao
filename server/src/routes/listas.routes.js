@@ -11,6 +11,11 @@ const TIPOS_VALIDOS = new Set([
   'material',
   'unidade',
   'tipo_custo_industrial',
+  'operacao',
+  'canal_venda',
+  'forma_pagamento',
+  'condicao_pagamento',
+  'vendedor',
 ]);
 
 function checkTipo(req, res, next) {

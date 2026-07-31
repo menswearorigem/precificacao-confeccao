@@ -21,6 +21,10 @@ import BipagemPage from './pages/BipagemPage';
 import EstoqueImportacaoPage from './pages/EstoqueImportacaoPage';
 import EstoqueEanImportacaoPage from './pages/EstoqueEanImportacaoPage';
 import FichaEstoquePage from './pages/FichaEstoquePage';
+import ClientesListPage from './pages/ClientesListPage';
+import ClienteFichaPage from './pages/ClienteFichaPage';
+import PedidosListPage from './pages/PedidosListPage';
+import PedidoFormPage from './pages/PedidoFormPage';
 
 function RequireAuth({ authed, children }) {
   const location = useLocation();
@@ -60,6 +64,10 @@ export default function App() {
                 <Route path="/estoque/importacao" element={<EstoqueImportacaoPage />} />
                 <Route path="/estoque/ean" element={<EstoqueEanImportacaoPage />} />
                 <Route path="/estoque/ficha" element={<FichaEstoquePage />} />
+                <Route path="/clientes" element={<ClientesListPage />} />
+                <Route path="/clientes/:id" element={<ClienteFichaPage />} />
+                <Route path="/pedidos" element={<PedidosListPage />} />
+                <Route path="/pedidos/:id" element={<PedidoFormPage />} />
                 <Route path="/configuracoes" element={<ConfiguracoesPage />} />
                 <Route path="/empresas" element={<EmpresasPage />} />
                 <Route path="/listas" element={<ListasPage />} />

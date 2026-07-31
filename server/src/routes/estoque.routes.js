@@ -4,6 +4,7 @@ const pool = require('../db/pool');
 const { gerarEan13, buscarEanMapeado } = require('../lib/ean');
 const { parseEstoqueImportFile, parseEanExternoCsv } = require('../lib/estoqueImportParser');
 const { getCalcContext } = require('../lib/calcContext');
+const { registrarMovimento } = require('../lib/estoqueMovimento');
 const produtosRoutes = require('./produtos.routes');
 
 // Ordem canônica de tamanhos (igual ao relatório do Wiki Sistemas); tamanhos
@@ -160,23 +161,6 @@ router.delete('/variantes/:id', async (req, res, next) => {
 });
 
 // ---------- movimentos (entrada/saída/ajuste) ----------
-
-async function registrarMovimento(client, varianteId, tipo, quantidadeDelta, motivo) {
-  const { rows: varRows } = await client.query('SELECT * FROM estoque_variantes WHERE id = $1 FOR UPDATE', [varianteId]);
-  if (varRows.length === 0) {
-    const err = new Error('Variante não encontrada.');
-    err.status = 404;
-    throw err;
-  }
-  const nova = Number(varRows[0].quantidade) + Number(quantidadeDelta);
-  await client.query('UPDATE estoque_variantes SET quantidade = $1, updated_at = now() WHERE id = $2', [nova, varianteId]);
-  await client.query(
-    `INSERT INTO estoque_movimentos (variante_id, tipo, quantidade, quantidade_resultante, motivo)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [varianteId, tipo, quantidadeDelta, nova, motivo || null]
-  );
-  return nova;
-}
 
 router.post('/variantes/:id/movimento', async (req, res, next) => {
   const client = await pool.connect();

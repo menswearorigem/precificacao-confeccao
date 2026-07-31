@@ -10,6 +10,11 @@ const TIPOS = [
   { tipo: 'material', label: 'Materiais' },
   { tipo: 'unidade', label: 'Unidades' },
   { tipo: 'tipo_custo_industrial', label: 'Tipos de Custo Industrial' },
+  { tipo: 'operacao', label: 'Operações (Vendas)' },
+  { tipo: 'canal_venda', label: 'Canais de Venda' },
+  { tipo: 'forma_pagamento', label: 'Formas de Pagamento' },
+  { tipo: 'condicao_pagamento', label: 'Condições de Pagamento' },
+  { tipo: 'vendedor', label: 'Vendedores' },
 ];
 
 export default function ListasPage() {
