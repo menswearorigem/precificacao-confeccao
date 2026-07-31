@@ -115,7 +115,53 @@ a { color: inherit; }
 }
 .logout-btn:hover { background: rgba(244, 239, 228, 0.12); }
 
-.shell-nav {
+.shell-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.shell-sidebar {
+  width: 172px;
+  flex-shrink: 0;
+  background: var(--leather-dark);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 10px;
+}
+
+.sidebar-module {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: rgba(244, 239, 228, 0.06);
+  color: rgba(244, 239, 228, 0.85);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+}
+.sidebar-module svg { flex-shrink: 0; }
+.sidebar-module:hover { background: rgba(244, 239, 228, 0.14); color: #fff; }
+.sidebar-module.active {
+  background: var(--module-color);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+}
+
+.shell-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.shell-submenu {
   display: flex;
   gap: 2px;
   padding: 10px 16px 0;
@@ -143,6 +189,18 @@ a { color: inherit; }
 .shell-main {
   flex: 1;
   background: var(--bg);
+  min-width: 0;
+}
+
+@media (max-width: 860px) {
+  .shell-body { flex-direction: column; }
+  .shell-sidebar {
+    width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 8px 10px;
+  }
+  .sidebar-module { flex-shrink: 0; padding: 8px 12px; white-space: nowrap; }
 }
 
 /* ---------- generic page/card layout ---------- */
@@ -347,7 +405,7 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
 /* ---------- impressão da ficha técnica ---------- */
 
 @media print {
-  .shell-header, .shell-nav, .no-print { display: none !important; }
+  .shell-header, .shell-sidebar, .shell-submenu, .no-print { display: none !important; }
   .shell-main { background: #fff; }
   .page-wide { max-width: 100%; padding: 0; }
   .ficha-page { break-after: page; border: none; box-shadow: none; padding: 0; }
