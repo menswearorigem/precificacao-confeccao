@@ -3,6 +3,20 @@ const multer = require('multer');
 const pool = require('../db/pool');
 const { gerarEan13, buscarEanMapeado } = require('../lib/ean');
 const { parseEstoqueImportFile, parseEanExternoCsv } = require('../lib/estoqueImportParser');
+const { getCalcContext } = require('../lib/calcContext');
+const produtosRoutes = require('./produtos.routes');
+
+// Ordem canônica de tamanhos (igual ao relatório do Wiki Sistemas); tamanhos
+// fora dessa lista (numéricos, PPP etc.) aparecem depois, em ordem alfabética.
+const ORDEM_TAMANHOS = ['PP', 'P', 'M', 'G', 'GG', 'EG', 'EGG'];
+function compararTamanhos(a, b) {
+  const ia = ORDEM_TAMANHOS.indexOf(a);
+  const ib = ORDEM_TAMANHOS.indexOf(b);
+  if (ia !== -1 && ib !== -1) return ia - ib;
+  if (ia !== -1) return -1;
+  if (ib !== -1) return 1;
+  return String(a).localeCompare(String(b), 'pt-BR', { numeric: true });
+}
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -188,13 +202,15 @@ router.post('/variantes/:id/movimento', async (req, res, next) => {
   }
 });
 
-// Bipagem: dá baixa de 1 unidade (ou a quantidade informada) direto pelo EAN.
+// Bipagem: dá entrada ou saída de 1 unidade (ou a quantidade informada) direto pelo EAN.
 router.post('/bipar', async (req, res, next) => {
   const client = await pool.connect();
   try {
     const body = req.body || {};
     if (!body.ean) return res.status(400).json({ error: 'ean é obrigatório.' });
+    const tipo = body.tipo === 'entrada' ? 'entrada' : 'saida';
     const quantidade = Math.abs(Number(body.quantidade) || 1);
+    const delta = tipo === 'entrada' ? quantidade : -quantidade;
 
     await client.query('BEGIN');
     const { rows: varRows } = await client.query('SELECT id FROM estoque_variantes WHERE ean = $1', [body.ean]);
@@ -203,7 +219,13 @@ router.post('/bipar', async (req, res, next) => {
       return res.status(404).json({ error: `Nenhuma variante encontrada com o EAN "${body.ean}".` });
     }
     const varianteId = varRows[0].id;
-    const novaQuantidade = await registrarMovimento(client, varianteId, 'bipagem', -quantidade, body.motivo || 'Bipagem de etiqueta');
+    const novaQuantidade = await registrarMovimento(
+      client,
+      varianteId,
+      'bipagem',
+      delta,
+      body.motivo || (tipo === 'entrada' ? 'Bipagem de entrada' : 'Bipagem de saída')
+    );
     await client.query('COMMIT');
 
     const { rows: full } = await variantesQuery('WHERE v.id = $1', [varianteId]);
@@ -522,8 +544,8 @@ router.delete('/ean-mapeamento/:id', async (req, res, next) => {
 });
 
 // ---------- ficha de estoque (impressão) ----------
-// Uma referência por página, variantes agrupadas por cor — pensado pra
-// conferência física de estoque (uma folha por referência).
+// Uma referência por página, em formato de grade cor x tamanho (igual ao
+// relatório "Saldo de estoque" do Wiki Sistemas que o usuário já conhece).
 router.get('/ficha', async (req, res, next) => {
   try {
     const referencias = String(req.query.referencias || '')
@@ -534,9 +556,11 @@ router.get('/ficha', async (req, res, next) => {
     if (referencias.length === 0) return res.json([]);
 
     const { rows: produtos } = await pool.query(
-      `SELECT id, referencia, codigo, descricao, categoria, marca FROM produtos WHERE referencia = ANY($1)`,
+      `SELECT id, referencia, codigo, descricao, categoria, marca, colecao FROM produtos WHERE referencia = ANY($1)`,
       [referencias]
     );
+
+    const ctx = await getCalcContext();
 
     const fichas = [];
     for (const produto of produtos) {
@@ -544,18 +568,38 @@ router.get('/ficha', async (req, res, next) => {
         `SELECT cor, tamanho, ean, quantidade FROM estoque_variantes WHERE produto_id = $1 AND ativo = true ORDER BY cor, tamanho`,
         [produto.id]
       );
+
+      const tamanhos = Array.from(new Set(variantes.map((v) => v.tamanho))).sort(compararTamanhos);
+
       const porCor = new Map();
       for (const v of variantes) {
-        if (!porCor.has(v.cor)) porCor.set(v.cor, []);
-        porCor.get(v.cor).push(v);
+        if (!porCor.has(v.cor)) porCor.set(v.cor, new Map());
+        porCor.get(v.cor).set(v.tamanho, v);
       }
-      const cores = Array.from(porCor.entries()).map(([cor, itens]) => ({
-        cor,
-        itens,
-        totalCor: itens.reduce((soma, it) => soma + Number(it.quantidade), 0),
-      }));
-      const totalGeral = cores.reduce((soma, c) => soma + c.totalCor, 0);
-      fichas.push({ produto, cores, totalGeral });
+
+      const linhas = Array.from(porCor.entries()).map(([cor, porTamanho]) => {
+        const quantidades = tamanhos.map((t) => Number(porTamanho.get(t)?.quantidade || 0));
+        return { cor, quantidades, total: quantidades.reduce((s, q) => s + q, 0) };
+      });
+      linhas.sort((a, b) => a.cor.localeCompare(b.cor, 'pt-BR'));
+
+      const totalizador = tamanhos.map((_, i) => linhas.reduce((s, l) => s + l.quantidades[i], 0));
+      const quantidadeTotal = totalizador.reduce((s, q) => s + q, 0);
+
+      let custoTotal = 0;
+      let valorTotal = 0;
+      try {
+        const produtoRow = await produtosRoutes.fetchProdutoRow(pool, produto.id);
+        const materiais = await produtosRoutes.fetchMateriais(pool, produto.id);
+        const custosIndustriais = await produtosRoutes.fetchCustosIndustriais(pool, produto.id);
+        const calculo = produtosRoutes.buildCalculo(produtoRow, materiais, custosIndustriais, ctx);
+        custoTotal = quantidadeTotal * Number(calculo.custoTotal.custoTotalPeca || 0);
+        valorTotal = quantidadeTotal * Number(calculo.formacaoPreco.precoSugerido || 0);
+      } catch {
+        // referência sem custo/precificação cadastrada ainda — mantém 0
+      }
+
+      fichas.push({ produto, tamanhos, linhas, totalizador, quantidadeTotal, custoTotal, valorTotal });
     }
     fichas.sort((a, b) => referencias.indexOf(a.produto.referencia) - referencias.indexOf(b.produto.referencia));
 

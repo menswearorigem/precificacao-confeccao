@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Search, X, Printer } from 'lucide-react';
 import { api } from '../api/client';
+import { brl } from '../lib/format';
 
 const MAX_REFERENCIAS = 20;
 
@@ -96,63 +97,76 @@ export default function FichaEstoquePage() {
         </div>
       </div>
 
-      {fichas.map((f) => (
-        <FichaEstoque key={f.produto.id} ficha={f} />
+      {fichas.map((f, i) => (
+        <FichaEstoque key={f.produto.id} ficha={f} pagina={i + 1} totalPaginas={fichas.length} />
       ))}
     </div>
   );
 }
 
-function FichaEstoque({ ficha }) {
-  const { produto, cores, totalGeral } = ficha;
-  return (
-    <div className="ficha-page card" style={{ marginBottom: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <h2>{produto.referencia}</h2>
-        <span className="mono" style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{produto.codigo}</span>
-      </div>
-      <p className="page-sub">{produto.descricao}</p>
-
-      <div className="form-grid" style={{ marginBottom: 16 }}>
-        <InfoItem label="Categoria" value={produto.categoria} />
-        <InfoItem label="Marca" value={produto.marca} />
-        <InfoItem label="Total em estoque" value={totalGeral} />
-      </div>
-
-      {cores.length === 0 && <p className="page-sub">Nenhuma variante de estoque cadastrada para esta referência.</p>}
-
-      <div className="ficha-estoque-cores">
-        {cores.map((c) => (
-          <div key={c.cor} className="ficha-estoque-cor">
-            <div className="card-head">{c.cor || '(sem cor)'}</div>
-            <table className="data-table">
-              <thead><tr><th>Tamanho</th><th>EAN</th><th>Qtd.</th></tr></thead>
-              <tbody>
-                {c.itens.map((it) => (
-                  <tr key={`${it.cor}-${it.tamanho}`}>
-                    <td>{it.tamanho}</td>
-                    <td className="mono">{it.ean}</td>
-                    <td className="mono" style={{ fontWeight: 700 }}>{it.quantidade}</td>
-                  </tr>
-                ))}
-                <tr>
-                  <td colSpan="2" style={{ textAlign: 'right', fontWeight: 700 }}>Subtotal</td>
-                  <td className="mono" style={{ fontWeight: 700 }}>{c.totalCor}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+function hoje() {
+  return new Date().toLocaleDateString('pt-BR');
 }
 
-function InfoItem({ label, value }) {
+function FichaEstoque({ ficha, pagina, totalPaginas }) {
+  const { produto, tamanhos, linhas, totalizador, quantidadeTotal, custoTotal, valorTotal } = ficha;
   return (
-    <div className="field">
-      <span className="field-label">{label}</span>
-      <span>{value || '—'}</span>
+    <div className="ficha-page ficha-estoque-grid card" style={{ marginBottom: 24 }}>
+      <div className="ficha-estoque-topo">
+        <div>
+          <div className="ficha-estoque-empresa">FORMAÇÃO DE PREÇO — MISS MANU · ORIGEM · HOGGAR · HEBRON</div>
+          <div className="ficha-estoque-titulo">Relatório - Saldo de Estoque</div>
+        </div>
+        <div className="ficha-estoque-meta">
+          <div><strong>Pag.:</strong> {pagina}/{totalPaginas}</div>
+          <div><strong>Data:</strong> {hoje()}</div>
+        </div>
+      </div>
+
+      <div className="ficha-estoque-campos">
+        <div className="ficha-estoque-campo"><span>REFERÊNCIA:</span> <strong>{produto.referencia}</strong></div>
+        <div className="ficha-estoque-campo ficha-estoque-campo-grande"><span>DESCRIÇÃO:</span> <strong>{produto.descricao || '—'}</strong></div>
+        <div className="ficha-estoque-campo"><span>COLEÇÃO:</span> <strong>{produto.colecao || '—'}</strong></div>
+      </div>
+
+      {tamanhos.length === 0 ? (
+        <p className="page-sub">Nenhuma variante de estoque cadastrada para esta referência.</p>
+      ) : (
+        <table className="ficha-estoque-tabela">
+          <thead>
+            <tr>
+              <th className="col-cor">Cor</th>
+              {tamanhos.map((t) => <th key={t}>{t}</th>)}
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map((l) => (
+              <tr key={l.cor}>
+                <td className="col-cor">{l.cor || '(sem cor)'}</td>
+                {l.quantidades.map((q, i) => <td key={i}>{q}</td>)}
+                <td className="col-total">{l.total}</td>
+              </tr>
+            ))}
+            <tr className="linha-totalizador">
+              <td className="col-cor">TOTALIZADOR</td>
+              {totalizador.map((q, i) => <td key={i}>{q}</td>)}
+              <td className="col-total">{quantidadeTotal}</td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+
+      <div className="ficha-estoque-resumo">
+        <table>
+          <thead><tr><th colSpan="2">TOTALIZADOR</th></tr></thead>
+          <tbody>
+            <tr><td>Qtd. Total:</td><td className="col-total">{quantidadeTotal}</td></tr>
+            <tr><td>Custo Total:</td><td className="col-total">{brl(custoTotal)}</td></tr>
+            <tr><td>Valor Total:</td><td className="col-total">{brl(valorTotal)}</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

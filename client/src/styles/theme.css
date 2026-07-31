@@ -354,23 +354,85 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
   .ficha-page:last-child { break-after: auto; }
 }
 
-/* ---------- ficha de estoque: grade de tabelas por cor ---------- */
+/* ---------- ficha de estoque: relatório em grade (cor x tamanho) ---------- */
 
-.ficha-estoque-cores {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 12px;
-  align-items: start;
+.ficha-estoque-grid { break-inside: avoid; }
+
+.ficha-estoque-topo {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 2px solid var(--leather);
+  padding-bottom: 8px;
+  margin-bottom: 12px;
 }
-.ficha-estoque-cor { break-inside: avoid; }
-.ficha-estoque-cor .card-head { margin-bottom: 4px; }
-.ficha-estoque-cor .data-table { min-width: 0; }
-.ficha-estoque-cor .data-table th, .ficha-estoque-cor .data-table td { padding: 3px 6px; }
+.ficha-estoque-empresa { font-size: 11px; letter-spacing: 0.03em; color: var(--ink-soft); text-transform: uppercase; }
+.ficha-estoque-titulo { font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--leather-dark); }
+.ficha-estoque-meta { text-align: right; font-size: 12px; font-family: var(--font-mono); }
+
+.ficha-estoque-campos {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+.ficha-estoque-campo {
+  flex: 1;
+  padding: 6px 10px;
+  border-right: 1px solid var(--border);
+  font-size: 12px;
+}
+.ficha-estoque-campo:last-child { border-right: none; }
+.ficha-estoque-campo-grande { flex: 2; }
+.ficha-estoque-campo span { color: var(--ink-soft); margin-right: 6px; }
+
+table.ficha-estoque-tabela {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+.ficha-estoque-tabela th {
+  background: var(--leather);
+  color: #fff;
+  font-weight: 600;
+  padding: 6px 8px;
+  text-align: center;
+  border: 1px solid var(--leather-dark);
+}
+.ficha-estoque-tabela th.col-cor { text-align: left; }
+.ficha-estoque-tabela td {
+  padding: 5px 8px;
+  text-align: center;
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+}
+.ficha-estoque-tabela td.col-cor { text-align: left; font-family: var(--font-body); }
+.ficha-estoque-tabela tr:nth-child(even) td { background: var(--surface-alt); }
+.ficha-estoque-tabela .linha-totalizador td {
+  font-weight: 700;
+  color: var(--danger);
+  border-top: 2px solid var(--leather);
+  background: var(--surface) !important;
+}
+
+.ficha-estoque-resumo { display: flex; justify-content: flex-end; }
+.ficha-estoque-resumo table { border-collapse: collapse; font-size: 12.5px; min-width: 240px; }
+.ficha-estoque-resumo th {
+  background: var(--leather);
+  color: #fff;
+  padding: 5px 10px;
+  border: 1px solid var(--leather-dark);
+}
+.ficha-estoque-resumo td {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+}
+.ficha-estoque-resumo td.col-total { text-align: right; font-family: var(--font-mono); font-weight: 700; }
 
 @media print {
-  .ficha-estoque-cores { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
-  .ficha-estoque-cor { font-size: 11px; }
-  .ficha-estoque-cor .card-head { font-size: 11.5px; }
+  .ficha-estoque-tabela { font-size: 11.5px; }
+  .ficha-estoque-tabela th, .ficha-estoque-tabela td { padding: 4px 6px; }
 }
 
 @media (max-width: 860px) {
