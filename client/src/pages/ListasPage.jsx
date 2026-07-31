@@ -15,6 +15,7 @@ const TIPOS = [
   { tipo: 'forma_pagamento', label: 'Formas de Pagamento' },
   { tipo: 'condicao_pagamento', label: 'Condições de Pagamento' },
   { tipo: 'vendedor', label: 'Vendedores' },
+  { tipo: 'categoria_compra', label: 'Categorias de Compra' },
 ];
 
 export default function ListasPage() {

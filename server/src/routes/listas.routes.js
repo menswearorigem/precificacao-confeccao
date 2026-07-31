@@ -16,6 +16,7 @@ const TIPOS_VALIDOS = new Set([
   'forma_pagamento',
   'condicao_pagamento',
   'vendedor',
+  'categoria_compra',
 ]);
 
 function checkTipo(req, res, next) {

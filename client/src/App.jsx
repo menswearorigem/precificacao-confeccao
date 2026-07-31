@@ -25,6 +25,11 @@ import ClientesListPage from './pages/ClientesListPage';
 import ClienteFichaPage from './pages/ClienteFichaPage';
 import PedidosListPage from './pages/PedidosListPage';
 import PedidoFormPage from './pages/PedidoFormPage';
+import FornecedoresListPage from './pages/FornecedoresListPage';
+import FornecedorFichaPage from './pages/FornecedorFichaPage';
+import ComprasListPage from './pages/ComprasListPage';
+import CompraFormPage from './pages/CompraFormPage';
+import RelatorioComprasPage from './pages/RelatorioComprasPage';
 
 function RequireAuth({ authed, children }) {
   const location = useLocation();
@@ -68,6 +73,11 @@ export default function App() {
                 <Route path="/clientes/:id" element={<ClienteFichaPage />} />
                 <Route path="/pedidos" element={<PedidosListPage />} />
                 <Route path="/pedidos/:id" element={<PedidoFormPage />} />
+                <Route path="/fornecedores" element={<FornecedoresListPage />} />
+                <Route path="/fornecedores/:id" element={<FornecedorFichaPage />} />
+                <Route path="/compras/relatorio" element={<RelatorioComprasPage />} />
+                <Route path="/compras" element={<ComprasListPage />} />
+                <Route path="/compras/:id" element={<CompraFormPage />} />
                 <Route path="/configuracoes" element={<ConfiguracoesPage />} />
                 <Route path="/empresas" element={<EmpresasPage />} />
                 <Route path="/listas" element={<ListasPage />} />

@@ -2,7 +2,8 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Shirt, Package, Settings, Landmark, Percent, Factory, Upload,
   FlaskConical, LayoutDashboard, Boxes, FileText, LogOut, List as ListIcon,
-  Warehouse, Barcode, Tags, Printer, Users, ClipboardList,
+  Warehouse, Barcode, Tags, Printer, Users, ClipboardList, ShoppingCart,
+  Truck, BarChart3,
 } from 'lucide-react';
 import { api } from '../api/client';
 
@@ -40,6 +41,17 @@ const MODULES = [
     pages: [
       { to: '/pedidos', label: 'Pedidos de Venda', icon: ClipboardList },
       { to: '/clientes', label: 'Clientes', icon: Users },
+    ],
+  },
+  {
+    key: 'compras',
+    label: 'Compras',
+    icon: ShoppingCart,
+    color: 'var(--danger)',
+    pages: [
+      { to: '/compras', label: 'Compras', icon: ShoppingCart },
+      { to: '/compras/relatorio', label: 'Relatório', icon: BarChart3 },
+      { to: '/fornecedores', label: 'Fornecedores', icon: Truck },
     ],
   },
   {
