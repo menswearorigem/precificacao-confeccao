@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Search, X, Printer } from 'lucide-react';
 import { api } from '../api/client';
-import { brl } from '../lib/format';
+import { brl, pct } from '../lib/format';
+import { statusToneClass } from '../lib/statusTone';
 
 const MAX_REFERENCIAS = 5;
 
-export default function FichaTecnicaPage() {
+export default function FichaVendaPage() {
   const [busca, setBusca] = useState('');
   const [resultados, setResultados] = useState([]);
   const [selecionadas, setSelecionadas] = useState([]);
@@ -15,7 +16,7 @@ export default function FichaTecnicaPage() {
   async function handleBuscar(e) {
     e.preventDefault();
     if (!busca.trim()) return;
-    const data = await api.get(`/produtos?busca=${encodeURIComponent(busca)}`);
+    const data = await api.get(`/pedidos/buscar-produtos?busca=${encodeURIComponent(busca)}`);
     setResultados(data);
   }
 
@@ -43,11 +44,10 @@ export default function FichaTecnicaPage() {
   return (
     <div className="page-wide">
       <div className="no-print">
-        <h2>Ficha Técnica</h2>
+        <h2>Ficha de Venda</h2>
         <p className="page-sub">
-          Busque e selecione até {MAX_REFERENCIAS} referências para gerar fichas de custo prontas
-          para impressão/exportação em PDF (uma por página). Só o custo de produção aparece aqui —
-          o preço de venda fica na Ficha de Venda, dentro de Vendas.
+          Busque e selecione até {MAX_REFERENCIAS} referências para gerar fichas completas —
+          custo de produção e formação de preço de venda, prontas para impressão/PDF.
         </p>
 
         <div className="card" style={{ marginBottom: 16 }}>
@@ -99,7 +99,7 @@ export default function FichaTecnicaPage() {
       </div>
 
       {fichas.map((f, i) => (
-        <FichaCusto key={f.produto.id} ficha={f} pagina={i + 1} totalPaginas={fichas.length} />
+        <FichaVenda key={f.produto.id} ficha={f} pagina={i + 1} totalPaginas={fichas.length} />
       ))}
     </div>
   );
@@ -109,15 +109,15 @@ function hoje() {
   return new Date().toLocaleDateString('pt-BR');
 }
 
-function FichaCusto({ ficha, pagina, totalPaginas }) {
+function FichaVenda({ ficha, pagina, totalPaginas }) {
   const { produto, materiais, custosIndustriais, calculo } = ficha;
-  const { custoTotal } = calculo;
+  const { custoTotal, formacaoPreco } = calculo;
   return (
     <div className="ficha-page ficha-doc-grid card" style={{ marginBottom: 24 }}>
       <div className="ficha-doc-topo">
         <div>
           <div className="ficha-doc-empresa">{produto.empresa_nome || 'FORMAÇÃO DE PREÇO'}</div>
-          <div className="ficha-doc-titulo">Ficha de Custo</div>
+          <div className="ficha-doc-titulo">Ficha de Venda</div>
         </div>
         <div className="ficha-doc-meta">
           <div><strong>Pag.:</strong> {pagina}/{totalPaginas}</div>
@@ -199,6 +199,24 @@ function FichaCusto({ ficha, pagina, totalPaginas }) {
             </tbody>
           </table>
         </div>
+
+        <div className="ficha-doc-resumo">
+          <table>
+            <thead><tr><th colSpan="2">FORMAÇÃO DE PREÇO</th></tr></thead>
+            <tbody>
+              <tr><td>Preço mínimo aceitável:</td><td className="col-total">{brl(formacaoPreco.precoMinimo)}</td></tr>
+              <tr><td>Preço ideal:</td><td className="col-total">{brl(formacaoPreco.precoIdeal)}</td></tr>
+              <tr><td>Preço premium:</td><td className="col-total">{brl(formacaoPreco.precoPremium)}</td></tr>
+              <tr><td>Markup:</td><td className="col-total">{formacaoPreco.markupMult.toFixed(2)}x</td></tr>
+              <tr><td>Lucro estimado:</td><td className="col-total">{brl(formacaoPreco.lucroRS)} ({pct(formacaoPreco.lucroPct)})</td></tr>
+              <tr className="linha-forte"><td>Preço de venda praticado:</td><td className="col-total">{brl(formacaoPreco.precoAtivo)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 10, textAlign: 'right' }}>
+        <span className={'stamp sm ' + statusToneClass(formacaoPreco.status)}>{formacaoPreco.status}</span>
       </div>
     </div>
   );

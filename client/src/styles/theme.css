@@ -664,11 +664,11 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
   .ficha-page:last-child { break-after: auto; }
 }
 
-/* ---------- ficha de estoque: relatório em grade (cor x tamanho) ---------- */
+/* ---------- fichas impressas (estoque, custo, venda): layout em folha ---------- */
 
-.ficha-estoque-grid { break-inside: avoid; }
+.ficha-doc-grid { break-inside: avoid; }
 
-.ficha-estoque-topo {
+.ficha-doc-topo {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -676,33 +676,45 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
   padding-bottom: 8px;
   margin-bottom: 12px;
 }
-.ficha-estoque-empresa { font-size: 11px; letter-spacing: 0.03em; color: var(--ink-soft); text-transform: uppercase; }
-.ficha-estoque-titulo { font-family: var(--font-display); font-size: 18px; font-weight: 600; color: var(--leather-dark); }
-.ficha-estoque-meta { text-align: right; font-size: 12px; font-family: var(--font-mono); }
+.ficha-doc-empresa { font-size: 11px; letter-spacing: 0.03em; color: var(--ink-soft); text-transform: uppercase; }
+.ficha-doc-titulo { font-family: var(--font-display); font-size: 18px; font-weight: 600; color: var(--leather-dark); }
+.ficha-doc-meta { text-align: right; font-size: 12px; font-family: var(--font-mono); }
 
-.ficha-estoque-campos {
+.ficha-doc-campos {
   display: flex;
   gap: 0;
   border: 1px solid var(--border);
   margin-bottom: 14px;
 }
-.ficha-estoque-campo {
+.ficha-doc-campo {
   flex: 1;
   padding: 6px 10px;
   border-right: 1px solid var(--border);
   font-size: 12px;
 }
-.ficha-estoque-campo:last-child { border-right: none; }
-.ficha-estoque-campo-grande { flex: 2; }
-.ficha-estoque-campo span { color: var(--ink-soft); margin-right: 6px; }
+.ficha-doc-campo:last-child { border-right: none; }
+.ficha-doc-campo-grande { flex: 2; }
+.ficha-doc-campo span { color: var(--ink-soft); margin-right: 6px; }
 
-table.ficha-estoque-tabela {
+.ficha-doc-secao {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--leather);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+  margin: 16px 0 8px;
+}
+.ficha-doc-secao:first-of-type { margin-top: 0; }
+
+table.ficha-doc-tabela {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  margin-bottom: 16px;
+  margin-bottom: 4px;
 }
-.ficha-estoque-tabela th {
+.ficha-doc-tabela th {
   background: var(--leather);
   color: #fff;
   font-weight: 600;
@@ -710,39 +722,41 @@ table.ficha-estoque-tabela {
   text-align: center;
   border: 1px solid var(--leather-dark);
 }
-.ficha-estoque-tabela th.col-cor { text-align: left; }
-.ficha-estoque-tabela td {
+.ficha-doc-tabela th.col-esq, .ficha-doc-tabela th.col-cor { text-align: left; }
+.ficha-doc-tabela td {
   padding: 5px 8px;
   text-align: center;
   border: 1px solid var(--border);
   font-family: var(--font-mono);
 }
-.ficha-estoque-tabela td.col-cor { text-align: left; font-family: var(--font-body); }
-.ficha-estoque-tabela tr:nth-child(even) td { background: var(--surface-alt); }
-.ficha-estoque-tabela .linha-totalizador td {
+.ficha-doc-tabela td.col-esq, .ficha-doc-tabela td.col-cor { text-align: left; font-family: var(--font-body); }
+.ficha-doc-tabela tr:nth-child(even) td { background: var(--surface-alt); }
+.ficha-doc-tabela .linha-totalizador td {
   font-weight: 700;
   color: var(--danger);
   border-top: 2px solid var(--leather);
   background: var(--surface) !important;
 }
 
-.ficha-estoque-resumo { display: flex; justify-content: flex-end; }
-.ficha-estoque-resumo table { border-collapse: collapse; font-size: 12.5px; min-width: 240px; }
-.ficha-estoque-resumo th {
+.ficha-doc-resumos { display: flex; justify-content: flex-end; gap: 20px; margin-top: 14px; flex-wrap: wrap; }
+.ficha-doc-resumo table { border-collapse: collapse; font-size: 12.5px; min-width: 260px; }
+.ficha-doc-resumo th {
   background: var(--leather);
   color: #fff;
   padding: 5px 10px;
   border: 1px solid var(--leather-dark);
 }
-.ficha-estoque-resumo td {
+.ficha-doc-resumo td {
   padding: 5px 10px;
   border: 1px solid var(--border);
 }
-.ficha-estoque-resumo td.col-total { text-align: right; font-family: var(--font-mono); font-weight: 700; }
+.ficha-doc-resumo td.col-total { text-align: right; font-family: var(--font-mono); font-weight: 700; }
+.ficha-doc-resumo tr.linha-forte td { font-weight: 700; color: var(--leather-deep); background: var(--surface-alt); }
 
 @media print {
-  .ficha-estoque-tabela { font-size: 11.5px; }
-  .ficha-estoque-tabela th, .ficha-estoque-tabela td { padding: 4px 6px; }
+  .ficha-doc-tabela { font-size: 11.5px; }
+  .ficha-doc-tabela th, .ficha-doc-tabela td { padding: 4px 6px; }
+  .ficha-doc-resumo table { font-size: 11px; }
 }
 
 @media (max-width: 860px) {

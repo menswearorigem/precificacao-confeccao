@@ -105,6 +105,24 @@ router.get('/buscar-estoque', async (req, res, next) => {
   }
 });
 
+// ---------- busca de produtos (pra Ficha de Venda, sem depender do módulo Produto) ----------
+
+router.get('/buscar-produtos', async (req, res, next) => {
+  try {
+    const { busca } = req.query;
+    if (!busca) return res.json([]);
+    const { rows } = await pool.query(
+      `SELECT id, referencia, descricao FROM produtos
+       WHERE referencia ILIKE $1 OR descricao ILIKE $1 OR codigo ILIKE $1
+       ORDER BY referencia LIMIT 50`,
+      [`%${busca}%`]
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ---------- listagem ----------
 
 router.get('/', async (req, res, next) => {

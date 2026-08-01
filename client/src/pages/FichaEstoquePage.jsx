@@ -111,28 +111,28 @@ function hoje() {
 function FichaEstoque({ ficha, pagina, totalPaginas }) {
   const { produto, tamanhos, linhas, totalizador, quantidadeTotal, custoTotal, valorTotal } = ficha;
   return (
-    <div className="ficha-page ficha-estoque-grid card" style={{ marginBottom: 24 }}>
-      <div className="ficha-estoque-topo">
+    <div className="ficha-page ficha-doc-grid card" style={{ marginBottom: 24 }}>
+      <div className="ficha-doc-topo">
         <div>
-          <div className="ficha-estoque-empresa">FORMAÇÃO DE PREÇO — MISS MANU · ORIGEM · HOGGAR · HEBRON</div>
-          <div className="ficha-estoque-titulo">Relatório - Saldo de Estoque</div>
+          <div className="ficha-doc-empresa">FORMAÇÃO DE PREÇO — MISS MANU · ORIGEM · HOGGAR · HEBRON</div>
+          <div className="ficha-doc-titulo">Relatório - Saldo de Estoque</div>
         </div>
-        <div className="ficha-estoque-meta">
+        <div className="ficha-doc-meta">
           <div><strong>Pag.:</strong> {pagina}/{totalPaginas}</div>
           <div><strong>Data:</strong> {hoje()}</div>
         </div>
       </div>
 
-      <div className="ficha-estoque-campos">
-        <div className="ficha-estoque-campo"><span>REFERÊNCIA:</span> <strong>{produto.referencia}</strong></div>
-        <div className="ficha-estoque-campo ficha-estoque-campo-grande"><span>DESCRIÇÃO:</span> <strong>{produto.descricao || '—'}</strong></div>
-        <div className="ficha-estoque-campo"><span>COLEÇÃO:</span> <strong>{produto.colecao || '—'}</strong></div>
+      <div className="ficha-doc-campos">
+        <div className="ficha-doc-campo"><span>REFERÊNCIA:</span> <strong>{produto.referencia}</strong></div>
+        <div className="ficha-doc-campo ficha-doc-campo-grande"><span>DESCRIÇÃO:</span> <strong>{produto.descricao || '—'}</strong></div>
+        <div className="ficha-doc-campo"><span>COLEÇÃO:</span> <strong>{produto.colecao || '—'}</strong></div>
       </div>
 
       {tamanhos.length === 0 ? (
         <p className="page-sub">Nenhuma variante de estoque cadastrada para esta referência.</p>
       ) : (
-        <table className="ficha-estoque-tabela">
+        <table className="ficha-doc-tabela">
           <thead>
             <tr>
               <th className="col-cor">Cor</th>
@@ -157,15 +157,17 @@ function FichaEstoque({ ficha, pagina, totalPaginas }) {
         </table>
       )}
 
-      <div className="ficha-estoque-resumo">
-        <table>
-          <thead><tr><th colSpan="2">TOTALIZADOR</th></tr></thead>
-          <tbody>
-            <tr><td>Qtd. Total:</td><td className="col-total">{quantidadeTotal}</td></tr>
-            <tr><td>Custo Total:</td><td className="col-total">{brl(custoTotal)}</td></tr>
-            <tr><td>Valor Total:</td><td className="col-total">{brl(valorTotal)}</td></tr>
-          </tbody>
-        </table>
+      <div className="ficha-doc-resumos">
+        <div className="ficha-doc-resumo">
+          <table>
+            <thead><tr><th colSpan="2">TOTALIZADOR</th></tr></thead>
+            <tbody>
+              <tr><td>Qtd. Total:</td><td className="col-total">{quantidadeTotal}</td></tr>
+              <tr><td>Custo Total:</td><td className="col-total">{brl(custoTotal)}</td></tr>
+              <tr><td>Valor Total:</td><td className="col-total">{brl(valorTotal)}</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

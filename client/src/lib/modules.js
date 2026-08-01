@@ -39,6 +39,7 @@ export const MODULES = [
     pages: [
       { to: '/pedidos', label: 'Pedidos de Venda', icon: ClipboardList },
       { to: '/clientes', label: 'Clientes', icon: Users },
+      { to: '/ficha-venda', label: 'Ficha de Venda', icon: Printer },
     ],
   },
   {

@@ -51,7 +51,7 @@ function createApp() {
   app.use('/api/produtos', requireAuth, requireModulo(['produto', 'analises']), produtosRoutes);
   app.use('/api/importacao', requireAuth, requireModulo('produto'), importacaoRoutes);
   app.use('/api/kits', requireAuth, requireModulo('produto'), kitsRoutes);
-  app.use('/api/ficha-tecnica', requireAuth, requireModulo('produto'), fichaTecnicaRoutes);
+  app.use('/api/ficha-tecnica', requireAuth, requireModulo(['produto', 'vendas']), fichaTecnicaRoutes);
   app.use('/api/simulacao', requireAuth, requireModulo('analises'), simulacaoRoutes);
 
   app.use('/api/estoque', requireAuth, requireModulo('estoque'), estoqueRoutes);
