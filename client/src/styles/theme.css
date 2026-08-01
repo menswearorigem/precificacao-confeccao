@@ -656,6 +656,7 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
 /* ---------- impressão da ficha técnica ---------- */
 
 @media print {
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
   .shell-header, .shell-sidebar, .shell-submenu, .no-print { display: none !important; }
   .shell-main { background: #fff; }
   .page-wide { max-width: 100%; padding: 0; }
