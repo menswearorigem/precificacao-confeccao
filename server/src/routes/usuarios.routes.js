@@ -53,7 +53,7 @@ router.post('/', async (req, res, next) => {
     await client.query('BEGIN');
     const { rows: created } = await client.query(
       'INSERT INTO usuarios (nome, email, senha_hash, role) VALUES ($1, $2, $3, $4) RETURNING id',
-      [body.nome, body.email.toLowerCase().trim(), senhaHash, role]
+      [body.nome.trim(), body.email.toLowerCase().trim(), senhaHash, role]
     );
     await salvarModulos(client, created[0].id, body.modulos);
     await client.query('COMMIT');
@@ -61,7 +61,7 @@ router.post('/', async (req, res, next) => {
     res.status(201).json(await fetchUsuarioCompleto(created[0].id));
   } catch (err) {
     await client.query('ROLLBACK');
-    if (err.code === '23505') return res.status(409).json({ error: 'Já existe uma conta com esse e-mail.' });
+    if (err.code === '23505') return res.status(409).json({ error: 'Já existe uma conta com esse nome ou e-mail.' });
     next(err);
   } finally {
     client.release();
@@ -75,7 +75,7 @@ router.put('/:id', async (req, res, next) => {
     const updates = [];
     const values = [];
     let i = 1;
-    if (body.nome !== undefined) { updates.push(`nome = $${i}`); values.push(body.nome); i += 1; }
+    if (body.nome !== undefined) { updates.push(`nome = $${i}`); values.push(body.nome.trim()); i += 1; }
     if (body.email !== undefined) { updates.push(`email = $${i}`); values.push(body.email.toLowerCase().trim()); i += 1; }
     if (body.role !== undefined) { updates.push(`role = $${i}`); values.push(body.role === 'admin' ? 'admin' : 'limitado'); i += 1; }
     if (body.ativo !== undefined) {
@@ -103,7 +103,7 @@ router.put('/:id', async (req, res, next) => {
     res.json(await fetchUsuarioCompleto(req.params.id));
   } catch (err) {
     await client.query('ROLLBACK');
-    if (err.code === '23505') return res.status(409).json({ error: 'Já existe uma conta com esse e-mail.' });
+    if (err.code === '23505') return res.status(409).json({ error: 'Já existe uma conta com esse nome ou e-mail.' });
     next(err);
   } finally {
     client.release();

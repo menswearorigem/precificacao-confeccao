@@ -4,11 +4,6 @@ async function request(path, options = {}) {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     ...options,
   });
-  if (res.status === 401) {
-    const err = new Error('unauthenticated');
-    err.status = 401;
-    throw err;
-  }
   const isJson = res.headers.get('content-type')?.includes('application/json');
   const data = isJson ? await res.json() : null;
   if (!res.ok) {
@@ -31,11 +26,6 @@ export const api = {
       credentials: 'include',
       body: formData,
     });
-    if (res.status === 401) {
-      const err = new Error('unauthenticated');
-      err.status = 401;
-      throw err;
-    }
     const data = await res.json();
     if (!res.ok) {
       const err = new Error(data?.error || `Erro na requisição (${res.status})`);

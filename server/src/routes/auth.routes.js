@@ -65,26 +65,26 @@ router.post('/setup', async (req, res, next) => {
     const senhaHash = await hashSenha(body.senha);
     const { rows: created } = await pool.query(
       `INSERT INTO usuarios (nome, email, senha_hash, role) VALUES ($1, $2, $3, 'admin') RETURNING id`,
-      [body.nome, body.email.toLowerCase().trim(), senhaHash]
+      [body.nome.trim(), body.email.toLowerCase().trim(), senhaHash]
     );
     setSessionCookie(res, created[0].id);
     res.status(201).json(await perfilCompleto(created[0].id));
   } catch (err) {
-    if (err.code === '23505') return res.status(409).json({ error: 'Já existe uma conta com esse e-mail.' });
+    if (err.code === '23505') return res.status(409).json({ error: 'Já existe uma conta com esse nome ou e-mail.' });
     next(err);
   }
 });
 
 router.post('/login', async (req, res, next) => {
   try {
-    const { email, senha } = req.body || {};
-    if (!email || !senha) return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
-    const { rows } = await pool.query('SELECT * FROM usuarios WHERE email = $1', [String(email).toLowerCase().trim()]);
+    const { nome, senha } = req.body || {};
+    if (!nome || !senha) return res.status(401).json({ error: 'Nome ou senha incorretos.' });
+    const { rows } = await pool.query('SELECT * FROM usuarios WHERE LOWER(nome) = LOWER($1)', [String(nome).trim()]);
     if (rows.length === 0 || !rows[0].ativo) {
-      return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
+      return res.status(401).json({ error: 'Nome ou senha incorretos.' });
     }
     const ok = await verificarSenha(senha, rows[0].senha_hash);
-    if (!ok) return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
+    if (!ok) return res.status(401).json({ error: 'Nome ou senha incorretos.' });
 
     setSessionCookie(res, rows[0].id);
     res.json(await perfilCompleto(rows[0].id));

@@ -27,7 +27,7 @@ export default function LoginPage({ onLoggedIn }) {
 }
 
 function LoginForm({ onSuccess }) {
-  const [email, setEmail] = useState('');
+  const [nome, setNome] = useState('');
   const [senha, setSenha] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -37,10 +37,10 @@ function LoginForm({ onSuccess }) {
     setError('');
     setLoading(true);
     try {
-      await api.post('/auth/login', { email, senha });
+      await api.post('/auth/login', { nome, senha });
       await onSuccess();
     } catch (err) {
-      setError(err.message || 'E-mail ou senha incorretos.');
+      setError(err.message || 'Nome ou senha incorretos.');
     } finally {
       setLoading(false);
     }
@@ -52,8 +52,8 @@ function LoginForm({ onSuccess }) {
       <h2>Formação de Preço</h2>
       <p className="page-sub">Indústria de confecção — acesso da equipe</p>
       <div className="field" style={{ marginTop: 10, marginBottom: 10, textAlign: 'left' }}>
-        <span className="field-label">E-mail</span>
-        <input type="email" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} />
+        <span className="field-label">Nome</span>
+        <input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} />
       </div>
       <div className="field" style={{ marginBottom: 14, textAlign: 'left' }}>
         <span className="field-label">Senha</span>
