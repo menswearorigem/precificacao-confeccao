@@ -52,6 +52,29 @@ function variantesQuery(where = '', values = []) {
   );
 }
 
+// Lista enxuta de referências (sem custo/margem) só pra alimentar o seletor
+// de "qual referência ver o estoque" — assim o módulo Estoque não depende
+// de acesso ao módulo Produto (que expõe preço/margem, mais sensível).
+router.get('/produtos-referencia', async (req, res, next) => {
+  try {
+    const { busca } = req.query;
+    const conditions = [];
+    const values = [];
+    if (busca) {
+      conditions.push('(referencia ILIKE $1 OR descricao ILIKE $1 OR codigo ILIKE $1)');
+      values.push(`%${busca}%`);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const { rows } = await pool.query(
+      `SELECT id, referencia, descricao FROM produtos ${where} ORDER BY referencia`,
+      values
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ---------- variantes ----------
 
 router.get('/variantes', async (req, res, next) => {

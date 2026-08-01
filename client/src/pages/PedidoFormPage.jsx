@@ -142,7 +142,7 @@ export default function PedidoFormPage() {
   async function buscarProduto(e) {
     e.preventDefault();
     if (!buscaProduto.trim()) { setResultadosProduto([]); return; }
-    const data = await api.get(`/estoque/variantes?busca=${encodeURIComponent(buscaProduto)}`);
+    const data = await api.get(`/pedidos/buscar-estoque?busca=${encodeURIComponent(buscaProduto)}`);
     setResultadosProduto(data);
   }
 

@@ -1,5 +1,6 @@
 const express = require('express');
 const pool = require('../db/pool');
+const { requireModulo } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -56,7 +57,7 @@ router.get('/:tipo', checkTipo, async (req, res, next) => {
   }
 });
 
-router.post('/:tipo', checkTipo, async (req, res, next) => {
+router.post('/:tipo', requireModulo('configuracoes'), checkTipo, async (req, res, next) => {
   try {
     const { valor, ordem } = req.body || {};
     if (!valor) return res.status(400).json({ error: 'valor é obrigatório.' });
@@ -71,7 +72,7 @@ router.post('/:tipo', checkTipo, async (req, res, next) => {
   }
 });
 
-router.put('/:tipo/:id', checkTipo, async (req, res, next) => {
+router.put('/:tipo/:id', requireModulo('configuracoes'), checkTipo, async (req, res, next) => {
   try {
     const { valor, ativo, ordem } = req.body || {};
     const updates = [];
@@ -94,7 +95,7 @@ router.put('/:tipo/:id', checkTipo, async (req, res, next) => {
 });
 
 // Desativa (soft delete) em vez de apagar, para não quebrar produtos já cadastrados com esse valor.
-router.delete('/:tipo/:id', checkTipo, async (req, res, next) => {
+router.delete('/:tipo/:id', requireModulo('configuracoes'), checkTipo, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
       'UPDATE listas SET ativo = FALSE WHERE id = $1 AND tipo = $2 RETURNING *',

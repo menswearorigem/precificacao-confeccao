@@ -135,7 +135,7 @@ export default function EstoquePage() {
   const [resultadoBusca, setResultadoBusca] = useState(null);
 
   useEffect(() => {
-    api.get('/produtos').then(setProdutos);
+    api.get('/estoque/produtos-referencia').then(setProdutos);
   }, []);
 
   function loadVariantes(id) {

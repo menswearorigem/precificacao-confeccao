@@ -1,5 +1,6 @@
 const express = require('express');
 const pool = require('../db/pool');
+const { requireModulo } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -26,7 +27,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', requireModulo('configuracoes'), async (req, res, next) => {
   try {
     const body = req.body || {};
     if (!body.nome) return res.status(400).json({ error: 'nome é obrigatório.' });
@@ -52,7 +53,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-router.put('/:id', async (req, res, next) => {
+router.put('/:id', requireModulo('configuracoes'), async (req, res, next) => {
   try {
     const body = req.body || {};
     const updates = [];
@@ -79,7 +80,7 @@ router.put('/:id', async (req, res, next) => {
   }
 });
 
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', requireModulo('configuracoes'), async (req, res, next) => {
   try {
     const { rowCount } = await pool.query('DELETE FROM empresas WHERE id = $1', [req.params.id]);
     if (rowCount === 0) return res.status(404).json({ error: 'Empresa não encontrada.' });

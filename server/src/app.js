@@ -1,8 +1,9 @@
 const path = require('path');
 const express = require('express');
 
-const { requireAuth } = require('./middleware/auth');
+const { requireAuth, requireModulo } = require('./middleware/auth');
 const authRoutes = require('./routes/auth.routes');
+const usuariosRoutes = require('./routes/usuarios.routes');
 const configuracoesRoutes = require('./routes/configuracoes.routes');
 const empresasRoutes = require('./routes/empresas.routes');
 const listasRoutes = require('./routes/listas.routes');
@@ -32,22 +33,32 @@ function createApp() {
 
   app.use('/api/auth', authRoutes);
 
-  // Todas as rotas de dados abaixo exigem sessão válida.
-  app.use('/api/configuracoes', requireAuth, configuracoesRoutes);
-  app.use('/api/empresas', requireAuth, empresasRoutes);
+  // Gestão de usuários é só pra administrador (checado dentro do próprio router).
+  app.use('/api/usuarios', requireAuth, usuariosRoutes);
+
+  // Listas e empresas alimentam dropdowns usados em quase toda tela do
+  // sistema — leitura fica liberada pra qualquer usuário autenticado, e só a
+  // edição (cadastro/config) exige o módulo "configuracoes".
   app.use('/api/listas', requireAuth, listasRoutes);
-  app.use('/api/taxas-venda', requireAuth, taxasVendaRoutes);
-  app.use('/api/custos-indiretos', requireAuth, custosIndiretosRoutes);
-  app.use('/api/produtos', requireAuth, produtosRoutes);
-  app.use('/api/importacao', requireAuth, importacaoRoutes);
-  app.use('/api/simulacao', requireAuth, simulacaoRoutes);
-  app.use('/api/kits', requireAuth, kitsRoutes);
-  app.use('/api/ficha-tecnica', requireAuth, fichaTecnicaRoutes);
-  app.use('/api/estoque', requireAuth, estoqueRoutes);
-  app.use('/api/clientes', requireAuth, clientesRoutes);
-  app.use('/api/pedidos', requireAuth, pedidosRoutes);
-  app.use('/api/fornecedores', requireAuth, fornecedoresRoutes);
-  app.use('/api/compras', requireAuth, comprasRoutes);
+  app.use('/api/empresas', requireAuth, empresasRoutes);
+
+  app.use('/api/configuracoes', requireAuth, requireModulo('configuracoes'), configuracoesRoutes);
+  app.use('/api/taxas-venda', requireAuth, requireModulo('configuracoes'), taxasVendaRoutes);
+  app.use('/api/custos-indiretos', requireAuth, requireModulo('configuracoes'), custosIndiretosRoutes);
+
+  // Análises (dashboard/simulador) trabalha em cima dos mesmos dados de
+  // custo/preço do módulo Produto — por isso também libera acesso a produtos.
+  app.use('/api/produtos', requireAuth, requireModulo(['produto', 'analises']), produtosRoutes);
+  app.use('/api/importacao', requireAuth, requireModulo('produto'), importacaoRoutes);
+  app.use('/api/kits', requireAuth, requireModulo('produto'), kitsRoutes);
+  app.use('/api/ficha-tecnica', requireAuth, requireModulo('produto'), fichaTecnicaRoutes);
+  app.use('/api/simulacao', requireAuth, requireModulo('analises'), simulacaoRoutes);
+
+  app.use('/api/estoque', requireAuth, requireModulo('estoque'), estoqueRoutes);
+  app.use('/api/clientes', requireAuth, requireModulo('vendas'), clientesRoutes);
+  app.use('/api/pedidos', requireAuth, requireModulo('vendas'), pedidosRoutes);
+  app.use('/api/fornecedores', requireAuth, requireModulo('compras'), fornecedoresRoutes);
+  app.use('/api/compras', requireAuth, requireModulo('compras'), comprasRoutes);
 
   // Build do React em produção (um único serviço no Render).
   app.use(express.static(CLIENT_DIST));

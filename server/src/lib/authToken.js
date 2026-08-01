@@ -9,28 +9,30 @@ function sign(payload) {
   return hmac.digest('hex');
 }
 
-function createToken() {
+function createToken(usuarioId) {
   const expiresAt = Date.now() + SESSION_HOURS * 60 * 60 * 1000;
-  const payload = `ok.${expiresAt}`;
+  const payload = `${usuarioId}.${expiresAt}`;
   const signature = sign(payload);
   return `${payload}.${signature}`;
 }
 
+// Retorna o usuarioId (número) se o token for válido, ou null caso contrário.
 function verifyToken(token) {
-  if (!token || typeof token !== 'string') return false;
+  if (!token || typeof token !== 'string') return null;
   const parts = token.split('.');
-  if (parts.length !== 3) return false;
-  const [marker, expiresAtStr, signature] = parts;
-  const payload = `${marker}.${expiresAtStr}`;
+  if (parts.length !== 3) return null;
+  const [usuarioIdStr, expiresAtStr, signature] = parts;
+  const payload = `${usuarioIdStr}.${expiresAtStr}`;
   const expected = sign(payload);
   const sigBuf = Buffer.from(signature, 'hex');
   const expectedBuf = Buffer.from(expected, 'hex');
-  if (sigBuf.length !== expectedBuf.length) return false;
-  if (!crypto.timingSafeEqual(sigBuf, expectedBuf)) return false;
-  if (marker !== 'ok') return false;
+  if (sigBuf.length !== expectedBuf.length) return null;
+  if (!crypto.timingSafeEqual(sigBuf, expectedBuf)) return null;
+  const usuarioId = Number(usuarioIdStr);
+  if (!Number.isInteger(usuarioId)) return null;
   const expiresAt = Number(expiresAtStr);
-  if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) return false;
-  return true;
+  if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) return null;
+  return usuarioId;
 }
 
 module.exports = { createToken, verifyToken, SESSION_HOURS };

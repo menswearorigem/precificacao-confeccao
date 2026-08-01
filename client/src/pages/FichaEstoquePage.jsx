@@ -15,7 +15,7 @@ export default function FichaEstoquePage() {
   async function handleBuscar(e) {
     e.preventDefault();
     if (!busca.trim()) return;
-    const data = await api.get(`/produtos?busca=${encodeURIComponent(busca)}`);
+    const data = await api.get(`/estoque/produtos-referencia?busca=${encodeURIComponent(busca)}`);
     setResultados(data);
   }
 

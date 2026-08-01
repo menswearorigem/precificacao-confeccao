@@ -85,6 +85,26 @@ async function fetchPedidoCompleto(id) {
   return { pedido: pedidoRows[0], itens };
 }
 
+// ---------- busca de estoque (pra lançar item no pedido sem depender do módulo Estoque) ----------
+
+router.get('/buscar-estoque', async (req, res, next) => {
+  try {
+    const { busca } = req.query;
+    if (!busca) return res.json([]);
+    const { rows } = await pool.query(
+      `SELECT v.id, v.cor, v.tamanho, v.ean, v.quantidade, v.produto_id, p.referencia, p.descricao
+       FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id
+       WHERE p.referencia ILIKE $1 OR p.descricao ILIKE $1 OR v.ean = $2
+       ORDER BY p.referencia, v.cor, v.tamanho
+       LIMIT 200`,
+      [`%${busca}%`, busca]
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ---------- listagem ----------
 
 router.get('/', async (req, res, next) => {
