@@ -2,7 +2,7 @@ import {
   Package, Settings, Landmark, Percent, Factory, Upload,
   FlaskConical, LayoutDashboard, Boxes, FileText, List as ListIcon,
   Warehouse, Barcode, Tags, Printer, Users, ClipboardList, ShoppingCart,
-  Truck, BarChart3, ShieldCheck,
+  Truck, BarChart3, ShieldCheck, Plug,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -75,6 +75,7 @@ export const MODULES = [
       { to: '/taxas-venda', label: 'Taxas de Venda', icon: Percent },
       { to: '/custos-indiretos', label: 'Custos Indiretos', icon: Factory },
       { to: '/usuarios', label: 'Usuários', icon: ShieldCheck, adminOnly: true },
+      { to: '/integracoes', label: 'Integrações', icon: Plug, adminOnly: true },
     ],
   },
 ];

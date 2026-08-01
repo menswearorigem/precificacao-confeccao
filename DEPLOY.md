@@ -61,6 +61,7 @@ Ainda na tela de criação (ou depois em **Environment**), adicione:
 | `APP_PASSWORD` | a senha que a equipe vai usar para entrar no sistema (escolha uma senha de verdade, não deixe a padrão) |
 | `SESSION_SECRET` | qualquer texto longo e aleatório (ex: gere com `openssl rand -hex 32`) |
 | `NODE_ENV` | `production` |
+| `APP_URL` | a URL pública do serviço, ex: `https://precificacao-confeccao.onrender.com` (sem barra no final) — usada nas integrações com marketplaces (Mercado Livre/Shopee) pra montar o link de retorno da autorização |
 
 Não precisa definir `PORT` — o Render define isso sozinho.
 
@@ -94,6 +95,22 @@ snapshots automáticos (em planos pagos) e também fazer um dump manual a
 qualquer momento (`pg_dump` usando a External Database URL). Vale a pena
 configurar isso já no início, especialmente antes de uma importação em
 massa grande.
+
+## 7. Integrações com marketplaces (Mercado Livre / Shopee)
+
+Em **Configurações → Integrações** (só administrador) dá pra conectar o
+Mercado Livre e a Shopee pra puxar os pedidos pagos automaticamente (a cada
+15 minutos, ou na hora clicando em "Sincronizar agora"). Pra cada um:
+
+- **Mercado Livre:** crie um app em https://developers.mercadolivre.com.br,
+  registre o redirect URI `SEU-SERVICO.onrender.com/api/integracoes/mercado_livre/callback`
+  e cadastre o Client ID/Secret na tela de Integrações.
+- **Shopee:** crie um app no Open Platform (Seller Center → Open API), pegue
+  o Partner ID/Key e cadastre na tela de Integrações. O redirect é gerado
+  automaticamente na hora de conectar, não precisa registrar antes.
+
+Depois de cadastrar as credenciais, clique em **Conectar** — você vai ser
+levado pra tela de login do próprio marketplace pra autorizar o acesso.
 
 ## Rodando localmente (para desenvolvimento)
 

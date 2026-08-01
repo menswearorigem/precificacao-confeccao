@@ -1,7 +1,7 @@
 const path = require('path');
 const express = require('express');
 
-const { requireAuth, requireModulo } = require('./middleware/auth');
+const { requireAuth, requireModulo, requireAdmin } = require('./middleware/auth');
 const authRoutes = require('./routes/auth.routes');
 const usuariosRoutes = require('./routes/usuarios.routes');
 const configuracoesRoutes = require('./routes/configuracoes.routes');
@@ -19,6 +19,7 @@ const clientesRoutes = require('./routes/clientes.routes');
 const pedidosRoutes = require('./routes/pedidos.routes');
 const fornecedoresRoutes = require('./routes/fornecedores.routes');
 const comprasRoutes = require('./routes/compras.routes');
+const integracoesRoutes = require('./routes/integracoes.routes');
 
 const CLIENT_DIST = path.join(__dirname, '..', '..', 'client', 'dist');
 
@@ -59,6 +60,13 @@ function createApp() {
   app.use('/api/pedidos', requireAuth, requireModulo('vendas'), pedidosRoutes);
   app.use('/api/fornecedores', requireAuth, requireModulo('compras'), fornecedoresRoutes);
   app.use('/api/compras', requireAuth, requireModulo('compras'), comprasRoutes);
+
+  // Callbacks OAuth são chamados pelo redirect do próprio marketplace — sem
+  // sessão nossa nesse momento, então ficam fora do requireAuth. A validação
+  // de segurança é o "state" de uso único gravado em integracoes_oauth_state.
+  app.use('/api/integracoes/mercado_livre/callback', integracoesRoutes.callbackMercadoLivre);
+  app.use('/api/integracoes/shopee/callback', integracoesRoutes.callbackShopee);
+  app.use('/api/integracoes', requireAuth, requireAdmin, integracoesRoutes);
 
   // Build do React em produção (um único serviço no Render).
   app.use(express.static(CLIENT_DIST));

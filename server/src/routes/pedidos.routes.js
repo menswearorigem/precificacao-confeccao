@@ -449,3 +449,4 @@ router.post('/:id/cancelar', async (req, res, next) => {
 });
 
 module.exports = router;
+module.exports.recalcularTotais = recalcularTotais;
