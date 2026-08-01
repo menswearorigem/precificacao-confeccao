@@ -56,8 +56,8 @@ export default function Shell({ children }) {
                 style={{ '--module-color': mod.color }}
                 onClick={() => navigate(mod.pages[0].to)}
               >
-                <Icon size={17} />
-                <span>{mod.label}</span>
+                <span className="module-badge"><Icon size={16} /></span>
+                <span className="module-label">{mod.label}</span>
               </button>
             );
           })}
