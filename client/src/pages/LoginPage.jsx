@@ -17,11 +17,33 @@ export default function LoginPage({ onLoggedIn }) {
     navigate(getDefaultPath(user) || '/produtos');
   }
 
-  if (setupNeeded === null) return null;
-
   return (
     <div className="login-screen">
-      {setupNeeded ? <SetupForm onSuccess={handleSuccess} /> : <LoginForm onSuccess={handleSuccess} />}
+      <div className="login-brand-panel">
+        <div className="login-brand-mark"><Shirt size={24} /></div>
+        <div className="login-brand-copy">
+          <div className="eyebrow">Sistema de gestão têxtil</div>
+          <h1>Formação de <em>Preço</em></h1>
+          <p>
+            Precificação, estoque, vendas e compras reunidos num só lugar — pensado pra dar
+            clareza de margem em cada peça, do corte à venda.
+          </p>
+        </div>
+        <div className="login-brand-footer">
+          <span>Miss Manu</span>
+          <span>Origem</span>
+          <span>Hoggar</span>
+          <span>Hebron</span>
+        </div>
+      </div>
+
+      <div className="login-form-panel">
+        {setupNeeded === null ? null : setupNeeded ? (
+          <SetupForm onSuccess={handleSuccess} />
+        ) : (
+          <LoginForm onSuccess={handleSuccess} />
+        )}
+      </div>
     </div>
   );
 }
@@ -48,10 +70,9 @@ function LoginForm({ onSuccess }) {
 
   return (
     <form className="login-card" onSubmit={handleSubmit}>
-      <div className="brand-mark" style={{ margin: '0 auto 14px' }}><Shirt size={22} /></div>
-      <h2>Formação de Preço</h2>
-      <p className="page-sub">Indústria de confecção — acesso da equipe</p>
-      <div className="field" style={{ marginTop: 10, marginBottom: 10, textAlign: 'left' }}>
+      <h2>Bem-vindo de volta</h2>
+      <p className="page-sub">Entre com seu nome e senha para acessar o sistema.</p>
+      <div className="field" style={{ marginTop: 6, marginBottom: 10, textAlign: 'left' }}>
         <span className="field-label">Nome</span>
         <input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} />
       </div>
@@ -96,10 +117,9 @@ function SetupForm({ onSuccess }) {
 
   return (
     <form className="login-card" onSubmit={handleSubmit} style={{ maxWidth: 380 }}>
-      <div className="brand-mark" style={{ margin: '0 auto 14px' }}><Shirt size={22} /></div>
       <h2>Configuração inicial</h2>
       <p className="page-sub">Ainda não existe nenhuma conta — crie a conta de administrador para começar.</p>
-      <div className="field" style={{ marginTop: 10, marginBottom: 10, textAlign: 'left' }}>
+      <div className="field" style={{ marginTop: 6, marginBottom: 10, textAlign: 'left' }}>
         <span className="field-label">Seu nome</span>
         <input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} />
       </div>

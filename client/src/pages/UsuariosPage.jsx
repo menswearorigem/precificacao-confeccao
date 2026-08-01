@@ -157,8 +157,8 @@ export default function UsuariosPage() {
 
       {!loading && usuarios.map((u) => (
         <div className="card" style={{ marginBottom: 16 }} key={u.id}>
-          <div className="card-head" style={{ justifyContent: 'space-between', display: 'flex', alignItems: 'center' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ justifyContent: 'space-between', display: 'flex', alignItems: 'center', marginBottom: 14, paddingBottom: 12, borderBottom: '1px solid var(--border-soft)' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 16, color: 'var(--leather-deep)' }}>
               {u.nome}
               {u.role === 'admin' && <span className="stamp sm tone-elevada"><ShieldCheck size={11} style={{ verticalAlign: -1, marginRight: 3 }} />Admin</span>}
               {!u.ativo && <span className="stamp sm tone-prejuizo">Inativo</span>}

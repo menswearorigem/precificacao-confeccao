@@ -22,7 +22,7 @@ export const MODULES = [
     key: 'estoque',
     label: 'Estoque',
     icon: Warehouse,
-    color: 'var(--leather)',
+    color: 'var(--brass)',
     pages: [
       { to: '/estoque', label: 'Estoque', icon: Warehouse },
       { to: '/estoque/bipagem', label: 'Bipagem', icon: Barcode },
