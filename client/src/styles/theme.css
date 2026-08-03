@@ -666,6 +666,12 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
   .ficha-page:last-child { break-after: auto; }
 }
 
+.print-only { display: none; }
+@media print {
+  .print-only { display: block; }
+  .card { box-shadow: none !important; border: 1px solid #ccc !important; }
+}
+
 /* ---------- fichas impressas (estoque, custo, venda): layout em folha ---------- */
 
 .ficha-doc-grid { break-inside: avoid; }

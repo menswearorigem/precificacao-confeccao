@@ -5,7 +5,7 @@ const { registrarMovimento } = require('../lib/estoqueMovimento');
 const { getCalcContext } = require('../lib/calcContext');
 const { calcularTaxaEsperadaPedido } = require('../lib/marketplaceTaxaCalc');
 const { parseArquivoPedidos } = require('../lib/pedidoImportParsers');
-const { importarPedido, sincronizarSeNecessario } = require('../lib/marketplaceSync');
+const { importarPedido, sincronizarSeNecessario, encontrarVariante } = require('../lib/marketplaceSync');
 const { recalcularTotais } = require('../lib/pedidoRecalculo');
 const produtosRoutes = require('./produtos.routes');
 
@@ -182,10 +182,54 @@ router.post('/importar-marketplace/confirmar', async (req, res, next) => {
   }
 });
 
+// Reprocessa itens de pedidos de marketplace que ficaram sem produto
+// vinculado (produto_id NULL) — casos importados antes de algum ajuste na
+// lógica de casamento (SKU/EAN), ou de um produto cadastrado depois do
+// pedido. O SKU original do marketplace fica preservado no campo
+// `referencia` mesmo quando não achou correspondência na hora da
+// importação, então dá pra tentar de novo sem precisar re-importar nada.
+router.post('/marketplace/revincular-custos', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const { rows: semVinculo } = await client.query(
+      `SELECT pi.id, pi.referencia
+       FROM pedido_itens pi
+       JOIN pedidos_venda pv ON pv.id = pi.pedido_id
+       WHERE pv.origem_marketplace IS NOT NULL AND pi.produto_id IS NULL
+         AND pi.referencia IS NOT NULL AND pi.referencia != '—'`
+    );
+
+    let vinculados = 0;
+    await client.query('BEGIN');
+    for (const item of semVinculo) {
+      const variante = await encontrarVariante(client, { eanExterno: null, skuExterno: item.referencia });
+      if (!variante) continue;
+      await client.query(
+        `UPDATE pedido_itens
+         SET produto_id = $1, variante_id = $2, referencia = $3, descricao = $4, cor = $5, tamanho = $6
+         WHERE id = $7`,
+        [variante.produto_id, variante.id, variante.referencia, variante.descricao, variante.cor || '', variante.tamanho || '', item.id]
+      );
+      vinculados += 1;
+    }
+    await client.query('COMMIT');
+
+    res.json({ verificados: semVinculo.length, vinculados, semCorrespondencia: semVinculo.length - vinculados });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
 // ---------- lucratividade e taxas de marketplace ----------
 
 // Custo total da peça (mesmo motor de cálculo da Ficha de Custo), com cache
 // em memória pra não recalcular o mesmo produto várias vezes num relatório.
+// Guarda separado o imposto embutido no preço (pctImpostos da empresa) do
+// restante (matéria-prima + mão de obra + indireto), pra dar pro relatório
+// mostrar essas duas categorias separadas.
 async function mapaCustoPorProduto(produtoIds, ctx) {
   const mapa = new Map();
   for (const id of produtoIds) {
@@ -195,9 +239,12 @@ async function mapaCustoPorProduto(produtoIds, ctx) {
       const materiais = await produtosRoutes.fetchMateriais(pool, id);
       const custosIndustriais = await produtosRoutes.fetchCustosIndustriais(pool, id);
       const calculo = produtosRoutes.buildCalculo(produtoRow, materiais, custosIndustriais, ctx);
-      mapa.set(id, Number(calculo.custoTotal.custoTotalPeca) || 0);
+      mapa.set(id, {
+        custoPeca: Number(calculo.custoTotal.subtotalProducao) || 0,
+        imposto: Number(calculo.custoTotal.impostosRS) || 0,
+      });
     } catch {
-      mapa.set(id, 0);
+      mapa.set(id, { custoPeca: 0, imposto: 0 });
     }
   }
   return mapa;
@@ -223,7 +270,12 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
        ${where} ORDER BY pv.data_pedido, pv.id`,
       values
     );
-    if (pedidos.length === 0) return res.json({ pedidos: [], totalGeral: { receita: 0, custo: 0, taxaMarketplace: 0, lucro: 0, margemPct: 0 } });
+    if (pedidos.length === 0) {
+      return res.json({
+        pedidos: [],
+        totalGeral: { receita: 0, custoPeca: 0, imposto: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, margemPct: 0 },
+      });
+    }
 
     const { rows: itens } = await pool.query(
       `SELECT * FROM pedido_itens WHERE pedido_id = ANY($1)`,
@@ -235,9 +287,12 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
 
     const resultado = pedidos.map((p) => {
       const itensDoPedido = itens.filter((it) => it.pedido_id === p.id);
-      const custo = itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * (mapaCusto.get(it.produto_id) || 0), 0);
+      const custoPeca = itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * (mapaCusto.get(it.produto_id)?.custoPeca || 0), 0);
+      const imposto = itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * (mapaCusto.get(it.produto_id)?.imposto || 0), 0);
       const semCusto = itensDoPedido.some((it) => !it.produto_id || !mapaCusto.has(it.produto_id));
       const taxaMarketplace = Number(p.taxa_marketplace) || 0;
+      const frete = Number(p.valor_frete) || 0;
+      const custo = custoPeca + imposto;
       const receita = Number(p.total_liquido);
       const lucro = receita - custo - taxaMarketplace;
       const margemPct = receita > 0 ? lucro / receita : 0;
@@ -248,6 +303,9 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
         cliente_nome: p.cliente_nome,
         canal_venda: p.canal_venda,
         receita,
+        custoPeca,
+        imposto,
+        frete,
         custo,
         taxaMarketplace,
         lucro,
@@ -259,11 +317,14 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
     const totalGeral = resultado.reduce(
       (acc, p) => ({
         receita: acc.receita + p.receita,
-        custo: acc.custo + p.custo,
+        custoPeca: acc.custoPeca + p.custoPeca,
+        imposto: acc.imposto + p.imposto,
+        frete: acc.frete + p.frete,
         taxaMarketplace: acc.taxaMarketplace + p.taxaMarketplace,
+        custo: acc.custo + p.custo,
         lucro: acc.lucro + p.lucro,
       }),
-      { receita: 0, custo: 0, taxaMarketplace: 0, lucro: 0 }
+      { receita: 0, custoPeca: 0, imposto: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0 }
     );
     totalGeral.margemPct = totalGeral.receita > 0 ? totalGeral.lucro / totalGeral.receita : 0;
 

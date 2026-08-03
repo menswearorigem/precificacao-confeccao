@@ -242,4 +242,10 @@ function sincronizarSeNecessario() {
   });
 }
 
-module.exports = { sincronizarIntegracao, sincronizarTodasAtivas, sincronizarSeNecessario, importarPedido };
+module.exports = {
+  sincronizarIntegracao,
+  sincronizarTodasAtivas,
+  sincronizarSeNecessario,
+  importarPedido,
+  encontrarVariante,
+};
