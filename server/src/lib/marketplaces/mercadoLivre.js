@@ -219,10 +219,12 @@ async function buscarDetalhesFaturamento({ accessToken, sellerId, orderIds }) {
   }
   // Chamada deu certo (sem erro) mas não achou nenhum campo reconhecido —
   // provavelmente o formato real da resposta é diferente do documentado.
-  // Guarda um recorte cru pra dar pra ajustar o parsing sem precisar de
-  // mais uma rodada de "manda print"/"não sei o que apareceu".
+  // Guarda o primeiro resultado POR INTEIRO (não a resposta toda, que com
+  // vários pedidos de uma vez passa fácil de várias dezenas de KB e corta
+  // antes de chegar nos campos que interessam) — o formato é o mesmo pra
+  // todos os pedidos, um só já basta pra ajustar o parsing.
   const diagnostico = !erro && mapa.size === 0 && ultimaRespostaCrua
-    ? JSON.stringify(ultimaRespostaCrua, null, 2).slice(0, 6000)
+    ? JSON.stringify((ultimaRespostaCrua.results || ultimaRespostaCrua.data || [])[0] ?? ultimaRespostaCrua, null, 2)
     : null;
   return { mapa, erro, diagnostico };
 }
