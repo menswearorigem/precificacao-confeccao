@@ -153,6 +153,41 @@ async function buscarPedidos({ accessToken, sellerId, desde }) {
   return pedidos;
 }
 
+// Valor líquido de verdade repassado pelo Mercado Livre por pedido — vem da
+// API de Faturamento (billing/integration), não do /orders/search. É o
+// mesmo valor que o ML usa pra calcular o repasse de fato (já considera
+// tarifa fixa por unidade, antecipação etc., que o sale_fee do pedido não
+// cobre), por isso é mais preciso que a nossa estimativa (receita - taxa).
+// Precisa da permissão de Faturamento habilitada no app do DevCenter — se
+// não tiver, ou se o Mercado Livre ainda não processou o repasse desse
+// pedido, simplesmente não entra no mapa de retorno (sem derrubar o resto
+// da sincronização).
+async function buscarDetalhesFaturamento({ accessToken, sellerId, orderIds }) {
+  const mapa = new Map();
+  const TAMANHO_LOTE = 20;
+  for (let i = 0; i < orderIds.length; i += TAMANHO_LOTE) {
+    const lote = orderIds.slice(i, i + TAMANHO_LOTE);
+    const params = new URLSearchParams({ order_ids: lote.join(','), seller_id: String(sellerId) });
+    let data;
+    try {
+      data = await chamarApi(`/billing/integration/group/ML/order/details?${params.toString()}`, accessToken);
+    } catch {
+      continue;
+    }
+    for (const resultado of data.results || data.data || []) {
+      const orderId = resultado.order_id ?? resultado.origin?.order_id;
+      const pagamento = resultado.payment_info || resultado;
+      if (!orderId || pagamento.base_amount === undefined) continue;
+      mapa.set(String(orderId), {
+        valorRecebido: pagamento.base_amount != null ? Number(pagamento.base_amount) : null,
+        status: pagamento.money_release_status || null,
+        dataLiberacao: pagamento.money_release_date || null,
+      });
+    }
+  }
+  return mapa;
+}
+
 // Converte um pedido do Mercado Livre pro formato genérico usado pelo
 // sincronizador (server/src/lib/marketplaceSync.js).
 function mapearPedido(order) {
@@ -199,5 +234,6 @@ module.exports = {
   renovarToken,
   buscarUsuario,
   buscarPedidos,
+  buscarDetalhesFaturamento,
   mapearPedido,
 };

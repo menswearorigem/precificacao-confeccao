@@ -467,6 +467,24 @@ export default function PedidoFormPage() {
         <div className="row-line"><span>Total Bruto</span><span className="mono">{brl(pedido.total_bruto)}</span></div>
         <div className="row-line"><span>Total de Descontos</span><span className="mono">{brl(pedido.total_desconto)}</span></div>
         <div className="row-line strong"><span>Total Líquido</span><span className="mono">{brl(pedido.total_liquido)}</span></div>
+        {pedido.origem_marketplace && (
+          <div className="row-line"><span>Taxa de Marketplace</span><span className="mono">{pedido.taxa_marketplace != null ? brl(pedido.taxa_marketplace) : '—'}</span></div>
+        )}
+        {pedido.origem_marketplace === 'mercado_livre' && (
+          <div className="row-line">
+            <span>Valor Recebido (Mercado Livre)</span>
+            <span className="mono">
+              {pedido.valor_recebido_marketplace != null ? (
+                <>
+                  {brl(pedido.valor_recebido_marketplace)}{' '}
+                  <span className={'stamp sm ' + (pedido.valor_recebido_status === 'released' ? 'tone-elevada' : 'tone-atencao')}>
+                    {pedido.valor_recebido_status === 'released' ? 'liberado' : 'pendente'}
+                  </span>
+                </>
+              ) : 'ainda não disponível'}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

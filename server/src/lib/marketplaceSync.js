@@ -160,6 +160,48 @@ async function importarPedido(client, pedidoGenerico, integracaoId) {
   return true;
 }
 
+// Busca na API de Faturamento do Mercado Livre o valor líquido de verdade
+// repassado por pedido (mais preciso que a nossa estimativa de receita menos
+// taxa) e atualiza os pedidos ainda sem esse dado ou com repasse pendente
+// (o Mercado Livre libera o valor alguns dias depois da venda, então pedidos
+// "pending" precisam ser reconferidos nas próximas sincronizações). Falha
+// em silêncio (ex.: app sem a permissão de Faturamento habilitada) sem
+// derrubar o resto da sincronização.
+async function atualizarValoresRecebidos(integracao) {
+  if (integracao.marketplace !== 'mercado_livre') return;
+  try {
+    // Inclui também pedidos importados manualmente por planilha (sem
+    // origem_integracao_id) — nesse caso não tem como saber de qual conta
+    // ML eles vieram, então tenta com essa integração; se o pedido for de
+    // outra conta, a API simplesmente não devolve nada pra esse order_id.
+    const { rows: pendentes } = await pool.query(
+      `SELECT origem_pedido_id FROM pedidos_venda
+       WHERE origem_marketplace = 'mercado_livre' AND (origem_integracao_id = $1 OR origem_integracao_id IS NULL)
+         AND (valor_recebido_status IS NULL OR valor_recebido_status != 'released')
+       ORDER BY data_pedido DESC LIMIT 200`,
+      [integracao.id]
+    );
+    if (pendentes.length === 0) return;
+
+    const detalhes = await mercadoLivre.buscarDetalhesFaturamento({
+      accessToken: integracao.access_token,
+      sellerId: integracao.conta_externa_id,
+      orderIds: pendentes.map((p) => p.origem_pedido_id),
+    });
+
+    for (const [orderId, info] of detalhes) {
+      await pool.query(
+        `UPDATE pedidos_venda
+         SET valor_recebido_marketplace = $1, valor_recebido_status = $2, valor_recebido_atualizado_em = now()
+         WHERE origem_marketplace = 'mercado_livre' AND origem_pedido_id = $3`,
+        [info.valorRecebido, info.status, orderId]
+      );
+    }
+  } catch (err) {
+    console.error(`[marketplace-sync] falha ao buscar valores recebidos (integração ${integracao.id}):`, err.message);
+  }
+}
+
 // Sincroniza uma conexão específica: renova token, busca pedidos desde a
 // última sincronização (ou dos últimos 7 dias, na primeira vez) e importa
 // os que ainda não existem. Retorna quantos pedidos novos entraram.
@@ -193,6 +235,8 @@ async function sincronizarIntegracao(integracaoId) {
     } finally {
       client.release();
     }
+
+    await atualizarValoresRecebidos(integracao);
 
     await pool.query(
       `UPDATE integracoes_marketplace SET ultima_sincronizacao = now(), ultimo_erro = NULL, atualizado_em = now() WHERE id = $1`,

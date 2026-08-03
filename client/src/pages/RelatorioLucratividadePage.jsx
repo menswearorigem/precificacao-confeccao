@@ -236,6 +236,15 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
             <div className="row-line"><span>Taxas de Marketplace</span><span className="mono">{brl(relatorio.totalGeral.taxaMarketplace)}</span></div>
             <div className="row-line strong"><span>Lucro Líquido</span><span className="mono">{brl(relatorio.totalGeral.lucro)}</span></div>
             <div className="row-line"><span>Margem</span><span className="mono">{pct(relatorio.totalGeral.margemPct)}</span></div>
+            {isMarketplace && (
+              <div className="row-line">
+                <span>Valor Recebido Confirmado (Mercado Livre)</span>
+                <span className="mono">
+                  {brl(relatorio.totalGeral.valorRecebido)}
+                  {relatorio.totalGeral.valorRecebidoPendentes > 0 ? ` (+${relatorio.totalGeral.valorRecebidoPendentes} pedido(s) ainda pendente(s)/não disponível)` : ''}
+                </span>
+              </div>
+            )}
             <div className="row-line no-print"><span>Pedidos no Período</span><span className="mono">{relatorio.pedidos.length}</span></div>
           </div>
 
@@ -248,6 +257,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                   {isMarketplace ? <th>Item Pedido</th> : <th>Cliente</th>}
                   <th>Canal</th>
                   <th>Receita</th><th>Custo</th><th>Taxa Marketplace</th><th>Lucro</th><th>Margem</th>
+                  {isMarketplace && <th>Valor Recebido (ML)</th>}
                   {isMarketplace && <th>Produto Vinculado</th>}
                   {isMarketplace && <th />}
                 </tr>
@@ -284,6 +294,18 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                       <td className="mono" style={{ fontWeight: 700 }}>{brl(p.lucro)}</td>
                       <td className="mono">{pct(p.margemPct)}</td>
                       {isMarketplace && (
+                        <td className="mono">
+                          {p.canal_venda !== 'Mercado Livre' ? '—' : p.valorRecebido != null ? (
+                            <>
+                              {brl(p.valorRecebido)}{' '}
+                              <span className={'stamp sm ' + (p.valorRecebidoStatus === 'released' ? 'tone-elevada' : 'tone-atencao')}>
+                                {p.valorRecebidoStatus === 'released' ? 'liberado' : 'pendente'}
+                              </span>
+                            </>
+                          ) : 'não disponível'}
+                        </td>
+                      )}
+                      {isMarketplace && (
                         <td>
                           {itemUnico ? (
                             itemUnico.produtoId ? <span className="mono">{itemUnico.referencia}</span> : <span className="stamp sm tone-atencao">sem vínculo</span>
@@ -302,7 +324,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                     </tr>
                   );
                 })}
-                {relatorio.pedidos.length === 0 && <tr><td colSpan="10">Nenhum pedido no período.</td></tr>}
+                {relatorio.pedidos.length === 0 && <tr><td colSpan="11">Nenhum pedido no período.</td></tr>}
               </tbody>
             </table>
           </div>

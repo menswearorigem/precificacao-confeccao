@@ -341,6 +341,8 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
         lucro,
         margemPct,
         custoIncompleto: semCusto,
+        valorRecebido: p.valor_recebido_marketplace !== null ? Number(p.valor_recebido_marketplace) : null,
+        valorRecebidoStatus: p.valor_recebido_status,
         itens: itensDoPedido.map((it) => ({
           id: it.id,
           tituloExterno: it.titulo_externo || it.descricao || '',
@@ -365,8 +367,10 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
         taxaMarketplace: acc.taxaMarketplace + p.taxaMarketplace,
         custo: acc.custo + p.custo,
         lucro: acc.lucro + p.lucro,
+        valorRecebido: acc.valorRecebido + (p.valorRecebidoStatus === 'released' ? p.valorRecebido || 0 : 0),
+        valorRecebidoPendentes: acc.valorRecebidoPendentes + (p.valorRecebido === null || p.valorRecebidoStatus !== 'released' ? 1 : 0),
       }),
-      { receita: 0, custoPeca: 0, imposto: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0 }
+      { receita: 0, custoPeca: 0, imposto: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, valorRecebido: 0, valorRecebidoPendentes: 0 }
     );
     totalGeral.margemPct = totalGeral.receita > 0 ? totalGeral.lucro / totalGeral.receita : 0;
 
