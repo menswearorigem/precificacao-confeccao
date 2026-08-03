@@ -40,6 +40,7 @@ export default function PedidoFormPage() {
   const [resultadosProduto, setResultadosProduto] = useState([]);
 
   const aberto = pedido?.situacao === 'aberto';
+  const voltarPara = pedido?.origem_marketplace ? '/marketplace/pedidos' : '/pedidos';
 
   function aplicarResposta(data) {
     setPedido(data.pedido);
@@ -198,14 +199,14 @@ export default function PedidoFormPage() {
   async function excluirPedido() {
     if (!confirm('Excluir este pedido em aberto? Essa ação não pode ser desfeita.')) return;
     await api.del(`/pedidos/${id}`);
-    navigate('/pedidos');
+    navigate(voltarPara);
   }
 
   if (loading || !pedido) return null;
 
   return (
     <div className="page-wide">
-      <button className="btn btn-ghost" style={{ marginBottom: 14 }} onClick={() => navigate('/pedidos')}>
+      <button className="btn btn-ghost" style={{ marginBottom: 14 }} onClick={() => navigate(voltarPara)}>
         <ArrowLeft size={14} /> Voltar para pedidos
       </button>
 

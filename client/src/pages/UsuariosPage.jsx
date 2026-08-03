@@ -8,6 +8,7 @@ const MODULOS = [
   { key: 'produto', label: 'Produto' },
   { key: 'estoque', label: 'Estoque' },
   { key: 'vendas', label: 'Vendas' },
+  { key: 'marketplace', label: 'Marketplace' },
   { key: 'compras', label: 'Compras' },
   { key: 'analises', label: 'Análises' },
   { key: 'configuracoes', label: 'Configurações' },

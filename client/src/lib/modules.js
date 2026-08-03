@@ -2,7 +2,7 @@ import {
   Package, Settings, Landmark, Percent, Factory, Upload,
   FlaskConical, LayoutDashboard, Boxes, FileText, List as ListIcon,
   Warehouse, Barcode, Tags, Printer, Users, ClipboardList, ShoppingCart,
-  Truck, BarChart3, ShieldCheck, Plug, TrendingUp, ReceiptText,
+  Truck, BarChart3, ShieldCheck, Plug, TrendingUp, ReceiptText, Store,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -41,8 +41,18 @@ export const MODULES = [
       { to: '/clientes', label: 'Clientes', icon: Users },
       { to: '/ficha-venda', label: 'Ficha de Venda', icon: Printer },
       { to: '/vendas/lucratividade', label: 'Lucratividade', icon: TrendingUp },
-      { to: '/vendas/taxas-marketplace', label: 'Taxas de Marketplace', icon: ReceiptText },
-      { to: '/vendas/importar-pedidos', label: 'Importar Pedidos', icon: Upload },
+    ],
+  },
+  {
+    key: 'marketplace',
+    label: 'Marketplace',
+    icon: Store,
+    color: 'var(--plum)',
+    pages: [
+      { to: '/marketplace/pedidos', label: 'Pedidos', icon: ClipboardList },
+      { to: '/marketplace/lucratividade', label: 'Lucratividade', icon: TrendingUp },
+      { to: '/marketplace/taxas', label: 'Taxas Cobradas', icon: ReceiptText },
+      { to: '/marketplace/importar-pedidos', label: 'Importar Pedidos', icon: Upload },
     ],
   },
   {

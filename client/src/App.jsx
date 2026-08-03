@@ -88,12 +88,14 @@ function AppRoutes() {
                   <Route path="/estoque/ficha" element={<FichaEstoquePage />} />
                   <Route path="/clientes" element={<ClientesListPage />} />
                   <Route path="/clientes/:id" element={<ClienteFichaPage />} />
-                  <Route path="/pedidos" element={<PedidosListPage />} />
+                  <Route path="/pedidos" element={<PedidosListPage origemFiltro="manual" />} />
                   <Route path="/pedidos/:id" element={<PedidoFormPage />} />
                   <Route path="/ficha-venda" element={<FichaVendaPage />} />
-                  <Route path="/vendas/lucratividade" element={<RelatorioLucratividadePage />} />
-                  <Route path="/vendas/taxas-marketplace" element={<RelatorioTaxasPage />} />
-                  <Route path="/vendas/importar-pedidos" element={<ImportarPedidosPage />} />
+                  <Route path="/vendas/lucratividade" element={<RelatorioLucratividadePage origemFiltro="manual" />} />
+                  <Route path="/marketplace/pedidos" element={<PedidosListPage origemFiltro="marketplace" />} />
+                  <Route path="/marketplace/lucratividade" element={<RelatorioLucratividadePage origemFiltro="marketplace" />} />
+                  <Route path="/marketplace/taxas" element={<RelatorioTaxasPage />} />
+                  <Route path="/marketplace/importar-pedidos" element={<ImportarPedidosPage />} />
                   <Route path="/fornecedores" element={<FornecedoresListPage />} />
                   <Route path="/fornecedores/:id" element={<FornecedorFichaPage />} />
                   <Route path="/compras/relatorio" element={<RelatorioComprasPage />} />

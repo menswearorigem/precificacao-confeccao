@@ -3,43 +3,50 @@ import { Printer } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
 
-function primeiroDiaDoMes() {
+function trintaDiasAtras() {
   const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+  d.setDate(d.getDate() - 30);
+  return d.toISOString().slice(0, 10);
 }
 
 function hoje() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function RelatorioLucratividadePage() {
-  const [dataInicio, setDataInicio] = useState(primeiroDiaDoMes());
+export default function RelatorioLucratividadePage({ origemFiltro }) {
+  const [dataInicio, setDataInicio] = useState(trintaDiasAtras());
   const [dataFim, setDataFim] = useState(hoje());
   const [canalVenda, setCanalVenda] = useState('');
   const [relatorio, setRelatorio] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState('');
 
   function gerar() {
     setLoading(true);
+    setErro('');
     const params = new URLSearchParams();
     if (dataInicio) params.set('data_inicio', dataInicio);
     if (dataFim) params.set('data_fim', dataFim);
     if (canalVenda) params.set('canal_venda', canalVenda);
-    api.get(`/pedidos/relatorio-lucratividade?${params.toString()}`).then((data) => {
-      setRelatorio(data);
-      setLoading(false);
-    });
+    if (origemFiltro) params.set('origem', origemFiltro);
+    api.get(`/pedidos/relatorio-lucratividade?${params.toString()}`)
+      .then((data) => setRelatorio(data))
+      .catch((err) => setErro(err.message))
+      .finally(() => setLoading(false));
   }
 
   useEffect(gerar, []);
 
+  const titulo = origemFiltro === 'marketplace' ? 'Lucratividade de Marketplace' : 'Lucratividade';
+
   return (
     <div className="page-wide">
       <div className="no-print">
-        <h2>Lucratividade</h2>
+        <h2>{titulo}</h2>
         <p className="page-sub">
-          Lucro real de cada pedido: preço de venda menos o custo de produção (o mesmo custo usado
-          na Ficha de Custo) e, quando vier de marketplace, também a taxa cobrada pela plataforma.
+          {origemFiltro === 'marketplace'
+            ? 'Lucro real de cada pedido vindo de marketplace: preço de venda menos o custo de produção e a taxa cobrada pela plataforma.'
+            : 'Lucro real de cada pedido lançado manualmente: preço de venda menos o custo de produção (o mesmo custo usado na Ficha de Custo).'}
         </p>
 
         <div className="card" style={{ marginBottom: 16 }}>
@@ -67,6 +74,7 @@ export default function RelatorioLucratividadePage() {
               </button>
             )}
           </div>
+          {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
         </div>
       </div>
 

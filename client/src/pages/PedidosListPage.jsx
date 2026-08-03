@@ -16,7 +16,7 @@ const SITUACAO_LABEL = {
   cancelado: 'Cancelado',
 };
 
-export default function PedidosListPage() {
+export default function PedidosListPage({ origemFiltro }) {
   const navigate = useNavigate();
   const [pedidos, setPedidos] = useState([]);
   const [busca, setBusca] = useState('');
@@ -29,6 +29,7 @@ export default function PedidosListPage() {
     const params = new URLSearchParams();
     if (busca) params.set('busca', busca);
     if (situacao) params.set('situacao', situacao);
+    if (origemFiltro) params.set('origem', origemFiltro);
     api.get(`/pedidos?${params.toString()}`).then((data) => {
       setPedidos(data);
       setLoading(false);
@@ -56,12 +57,18 @@ export default function PedidosListPage() {
     <div className="page-wide">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
         <div>
-          <h2>Pedidos de Venda</h2>
-          <p className="page-sub">Versão de teste do fluxo de vendas — ainda não emite nota fiscal.</p>
+          <h2>{origemFiltro === 'marketplace' ? 'Pedidos de Marketplace' : 'Pedidos de Venda'}</h2>
+          <p className="page-sub">
+            {origemFiltro === 'marketplace'
+              ? 'Pedidos importados do Mercado Livre, Shopee e demais marketplaces (sincronização automática ou planilha).'
+              : 'Pedidos lançados manualmente (loja física, WhatsApp etc). Versão de teste — ainda não emite nota fiscal.'}
+          </p>
         </div>
-        <button className="btn btn-primary" onClick={novoPedido} disabled={criando}>
-          <Plus size={14} /> Novo Pedido
-        </button>
+        {origemFiltro !== 'marketplace' && (
+          <button className="btn btn-primary" onClick={novoPedido} disabled={criando}>
+            <Plus size={14} /> Novo Pedido
+          </button>
+        )}
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>

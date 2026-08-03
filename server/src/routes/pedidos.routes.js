@@ -197,13 +197,15 @@ async function mapaCustoPorProduto(produtoIds, ctx) {
 
 router.get('/relatorio-lucratividade', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, canal_venda } = req.query;
+    const { data_inicio, data_fim, canal_venda, origem } = req.query;
     const conditions = ["pv.situacao != 'cancelado'"];
     const values = [];
     let i = 1;
     if (data_inicio) { conditions.push(`pv.data_pedido >= $${i}`); values.push(data_inicio); i += 1; }
     if (data_fim) { conditions.push(`pv.data_pedido <= $${i}`); values.push(data_fim); i += 1; }
     if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
+    if (origem === 'marketplace') conditions.push('pv.origem_marketplace IS NOT NULL');
+    if (origem === 'manual') conditions.push('pv.origem_marketplace IS NULL');
     const where = `WHERE ${conditions.join(' AND ')}`;
 
     const { rows: pedidos } = await pool.query(
@@ -348,11 +350,13 @@ router.get('/relatorio-taxas', async (req, res, next) => {
 
 router.get('/', async (req, res, next) => {
   try {
-    const { busca, situacao } = req.query;
+    const { busca, situacao, origem } = req.query;
     const conditions = [];
     const values = [];
     let i = 1;
     if (situacao) { conditions.push(`pv.situacao = $${i}`); values.push(situacao); i += 1; }
+    if (origem === 'marketplace') conditions.push('pv.origem_marketplace IS NOT NULL');
+    if (origem === 'manual') conditions.push('pv.origem_marketplace IS NULL');
     if (busca) {
       conditions.push(`(c.nome ILIKE $${i} OR pv.numero::text = $${i + 1})`);
       values.push(`%${busca}%`, busca);

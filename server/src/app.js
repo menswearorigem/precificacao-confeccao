@@ -65,7 +65,7 @@ function createApp() {
 
   app.use('/api/estoque', requireAuth, requireModulo('estoque'), estoqueRoutes);
   app.use('/api/clientes', requireAuth, requireModulo('vendas'), clientesRoutes);
-  app.use('/api/pedidos', requireAuth, requireModulo('vendas'), pedidosRoutes);
+  app.use('/api/pedidos', requireAuth, requireModulo(['vendas', 'marketplace']), pedidosRoutes);
   app.use('/api/fornecedores', requireAuth, requireModulo('compras'), fornecedoresRoutes);
   app.use('/api/compras', requireAuth, requireModulo('compras'), comprasRoutes);
 

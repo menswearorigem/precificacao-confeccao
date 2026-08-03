@@ -3,9 +3,10 @@ import { Printer } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
 
-function primeiroDiaDoMes() {
+function trintaDiasAtras() {
   const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+  d.setDate(d.getDate() - 30);
+  return d.toISOString().slice(0, 10);
 }
 
 function hoje() {
@@ -13,22 +14,24 @@ function hoje() {
 }
 
 export default function RelatorioTaxasPage() {
-  const [dataInicio, setDataInicio] = useState(primeiroDiaDoMes());
+  const [dataInicio, setDataInicio] = useState(trintaDiasAtras());
   const [dataFim, setDataFim] = useState(hoje());
   const [canalVenda, setCanalVenda] = useState('');
   const [relatorio, setRelatorio] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState('');
 
   function gerar() {
     setLoading(true);
+    setErro('');
     const params = new URLSearchParams();
     if (dataInicio) params.set('data_inicio', dataInicio);
     if (dataFim) params.set('data_fim', dataFim);
     if (canalVenda) params.set('canal_venda', canalVenda);
-    api.get(`/pedidos/relatorio-taxas?${params.toString()}`).then((data) => {
-      setRelatorio(data);
-      setLoading(false);
-    });
+    api.get(`/pedidos/relatorio-taxas?${params.toString()}`)
+      .then((data) => setRelatorio(data))
+      .catch((err) => setErro(err.message))
+      .finally(() => setLoading(false));
   }
 
   useEffect(gerar, []);
@@ -71,6 +74,7 @@ export default function RelatorioTaxasPage() {
               </button>
             )}
           </div>
+          {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
         </div>
       </div>
 
