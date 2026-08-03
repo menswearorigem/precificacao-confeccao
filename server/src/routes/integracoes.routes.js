@@ -212,3 +212,14 @@ callbackShopee.get('/', async (req, res) => {
 
 module.exports.callbackMercadoLivre = callbackMercadoLivre;
 module.exports.callbackShopee = callbackShopee;
+
+// Recebe as notificações (webhooks) do Mercado Livre — exigidas pelo app
+// mesmo não sendo usadas ainda, já que o sistema busca pedidos por
+// sincronização periódica (a cada 15min), não por notificação em tempo
+// real. Só confirma o recebimento (o Mercado Livre exige resposta 200 em
+// até 500ms, senão passa a re-tentar e pode desativar a URL do app).
+const notificacoesMercadoLivre = express.Router();
+notificacoesMercadoLivre.post('/', (req, res) => {
+  res.status(200).end();
+});
+module.exports.notificacoesMercadoLivre = notificacoesMercadoLivre;
