@@ -73,12 +73,24 @@ async function encontrarOuCriarCliente(client, pedidoGenerico) {
   return rows[0].id;
 }
 
-// O EAN externo (código de barras real do anúncio, o mesmo que o vendedor já
-// vincula em Estoque > EAN externo) é a fonte confiável de casamento — o
-// seller_sku é texto livre que muita gente nunca preenche corretamente, então
-// só entra como segunda tentativa (e ainda assim primeiro contra o próprio
-// EAN, pra quem usa o campo de SKU pra guardar o código de barras).
+// O SKU (cadastrado no anúncio pra bater com a própria referência do
+// produto) é a fonte principal de casamento — o EAN do marketplace pode ser
+// diferente do EAN de produção, então só entra como último recurso.
 async function encontrarVariante(client, { eanExterno, skuExterno }) {
+  if (skuExterno) {
+    let r = await client.query(
+      `SELECT v.*, p.referencia, p.descricao FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id WHERE p.referencia = $1 ORDER BY v.id LIMIT 1`,
+      [skuExterno]
+    );
+    if (r.rows.length > 0) return r.rows[0];
+
+    r = await client.query(
+      `SELECT v.*, p.referencia, p.descricao FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id WHERE v.ean = $1`,
+      [skuExterno]
+    );
+    if (r.rows.length > 0) return r.rows[0];
+  }
+
   if (eanExterno) {
     const r = await client.query(
       `SELECT v.*, p.referencia, p.descricao FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id WHERE v.ean = $1`,
@@ -86,19 +98,7 @@ async function encontrarVariante(client, { eanExterno, skuExterno }) {
     );
     if (r.rows.length > 0) return r.rows[0];
   }
-  if (!skuExterno) return null;
-
-  let r = await client.query(
-    `SELECT v.*, p.referencia, p.descricao FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id WHERE v.ean = $1`,
-    [skuExterno]
-  );
-  if (r.rows.length > 0) return r.rows[0];
-
-  r = await client.query(
-    `SELECT v.*, p.referencia, p.descricao FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id WHERE p.referencia = $1 ORDER BY v.id LIMIT 1`,
-    [skuExterno]
-  );
-  return r.rows[0] || null;
+  return null;
 }
 
 async function importarPedido(client, pedidoGenerico, integracaoId) {

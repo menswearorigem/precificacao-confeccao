@@ -74,20 +74,39 @@ function mapearTipoAnuncio(listingTypeId) {
   return listingTypeId === 'gold_pro' ? 'premium' : 'classico';
 }
 
-// O seller_sku é texto livre que muita gente nunca preenche — o código de
-// barras de verdade (o mesmo que o vendedor cadastra como "EAN externo" no
-// estoque) vem como um atributo separado do anúncio.
+// O código de barras (GTIN) fica num atributo separado do anúncio.
 function extrairGtin(item) {
   const atributo = (item.attributes || []).find((a) => a.id === 'GTIN');
   return atributo?.value_name || null;
 }
 
+function extrairAtributo(lista, id) {
+  return (lista || []).find((a) => a.id === id)?.value_name || null;
+}
+
+// O SKU "oficial" fica no atributo SELLER_SKU — pra anúncio com variação
+// (cor/tamanho, o caso comum de roupa) esse atributo mora dentro da
+// variação específica, não no anúncio como um todo, então tem que achar a
+// variação certa (variation_id) pra pegar o SKU daquela combinação. Cai pro
+// seller_custom_field (campo livre) só se não achar SELLER_SKU em lugar nenhum.
+function extrairSku(item, variationId) {
+  if (variationId) {
+    const variacao = (item.variations || []).find((v) => v.id === variationId);
+    if (variacao) {
+      const skuVariacao = extrairAtributo(variacao.attributes, 'SELLER_SKU') || variacao.seller_custom_field;
+      if (skuVariacao) return skuVariacao;
+    }
+  }
+  return extrairAtributo(item.attributes, 'SELLER_SKU') || item.seller_custom_field || null;
+}
+
 // Busca pedidos pagos criados a partir de `desde` (ISO). O ML pagina em
 // blocos de até 50; segue puxando até acabar ou bater o limite de segurança.
-// Também enriquece cada item com o tipo de anúncio (clássico/premium), que
-// define qual comissão se aplica, e com o GTIN (código de barras) do anúncio
-// — tudo com cache por item pra não repetir a mesma chamada quando o mesmo
-// anúncio aparece em vários pedidos.
+// Também enriquece cada item com o tipo de anúncio (clássico/premium), o
+// SKU de verdade (que pra anúncio com variação só existe no detalhe do
+// anúncio, não no pedido) e o GTIN (código de barras) — tudo com cache por
+// item pra não repetir a mesma chamada quando o mesmo anúncio aparece em
+// vários pedidos.
 async function buscarPedidos({ accessToken, sellerId, desde }) {
   const pedidos = [];
   let offset = 0;
@@ -107,24 +126,27 @@ async function buscarPedidos({ accessToken, sellerId, desde }) {
     offset += limit;
   }
 
-  const detalhePorItem = new Map();
+  const itemDetalhePorId = new Map();
   for (const order of pedidos) {
     for (const oi of order.order_items || []) {
       const itemId = oi.item?.id;
-      if (!itemId || detalhePorItem.has(itemId)) continue;
+      if (!itemId || itemDetalhePorId.has(itemId)) continue;
       try {
-        const item = await chamarApi(`/items/${itemId}`, accessToken);
-        detalhePorItem.set(itemId, { tipoAnuncio: mapearTipoAnuncio(item.listing_type_id), ean: extrairGtin(item) });
+        itemDetalhePorId.set(itemId, await chamarApi(`/items/${itemId}`, accessToken));
       } catch {
-        detalhePorItem.set(itemId, { tipoAnuncio: 'classico', ean: null });
+        itemDetalhePorId.set(itemId, null);
       }
     }
   }
   for (const order of pedidos) {
     for (const oi of order.order_items || []) {
-      const detalhe = detalhePorItem.get(oi.item?.id);
-      oi.tipoAnuncio = detalhe?.tipoAnuncio || 'classico';
-      oi.eanExterno = detalhe?.ean || null;
+      const item = itemDetalhePorId.get(oi.item?.id);
+      oi.tipoAnuncio = item ? mapearTipoAnuncio(item.listing_type_id) : 'classico';
+      oi.eanExterno = item ? extrairGtin(item) : null;
+      // sku direto no pedido (quando o ML já resolve) tem prioridade; só
+      // busca no detalhe do anúncio se não veio pronto ali.
+      oi.skuExterno = oi.item?.seller_sku || oi.item?.seller_custom_field
+        || (item ? extrairSku(item, oi.item?.variation_id) : null);
     }
   }
 
@@ -135,7 +157,7 @@ async function buscarPedidos({ accessToken, sellerId, desde }) {
 // sincronizador (server/src/lib/marketplaceSync.js).
 function mapearPedido(order) {
   const itens = (order.order_items || []).map((oi) => ({
-    skuExterno: oi.item?.seller_sku || oi.item?.seller_custom_field || null,
+    skuExterno: oi.skuExterno || null,
     eanExterno: oi.eanExterno || null,
     tituloExterno: oi.item?.title || '',
     quantidade: Number(oi.quantity) || 1,
