@@ -75,6 +75,7 @@ export const MODULES = [
       { to: '/empresas', label: 'Empresas', icon: Landmark },
       { to: '/listas', label: 'Listas', icon: ListIcon },
       { to: '/taxas-venda', label: 'Taxas de Venda', icon: Percent },
+      { to: '/marketplace-taxas', label: 'Taxas de Marketplace', icon: ReceiptText },
       { to: '/custos-indiretos', label: 'Custos Indiretos', icon: Factory },
       { to: '/usuarios', label: 'Usuários', icon: ShieldCheck, adminOnly: true },
       { to: '/integracoes', label: 'Integrações', icon: Plug, adminOnly: true },

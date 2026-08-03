@@ -20,6 +20,7 @@ const pedidosRoutes = require('./routes/pedidos.routes');
 const fornecedoresRoutes = require('./routes/fornecedores.routes');
 const comprasRoutes = require('./routes/compras.routes');
 const integracoesRoutes = require('./routes/integracoes.routes');
+const marketplaceTaxasRoutes = require('./routes/marketplaceTaxas.routes');
 
 const CLIENT_DIST = path.join(__dirname, '..', '..', 'client', 'dist');
 
@@ -46,6 +47,7 @@ function createApp() {
   app.use('/api/configuracoes', requireAuth, requireModulo('configuracoes'), configuracoesRoutes);
   app.use('/api/taxas-venda', requireAuth, requireModulo('configuracoes'), taxasVendaRoutes);
   app.use('/api/custos-indiretos', requireAuth, requireModulo('configuracoes'), custosIndiretosRoutes);
+  app.use('/api/marketplace-taxas', requireAuth, requireModulo('configuracoes'), marketplaceTaxasRoutes);
 
   // Análises (dashboard/simulador) trabalha em cima dos mesmos dados de
   // custo/preço do módulo Produto — por isso também libera acesso a produtos.

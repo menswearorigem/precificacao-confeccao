@@ -66,8 +66,19 @@ async function buscarUsuario(accessToken) {
   return chamarApi('/users/me', accessToken);
 }
 
+// gold_special = anúncio Clássico · gold_pro = anúncio Premium — os únicos
+// dois tipos vendidos hoje em dia; qualquer outro (formatos antigos/grátis)
+// cai como "classico" por aproximação, já que não tem comissão própria nas
+// tabelas atuais.
+function mapearTipoAnuncio(listingTypeId) {
+  return listingTypeId === 'gold_pro' ? 'premium' : 'classico';
+}
+
 // Busca pedidos pagos criados a partir de `desde` (ISO). O ML pagina em
 // blocos de até 50; segue puxando até acabar ou bater o limite de segurança.
+// Também enriquece cada item com o tipo de anúncio (clássico/premium), que
+// define qual comissão se aplica — com cache por item pra não repetir a
+// mesma chamada quando o mesmo anúncio aparece em vários pedidos.
 async function buscarPedidos({ accessToken, sellerId, desde }) {
   const pedidos = [];
   let offset = 0;
@@ -86,6 +97,26 @@ async function buscarPedidos({ accessToken, sellerId, desde }) {
     if (!data.results || data.results.length < limit) break;
     offset += limit;
   }
+
+  const tipoAnuncioPorItem = new Map();
+  for (const order of pedidos) {
+    for (const oi of order.order_items || []) {
+      const itemId = oi.item?.id;
+      if (!itemId || tipoAnuncioPorItem.has(itemId)) continue;
+      try {
+        const item = await chamarApi(`/items/${itemId}`, accessToken);
+        tipoAnuncioPorItem.set(itemId, mapearTipoAnuncio(item.listing_type_id));
+      } catch {
+        tipoAnuncioPorItem.set(itemId, 'classico');
+      }
+    }
+  }
+  for (const order of pedidos) {
+    for (const oi of order.order_items || []) {
+      oi.tipoAnuncio = tipoAnuncioPorItem.get(oi.item?.id) || 'classico';
+    }
+  }
+
   return pedidos;
 }
 
@@ -97,7 +128,10 @@ function mapearPedido(order) {
     tituloExterno: oi.item?.title || '',
     quantidade: Number(oi.quantity) || 1,
     valorUnitario: Number(oi.unit_price) || 0,
+    tipoAnuncio: oi.tipoAnuncio || null,
   }));
+
+  const formaPagamento = order.payments?.[0]?.payment_method_id === 'pix' ? 'pix' : 'outro';
 
   // sale_fee é a comissão que o Mercado Livre cobra por item vendido — vem
   // como número simples na maioria dos casos, mas em alguns retornos vem
@@ -120,6 +154,7 @@ function mapearPedido(order) {
     clienteNome: order.buyer?.nickname || [order.buyer?.first_name, order.buyer?.last_name].filter(Boolean).join(' ') || 'Comprador Mercado Livre',
     valorFrete: frete,
     taxaMarketplace,
+    formaPagamento,
     itens,
   };
 }

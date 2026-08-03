@@ -23,6 +23,7 @@ function emptyProduto() {
     empresa_id: '',
     responsavel: '',
     preco_informado: '',
+    peso_kg: '',
   };
 }
 
@@ -236,6 +237,9 @@ export default function ProdutoFichaPage() {
             </Field>
             <Field label="Responsável pela Precificação">
               <input value={produto.responsavel || ''} onChange={(e) => updateProduto({ responsavel: e.target.value })} />
+            </Field>
+            <Field label="Peso da peça (opcional)">
+              <NumInput value={produto.peso_kg ?? ''} onChange={(v) => updateProduto({ peso_kg: v === '' ? null : v })} suffix="kg" placeholder="usado na conferência de frete de marketplace" />
             </Field>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

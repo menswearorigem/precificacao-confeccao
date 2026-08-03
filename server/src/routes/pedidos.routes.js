@@ -2,6 +2,7 @@ const express = require('express');
 const pool = require('../db/pool');
 const { registrarMovimento } = require('../lib/estoqueMovimento');
 const { getCalcContext } = require('../lib/calcContext');
+const { calcularTaxaEsperadaPedido } = require('../lib/marketplaceTaxaCalc');
 const produtosRoutes = require('./produtos.routes');
 
 const router = express.Router();
@@ -223,37 +224,67 @@ router.get('/relatorio-taxas', async (req, res, next) => {
     const where = `WHERE ${conditions.join(' AND ')}`;
 
     const { rows: pedidos } = await pool.query(
-      `SELECT pv.id, pv.numero, pv.data_pedido, pv.canal_venda, pv.total_liquido, pv.taxa_marketplace, pv.origem_marketplace
+      `SELECT pv.id, pv.numero, pv.data_pedido, pv.canal_venda, pv.total_liquido, pv.taxa_marketplace,
+              pv.origem_marketplace, pv.forma_pagamento_marketplace,
+              COALESCE(im.usa_frete_subsidiado, TRUE) AS usa_frete_subsidiado
        FROM pedidos_venda pv
+       LEFT JOIN integracoes_marketplace im ON im.id = pv.origem_integracao_id
        ${where} ORDER BY pv.data_pedido, pv.id`,
       values
     );
+    if (pedidos.length === 0) return res.json({ pedidos: [], pendentesSemTaxa: 0 });
 
-    const { rows: taxasConfig } = await pool.query('SELECT nome, percentual FROM taxas_venda WHERE ativo = TRUE');
-    const percentualEsperado = new Map(taxasConfig.map((t) => [t.nome, Number(t.percentual)]));
+    const { rows: itens } = await pool.query(
+      `SELECT pi.*, p.peso_kg
+       FROM pedido_itens pi LEFT JOIN produtos p ON p.id = pi.produto_id
+       WHERE pi.pedido_id = ANY($1)`,
+      [pedidos.map((p) => p.id)]
+    );
 
     const LIMITE_DIVERGENCIA = 0.01; // 1 ponto percentual de tolerância
 
-    const resultado = pedidos
-      .filter((p) => p.taxa_marketplace !== null)
-      .map((p) => {
-        const receita = Number(p.total_liquido);
-        const taxaCobrada = Number(p.taxa_marketplace);
-        const pctCobrado = receita > 0 ? taxaCobrada / receita : 0;
-        const pctEsperado = percentualEsperado.get(p.canal_venda) ?? null;
-        const divergente = pctEsperado !== null && Math.abs(pctCobrado - pctEsperado) > LIMITE_DIVERGENCIA;
-        return {
-          id: p.id,
-          numero: p.numero,
-          data_pedido: p.data_pedido,
-          canal_venda: p.canal_venda,
-          receita,
-          taxaCobrada,
-          pctCobrado,
-          pctEsperado,
-          divergente,
-        };
+    const resultado = [];
+    for (const p of pedidos) {
+      if (p.taxa_marketplace === null) continue;
+      const itensDoPedido = itens.filter((it) => it.pedido_id === p.id);
+      const pesoConhecido = itensDoPedido.length > 0 && itensDoPedido.every((it) => it.peso_kg !== null);
+      const pesoTotalKg = pesoConhecido
+        ? itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * Number(it.peso_kg), 0)
+        : null;
+
+      const receita = Number(p.total_liquido);
+      const taxaCobrada = Number(p.taxa_marketplace);
+
+      const esperado = await calcularTaxaEsperadaPedido({
+        marketplace: p.origem_marketplace,
+        itens: itensDoPedido,
+        valorTotalPedido: receita,
+        formaPagamento: p.forma_pagamento_marketplace,
+        usaFreteSubsidiado: p.usa_frete_subsidiado,
+        pesoTotalKg,
       });
+
+      const pctCobrado = receita > 0 ? taxaCobrada / receita : 0;
+      const pctEsperado = receita > 0 ? esperado.taxaEsperadaTotal / receita : null;
+      const divergente = !esperado.comissaoIncompleta && pctEsperado !== null && Math.abs(pctCobrado - pctEsperado) > LIMITE_DIVERGENCIA;
+
+      resultado.push({
+        id: p.id,
+        numero: p.numero,
+        data_pedido: p.data_pedido,
+        canal_venda: p.canal_venda,
+        receita,
+        taxaCobrada,
+        pctCobrado,
+        taxaEsperada: esperado.taxaEsperadaTotal,
+        comissaoEsperada: esperado.comissaoEsperada,
+        freteEsperado: esperado.freteEsperado,
+        pctEsperado,
+        semTabelaCadastrada: esperado.comissaoIncompleta,
+        pesoDesconhecido: !pesoConhecido,
+        divergente,
+      });
+    }
 
     const pendentes = pedidos.filter((p) => p.taxa_marketplace === null).length;
 

@@ -88,7 +88,7 @@ async function encontrarVariante(client, skuExterno) {
   return r.rows[0] || null;
 }
 
-async function importarPedido(client, pedidoGenerico) {
+async function importarPedido(client, pedidoGenerico, integracaoId) {
   const { rows: existentes } = await client.query(
     'SELECT id FROM pedidos_venda WHERE origem_marketplace = $1 AND origem_pedido_id = $2',
     [pedidoGenerico.marketplace, pedidoGenerico.idExterno]
@@ -98,17 +98,19 @@ async function importarPedido(client, pedidoGenerico) {
   const clienteId = await encontrarOuCriarCliente(client, pedidoGenerico);
 
   const { rows } = await client.query(
-    `INSERT INTO pedidos_venda (data_pedido, cliente_id, operacao, canal_venda, valor_frete, taxa_marketplace, observacao, origem_marketplace, origem_pedido_id)
-     VALUES ($1, $2, 'Venda', $3, $4, $5, $6, $7, $8) RETURNING id`,
+    `INSERT INTO pedidos_venda (data_pedido, cliente_id, operacao, canal_venda, valor_frete, taxa_marketplace, forma_pagamento_marketplace, observacao, origem_marketplace, origem_pedido_id, origem_integracao_id)
+     VALUES ($1, $2, 'Venda', $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
     [
       pedidoGenerico.dataPedido || new Date().toISOString().slice(0, 10),
       clienteId,
       LABEL[pedidoGenerico.marketplace],
       pedidoGenerico.valorFrete || 0,
       pedidoGenerico.taxaMarketplace ?? null,
+      pedidoGenerico.formaPagamento || null,
       `Pedido ${pedidoGenerico.numeroExterno} importado automaticamente do ${LABEL[pedidoGenerico.marketplace]}.`,
       pedidoGenerico.marketplace,
       pedidoGenerico.idExterno,
+      integracaoId,
     ]
   );
   const pedidoId = rows[0].id;
@@ -119,8 +121,8 @@ async function importarPedido(client, pedidoGenerico) {
     const total = item.quantidade * item.valorUnitario;
     await client.query(
       `INSERT INTO pedido_itens
-        (pedido_id, variante_id, produto_id, referencia, descricao, cor, tamanho, quantidade, valor_unitario, total, ordem)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        (pedido_id, variante_id, produto_id, referencia, descricao, cor, tamanho, quantidade, valor_unitario, total, ordem, tipo_anuncio_marketplace)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
       [
         pedidoId,
         variante?.id || null,
@@ -133,6 +135,7 @@ async function importarPedido(client, pedidoGenerico) {
         item.valorUnitario,
         total,
         ordem,
+        item.tipoAnuncio || null,
       ]
     );
     ordem += 1;
@@ -165,7 +168,7 @@ async function sincronizarIntegracao(integracaoId) {
     try {
       await client.query('BEGIN');
       for (const pedidoGenerico of pedidosGenericos) {
-        const ok = await importarPedido(client, pedidoGenerico);
+        const ok = await importarPedido(client, pedidoGenerico, integracao.id);
         if (ok) importados += 1;
       }
       await client.query('COMMIT');

@@ -9,6 +9,7 @@ import EmpresasPage from './pages/EmpresasPage';
 import ListasPage from './pages/ListasPage';
 import TaxasVendaPage from './pages/TaxasVendaPage';
 import CustosIndiretosPage from './pages/CustosIndiretosPage';
+import MarketplaceTaxasPage from './pages/MarketplaceTaxasPage';
 import UsuariosPage from './pages/UsuariosPage';
 import IntegracoesPage from './pages/IntegracoesPage';
 import ProdutosListPage from './pages/ProdutosListPage';
@@ -101,6 +102,7 @@ function AppRoutes() {
                   <Route path="/listas" element={<ListasPage />} />
                   <Route path="/taxas-venda" element={<TaxasVendaPage />} />
                   <Route path="/custos-indiretos" element={<CustosIndiretosPage />} />
+                  <Route path="/marketplace-taxas" element={<MarketplaceTaxasPage />} />
                   <Route path="/usuarios" element={<UsuariosPage />} />
                   <Route path="/integracoes" element={<IntegracoesPage />} />
                   <Route path="*" element={<Navigate to={getDefaultPath(user) || '/produtos'} replace />} />

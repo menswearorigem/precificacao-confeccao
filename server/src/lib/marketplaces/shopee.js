@@ -114,7 +114,7 @@ async function buscarPedidos({ partnerId, partnerKey, accessToken, shopId, desde
       partnerKey,
       accessToken,
       shopId,
-      query: { order_sn_list: lote.join(','), response_optional_fields: 'item_list,buyer_username,total_amount' },
+      query: { order_sn_list: lote.join(','), response_optional_fields: 'item_list,buyer_username,total_amount,payment_method' },
     });
     detalhes.push(...(data.response?.order_list || []));
   }
@@ -159,6 +159,11 @@ function mapearPedido(order) {
     ? (Number(renda.commission_fee) || 0) + (Number(renda.service_fee) || 0) + (Number(renda.transaction_fee) || 0)
     : null;
 
+  // O nome exato do campo/valor pode variar (ex: "ShopeePay", "Pix",
+  // "Cartão de Crédito") — checa case-insensitive por "pix" em vez de
+  // comparar com um valor fixo, pra não quebrar se vier com outra grafia.
+  const formaPagamento = String(order.payment_method || '').toLowerCase().includes('pix') ? 'pix' : 'outro';
+
   return {
     marketplace: 'shopee',
     idExterno: order.order_sn,
@@ -167,6 +172,7 @@ function mapearPedido(order) {
     clienteNome: order.buyer_username || 'Comprador Shopee',
     valorFrete: 0,
     taxaMarketplace,
+    formaPagamento,
     itens,
   };
 }

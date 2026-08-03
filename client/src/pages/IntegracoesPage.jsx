@@ -103,6 +103,11 @@ export default function IntegracoesPage() {
     load();
   }
 
+  async function alternarFreteSubsidiado(item) {
+    await api.put(`/integracoes/${item.id}`, { usa_frete_subsidiado: !item.usaFreteSubsidiado });
+    load();
+  }
+
   return (
     <div className="page-wide">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
@@ -199,6 +204,12 @@ export default function IntegracoesPage() {
               </Field>
               <Field label="Última sincronização">
                 <input value={hoje(item.ultimaSincronizacao)} disabled style={{ opacity: 0.7 }} />
+              </Field>
+              <Field label="Usa frete subsidiado?">
+                <label className="toggle">
+                  <input type="checkbox" checked={item.usaFreteSubsidiado} onChange={() => alternarFreteSubsidiado(item)} />
+                  {item.usaFreteSubsidiado ? 'Sim' : 'Não'}
+                </label>
               </Field>
             </div>
 

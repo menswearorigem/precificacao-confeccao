@@ -23,6 +23,7 @@ function paraFora(row) {
     conectado: Boolean(row.access_token),
     contaExternaId: row.conta_externa_id,
     ativo: row.ativo,
+    usaFreteSubsidiado: row.usa_frete_subsidiado,
     ultimaSincronizacao: row.ultima_sincronizacao,
     ultimoErro: row.ultimo_erro,
   };
@@ -59,7 +60,7 @@ router.post('/', async (req, res, next) => {
 
 router.put('/:id', async (req, res, next) => {
   try {
-    const { nome, client_id, client_secret, ativo } = req.body || {};
+    const { nome, client_id, client_secret, ativo, usa_frete_subsidiado } = req.body || {};
     const updates = [];
     const values = [];
     let i = 1;
@@ -67,6 +68,7 @@ router.put('/:id', async (req, res, next) => {
     if (client_id !== undefined) { updates.push(`client_id = $${i}`); values.push(client_id); i += 1; }
     if (client_secret !== undefined && client_secret !== '') { updates.push(`client_secret = $${i}`); values.push(client_secret); i += 1; }
     if (ativo !== undefined) { updates.push(`ativo = $${i}`); values.push(ativo); i += 1; }
+    if (usa_frete_subsidiado !== undefined) { updates.push(`usa_frete_subsidiado = $${i}`); values.push(usa_frete_subsidiado); i += 1; }
     if (updates.length === 0) return res.status(400).json({ error: 'Nada para atualizar.' });
     updates.push('atualizado_em = now()');
     values.push(req.params.id);

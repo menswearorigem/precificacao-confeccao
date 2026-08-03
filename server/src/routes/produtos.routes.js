@@ -172,8 +172,8 @@ router.post('/', async (req, res, next) => {
 
     const { rows } = await client.query(
       `INSERT INTO produtos (codigo, referencia, descricao, categoria, marca, colecao, linha,
-                              empresa_id, data_criacao, responsavel, preco_informado)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, CURRENT_DATE), $10, $11)
+                              empresa_id, data_criacao, responsavel, preco_informado, peso_kg)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, CURRENT_DATE), $10, $11, $12)
        RETURNING *`,
       [
         body.codigo || null,
@@ -187,6 +187,7 @@ router.post('/', async (req, res, next) => {
         body.data_criacao || null,
         body.responsavel || null,
         body.preco_informado ?? null,
+        body.peso_kg ?? null,
       ]
     );
     const produto = rows[0];
@@ -244,7 +245,7 @@ router.put('/:id', async (req, res, next) => {
 
     await client.query('BEGIN');
 
-    const fields = ['codigo', 'referencia', 'descricao', 'categoria', 'marca', 'colecao', 'linha', 'empresa_id', 'data_criacao', 'responsavel', 'preco_informado'];
+    const fields = ['codigo', 'referencia', 'descricao', 'categoria', 'marca', 'colecao', 'linha', 'empresa_id', 'data_criacao', 'responsavel', 'preco_informado', 'peso_kg'];
     const updates = [];
     const values = [];
     let i = 1;

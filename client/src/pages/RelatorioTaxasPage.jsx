@@ -41,8 +41,9 @@ export default function RelatorioTaxasPage() {
         <h2>Taxas de Marketplace</h2>
         <p className="page-sub">
           Compara a taxa que o Mercado Livre/Shopee realmente cobrou em cada pedido importado com o
-          percentual esperado cadastrado em Configurações → Taxas de Venda, pra pegar cobrança
-          divergente do combinado. Só considera pedidos importados automaticamente das integrações.
+          esperado pelas tabelas de comissão + frete cadastradas em Configurações → Taxas de
+          Marketplace, pra pegar cobrança divergente do combinado. Só considera pedidos importados
+          automaticamente das integrações.
         </p>
 
         <div className="card" style={{ marginBottom: 16 }}>
@@ -98,7 +99,7 @@ export default function RelatorioTaxasPage() {
               <thead>
                 <tr>
                   <th>Nº</th><th>Data</th><th>Canal</th><th>Receita</th>
-                  <th>Taxa Cobrada</th><th>% Cobrado</th><th>% Esperado</th><th>Situação</th>
+                  <th>Taxa Cobrada</th><th>Taxa Esperada</th><th>% Cobrado</th><th>% Esperado</th><th>Situação</th>
                 </tr>
               </thead>
               <tbody>
@@ -109,10 +110,16 @@ export default function RelatorioTaxasPage() {
                     <td>{p.canal_venda}</td>
                     <td className="mono">{brl(p.receita)}</td>
                     <td className="mono">{brl(p.taxaCobrada)}</td>
+                    <td className="mono">
+                      {p.semTabelaCadastrada ? '—' : brl(p.taxaEsperada)}
+                      {!p.semTabelaCadastrada && p.pesoDesconhecido && (
+                        <span className="stamp sm tone-atencao" style={{ marginLeft: 6 }} title="Peso do produto não cadastrado — frete não entrou na conta">só comissão</span>
+                      )}
+                    </td>
                     <td className="mono">{pct(p.pctCobrado)}</td>
-                    <td className="mono">{p.pctEsperado === null ? '— (não cadastrado)' : pct(p.pctEsperado)}</td>
+                    <td className="mono">{p.semTabelaCadastrada ? '— (sem tabela)' : pct(p.pctEsperado)}</td>
                     <td>
-                      {p.pctEsperado === null ? (
+                      {p.semTabelaCadastrada ? (
                         <span className="stamp sm tone-neutro">Sem referência</span>
                       ) : p.divergente ? (
                         <span className="stamp sm tone-prejuizo">Divergente</span>
@@ -122,7 +129,7 @@ export default function RelatorioTaxasPage() {
                     </td>
                   </tr>
                 ))}
-                {relatorio.pedidos.length === 0 && <tr><td colSpan="8">Nenhum pedido de marketplace com taxa disponível no período.</td></tr>}
+                {relatorio.pedidos.length === 0 && <tr><td colSpan="9">Nenhum pedido de marketplace com taxa disponível no período.</td></tr>}
               </tbody>
             </table>
           </div>
