@@ -123,6 +123,146 @@ router.get('/buscar-produtos', async (req, res, next) => {
   }
 });
 
+// ---------- lucratividade e taxas de marketplace ----------
+
+// Custo total da peça (mesmo motor de cálculo da Ficha de Custo), com cache
+// em memória pra não recalcular o mesmo produto várias vezes num relatório.
+async function mapaCustoPorProduto(produtoIds, ctx) {
+  const mapa = new Map();
+  for (const id of produtoIds) {
+    if (id === null || id === undefined || mapa.has(id)) continue;
+    try {
+      const produtoRow = await produtosRoutes.fetchProdutoRow(pool, id);
+      const materiais = await produtosRoutes.fetchMateriais(pool, id);
+      const custosIndustriais = await produtosRoutes.fetchCustosIndustriais(pool, id);
+      const calculo = produtosRoutes.buildCalculo(produtoRow, materiais, custosIndustriais, ctx);
+      mapa.set(id, Number(calculo.custoTotal.custoTotalPeca) || 0);
+    } catch {
+      mapa.set(id, 0);
+    }
+  }
+  return mapa;
+}
+
+router.get('/relatorio-lucratividade', async (req, res, next) => {
+  try {
+    const { data_inicio, data_fim, canal_venda } = req.query;
+    const conditions = ["pv.situacao != 'cancelado'"];
+    const values = [];
+    let i = 1;
+    if (data_inicio) { conditions.push(`pv.data_pedido >= $${i}`); values.push(data_inicio); i += 1; }
+    if (data_fim) { conditions.push(`pv.data_pedido <= $${i}`); values.push(data_fim); i += 1; }
+    if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
+    const where = `WHERE ${conditions.join(' AND ')}`;
+
+    const { rows: pedidos } = await pool.query(
+      `SELECT pv.*, c.nome AS cliente_nome
+       FROM pedidos_venda pv LEFT JOIN clientes c ON c.id = pv.cliente_id
+       ${where} ORDER BY pv.data_pedido, pv.id`,
+      values
+    );
+    if (pedidos.length === 0) return res.json({ pedidos: [], totalGeral: { receita: 0, custo: 0, taxaMarketplace: 0, lucro: 0, margemPct: 0 } });
+
+    const { rows: itens } = await pool.query(
+      `SELECT * FROM pedido_itens WHERE pedido_id = ANY($1)`,
+      [pedidos.map((p) => p.id)]
+    );
+
+    const ctx = await getCalcContext();
+    const mapaCusto = await mapaCustoPorProduto(itens.map((it) => it.produto_id), ctx);
+
+    const resultado = pedidos.map((p) => {
+      const itensDoPedido = itens.filter((it) => it.pedido_id === p.id);
+      const custo = itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * (mapaCusto.get(it.produto_id) || 0), 0);
+      const semCusto = itensDoPedido.some((it) => !it.produto_id || !mapaCusto.has(it.produto_id));
+      const taxaMarketplace = Number(p.taxa_marketplace) || 0;
+      const receita = Number(p.total_liquido);
+      const lucro = receita - custo - taxaMarketplace;
+      const margemPct = receita > 0 ? lucro / receita : 0;
+      return {
+        id: p.id,
+        numero: p.numero,
+        data_pedido: p.data_pedido,
+        cliente_nome: p.cliente_nome,
+        canal_venda: p.canal_venda,
+        receita,
+        custo,
+        taxaMarketplace,
+        lucro,
+        margemPct,
+        custoIncompleto: semCusto,
+      };
+    });
+
+    const totalGeral = resultado.reduce(
+      (acc, p) => ({
+        receita: acc.receita + p.receita,
+        custo: acc.custo + p.custo,
+        taxaMarketplace: acc.taxaMarketplace + p.taxaMarketplace,
+        lucro: acc.lucro + p.lucro,
+      }),
+      { receita: 0, custo: 0, taxaMarketplace: 0, lucro: 0 }
+    );
+    totalGeral.margemPct = totalGeral.receita > 0 ? totalGeral.lucro / totalGeral.receita : 0;
+
+    res.json({ pedidos: resultado, totalGeral });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/relatorio-taxas', async (req, res, next) => {
+  try {
+    const { data_inicio, data_fim, canal_venda } = req.query;
+    const conditions = ["pv.situacao != 'cancelado'", 'pv.origem_marketplace IS NOT NULL'];
+    const values = [];
+    let i = 1;
+    if (data_inicio) { conditions.push(`pv.data_pedido >= $${i}`); values.push(data_inicio); i += 1; }
+    if (data_fim) { conditions.push(`pv.data_pedido <= $${i}`); values.push(data_fim); i += 1; }
+    if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
+    const where = `WHERE ${conditions.join(' AND ')}`;
+
+    const { rows: pedidos } = await pool.query(
+      `SELECT pv.id, pv.numero, pv.data_pedido, pv.canal_venda, pv.total_liquido, pv.taxa_marketplace, pv.origem_marketplace
+       FROM pedidos_venda pv
+       ${where} ORDER BY pv.data_pedido, pv.id`,
+      values
+    );
+
+    const { rows: taxasConfig } = await pool.query('SELECT nome, percentual FROM taxas_venda WHERE ativo = TRUE');
+    const percentualEsperado = new Map(taxasConfig.map((t) => [t.nome, Number(t.percentual)]));
+
+    const LIMITE_DIVERGENCIA = 0.01; // 1 ponto percentual de tolerância
+
+    const resultado = pedidos
+      .filter((p) => p.taxa_marketplace !== null)
+      .map((p) => {
+        const receita = Number(p.total_liquido);
+        const taxaCobrada = Number(p.taxa_marketplace);
+        const pctCobrado = receita > 0 ? taxaCobrada / receita : 0;
+        const pctEsperado = percentualEsperado.get(p.canal_venda) ?? null;
+        const divergente = pctEsperado !== null && Math.abs(pctCobrado - pctEsperado) > LIMITE_DIVERGENCIA;
+        return {
+          id: p.id,
+          numero: p.numero,
+          data_pedido: p.data_pedido,
+          canal_venda: p.canal_venda,
+          receita,
+          taxaCobrada,
+          pctCobrado,
+          pctEsperado,
+          divergente,
+        };
+      });
+
+    const pendentes = pedidos.filter((p) => p.taxa_marketplace === null).length;
+
+    res.json({ pedidos: resultado, pendentesSemTaxa: pendentes });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ---------- listagem ----------
 
 router.get('/', async (req, res, next) => {

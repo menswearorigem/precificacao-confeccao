@@ -118,7 +118,30 @@ async function buscarPedidos({ partnerId, partnerKey, accessToken, shopId, desde
     });
     detalhes.push(...(data.response?.order_list || []));
   }
+
+  // A comissão/taxa cobrada não vem no detalhe do pedido — só na conciliação
+  // financeira (escrow). Busca uma a uma; se alguma falhar (ex: pedido ainda
+  // não liquidado), segue sem a taxa em vez de derrubar a sincronização toda.
+  for (const detalhe of detalhes) {
+    try {
+      const escrow = await buscarDetalheEscrow(detalhe.order_sn, { partnerId, partnerKey, accessToken, shopId });
+      detalhe.order_income = escrow.response?.order_income || null;
+    } catch {
+      detalhe.order_income = null;
+    }
+  }
+
   return detalhes;
+}
+
+async function buscarDetalheEscrow(orderSn, { partnerId, partnerKey, accessToken, shopId }) {
+  return chamarDaLoja('/api/v2/payment/get_escrow_detail', {
+    partnerId,
+    partnerKey,
+    accessToken,
+    shopId,
+    query: { order_sn: orderSn },
+  });
 }
 
 // Converte um pedido da Shopee pro formato genérico usado pelo
@@ -131,6 +154,11 @@ function mapearPedido(order) {
     valorUnitario: Number(it.model_discounted_price ?? it.model_original_price) || 0,
   }));
 
+  const renda = order.order_income;
+  const taxaMarketplace = renda
+    ? (Number(renda.commission_fee) || 0) + (Number(renda.service_fee) || 0) + (Number(renda.transaction_fee) || 0)
+    : null;
+
   return {
     marketplace: 'shopee',
     idExterno: order.order_sn,
@@ -138,6 +166,7 @@ function mapearPedido(order) {
     dataPedido: order.create_time ? new Date(order.create_time * 1000).toISOString().slice(0, 10) : null,
     clienteNome: order.buyer_username || 'Comprador Shopee',
     valorFrete: 0,
+    taxaMarketplace,
     itens,
   };
 }

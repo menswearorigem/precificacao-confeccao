@@ -99,6 +99,17 @@ function mapearPedido(order) {
     valorUnitario: Number(oi.unit_price) || 0,
   }));
 
+  // sale_fee é a comissão que o Mercado Livre cobra por item vendido — vem
+  // como número simples na maioria dos casos, mas em alguns retornos vem
+  // como objeto com o detalhamento do custo (venda + Mercado Pago + parcelamento).
+  const taxaMarketplace = (order.order_items || []).reduce((soma, oi) => {
+    const feeRaw = oi.sale_fee;
+    const fee = typeof feeRaw === 'object' && feeRaw !== null
+      ? Number(feeRaw.total ?? feeRaw.amount ?? 0)
+      : Number(feeRaw) || 0;
+    return soma + fee;
+  }, 0);
+
   const frete = Number(order.shipping?.cost) || 0;
 
   return {
@@ -108,6 +119,7 @@ function mapearPedido(order) {
     dataPedido: order.date_created ? order.date_created.slice(0, 10) : null,
     clienteNome: order.buyer?.nickname || [order.buyer?.first_name, order.buyer?.last_name].filter(Boolean).join(' ') || 'Comprador Mercado Livre',
     valorFrete: frete,
+    taxaMarketplace,
     itens,
   };
 }

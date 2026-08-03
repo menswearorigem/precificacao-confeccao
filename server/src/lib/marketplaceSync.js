@@ -98,13 +98,14 @@ async function importarPedido(client, pedidoGenerico) {
   const clienteId = await encontrarOuCriarCliente(client, pedidoGenerico);
 
   const { rows } = await client.query(
-    `INSERT INTO pedidos_venda (data_pedido, cliente_id, operacao, canal_venda, valor_frete, observacao, origem_marketplace, origem_pedido_id)
-     VALUES ($1, $2, 'Venda', $3, $4, $5, $6, $7) RETURNING id`,
+    `INSERT INTO pedidos_venda (data_pedido, cliente_id, operacao, canal_venda, valor_frete, taxa_marketplace, observacao, origem_marketplace, origem_pedido_id)
+     VALUES ($1, $2, 'Venda', $3, $4, $5, $6, $7, $8) RETURNING id`,
     [
       pedidoGenerico.dataPedido || new Date().toISOString().slice(0, 10),
       clienteId,
       LABEL[pedidoGenerico.marketplace],
       pedidoGenerico.valorFrete || 0,
+      pedidoGenerico.taxaMarketplace ?? null,
       `Pedido ${pedidoGenerico.numeroExterno} importado automaticamente do ${LABEL[pedidoGenerico.marketplace]}.`,
       pedidoGenerico.marketplace,
       pedidoGenerico.idExterno,

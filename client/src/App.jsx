@@ -33,6 +33,8 @@ import FornecedorFichaPage from './pages/FornecedorFichaPage';
 import ComprasListPage from './pages/ComprasListPage';
 import CompraFormPage from './pages/CompraFormPage';
 import RelatorioComprasPage from './pages/RelatorioComprasPage';
+import RelatorioLucratividadePage from './pages/RelatorioLucratividadePage';
+import RelatorioTaxasPage from './pages/RelatorioTaxasPage';
 
 function RequireAuth({ loading, user, children }) {
   const location = useLocation();
@@ -87,6 +89,8 @@ function AppRoutes() {
                   <Route path="/pedidos" element={<PedidosListPage />} />
                   <Route path="/pedidos/:id" element={<PedidoFormPage />} />
                   <Route path="/ficha-venda" element={<FichaVendaPage />} />
+                  <Route path="/vendas/lucratividade" element={<RelatorioLucratividadePage />} />
+                  <Route path="/vendas/taxas-marketplace" element={<RelatorioTaxasPage />} />
                   <Route path="/fornecedores" element={<FornecedoresListPage />} />
                   <Route path="/fornecedores/:id" element={<FornecedorFichaPage />} />
                   <Route path="/compras/relatorio" element={<RelatorioComprasPage />} />
