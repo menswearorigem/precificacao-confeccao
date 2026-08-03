@@ -27,6 +27,12 @@ const CLIENT_DIST = path.join(__dirname, '..', '..', 'client', 'dist');
 function createApp() {
   const app = express();
 
+  // O Render (como qualquer proxy reverso) entrega HTTPS pro navegador mas
+  // repassa a requisição pro servidor como HTTP puro — sem isso, req.protocol
+  // sempre voltava "http", quebrando o redirect_uri das integrações de
+  // marketplace (que precisa bater exatamente com o cadastrado no app).
+  app.set('trust proxy', 1);
+
   app.use(express.json({ limit: '15mb' }));
 
   app.get('/api/health', (req, res) => {
