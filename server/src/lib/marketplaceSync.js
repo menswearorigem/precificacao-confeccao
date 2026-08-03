@@ -174,16 +174,21 @@ async function atualizarValoresRecebidos(integracao) {
     // origem_integracao_id) — nesse caso não tem como saber de qual conta
     // ML eles vieram, então tenta com essa integração; se o pedido for de
     // outra conta, a API simplesmente não devolve nada pra esse order_id.
-    // Limitado a 40 (2 lotes) por ciclo — a API de Faturamento aceita só 5
-    // chamadas/minuto no total (e esse limite é compartilhado entre todas as
-    // integrações do processo), então processar tudo de uma vez deixaria a
-    // sincronização (e o botão "Sincronizar agora") lenta demais. Pedidos
-    // que sobrarem "pending" são reconferidos nos próximos ciclos.
+    // Limitado a 100 (5 lotes, o total que cabe na janela de 5/min) por
+    // ciclo — a API de Faturamento aceita só 5 chamadas/minuto no total (e
+    // esse limite é compartilhado entre todas as integrações do processo),
+    // então processar tudo de uma vez deixaria a sincronização (e o botão
+    // "Sincronizar agora") lenta demais. Ordena por
+    // "nunca verificado" primeiro e depois pelo menos recentemente verificado
+    // — se ordenasse pela data do pedido, os mais recentes (que são
+    // exatamente os que ainda não bateram o prazo de liberação) sempre
+    // ganhariam a vaga, e pedidos mais antigos nunca chegariam a ser
+    // reconferidos.
     const { rows: pendentes } = await pool.query(
       `SELECT origem_pedido_id FROM pedidos_venda
        WHERE origem_marketplace = 'mercado_livre' AND (origem_integracao_id = $1 OR origem_integracao_id IS NULL)
          AND (valor_recebido_status IS NULL OR valor_recebido_status != 'released')
-       ORDER BY data_pedido DESC LIMIT 40`,
+       ORDER BY valor_recebido_atualizado_em ASC NULLS FIRST LIMIT 100`,
       [integracao.id]
     );
     if (pendentes.length === 0) return;
