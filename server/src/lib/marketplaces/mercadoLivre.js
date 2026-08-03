@@ -206,8 +206,10 @@ async function buscarDetalhesFaturamento({ accessToken, sellerId, orderIds }) {
     ultimaRespostaCrua = data;
     for (const resultado of data.results || data.data || []) {
       const orderId = resultado.order_id ?? resultado.origin?.order_id;
-      const pagamento = resultado.payment_info || resultado;
-      if (!orderId || pagamento.base_amount === undefined) continue;
+      // payment_info vem como array (um pedido pode ter mais de um pagamento) —
+      // usa o primeiro por enquanto.
+      const pagamento = Array.isArray(resultado.payment_info) ? resultado.payment_info[0] : resultado.payment_info || resultado;
+      if (!orderId || !pagamento || pagamento.base_amount === undefined) continue;
       mapa.set(String(orderId), {
         valorRecebido: pagamento.base_amount != null ? Number(pagamento.base_amount) : null,
         status: pagamento.money_release_status || null,
@@ -220,7 +222,7 @@ async function buscarDetalhesFaturamento({ accessToken, sellerId, orderIds }) {
   // Guarda um recorte cru pra dar pra ajustar o parsing sem precisar de
   // mais uma rodada de "manda print"/"não sei o que apareceu".
   const diagnostico = !erro && mapa.size === 0 && ultimaRespostaCrua
-    ? JSON.stringify(ultimaRespostaCrua).slice(0, 800)
+    ? JSON.stringify(ultimaRespostaCrua, null, 2).slice(0, 6000)
     : null;
   return { mapa, erro, diagnostico };
 }
