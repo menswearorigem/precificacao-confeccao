@@ -158,12 +158,15 @@ async function buscarPedidos({ accessToken, sellerId, desde }) {
 // mesmo valor que o ML usa pra calcular o repasse de fato (já considera
 // tarifa fixa por unidade, antecipação etc., que o sale_fee do pedido não
 // cobre), por isso é mais preciso que a nossa estimativa (receita - taxa).
-// Precisa da permissão de Faturamento habilitada no app do DevCenter — se
-// não tiver, ou se o Mercado Livre ainda não processou o repasse desse
-// pedido, simplesmente não entra no mapa de retorno (sem derrubar o resto
-// da sincronização).
+// Precisa da permissão de Faturamento habilitada no app do DevCenter. Se
+// faltar essa permissão, ou se o Mercado Livre ainda não processou o
+// repasse de algum pedido, esse pedido simplesmente não entra no mapa de
+// retorno — mas o erro do último lote que falhou é reportado em `erro`
+// (não lançado direto) pra não derrubar o resto da sincronização, e ainda
+// assim dar pra diagnosticar o motivo.
 async function buscarDetalhesFaturamento({ accessToken, sellerId, orderIds }) {
   const mapa = new Map();
+  let erro = null;
   const TAMANHO_LOTE = 20;
   for (let i = 0; i < orderIds.length; i += TAMANHO_LOTE) {
     const lote = orderIds.slice(i, i + TAMANHO_LOTE);
@@ -171,7 +174,8 @@ async function buscarDetalhesFaturamento({ accessToken, sellerId, orderIds }) {
     let data;
     try {
       data = await chamarApi(`/billing/integration/group/ML/order/details?${params.toString()}`, accessToken);
-    } catch {
+    } catch (err) {
+      erro = err;
       continue;
     }
     for (const resultado of data.results || data.data || []) {
@@ -185,7 +189,7 @@ async function buscarDetalhesFaturamento({ accessToken, sellerId, orderIds }) {
       });
     }
   }
-  return mapa;
+  return { mapa, erro };
 }
 
 // Converte um pedido do Mercado Livre pro formato genérico usado pelo

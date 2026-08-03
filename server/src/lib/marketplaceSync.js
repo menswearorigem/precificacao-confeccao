@@ -183,7 +183,7 @@ async function atualizarValoresRecebidos(integracao) {
     );
     if (pendentes.length === 0) return;
 
-    const detalhes = await mercadoLivre.buscarDetalhesFaturamento({
+    const { mapa: detalhes, erro } = await mercadoLivre.buscarDetalhesFaturamento({
       accessToken: integracao.access_token,
       sellerId: integracao.conta_externa_id,
       orderIds: pendentes.map((p) => p.origem_pedido_id),
@@ -197,8 +197,17 @@ async function atualizarValoresRecebidos(integracao) {
         [info.valorRecebido, info.status, orderId]
       );
     }
+
+    await pool.query(
+      'UPDATE integracoes_marketplace SET ultimo_erro_faturamento = $1 WHERE id = $2',
+      [erro ? erro.message : null, integracao.id]
+    );
   } catch (err) {
     console.error(`[marketplace-sync] falha ao buscar valores recebidos (integração ${integracao.id}):`, err.message);
+    await pool.query(
+      'UPDATE integracoes_marketplace SET ultimo_erro_faturamento = $1 WHERE id = $2',
+      [err.message, integracao.id]
+    ).catch(() => {});
   }
 }
 

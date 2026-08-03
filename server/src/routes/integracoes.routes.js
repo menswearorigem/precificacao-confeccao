@@ -26,6 +26,7 @@ function paraFora(row) {
     usaFreteSubsidiado: row.usa_frete_subsidiado,
     ultimaSincronizacao: row.ultima_sincronizacao,
     ultimoErro: row.ultimo_erro,
+    ultimoErroFaturamento: row.ultimo_erro_faturamento,
   };
 }
 

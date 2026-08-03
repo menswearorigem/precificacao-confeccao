@@ -216,6 +216,11 @@ export default function IntegracoesPage() {
             {item.ultimoErro && (
               <div className="login-error">Última tentativa falhou: {item.ultimoErro}</div>
             )}
+            {item.ultimoErroFaturamento && (
+              <div className="login-error" style={{ marginTop: item.ultimoErro ? 8 : 0 }}>
+                Não consegui buscar o valor recebido (API de Faturamento): {item.ultimoErroFaturamento}
+              </div>
+            )}
           </div>
         );
       })}
