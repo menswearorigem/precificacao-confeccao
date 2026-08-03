@@ -42,6 +42,7 @@ export const MODULES = [
       { to: '/ficha-venda', label: 'Ficha de Venda', icon: Printer },
       { to: '/vendas/lucratividade', label: 'Lucratividade', icon: TrendingUp },
       { to: '/vendas/taxas-marketplace', label: 'Taxas de Marketplace', icon: ReceiptText },
+      { to: '/vendas/importar-pedidos', label: 'Importar Pedidos', icon: Upload },
     ],
   },
   {

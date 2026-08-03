@@ -6,7 +6,7 @@
 const pool = require('../db/pool');
 const mercadoLivre = require('./marketplaces/mercadoLivre');
 const shopee = require('./marketplaces/shopee');
-const pedidosRoutes = require('../routes/pedidos.routes');
+const { recalcularTotais } = require('./pedidoRecalculo');
 
 const LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee' };
 
@@ -141,7 +141,7 @@ async function importarPedido(client, pedidoGenerico, integracaoId) {
     ordem += 1;
   }
 
-  await pedidosRoutes.recalcularTotais(client, pedidoId);
+  await recalcularTotais(client, pedidoId);
   return true;
 }
 
@@ -211,4 +211,4 @@ async function sincronizarTodasAtivas() {
   }
 }
 
-module.exports = { sincronizarIntegracao, sincronizarTodasAtivas };
+module.exports = { sincronizarIntegracao, sincronizarTodasAtivas, importarPedido };

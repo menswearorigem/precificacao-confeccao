@@ -1,11 +1,16 @@
 const express = require('express');
+const multer = require('multer');
 const pool = require('../db/pool');
 const { registrarMovimento } = require('../lib/estoqueMovimento');
 const { getCalcContext } = require('../lib/calcContext');
 const { calcularTaxaEsperadaPedido } = require('../lib/marketplaceTaxaCalc');
+const { parseArquivoPedidos } = require('../lib/pedidoImportParsers');
+const { importarPedido } = require('../lib/marketplaceSync');
+const { recalcularTotais } = require('../lib/pedidoRecalculo');
 const produtosRoutes = require('./produtos.routes');
 
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const HEADER_FIELDS = [
   'data_pedido',
@@ -33,29 +38,6 @@ async function precoSugeridoDoProduto(produtoId, ctx) {
   } catch {
     return 0;
   }
-}
-
-// Recalcula e grava os totais do pedido a partir dos itens atuais + campos
-// de desconto/acréscimo/frete do cabeçalho.
-async function recalcularTotais(client, pedidoId) {
-  const { rows: pedidoRows } = await client.query('SELECT * FROM pedidos_venda WHERE id = $1 FOR UPDATE', [pedidoId]);
-  const pedido = pedidoRows[0];
-  const { rows: itens } = await client.query('SELECT * FROM pedido_itens WHERE pedido_id = $1', [pedidoId]);
-
-  const quantidadePecas = itens.reduce((s, it) => s + Number(it.quantidade), 0);
-  const totalBruto = itens.reduce((s, it) => s + Number(it.quantidade) * Number(it.valor_unitario), 0);
-  const totalDescontoItens = itens.reduce((s, it) => s + Number(it.desconto_valor), 0);
-  const subtotal = totalBruto - totalDescontoItens;
-  const descontoHeader = Number(pedido.desconto_pct) > 0 ? subtotal * Number(pedido.desconto_pct) : Number(pedido.desconto_valor || 0);
-  const totalDesconto = totalDescontoItens + descontoHeader;
-  const totalLiquido = subtotal - descontoHeader + Number(pedido.acrescimo || 0) + Number(pedido.valor_frete || 0);
-
-  await client.query(
-    `UPDATE pedidos_venda
-     SET quantidade_pecas = $1, total_bruto = $2, total_desconto = $3, total_liquido = $4, updated_at = now()
-     WHERE id = $5`,
-    [quantidadePecas, totalBruto, totalDesconto, totalLiquido, pedidoId]
-  );
 }
 
 function calcularItem({ quantidade, valor_unitario, desconto_pct, desconto_valor }) {
@@ -121,6 +103,74 @@ router.get('/buscar-produtos', async (req, res, next) => {
     res.json(rows);
   } catch (err) {
     next(err);
+  }
+});
+
+// ---------- importação manual de pedidos (planilha Shopee/Mercado Livre/UpSeller) ----------
+
+router.post('/importar-marketplace/preview', upload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+    const { fonte } = req.body;
+    const pedidosGenericos = await parseArquivoPedidos(fonte, req.file.buffer);
+    if (pedidosGenericos.length === 0) {
+      return res.status(400).json({ error: 'Não encontrei nenhum pedido nessa planilha.' });
+    }
+
+    const idsExternos = pedidosGenericos.map((p) => p.idExterno);
+    const { rows: existentes } = await pool.query(
+      `SELECT origem_marketplace, origem_pedido_id FROM pedidos_venda
+       WHERE origem_pedido_id = ANY($1)`,
+      [idsExternos]
+    );
+    const jaImportados = new Set(existentes.map((e) => `${e.origem_marketplace}::${e.origem_pedido_id}`));
+
+    const skusUnicos = [...new Set(pedidosGenericos.flatMap((p) => p.itens.map((it) => it.skuExterno)).filter(Boolean))];
+    const { rows: variantesEncontradas } = skusUnicos.length > 0
+      ? await pool.query(
+          `SELECT v.ean, p.referencia FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id
+           WHERE v.ean = ANY($1) OR p.referencia = ANY($1)`,
+          [skusUnicos]
+        )
+      : { rows: [] };
+    const skusComMatch = new Set([...variantesEncontradas.map((v) => v.ean), ...variantesEncontradas.map((v) => v.referencia)]);
+
+    const preview = pedidosGenericos.map((p) => ({
+      ...p,
+      jaImportado: jaImportados.has(`${p.marketplace}::${p.idExterno}`),
+      itens: p.itens.map((it) => ({ ...it, semCorrespondencia: !it.skuExterno || !skusComMatch.has(it.skuExterno) })),
+    }));
+
+    res.json({
+      pedidos: preview,
+      totalPedidos: preview.length,
+      totalJaImportados: preview.filter((p) => p.jaImportado).length,
+    });
+  } catch (err) {
+    if (err.message?.includes('reconheci') || err.message?.includes('desconhecida')) {
+      return res.status(400).json({ error: err.message });
+    }
+    next(err);
+  }
+});
+
+router.post('/importar-marketplace/confirmar', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const pedidosGenericos = req.body?.pedidos || [];
+    let importados = 0;
+    await client.query('BEGIN');
+    for (const pedidoGenerico of pedidosGenericos) {
+      const ok = await importarPedido(client, pedidoGenerico, null);
+      if (ok) importados += 1;
+    }
+    await client.query('COMMIT');
+    res.json({ pedidosImportados: importados, pedidosIgnorados: pedidosGenericos.length - importados });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
   }
 });
 
@@ -620,4 +670,3 @@ router.post('/:id/cancelar', async (req, res, next) => {
 });
 
 module.exports = router;
-module.exports.recalcularTotais = recalcularTotais;
