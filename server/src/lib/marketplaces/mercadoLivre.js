@@ -176,6 +176,21 @@ async function buscarPedidos({ accessToken, sellerId, desde }) {
   return pedidos;
 }
 
+// A resposta real (confirmada com dado de produção, não documentação) não
+// tem um campo pronto de "valor líquido" — tem que calcular: pega o valor
+// total do pedido (sales_info[0].transaction_amount, dentro do primeiro
+// item de "details") e desconta sale_fee.net (a comissão já líquida de
+// rebate/desconto — sale_fee.net = soma dos "details[].charge_info.detail_amount"
+// do tipo CHARGE, ex.: "Custo por vender no Mercado Livre" + "Custo por
+// cobrar no Mercado Pago"). Não inclui frete pago pelo vendedor (isso já é
+// tratado à parte, via valor_frete do pedido).
+function extrairValorRecebido(resultado) {
+  const transacao = resultado.details?.[0]?.sales_info?.[0]?.transaction_amount;
+  const taxaLiquida = resultado.sale_fee?.net;
+  if (transacao == null || taxaLiquida == null) return null;
+  return Number(transacao) - Number(taxaLiquida);
+}
+
 // Valor líquido de verdade repassado pelo Mercado Livre por pedido — vem da
 // API de Faturamento (billing/integration), não do /orders/search. É o
 // mesmo valor que o ML usa pra calcular o repasse de fato (já considera
@@ -208,10 +223,10 @@ async function buscarDetalhesFaturamento({ accessToken, sellerId, orderIds }) {
       const orderId = resultado.order_id ?? resultado.origin?.order_id;
       // payment_info vem como array (um pedido pode ter mais de um pagamento) —
       // usa o primeiro por enquanto.
-      const pagamento = Array.isArray(resultado.payment_info) ? resultado.payment_info[0] : resultado.payment_info || resultado;
-      if (!orderId || !pagamento || pagamento.base_amount === undefined) continue;
+      const pagamento = Array.isArray(resultado.payment_info) ? resultado.payment_info[0] : resultado.payment_info;
+      if (!orderId || !pagamento) continue;
       mapa.set(String(orderId), {
-        valorRecebido: pagamento.base_amount != null ? Number(pagamento.base_amount) : null,
+        valorRecebido: extrairValorRecebido(resultado),
         status: pagamento.money_release_status || null,
         dataLiberacao: pagamento.money_release_date || null,
       });
