@@ -185,24 +185,24 @@ router.post('/importar-marketplace/confirmar', async (req, res, next) => {
 // Reprocessa itens de pedidos de marketplace que ficaram sem produto
 // vinculado (produto_id NULL) — casos importados antes de algum ajuste na
 // lógica de casamento (SKU/EAN), ou de um produto cadastrado depois do
-// pedido. O SKU original do marketplace fica preservado no campo
-// `referencia` mesmo quando não achou correspondência na hora da
-// importação, então dá pra tentar de novo sem precisar re-importar nada.
+// pedido. O SKU original do marketplace fica preservado (em sku_externo, ou
+// em `referencia` nos itens antigos de antes dessa coluna existir), então dá
+// pra tentar de novo sem precisar re-importar nada.
 router.post('/marketplace/revincular-custos', async (req, res, next) => {
   const client = await pool.connect();
   try {
     const { rows: semVinculo } = await client.query(
-      `SELECT pi.id, pi.referencia
+      `SELECT pi.id, COALESCE(pi.sku_externo, pi.referencia) AS sku
        FROM pedido_itens pi
        JOIN pedidos_venda pv ON pv.id = pi.pedido_id
        WHERE pv.origem_marketplace IS NOT NULL AND pi.produto_id IS NULL
-         AND pi.referencia IS NOT NULL AND pi.referencia != '—'`
+         AND COALESCE(pi.sku_externo, pi.referencia) IS NOT NULL AND COALESCE(pi.sku_externo, pi.referencia) != '—'`
     );
 
     let vinculados = 0;
     await client.query('BEGIN');
     for (const item of semVinculo) {
-      const variante = await encontrarVariante(client, { eanExterno: null, skuExterno: item.referencia });
+      const variante = await encontrarVariante(client, { eanExterno: null, skuExterno: item.sku });
       if (!variante) continue;
       await client.query(
         `UPDATE pedido_itens
@@ -220,6 +220,36 @@ router.post('/marketplace/revincular-custos', async (req, res, next) => {
     next(err);
   } finally {
     client.release();
+  }
+});
+
+// Vincula (ou troca) manualmente o produto de um item de pedido de
+// marketplace — usado quando o casamento automático por SKU/EAN não achou
+// nada, ou achou o produto errado. Preserva titulo_externo/sku_externo (o
+// que o cliente pediu de verdade no anúncio) mesmo trocando o vínculo.
+router.put('/itens/:itemId/produto', async (req, res, next) => {
+  try {
+    const { varianteId } = req.body || {};
+    if (!varianteId) return res.status(400).json({ error: 'Informe a variante do produto.' });
+
+    const { rows: varianteRows } = await pool.query(
+      `SELECT v.*, p.referencia, p.descricao FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id WHERE v.id = $1`,
+      [varianteId]
+    );
+    const variante = varianteRows[0];
+    if (!variante) return res.status(404).json({ error: 'Variante não encontrada.' });
+
+    const { rows } = await pool.query(
+      `UPDATE pedido_itens
+       SET produto_id = $1, variante_id = $2, referencia = $3, descricao = $4, cor = $5, tamanho = $6
+       WHERE id = $7 RETURNING *`,
+      [variante.produto_id, variante.id, variante.referencia, variante.descricao, variante.cor || '', variante.tamanho || '', req.params.itemId]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Item de pedido não encontrado.' });
+
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
   }
 });
 
@@ -311,6 +341,18 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
         lucro,
         margemPct,
         custoIncompleto: semCusto,
+        itens: itensDoPedido.map((it) => ({
+          id: it.id,
+          tituloExterno: it.titulo_externo || it.descricao || '',
+          skuExterno: it.sku_externo || (it.produto_id ? null : it.referencia),
+          quantidade: Number(it.quantidade),
+          produtoId: it.produto_id,
+          varianteId: it.variante_id,
+          referencia: it.produto_id ? it.referencia : null,
+          descricao: it.produto_id ? it.descricao : null,
+          cor: it.cor,
+          tamanho: it.tamanho,
+        })),
       };
     });
 
