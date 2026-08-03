@@ -62,6 +62,29 @@ async function chamarApi(path, accessToken) {
   return data;
 }
 
+// A API de Faturamento (billing/integration) tem um limite duro de 5
+// chamadas por minuto — descoberto na prática ("Rate limit exceeded: 5
+// requests per minute"), não documentado às claras. Esse controle é
+// compartilhado entre TODAS as integrações do processo (não por chamada),
+// porque com várias marcas/contas ML conectadas as chamadas de cada uma
+// disputam o mesmo limite.
+const JANELA_MS = 60 * 1000;
+const LIMITE_POR_JANELA = 5;
+const chamadasFaturamento = [];
+
+async function aguardarJanelaFaturamento() {
+  const agora = Date.now();
+  while (chamadasFaturamento.length > 0 && agora - chamadasFaturamento[0] > JANELA_MS) {
+    chamadasFaturamento.shift();
+  }
+  if (chamadasFaturamento.length >= LIMITE_POR_JANELA) {
+    const espera = JANELA_MS - (agora - chamadasFaturamento[0]) + 500;
+    await new Promise((resolve) => setTimeout(resolve, espera));
+    return aguardarJanelaFaturamento();
+  }
+  chamadasFaturamento.push(Date.now());
+}
+
 async function buscarUsuario(accessToken) {
   return chamarApi('/users/me', accessToken);
 }
@@ -167,10 +190,12 @@ async function buscarPedidos({ accessToken, sellerId, desde }) {
 async function buscarDetalhesFaturamento({ accessToken, sellerId, orderIds }) {
   const mapa = new Map();
   let erro = null;
+  let ultimaRespostaCrua = null;
   const TAMANHO_LOTE = 20;
   for (let i = 0; i < orderIds.length; i += TAMANHO_LOTE) {
     const lote = orderIds.slice(i, i + TAMANHO_LOTE);
     const params = new URLSearchParams({ order_ids: lote.join(','), seller_id: String(sellerId) });
+    await aguardarJanelaFaturamento();
     let data;
     try {
       data = await chamarApi(`/billing/integration/group/ML/order/details?${params.toString()}`, accessToken);
@@ -178,6 +203,7 @@ async function buscarDetalhesFaturamento({ accessToken, sellerId, orderIds }) {
       erro = err;
       continue;
     }
+    ultimaRespostaCrua = data;
     for (const resultado of data.results || data.data || []) {
       const orderId = resultado.order_id ?? resultado.origin?.order_id;
       const pagamento = resultado.payment_info || resultado;
@@ -189,7 +215,14 @@ async function buscarDetalhesFaturamento({ accessToken, sellerId, orderIds }) {
       });
     }
   }
-  return { mapa, erro };
+  // Chamada deu certo (sem erro) mas não achou nenhum campo reconhecido —
+  // provavelmente o formato real da resposta é diferente do documentado.
+  // Guarda um recorte cru pra dar pra ajustar o parsing sem precisar de
+  // mais uma rodada de "manda print"/"não sei o que apareceu".
+  const diagnostico = !erro && mapa.size === 0 && ultimaRespostaCrua
+    ? JSON.stringify(ultimaRespostaCrua).slice(0, 800)
+    : null;
+  return { mapa, erro, diagnostico };
 }
 
 // Converte um pedido do Mercado Livre pro formato genérico usado pelo

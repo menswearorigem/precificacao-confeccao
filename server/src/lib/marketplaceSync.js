@@ -174,16 +174,21 @@ async function atualizarValoresRecebidos(integracao) {
     // origem_integracao_id) — nesse caso não tem como saber de qual conta
     // ML eles vieram, então tenta com essa integração; se o pedido for de
     // outra conta, a API simplesmente não devolve nada pra esse order_id.
+    // Limitado a 40 (2 lotes) por ciclo — a API de Faturamento aceita só 5
+    // chamadas/minuto no total (e esse limite é compartilhado entre todas as
+    // integrações do processo), então processar tudo de uma vez deixaria a
+    // sincronização (e o botão "Sincronizar agora") lenta demais. Pedidos
+    // que sobrarem "pending" são reconferidos nos próximos ciclos.
     const { rows: pendentes } = await pool.query(
       `SELECT origem_pedido_id FROM pedidos_venda
        WHERE origem_marketplace = 'mercado_livre' AND (origem_integracao_id = $1 OR origem_integracao_id IS NULL)
          AND (valor_recebido_status IS NULL OR valor_recebido_status != 'released')
-       ORDER BY data_pedido DESC LIMIT 200`,
+       ORDER BY data_pedido DESC LIMIT 40`,
       [integracao.id]
     );
     if (pendentes.length === 0) return;
 
-    const { mapa: detalhes, erro } = await mercadoLivre.buscarDetalhesFaturamento({
+    const { mapa: detalhes, erro, diagnostico } = await mercadoLivre.buscarDetalhesFaturamento({
       accessToken: integracao.access_token,
       sellerId: integracao.conta_externa_id,
       orderIds: pendentes.map((p) => p.origem_pedido_id),
@@ -198,9 +203,10 @@ async function atualizarValoresRecebidos(integracao) {
       );
     }
 
+    const mensagem = erro ? erro.message : (diagnostico ? `Resposta sem valores reconhecidos: ${diagnostico}` : null);
     await pool.query(
       'UPDATE integracoes_marketplace SET ultimo_erro_faturamento = $1 WHERE id = $2',
-      [erro ? erro.message : null, integracao.id]
+      [mensagem, integracao.id]
     );
   } catch (err) {
     console.error(`[marketplace-sync] falha ao buscar valores recebidos (integração ${integracao.id}):`, err.message);
