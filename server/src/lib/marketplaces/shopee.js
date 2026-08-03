@@ -149,6 +149,7 @@ async function buscarDetalheEscrow(orderSn, { partnerId, partnerKey, accessToken
 function mapearPedido(order) {
   const itens = (order.item_list || []).map((it) => ({
     skuExterno: it.model_sku || it.item_sku || null,
+    eanExterno: null,
     tituloExterno: [it.item_name, it.model_name].filter(Boolean).join(' - '),
     quantidade: Number(it.model_quantity_purchased) || 1,
     valorUnitario: Number(it.model_discounted_price ?? it.model_original_price) || 0,

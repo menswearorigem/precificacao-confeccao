@@ -3,7 +3,7 @@ const express = require('express');
 const pool = require('../db/pool');
 const mercadoLivre = require('../lib/marketplaces/mercadoLivre');
 const shopee = require('../lib/marketplaces/shopee');
-const { sincronizarIntegracao } = require('../lib/marketplaceSync');
+const { sincronizarIntegracao, sincronizarSeNecessario } = require('../lib/marketplaceSync');
 
 const router = express.Router();
 
@@ -31,6 +31,7 @@ function paraFora(row) {
 
 router.get('/', async (req, res, next) => {
   try {
+    sincronizarSeNecessario();
     const { rows } = await pool.query('SELECT * FROM integracoes_marketplace ORDER BY id');
     res.json(rows.map(paraFora));
   } catch (err) {

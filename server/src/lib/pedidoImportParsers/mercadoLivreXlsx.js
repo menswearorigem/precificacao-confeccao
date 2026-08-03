@@ -71,6 +71,7 @@ async function parseMercadoLivreXlsx(buffer) {
     const tipoAnuncioTexto = idxTipoAnuncio !== undefined ? textoCelula(row[idxTipoAnuncio]).trim().toLowerCase() : '';
     pedido.itens.push({
       skuExterno: idxSku !== undefined ? textoCelula(row[idxSku]).trim() || null : null,
+      eanExterno: null,
       tituloExterno: idxTitulo !== undefined ? textoCelula(row[idxTitulo]) : '',
       quantidade: numeroCelula(row[idxQtd]) || 1,
       valorUnitario: idxPreco !== undefined ? numeroCelula(row[idxPreco]) : 0,

@@ -58,6 +58,7 @@ async function parseShopeeXlsx(buffer) {
     const pedido = pedidosPorId.get(idExterno);
     pedido.itens.push({
       skuExterno: textoCelula(row[idxSku]).trim() || null,
+      eanExterno: null,
       tituloExterno: idxTitulo !== undefined ? textoCelula(row[idxTitulo]) : '',
       quantidade: numeroCelula(row[idxQtd]) || 1,
       valorUnitario: idxPreco !== undefined ? numeroCelula(row[idxPreco]) : 0,

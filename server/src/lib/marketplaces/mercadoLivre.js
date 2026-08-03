@@ -74,11 +74,20 @@ function mapearTipoAnuncio(listingTypeId) {
   return listingTypeId === 'gold_pro' ? 'premium' : 'classico';
 }
 
+// O seller_sku é texto livre que muita gente nunca preenche — o código de
+// barras de verdade (o mesmo que o vendedor cadastra como "EAN externo" no
+// estoque) vem como um atributo separado do anúncio.
+function extrairGtin(item) {
+  const atributo = (item.attributes || []).find((a) => a.id === 'GTIN');
+  return atributo?.value_name || null;
+}
+
 // Busca pedidos pagos criados a partir de `desde` (ISO). O ML pagina em
 // blocos de até 50; segue puxando até acabar ou bater o limite de segurança.
 // Também enriquece cada item com o tipo de anúncio (clássico/premium), que
-// define qual comissão se aplica — com cache por item pra não repetir a
-// mesma chamada quando o mesmo anúncio aparece em vários pedidos.
+// define qual comissão se aplica, e com o GTIN (código de barras) do anúncio
+// — tudo com cache por item pra não repetir a mesma chamada quando o mesmo
+// anúncio aparece em vários pedidos.
 async function buscarPedidos({ accessToken, sellerId, desde }) {
   const pedidos = [];
   let offset = 0;
@@ -98,22 +107,24 @@ async function buscarPedidos({ accessToken, sellerId, desde }) {
     offset += limit;
   }
 
-  const tipoAnuncioPorItem = new Map();
+  const detalhePorItem = new Map();
   for (const order of pedidos) {
     for (const oi of order.order_items || []) {
       const itemId = oi.item?.id;
-      if (!itemId || tipoAnuncioPorItem.has(itemId)) continue;
+      if (!itemId || detalhePorItem.has(itemId)) continue;
       try {
         const item = await chamarApi(`/items/${itemId}`, accessToken);
-        tipoAnuncioPorItem.set(itemId, mapearTipoAnuncio(item.listing_type_id));
+        detalhePorItem.set(itemId, { tipoAnuncio: mapearTipoAnuncio(item.listing_type_id), ean: extrairGtin(item) });
       } catch {
-        tipoAnuncioPorItem.set(itemId, 'classico');
+        detalhePorItem.set(itemId, { tipoAnuncio: 'classico', ean: null });
       }
     }
   }
   for (const order of pedidos) {
     for (const oi of order.order_items || []) {
-      oi.tipoAnuncio = tipoAnuncioPorItem.get(oi.item?.id) || 'classico';
+      const detalhe = detalhePorItem.get(oi.item?.id);
+      oi.tipoAnuncio = detalhe?.tipoAnuncio || 'classico';
+      oi.eanExterno = detalhe?.ean || null;
     }
   }
 
@@ -125,6 +136,7 @@ async function buscarPedidos({ accessToken, sellerId, desde }) {
 function mapearPedido(order) {
   const itens = (order.order_items || []).map((oi) => ({
     skuExterno: oi.item?.seller_sku || oi.item?.seller_custom_field || null,
+    eanExterno: oi.eanExterno || null,
     tituloExterno: oi.item?.title || '',
     quantidade: Number(oi.quantity) || 1,
     valorUnitario: Number(oi.unit_price) || 0,

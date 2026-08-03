@@ -73,8 +73,21 @@ async function encontrarOuCriarCliente(client, pedidoGenerico) {
   return rows[0].id;
 }
 
-async function encontrarVariante(client, skuExterno) {
+// O EAN externo (código de barras real do anúncio, o mesmo que o vendedor já
+// vincula em Estoque > EAN externo) é a fonte confiável de casamento — o
+// seller_sku é texto livre que muita gente nunca preenche corretamente, então
+// só entra como segunda tentativa (e ainda assim primeiro contra o próprio
+// EAN, pra quem usa o campo de SKU pra guardar o código de barras).
+async function encontrarVariante(client, { eanExterno, skuExterno }) {
+  if (eanExterno) {
+    const r = await client.query(
+      `SELECT v.*, p.referencia, p.descricao FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id WHERE v.ean = $1`,
+      [eanExterno]
+    );
+    if (r.rows.length > 0) return r.rows[0];
+  }
   if (!skuExterno) return null;
+
   let r = await client.query(
     `SELECT v.*, p.referencia, p.descricao FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id WHERE v.ean = $1`,
     [skuExterno]
@@ -117,7 +130,7 @@ async function importarPedido(client, pedidoGenerico, integracaoId) {
 
   let ordem = 1;
   for (const item of pedidoGenerico.itens) {
-    const variante = await encontrarVariante(client, item.skuExterno);
+    const variante = await encontrarVariante(client, { eanExterno: item.eanExterno, skuExterno: item.skuExterno });
     const total = item.quantidade * item.valorUnitario;
     await client.query(
       `INSERT INTO pedido_itens
@@ -211,4 +224,22 @@ async function sincronizarTodasAtivas() {
   }
 }
 
-module.exports = { sincronizarIntegracao, sincronizarTodasAtivas, importarPedido };
+// No plano gratuito do Render o serviço "dorme" após um tempo sem tráfego, e
+// o setInterval de 15min (index.js) só roda enquanto o processo está
+// acordado — ou seja, pode passar horas sem sincronizar sozinho. Como
+// paliativo, as telas de Marketplace disparam essa checagem oportunista a
+// cada carregamento; o cooldown evita chamar a API dos marketplaces a cada
+// requisição enquanto o usuário navega.
+const COOLDOWN_MS = 5 * 60 * 1000;
+let ultimaChamadaOportunista = 0;
+
+function sincronizarSeNecessario() {
+  const agora = Date.now();
+  if (agora - ultimaChamadaOportunista < COOLDOWN_MS) return;
+  ultimaChamadaOportunista = agora;
+  sincronizarTodasAtivas().catch((err) => {
+    console.error('[marketplace-sync] falha na sincronização oportunista:', err.message);
+  });
+}
+
+module.exports = { sincronizarIntegracao, sincronizarTodasAtivas, sincronizarSeNecessario, importarPedido };

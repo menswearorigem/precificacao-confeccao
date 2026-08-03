@@ -5,7 +5,7 @@ const { registrarMovimento } = require('../lib/estoqueMovimento');
 const { getCalcContext } = require('../lib/calcContext');
 const { calcularTaxaEsperadaPedido } = require('../lib/marketplaceTaxaCalc');
 const { parseArquivoPedidos } = require('../lib/pedidoImportParsers');
-const { importarPedido } = require('../lib/marketplaceSync');
+const { importarPedido, sincronizarSeNecessario } = require('../lib/marketplaceSync');
 const { recalcularTotais } = require('../lib/pedidoRecalculo');
 const produtosRoutes = require('./produtos.routes');
 
@@ -125,20 +125,28 @@ router.post('/importar-marketplace/preview', upload.single('file'), async (req, 
     );
     const jaImportados = new Set(existentes.map((e) => `${e.origem_marketplace}::${e.origem_pedido_id}`));
 
-    const skusUnicos = [...new Set(pedidosGenericos.flatMap((p) => p.itens.map((it) => it.skuExterno)).filter(Boolean))];
-    const { rows: variantesEncontradas } = skusUnicos.length > 0
+    const codigosUnicos = [...new Set(
+      pedidosGenericos.flatMap((p) => p.itens.flatMap((it) => [it.eanExterno, it.skuExterno])).filter(Boolean)
+    )];
+    const { rows: variantesEncontradas } = codigosUnicos.length > 0
       ? await pool.query(
           `SELECT v.ean, p.referencia FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id
            WHERE v.ean = ANY($1) OR p.referencia = ANY($1)`,
-          [skusUnicos]
+          [codigosUnicos]
         )
       : { rows: [] };
-    const skusComMatch = new Set([...variantesEncontradas.map((v) => v.ean), ...variantesEncontradas.map((v) => v.referencia)]);
+    const codigosComMatch = new Set([...variantesEncontradas.map((v) => v.ean), ...variantesEncontradas.map((v) => v.referencia)]);
 
     const preview = pedidosGenericos.map((p) => ({
       ...p,
       jaImportado: jaImportados.has(`${p.marketplace}::${p.idExterno}`),
-      itens: p.itens.map((it) => ({ ...it, semCorrespondencia: !it.skuExterno || !skusComMatch.has(it.skuExterno) })),
+      itens: p.itens.map((it) => ({
+        ...it,
+        semCorrespondencia: !(
+          (it.eanExterno && codigosComMatch.has(it.eanExterno)) ||
+          (it.skuExterno && codigosComMatch.has(it.skuExterno))
+        ),
+      })),
     }));
 
     res.json({
@@ -198,6 +206,7 @@ async function mapaCustoPorProduto(produtoIds, ctx) {
 router.get('/relatorio-lucratividade', async (req, res, next) => {
   try {
     const { data_inicio, data_fim, canal_venda, origem } = req.query;
+    if (origem === 'marketplace') sincronizarSeNecessario();
     const conditions = ["pv.situacao != 'cancelado'"];
     const values = [];
     let i = 1;
@@ -351,6 +360,7 @@ router.get('/relatorio-taxas', async (req, res, next) => {
 router.get('/', async (req, res, next) => {
   try {
     const { busca, situacao, origem } = req.query;
+    if (origem === 'marketplace') sincronizarSeNecessario();
     const conditions = [];
     const values = [];
     let i = 1;
