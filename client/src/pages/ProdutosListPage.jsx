@@ -4,6 +4,7 @@ import { Plus, ChevronRight, Search } from 'lucide-react';
 import { api } from '../api/client';
 import { statusToneClass } from '../lib/statusTone';
 import { brl, pct } from '../lib/format';
+import FotoProduto from '../components/FotoProduto';
 
 export default function ProdutosListPage() {
   const navigate = useNavigate();
@@ -74,6 +75,7 @@ export default function ProdutosListPage() {
         <table className="data-table">
           <thead>
             <tr>
+              <th />
               <th>Referência</th>
               <th>Descrição</th>
               <th>Marca</th>
@@ -87,6 +89,9 @@ export default function ProdutosListPage() {
           <tbody>
             {produtos.map((p) => (
               <tr key={p.id} className="clickable-row" onClick={() => navigate(`/produtos/${p.id}`)}>
+                <td onClick={(e) => e.stopPropagation()}>
+                  <FotoProduto produtoId={p.id} temFoto={p.temFoto} size={36} alt={p.descricao} />
+                </td>
                 <td className="mono">{p.referencia}</td>
                 <td>{p.descricao}</td>
                 <td>{p.marca}</td>

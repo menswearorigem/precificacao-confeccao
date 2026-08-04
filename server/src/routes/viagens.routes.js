@@ -129,6 +129,20 @@ router.delete('/:id', async (req, res, next) => {
   }
 });
 
+// Serve a foto do produto sem depender do módulo "produto" — quem só tem
+// acesso a Viagens também precisa ver a foto pra reconhecer a peça.
+router.get('/produtos/:produtoId/foto', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT dados, mime_type FROM produto_fotos WHERE produto_id = $1', [req.params.produtoId]);
+    if (rows.length === 0) return res.status(404).end();
+    res.set('Content-Type', rows[0].mime_type);
+    res.set('Cache-Control', 'private, max-age=86400');
+    res.send(rows[0].dados);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ---------- catálogo de produtos da viagem ----------
 
 router.get('/:id/buscar-produtos', async (req, res, next) => {
@@ -205,6 +219,9 @@ router.get('/:id/produtos', async (req, res, next) => {
     );
     const vendidoPorVariante = new Map(vendidoRows.map((r) => [r.variante_id, Number(r.quantidade)]));
 
+    const { rows: fotoRows } = await pool.query('SELECT produto_id FROM produto_fotos WHERE produto_id = ANY($1)', [produtoIds]);
+    const idsComFoto = new Set(fotoRows.map((f) => f.produto_id));
+
     const ctx = await getCalcContext();
     const limiteBaixo = Number(ctx.config.viagem_estoque_baixo_qtd) || 5;
 
@@ -246,6 +263,7 @@ router.get('/:id/produtos', async (req, res, next) => {
         descontoMaximoPct: info.descontoMaximoPct,
         descontoIdealPct: info.descontoIdealPct,
         statusGeral,
+        temFoto: idsComFoto.has(c.produto_id),
         variantes: variantesDoProduto,
       });
     }

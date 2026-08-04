@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { Field } from '../components/ui';
+import FotoProduto from '../components/FotoProduto';
 import { brl, pct } from '../lib/format';
 
 const SITUACAO_LABEL = { planejamento: 'Planejamento', em_andamento: 'Em andamento', finalizada: 'Finalizada' };
@@ -330,11 +331,14 @@ function ProdutoCard({ produto, limiteEstoqueBaixo, emCarrinhoPorVariante, podeV
   return (
     <div className={'viagem-produto-card status-' + statusGeral}>
       <div className="viagem-produto-topo">
-        <div>
-          <div className="viagem-produto-ref mono">{produto.referencia}</div>
-          <div className="viagem-produto-desc">{produto.descricao}</div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', minWidth: 0 }}>
+          <FotoProduto produtoId={produto.produtoId} temFoto={produto.temFoto} urlBase="/viagens/produtos" size={44} alt={produto.descricao} />
+          <div style={{ minWidth: 0 }}>
+            <div className="viagem-produto-ref mono">{produto.referencia}</div>
+            <div className="viagem-produto-desc">{produto.descricao}</div>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 4 }}>
+        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
           <button className="icon-btn" title="Dar entrada de estoque" onClick={() => setEntradaAberta((v) => !v)}>
             <PackagePlus size={15} />
           </button>

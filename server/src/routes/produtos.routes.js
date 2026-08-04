@@ -1,4 +1,5 @@
 const express = require('express');
+const multer = require('multer');
 const pool = require('../db/pool');
 const { calcularProduto, pctImpostosEmpresa } = require('../lib/calc');
 const { getCalcContext, getEmpresa } = require('../lib/calcContext');
@@ -116,6 +117,8 @@ router.get('/', async (req, res, next) => {
     );
 
     const ctx = await getCalcContext();
+    const { rows: fotoRows } = await pool.query('SELECT produto_id FROM produto_fotos WHERE produto_id = ANY($1)', [ids]);
+    const idsComFoto = new Set(fotoRows.map((f) => f.produto_id));
 
     const result = produtos.map((p) => {
       const materiais = materiaisRows.filter((m) => m.produto_id === p.id);
@@ -135,6 +138,7 @@ router.get('/', async (req, res, next) => {
         precoAtivo: calculo.formacaoPreco.precoAtivo,
         lucroPct: calculo.formacaoPreco.lucroPct,
         status: calculo.formacaoPreco.status,
+        temFoto: idsComFoto.has(p.id),
       };
     });
 
@@ -154,7 +158,55 @@ router.get('/:id', async (req, res, next) => {
     const custosIndustriais = await fetchCustosIndustriais(pool, req.params.id);
     const ctx = await getCalcContext();
     const calculo = buildCalculo(produtoRow, materiais, custosIndustriais, ctx);
+    const { rows: fotoRows } = await pool.query('SELECT 1 FROM produto_fotos WHERE produto_id = $1', [req.params.id]);
+    produtoRow.temFoto = fotoRows.length > 0;
     res.json({ produto: produtoRow, materiais, custosIndustriais, calculo });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------- foto (opcional, uma por produto) ----------
+
+router.get('/:id/foto', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT dados, mime_type, updated_at FROM produto_fotos WHERE produto_id = $1', [req.params.id]);
+    if (rows.length === 0) return res.status(404).end();
+    res.set('Content-Type', rows[0].mime_type);
+    res.set('Cache-Control', 'private, max-age=86400');
+    res.send(rows[0].dados);
+  } catch (err) {
+    next(err);
+  }
+});
+
+const uploadFoto = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, /^image\/(jpeg|png|webp)$/.test(file.mimetype)),
+});
+
+router.post('/:id/foto', uploadFoto.single('foto'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Envie uma imagem JPEG, PNG ou WEBP de até 5MB.' });
+    const { rows: produtoRows } = await pool.query('SELECT id FROM produtos WHERE id = $1', [req.params.id]);
+    if (produtoRows.length === 0) return res.status(404).json({ error: 'Produto não encontrado.' });
+    await pool.query(
+      `INSERT INTO produto_fotos (produto_id, dados, mime_type, tamanho, updated_at)
+       VALUES ($1, $2, $3, $4, now())
+       ON CONFLICT (produto_id) DO UPDATE SET dados = $2, mime_type = $3, tamanho = $4, updated_at = now()`,
+      [req.params.id, req.file.buffer, req.file.mimetype, req.file.size]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/:id/foto', async (req, res, next) => {
+  try {
+    await pool.query('DELETE FROM produto_fotos WHERE produto_id = $1', [req.params.id]);
+    res.status(204).end();
   } catch (err) {
     next(err);
   }

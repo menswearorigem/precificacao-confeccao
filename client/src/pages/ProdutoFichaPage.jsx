@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Plus, Trash2, Layers, Factory, Wallet, TrendingUp, AlertTriangle,
-  Save, XCircle, CheckCircle2, Package, ArrowLeft,
+  Save, XCircle, CheckCircle2, Package, ArrowLeft, ImagePlus,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { Field, NumInput, Row } from '../components/ui';
 import { statusToneClass } from '../lib/statusTone';
 import { brl, pct, uid } from '../lib/format';
+import Lightbox from '../components/Lightbox';
 
 const UNIDADES_FALLBACK = ['un', 'm', 'cm', 'kg', 'g', 'par', 'cj', 'rolo', 'pct'];
 
@@ -50,6 +51,11 @@ export default function ProdutoFichaPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const calcTimer = useRef(null);
+  const fotoInputRef = useRef(null);
+  const [enviandoFoto, setEnviandoFoto] = useState(false);
+  const [fotoVersion, setFotoVersion] = useState(0);
+  const [fotoAmpliada, setFotoAmpliada] = useState(false);
+  const fotoUrl = `/api/produtos/${id}/foto?v=${fotoVersion}`;
 
   useEffect(() => {
     Promise.all([api.get('/listas'), api.get('/empresas')]).then(([l, e]) => {
@@ -172,6 +178,31 @@ export default function ProdutoFichaPage() {
     navigate('/produtos');
   }
 
+  async function handleFotoSelecionada(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setEnviandoFoto(true);
+    setError('');
+    try {
+      const formData = new FormData();
+      formData.append('foto', file);
+      await api.upload(`/produtos/${id}/foto`, formData);
+      setProduto((p) => ({ ...p, temFoto: true }));
+      setFotoVersion((v) => v + 1);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setEnviandoFoto(false);
+      if (fotoInputRef.current) fotoInputRef.current.value = '';
+    }
+  }
+
+  async function handleRemoverFoto() {
+    if (!confirm('Remover a foto desse produto?')) return;
+    await api.del(`/produtos/${id}/foto`);
+    setProduto((p) => ({ ...p, temFoto: false }));
+  }
+
   const totalMateriais = useMemo(
     () => materiais.reduce((s, m) => s + (Number(m.quantidade) || 0) * (Number(m.valor_unitario) || 0), 0),
     [materiais]
@@ -195,6 +226,38 @@ export default function ProdutoFichaPage() {
 
       <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+          <div className="produto-foto-painel">
+            {produto.temFoto ? (
+              <img src={fotoUrl} alt={produto.descricao} className="foto-produto-thumb" style={{ width: 108, height: 108 }} onClick={() => setFotoAmpliada(true)} />
+            ) : (
+              <button
+                type="button"
+                className="foto-produto-upload-btn"
+                style={{ width: 108, height: 108 }}
+                disabled={isNew}
+                title={isNew ? 'Salve o produto primeiro pra adicionar uma foto' : 'Adicionar foto'}
+                onClick={() => fotoInputRef.current?.click()}
+              >
+                <ImagePlus size={22} />
+                <span>{enviandoFoto ? 'Enviando…' : 'Adicionar foto'}</span>
+              </button>
+            )}
+            {!isNew && (
+              <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                <button type="button" className="btn btn-ghost sm" onClick={() => fotoInputRef.current?.click()} disabled={enviandoFoto}>
+                  {produto.temFoto ? 'Trocar' : 'Enviar'}
+                </button>
+                {produto.temFoto && (
+                  <button type="button" className="icon-btn" title="Remover foto" onClick={handleRemoverFoto}><Trash2 size={13} /></button>
+                )}
+              </div>
+            )}
+            <input
+              ref={fotoInputRef} type="file" accept="image/jpeg,image/png,image/webp"
+              style={{ display: 'none' }} onChange={handleFotoSelecionada}
+            />
+            {fotoAmpliada && <Lightbox src={fotoUrl} alt={produto.descricao} onClose={() => setFotoAmpliada(false)} />}
+          </div>
           <div className="form-grid" style={{ flex: 1, gridTemplateColumns: 'repeat(3, 1fr)' }}>
             <Field label="Código do Produto">
               <input value={produto.codigo || ''} onChange={(e) => updateProduto({ codigo: e.target.value })} placeholder="MM6387" />
