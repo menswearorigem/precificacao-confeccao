@@ -43,17 +43,30 @@ async function login(email, senha) {
   };
 }
 
-async function chamarApi(path, token, params = {}) {
+async function chamarApiComBase(base, path, token, params) {
   await aguardarJanela();
   const query = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null && v !== '') query.set(k, v);
   }
-  const url = `${API_BASE}/wiki_v2/${path}${query.toString() ? `?${query.toString()}` : ''}`;
+  const url = `${API_BASE}/${base}/${path}${query.toString() ? `?${query.toString()}` : ''}`;
   const res = await fetch(url, {
     headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
   });
   const data = await res.json().catch(() => ({}));
+  return { res, data };
+}
+
+// A documentação do Wik é inconsistente sobre o prefixo da URL — a maioria
+// das rotas usa "wiki_v2", mas pelo menos "saldo_estoque_get" tem exemplos
+// de curl com "apiwiki" nesse mesmo endpoint. Tenta "wiki_v2" primeiro (é o
+// que a maioria confirma) e só cai pro prefixo alternativo se vier 404, pra
+// não depender de adivinhar certo qual documentação está desatualizada.
+async function chamarApi(path, token, params = {}) {
+  let { res, data } = await chamarApiComBase('wiki_v2', path, token, params);
+  if (res.status === 404) {
+    ({ res, data } = await chamarApiComBase('apiwiki', path, token, params));
+  }
   if (!res.ok || data.success === false) {
     throw new Error(data.message || `Erro na API do Wik (${res.status}): ${path}`);
   }
