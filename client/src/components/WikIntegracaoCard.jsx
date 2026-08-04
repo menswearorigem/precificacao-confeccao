@@ -31,6 +31,10 @@ export default function WikIntegracaoCard() {
       setEmail(wikData?.email || '');
       setMarcas(marcasData);
       setLoading(false);
+      if (wikData?.previewStatus === 'rodando') {
+        setPreviewLoading(true);
+        esperarPreview();
+      }
     });
   }
 
@@ -73,19 +77,42 @@ export default function WikIntegracaoCard() {
     setMarcas((lista) => lista.map((m) => (m.id === marca.id ? atualizado : m)));
   }
 
+  // Puxar o saldo inteiro do Wik pode levar minutos (o Wik só deixa 3
+  // requisições/segundo) — tempo demais pra uma única chamada aguardar.
+  // O botão só dispara o job em segundo plano e essa função fica
+  // perguntando o status de tempos em tempos até ele terminar.
   async function previsualizarEstoque() {
     setErro('');
     setAviso('');
     setResultadoSync(null);
+    setPreview(null);
     setPreviewLoading(true);
     try {
-      const data = await api.post('/wik/estoque/preview', {});
-      setPreview(data);
+      await api.post('/wik/estoque/preview', {});
+      await esperarPreview();
     } catch (err) {
       setErro(err.message);
-    } finally {
       setPreviewLoading(false);
     }
+  }
+
+  async function esperarPreview() {
+    for (let tentativa = 0; tentativa < 200; tentativa += 1) {
+      const status = await api.get('/wik/estoque/preview');
+      if (status.status === 'concluido') {
+        setPreview(status.resultado);
+        setPreviewLoading(false);
+        return;
+      }
+      if (status.status === 'erro') {
+        setErro(status.erro || 'Falha ao buscar o estoque no Wik.');
+        setPreviewLoading(false);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+    setErro('A busca no Wik está demorando demais — tente de novo em alguns minutos.');
+    setPreviewLoading(false);
   }
 
   async function confirmarSincronizacao() {
@@ -170,10 +197,15 @@ export default function WikIntegracaoCard() {
         </tbody>
       </table>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
         <button className="btn btn-primary" onClick={previsualizarEstoque} disabled={previewLoading || !integracao}>
           <RefreshCw size={13} /> {previewLoading ? 'Buscando no Wik…' : 'Pré-visualizar sincronização de estoque'}
         </button>
+        {previewLoading && (
+          <span className="page-sub" style={{ margin: 0 }}>
+            O Wik só libera 3 requisições por segundo — com estoque grande isso pode levar alguns minutos.
+          </span>
+        )}
       </div>
 
       {resultadoSync && (

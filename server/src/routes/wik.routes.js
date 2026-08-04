@@ -30,6 +30,7 @@ function paraFora(row) {
     ativo: row.ativo,
     ultimaSincronizacao: row.ultima_sincronizacao,
     ultimoErro: row.ultimo_erro,
+    previewStatus: row.preview_status,
   };
 }
 
@@ -127,72 +128,113 @@ async function empIdsConfigurados() {
   return porEmpId;
 }
 
-// Pré-visualização da sincronização de estoque: puxa o saldo de todas as
-// empresas (marcas) configuradas e cruza com o que já existe localmente —
-// mesma lógica/formato da importação manual de CSV/PDF (estoque.routes.js),
-// só que a fonte é a API em vez de um arquivo. Nada é gravado aqui.
+// Puxa o saldo de todas as empresas (marcas) configuradas e cruza com o que
+// já existe localmente — mesma lógica/formato da importação manual de
+// CSV/PDF (estoque.routes.js), só que a fonte é a API em vez de um arquivo.
+async function montarPreviewEstoque(integracao, porEmpId) {
+  const token = await obterTokenValido(integracao);
+
+  const linhasBrutas = [];
+  for (const empId of porEmpId.keys()) {
+    const linhas = await wik.listarSaldoEstoque(token, empId);
+    linhasBrutas.push(...linhas);
+  }
+
+  const { rows: produtosRows } = await pool.query('SELECT id, referencia FROM produtos');
+  const produtoIdPorReferencia = new Map(produtosRows.map((p) => [p.referencia, p.id]));
+
+  const { rows: variantesRows } = await pool.query(
+    `SELECT v.*, p.referencia FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id`
+  );
+  const varianteExistente = new Map(variantesRows.map((v) => [chaveVariante(v.referencia, v.cor, v.tamanho), v]));
+
+  const porChave = new Map();
+  const erros = [];
+  for (const linha of linhasBrutas) {
+    const referencia = linha.prod_referencia;
+    const cor = limparDescricaoWik(linha.cor);
+    const tamanho = linha.estct_tamanho || '';
+    const quantidade = Number(linha.estct_saldo) || 0;
+    if (!produtoIdPorReferencia.has(referencia)) {
+      erros.push({ motivo: `Referência "${referencia}" não está cadastrada em Produtos — cadastre-a antes de sincronizar.`, dados: { referencia, cor, tamanho } });
+      continue;
+    }
+    porChave.set(chaveVariante(referencia, cor, tamanho), { referencia, descricao: linha.prod_descricao, cor, tamanho, quantidade });
+  }
+
+  const criar = [];
+  const atualizar = [];
+  for (const [chave, linha] of porChave.entries()) {
+    const existente = varianteExistente.get(chave);
+    if (existente) {
+      if (Number(existente.quantidade) === linha.quantidade) continue; // sem mudança, não precisa listar
+      atualizar.push({
+        referencia: linha.referencia, descricao: linha.descricao, cor: linha.cor, tamanho: linha.tamanho,
+        quantidadeAtual: Number(existente.quantidade), quantidadeNova: linha.quantidade, varianteId: existente.id,
+      });
+    } else {
+      criar.push({ referencia: linha.referencia, descricao: linha.descricao, cor: linha.cor, tamanho: linha.tamanho, quantidadeNova: linha.quantidade });
+    }
+  }
+
+  return {
+    criar, atualizar, erros,
+    resumo: { totalLinhasWik: linhasBrutas.length, variantesCriar: criar.length, variantesAtualizar: atualizar.length, totalErros: erros.length },
+  };
+}
+
+// Com o limite de 3 req/s do Wik, puxar o saldo inteiro de duas empresas
+// pode passar de um minuto — tempo demais pra uma única requisição HTTP
+// (o proxy do Render derruba antes). Por isso o botão só dispara o job
+// (roda em segundo plano, sem o `await`) e devolve na hora; o front consulta
+// o progresso via GET até o status virar "concluido" ou "erro".
 router.post('/estoque/preview', async (req, res, next) => {
   try {
     const integracao = await buscarIntegracao();
     if (!integracao) return res.status(400).json({ error: 'Cadastre a credencial do Wik primeiro.' });
+
+    const jobTravado = integracao.preview_status === 'rodando'
+      && integracao.preview_iniciado_em
+      && Date.now() - new Date(integracao.preview_iniciado_em).getTime() < 10 * 60 * 1000;
+    if (jobTravado) return res.json({ status: 'rodando' });
+
     const porEmpId = await empIdsConfigurados();
     if (porEmpId.size === 0) {
       return res.status(400).json({ error: 'Nenhuma marca tem Id de Empresa do Wik configurado (em Listas > Marcas).' });
     }
 
-    const token = await obterTokenValido(integracao);
-
-    const linhasBrutas = [];
-    for (const empId of porEmpId.keys()) {
-      const linhas = await wik.listarSaldoEstoque(token, empId);
-      linhasBrutas.push(...linhas);
-    }
-
-    const { rows: produtosRows } = await pool.query('SELECT id, referencia FROM produtos');
-    const produtoIdPorReferencia = new Map(produtosRows.map((p) => [p.referencia, p.id]));
-
-    const { rows: variantesRows } = await pool.query(
-      `SELECT v.*, p.referencia FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id`
+    await pool.query(
+      `UPDATE integracoes_wik SET preview_status = 'rodando', preview_resultado = NULL, preview_erro = NULL,
+                                   preview_iniciado_em = now(), atualizado_em = now() WHERE id = $1`,
+      [integracao.id]
     );
-    const varianteExistente = new Map(variantesRows.map((v) => [chaveVariante(v.referencia, v.cor, v.tamanho), v]));
+    res.json({ status: 'rodando' });
 
-    const porChave = new Map();
-    const erros = [];
-    for (const linha of linhasBrutas) {
-      const referencia = linha.prod_referencia;
-      const cor = limparDescricaoWik(linha.cor);
-      const tamanho = linha.estct_tamanho || '';
-      const quantidade = Number(linha.estct_saldo) || 0;
-      if (!produtoIdPorReferencia.has(referencia)) {
-        erros.push({ motivo: `Referência "${referencia}" não está cadastrada em Produtos — cadastre-a antes de sincronizar.`, dados: { referencia, cor, tamanho } });
-        continue;
-      }
-      porChave.set(chaveVariante(referencia, cor, tamanho), { referencia, descricao: linha.prod_descricao, cor, tamanho, quantidade });
-    }
+    montarPreviewEstoque(integracao, porEmpId)
+      .then((resultado) => pool.query(
+        `UPDATE integracoes_wik SET preview_status = 'concluido', preview_resultado = $1, ultimo_erro = NULL, atualizado_em = now() WHERE id = $2`,
+        [JSON.stringify(resultado), integracao.id]
+      ))
+      .catch((err) => pool.query(
+        `UPDATE integracoes_wik SET preview_status = 'erro', preview_erro = $1, ultimo_erro = $1, atualizado_em = now() WHERE id = $2`,
+        [err.message, integracao.id]
+      ));
+  } catch (err) {
+    next(err);
+  }
+});
 
-    const criar = [];
-    const atualizar = [];
-    for (const [chave, linha] of porChave.entries()) {
-      const existente = varianteExistente.get(chave);
-      if (existente) {
-        if (Number(existente.quantidade) === linha.quantidade) continue; // sem mudança, não precisa listar
-        atualizar.push({
-          referencia: linha.referencia, descricao: linha.descricao, cor: linha.cor, tamanho: linha.tamanho,
-          quantidadeAtual: Number(existente.quantidade), quantidadeNova: linha.quantidade, varianteId: existente.id,
-        });
-      } else {
-        criar.push({ referencia: linha.referencia, descricao: linha.descricao, cor: linha.cor, tamanho: linha.tamanho, quantidadeNova: linha.quantidade });
-      }
-    }
-
+router.get('/estoque/preview', async (req, res, next) => {
+  try {
+    const integracao = await buscarIntegracao();
+    if (!integracao) return res.status(400).json({ error: 'Cadastre a credencial do Wik primeiro.' });
     res.json({
-      criar, atualizar, erros,
-      resumo: { totalLinhasWik: linhasBrutas.length, variantesCriar: criar.length, variantesAtualizar: atualizar.length, totalErros: erros.length },
+      status: integracao.preview_status,
+      resultado: integracao.preview_resultado,
+      erro: integracao.preview_erro,
     });
   } catch (err) {
-    const integracao = await buscarIntegracao();
-    if (integracao) await pool.query('UPDATE integracoes_wik SET ultimo_erro = $1, atualizado_em = now() WHERE id = $2', [err.message, integracao.id]);
-    res.status(422).json({ error: err.message });
+    next(err);
   }
 });
 
@@ -246,7 +288,11 @@ router.post('/estoque/confirmar', async (req, res, next) => {
 
     const integracao = await buscarIntegracao();
     if (integracao) {
-      await pool.query('UPDATE integracoes_wik SET ultima_sincronizacao = now(), ultimo_erro = NULL WHERE id = $1', [integracao.id]);
+      await pool.query(
+        `UPDATE integracoes_wik SET ultima_sincronizacao = now(), ultimo_erro = NULL,
+                                     preview_status = 'idle', preview_resultado = NULL WHERE id = $1`,
+        [integracao.id]
+      );
     }
 
     res.json({ criados, atualizados });
