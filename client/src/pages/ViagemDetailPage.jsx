@@ -42,6 +42,7 @@ export default function ViagemDetailPage() {
 
   const [buscaProduto, setBuscaProduto] = useState('');
   const [resultadosProduto, setResultadosProduto] = useState([]);
+  const [filtroCatalogo, setFiltroCatalogo] = useState('');
 
   const [carrinho, setCarrinho] = useState([]); // [{varianteId, referencia, descricao, cor, tamanho, precoIdeal, precoMinimo, quantidade, valorUnitario, descontoPct}]
   const [checkoutAberto, setCheckoutAberto] = useState(false);
@@ -144,6 +145,17 @@ export default function ViagemDetailPage() {
     [carrinho]
   );
   const totalItensCarrinho = useMemo(() => carrinho.reduce((s, it) => s + it.quantidade, 0), [carrinho]);
+
+  const produtosFiltrados = useMemo(() => {
+    const termo = filtroCatalogo.trim().toLowerCase();
+    if (!termo) return produtos;
+    return produtos.filter((p) => (
+      p.referencia?.toLowerCase().includes(termo)
+      || p.descricao?.toLowerCase().includes(termo)
+      || p.categoria?.toLowerCase().includes(termo)
+      || p.marca?.toLowerCase().includes(termo)
+    ));
+  }, [produtos, filtroCatalogo]);
 
   async function confirmarVenda({ clienteId, clienteNomeAvulso, formaPagamento }) {
     await api.post(`/viagens/${id}/vender`, {
@@ -254,20 +266,39 @@ export default function ViagemDetailPage() {
             mostra o estoque disponível, o preço certo e até quanto de desconto dá pra dar em cada peça.</p>
         </div>
       ) : (
-        <div className="viagem-produtos-grid">
-          {produtos.map((produto) => (
-            <ProdutoCard
-              key={produto.produtoId}
-              produto={produto}
-              limiteEstoqueBaixo={limiteEstoqueBaixo}
-              emCarrinhoPorVariante={emCarrinhoPorVariante}
-              podeVender={podeVender}
-              onAdicionarAoCarrinho={(variante) => adicionarAoCarrinho(produto, variante)}
-              onRemover={() => removerProduto(produto.produtoId)}
-              onDarEntrada={darEntradaEstoque}
+        <>
+          <div style={{ position: 'relative', maxWidth: 420, marginBottom: 14 }}>
+            <Search size={15} style={{ position: 'absolute', left: 12, top: 11, color: 'var(--ink-faint)' }} />
+            <input
+              style={{ paddingLeft: 34 }}
+              placeholder="Procurar na lista dessa viagem..."
+              value={filtroCatalogo}
+              onChange={(e) => setFiltroCatalogo(e.target.value)}
             />
-          ))}
-        </div>
+          </div>
+
+          {produtosFiltrados.length === 0 ? (
+            <div className="card viagem-vazio">
+              <Package2 size={30} />
+              <p>Nenhum produto da viagem bate com "{filtroCatalogo}".</p>
+            </div>
+          ) : (
+            <div className="viagem-produtos-grid">
+              {produtosFiltrados.map((produto) => (
+                <ProdutoCard
+                  key={produto.produtoId}
+                  produto={produto}
+                  limiteEstoqueBaixo={limiteEstoqueBaixo}
+                  emCarrinhoPorVariante={emCarrinhoPorVariante}
+                  podeVender={podeVender}
+                  onAdicionarAoCarrinho={(variante) => adicionarAoCarrinho(produto, variante)}
+                  onRemover={() => removerProduto(produto.produtoId)}
+                  onDarEntrada={darEntradaEstoque}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {carrinho.length > 0 && (
