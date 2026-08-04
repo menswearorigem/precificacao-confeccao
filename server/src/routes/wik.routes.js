@@ -6,6 +6,21 @@ const { registrarMovimento } = require('../lib/estoqueMovimento');
 
 const router = express.Router();
 
+// Vários campos "descritivos" do saldo_estoque_get vêm como "id-DESCRIÇÃO"
+// (ex.: cor: "10-DIVERSAS", grupo: "1 - CALÇA") — aqui só a descrição, sem
+// o id, é o que bate com o que a gente já guarda em estoque_variantes.cor.
+function limparDescricaoWik(valor) {
+  return String(valor || '').replace(/^\s*\d+\s*-\s*/, '').trim();
+}
+
+// Chave de comparação ignorando maiúsculas/minúsculas — o Wik manda cor e
+// tamanho em CAIXA ALTA, mas o cadastro local pode estar em outra
+// capitalização (ex.: "Azul" vs "AZUL"), o que faria a variante não bater
+// e criar uma duplicata em vez de atualizar a existente.
+function chaveVariante(referencia, cor, tamanho) {
+  return `${referencia}::${String(cor || '').toUpperCase()}::${String(tamanho || '').toUpperCase()}`;
+}
+
 function paraFora(row) {
   if (!row) return null;
   return {
@@ -139,20 +154,20 @@ router.post('/estoque/preview', async (req, res, next) => {
     const { rows: variantesRows } = await pool.query(
       `SELECT v.*, p.referencia FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id`
     );
-    const varianteExistente = new Map(variantesRows.map((v) => [`${v.referencia}::${v.cor}::${v.tamanho}`, v]));
+    const varianteExistente = new Map(variantesRows.map((v) => [chaveVariante(v.referencia, v.cor, v.tamanho), v]));
 
     const porChave = new Map();
     const erros = [];
     for (const linha of linhasBrutas) {
       const referencia = linha.prod_referencia;
-      const cor = linha.cor || '';
+      const cor = limparDescricaoWik(linha.cor);
       const tamanho = linha.estct_tamanho || '';
       const quantidade = Number(linha.estct_saldo) || 0;
       if (!produtoIdPorReferencia.has(referencia)) {
         erros.push({ motivo: `Referência "${referencia}" não está cadastrada em Produtos — cadastre-a antes de sincronizar.`, dados: { referencia, cor, tamanho } });
         continue;
       }
-      porChave.set(`${referencia}::${cor}::${tamanho}`, { referencia, descricao: linha.prod_descricao, cor, tamanho, quantidade });
+      porChave.set(chaveVariante(referencia, cor, tamanho), { referencia, descricao: linha.prod_descricao, cor, tamanho, quantidade });
     }
 
     const criar = [];
