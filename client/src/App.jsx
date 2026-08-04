@@ -37,6 +37,8 @@ import RelatorioComprasPage from './pages/RelatorioComprasPage';
 import RelatorioLucratividadePage from './pages/RelatorioLucratividadePage';
 import RelatorioTaxasPage from './pages/RelatorioTaxasPage';
 import ImportarPedidosPage from './pages/ImportarPedidosPage';
+import ViagensListPage from './pages/ViagensListPage';
+import ViagemDetailPage from './pages/ViagemDetailPage';
 
 function RequireAuth({ loading, user, children }) {
   const location = useLocation();
@@ -96,6 +98,8 @@ function AppRoutes() {
                   <Route path="/marketplace/lucratividade" element={<RelatorioLucratividadePage origemFiltro="marketplace" />} />
                   <Route path="/marketplace/taxas" element={<RelatorioTaxasPage />} />
                   <Route path="/marketplace/importar-pedidos" element={<ImportarPedidosPage />} />
+                  <Route path="/viagens" element={<ViagensListPage />} />
+                  <Route path="/viagens/:id" element={<ViagemDetailPage />} />
                   <Route path="/fornecedores" element={<FornecedoresListPage />} />
                   <Route path="/fornecedores/:id" element={<FornecedorFichaPage />} />
                   <Route path="/compras/relatorio" element={<RelatorioComprasPage />} />

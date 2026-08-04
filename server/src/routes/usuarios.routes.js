@@ -5,7 +5,7 @@ const { requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
-const MODULOS_VALIDOS = new Set(['produto', 'estoque', 'vendas', 'marketplace', 'compras', 'analises', 'configuracoes']);
+const MODULOS_VALIDOS = new Set(['produto', 'estoque', 'vendas', 'marketplace', 'viagens', 'compras', 'analises', 'configuracoes']);
 
 router.use(requireAdmin);
 

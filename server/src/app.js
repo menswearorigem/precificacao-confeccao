@@ -21,6 +21,7 @@ const fornecedoresRoutes = require('./routes/fornecedores.routes');
 const comprasRoutes = require('./routes/compras.routes');
 const integracoesRoutes = require('./routes/integracoes.routes');
 const marketplaceTaxasRoutes = require('./routes/marketplaceTaxas.routes');
+const viagensRoutes = require('./routes/viagens.routes');
 
 const CLIENT_DIST = path.join(__dirname, '..', '..', 'client', 'dist');
 
@@ -68,6 +69,7 @@ function createApp() {
   app.use('/api/pedidos', requireAuth, requireModulo(['vendas', 'marketplace']), pedidosRoutes);
   app.use('/api/fornecedores', requireAuth, requireModulo('compras'), fornecedoresRoutes);
   app.use('/api/compras', requireAuth, requireModulo('compras'), comprasRoutes);
+  app.use('/api/viagens', requireAuth, requireModulo('viagens'), viagensRoutes);
 
   // Callbacks OAuth são chamados pelo redirect do próprio marketplace — sem
   // sessão nossa nesse momento, então ficam fora do requireAuth. A validação
