@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Plug, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
 import { Field } from '../components/ui';
+import WikIntegracaoCard from '../components/WikIntegracaoCard';
 
 const MARKETPLACES = {
   mercado_livre: {
@@ -125,6 +126,8 @@ export default function IntegracoesPage() {
 
       {erro && <div className="login-error" style={{ marginBottom: 12 }}>{erro}</div>}
       {aviso && <div className="stamp sm tone-saudavel" style={{ marginBottom: 12, display: 'inline-flex' }}>{aviso}</div>}
+
+      <WikIntegracaoCard />
 
       {mostrarNova && (
         <div className="card" style={{ marginBottom: 16 }}>

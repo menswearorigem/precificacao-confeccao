@@ -22,6 +22,7 @@ const comprasRoutes = require('./routes/compras.routes');
 const integracoesRoutes = require('./routes/integracoes.routes');
 const marketplaceTaxasRoutes = require('./routes/marketplaceTaxas.routes');
 const viagensRoutes = require('./routes/viagens.routes');
+const wikRoutes = require('./routes/wik.routes');
 
 const CLIENT_DIST = path.join(__dirname, '..', '..', 'client', 'dist');
 
@@ -78,6 +79,7 @@ function createApp() {
   app.use('/api/integracoes/shopee/callback', integracoesRoutes.callbackShopee);
   app.use('/api/integracoes/mercado_livre/notificacoes', integracoesRoutes.notificacoesMercadoLivre);
   app.use('/api/integracoes', requireAuth, requireAdmin, integracoesRoutes);
+  app.use('/api/wik', requireAuth, requireAdmin, wikRoutes);
 
   // Build do React em produção (um único serviço no Render).
   app.use(express.static(CLIENT_DIST));

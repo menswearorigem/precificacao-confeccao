@@ -74,13 +74,14 @@ router.post('/:tipo', requireModulo('configuracoes'), checkTipo, async (req, res
 
 router.put('/:tipo/:id', requireModulo('configuracoes'), checkTipo, async (req, res, next) => {
   try {
-    const { valor, ativo, ordem } = req.body || {};
+    const { valor, ativo, ordem, wik_emp_id: wikEmpId } = req.body || {};
     const updates = [];
     const values = [];
     let i = 1;
     if (valor !== undefined) { updates.push(`valor = $${i}`); values.push(valor); i += 1; }
     if (ativo !== undefined) { updates.push(`ativo = $${i}`); values.push(ativo); i += 1; }
     if (ordem !== undefined) { updates.push(`ordem = $${i}`); values.push(ordem); i += 1; }
+    if (wikEmpId !== undefined) { updates.push(`wik_emp_id = $${i}`); values.push(wikEmpId || null); i += 1; }
     if (updates.length === 0) return res.status(400).json({ error: 'nada para atualizar.' });
     values.push(req.params.id, req.params.tipo);
     const { rows } = await pool.query(
