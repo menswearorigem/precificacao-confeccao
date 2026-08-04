@@ -295,18 +295,59 @@ button, input, select, textarea { font-family: inherit; }
   min-width: 0;
 }
 
+.mobile-menu-btn {
+  display: none;
+  background: transparent;
+  border: none;
+  color: #fbf5e9;
+  padding: 6px;
+  margin-right: 2px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.mobile-menu-btn:hover { background: rgba(244, 239, 228, 0.12); }
+.mobile-sidebar-backdrop { display: none; }
+
 @media (max-width: 860px) {
-  .shell-body { flex-direction: column; }
+  .mobile-menu-btn { display: flex; align-items: center; justify-content: center; }
+  .shell-body { position: relative; }
+
+  /* Vira um menu-gaveta que desliza por cima do conteúdo — em vez de uma
+     fileira horizontal (com 8 módulos + o submenu embaixo, ficava
+     apertado demais pra ler direito num celular). */
   .shell-sidebar {
-    width: 100%;
-    flex-direction: row;
-    overflow-x: auto;
-    padding: 10px 12px;
-    gap: 8px;
-    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 250px;
+    max-width: 82vw;
+    transform: translateX(-100%);
+    transition: transform 0.25s var(--ease);
+    z-index: 50;
+    box-shadow: var(--shadow-lg);
+    padding-top: 76px;
   }
-  .sidebar-module { flex-shrink: 0; padding: 5px 14px 5px 5px; white-space: nowrap; }
-  .module-badge { width: 30px; height: 30px; }
+  .shell-sidebar.mobile-open { transform: translateX(0); }
+
+  .mobile-sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 12, 5, 0.45);
+    z-index: 40;
+  }
+
+  .sidebar-module { padding: 9px 18px 9px 6px; }
+  .shell-submenu { padding: 10px 14px 0; }
+  .nav-link { padding: 9px 12px; font-size: 12.5px; }
+}
+
+@media (max-width: 480px) {
+  .shell-header { padding: 11px 14px; }
+  .brand-name { font-size: 16px; }
+  .brand-sub { font-size: 9px; }
+  .user-badge { display: none; }
 }
 
 /* ---------- generic page/card layout ---------- */
@@ -966,12 +1007,16 @@ table.ficha-doc-tabela {
 .viagem-variantes-tabela td { padding: 6px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
 .viagem-variantes-tabela tr:last-child td { border-bottom: none; }
 
-.viagem-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
-.viagem-dot.disponivel { background: var(--success-ring); }
-.viagem-dot.atencao { background: var(--warning-ring); }
-.viagem-dot.sem_estoque { background: var(--danger-ring); }
+/* Cores bem vivas e saturadas de propósito — o semáforo precisa ser lido
+   num piscar de olhos, diferente do tom mais suave dos "stamps" de margem. */
+.viagem-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; box-shadow: 0 0 0 2px rgba(255,255,255,0.5) inset; }
+.viagem-dot.disponivel { background: #16a34a; }
+.viagem-dot.atencao { background: #eab308; }
+.viagem-dot.sem_estoque { background: #dc2626; }
 
-.btn-dashed.sm { padding: 3px 9px; font-size: 11px; }
+.viagem-qtd-negativa { color: #dc2626; font-weight: 700; }
+
+.btn.sm, .btn-dashed.sm { padding: 3px 9px; font-size: 11px; }
 
 .viagem-carrinho-flutuante {
   position: fixed;
@@ -987,6 +1032,7 @@ table.ficha-doc-tabela {
   border-radius: 999px;
   box-shadow: var(--shadow-lg);
   z-index: 100;
+  max-width: calc(100vw - 24px);
 }
 .viagem-carrinho-flutuante .mono { color: var(--teal-bright); font-weight: 700; }
 
@@ -1002,7 +1048,80 @@ table.ficha-doc-tabela {
 }
 .viagem-modal { max-width: 720px; width: 100%; max-height: 86vh; overflow-y: auto; }
 
+.viagem-checkout-itens { display: flex; flex-direction: column; gap: 10px; margin-bottom: 4px; }
+.viagem-checkout-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: var(--surface-alt);
+}
+.viagem-checkout-item-topo { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+.viagem-checkout-item-campos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.viagem-checkout-item-total { text-align: right; font-weight: 700; margin-top: 8px; font-size: 15px; }
+
 @media (max-width: 900px) {
   .viagem-resumo-strip { grid-template-columns: repeat(2, 1fr); }
   .viagem-produto-precos { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ---------- mobile: módulo Viagens (e telas com o mesmo padrão de card) ---------- */
+
+@media (max-width: 640px) {
+  .page-wide { padding: 16px 14px 90px; }
+
+  .viagem-header { flex-direction: column; align-items: stretch; gap: 12px; }
+  .viagem-header > div:last-child { display: flex; }
+  .viagem-header .btn { flex: 1; }
+
+  .viagem-resumo-strip { grid-template-columns: repeat(2, 1fr); }
+  .viagem-stat { padding: 11px 12px; }
+  .viagem-stat-value { font-size: 15px; }
+
+  .viagem-grid, .viagem-produtos-grid { grid-template-columns: 1fr; }
+
+  .viagem-produto-precos { grid-template-columns: repeat(2, 1fr); gap: 10px 8px; }
+
+  /* tabela de variantes vira uma pilha de "cartõezinhos" — sem espremer
+     colunas nem cortar nada na tela pequena. */
+  .viagem-variantes-tabela, .viagem-variantes-tabela thead, .viagem-variantes-tabela tbody,
+  .viagem-variantes-tabela th, .viagem-variantes-tabela td, .viagem-variantes-tabela tr { display: block; }
+  .viagem-variantes-tabela thead { display: none; }
+  .viagem-variantes-tabela tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .viagem-variantes-tabela tr:last-child { border-bottom: none; }
+  .viagem-variantes-tabela td { padding: 0; border: none; flex: 0 0 auto; }
+  .viagem-variantes-tabela td:first-child { flex: 1 1 100%; font-weight: 600; }
+  .viagem-variantes-tabela td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ink-faint);
+    font-weight: 700;
+  }
+  .viagem-variantes-tabela td:first-child::before { content: none; }
+
+  .viagem-checkout-item-campos { grid-template-columns: 1fr 1fr; }
+  .viagem-modal { max-height: 92vh; }
+  .viagem-modal-overlay { padding: 0; align-items: flex-end; }
+  .viagem-modal { border-radius: var(--radius) var(--radius) 0 0; max-width: 100%; }
+
+  .viagem-carrinho-flutuante {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    transform: none;
+    justify-content: space-between;
+    max-width: none;
+  }
+
+  .form-grid { grid-template-columns: 1fr; }
 }

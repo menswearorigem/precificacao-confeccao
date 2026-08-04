@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Shirt, LogOut } from 'lucide-react';
+import { Shirt, LogOut, Menu, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getVisibleModules } from '../lib/modules';
 
@@ -18,6 +19,11 @@ export default function Shell({ children }) {
   const { user, logout } = useAuth();
   const visibleModules = getVisibleModules(user);
   const activeModule = findActiveModule(location.pathname, visibleModules);
+  const [menuAberto, setMenuAberto] = useState(false);
+
+  // fecha o menu (celular) sempre que troca de página, senão fica aberto
+  // por cima do conteúdo novo.
+  useEffect(() => { setMenuAberto(false); }, [location.pathname]);
 
   async function handleLogout() {
     await logout();
@@ -28,6 +34,9 @@ export default function Shell({ children }) {
     <div className="shell">
       <header className="shell-header">
         <div className="brand">
+          <button className="mobile-menu-btn" onClick={() => setMenuAberto((v) => !v)} aria-label="Abrir menu">
+            {menuAberto ? <X size={20} /> : <Menu size={20} />}
+          </button>
           <div className="brand-mark"><Shirt size={20} /></div>
           <div>
             <div className="brand-name">Formação de Preço</div>
@@ -44,7 +53,8 @@ export default function Shell({ children }) {
       </header>
 
       <div className="shell-body">
-        <nav className="shell-sidebar">
+        {menuAberto && <div className="mobile-sidebar-backdrop" onClick={() => setMenuAberto(false)} />}
+        <nav className={'shell-sidebar' + (menuAberto ? ' mobile-open' : '')}>
           {visibleModules.map((mod) => {
             const Icon = mod.icon;
             const isActive = activeModule && mod.key === activeModule.key;

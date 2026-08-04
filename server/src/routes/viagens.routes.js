@@ -250,9 +250,36 @@ router.get('/:id/produtos', async (req, res, next) => {
       });
     }
 
-    res.json({ viagem: viagemRows[0], produtos });
+    res.json({ viagem: viagemRows[0], produtos, limiteEstoqueBaixo: limiteBaixo });
   } catch (err) {
     next(err);
+  }
+});
+
+// Entrada de estoque em lote — dá pra ajustar várias variantes de uma vez
+// (ex.: acabou de chegar 500 peças novas da facção) direto do card do
+// produto na viagem, sem precisar ir no módulo Estoque.
+router.post('/:id/estoque/entrada', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const { itens } = req.body || {};
+    if (!Array.isArray(itens) || itens.length === 0) {
+      return res.status(400).json({ error: 'Informe ao menos uma quantidade.' });
+    }
+    await client.query('BEGIN');
+    for (const item of itens) {
+      const qtd = Number(item.quantidade);
+      if (!qtd || qtd <= 0) continue;
+      await registrarMovimento(client, item.varianteId, 'entrada', qtd, 'Entrada de estoque via módulo Viagens');
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  } finally {
+    client.release();
   }
 });
 

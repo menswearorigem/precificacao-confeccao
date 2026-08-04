@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft, MapPin, CalendarDays, Search, Plus, Minus, ShoppingBag, X,
-  CheckCircle2, AlertTriangle, XCircle, TrendingUp, Package2, Trash2,
+  ArrowLeft, MapPin, CalendarDays, Search, Plus, ShoppingBag, X,
+  CheckCircle2, AlertTriangle, XCircle, Package2, Trash2, PackagePlus,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { Field } from '../components/ui';
@@ -14,8 +14,14 @@ const SITUACAO_TONE = { planejamento: 'tone-neutro', em_andamento: 'tone-atencao
 const STATUS_INFO = {
   disponivel: { tone: 'tone-saudavel', label: 'Pode vender sem medo', Icon: CheckCircle2 },
   atencao: { tone: 'tone-atencao', label: 'Atenção — conferir estoque', Icon: AlertTriangle },
-  sem_estoque: { tone: 'tone-prejuizo', label: 'Sem estoque — não vender', Icon: XCircle },
+  sem_estoque: { tone: 'tone-prejuizo', label: 'Sem estoque disponível', Icon: XCircle },
 };
+
+function statusEstoqueClient(quantidade, limiteBaixo) {
+  if (quantidade <= 0) return 'sem_estoque';
+  if (quantidade <= limiteBaixo) return 'atencao';
+  return 'disponivel';
+}
 
 function dataBr(iso) {
   if (!iso) return null;
@@ -28,6 +34,7 @@ export default function ViagemDetailPage() {
 
   const [viagem, setViagem] = useState(null);
   const [produtos, setProdutos] = useState([]);
+  const [limiteEstoqueBaixo, setLimiteEstoqueBaixo] = useState(5);
   const [resumo, setResumo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
@@ -39,7 +46,11 @@ export default function ViagemDetailPage() {
   const [checkoutAberto, setCheckoutAberto] = useState(false);
 
   function carregarCatalogo() {
-    return api.get(`/viagens/${id}/produtos`).then((data) => { setViagem(data.viagem); setProdutos(data.produtos); });
+    return api.get(`/viagens/${id}/produtos`).then((data) => {
+      setViagem(data.viagem);
+      setProdutos(data.produtos);
+      setLimiteEstoqueBaixo(data.limiteEstoqueBaixo);
+    });
   }
 
   function carregarResumo() {
@@ -82,14 +93,25 @@ export default function ViagemDetailPage() {
     setViagem(data);
   }
 
+  async function darEntradaEstoque(itens) {
+    await api.post(`/viagens/${id}/estoque/entrada`, { itens });
+    await carregarCatalogo();
+  }
+
+  // Cada peça adicionada ao carrinho já "reserva" visualmente do estoque
+  // mostrado — sem esperar a venda ser confirmada de verdade.
+  const emCarrinhoPorVariante = useMemo(() => {
+    const mapa = new Map();
+    for (const it of carrinho) mapa.set(it.varianteId, (mapa.get(it.varianteId) || 0) + it.quantidade);
+    return mapa;
+  }, [carrinho]);
+
   function adicionarAoCarrinho(produto, variante) {
     setCarrinho((lista) => {
       const existente = lista.find((it) => it.varianteId === variante.id);
       if (existente) {
-        if (existente.quantidade >= variante.quantidade) return lista;
         return lista.map((it) => (it.varianteId === variante.id ? { ...it, quantidade: it.quantidade + 1 } : it));
       }
-      if (variante.quantidade <= 0) return lista;
       return [...lista, {
         varianteId: variante.id,
         referencia: produto.referencia,
@@ -236,9 +258,12 @@ export default function ViagemDetailPage() {
             <ProdutoCard
               key={produto.produtoId}
               produto={produto}
+              limiteEstoqueBaixo={limiteEstoqueBaixo}
+              emCarrinhoPorVariante={emCarrinhoPorVariante}
               podeVender={podeVender}
               onAdicionarAoCarrinho={(variante) => adicionarAoCarrinho(produto, variante)}
               onRemover={() => removerProduto(produto.produtoId)}
+              onDarEntrada={darEntradaEstoque}
             />
           ))}
         </div>
@@ -270,16 +295,51 @@ export default function ViagemDetailPage() {
   );
 }
 
-function ProdutoCard({ produto, podeVender, onAdicionarAoCarrinho, onRemover }) {
-  const status = STATUS_INFO[produto.statusGeral] || STATUS_INFO.atencao;
+function ProdutoCard({ produto, limiteEstoqueBaixo, emCarrinhoPorVariante, podeVender, onAdicionarAoCarrinho, onRemover, onDarEntrada }) {
+  const [entradaAberta, setEntradaAberta] = useState(false);
+  const [quantidadesEntrada, setQuantidadesEntrada] = useState({});
+  const [enviandoEntrada, setEnviandoEntrada] = useState(false);
+
+  const variantesExibidas = produto.variantes.map((v) => {
+    const reservado = emCarrinhoPorVariante.get(v.id) || 0;
+    const quantidadeExibida = v.quantidade - reservado;
+    return { ...v, quantidadeExibida, statusExibido: statusEstoqueClient(quantidadeExibida, limiteEstoqueBaixo) };
+  });
+  const statusGeral = variantesExibidas.length === 0 || variantesExibidas.every((v) => v.statusExibido === 'sem_estoque')
+    ? 'sem_estoque'
+    : variantesExibidas.some((v) => v.statusExibido !== 'disponivel')
+      ? 'atencao'
+      : 'disponivel';
+  const status = STATUS_INFO[statusGeral] || STATUS_INFO.atencao;
+
+  async function confirmarEntrada() {
+    const itens = Object.entries(quantidadesEntrada)
+      .map(([varianteId, quantidade]) => ({ varianteId: Number(varianteId), quantidade: Number(quantidade) }))
+      .filter((it) => it.quantidade > 0);
+    if (itens.length === 0) { setEntradaAberta(false); return; }
+    setEnviandoEntrada(true);
+    try {
+      await onDarEntrada(itens);
+      setQuantidadesEntrada({});
+      setEntradaAberta(false);
+    } finally {
+      setEnviandoEntrada(false);
+    }
+  }
+
   return (
-    <div className={'viagem-produto-card status-' + produto.statusGeral}>
+    <div className={'viagem-produto-card status-' + statusGeral}>
       <div className="viagem-produto-topo">
         <div>
           <div className="viagem-produto-ref mono">{produto.referencia}</div>
           <div className="viagem-produto-desc">{produto.descricao}</div>
         </div>
-        <button className="icon-btn" title="Tirar da viagem" onClick={onRemover}><Trash2 size={13} /></button>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button className="icon-btn" title="Dar entrada de estoque" onClick={() => setEntradaAberta((v) => !v)}>
+            <PackagePlus size={15} />
+          </button>
+          <button className="icon-btn" title="Tirar da viagem" onClick={onRemover}><Trash2 size={13} /></button>
+        </div>
       </div>
 
       <div className={'stamp sm ' + status.tone} style={{ marginTop: 6 }}>
@@ -308,21 +368,31 @@ function ProdutoCard({ produto, podeVender, onAdicionarAoCarrinho, onRemover }) 
 
       <table className="viagem-variantes-tabela">
         <thead>
-          <tr><th>Cor / Tam.</th><th>Estoque</th><th>Vendido</th><th /></tr>
+          <tr>
+            <th>Cor / Tam.</th><th>Estoque</th><th>Vendido</th>
+            {entradaAberta ? <th>+ Entrada</th> : <th />}
+          </tr>
         </thead>
         <tbody>
-          {produto.variantes.map((v) => {
-            const vStatus = STATUS_INFO[v.status] || STATUS_INFO.atencao;
+          {variantesExibidas.map((v) => {
+            const vStatus = STATUS_INFO[v.statusExibido] || STATUS_INFO.atencao;
             return (
               <tr key={v.id}>
-                <td>{[v.cor, v.tamanho].filter(Boolean).join(' / ') || '—'}</td>
-                <td>
-                  <span className={'viagem-dot ' + v.status} title={vStatus.label} />
-                  <span className="mono">{v.quantidade}</span>
+                <td data-label="Cor / Tam.">{[v.cor, v.tamanho].filter(Boolean).join(' / ') || '—'}</td>
+                <td data-label="Estoque">
+                  <span className={'viagem-dot ' + v.statusExibido} title={vStatus.label} />
+                  <span className={'mono' + (v.quantidadeExibida < 0 ? ' viagem-qtd-negativa' : '')}>{v.quantidadeExibida}</span>
                 </td>
-                <td className="mono">{v.vendidoNaViagem || '—'}</td>
-                <td style={{ textAlign: 'right' }}>
-                  {podeVender && v.status !== 'sem_estoque' && (
+                <td className="mono" data-label="Vendido">{v.vendidoNaViagem || '—'}</td>
+                <td style={{ textAlign: 'right' }} data-label={entradaAberta ? '+ Entrada' : ''}>
+                  {entradaAberta ? (
+                    <input
+                      type="number" min="0" className="mono" style={{ width: 72 }}
+                      placeholder="0"
+                      value={quantidadesEntrada[v.id] ?? ''}
+                      onChange={(e) => setQuantidadesEntrada((q) => ({ ...q, [v.id]: e.target.value }))}
+                    />
+                  ) : podeVender && (
                     <button className="btn btn-dashed sm" onClick={() => onAdicionarAoCarrinho(v)}>
                       <Plus size={12} /> Vender
                     </button>
@@ -333,6 +403,15 @@ function ProdutoCard({ produto, podeVender, onAdicionarAoCarrinho, onRemover }) 
           })}
         </tbody>
       </table>
+
+      {entradaAberta && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          <button className="btn btn-primary sm" onClick={confirmarEntrada} disabled={enviandoEntrada}>
+            {enviandoEntrada ? 'Adicionando…' : 'Confirmar Entrada'}
+          </button>
+          <button className="btn btn-ghost sm" onClick={() => { setEntradaAberta(false); setQuantidadesEntrada({}); }}>Cancelar</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -378,45 +457,46 @@ function CheckoutModal({ itens, total, onAtualizarItem, onRemoverItem, onClose, 
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
 
-        <table className="data-table" style={{ marginBottom: 14 }}>
-          <thead><tr><th>Peça</th><th>Qtd.</th><th>Valor</th><th>Desc.</th><th>Total</th><th /></tr></thead>
-          <tbody>
-            {itens.map((it) => {
-              const totalItem = it.quantidade * it.valorUnitario * (1 - it.descontoPct);
-              const descontoAcimaDoMaximo = it.descontoPct > it.descontoMaximoPct + 0.0001;
-              return (
-                <tr key={it.varianteId}>
-                  <td>
-                    <div className="mono">{it.referencia}</div>
+        <div className="viagem-checkout-itens">
+          {itens.map((it) => {
+            const totalItem = it.quantidade * it.valorUnitario * (1 - it.descontoPct);
+            const descontoAcimaDoMaximo = it.descontoPct > it.descontoMaximoPct + 0.0001;
+            const acimaDoEstoque = it.quantidade > it.estoqueDisponivel;
+            return (
+              <div className="viagem-checkout-item" key={it.varianteId}>
+                <div className="viagem-checkout-item-topo">
+                  <div>
+                    <div className="mono" style={{ fontWeight: 700 }}>{it.referencia}</div>
                     <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{[it.cor, it.tamanho].filter(Boolean).join(' / ')}</div>
-                  </td>
-                  <td>
-                    <input type="number" min="1" max={it.estoqueDisponivel} className="mono" style={{ width: 56 }}
+                  </div>
+                  <button className="icon-btn" onClick={() => onRemoverItem(it.varianteId)}><Trash2 size={13} /></button>
+                </div>
+                <div className="viagem-checkout-item-campos">
+                  <Field label="Qtd.">
+                    <input type="number" min="1" className="mono"
                       value={it.quantidade}
-                      onChange={(e) => onAtualizarItem(it.varianteId, { quantidade: Math.min(it.estoqueDisponivel, Math.max(1, Number(e.target.value) || 1)) })} />
-                    <div style={{ fontSize: 10, color: 'var(--ink-faint)' }}>{it.estoqueDisponivel} em estoque</div>
-                  </td>
-                  <td>
-                    <input type="number" step="0.01" className="mono" style={{ width: 80 }}
+                      onChange={(e) => onAtualizarItem(it.varianteId, { quantidade: Math.max(1, Number(e.target.value) || 1) })} />
+                    {acimaDoEstoque && <span className="field-hint" style={{ color: 'var(--danger)' }}>só {it.estoqueDisponivel} em estoque</span>}
+                  </Field>
+                  <Field label="Valor Unit.">
+                    <input type="number" step="0.01" className="mono"
                       value={it.valorUnitario}
                       onChange={(e) => onAtualizarItem(it.varianteId, { valorUnitario: Number(e.target.value) || 0 })} />
-                  </td>
-                  <td>
-                    <input type="number" step="1" className="mono" style={{ width: 56, borderColor: descontoAcimaDoMaximo ? 'var(--danger)' : undefined }}
+                  </Field>
+                  <Field label="Desconto %">
+                    <input type="number" step="1" className="mono" style={{ borderColor: descontoAcimaDoMaximo ? 'var(--danger)' : undefined }}
                       value={Math.round(it.descontoPct * 1000) / 10}
                       onChange={(e) => onAtualizarItem(it.varianteId, { descontoPct: Math.max(0, Math.min(1, (Number(e.target.value) || 0) / 100)) })} />
-                    %
-                    {descontoAcimaDoMaximo && <div style={{ fontSize: 10, color: 'var(--danger)' }}>acima do máximo</div>}
-                  </td>
-                  <td className="mono" style={{ fontWeight: 700 }}>{brl(totalItem)}</td>
-                  <td><button className="icon-btn" onClick={() => onRemoverItem(it.varianteId)}><Trash2 size={13} /></button></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                    {descontoAcimaDoMaximo && <span className="field-hint" style={{ color: 'var(--danger)' }}>acima do máximo</span>}
+                  </Field>
+                </div>
+                <div className="viagem-checkout-item-total mono">{brl(totalItem)}</div>
+              </div>
+            );
+          })}
+        </div>
 
-        <div className="row-line strong" style={{ marginBottom: 14 }}><span>Total da Venda</span><span className="mono">{brl(total)}</span></div>
+        <div className="row-line strong" style={{ marginTop: 4, marginBottom: 14 }}><span>Total da Venda</span><span className="mono">{brl(total)}</span></div>
 
         <div className="form-grid">
           <Field label="Cliente (buscar cadastrado)">
