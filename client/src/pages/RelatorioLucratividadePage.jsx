@@ -140,7 +140,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
       .finally(() => setLoading(false));
   }
 
-  useEffect(gerar, []);
+  useEffect(() => { gerar(); }, []);
 
   async function revincularCustos() {
     setRevinculando(true);

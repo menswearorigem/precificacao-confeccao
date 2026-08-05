@@ -479,11 +479,12 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.6; cursor: not-a
 .select-custom.is-open .select-custom-seta { transform: rotate(180deg); color: var(--terracotta); }
 
 .select-custom-lista {
-  position: absolute;
-  z-index: 60;
-  top: calc(100% + 6px);
-  left: 0;
-  right: 0;
+  /* position: fixed (não absolute) de propósito — o topo/esquerda/largura
+     vêm por style inline (calculados a partir do gatilho em coordenadas de
+     tela), assim o painel escapa de qualquer .card com overflow no caminho
+     em vez de ficar cortado por ele. Ver usePosicaoFlutuante em ui.jsx. */
+  position: fixed;
+  z-index: 1000;
   max-height: 264px;
   overflow-y: auto;
   margin: 0;
@@ -584,10 +585,11 @@ table.data-table .select-custom-lista { font-size: 12.5px; }
 .date-custom-limpar:hover { background: var(--danger-bg); color: var(--danger); }
 
 .date-custom-painel {
-  position: absolute;
-  z-index: 60;
-  top: calc(100% + 6px);
-  left: 0;
+  /* position: fixed (não absolute) de propósito — mesmo motivo do
+     .select-custom-lista acima: topo/esquerda vêm por style inline em
+     coordenadas de tela, escapando de qualquer .card com overflow. */
+  position: fixed;
+  z-index: 1000;
   width: 272px;
   padding: 12px;
   background: var(--surface);

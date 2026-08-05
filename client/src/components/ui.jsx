@@ -1,5 +1,34 @@
 import { Children, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Check, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CalendarDays } from 'lucide-react';
+
+// Painéis flutuantes (lista do Select, calendário do DateInput) precisam
+// escapar de qualquer ancestral com overflow:hidden/auto (todo .card do
+// sistema tem overflow-x:auto, o que na prática também corta o eixo Y) —
+// em vez de position:absolute dentro do próprio campo, calcula a posição em
+// coordenadas de tela e usa um portal direto pro <body>, recalculando se a
+// página rolar ou a janela mudar de tamanho enquanto o painel está aberto.
+function usePosicaoFlutuante(aberto, gatilhoRef) {
+  const [pos, setPos] = useState(null);
+  useEffect(() => {
+    if (!aberto) { setPos(null); return undefined; }
+    function atualizar() {
+      const el = gatilhoRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setPos({ top: r.bottom + 6, left: r.left, width: r.width });
+    }
+    atualizar();
+    window.addEventListener('scroll', atualizar, true);
+    window.addEventListener('resize', atualizar);
+    return () => {
+      window.removeEventListener('scroll', atualizar, true);
+      window.removeEventListener('resize', atualizar);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aberto]);
+  return pos;
+}
 
 export function Field({ label, children, hint }) {
   return (
@@ -54,8 +83,10 @@ export function Select({ value, onChange, children, disabled, className = '', st
   const [aberto, setAberto] = useState(false);
   const [destaque, setDestaque] = useState(-1);
   const raizRef = useRef(null);
+  const gatilhoRef = useRef(null);
   const listaRef = useRef(null);
   const buscaRef = useRef({ termo: '', timeout: null });
+  const pos = usePosicaoFlutuante(aberto, gatilhoRef);
 
   const opcoes = useMemo(() => extrairOpcoes(children), [children]);
   const valorAtual = value === undefined || value === null ? '' : String(value);
@@ -63,7 +94,9 @@ export function Select({ value, onChange, children, disabled, className = '', st
 
   useEffect(() => {
     function aoClicarFora(e) {
-      if (raizRef.current && !raizRef.current.contains(e.target)) setAberto(false);
+      if (raizRef.current?.contains(e.target)) return;
+      if (listaRef.current?.contains(e.target)) return;
+      setAberto(false);
     }
     document.addEventListener('mousedown', aoClicarFora);
     return () => document.removeEventListener('mousedown', aoClicarFora);
@@ -137,6 +170,7 @@ export function Select({ value, onChange, children, disabled, className = '', st
     >
       <button
         type="button"
+        ref={gatilhoRef}
         className="select-custom-trigger"
         aria-haspopup="listbox"
         aria-expanded={aberto}
@@ -149,8 +183,13 @@ export function Select({ value, onChange, children, disabled, className = '', st
         </span>
         <ChevronDown size={14} className="select-custom-seta" />
       </button>
-      {aberto && (
-        <ul className="select-custom-lista" role="listbox" ref={listaRef}>
+      {aberto && pos && createPortal(
+        <ul
+          className="select-custom-lista"
+          role="listbox"
+          ref={listaRef}
+          style={{ top: pos.top, left: pos.left, width: pos.width }}
+        >
           {opcoes.map((o, idx) => (
             <li
               key={`${o.valor}-${idx}`}
@@ -167,7 +206,8 @@ export function Select({ value, onChange, children, disabled, className = '', st
               {o.valor === valorAtual && <Check size={13} className="select-custom-check" />}
             </li>
           ))}
-        </ul>
+        </ul>,
+        document.body
       )}
     </div>
   );
@@ -224,6 +264,8 @@ function gerarCelulas(ano, mes) {
   return celulas;
 }
 
+const LARGURA_PAINEL = 272; // precisa bater com a largura fixa de .date-custom-painel no CSS
+
 function hojeSemHora() {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -237,9 +279,12 @@ function hojeSemHora() {
 export function DateInput({ value, onChange, onBlur, disabled, placeholder = 'dd/mm/aaaa', className = '', style }) {
   const [aberto, setAberto] = useState(false);
   const raizRef = useRef(null);
+  const gatilhoRef = useRef(null);
+  const painelRef = useRef(null);
   const selecionada = useMemo(() => paraData(value), [value]);
   const [cursor, setCursor] = useState(() => selecionada || new Date());
   const hoje = hojeSemHora();
+  const pos = usePosicaoFlutuante(aberto, gatilhoRef);
 
   // Guarda sempre a versão mais recente do onBlur: em telas que fazem
   // onChange (só troca o estado local) + onBlur (salva de fato, lendo o
@@ -263,7 +308,9 @@ export function DateInput({ value, onChange, onBlur, disabled, placeholder = 'dd
   useEffect(() => {
     if (!aberto) return undefined;
     function aoClicarFora(e) {
-      if (raizRef.current && !raizRef.current.contains(e.target)) fechar();
+      if (raizRef.current?.contains(e.target)) return;
+      if (painelRef.current?.contains(e.target)) return;
+      fechar();
     }
     document.addEventListener('mousedown', aoClicarFora);
     return () => document.removeEventListener('mousedown', aoClicarFora);
@@ -312,6 +359,7 @@ export function DateInput({ value, onChange, onBlur, disabled, placeholder = 'dd
       onClick={(e) => e.preventDefault()}
     >
       <div
+        ref={gatilhoRef}
         className="date-custom-trigger"
         role="button"
         tabIndex={disabled ? -1 : 0}
@@ -339,8 +387,14 @@ export function DateInput({ value, onChange, onBlur, disabled, placeholder = 'dd
           ×
         </button>
       )}
-      {aberto && (
-        <div className="date-custom-painel" role="dialog" aria-label="Escolher data">
+      {aberto && pos && createPortal(
+        <div
+          ref={painelRef}
+          className="date-custom-painel"
+          role="dialog"
+          aria-label="Escolher data"
+          style={{ top: pos.top, left: Math.max(8, Math.min(pos.left, window.innerWidth - LARGURA_PAINEL - 8)) }}
+        >
           <div className="date-custom-cabecalho">
             <button type="button" className="date-custom-nav" onMouseDown={semFoco} onClick={() => setCursor((c) => new Date(c.getFullYear() - 1, c.getMonth(), 1))} aria-label="Ano anterior"><ChevronsLeft size={14} /></button>
             <button type="button" className="date-custom-nav" onMouseDown={semFoco} onClick={() => setCursor((c) => new Date(c.getFullYear(), c.getMonth() - 1, 1))} aria-label="Mês anterior"><ChevronLeft size={14} /></button>
@@ -376,7 +430,8 @@ export function DateInput({ value, onChange, onBlur, disabled, placeholder = 'dd
             <button type="button" className="date-custom-acao" onMouseDown={semFoco} onClick={() => selecionar(new Date())}>Hoje</button>
             {selecionada && <button type="button" className="date-custom-acao" onMouseDown={semFoco} onClick={limpar}>Limpar</button>}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
