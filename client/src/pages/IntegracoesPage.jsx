@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { Field } from '../components/ui';
 import WikIntegracaoCard from '../components/WikIntegracaoCard';
 import WikImportarProdutosCard from '../components/WikImportarProdutosCard';
+import WikImportarFichaCustoCard from '../components/WikImportarFichaCustoCard';
 import WikFichaCustoDiagnosticoCard from '../components/WikFichaCustoDiagnosticoCard';
 
 const MARKETPLACES = {
@@ -131,6 +132,7 @@ export default function IntegracoesPage() {
 
       <WikIntegracaoCard />
       <WikImportarProdutosCard />
+      <WikImportarFichaCustoCard />
       <WikFichaCustoDiagnosticoCard />
 
       {mostrarNova && (

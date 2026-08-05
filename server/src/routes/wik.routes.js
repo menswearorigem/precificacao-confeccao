@@ -5,6 +5,7 @@ const {
   buscarIntegracao, obterTokenValido, empIdsConfigurados, montarPreviewEstoque, aplicarSincronizacaoEstoque, sincronizarEstoqueAgora,
 } = require('../lib/wikSync');
 const { montarPreviewProdutos, aplicarImportacaoProdutos } = require('../lib/wikProdutosImport');
+const { montarPreviewFichaCusto, aplicarImportacaoFichaCusto } = require('../lib/wikFichaCustoImport');
 
 const router = express.Router();
 
@@ -19,6 +20,7 @@ function paraFora(row) {
     ultimoErro: row.ultimo_erro,
     previewStatus: row.preview_status,
     produtosImportStatus: row.produtos_import_status,
+    fichaCustoImportStatus: row.ficha_custo_import_status,
   };
 }
 
@@ -300,6 +302,79 @@ router.post('/ficha-custo/diagnosticar', async (req, res, next) => {
     });
   } catch (err) {
     res.status(422).json({ error: err.message });
+  }
+});
+
+// Importação de Ficha de Custo (materiais com custo real via
+// materiaprima_get + operações sem valor, já que o Wik não expõe custo de
+// mão-de-obra) — só pra produtos que ainda não têm nenhuma ficha
+// cadastrada localmente, pra não sobrescrever o que já foi preenchido à
+// mão. Assíncrono pelo mesmo motivo dos outros: cada produto exige várias
+// chamadas (insumos + operações + 1 por material único), e um catálogo
+// grande facilmente passa dos limites de uma única requisição HTTP.
+router.post('/ficha-custo/preview', async (req, res, next) => {
+  try {
+    const integracao = await buscarIntegracao();
+    if (!integracao) return res.status(400).json({ error: 'Cadastre a credencial do Wik primeiro.' });
+
+    const jobTravado = integracao.ficha_custo_import_status === 'rodando'
+      && integracao.ficha_custo_import_iniciado_em
+      && Date.now() - new Date(integracao.ficha_custo_import_iniciado_em).getTime() < 30 * 60 * 1000;
+    if (jobTravado) return res.json({ status: 'rodando' });
+
+    await pool.query(
+      `UPDATE integracoes_wik SET ficha_custo_import_status = 'rodando', ficha_custo_import_resultado = NULL,
+                                   ficha_custo_import_erro = NULL, ficha_custo_import_iniciado_em = now(), atualizado_em = now()
+       WHERE id = $1`,
+      [integracao.id]
+    );
+    res.json({ status: 'rodando' });
+
+    montarPreviewFichaCusto(integracao)
+      .then((resultado) => pool.query(
+        `UPDATE integracoes_wik SET ficha_custo_import_status = 'concluido', ficha_custo_import_resultado = $1,
+                                     atualizado_em = now() WHERE id = $2`,
+        [JSON.stringify(resultado), integracao.id]
+      ))
+      .catch((err) => pool.query(
+        `UPDATE integracoes_wik SET ficha_custo_import_status = 'erro', ficha_custo_import_erro = $1, atualizado_em = now() WHERE id = $2`,
+        [err.message, integracao.id]
+      ));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/ficha-custo/preview', async (req, res, next) => {
+  try {
+    const integracao = await buscarIntegracao();
+    if (!integracao) return res.status(400).json({ error: 'Cadastre a credencial do Wik primeiro.' });
+    res.json({
+      status: integracao.ficha_custo_import_status,
+      resultado: integracao.ficha_custo_import_resultado,
+      erro: integracao.ficha_custo_import_erro,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/ficha-custo/confirmar', async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const resultado = await aplicarImportacaoFichaCusto(body.produtos || []);
+
+    const integracao = await buscarIntegracao();
+    if (integracao) {
+      await pool.query(
+        `UPDATE integracoes_wik SET ficha_custo_import_status = 'idle', ficha_custo_import_resultado = NULL WHERE id = $1`,
+        [integracao.id]
+      );
+    }
+
+    res.json(resultado);
+  } catch (err) {
+    next(err);
   }
 });
 
