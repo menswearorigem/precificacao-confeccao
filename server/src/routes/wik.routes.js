@@ -2,7 +2,7 @@ const express = require('express');
 const pool = require('../db/pool');
 const wik = require('../lib/wik');
 const {
-  buscarIntegracao, empIdsConfigurados, montarPreviewEstoque, aplicarSincronizacaoEstoque, sincronizarEstoqueAgora,
+  buscarIntegracao, obterTokenValido, empIdsConfigurados, montarPreviewEstoque, aplicarSincronizacaoEstoque, sincronizarEstoqueAgora,
 } = require('../lib/wikSync');
 const { montarPreviewProdutos, aplicarImportacaoProdutos } = require('../lib/wikProdutosImport');
 
@@ -239,6 +239,55 @@ router.post('/produtos/confirmar', async (req, res, next) => {
     res.json(resultado);
   } catch (err) {
     next(err);
+  }
+});
+
+// ---------- Ficha de Custo (Audaces) — ainda em fase de descoberta ----------
+// Ainda não sabemos como o "id" de insumosfichatecnica_get/
+// operacoesfichatecnica_get se relaciona com o produto na prática (a doc
+// chama de "id do produto ficha tecnica", ambíguo) — essa rota só busca o
+// ProdId de um produto real (pela referência, já que produto_get não lista
+// sem filtro) e mostra a resposta crua dos dois endpoints, pra confirmar
+// antes de construir a importação de verdade.
+router.post('/ficha-custo/diagnosticar', async (req, res, next) => {
+  try {
+    const { referencia } = req.body || {};
+    if (!referencia) return res.status(400).json({ error: 'Informe a referência do produto.' });
+
+    const integracao = await buscarIntegracao();
+    if (!integracao) return res.status(400).json({ error: 'Cadastre a credencial do Wik primeiro.' });
+
+    const { rows } = await pool.query('SELECT id, referencia, descricao, wik_prod_id FROM produtos WHERE referencia = $1', [referencia]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Não achei esse produto cadastrado localmente.' });
+    const produto = rows[0];
+
+    const token = await obterTokenValido(integracao);
+
+    let wikProdId = produto.wik_prod_id;
+    let produtoWik = null;
+    if (!wikProdId) {
+      produtoWik = await wik.buscarProdutoPorReferencia(token, referencia);
+      wikProdId = produtoWik?.ProdId || null;
+      if (wikProdId) {
+        await pool.query('UPDATE produtos SET wik_prod_id = $1 WHERE id = $2', [wikProdId, produto.id]);
+      }
+    }
+
+    if (!wikProdId) {
+      return res.status(422).json({
+        error: 'Não consegui resolver o ProdId desse produto no Wik (busca por referência não retornou nada).',
+        produtoWik,
+      });
+    }
+
+    const [insumos, operacoesFicha] = await Promise.all([
+      wik.buscarInsumosFichaTecnica(token, wikProdId).catch((err) => ({ erro: err.message })),
+      wik.buscarOperacoesFichaTecnica(token, wikProdId).catch((err) => ({ erro: err.message })),
+    ]);
+
+    res.json({ produto: { ...produto, wik_prod_id: wikProdId }, produtoWik, insumos, operacoesFicha });
+  } catch (err) {
+    res.status(422).json({ error: err.message });
   }
 });
 

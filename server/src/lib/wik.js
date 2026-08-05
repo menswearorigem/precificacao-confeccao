@@ -119,4 +119,42 @@ async function listarSaldoEstoque(token, empId) {
   return linhas;
 }
 
-module.exports = { login, listarCategorias, listarProdutos, listarSaldoEstoque };
+// Já que produto_get não aceita listar sem filtro, essa é a forma de
+// resolver o ProdId de UM produto específico a partir da referência (não
+// precisa saber o id de antemão).
+async function buscarProdutoPorReferencia(token, prodReferencia) {
+  const data = await chamarApi('produto_get', token, { prodReferencia });
+  const lista = Array.isArray(data.retorno) ? data.retorno : (data.retorno?.dados || []);
+  return lista[0] || null;
+}
+
+// ---------- Audaces (ficha técnica: materiais/insumos e operações de custo) ----------
+// Ainda não confirmado na prática como o "id" desses endpoints se relaciona
+// com o ProdId do produto (a doc chama de "id do produto ficha tecnica",
+// ambíguo) — por isso ainda não tem uma função de importação em massa,
+// só essas funções básicas pra testar contra um produto real primeiro.
+
+async function buscarInsumosFichaTecnica(token, id) {
+  const data = await chamarApi('insumosfichatecnica_get', token, { id });
+  return Array.isArray(data.retorno) ? data.retorno : [];
+}
+
+async function buscarOperacoesFichaTecnica(token, id) {
+  const data = await chamarApi('operacoesfichatecnica_get', token, { id });
+  return Array.isArray(data.retorno) ? data.retorno : [];
+}
+
+async function buscarMateriaPrima(token, id) {
+  const data = await chamarApi('materiaprima_get', token, { id });
+  return data.retorno || null;
+}
+
+async function listarOperacoes(token) {
+  const data = await chamarApi('operacoes_get', token);
+  return Array.isArray(data.retorno) ? data.retorno : [];
+}
+
+module.exports = {
+  login, listarCategorias, listarProdutos, listarSaldoEstoque, buscarProdutoPorReferencia,
+  buscarInsumosFichaTecnica, buscarOperacoesFichaTecnica, buscarMateriaPrima, listarOperacoes,
+};
