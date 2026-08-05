@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Upload, CheckCircle2, AlertTriangle, FileSpreadsheet } from 'lucide-react';
 import { api } from '../api/client';
+import { Select } from '../components/ui';
 
 export default function ImportacaoPage() {
   const fileRef = useRef(null);
@@ -86,11 +87,11 @@ export default function ImportacaoPage() {
           {isCsv && (
             <div className="field">
               <span className="field-label">Esse CSV é a tabela de:</span>
-              <select value={tipoCsv} onChange={(e) => setTipoCsv(e.target.value)}>
+              <Select value={tipoCsv} onChange={(e) => setTipoCsv(e.target.value)}>
                 <option value="produtos">Cadastro de Produtos</option>
                 <option value="materiais">Materiais</option>
                 <option value="custos_industriais">Custos Industriais</option>
-              </select>
+              </Select>
             </div>
           )}
           <button className="btn btn-primary" type="submit" disabled={loading}>

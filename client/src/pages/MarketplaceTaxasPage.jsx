@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
-import { NumInput } from '../components/ui';
+import { NumInput, Select } from '../components/ui';
 
 const MARKETPLACES = [
   { key: 'mercado_livre', label: 'Mercado Livre' },
@@ -120,10 +120,10 @@ export default function MarketplaceTaxasPage() {
               <tr key={f.id}>
                 {marketplace === 'mercado_livre' && (
                   <td>
-                    <select value={f.tipo_anuncio || 'classico'} onChange={(e) => updateComissao(f.id, { tipo_anuncio: e.target.value })}>
+                    <Select value={f.tipo_anuncio || 'classico'} onChange={(e) => updateComissao(f.id, { tipo_anuncio: e.target.value })}>
                       <option value="classico">Clássico</option>
                       <option value="premium">Premium</option>
-                    </select>
+                    </Select>
                   </td>
                 )}
                 <td><NumInput value={f.valor_min} onChange={(v) => updateComissao(f.id, { valor_min: v })} /></td>

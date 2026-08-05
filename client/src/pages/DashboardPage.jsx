@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Field } from '../components/ui';
+import { Field, Select } from '../components/ui';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
 import { statusToneClass } from '../lib/statusTone';
@@ -129,12 +129,12 @@ export default function DashboardPage() {
 
       <div className="card" style={{ marginBottom: 16 }}>
         <Field label="Referência">
-          <select value={produtoId} onChange={(e) => setProdutoId(e.target.value)}>
+          <Select value={produtoId} onChange={(e) => setProdutoId(e.target.value)}>
             <option value="">Selecione uma referência…</option>
             {produtos.map((p) => (
               <option key={p.id} value={p.id}>{p.referencia} — {p.descricao}</option>
             ))}
-          </select>
+          </Select>
         </Field>
       </div>
 

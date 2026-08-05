@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, UserPlus } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, NumInput } from '../components/ui';
+import { Field, NumInput, Select } from '../components/ui';
 import { brl } from '../lib/format';
 
 const SITUACAO_TONE = { pendente: 'tone-atencao', recebido: 'tone-saudavel', cancelado: 'tone-prejuizo' };
@@ -229,31 +229,31 @@ export default function CompraFormPage() {
             <input type="date" value={compra.data_compra?.slice(0, 10) || ''} onChange={(e) => setHeader({ data_compra: e.target.value })} onBlur={() => salvarHeader()} />
           </Field>
           <Field label="Categoria">
-            <select value={compra.categoria || ''} onChange={(e) => { setHeader({ categoria: e.target.value }); salvarHeader({ categoria: e.target.value }); }}>
+            <Select value={compra.categoria || ''} onChange={(e) => { setHeader({ categoria: e.target.value }); salvarHeader({ categoria: e.target.value }); }}>
               {listas?.categoria_compra.map((c) => <option key={c.id} value={c.valor}>{c.valor}</option>)}
-            </select>
+            </Select>
           </Field>
           <Field label="Nº do Documento (nota/cupom)">
             <input value={compra.numero_documento || ''} onChange={(e) => setHeader({ numero_documento: e.target.value })} onBlur={() => salvarHeader()} />
           </Field>
           <Field label="Situação">
-            <select value={compra.situacao} onChange={(e) => { setHeader({ situacao: e.target.value }); salvarHeader({ situacao: e.target.value }); }}>
+            <Select value={compra.situacao} onChange={(e) => { setHeader({ situacao: e.target.value }); salvarHeader({ situacao: e.target.value }); }}>
               <option value="pendente">Pendente</option>
               <option value="recebido">Recebido</option>
               <option value="cancelado">Cancelado</option>
-            </select>
+            </Select>
           </Field>
           <Field label="Forma de Pagamento">
-            <select value={compra.forma_pagamento || ''} onChange={(e) => { setHeader({ forma_pagamento: e.target.value }); salvarHeader({ forma_pagamento: e.target.value }); }}>
+            <Select value={compra.forma_pagamento || ''} onChange={(e) => { setHeader({ forma_pagamento: e.target.value }); salvarHeader({ forma_pagamento: e.target.value }); }}>
               <option value="">—</option>
               {listas?.forma_pagamento.map((o) => <option key={o.id} value={o.valor}>{o.valor}</option>)}
-            </select>
+            </Select>
           </Field>
           <Field label="Condição de Pagamento">
-            <select value={compra.condicao_pagamento || ''} onChange={(e) => { setHeader({ condicao_pagamento: e.target.value }); salvarHeader({ condicao_pagamento: e.target.value }); }}>
+            <Select value={compra.condicao_pagamento || ''} onChange={(e) => { setHeader({ condicao_pagamento: e.target.value }); salvarHeader({ condicao_pagamento: e.target.value }); }}>
               <option value="">—</option>
               {listas?.condicao_pagamento.map((o) => <option key={o.id} value={o.valor}>{o.valor}</option>)}
-            </select>
+            </Select>
           </Field>
           <Field label="Desconto R$">
             <NumInput value={compra.desconto_valor} onChange={(v) => setHeader({ desconto_valor: v })} onBlur={() => salvarHeader()} suffix="R$" />

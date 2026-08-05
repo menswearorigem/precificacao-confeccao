@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Upload, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { api } from '../api/client';
 import { brl } from '../lib/format';
+import { Select } from '../components/ui';
 
 const FONTES = [
   { key: 'mercado_livre', label: 'Mercado Livre (Vendas → Relatórios → Vendas)' },
@@ -81,9 +82,9 @@ export default function ImportarPedidosPage() {
         <form onSubmit={handlePreview} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div className="field">
             <span className="field-label">De onde veio essa planilha?</span>
-            <select value={fonte} onChange={(e) => setFonte(e.target.value)}>
+            <Select value={fonte} onChange={(e) => setFonte(e.target.value)}>
               {FONTES.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
-            </select>
+            </Select>
           </div>
           <div className="field">
             <span className="field-label">Arquivo (.xlsx)</span>

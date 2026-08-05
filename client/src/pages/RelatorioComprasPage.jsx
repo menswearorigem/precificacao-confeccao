@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer } from 'lucide-react';
 import { api } from '../api/client';
 import { brl } from '../lib/format';
+import { Select } from '../components/ui';
 
 function primeiroDiaDoMes() {
   const d = new Date();
@@ -68,17 +69,17 @@ export default function RelatorioComprasPage() {
             </div>
             <div className="field">
               <span className="field-label">Categoria</span>
-              <select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
+              <Select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
                 <option value="">Todas</option>
                 {listas?.categoria_compra.map((c) => <option key={c.id} value={c.valor}>{c.valor}</option>)}
-              </select>
+              </Select>
             </div>
             <div className="field">
               <span className="field-label">Fornecedor</span>
-              <select value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)}>
+              <Select value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)}>
                 <option value="">Todos</option>
                 {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.nome}</option>)}
-              </select>
+              </Select>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>

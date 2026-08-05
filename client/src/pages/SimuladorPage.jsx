@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { FlaskConical } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, NumInput, Row } from '../components/ui';
+import { Field, NumInput, Row, Select } from '../components/ui';
 import { brl, pct } from '../lib/format';
 import { statusToneClass } from '../lib/statusTone';
 
@@ -69,12 +69,12 @@ export default function SimuladorPage() {
 
       <div className="card" style={{ marginBottom: 16 }}>
         <Field label="Referência a simular">
-          <select value={produtoId} onChange={(e) => handleProdutoChange(e.target.value)}>
+          <Select value={produtoId} onChange={(e) => handleProdutoChange(e.target.value)}>
             <option value="">Selecione uma referência…</option>
             {produtos.map((p) => (
               <option key={p.id} value={p.id}>{p.referencia} — {p.descricao}</option>
             ))}
-          </select>
+          </Select>
         </Field>
       </div>
 

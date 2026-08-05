@@ -5,7 +5,7 @@ import {
   Save, XCircle, CheckCircle2, Package, ArrowLeft, ImagePlus,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, NumInput, Row } from '../components/ui';
+import { Field, NumInput, Row, Select } from '../components/ui';
 import { statusToneClass } from '../lib/statusTone';
 import { brl, pct, uid } from '../lib/format';
 import Lightbox from '../components/Lightbox';
@@ -269,34 +269,34 @@ export default function ProdutoFichaPage() {
               <input value={produto.descricao || ''} onChange={(e) => updateProduto({ descricao: e.target.value })} />
             </Field>
             <Field label="Categoria">
-              <select value={produto.categoria || ''} onChange={(e) => updateProduto({ categoria: e.target.value })}>
+              <Select value={produto.categoria || ''} onChange={(e) => updateProduto({ categoria: e.target.value })}>
                 <option value="">—</option>
                 {listas.categoria.map((v) => <option key={v.id} value={v.valor}>{v.valor}</option>)}
-              </select>
+              </Select>
             </Field>
             <Field label="Marca">
-              <select value={produto.marca || ''} onChange={(e) => updateProduto({ marca: e.target.value })}>
+              <Select value={produto.marca || ''} onChange={(e) => updateProduto({ marca: e.target.value })}>
                 <option value="">—</option>
                 {listas.marca.map((v) => <option key={v.id} value={v.valor}>{v.valor}</option>)}
-              </select>
+              </Select>
             </Field>
             <Field label="Coleção">
-              <select value={produto.colecao || ''} onChange={(e) => updateProduto({ colecao: e.target.value })}>
+              <Select value={produto.colecao || ''} onChange={(e) => updateProduto({ colecao: e.target.value })}>
                 <option value="">—</option>
                 {listas.colecao.map((v) => <option key={v.id} value={v.valor}>{v.valor}</option>)}
-              </select>
+              </Select>
             </Field>
             <Field label="Linha">
-              <select value={produto.linha || ''} onChange={(e) => updateProduto({ linha: e.target.value })}>
+              <Select value={produto.linha || ''} onChange={(e) => updateProduto({ linha: e.target.value })}>
                 <option value="">—</option>
                 {listas.linha.map((v) => <option key={v.id} value={v.valor}>{v.valor}</option>)}
-              </select>
+              </Select>
             </Field>
             <Field label="Empresa (regime tributário)">
-              <select value={produto.empresa_id || ''} onChange={(e) => updateProduto({ empresa_id: e.target.value })}>
+              <Select value={produto.empresa_id || ''} onChange={(e) => updateProduto({ empresa_id: e.target.value })}>
                 <option value="">—</option>
                 {empresas.map((emp) => <option key={emp.id} value={emp.id}>{emp.nome}</option>)}
-              </select>
+              </Select>
             </Field>
             <Field label="Responsável pela Precificação">
               <input value={produto.responsavel || ''} onChange={(e) => updateProduto({ responsavel: e.target.value })} />
@@ -354,9 +354,9 @@ export default function ProdutoFichaPage() {
                     />
                   </td>
                   <td>
-                    <select value={m.unidade || ''} onChange={(e) => updateMaterial(m._key, { unidade: e.target.value })}>
+                    <Select value={m.unidade || ''} onChange={(e) => updateMaterial(m._key, { unidade: e.target.value })}>
                       {unidades.map((u) => <option key={u} value={u}>{u}</option>)}
-                    </select>
+                    </Select>
                   </td>
                   <td><NumInput value={m.quantidade} onChange={(v) => updateMaterial(m._key, { quantidade: v })} /></td>
                   <td><NumInput value={m.valor_unitario} onChange={(v) => updateMaterial(m._key, { valor_unitario: v })} suffix="R$" /></td>
@@ -387,10 +387,10 @@ export default function ProdutoFichaPage() {
               {custosIndustriais.map((cst) => (
                 <tr key={cst._key}>
                   <td>
-                    <select value={cst.tipo || ''} onChange={(e) => updateCusto(cst._key, { tipo: e.target.value })}>
+                    <Select value={cst.tipo || ''} onChange={(e) => updateCusto(cst._key, { tipo: e.target.value })}>
                       <option value="">—</option>
                       {listas.tipo_custo_industrial.map((v) => <option key={v.id} value={v.valor}>{v.valor}</option>)}
-                    </select>
+                    </Select>
                   </td>
                   <td><input value={cst.observacao || ''} onChange={(e) => updateCusto(cst._key, { observacao: e.target.value })} /></td>
                   <td><NumInput value={cst.valor} onChange={(v) => updateCusto(cst._key, { valor: v })} suffix="R$" /></td>

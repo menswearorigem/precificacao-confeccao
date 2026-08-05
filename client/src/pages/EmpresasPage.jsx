@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, NumInput } from '../components/ui';
+import { Field, NumInput, Select } from '../components/ui';
 
 const REGIMES = ['Simples Nacional', 'Lucro Presumido', 'Lucro Real'];
 
@@ -62,14 +62,14 @@ export default function EmpresasPage() {
               />
             </Field>
             <Field label="Regime Tributário">
-              <select
+              <Select
                 value={emp.regime_tributario}
                 onChange={(e) => updateEmpresa(emp.id, { regime_tributario: e.target.value })}
               >
                 {REGIMES.map((r) => (
                   <option key={r} value={r}>{r}</option>
                 ))}
-              </select>
+              </Select>
             </Field>
           </div>
 

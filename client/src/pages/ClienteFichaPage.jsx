@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Save, Trash2, MapPinCheck } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, NumInput } from '../components/ui';
+import { Field, NumInput, Select } from '../components/ui';
 
 function emptyCliente() {
   return {
@@ -153,10 +153,10 @@ export default function ClienteFichaPage() {
         <div className="card-head">Identificação</div>
         <div className="form-grid">
           <Field label="Tipo de Pessoa">
-            <select value={cliente.tipo_pessoa} onChange={(e) => set({ tipo_pessoa: e.target.value })}>
+            <Select value={cliente.tipo_pessoa} onChange={(e) => set({ tipo_pessoa: e.target.value })}>
               <option value="PF">Pessoa Física</option>
               <option value="PJ">Pessoa Jurídica</option>
-            </select>
+            </Select>
           </Field>
           <Field label={cliente.tipo_pessoa === 'PJ' ? 'Razão Social' : 'Nome'}>
             <input value={cliente.nome} onChange={(e) => set({ nome: e.target.value })} />

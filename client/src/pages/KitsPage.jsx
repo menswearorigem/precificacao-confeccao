@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Plus, Trash2, Boxes } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct, uid } from '../lib/format';
+import { Select } from '../components/ui';
 
 function NovoKitForm({ produtos, onCriado }) {
   const [nome, setNome] = useState('');
@@ -60,10 +61,10 @@ function NovoKitForm({ produtos, onCriado }) {
           {itens.map((item) => (
             <tr key={item._key}>
               <td>
-                <select value={item.produtoId} onChange={(e) => updateItem(item._key, { produtoId: e.target.value })}>
+                <Select value={item.produtoId} onChange={(e) => updateItem(item._key, { produtoId: e.target.value })}>
                   <option value="">Selecione…</option>
                   {produtos.map((p) => <option key={p.id} value={p.id}>{p.referencia} — {p.descricao}</option>)}
-                </select>
+                </Select>
               </td>
               <td><input type="number" min="1" value={item.quantidade} onChange={(e) => updateItem(item._key, { quantidade: e.target.value })} /></td>
               <td><button type="button" className="icon-btn" onClick={() => removeItem(item._key)}><Trash2 size={13} /></button></td>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Search, Barcode, Upload, Pencil, Check, X, Tags, Printer, Wand2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import { Field } from '../components/ui';
+import { Field, Select } from '../components/ui';
 
 function EanEditavel({ variante, onFeito }) {
   const [editando, setEditando] = useState(false);
@@ -184,10 +184,10 @@ function CorrigirEmMassa() {
       </p>
       <form onSubmit={buscar} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <Field label="Campo">
-          <select value={campo} onChange={(e) => { setCampo(e.target.value); setEncontradas(null); }}>
+          <Select value={campo} onChange={(e) => { setCampo(e.target.value); setEncontradas(null); }}>
             <option value="cor">Cor</option>
             <option value="tamanho">Tamanho</option>
-          </select>
+          </Select>
         </Field>
         <Field label="Valor atual (exato)">
           <input value={valorAtual} onChange={(e) => setValorAtual(e.target.value)} style={{ width: 160 }} />
@@ -396,10 +396,10 @@ export default function EstoquePage() {
 
       <div className="card">
         <Field label="Referência">
-          <select value={produtoId} onChange={(e) => setProdutoId(e.target.value)}>
+          <Select value={produtoId} onChange={(e) => setProdutoId(e.target.value)}>
             <option value="">Selecione uma referência…</option>
             {produtos.map((p) => <option key={p.id} value={p.id}>{p.referencia} — {p.descricao}</option>)}
-          </select>
+          </Select>
         </Field>
 
         {produtoId && (

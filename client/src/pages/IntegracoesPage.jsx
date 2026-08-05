@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Plug, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
-import { Field } from '../components/ui';
+import { Field, Select } from '../components/ui';
 import WikIntegracaoCard from '../components/WikIntegracaoCard';
 import WikImportarProdutosCard from '../components/WikImportarProdutosCard';
 import WikImportarFichaCustoCard from '../components/WikImportarFichaCustoCard';
@@ -141,13 +141,13 @@ export default function IntegracoesPage() {
           <form onSubmit={criar}>
             <div className="form-grid">
               <Field label="Marketplace">
-                <select
+                <Select
                   value={nova.marketplace}
                   onChange={(e) => setNova((n) => ({ ...n, marketplace: e.target.value }))}
                 >
                   <option value="mercado_livre">Mercado Livre</option>
                   <option value="shopee">Shopee</option>
-                </select>
+                </Select>
               </Field>
               <Field label="Nome (só pra identificar)">
                 <input value={nova.nome} onChange={(e) => setNova((n) => ({ ...n, nome: e.target.value }))} />

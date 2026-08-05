@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Plus, Trash2, KeyRound, ShieldCheck } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
-import { Field } from '../components/ui';
+import { Field, Select } from '../components/ui';
 
 const MODULOS = [
   { key: 'produto', label: 'Produto' },
@@ -133,10 +133,10 @@ export default function UsuariosPage() {
                 <input type="password" value={novoUsuario.senha} onChange={(e) => setNovoUsuario((u) => ({ ...u, senha: e.target.value }))} />
               </Field>
               <Field label="Perfil">
-                <select value={novoUsuario.role} onChange={(e) => setNovoUsuario((u) => ({ ...u, role: e.target.value }))}>
+                <Select value={novoUsuario.role} onChange={(e) => setNovoUsuario((u) => ({ ...u, role: e.target.value }))}>
                   <option value="limitado">Limitado (só os módulos marcados)</option>
                   <option value="admin">Administrador (acesso total)</option>
-                </select>
+                </Select>
               </Field>
             </div>
             {novoUsuario.role === 'limitado' && (
@@ -180,10 +180,10 @@ export default function UsuariosPage() {
               <input value={u.email} disabled style={{ opacity: 0.7 }} />
             </Field>
             <Field label="Perfil">
-              <select value={u.role} onChange={(e) => atualizarUsuario(u.id, { role: e.target.value })}>
+              <Select value={u.role} onChange={(e) => atualizarUsuario(u.id, { role: e.target.value })}>
                 <option value="limitado">Limitado</option>
                 <option value="admin">Administrador</option>
-              </select>
+              </Select>
             </Field>
             <Field label="Ativo?">
               <label className="toggle">

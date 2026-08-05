@@ -4,7 +4,7 @@ import {
   ArrowLeft, Barcode, Search, Trash2, UserPlus, CheckCircle2, XCircle,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, NumInput } from '../components/ui';
+import { Field, NumInput, Select } from '../components/ui';
 import { brl } from '../lib/format';
 
 const SITUACAO_TONE = { aberto: 'tone-atencao', faturado: 'tone-saudavel', cancelado: 'tone-prejuizo' };
@@ -305,10 +305,10 @@ export default function PedidoFormPage() {
             <input type="date" disabled={!aberto} value={pedido.data_pedido?.slice(0, 10) || ''} onChange={(e) => setHeader({ data_pedido: e.target.value })} onBlur={() => salvarHeader()} />
           </Field>
           <Field label="Empresa (Emitente)">
-            <select disabled={!aberto} value={pedido.empresa_id || ''} onChange={(e) => { setHeader({ empresa_id: e.target.value || null }); salvarHeader({ empresa_id: e.target.value || null }); }}>
+            <Select disabled={!aberto} value={pedido.empresa_id || ''} onChange={(e) => { setHeader({ empresa_id: e.target.value || null }); salvarHeader({ empresa_id: e.target.value || null }); }}>
               <option value="">—</option>
               {empresas.map((e) => <option key={e.id} value={e.id}>{e.nome}</option>)}
-            </select>
+            </Select>
           </Field>
           <Field label="Vendedor">
             <input disabled={!aberto} list="vendedores-list" value={pedido.vendedor || ''} onChange={(e) => setHeader({ vendedor: e.target.value })} onBlur={() => salvarHeader()} />
@@ -317,27 +317,27 @@ export default function PedidoFormPage() {
             </datalist>
           </Field>
           <Field label="Operação">
-            <select disabled={!aberto} value={pedido.operacao || ''} onChange={(e) => { setHeader({ operacao: e.target.value }); salvarHeader({ operacao: e.target.value }); }}>
+            <Select disabled={!aberto} value={pedido.operacao || ''} onChange={(e) => { setHeader({ operacao: e.target.value }); salvarHeader({ operacao: e.target.value }); }}>
               {listas?.operacao.map((o) => <option key={o.id} value={o.valor}>{o.valor}</option>)}
-            </select>
+            </Select>
           </Field>
           <Field label="Canal de Venda">
-            <select disabled={!aberto} value={pedido.canal_venda || ''} onChange={(e) => { setHeader({ canal_venda: e.target.value }); salvarHeader({ canal_venda: e.target.value }); }}>
+            <Select disabled={!aberto} value={pedido.canal_venda || ''} onChange={(e) => { setHeader({ canal_venda: e.target.value }); salvarHeader({ canal_venda: e.target.value }); }}>
               <option value="">—</option>
               {listas?.canal_venda.map((o) => <option key={o.id} value={o.valor}>{o.valor}</option>)}
-            </select>
+            </Select>
           </Field>
           <Field label="Condição de Pagamento">
-            <select disabled={!aberto} value={pedido.condicao_pagamento || ''} onChange={(e) => { setHeader({ condicao_pagamento: e.target.value }); salvarHeader({ condicao_pagamento: e.target.value }); }}>
+            <Select disabled={!aberto} value={pedido.condicao_pagamento || ''} onChange={(e) => { setHeader({ condicao_pagamento: e.target.value }); salvarHeader({ condicao_pagamento: e.target.value }); }}>
               <option value="">—</option>
               {listas?.condicao_pagamento.map((o) => <option key={o.id} value={o.valor}>{o.valor}</option>)}
-            </select>
+            </Select>
           </Field>
           <Field label="Forma de Pagamento">
-            <select disabled={!aberto} value={pedido.forma_pagamento || ''} onChange={(e) => { setHeader({ forma_pagamento: e.target.value }); salvarHeader({ forma_pagamento: e.target.value }); }}>
+            <Select disabled={!aberto} value={pedido.forma_pagamento || ''} onChange={(e) => { setHeader({ forma_pagamento: e.target.value }); salvarHeader({ forma_pagamento: e.target.value }); }}>
               <option value="">—</option>
               {listas?.forma_pagamento.map((o) => <option key={o.id} value={o.valor}>{o.valor}</option>)}
-            </select>
+            </Select>
           </Field>
           <Field label="Desconto %">
             <NumInput disabled={!aberto} value={pedido.desconto_pct * 100} onChange={(v) => setHeader({ desconto_pct: (Number(v) || 0) / 100 })} onBlur={() => salvarHeader()} suffix="%" />

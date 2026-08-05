@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { statusToneClass } from '../lib/statusTone';
 import { brl, pct } from '../lib/format';
 import FotoProduto from '../components/FotoProduto';
+import { Select } from '../components/ui';
 
 export default function ProdutosListPage() {
   const navigate = useNavigate();
@@ -60,14 +61,14 @@ export default function ProdutosListPage() {
             />
             <button className="btn btn-ghost" type="submit"><Search size={14} /></button>
           </form>
-          <select value={marca} onChange={(e) => setMarca(e.target.value)} style={{ maxWidth: 200 }}>
+          <Select value={marca} onChange={(e) => setMarca(e.target.value)} style={{ maxWidth: 200 }}>
             <option value="">Todas as marcas</option>
             {listas?.marca.map((m) => <option key={m.id} value={m.valor}>{m.valor}</option>)}
-          </select>
-          <select value={categoria} onChange={(e) => setCategoria(e.target.value)} style={{ maxWidth: 220 }}>
+          </Select>
+          <Select value={categoria} onChange={(e) => setCategoria(e.target.value)} style={{ maxWidth: 220 }}>
             <option value="">Todas as categorias</option>
             {listas?.categoria.map((c) => <option key={c.id} value={c.valor}>{c.valor}</option>)}
-          </select>
+          </Select>
         </div>
       </div>
 

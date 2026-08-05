@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Search, ChevronRight } from 'lucide-react';
 import { api } from '../api/client';
 import { brl } from '../lib/format';
+import { Select } from '../components/ui';
 
 const SITUACAO_TONE = {
   aberto: 'tone-atencao',
@@ -81,12 +82,12 @@ export default function PedidosListPage({ origemFiltro }) {
             />
             <button className="btn btn-ghost" type="submit"><Search size={14} /></button>
           </form>
-          <select value={situacao} onChange={(e) => setSituacao(e.target.value)} style={{ maxWidth: 200 }}>
+          <Select value={situacao} onChange={(e) => setSituacao(e.target.value)} style={{ maxWidth: 200 }}>
             <option value="">Todas as situações</option>
             <option value="aberto">Aberto</option>
             <option value="faturado">Faturado</option>
             <option value="cancelado">Cancelado</option>
-          </select>
+          </Select>
         </div>
       </div>
 

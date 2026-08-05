@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Save, Trash2, MapPinCheck } from 'lucide-react';
 import { api } from '../api/client';
-import { Field } from '../components/ui';
+import { Field, Select } from '../components/ui';
 
 function emptyFornecedor() {
   return {
@@ -154,10 +154,10 @@ export default function FornecedorFichaPage() {
         <div className="card-head">Identificação</div>
         <div className="form-grid">
           <Field label="Tipo de Pessoa">
-            <select value={fornecedor.tipo_pessoa} onChange={(e) => set({ tipo_pessoa: e.target.value })}>
+            <Select value={fornecedor.tipo_pessoa} onChange={(e) => set({ tipo_pessoa: e.target.value })}>
               <option value="PJ">Pessoa Jurídica</option>
               <option value="PF">Pessoa Física</option>
-            </select>
+            </Select>
           </Field>
           <Field label={fornecedor.tipo_pessoa === 'PJ' ? 'Razão Social' : 'Nome'}>
             <input value={fornecedor.nome} onChange={(e) => set({ nome: e.target.value })} />
@@ -238,16 +238,16 @@ export default function FornecedorFichaPage() {
         <div className="card-head">Comercial</div>
         <div className="form-grid">
           <Field label="Categoria Principal">
-            <select value={fornecedor.categoria_principal || ''} onChange={(e) => set({ categoria_principal: e.target.value })}>
+            <Select value={fornecedor.categoria_principal || ''} onChange={(e) => set({ categoria_principal: e.target.value })}>
               <option value="">—</option>
               {listas?.categoria_compra.map((c) => <option key={c.id} value={c.valor}>{c.valor}</option>)}
-            </select>
+            </Select>
           </Field>
           <Field label="Condição de Pagamento Padrão">
-            <select value={fornecedor.condicao_pagamento_padrao || ''} onChange={(e) => set({ condicao_pagamento_padrao: e.target.value })}>
+            <Select value={fornecedor.condicao_pagamento_padrao || ''} onChange={(e) => set({ condicao_pagamento_padrao: e.target.value })}>
               <option value="">—</option>
               {listas?.condicao_pagamento.map((c) => <option key={c.id} value={c.valor}>{c.valor}</option>)}
-            </select>
+            </Select>
           </Field>
           <Field label="Chave PIX">
             <input className="mono" value={fornecedor.chave_pix || ''} onChange={(e) => set({ chave_pix: e.target.value })} />
