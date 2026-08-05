@@ -280,12 +280,24 @@ router.post('/ficha-custo/diagnosticar', async (req, res, next) => {
       });
     }
 
-    const [insumos, operacoesFicha] = await Promise.all([
+    const [insumos, operacoesFicha, operacoesGlobais] = await Promise.all([
       wik.buscarInsumosFichaTecnica(token, wikProdId).catch((err) => ({ erro: err.message })),
       wik.buscarOperacoesFichaTecnica(token, wikProdId).catch((err) => ({ erro: err.message })),
+      wik.listarOperacoes(token).catch((err) => ({ erro: err.message })),
     ]);
 
-    res.json({ produto: { ...produto, wik_prod_id: wikProdId }, produtoWik, insumos, operacoesFicha });
+    // A doc de materiaprima_get não mostra campo de custo — testa aqui se
+    // ele vem "escondido" mesmo assim (já rolou duas vezes de a doc omitir
+    // campo que a resposta real trazia).
+    let materiaPrimaExemplo = null;
+    if (Array.isArray(insumos) && insumos.length > 0) {
+      materiaPrimaExemplo = await wik.buscarMateriaPrima(token, insumos[0].MatId).catch((err) => ({ erro: err.message }));
+    }
+
+    res.json({
+      produto: { ...produto, wik_prod_id: wikProdId }, produtoWik, insumos, operacoesFicha, operacoesGlobais,
+      materiaPrimaExemplo: materiaPrimaExemplo ? { matIdTestado: insumos[0]?.MatId, resposta: materiaPrimaExemplo } : null,
+    });
   } catch (err) {
     res.status(422).json({ error: err.message });
   }
