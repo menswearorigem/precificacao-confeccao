@@ -69,12 +69,13 @@ export default function WikImportarFichaCustoCard() {
 
   return (
     <div className="card" style={{ marginBottom: 18 }}>
-      <div className="card-head">Importar Ficha de Custo (materiais e operações) do Wik</div>
+      <div className="card-head">Importar Ficha de Custo do Wik</div>
       <p className="page-sub" style={{ marginTop: -6, marginBottom: 14 }}>
-        Traz os materiais (com custo unitário real) e as operações de corte/costura de cada produto que
-        ainda não tem nenhuma ficha de custo cadastrada aqui — não mexe em produto que você já preencheu
-        manualmente. O Wik não informa o valor de cada operação (corte, facção etc.), então elas entram
-        com valor R$ 0,00 — só falta você preencher isso depois.
+        Traz o custo total já calculado e aprovado na Ficha de Custo do Wik (o mesmo valor que aparece na
+        ficha impressa) pra cada produto que ainda não tem nenhuma ficha cadastrada aqui — não mexe em
+        produto que você já preencheu manualmente. Os materiais entram como referência (nome e quantidade
+        por peça), mas sem custo individual — o Wik não expõe um custo por material que bata com a ficha
+        aprovada, só o total (confirmado comparando com a ficha impressa real).
       </p>
 
       <button className="btn btn-primary" onClick={iniciar} disabled={loading}>
@@ -82,8 +83,9 @@ export default function WikImportarFichaCustoCard() {
       </button>
       {loading && (
         <p className="page-sub" style={{ marginTop: 8 }}>
-          Isso pode levar bastante tempo (uma chamada por produto, mais uma por material único, respeitando
-          o limite de 3 requisições/segundo do Wik). Pode continuar usando o sistema normalmente.
+          Isso pode levar bastante tempo (uma chamada ao produto por referência, mais uma por material único
+          pra pegar a unidade de medida, respeitando o limite de 3 requisições/segundo do Wik). Pode continuar
+          usando o sistema normalmente.
         </p>
       )}
 
@@ -108,18 +110,31 @@ export default function WikImportarFichaCustoCard() {
             <div><span className="field-label">Produtos sem ficha (candidatos)</span><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{preview.resumo.totalCandidatos}</div></div>
             <div><span className="field-label">Ficha encontrada no Wik</span><div className="mono" style={{ fontSize: 18, fontWeight: 700, color: 'var(--success)' }}>{preview.resumo.comFichaEncontrada}</div></div>
             <div><span className="field-label">Sem ficha no Wik</span><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{preview.resumo.semFichaNoWik}</div></div>
+            <div><span className="field-label">Sem custo total</span><div className="mono" style={{ fontSize: 18, fontWeight: 700, color: preview.resumo.semCustoTotal > 0 ? 'var(--danger)' : undefined }}>{preview.resumo.semCustoTotal}</div></div>
             <div><span className="field-label">Com erro</span><div className="mono" style={{ fontSize: 18, fontWeight: 700, color: preview.resumo.totalErros > 0 ? 'var(--danger)' : undefined }}>{preview.resumo.totalErros}</div></div>
           </div>
 
+          {preview.resumo.semCustoTotal > 0 && (
+            <div className="login-error" style={{ marginBottom: 12 }}>
+              <AlertTriangle size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
+              {preview.resumo.semCustoTotal} produto(s) tinham materiais/operações mas nenhum custo total
+              encontrado (sem tabela de preço no Wik) — serão criados só com a referência de materiais, sem
+              nenhum custo. Precisam ser preenchidos manualmente.
+            </div>
+          )}
+
           <table className="data-table" style={{ marginBottom: 10 }}>
-            <thead><tr><th>Referência</th><th>Descrição</th><th>Materiais</th><th>Operações</th></tr></thead>
+            <thead><tr><th>Referência</th><th>Descrição</th><th>Materiais (ref.)</th><th>Operações</th><th>Custo Total (Wik)</th></tr></thead>
             <tbody>
               {preview.produtos.slice(0, 200).map((p, i) => (
                 <tr key={i}>
                   <td className="mono">{p.referencia}</td>
                   <td>{p.descricao}</td>
                   <td className="mono">{p.materiais.length}</td>
-                  <td className="mono">{p.custosIndustriais.length}</td>
+                  <td className="mono">{p.custosIndustriais.length - (p.custoTotalWik != null ? 1 : 0)}</td>
+                  <td className="mono" style={{ fontWeight: 700, color: p.custoTotalWik != null ? 'var(--success)' : 'var(--danger)' }}>
+                    {p.custoTotalWik != null ? `R$ ${Number(p.custoTotalWik).toFixed(2)}` : 'sem custo'}
+                  </td>
                 </tr>
               ))}
             </tbody>

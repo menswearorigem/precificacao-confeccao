@@ -2,11 +2,16 @@ const pool = require('../db/pool');
 const wik = require('./wik');
 const { obterTokenValido } = require('./wikSync');
 
-// Puxa materiais (com custo unitário — MatVlrUnit, campo que a doc do Wik
-// não documenta mas a resposta real traz) e operações de custo (sem valor,
-// o Wik não expõe custo de mão-de-obra por operação) pra cada produto que
-// AINDA NÃO tem nenhuma ficha de custo cadastrada localmente — não
-// sobrescreve produto que já foi preenchido manualmente.
+// IMPORTANTE: materiaprima_get devolve um "MatVlrUnit" que parece ser o
+// preço CORRENTE do material, não o custo que está de fato congelado na
+// ficha de custo aprovada — confirmado comparando com a ficha impressa
+// real (Costonera: Wik aprovado R$0,19, materiaprima_get devolveu R$0,34).
+// Por isso NÃO usamos esse campo pra custo. Em vez disso, usamos
+// ListaTabPreco[].TabpCusto do produto_get, que bate exatamente com o
+// "Custo Total Previsto" da ficha de custo aprovada (conferido na prática:
+// R$26,10 nos dois). Os materiais/operações individuais entram só como
+// referência (nome + quantidade, sem custo un.); o custo de verdade da
+// peça entra como um único item de custo industrial com esse valor total.
 async function montarPreviewFichaCusto(integracao) {
   const token = await obterTokenValido(integracao);
 
@@ -18,52 +23,75 @@ async function montarPreviewFichaCusto(integracao) {
     ORDER BY p.referencia
   `);
 
-  const materiaPrimaCache = new Map();
+  const unidadeMaterialCache = new Map(); // MatId -> unidade (só a unidade, nunca o custo)
   const produtos = [];
   const semFichaNoWik = [];
+  const semCustoTotal = [];
   const erros = [];
 
   for (const produto of candidatos) {
-    let wikProdId = produto.wik_prod_id;
     try {
-      if (!wikProdId) {
-        const produtoWik = await wik.buscarProdutoPorReferencia(token, produto.referencia);
-        wikProdId = produtoWik?.ProdId || null;
-        if (wikProdId) await pool.query('UPDATE produtos SET wik_prod_id = $1 WHERE id = $2', [wikProdId, produto.id]);
+      // Sempre busca o produto_get (não só quando falta wik_prod_id) — é
+      // dele que vem o TabpCusto, a única fonte de custo confirmada.
+      const produtoWik = await wik.buscarProdutoPorReferencia(token, produto.referencia);
+      const wikProdId = produtoWik?.ProdId || produto.wik_prod_id || null;
+      if (wikProdId && wikProdId !== produto.wik_prod_id) {
+        await pool.query('UPDATE produtos SET wik_prod_id = $1 WHERE id = $2', [wikProdId, produto.id]);
       }
       if (!wikProdId) { semFichaNoWik.push(produto.referencia); continue; }
+
+      const custoTotalWik = produtoWik?.ListaTabPreco?.[0]?.TabpCusto != null
+        ? Number(produtoWik.ListaTabPreco[0].TabpCusto)
+        : null;
+      const itensGrade = Array.isArray(produtoWik?.ListaGrade) ? produtoWik.ListaGrade.length : 0;
 
       const [insumos, operacoes] = await Promise.all([
         wik.buscarInsumosFichaTecnica(token, wikProdId),
         wik.buscarOperacoesFichaTecnica(token, wikProdId),
       ]);
 
-      if (insumos.length === 0 && operacoes.length === 0) { semFichaNoWik.push(produto.referencia); continue; }
+      if (insumos.length === 0 && operacoes.length === 0 && custoTotalWik == null) {
+        semFichaNoWik.push(produto.referencia);
+        continue;
+      }
+      if (custoTotalWik == null) semCustoTotal.push(produto.referencia);
 
       const materiais = [];
       for (const insumo of insumos) {
-        if (!materiaPrimaCache.has(insumo.MatId)) {
+        if (!unidadeMaterialCache.has(insumo.MatId)) {
           try {
             const resposta = await wik.buscarMateriaPrima(token, insumo.MatId);
             const dados = Array.isArray(resposta) ? resposta[0] : resposta;
-            materiaPrimaCache.set(insumo.MatId, {
-              descricao: dados?.MatDescricao || insumo.MatDescricao || '',
-              unidade: dados?.MatUnd || '',
-              valorUnitario: Number(dados?.MatVlrUnit) || 0,
-            });
+            unidadeMaterialCache.set(insumo.MatId, dados?.MatUnd || '');
           } catch {
-            materiaPrimaCache.set(insumo.MatId, { descricao: insumo.MatDescricao || '', unidade: '', valorUnitario: 0 });
+            unidadeMaterialCache.set(insumo.MatId, '');
           }
         }
-        const mp = materiaPrimaCache.get(insumo.MatId);
-        materiais.push({ material: mp.descricao, unidade: mp.unidade, quantidade: Number(insumo.Qtd) || 0, valorUnitario: mp.valorUnitario });
+        // Qtd do insumosfichatecnica_get é o consumo da GRADE INTEIRA (todos
+        // os tamanhos somados), não por peça — divide pelo nº de tamanhos
+        // da grade pra chegar no consumo de uma peça (conferido com a ficha
+        // impressa: 98 ÷ 7 tamanhos = 14 por peça).
+        const quantidadePorPeca = itensGrade > 0 ? Number(insumo.Qtd) / itensGrade : Number(insumo.Qtd) || 0;
+        materiais.push({
+          material: insumo.MatDescricao || insumo.MatReferencia || '',
+          unidade: unidadeMaterialCache.get(insumo.MatId),
+          quantidade: quantidadePorPeca,
+          valorUnitario: 0, // sem fonte confiável de custo por material — ver custo total abaixo
+        });
       }
 
-      const custosIndustriais = operacoes.map((op) => ({ tipo: op.SerDescricao || '', valor: 0 }));
+      const custosIndustriais = operacoes.map((op) => ({ tipo: op.SerDescricao || '', valor: 0, custoTotal: false }));
+      if (custoTotalWik != null) {
+        custosIndustriais.push({
+          tipo: 'Custo Total (Ficha de Custo aprovada no Wik)',
+          valor: custoTotalWik,
+          custoTotal: true,
+        });
+      }
 
       produtos.push({
         produtoId: produto.id, referencia: produto.referencia, descricao: produto.descricao,
-        materiais, custosIndustriais,
+        materiais, custosIndustriais, custoTotalWik,
       });
     } catch (err) {
       erros.push({ referencia: produto.referencia, motivo: err.message });
@@ -77,8 +105,8 @@ async function montarPreviewFichaCusto(integracao) {
       totalCandidatos: candidatos.length,
       comFichaEncontrada: produtos.length,
       semFichaNoWik: semFichaNoWik.length,
+      semCustoTotal: semCustoTotal.length,
       totalErros: erros.length,
-      materiaisUnicosConsultados: materiaPrimaCache.size,
     },
   };
 }
@@ -112,9 +140,12 @@ async function aplicarImportacaoFichaCusto(produtos) {
       ordem = 0;
       for (const c of item.custosIndustriais || []) {
         ordem += 1;
+        const observacao = c.custoTotal
+          ? 'Custo total já calculado e aprovado na Ficha de Custo do Wik (matéria-prima + serviços) — os materiais acima entram só como referência (o Wik não expõe custo confiável por material).'
+          : 'Importado do Wik — valor de mão-de-obra por operação não é exposto pela API, já está incluído no "Custo Total" desta ficha.';
         await client.query(
           `INSERT INTO custos_industriais (produto_id, tipo, observacao, valor, ordem) VALUES ($1,$2,$3,$4,$5)`,
-          [item.produtoId, c.tipo, 'Importado do Wik — falta preencher o valor (o Wik não informa custo de operação)', c.valor, ordem]
+          [item.produtoId, c.tipo, observacao, c.valor, ordem]
         );
         custosCriados += 1;
       }
