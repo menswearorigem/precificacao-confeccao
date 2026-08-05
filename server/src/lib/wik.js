@@ -83,17 +83,19 @@ async function listarCategorias(token) {
   return mapa;
 }
 
-// produto_get: a doc não mostra um envelope de paginação nesse endpoint
-// (diferente do saldo_estoque_get), então paramos quando a página vier
-// vazia ou o "retorno" não for lista.
-async function listarProdutos(token, empId, { situacao } = {}) {
+// produto_get: o parâmetro "id" da doc é o identificador de UM produto
+// específico (não da empresa, apesar do exemplo confuso na doc) — passá-lo
+// filtra pra um produto só. Pra listar o catálogo inteiro é só paginar sem
+// "id" nenhum. A doc não mostra um envelope de paginação nesse endpoint
+// (diferente do saldo_estoque_get), então paramos só quando a página vier
+// vazia — sem "chutar" um tamanho de página, que pode variar.
+async function listarProdutos(token, { situacao } = {}) {
   const produtos = [];
-  for (let pagina = 1; pagina <= 500; pagina += 1) {
-    const data = await chamarApi('produto_get', token, { id: empId, pagina, prodSituacao: situacao });
+  for (let pagina = 1; pagina <= 5000; pagina += 1) {
+    const data = await chamarApi('produto_get', token, { pagina, prodSituacao: situacao });
     const lista = Array.isArray(data.retorno) ? data.retorno : (data.retorno?.dados || []);
     if (lista.length === 0) break;
     produtos.push(...lista);
-    if (lista.length < 30) break; // menor que o tamanho de página observado
   }
   return produtos;
 }

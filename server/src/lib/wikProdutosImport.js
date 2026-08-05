@@ -17,38 +17,54 @@ function normalizar(valor) {
   return String(valor || '').trim().toUpperCase();
 }
 
-// Puxa produto_get + saldo_estoque_get de todas as empresas configuradas,
-// junta tudo por referência (o mesmo produto pode ter cadastro em mais de
-// uma "loja"/empresa no Wik) e resolve marca/categoria a partir dos campos
-// de texto do saldo_estoque_get (produto_get só traz os ids numéricos,
-// sem descrição). Pro estoque, cada loja pode ter um valor diferente pro
-// mesmo produto+cor+tamanho — como pedido, usamos o MAIOR valor entre elas.
+// Descobre o catálogo cruzando DUAS fontes:
+// 1) saldo_estoque_get por empresa — já comprovadamente funciona por
+//    empresa (é a mesma rota que a sincronização de estoque recorrente já
+//    usa com sucesso) e cada linha já traz descrição/marca/categoria/
+//    situação em texto, prontos.
+// 2) produto_get, sem filtro de empresa — o parâmetro "id" da doc é o
+//    identificador de UM produto específico, não da empresa (confirmado:
+//    passar os 4 Ids de empresa ali só trouxe os produtos cujo ProdId
+//    coincidia com esses números). Usada aqui só como reforço: dá o ProdId
+//    (vai ser necessário na Ficha de Custo/Audaces) e pega produto que
+//    porventura não tenha nenhum saldo lançado em lugar nenhum.
+// Pro estoque, cada empresa/loja pode ter um valor diferente pro mesmo
+// produto+cor+tamanho — como pedido, usamos o MAIOR valor entre elas.
 async function montarPreviewProdutos(integracao, empIds = EMP_IDS_PADRAO) {
   const token = await obterTokenValido(integracao);
 
-  const produtosBrutos = [];
   const estoqueBruto = [];
   for (const empId of empIds) {
-    const produtos = await wik.listarProdutos(token, empId);
-    produtosBrutos.push(...produtos);
     const saldo = await wik.listarSaldoEstoque(token, empId);
     estoqueBruto.push(...saldo);
   }
+  const produtosBrutos = await wik.listarProdutos(token);
 
-  const classificacaoPorReferencia = new Map();
+  const porReferencia = new Map();
   for (const s of estoqueBruto) {
     const ref = s.prod_referencia;
-    if (!ref || classificacaoPorReferencia.has(ref)) continue;
-    const marca = limparPrefixo(s.marca);
-    const categoria = limparPrefixo(s.categoria) || limparPrefixo(s.grupo);
-    if (marca || categoria) classificacaoPorReferencia.set(ref, { marca, categoria });
+    if (!ref) continue;
+    const atual = porReferencia.get(ref) || {};
+    const situacaoTexto = String(s.prod_situacao || '').trim();
+    porReferencia.set(ref, {
+      descricao: atual.descricao || s.prod_descricao || '',
+      marca: atual.marca || limparPrefixo(s.marca) || null,
+      categoria: atual.categoria || limparPrefixo(s.categoria) || limparPrefixo(s.grupo) || null,
+      ativa: atual.ativa !== undefined ? atual.ativa : (situacaoTexto === '' || situacaoTexto.startsWith('0')),
+      wikProdId: atual.wikProdId,
+    });
   }
-
-  const produtoPorReferencia = new Map();
   for (const p of produtosBrutos) {
     const ref = p.ProdReferencia;
-    if (!ref || p.ProdSituacao !== '0') continue; // só produtos ativos
-    if (!produtoPorReferencia.has(ref)) produtoPorReferencia.set(ref, p);
+    if (!ref) continue;
+    const atual = porReferencia.get(ref) || {};
+    porReferencia.set(ref, {
+      descricao: atual.descricao || p.ProdDescricao || '',
+      marca: atual.marca || null,
+      categoria: atual.categoria || null,
+      ativa: atual.ativa !== undefined ? atual.ativa : p.ProdSituacao === '0',
+      wikProdId: atual.wikProdId || p.ProdId,
+    });
   }
 
   const estoqueMaxPorChave = new Map();
@@ -72,18 +88,19 @@ async function montarPreviewProdutos(integracao, empIds = EMP_IDS_PADRAO) {
   const { rows: existentesRows } = await pool.query('SELECT referencia FROM produtos');
   const existentes = new Set(existentesRows.map((r) => r.referencia));
 
+  const ativos = [...porReferencia.entries()].filter(([, info]) => info.ativa);
+
   const criar = [];
   let semClassificacao = 0;
-  for (const [referencia, p] of produtoPorReferencia.entries()) {
+  for (const [referencia, info] of ativos) {
     if (existentes.has(referencia)) continue; // já existe localmente, não duplica
-    const classificacao = classificacaoPorReferencia.get(referencia) || {};
-    if (!classificacao.marca) semClassificacao += 1;
+    if (!info.marca) semClassificacao += 1;
     criar.push({
       referencia,
-      descricao: p.ProdDescricao || '',
-      marca: classificacao.marca || null,
-      categoria: classificacao.categoria || null,
-      wikProdId: p.ProdId,
+      descricao: info.descricao,
+      marca: info.marca,
+      categoria: info.categoria,
+      wikProdId: info.wikProdId || null,
       variantes: variantesPorReferencia.get(referencia) || [],
     });
   }
@@ -91,9 +108,9 @@ async function montarPreviewProdutos(integracao, empIds = EMP_IDS_PADRAO) {
   return {
     criar,
     resumo: {
-      totalProdutosWik: produtoPorReferencia.size,
+      totalProdutosWik: ativos.length,
       novosParaCriar: criar.length,
-      jaExistentesIgnorados: produtoPorReferencia.size - criar.length,
+      jaExistentesIgnorados: ativos.length - criar.length,
       semMarcaOuCategoria: semClassificacao,
       totalVariantesConsolidadas: estoqueMaxPorChave.size,
     },
