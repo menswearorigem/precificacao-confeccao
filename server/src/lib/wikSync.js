@@ -84,7 +84,16 @@ async function montarPreviewEstoque(integracao, porEmpId) {
       erros.push({ motivo: `Referência "${referencia}" não está cadastrada em Produtos — cadastre-a antes de sincronizar.`, dados: { referencia, cor, tamanho } });
       continue;
     }
-    porChave.set(chaveVariante(referencia, cor, tamanho), { referencia, descricao: linha.prod_descricao, cor, tamanho, quantidade });
+    // BUG CORRIGIDO: isso sobrescrevia sem comparar, então quando o mesmo
+    // produto+cor+tamanho existia em mais de uma loja (empresa), só a
+    // última loja processada no loop "ganhava" — nunca o maior valor entre
+    // elas, como devia ser (pedido explícito da usuária, já que cada loja
+    // registra um saldo diferente hoje). Agora compara e fica com o maior.
+    const chave = chaveVariante(referencia, cor, tamanho);
+    const atual = porChave.get(chave);
+    if (!atual || quantidade > atual.quantidade) {
+      porChave.set(chave, { referencia, descricao: linha.prod_descricao, cor, tamanho, quantidade });
+    }
   }
 
   const criar = [];
