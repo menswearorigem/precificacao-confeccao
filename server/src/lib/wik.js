@@ -68,7 +68,11 @@ async function chamarApi(path, token, params = {}) {
     ({ res, data } = await chamarApiComBase('apiwiki', path, token, params));
   }
   if (!res.ok || data.success === false) {
-    throw new Error(data.message || `Erro na API do Wik (${res.status}): ${path}`);
+    const detalhes = [];
+    if (data.message) detalhes.push(data.message);
+    if (data.errors && Object.keys(data.errors).length > 0) detalhes.push(JSON.stringify(data.errors));
+    if (detalhes.length === 0) detalhes.push(`corpo bruto: ${JSON.stringify(data).slice(0, 500)}`);
+    throw new Error(`Erro na API do Wik (HTTP ${res.status}, body.status ${data.status}) em ${path}: ${detalhes.join(' | ')}`);
   }
   return data;
 }
