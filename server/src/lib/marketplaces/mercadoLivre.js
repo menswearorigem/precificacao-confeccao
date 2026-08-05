@@ -8,6 +8,12 @@
 
 const AUTH_BASE = 'https://auth.mercadolivre.com.br/authorization';
 const API_BASE = 'https://api.mercadolibre.com';
+// O pagamento em si (GET /v1/payments/:id) só existe no host do Mercado
+// Pago — confirmado na prática: api.mercadolibre.com/payments/:id devolve
+// "Payment not found" mesmo com um id válido. O access_token obtido pelo
+// fluxo de autorização do Mercado Livre funciona normalmente aqui também
+// (é o mesmo ecossistema de conta por baixo).
+const MP_API_BASE = 'https://api.mercadopago.com';
 
 function buildAuthorizeUrl({ clientId, redirectUri, state }) {
   const params = new URLSearchParams({
@@ -51,8 +57,8 @@ function renovarToken({ clientId, clientSecret, refreshToken }) {
   });
 }
 
-async function chamarApi(path, accessToken) {
-  const res = await fetch(`${API_BASE}${path}`, {
+async function chamarApiComBase(base, path, accessToken) {
+  const res = await fetch(`${base}${path}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   const data = await res.json();
@@ -60,6 +66,10 @@ async function chamarApi(path, accessToken) {
     throw new Error(data.message || `Erro na API do Mercado Livre (${res.status}): ${path}`);
   }
   return data;
+}
+
+async function chamarApi(path, accessToken) {
+  return chamarApiComBase(API_BASE, path, accessToken);
 }
 
 async function buscarUsuario(accessToken) {
@@ -174,7 +184,16 @@ async function buscarPedidos({ accessToken, sellerId, desde }) {
 // saldo (money_release_date) — por isso reporta os dois separados: o valor
 // (que já é o valor final) e se já foi liberado ou não.
 async function buscarValorRecebido({ pagamentoId, accessToken }) {
-  const pagamento = await chamarApi(`/payments/${pagamentoId}`, accessToken);
+  // Tenta primeiro o host do Mercado Pago (o documentado/correto pra esse
+  // endpoint); se não achar por algum motivo (ex.: token com outro
+  // relacionamento de conta), tenta o host do Mercado Livre como reforço
+  // antes de desistir.
+  let pagamento;
+  try {
+    pagamento = await chamarApiComBase(MP_API_BASE, `/v1/payments/${pagamentoId}`, accessToken);
+  } catch {
+    pagamento = await chamarApiComBase(API_BASE, `/payments/${pagamentoId}`, accessToken);
+  }
   const valorRecebido = pagamento.transaction_details?.net_received_amount;
   const dataLiberacao = pagamento.money_release_date || null;
   if (valorRecebido == null) {
