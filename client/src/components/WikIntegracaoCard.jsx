@@ -23,6 +23,7 @@ export default function WikIntegracaoCard() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
   const [resultadoSync, setResultadoSync] = useState(null);
+  const [sincronizandoAgora, setSincronizandoAgora] = useState(false);
 
   function load() {
     setLoading(true);
@@ -115,6 +116,28 @@ export default function WikIntegracaoCard() {
     setPreviewLoading(false);
   }
 
+  // Força a sincronização completa (busca + aplica) agora, sem esperar o
+  // próximo ciclo automático — mesma rotina que já roda sozinha a cada 15min.
+  async function sincronizarAgora() {
+    setErro('');
+    setAviso('');
+    setResultadoSync(null);
+    setSincronizandoAgora(true);
+    try {
+      const data = await api.post('/wik/estoque/sincronizar-agora', {});
+      if (data.pulado) {
+        setAviso(`Não rodou agora: ${data.pulado}.`);
+      } else {
+        setResultadoSync(data);
+      }
+      load();
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setSincronizandoAgora(false);
+    }
+  }
+
   async function confirmarSincronizacao() {
     if (!preview) return;
     setConfirmando(true);
@@ -137,8 +160,9 @@ export default function WikIntegracaoCard() {
     <div className="card" style={{ marginBottom: 18 }}>
       <div className="card-head">Wik Sistemas (ERP) — Sincronização de Estoque</div>
       <p className="page-sub" style={{ marginTop: -6, marginBottom: 14 }}>
-        Puxa o saldo de estoque direto da API do Wik pras referências já cadastradas aqui, em vez de
-        depender só da importação manual de CSV/PDF.
+        Puxa o saldo de estoque direto da API do Wik pras referências já cadastradas aqui, atualizando
+        sozinho a cada 15 minutos — sem precisar clicar em nada. Os botões abaixo são só pra
+        conferir/forçar uma sincronização na hora, se precisar.
       </p>
 
       <form onSubmit={salvarCredencial} className="form-grid" style={{ marginBottom: 10 }}>
@@ -198,10 +222,13 @@ export default function WikIntegracaoCard() {
       </table>
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
-        <button className="btn btn-primary" onClick={previsualizarEstoque} disabled={previewLoading || !integracao}>
-          <RefreshCw size={13} /> {previewLoading ? 'Buscando no Wik…' : 'Pré-visualizar sincronização de estoque'}
+        <button className="btn btn-primary" onClick={sincronizarAgora} disabled={sincronizandoAgora || previewLoading || !integracao}>
+          <RefreshCw size={13} /> {sincronizandoAgora ? 'Sincronizando…' : 'Sincronizar agora'}
         </button>
-        {previewLoading && (
+        <button className="btn btn-ghost" onClick={previsualizarEstoque} disabled={previewLoading || sincronizandoAgora || !integracao}>
+          <RefreshCw size={13} /> {previewLoading ? 'Buscando no Wik…' : 'Só conferir (sem aplicar)'}
+        </button>
+        {(previewLoading || sincronizandoAgora) && (
           <span className="page-sub" style={{ margin: 0 }}>
             O Wik só libera 3 requisições por segundo — com estoque grande isso pode levar alguns minutos.
           </span>
