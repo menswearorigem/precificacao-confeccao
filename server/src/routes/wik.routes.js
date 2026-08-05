@@ -257,7 +257,7 @@ router.post('/ficha-custo/diagnosticar', async (req, res, next) => {
     const integracao = await buscarIntegracao();
     if (!integracao) return res.status(400).json({ error: 'Cadastre a credencial do Wik primeiro.' });
 
-    const { rows } = await pool.query('SELECT id, referencia, descricao, wik_prod_id FROM produtos WHERE referencia = $1', [referencia]);
+    const { rows } = await pool.query('SELECT id, referencia, descricao, wik_prod_id FROM produtos WHERE referencia ILIKE $1', [referencia.trim()]);
     if (rows.length === 0) return res.status(404).json({ error: 'Não achei esse produto cadastrado localmente.' });
     const produto = rows[0];
 
