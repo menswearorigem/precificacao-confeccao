@@ -59,7 +59,7 @@ router.get('/produtos-referencia', async (req, res, next) => {
 
 router.get('/variantes', async (req, res, next) => {
   try {
-    const { produto_id, busca } = req.query;
+    const { produto_id, busca, cor, tamanho } = req.query;
     const conditions = [];
     const values = [];
     let i = 1;
@@ -69,6 +69,11 @@ router.get('/variantes', async (req, res, next) => {
       values.push(`%${busca}%`, busca);
       i += 2;
     }
+    // Comparação exata (não ILIKE) — usado pela ferramenta de corrigir
+    // cor/tamanho em massa, que precisa achar TODAS as variantes com um
+    // valor específico (ex.: "Azl") pra corrigir de uma vez só.
+    if (cor !== undefined) { conditions.push(`v.cor = $${i}`); values.push(cor); i += 1; }
+    if (tamanho !== undefined) { conditions.push(`v.tamanho = $${i}`); values.push(tamanho); i += 1; }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const { rows } = await variantesQuery(where, values);
     res.json(rows);
