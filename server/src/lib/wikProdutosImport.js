@@ -28,6 +28,13 @@ function normalizar(valor) {
 //    coincidia com esses números). Usada aqui só como reforço: dá o ProdId
 //    (vai ser necessário na Ficha de Custo/Audaces) e pega produto que
 //    porventura não tenha nenhum saldo lançado em lugar nenhum.
+//
+// NOTA: na prática o produto_get não aceita listar o catálogo sem filtro
+// (devolve "Nenhum produto encontrado" mesmo com só a paginação) — ou seja,
+// ele não serve pra descobrir o catálogo inteiro, só funcionaria dado um
+// produto específico. Por isso é tratado como best-effort: se falhar, o
+// catálogo continua vindo 100% do saldo_estoque_get (fonte principal e já
+// comprovadamente confiável), só sem o ProdId de reforço.
 // Pro estoque, cada empresa/loja pode ter um valor diferente pro mesmo
 // produto+cor+tamanho — como pedido, usamos o MAIOR valor entre elas.
 async function montarPreviewProdutos(integracao, empIds = EMP_IDS_PADRAO) {
@@ -38,7 +45,13 @@ async function montarPreviewProdutos(integracao, empIds = EMP_IDS_PADRAO) {
     const saldo = await wik.listarSaldoEstoque(token, empId);
     estoqueBruto.push(...saldo);
   }
-  const produtosBrutos = await wik.listarProdutos(token);
+  let produtosBrutos = [];
+  let produtoGetDisponivel = true;
+  try {
+    produtosBrutos = await wik.listarProdutos(token);
+  } catch {
+    produtoGetDisponivel = false; // produto_get não deu certo sem filtro — segue só com o saldo_estoque_get
+  }
 
   const porReferencia = new Map();
   for (const s of estoqueBruto) {
@@ -113,6 +126,7 @@ async function montarPreviewProdutos(integracao, empIds = EMP_IDS_PADRAO) {
       jaExistentesIgnorados: ativos.length - criar.length,
       semMarcaOuCategoria: semClassificacao,
       totalVariantesConsolidadas: estoqueMaxPorChave.size,
+      produtoGetDisponivel,
     },
   };
 }

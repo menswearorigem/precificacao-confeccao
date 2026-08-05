@@ -121,6 +121,14 @@ export default function WikImportarProdutosCard() {
             </div>
           )}
 
+          {preview.resumo.produtoGetDisponivel === false && (
+            <div className="stamp sm tone-atencao" style={{ marginBottom: 12, display: 'inline-flex' }}>
+              O catálogo veio 100% do saldo de estoque do Wik — a busca complementar de produto (que traria o
+              Id interno, usado depois na Ficha de Custo) não respondeu dessa vez, mas não afeta o que está
+              listado abaixo.
+            </div>
+          )}
+
           <table className="data-table" style={{ marginBottom: 10 }}>
             <thead><tr><th>Referência</th><th>Descrição</th><th>Marca</th><th>Categoria</th><th>Variantes</th></tr></thead>
             <tbody>
