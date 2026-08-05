@@ -521,6 +521,169 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.6; cursor: not-a
 table.data-table .select-custom-trigger { font-size: 12.5px; padding: 6px 8px; }
 table.data-table .select-custom-lista { font-size: 12.5px; }
 
+/* ---------- calendário customizado (substitui o input[type=date] nativo) ---------- */
+
+.date-custom { position: relative; width: 100%; }
+
+/* reset dos <button> internos — sem isso o navegador desenha a borda/fundo padrão de botão por cima de tudo que definimos abaixo */
+.date-custom-nav, .date-custom-dia, .date-custom-acao, .date-custom-limpar {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.date-custom-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  font-family: var(--font-body);
+  font-size: 13px;
+  text-align: left;
+  padding: 8px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+.date-custom-trigger:hover { border-color: var(--ink-faint); }
+.date-custom-trigger:focus-visible,
+.date-custom.is-open .date-custom-trigger {
+  outline: none;
+  border-color: var(--terracotta);
+  box-shadow: 0 0 0 3px rgba(181, 101, 29, 0.14);
+}
+.date-custom.is-disabled .date-custom-trigger { opacity: 0.6; cursor: not-allowed; }
+
+.date-custom-icone { flex-shrink: 0; color: var(--terracotta); }
+.date-custom-valor { flex: 1; padding-right: 18px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.date-custom-valor.is-placeholder { color: var(--ink-faint); font-family: var(--font-body); }
+
+.date-custom-limpar {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--ink-faint);
+  transition: background-color 0.12s var(--ease), color 0.12s var(--ease);
+}
+.date-custom-limpar:hover { background: var(--danger-bg); color: var(--danger); }
+
+.date-custom-painel {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 272px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  animation: select-custom-abrir 0.14s var(--ease);
+}
+
+.date-custom-cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+  margin: -4px -4px 10px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(120deg, var(--leather-dark), var(--terracotta) 85%);
+}
+.date-custom-titulo {
+  flex: 1;
+  text-align: center;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--surface);
+  letter-spacing: 0.01em;
+}
+.date-custom-nav {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.85);
+  transition: background-color 0.12s var(--ease);
+}
+.date-custom-nav:hover { background: rgba(255, 255, 255, 0.18); }
+
+.date-custom-semana {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 4px;
+}
+.date-custom-semana-item {
+  text-align: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.date-custom-grade { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+
+.date-custom-dia {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12.5px;
+  font-family: var(--font-mono);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--cor-coluna) 7%, transparent);
+  transition: background-color 0.12s var(--ease), color 0.12s var(--ease), transform 0.12s var(--ease);
+}
+.date-custom-dia:hover { background: color-mix(in srgb, var(--cor-coluna) 22%, transparent); }
+.date-custom-dia.is-fora { background: transparent; color: var(--ink-faint); opacity: 0.55; }
+.date-custom-dia.is-hoje { box-shadow: inset 0 0 0 1.5px var(--cor-coluna); font-weight: 700; color: var(--cor-coluna); background: transparent; }
+.date-custom-dia.is-selecionado {
+  background: linear-gradient(135deg, var(--terracotta), var(--terracotta-bright));
+  color: var(--surface);
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+  transform: scale(1.06);
+}
+
+.date-custom-rodape {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+.date-custom-acao {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--terracotta);
+}
+.date-custom-acao:hover { color: var(--terracotta-bright); text-decoration: underline; }
+
 /* ---------- buttons ---------- */
 
 .btn {

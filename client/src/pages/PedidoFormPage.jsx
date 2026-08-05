@@ -4,7 +4,7 @@ import {
   ArrowLeft, Barcode, Search, Trash2, UserPlus, CheckCircle2, XCircle,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, NumInput, Select } from '../components/ui';
+import { Field, NumInput, Select, DateInput } from '../components/ui';
 import { brl } from '../lib/format';
 
 const SITUACAO_TONE = { aberto: 'tone-atencao', faturado: 'tone-saudavel', cancelado: 'tone-prejuizo' };
@@ -302,7 +302,7 @@ export default function PedidoFormPage() {
         <div className="card-head">Dados do Pedido</div>
         <div className="form-grid">
           <Field label="Data do Pedido">
-            <input type="date" disabled={!aberto} value={pedido.data_pedido?.slice(0, 10) || ''} onChange={(e) => setHeader({ data_pedido: e.target.value })} onBlur={() => salvarHeader()} />
+            <DateInput disabled={!aberto} value={pedido.data_pedido?.slice(0, 10) || ''} onChange={(e) => setHeader({ data_pedido: e.target.value })} onBlur={() => salvarHeader()} />
           </Field>
           <Field label="Empresa (Emitente)">
             <Select disabled={!aberto} value={pedido.empresa_id || ''} onChange={(e) => { setHeader({ empresa_id: e.target.value || null }); salvarHeader({ empresa_id: e.target.value || null }); }}>

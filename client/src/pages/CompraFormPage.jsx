@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, UserPlus } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, NumInput, Select } from '../components/ui';
+import { Field, NumInput, Select, DateInput } from '../components/ui';
 import { brl } from '../lib/format';
 
 const SITUACAO_TONE = { pendente: 'tone-atencao', recebido: 'tone-saudavel', cancelado: 'tone-prejuizo' };
@@ -226,7 +226,7 @@ export default function CompraFormPage() {
         <div className="card-head">Dados da Compra</div>
         <div className="form-grid">
           <Field label="Data da Compra">
-            <input type="date" value={compra.data_compra?.slice(0, 10) || ''} onChange={(e) => setHeader({ data_compra: e.target.value })} onBlur={() => salvarHeader()} />
+            <DateInput value={compra.data_compra?.slice(0, 10) || ''} onChange={(e) => setHeader({ data_compra: e.target.value })} onBlur={() => salvarHeader()} />
           </Field>
           <Field label="Categoria">
             <Select value={compra.categoria || ''} onChange={(e) => { setHeader({ categoria: e.target.value }); salvarHeader({ categoria: e.target.value }); }}>

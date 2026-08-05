@@ -1,5 +1,5 @@
 import { Children, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Check } from 'lucide-react';
+import { ChevronDown, Check, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CalendarDays } from 'lucide-react';
 
 export function Field({ label, children, hint }) {
   return (
@@ -168,6 +168,215 @@ export function Select({ value, onChange, children, disabled, className = '', st
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+const MESES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
+
+// Uma cor por dia da semana (só de propósito — pra não ficar um calendário
+// monocromático) que colore tanto o cabeçalho quanto uma leve tonalidade de
+// fundo nas células daquela coluna, deixando fácil "escanear" a semana.
+const DIAS_SEMANA = [
+  { rotulo: 'Dom', cor: 'var(--danger)' },
+  { rotulo: 'Seg', cor: 'var(--info)' },
+  { rotulo: 'Ter', cor: 'var(--teal)' },
+  { rotulo: 'Qua', cor: 'var(--brass)' },
+  { rotulo: 'Qui', cor: 'var(--plum)' },
+  { rotulo: 'Sex', cor: 'var(--terracotta)' },
+  { rotulo: 'Sáb', cor: 'var(--success)' },
+];
+
+function paraData(iso) {
+  if (!iso) return null;
+  const [ano, mes, dia] = String(iso).split('-').map(Number);
+  if (!ano || !mes || !dia) return null;
+  return new Date(ano, mes - 1, dia);
+}
+
+function paraIso(data) {
+  const ano = data.getFullYear();
+  const mes = String(data.getMonth() + 1).padStart(2, '0');
+  const dia = String(data.getDate()).padStart(2, '0');
+  return `${ano}-${mes}-${dia}`;
+}
+
+function formatarBr(data) {
+  const dia = String(data.getDate()).padStart(2, '0');
+  const mes = String(data.getMonth() + 1).padStart(2, '0');
+  return `${dia}/${mes}/${data.getFullYear()}`;
+}
+
+function gerarCelulas(ano, mes) {
+  const primeiroDoMes = new Date(ano, mes, 1);
+  const inicioGrade = new Date(primeiroDoMes);
+  inicioGrade.setDate(primeiroDoMes.getDate() - primeiroDoMes.getDay());
+  const celulas = [];
+  for (let i = 0; i < 42; i += 1) {
+    const data = new Date(inicioGrade);
+    data.setDate(inicioGrade.getDate() + i);
+    celulas.push({ data, foraDoMes: data.getMonth() !== mes });
+  }
+  return celulas;
+}
+
+function hojeSemHora() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// Substituto do <input type="date"> nativo — mesma API (value em
+// "AAAA-MM-DD", onChange recebe um evento sintético com target.value, dá pra
+// trocar só a tag em qualquer tela sem mexer no resto do código) só que com
+// um calendário próprio em vez do widget do sistema operacional.
+export function DateInput({ value, onChange, onBlur, disabled, placeholder = 'dd/mm/aaaa', className = '', style }) {
+  const [aberto, setAberto] = useState(false);
+  const raizRef = useRef(null);
+  const selecionada = useMemo(() => paraData(value), [value]);
+  const [cursor, setCursor] = useState(() => selecionada || new Date());
+  const hoje = hojeSemHora();
+
+  // Guarda sempre a versão mais recente do onBlur: em telas que fazem
+  // onChange (só troca o estado local) + onBlur (salva de fato, lendo o
+  // estado mais recente do componente pai), disparar os dois no mesmo evento
+  // chamaria uma versão do onBlur "presa" no estado de ANTES da troca. O ref
+  // é atualizado depois de cada render (useEffect), então quando o fechar()
+  // adia a chamada pro próximo tick, ela já pega o onBlur atualizado.
+  const onBlurRef = useRef(onBlur);
+  useEffect(() => { onBlurRef.current = onBlur; });
+
+  useEffect(() => {
+    if (aberto) setCursor(selecionada || new Date());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aberto]);
+
+  function fechar() {
+    setAberto(false);
+    setTimeout(() => onBlurRef.current?.(), 0);
+  }
+
+  useEffect(() => {
+    if (!aberto) return undefined;
+    function aoClicarFora(e) {
+      if (raizRef.current && !raizRef.current.contains(e.target)) fechar();
+    }
+    document.addEventListener('mousedown', aoClicarFora);
+    return () => document.removeEventListener('mousedown', aoClicarFora);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aberto]);
+
+  function selecionar(data) {
+    onChange?.({ target: { value: paraIso(data) } });
+    fechar();
+  }
+
+  function limpar(e) {
+    e.stopPropagation();
+    onChange?.({ target: { value: '' } });
+    fechar();
+  }
+
+  function aoTeclar(e) {
+    if (disabled) return;
+    if (!aberto) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') { e.preventDefault(); setAberto(true); }
+      return;
+    }
+    if (e.key === 'Escape') { e.preventDefault(); fechar(); }
+  }
+
+  // Sem isso, o mousedown no botão do dia move o FOCO pra ele antes do
+  // click disparar; como esse botão some do DOM assim que o dia é
+  // selecionado (o painel fecha), o navegador precisa "realocar" o foco na
+  // hora — e acaba reabrindo o calendário sozinho ao focar (e re-clicar) o
+  // botão-gatilho. Prevenindo o foco no mousedown, isso nunca acontece.
+  function semFoco(e) { e.preventDefault(); }
+
+  const celulas = useMemo(() => gerarCelulas(cursor.getFullYear(), cursor.getMonth()), [cursor]);
+
+  return (
+    <div
+      ref={raizRef}
+      className={`date-custom${aberto ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}${className ? ` ${className}` : ''}`}
+      style={style}
+      // O campo costuma vir dentro de um <label> (componente Field). Sem isso,
+      // o navegador "repassa" todo clique aqui dentro pro primeiro <button>
+      // de verdade que existir (o de limpar, ou o de navegação do mês) --
+      // um comportamento nativo de label pensado pra <input>, que aqui só
+      // reabria o calendário sozinho logo depois de escolher uma data.
+      onClick={(e) => e.preventDefault()}
+    >
+      <div
+        className="date-custom-trigger"
+        role="button"
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={disabled}
+        onClick={() => !disabled && setAberto((a) => !a)}
+        onKeyDown={aoTeclar}
+      >
+        <CalendarDays size={14} className="date-custom-icone" />
+        <span className={`date-custom-valor${!selecionada ? ' is-placeholder' : ''}`}>
+          {selecionada ? formatarBr(selecionada) : placeholder}
+        </span>
+      </div>
+      {selecionada && !disabled && (
+        // Fica FORA da trigger de propósito (não aninhado): um botão dentro
+        // de outro elemento clicável levou o Chrome a "avançar o foco" pra
+        // ele sozinho assim que o calendário abria, reabrindo tudo na hora
+        // errada — como irmão, isso não acontece mais.
+        <button
+          type="button"
+          className="date-custom-limpar"
+          aria-label="Limpar data"
+          onMouseDown={semFoco}
+          onClick={limpar}
+        >
+          ×
+        </button>
+      )}
+      {aberto && (
+        <div className="date-custom-painel" role="dialog" aria-label="Escolher data">
+          <div className="date-custom-cabecalho">
+            <button type="button" className="date-custom-nav" onMouseDown={semFoco} onClick={() => setCursor((c) => new Date(c.getFullYear() - 1, c.getMonth(), 1))} aria-label="Ano anterior"><ChevronsLeft size={14} /></button>
+            <button type="button" className="date-custom-nav" onMouseDown={semFoco} onClick={() => setCursor((c) => new Date(c.getFullYear(), c.getMonth() - 1, 1))} aria-label="Mês anterior"><ChevronLeft size={14} /></button>
+            <span className="date-custom-titulo">{MESES[cursor.getMonth()]} {cursor.getFullYear()}</span>
+            <button type="button" className="date-custom-nav" onMouseDown={semFoco} onClick={() => setCursor((c) => new Date(c.getFullYear(), c.getMonth() + 1, 1))} aria-label="Próximo mês"><ChevronRight size={14} /></button>
+            <button type="button" className="date-custom-nav" onMouseDown={semFoco} onClick={() => setCursor((c) => new Date(c.getFullYear() + 1, c.getMonth(), 1))} aria-label="Próximo ano"><ChevronsRight size={14} /></button>
+          </div>
+          <div className="date-custom-semana">
+            {DIAS_SEMANA.map((d) => (
+              <span key={d.rotulo} className="date-custom-semana-item" style={{ color: d.cor }}>{d.rotulo}</span>
+            ))}
+          </div>
+          <div className="date-custom-grade">
+            {celulas.map((c) => {
+              const cor = DIAS_SEMANA[c.data.getDay()].cor;
+              const isSelecionado = selecionada && c.data.getTime() === selecionada.getTime();
+              const isHoje = c.data.getTime() === hoje.getTime();
+              return (
+                <button
+                  key={c.data.getTime()}
+                  type="button"
+                  className={`date-custom-dia${c.foraDoMes ? ' is-fora' : ''}${isSelecionado ? ' is-selecionado' : ''}${isHoje && !isSelecionado ? ' is-hoje' : ''}`}
+                  style={{ '--cor-coluna': cor }}
+                  onMouseDown={semFoco}
+                  onClick={() => selecionar(c.data)}
+                >
+                  {c.data.getDate()}
+                </button>
+              );
+            })}
+          </div>
+          <div className="date-custom-rodape">
+            <button type="button" className="date-custom-acao" onMouseDown={semFoco} onClick={() => selecionar(new Date())}>Hoje</button>
+            {selecionada && <button type="button" className="date-custom-acao" onMouseDown={semFoco} onClick={limpar}>Limpar</button>}
+          </div>
+        </div>
       )}
     </div>
   );

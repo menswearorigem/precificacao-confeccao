@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plane, Plus, MapPin, CalendarDays, Package, TrendingUp } from 'lucide-react';
 import { api } from '../api/client';
-import { Field } from '../components/ui';
+import { Field, DateInput } from '../components/ui';
 import { brl } from '../lib/format';
 
 const SITUACAO_LABEL = { planejamento: 'Planejamento', em_andamento: 'Em andamento', finalizada: 'Finalizada' };
@@ -79,10 +79,10 @@ export default function ViagensListPage() {
                 <input placeholder="Ex: Fortaleza / Recife" value={nova.local} onChange={(e) => setNova((n) => ({ ...n, local: e.target.value }))} />
               </Field>
               <Field label="Data de início">
-                <input type="date" value={nova.data_inicio} onChange={(e) => setNova((n) => ({ ...n, data_inicio: e.target.value }))} />
+                <DateInput value={nova.data_inicio} onChange={(e) => setNova((n) => ({ ...n, data_inicio: e.target.value }))} />
               </Field>
               <Field label="Data de fim">
-                <input type="date" value={nova.data_fim} onChange={(e) => setNova((n) => ({ ...n, data_fim: e.target.value }))} />
+                <DateInput value={nova.data_fim} onChange={(e) => setNova((n) => ({ ...n, data_fim: e.target.value }))} />
               </Field>
             </div>
             <Field label="Observações (opcional)">

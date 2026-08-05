@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Printer } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
+import { DateInput } from '../components/ui';
 
 function trintaDiasAtras() {
   const d = new Date();
@@ -53,11 +54,11 @@ export default function RelatorioTaxasPage() {
           <div className="form-grid">
             <div className="field">
               <span className="field-label">Data Início</span>
-              <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+              <DateInput value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
             </div>
             <div className="field">
               <span className="field-label">Data Fim</span>
-              <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+              <DateInput value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
             </div>
             <div className="field">
               <span className="field-label">Canal de venda</span>
