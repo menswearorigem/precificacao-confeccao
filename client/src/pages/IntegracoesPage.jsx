@@ -227,7 +227,7 @@ export default function IntegracoesPage() {
             )}
             {item.ultimoErroFaturamento && (
               <div className="login-error" style={{ marginTop: item.ultimoErro ? 8 : 0 }}>
-                <div style={{ marginBottom: 6 }}>Não consegui buscar o valor recebido (API de Faturamento):</div>
+                <div style={{ marginBottom: 6 }}>Não consegui confirmar o valor recebido de algum pedido:</div>
                 <pre style={{
                   whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 320, overflowY: 'auto',
                   background: 'rgba(0,0,0,0.05)', padding: 8, borderRadius: 4, fontSize: 12, margin: 0,

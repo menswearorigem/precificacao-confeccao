@@ -111,8 +111,8 @@ async function importarPedido(client, pedidoGenerico, integracaoId) {
   const clienteId = await encontrarOuCriarCliente(client, pedidoGenerico);
 
   const { rows } = await client.query(
-    `INSERT INTO pedidos_venda (data_pedido, cliente_id, operacao, canal_venda, valor_frete, taxa_marketplace, forma_pagamento_marketplace, observacao, origem_marketplace, origem_pedido_id, origem_integracao_id)
-     VALUES ($1, $2, 'Venda', $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+    `INSERT INTO pedidos_venda (data_pedido, cliente_id, operacao, canal_venda, valor_frete, taxa_marketplace, forma_pagamento_marketplace, observacao, origem_marketplace, origem_pedido_id, origem_integracao_id, pagamento_id_marketplace)
+     VALUES ($1, $2, 'Venda', $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
     [
       pedidoGenerico.dataPedido || new Date().toISOString().slice(0, 10),
       clienteId,
@@ -124,6 +124,7 @@ async function importarPedido(client, pedidoGenerico, integracaoId) {
       pedidoGenerico.marketplace,
       pedidoGenerico.idExterno,
       integracaoId,
+      pedidoGenerico.pagamentoIdExterno || null,
     ]
   );
   const pedidoId = rows[0].id;
@@ -160,58 +161,91 @@ async function importarPedido(client, pedidoGenerico, integracaoId) {
   return true;
 }
 
-// Busca na API de Faturamento do Mercado Livre o valor líquido de verdade
-// repassado por pedido (mais preciso que a nossa estimativa de receita menos
-// taxa) e atualiza os pedidos ainda sem esse dado ou com repasse pendente
-// (o Mercado Livre libera o valor alguns dias depois da venda, então pedidos
-// "pending" precisam ser reconferidos nas próximas sincronizações). Falha
-// em silêncio (ex.: app sem a permissão de Faturamento habilitada) sem
-// derrubar o resto da sincronização.
+// Busca o valor líquido de verdade repassado por pedido, direto do
+// pagamento (bem mais rápido que esperar o relatório de Faturamento fechar
+// o período — ver comentário de buscarValorRecebido em mercadoLivre.js) e
+// atualiza os pedidos ainda sem esse dado ou ainda não liberados (o
+// dinheiro pode ficar alguns dias retido até cair no saldo, então pedidos
+// "confirmado" precisam ser reconferidos nas próximas sincronizações pra
+// pegar quando viram "liberado"). Falha em silêncio (guarda o erro em
+// ultimo_erro_faturamento) sem derrubar o resto da sincronização.
+// Pedidos importados ANTES dessa funcionalidade existir não têm o
+// payment_id guardado (a coluna é nova) — descobre buscando o pedido de
+// novo no Mercado Livre, só pra pegar esse id (não precisa mais disso
+// depois, os próximos ciclos já usam o payment_id salvo aqui).
+async function preencherPagamentoId(integracao) {
+  const { rows: semPagamentoId } = await pool.query(
+    `SELECT id, origem_pedido_id FROM pedidos_venda
+     WHERE origem_marketplace = 'mercado_livre' AND pagamento_id_marketplace IS NULL
+       AND (origem_integracao_id = $1 OR origem_integracao_id IS NULL)
+     ORDER BY data_pedido DESC LIMIT 30`,
+    [integracao.id]
+  );
+  for (const pedido of semPagamentoId) {
+    try {
+      const order = await mercadoLivre.buscarPedidoPorId(pedido.origem_pedido_id, integracao.access_token);
+      const paymentId = order.payments?.[0]?.id ? String(order.payments[0].id) : null;
+      if (paymentId) {
+        await pool.query('UPDATE pedidos_venda SET pagamento_id_marketplace = $1 WHERE id = $2', [paymentId, pedido.id]);
+      }
+    } catch {
+      // tenta de novo no próximo ciclo
+    }
+  }
+}
+
 async function atualizarValoresRecebidos(integracao) {
   if (integracao.marketplace !== 'mercado_livre') return;
   try {
+    await preencherPagamentoId(integracao);
+
+    // Limitado a 50 por ciclo — cada pedido é uma chamada própria
+    // (GET /payments/:id não aceita lote), então processar tudo de uma vez
+    // deixaria a sincronização (e o botão "Sincronizar agora") lenta
+    // demais. Ordena por "nunca verificado" primeiro e depois pelo menos
+    // recentemente verificado — se ordenasse pela data do pedido, os mais
+    // recentes (que são exatamente os que ainda não bateram o prazo de
+    // liberação) sempre ganhariam a vaga, e pedidos mais antigos nunca
+    // chegariam a ser reconferidos.
     // Inclui também pedidos importados manualmente por planilha (sem
     // origem_integracao_id) — nesse caso não tem como saber de qual conta
-    // ML eles vieram, então tenta com essa integração; se o pedido for de
-    // outra conta, a API simplesmente não devolve nada pra esse order_id.
-    // Limitado a 100 (5 lotes, o total que cabe na janela de 5/min) por
-    // ciclo — a API de Faturamento aceita só 5 chamadas/minuto no total (e
-    // esse limite é compartilhado entre todas as integrações do processo),
-    // então processar tudo de uma vez deixaria a sincronização (e o botão
-    // "Sincronizar agora") lenta demais. Ordena por
-    // "nunca verificado" primeiro e depois pelo menos recentemente verificado
-    // — se ordenasse pela data do pedido, os mais recentes (que são
-    // exatamente os que ainda não bateram o prazo de liberação) sempre
-    // ganhariam a vaga, e pedidos mais antigos nunca chegariam a ser
-    // reconferidos.
+    // ML eles vieram, então tenta com essa integração; se o pagamento for
+    // de outra conta, a API simplesmente nega e o erro é ignorado.
     const { rows: pendentes } = await pool.query(
-      `SELECT origem_pedido_id FROM pedidos_venda
-       WHERE origem_marketplace = 'mercado_livre' AND (origem_integracao_id = $1 OR origem_integracao_id IS NULL)
-         AND (valor_recebido_status IS NULL OR valor_recebido_status != 'released')
-       ORDER BY valor_recebido_atualizado_em ASC NULLS FIRST LIMIT 100`,
+      `SELECT id, pagamento_id_marketplace FROM pedidos_venda
+       WHERE origem_marketplace = 'mercado_livre' AND pagamento_id_marketplace IS NOT NULL
+         AND (origem_integracao_id = $1 OR origem_integracao_id IS NULL)
+         AND (valor_recebido_status IS NULL OR valor_recebido_status != 'liberado')
+       ORDER BY valor_recebido_atualizado_em ASC NULLS FIRST LIMIT 50`,
       [integracao.id]
     );
     if (pendentes.length === 0) return;
 
-    const { mapa: detalhes, erro, diagnostico } = await mercadoLivre.buscarDetalhesFaturamento({
-      accessToken: integracao.access_token,
-      sellerId: integracao.conta_externa_id,
-      orderIds: pendentes.map((p) => p.origem_pedido_id),
-    });
-
-    for (const [orderId, info] of detalhes) {
-      await pool.query(
-        `UPDATE pedidos_venda
-         SET valor_recebido_marketplace = $1, valor_recebido_status = $2, valor_recebido_atualizado_em = now()
-         WHERE origem_marketplace = 'mercado_livre' AND origem_pedido_id = $3`,
-        [info.valorRecebido, info.status, orderId]
-      );
+    let ultimoErro = null;
+    for (const pedido of pendentes) {
+      try {
+        const { valorRecebido, dataLiberacao, liberado, diagnostico } = await mercadoLivre.buscarValorRecebido({
+          pagamentoId: pedido.pagamento_id_marketplace,
+          accessToken: integracao.access_token,
+        });
+        if (valorRecebido == null) {
+          if (diagnostico) ultimoErro = `Resposta sem valor líquido reconhecido: ${diagnostico}`;
+          continue;
+        }
+        await pool.query(
+          `UPDATE pedidos_venda
+           SET valor_recebido_marketplace = $1, valor_recebido_status = $2, valor_recebido_liberacao_em = $3, valor_recebido_atualizado_em = now()
+           WHERE id = $4`,
+          [valorRecebido, liberado ? 'liberado' : 'confirmado', dataLiberacao, pedido.id]
+        );
+      } catch (err) {
+        ultimoErro = err.message;
+      }
     }
 
-    const mensagem = erro ? erro.message : (diagnostico ? `Resposta sem valores reconhecidos: ${diagnostico}` : null);
     await pool.query(
       'UPDATE integracoes_marketplace SET ultimo_erro_faturamento = $1 WHERE id = $2',
-      [mensagem, integracao.id]
+      [ultimoErro, integracao.id]
     );
   } catch (err) {
     console.error(`[marketplace-sync] falha ao buscar valores recebidos (integração ${integracao.id}):`, err.message);
@@ -314,4 +348,5 @@ module.exports = {
   sincronizarSeNecessario,
   importarPedido,
   encontrarVariante,
+  atualizarValoresRecebidos,
 };

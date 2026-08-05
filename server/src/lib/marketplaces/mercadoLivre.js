@@ -62,31 +62,16 @@ async function chamarApi(path, accessToken) {
   return data;
 }
 
-// A API de Faturamento (billing/integration) tem um limite duro de 5
-// chamadas por minuto — descoberto na prática ("Rate limit exceeded: 5
-// requests per minute"), não documentado às claras. Esse controle é
-// compartilhado entre TODAS as integrações do processo (não por chamada),
-// porque com várias marcas/contas ML conectadas as chamadas de cada uma
-// disputam o mesmo limite.
-const JANELA_MS = 60 * 1000;
-const LIMITE_POR_JANELA = 5;
-const chamadasFaturamento = [];
-
-async function aguardarJanelaFaturamento() {
-  const agora = Date.now();
-  while (chamadasFaturamento.length > 0 && agora - chamadasFaturamento[0] > JANELA_MS) {
-    chamadasFaturamento.shift();
-  }
-  if (chamadasFaturamento.length >= LIMITE_POR_JANELA) {
-    const espera = JANELA_MS - (agora - chamadasFaturamento[0]) + 500;
-    await new Promise((resolve) => setTimeout(resolve, espera));
-    return aguardarJanelaFaturamento();
-  }
-  chamadasFaturamento.push(Date.now());
-}
-
 async function buscarUsuario(accessToken) {
   return chamarApi('/users/me', accessToken);
+}
+
+// Usado só pra descobrir o payment_id de pedidos importados ANTES dessa
+// funcionalidade existir (que não têm esse dado guardado ainda) — pedidos
+// novos já vêm com o payment_id direto do /orders/search, sem precisar
+// buscar de novo um por um.
+async function buscarPedidoPorId(orderId, accessToken) {
+  return chamarApi(`/orders/${orderId}`, accessToken);
 }
 
 // gold_special = anúncio Clássico · gold_pro = anúncio Premium — os únicos
@@ -176,72 +161,31 @@ async function buscarPedidos({ accessToken, sellerId, desde }) {
   return pedidos;
 }
 
-// A resposta real (confirmada com dado de produção, não documentação) não
-// tem um campo pronto de "valor líquido" — tem que calcular: pega o valor
-// total do pedido (sales_info[0].transaction_amount, dentro do primeiro
-// item de "details") e desconta sale_fee.net (a comissão já líquida de
-// rebate/desconto — sale_fee.net = soma dos "details[].charge_info.detail_amount"
-// do tipo CHARGE, ex.: "Custo por vender no Mercado Livre" + "Custo por
-// cobrar no Mercado Pago"). Não inclui frete pago pelo vendedor (isso já é
-// tratado à parte, via valor_frete do pedido).
-function extrairValorRecebido(resultado) {
-  const transacao = resultado.details?.[0]?.sales_info?.[0]?.transaction_amount;
-  const taxaLiquida = resultado.sale_fee?.net;
-  if (transacao == null || taxaLiquida == null) return null;
-  return Number(transacao) - Number(taxaLiquida);
-}
-
-// Valor líquido de verdade repassado pelo Mercado Livre por pedido — vem da
-// API de Faturamento (billing/integration), não do /orders/search. É o
-// mesmo valor que o ML usa pra calcular o repasse de fato (já considera
-// tarifa fixa por unidade, antecipação etc., que o sale_fee do pedido não
-// cobre), por isso é mais preciso que a nossa estimativa (receita - taxa).
-// Precisa da permissão de Faturamento habilitada no app do DevCenter. Se
-// faltar essa permissão, ou se o Mercado Livre ainda não processou o
-// repasse de algum pedido, esse pedido simplesmente não entra no mapa de
-// retorno — mas o erro do último lote que falhou é reportado em `erro`
-// (não lançado direto) pra não derrubar o resto da sincronização, e ainda
-// assim dar pra diagnosticar o motivo.
-async function buscarDetalhesFaturamento({ accessToken, sellerId, orderIds }) {
-  const mapa = new Map();
-  let erro = null;
-  let ultimaRespostaCrua = null;
-  const TAMANHO_LOTE = 20;
-  for (let i = 0; i < orderIds.length; i += TAMANHO_LOTE) {
-    const lote = orderIds.slice(i, i + TAMANHO_LOTE);
-    const params = new URLSearchParams({ order_ids: lote.join(','), seller_id: String(sellerId) });
-    await aguardarJanelaFaturamento();
-    let data;
-    try {
-      data = await chamarApi(`/billing/integration/group/ML/order/details?${params.toString()}`, accessToken);
-    } catch (err) {
-      erro = err;
-      continue;
-    }
-    ultimaRespostaCrua = data;
-    for (const resultado of data.results || data.data || []) {
-      const orderId = resultado.order_id ?? resultado.origin?.order_id;
-      // payment_info vem como array (um pedido pode ter mais de um pagamento) —
-      // usa o primeiro por enquanto.
-      const pagamento = Array.isArray(resultado.payment_info) ? resultado.payment_info[0] : resultado.payment_info;
-      if (!orderId || !pagamento) continue;
-      mapa.set(String(orderId), {
-        valorRecebido: extrairValorRecebido(resultado),
-        status: pagamento.money_release_status || null,
-        dataLiberacao: pagamento.money_release_date || null,
-      });
-    }
+// Valor líquido de verdade repassado pelo Mercado Livre por pedido.
+//
+// Tentativa anterior usava a API de Faturamento (billing/integration), que
+// só fecha o período no fim do mês — na prática o pedido ficava sem
+// nenhuma informação por semanas, o que não ajudava em nada no dia a dia.
+// Essa aqui consulta direto o PAGAMENTO do pedido (GET /payments/:id,
+// mesmo host e token do resto da API) — o Mercado Pago já calcula o valor
+// líquido (transaction_details.net_received_amount) no momento em que o
+// pagamento é aprovado, então fica disponível bem mais rápido. A única
+// coisa que ainda pode estar no futuro é a DISPONIBILIDADE do dinheiro no
+// saldo (money_release_date) — por isso reporta os dois separados: o valor
+// (que já é o valor final) e se já foi liberado ou não.
+async function buscarValorRecebido({ pagamentoId, accessToken }) {
+  const pagamento = await chamarApi(`/payments/${pagamentoId}`, accessToken);
+  const valorRecebido = pagamento.transaction_details?.net_received_amount;
+  const dataLiberacao = pagamento.money_release_date || null;
+  if (valorRecebido == null) {
+    // Chamada deu certo mas não achou o campo esperado — provavelmente o
+    // formato real da resposta é diferente do que a documentação descreve.
+    // Guarda a resposta inteira (cortada, pra não estourar o tamanho do
+    // campo de erro) pra dar pra ajustar o parsing sem precisar adivinhar.
+    return { valorRecebido: null, dataLiberacao: null, liberado: false, diagnostico: JSON.stringify(pagamento, null, 2).slice(0, 4000) };
   }
-  // Chamada deu certo (sem erro) mas não achou nenhum campo reconhecido —
-  // provavelmente o formato real da resposta é diferente do documentado.
-  // Guarda o primeiro resultado POR INTEIRO (não a resposta toda, que com
-  // vários pedidos de uma vez passa fácil de várias dezenas de KB e corta
-  // antes de chegar nos campos que interessam) — o formato é o mesmo pra
-  // todos os pedidos, um só já basta pra ajustar o parsing.
-  const diagnostico = !erro && mapa.size === 0 && ultimaRespostaCrua
-    ? JSON.stringify((ultimaRespostaCrua.results || ultimaRespostaCrua.data || [])[0] ?? ultimaRespostaCrua, null, 2)
-    : null;
-  return { mapa, erro, diagnostico };
+  const liberado = Boolean(dataLiberacao) && new Date(dataLiberacao).getTime() <= Date.now();
+  return { valorRecebido: Number(valorRecebido), dataLiberacao, liberado, diagnostico: null };
 }
 
 // Converte um pedido do Mercado Livre pro formato genérico usado pelo
@@ -257,6 +201,7 @@ function mapearPedido(order) {
   }));
 
   const formaPagamento = order.payments?.[0]?.payment_method_id === 'pix' ? 'pix' : 'outro';
+  const pagamentoIdExterno = order.payments?.[0]?.id ? String(order.payments[0].id) : null;
 
   // sale_fee é a comissão que o Mercado Livre cobra por item vendido — vem
   // como número simples na maioria dos casos, mas em alguns retornos vem
@@ -280,6 +225,7 @@ function mapearPedido(order) {
     valorFrete: frete,
     taxaMarketplace,
     formaPagamento,
+    pagamentoIdExterno,
     itens,
   };
 }
@@ -290,6 +236,7 @@ module.exports = {
   renovarToken,
   buscarUsuario,
   buscarPedidos,
-  buscarDetalhesFaturamento,
+  buscarPedidoPorId,
+  buscarValorRecebido,
   mapearPedido,
 };

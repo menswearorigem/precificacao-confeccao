@@ -477,11 +477,14 @@ export default function PedidoFormPage() {
               {pedido.valor_recebido_marketplace != null ? (
                 <>
                   {brl(pedido.valor_recebido_marketplace)}{' '}
-                  <span className={'stamp sm ' + (pedido.valor_recebido_status === 'released' ? 'tone-elevada' : 'tone-atencao')}>
-                    {pedido.valor_recebido_status === 'released' ? 'liberado' : 'pendente'}
+                  <span className={'stamp sm ' + (pedido.valor_recebido_status === 'liberado' ? 'tone-elevada' : 'tone-atencao')}>
+                    {pedido.valor_recebido_status === 'liberado' ? 'liberado' : 'confirmado'}
                   </span>
+                  {pedido.valor_recebido_status !== 'liberado' && pedido.valor_recebido_liberacao_em && (
+                    <> — libera em {new Date(pedido.valor_recebido_liberacao_em).toLocaleDateString('pt-BR')}</>
+                  )}
                 </>
-              ) : 'ainda não disponível'}
+              ) : 'ainda sem confirmação'}
             </span>
           </div>
         )}

@@ -303,7 +303,10 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
     if (pedidos.length === 0) {
       return res.json({
         pedidos: [],
-        totalGeral: { receita: 0, custoPeca: 0, imposto: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, margemPct: 0 },
+        totalGeral: {
+          receita: 0, custoPeca: 0, imposto: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, margemPct: 0,
+          valorRecebidoLiberado: 0, valorRecebidoConfirmado: 0, valorRecebidoSemConfirmacao: 0,
+        },
       });
     }
 
@@ -343,6 +346,7 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
         custoIncompleto: semCusto,
         valorRecebido: p.valor_recebido_marketplace !== null ? Number(p.valor_recebido_marketplace) : null,
         valorRecebidoStatus: p.valor_recebido_status,
+        valorRecebidoLiberacaoEm: p.valor_recebido_liberacao_em,
         itens: itensDoPedido.map((it) => ({
           id: it.id,
           tituloExterno: it.titulo_externo || it.descricao || '',
@@ -358,19 +362,28 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
       };
     });
 
+    // valor recebido só existe pra Mercado Livre (Shopee não tem esse dado);
+    // "liberado" é dinheiro já disponível no saldo, "confirmado" é o valor
+    // real já conhecido mas ainda retido (chega no saldo em
+    // valor_recebido_liberacao_em) — os dois são valores de VERDADE vindos
+    // do pagamento, só a disponibilidade que muda.
     const totalGeral = resultado.reduce(
-      (acc, p) => ({
-        receita: acc.receita + p.receita,
-        custoPeca: acc.custoPeca + p.custoPeca,
-        imposto: acc.imposto + p.imposto,
-        frete: acc.frete + p.frete,
-        taxaMarketplace: acc.taxaMarketplace + p.taxaMarketplace,
-        custo: acc.custo + p.custo,
-        lucro: acc.lucro + p.lucro,
-        valorRecebido: acc.valorRecebido + (p.valorRecebidoStatus === 'released' ? p.valorRecebido || 0 : 0),
-        valorRecebidoPendentes: acc.valorRecebidoPendentes + (p.valorRecebido === null || p.valorRecebidoStatus !== 'released' ? 1 : 0),
-      }),
-      { receita: 0, custoPeca: 0, imposto: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, valorRecebido: 0, valorRecebidoPendentes: 0 }
+      (acc, p) => {
+        const ehML = p.canal_venda === 'Mercado Livre';
+        return {
+          receita: acc.receita + p.receita,
+          custoPeca: acc.custoPeca + p.custoPeca,
+          imposto: acc.imposto + p.imposto,
+          frete: acc.frete + p.frete,
+          taxaMarketplace: acc.taxaMarketplace + p.taxaMarketplace,
+          custo: acc.custo + p.custo,
+          lucro: acc.lucro + p.lucro,
+          valorRecebidoLiberado: acc.valorRecebidoLiberado + (ehML && p.valorRecebidoStatus === 'liberado' ? p.valorRecebido || 0 : 0),
+          valorRecebidoConfirmado: acc.valorRecebidoConfirmado + (ehML && p.valorRecebidoStatus === 'confirmado' ? p.valorRecebido || 0 : 0),
+          valorRecebidoSemConfirmacao: acc.valorRecebidoSemConfirmacao + (ehML && p.valorRecebido === null ? 1 : 0),
+        };
+      },
+      { receita: 0, custoPeca: 0, imposto: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, valorRecebidoLiberado: 0, valorRecebidoConfirmado: 0, valorRecebidoSemConfirmacao: 0 }
     );
     totalGeral.margemPct = totalGeral.receita > 0 ? totalGeral.lucro / totalGeral.receita : 0;
 

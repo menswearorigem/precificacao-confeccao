@@ -238,13 +238,22 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
             <div className="row-line strong"><span>Lucro Líquido</span><span className="mono">{brl(relatorio.totalGeral.lucro)}</span></div>
             <div className="row-line"><span>Margem</span><span className="mono">{pct(relatorio.totalGeral.margemPct)}</span></div>
             {isMarketplace && (
-              <div className="row-line">
-                <span>Valor Recebido Confirmado (Mercado Livre)</span>
-                <span className="mono">
-                  {brl(relatorio.totalGeral.valorRecebido)}
-                  {relatorio.totalGeral.valorRecebidoPendentes > 0 ? ` (+${relatorio.totalGeral.valorRecebidoPendentes} pedido(s) ainda pendente(s)/não disponível)` : ''}
-                </span>
-              </div>
+              <>
+                <div className="row-line">
+                  <span>Valor Liberado no Saldo (Mercado Livre)</span>
+                  <span className="mono">{brl(relatorio.totalGeral.valorRecebidoLiberado)}</span>
+                </div>
+                <div className="row-line">
+                  <span>Valor Confirmado, Ainda Retido (Mercado Livre)</span>
+                  <span className="mono">{brl(relatorio.totalGeral.valorRecebidoConfirmado)}</span>
+                </div>
+                {relatorio.totalGeral.valorRecebidoSemConfirmacao > 0 && (
+                  <div className="row-line">
+                    <span>Sem Confirmação Ainda</span>
+                    <span className="mono">{relatorio.totalGeral.valorRecebidoSemConfirmacao} pedido(s)</span>
+                  </div>
+                )}
+              </>
             )}
             <div className="row-line no-print"><span>Pedidos no Período</span><span className="mono">{relatorio.pedidos.length}</span></div>
           </div>
@@ -299,11 +308,14 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                           {p.canal_venda !== 'Mercado Livre' ? '—' : p.valorRecebido != null ? (
                             <>
                               {brl(p.valorRecebido)}{' '}
-                              <span className={'stamp sm ' + (p.valorRecebidoStatus === 'released' ? 'tone-elevada' : 'tone-atencao')}>
-                                {p.valorRecebidoStatus === 'released' ? 'liberado' : 'pendente'}
+                              <span className={'stamp sm ' + (p.valorRecebidoStatus === 'liberado' ? 'tone-elevada' : 'tone-atencao')}>
+                                {p.valorRecebidoStatus === 'liberado' ? 'liberado' : 'confirmado'}
                               </span>
+                              {p.valorRecebidoStatus !== 'liberado' && p.valorRecebidoLiberacaoEm && (
+                                <div className="page-sub" style={{ marginTop: 2 }}>libera em {dataBr(p.valorRecebidoLiberacaoEm.slice(0, 10))}</div>
+                              )}
                             </>
-                          ) : 'não disponível'}
+                          ) : 'sem confirmação ainda'}
                         </td>
                       )}
                       {isMarketplace && (
