@@ -155,10 +155,19 @@ router.put('/variantes/:id', async (req, res, next) => {
 
 router.delete('/variantes/:id', async (req, res, next) => {
   try {
+    const { rows: usoRows } = await pool.query('SELECT 1 FROM pedido_itens WHERE variante_id = $1 LIMIT 1', [req.params.id]);
+    if (usoRows.length > 0) {
+      return res.status(409).json({
+        error: 'Essa variante já foi usada em pedido(s) de venda e não pode ser excluída (isso quebraria o histórico). Desative-a em vez de excluir.',
+      });
+    }
     const { rowCount } = await pool.query('DELETE FROM estoque_variantes WHERE id = $1', [req.params.id]);
     if (rowCount === 0) return res.status(404).json({ error: 'Variante não encontrada.' });
     res.status(204).end();
   } catch (err) {
+    if (err.code === '23503') {
+      return res.status(409).json({ error: 'Essa variante está em uso em outro lugar do sistema e não pode ser excluída. Desative-a em vez de excluir.' });
+    }
     next(err);
   }
 });

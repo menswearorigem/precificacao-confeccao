@@ -133,6 +133,7 @@ export default function EstoquePage() {
   const [variantes, setVariantes] = useState([]);
   const [busca, setBusca] = useState('');
   const [resultadoBusca, setResultadoBusca] = useState(null);
+  const [erro, setErro] = useState('');
 
   useEffect(() => {
     api.get('/estoque/produtos-referencia').then(setProdutos);
@@ -154,9 +155,24 @@ export default function EstoquePage() {
 
   async function removerVariante(id) {
     if (!confirm('Remover esta variante de estoque? O histórico de movimentos dela também será apagado.')) return;
-    await api.del(`/estoque/variantes/${id}`);
-    loadVariantes(produtoId);
-    if (resultadoBusca) handleBuscar({ preventDefault: () => {} });
+    setErro('');
+    try {
+      await api.del(`/estoque/variantes/${id}`);
+      loadVariantes(produtoId);
+      if (resultadoBusca) handleBuscar({ preventDefault: () => {} });
+    } catch (err) {
+      setErro(err.message);
+    }
+  }
+
+  async function alternarAtivo(variante) {
+    setErro('');
+    try {
+      await api.put(`/estoque/variantes/${variante.id}`, { ativo: !variante.ativo });
+      loadVariantes(produtoId);
+    } catch (err) {
+      setErro(err.message);
+    }
   }
 
   return (
@@ -173,6 +189,8 @@ export default function EstoquePage() {
           <Link to="/estoque/bipagem" className="btn btn-primary"><Barcode size={14} /> Bipagem</Link>
         </div>
       </div>
+
+      {erro && <div className="login-error" style={{ marginBottom: 12 }}>{erro}</div>}
 
       <div className="card" style={{ marginBottom: 16 }}>
         <form onSubmit={handleBuscar} style={{ display: 'flex', gap: 8 }}>
@@ -215,21 +233,27 @@ export default function EstoquePage() {
           <>
             <table className="data-table" style={{ marginTop: 14 }}>
               <thead>
-                <tr><th>Cor</th><th>Tamanho</th><th>EAN</th><th>Qtd. atual</th><th>Movimentar</th><th /></tr>
+                <tr><th>Cor</th><th>Tamanho</th><th>EAN</th><th>Qtd. atual</th><th>Movimentar</th><th>Ativa?</th><th /></tr>
               </thead>
               <tbody>
                 {variantes.map((v) => (
-                  <tr key={v.id}>
+                  <tr key={v.id} style={v.ativo ? undefined : { opacity: 0.55 }}>
                     <td>{v.cor}</td>
                     <td>{v.tamanho}</td>
                     <td><EanEditavel variante={v} onFeito={() => loadVariantes(produtoId)} /></td>
                     <td className="mono" style={{ fontWeight: 700 }}>{v.quantidade}</td>
                     <td><MovimentoInline variante={v} onFeito={() => loadVariantes(produtoId)} /></td>
-                    <td><button className="icon-btn" onClick={() => removerVariante(v.id)}><Trash2 size={13} /></button></td>
+                    <td>
+                      <label className="toggle">
+                        <input type="checkbox" checked={v.ativo} onChange={() => alternarAtivo(v)} />
+                        {v.ativo ? 'Sim' : 'Não'}
+                      </label>
+                    </td>
+                    <td><button className="icon-btn" title="Excluir (só se nunca vendida)" onClick={() => removerVariante(v.id)}><Trash2 size={13} /></button></td>
                   </tr>
                 ))}
                 {variantes.length === 0 && (
-                  <tr><td colSpan="6" style={{ color: 'var(--ink-soft)' }}>Nenhuma variante cadastrada ainda para esta referência.</td></tr>
+                  <tr><td colSpan="7" style={{ color: 'var(--ink-soft)' }}>Nenhuma variante cadastrada ainda para esta referência.</td></tr>
                 )}
               </tbody>
             </table>
