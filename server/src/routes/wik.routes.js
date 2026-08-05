@@ -4,8 +4,8 @@ const wik = require('../lib/wik');
 const {
   buscarIntegracao, obterTokenValido, empIdsConfigurados, montarPreviewEstoque, aplicarSincronizacaoEstoque, sincronizarEstoqueAgora,
 } = require('../lib/wikSync');
-const { montarPreviewProdutos, aplicarImportacaoProdutos } = require('../lib/wikProdutosImport');
-const { montarPreviewFichaCusto, aplicarImportacaoFichaCusto } = require('../lib/wikFichaCustoImport');
+const { montarPreviewProdutos, aplicarImportacaoProdutos, sincronizarProdutosAgora } = require('../lib/wikProdutosImport');
+const { montarPreviewFichaCusto, aplicarImportacaoFichaCusto, sincronizarFichaCustoAgora } = require('../lib/wikFichaCustoImport');
 
 const router = express.Router();
 
@@ -176,8 +176,9 @@ router.post('/estoque/sincronizar-agora', async (req, res, next) => {
 // Importação completa do catálogo (produtos + variantes + estoque
 // consolidado) — separada da sincronização de estoque recorrente, usa
 // colunas de status próprias (produtos_import_*) pra não colidir com ela.
-// É sempre manual (nunca roda sozinha): criar milhares de produtos de uma
-// vez tem um risco bem maior que só atualizar uma quantidade já conhecida.
+// Além do botão manual abaixo, roda sozinha periodicamente (ver index.js)
+// pra pegar produtos recém-lançados no Wik sem depender de clique nenhum —
+// seguro porque só CRIA produtos novos, nunca apaga/edita os existentes.
 router.post('/produtos/preview', async (req, res, next) => {
   try {
     const integracao = await buscarIntegracao();
@@ -244,6 +245,17 @@ router.post('/produtos/confirmar', async (req, res, next) => {
   }
 });
 
+// Força a importação de produtos novos agora, sem esperar o próximo ciclo
+// automático (ver WIK_CATALOGO_INTERVAL_MS em index.js).
+router.post('/produtos/sincronizar-agora', async (req, res, next) => {
+  try {
+    const resultado = await sincronizarProdutosAgora();
+    res.json(resultado);
+  } catch (err) {
+    res.status(422).json({ error: err.message });
+  }
+});
+
 // ---------- Ficha de Custo (Audaces) — ainda em fase de descoberta ----------
 // Ainda não sabemos como o "id" de insumosfichatecnica_get/
 // operacoesfichatecnica_get se relaciona com o produto na prática (a doc
@@ -305,13 +317,15 @@ router.post('/ficha-custo/diagnosticar', async (req, res, next) => {
   }
 });
 
-// Importação de Ficha de Custo (materiais com custo real via
-// materiaprima_get + operações sem valor, já que o Wik não expõe custo de
-// mão-de-obra) — só pra produtos que ainda não têm nenhuma ficha
-// cadastrada localmente, pra não sobrescrever o que já foi preenchido à
-// mão. Assíncrono pelo mesmo motivo dos outros: cada produto exige várias
-// chamadas (insumos + operações + 1 por material único), e um catálogo
-// grande facilmente passa dos limites de uma única requisição HTTP.
+// Importação de Ficha de Custo — cria ficha nova pra produto que ainda não
+// tem nenhuma, e ATUALIZA a ficha de produto que já foi importada do Wik
+// antes (ficha_custo_origem_wik = TRUE), pra acompanhar mudanças feitas lá.
+// Uma ficha editada à mão localmente nunca é tocada (ver
+// ficha_custo_origem_wik em produtos.routes.js). Além do botão manual
+// abaixo, roda sozinha periodicamente (ver index.js). Assíncrono pelo mesmo
+// motivo dos outros: cada produto exige várias chamadas (insumos +
+// operações + 1 por material único), e um catálogo grande facilmente passa
+// dos limites de uma única requisição HTTP.
 router.post('/ficha-custo/preview', async (req, res, next) => {
   try {
     const integracao = await buscarIntegracao();
@@ -375,6 +389,17 @@ router.post('/ficha-custo/confirmar', async (req, res, next) => {
     res.json(resultado);
   } catch (err) {
     next(err);
+  }
+});
+
+// Força a atualização das fichas de custo agora, sem esperar o próximo
+// ciclo automático (ver WIK_CATALOGO_INTERVAL_MS em index.js).
+router.post('/ficha-custo/sincronizar-agora', async (req, res, next) => {
+  try {
+    const resultado = await sincronizarFichaCustoAgora();
+    res.json(resultado);
+  } catch (err) {
+    res.status(422).json({ error: err.message });
   }
 });
 

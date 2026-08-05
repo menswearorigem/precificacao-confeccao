@@ -327,6 +327,13 @@ router.put('/:id', async (req, res, next) => {
     if (body.custosIndustriais !== undefined) {
       await client.query('DELETE FROM custos_industriais WHERE produto_id = $1', [id]);
     }
+    if (body.materiais !== undefined || body.custosIndustriais !== undefined) {
+      // Essa rota só é chamada pela tela de edição do produto (a sincronização
+      // automática do Wik grava direto no banco, sem passar por aqui) — então
+      // qualquer PUT com materiais/custos é uma edição manual da usuária, que
+      // deve ficar protegida da próxima atualização automática da Ficha de Custo.
+      await client.query('UPDATE produtos SET ficha_custo_origem_wik = FALSE WHERE id = $1', [id]);
+    }
     await inserirMateriaisECustos(client, id, body.materiais || [], body.custosIndustriais || []);
 
     const produtoRow = await fetchProdutoRow(client, id);

@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, AlertTriangle, Download } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Download, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
 
 export default function WikImportarFichaCustoCard() {
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState(null);
   const [erro, setErro] = useState('');
+  const [aviso, setAviso] = useState('');
   const [confirmando, setConfirmando] = useState(false);
   const [resultado, setResultado] = useState(null);
+  const [sincronizandoAgora, setSincronizandoAgora] = useState(false);
 
   useEffect(() => {
     api.get('/wik').then((data) => {
@@ -67,21 +69,49 @@ export default function WikImportarFichaCustoCard() {
     }
   }
 
+  // Mesma busca, mas dispara e já grava sozinha (sem passar por
+  // conferência) — igual ao que já roda automaticamente a cada 6h.
+  async function atualizarAgora() {
+    setErro('');
+    setAviso('');
+    setResultado(null);
+    setSincronizandoAgora(true);
+    try {
+      const data = await api.post('/wik/ficha-custo/sincronizar-agora', {});
+      if (data.pulado) {
+        setAviso(`Não rodou agora: ${data.pulado}.`);
+      } else {
+        setResultado(data);
+      }
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setSincronizandoAgora(false);
+    }
+  }
+
   return (
     <div className="card" style={{ marginBottom: 18 }}>
       <div className="card-head">Importar Ficha de Custo do Wik</div>
       <p className="page-sub" style={{ marginTop: -6, marginBottom: 14 }}>
         Traz o custo total já calculado e aprovado na Ficha de Custo do Wik (o mesmo valor que aparece na
-        ficha impressa) pra cada produto que ainda não tem nenhuma ficha cadastrada aqui — não mexe em
-        produto que você já preencheu manualmente. Os materiais entram como referência (nome e quantidade
-        por peça), mas sem custo individual — o Wik não expõe um custo por material que bata com a ficha
-        aprovada, só o total (confirmado comparando com a ficha impressa real).
+        ficha impressa) pra cada produto que ainda não tem ficha, e ATUALIZA a ficha de produto que já foi
+        trazida do Wik antes, acompanhando mudanças feitas lá — nunca mexe em produto que você editou
+        manualmente aqui. Além disso, roda sozinha a cada 6 horas; os botões abaixo são só pra conferir ou
+        forçar agora. Os materiais entram como referência (nome e quantidade por peça), mas sem custo
+        individual — o Wik não expõe um custo por material que bata com a ficha aprovada, só o total
+        (confirmado comparando com a ficha impressa real).
       </p>
 
-      <button className="btn btn-primary" onClick={iniciar} disabled={loading}>
-        <Download size={13} /> {loading ? 'Buscando no Wik…' : 'Buscar ficha de custo dos produtos pendentes'}
-      </button>
-      {loading && (
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button className="btn btn-primary" onClick={atualizarAgora} disabled={sincronizandoAgora || loading}>
+          <RefreshCw size={13} /> {sincronizandoAgora ? 'Atualizando…' : 'Atualizar agora'}
+        </button>
+        <button className="btn btn-ghost" onClick={iniciar} disabled={loading || sincronizandoAgora}>
+          <Download size={13} /> {loading ? 'Buscando no Wik…' : 'Só conferir (sem aplicar)'}
+        </button>
+      </div>
+      {(loading || sincronizandoAgora) && (
         <p className="page-sub" style={{ marginTop: 8 }}>
           Isso pode levar bastante tempo (uma chamada ao produto por referência, mais uma por material único
           pra pegar a unidade de medida, respeitando o limite de 3 requisições/segundo do Wik). Pode continuar
@@ -90,6 +120,7 @@ export default function WikImportarFichaCustoCard() {
       )}
 
       {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
+      {aviso && <div className="stamp sm tone-saudavel" style={{ marginTop: 10, display: 'inline-flex' }}>{aviso}</div>}
 
       {resultado && (
         <div className="card" style={{ marginTop: 14, borderColor: 'var(--success-ring)' }}>
@@ -97,9 +128,9 @@ export default function WikImportarFichaCustoCard() {
             <CheckCircle2 size={14} /> Importação concluída
           </div>
           <p>
-            {resultado.produtosAtualizados} produto(s) com ficha de custo criada — {resultado.materiaisCriados} material(is)
+            {resultado.produtosAtualizados} produto(s) com ficha de custo criada ou atualizada — {resultado.materiaisCriados} material(is)
             e {resultado.custosCriados} operaç(ões) de custo industrial no total.
-            {resultado.ignorados.length > 0 && ` ${resultado.ignorados.length} produto(s) já tinham ficha e foram ignorados.`}
+            {resultado.ignorados.length > 0 && ` ${resultado.ignorados.length} produto(s) tinham ficha editada manualmente e foram ignorados (protegidos).`}
           </p>
         </div>
       )}
@@ -107,7 +138,7 @@ export default function WikImportarFichaCustoCard() {
       {preview && (
         <div style={{ marginTop: 14 }}>
           <div className="form-grid" style={{ marginBottom: 12 }}>
-            <div><span className="field-label">Produtos sem ficha (candidatos)</span><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{preview.resumo.totalCandidatos}</div></div>
+            <div><span className="field-label">Candidatos (sem ficha ou vindos do Wik)</span><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{preview.resumo.totalCandidatos}</div></div>
             <div><span className="field-label">Ficha encontrada no Wik</span><div className="mono" style={{ fontSize: 18, fontWeight: 700, color: 'var(--success)' }}>{preview.resumo.comFichaEncontrada}</div></div>
             <div><span className="field-label">Sem ficha no Wik</span><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{preview.resumo.semFichaNoWik}</div></div>
             <div><span className="field-label">Sem custo total</span><div className="mono" style={{ fontSize: 18, fontWeight: 700, color: preview.resumo.semCustoTotal > 0 ? 'var(--danger)' : undefined }}>{preview.resumo.semCustoTotal}</div></div>

@@ -1,6 +1,6 @@
 const pool = require('../db/pool');
 const wik = require('./wik');
-const { obterTokenValido } = require('./wikSync');
+const { buscarIntegracao, obterTokenValido } = require('./wikSync');
 
 // IMPORTANTE: materiaprima_get devolve um "MatVlrUnit" que parece ser o
 // preço CORRENTE do material, não o custo que está de fato congelado na
@@ -15,11 +15,18 @@ const { obterTokenValido } = require('./wikSync');
 async function montarPreviewFichaCusto(integracao) {
   const token = await obterTokenValido(integracao);
 
+  // Candidatos: produtos sem ficha nenhuma ainda (importação inicial) OU
+  // produtos cuja ficha já veio do Wik antes (ficha_custo_origem_wik = TRUE)
+  // — esses últimos entram de novo pra pegar eventuais mudanças na ficha lá
+  // no Wik. Uma ficha editada à mão (origem_wik = FALSE) nunca entra aqui.
   const { rows: candidatos } = await pool.query(`
     SELECT p.id, p.referencia, p.descricao, p.wik_prod_id
     FROM produtos p
-    WHERE NOT EXISTS (SELECT 1 FROM materiais m WHERE m.produto_id = p.id)
-      AND NOT EXISTS (SELECT 1 FROM custos_industriais c WHERE c.produto_id = p.id)
+    WHERE p.ficha_custo_origem_wik = TRUE
+       OR (
+         NOT EXISTS (SELECT 1 FROM materiais m WHERE m.produto_id = p.id)
+         AND NOT EXISTS (SELECT 1 FROM custos_industriais c WHERE c.produto_id = p.id)
+       )
     ORDER BY p.referencia
   `);
 
@@ -112,8 +119,11 @@ async function montarPreviewFichaCusto(integracao) {
 }
 
 // Grava materiais + custos industriais dos produtos vindos do preview.
-// Reconfirma que o produto ainda não tem ficha (evita duplicar se a rotina
-// rodar duas vezes em cima do mesmo resultado).
+// Reconfirma o estado atual de cada produto no momento de aplicar (protege
+// contra corrida entre o preview e a confirmação): só grava se o produto
+// ainda não tem ficha nenhuma (importação inicial) ou se a ficha existente
+// já era "origem Wik" (seguro atualizar). Uma ficha editada à mão localmente
+// (ficha_custo_origem_wik = FALSE) nunca é tocada — fica sempre ignorada.
 async function aplicarImportacaoFichaCusto(produtos) {
   const client = await pool.connect();
   try {
@@ -124,9 +134,17 @@ async function aplicarImportacaoFichaCusto(produtos) {
     const ignorados = [];
 
     for (const item of produtos) {
+      const { rows: produtoRows } = await client.query('SELECT ficha_custo_origem_wik FROM produtos WHERE id = $1', [item.produtoId]);
+      if (produtoRows.length === 0) { ignorados.push(item.referencia); continue; }
       const { rows: existeMat } = await client.query('SELECT 1 FROM materiais WHERE produto_id = $1', [item.produtoId]);
       const { rows: existeCusto } = await client.query('SELECT 1 FROM custos_industriais WHERE produto_id = $1', [item.produtoId]);
-      if (existeMat.length > 0 || existeCusto.length > 0) { ignorados.push(item.referencia); continue; }
+      const temFicha = existeMat.length > 0 || existeCusto.length > 0;
+      if (temFicha && !produtoRows[0].ficha_custo_origem_wik) { ignorados.push(item.referencia); continue; }
+
+      if (temFicha) {
+        await client.query('DELETE FROM materiais WHERE produto_id = $1', [item.produtoId]);
+        await client.query('DELETE FROM custos_industriais WHERE produto_id = $1', [item.produtoId]);
+      }
 
       let ordem = 0;
       for (const m of item.materiais || []) {
@@ -149,6 +167,7 @@ async function aplicarImportacaoFichaCusto(produtos) {
         );
         custosCriados += 1;
       }
+      await client.query('UPDATE produtos SET ficha_custo_origem_wik = TRUE WHERE id = $1', [item.produtoId]);
       produtosAtualizados += 1;
     }
 
@@ -162,4 +181,41 @@ async function aplicarImportacaoFichaCusto(produtos) {
   }
 }
 
-module.exports = { montarPreviewFichaCusto, aplicarImportacaoFichaCusto };
+// Pipeline completo (busca + aplica) usado pelo job automático em segundo
+// plano, mesma trava anti-sobreposição das outras sincronizações (usa as
+// colunas ficha_custo_import_*, que já existem pra suportar o botão manual).
+async function sincronizarFichaCustoAgora() {
+  const integracao = await buscarIntegracao();
+  if (!integracao || !integracao.ativo) return { pulado: 'sem credencial ativa' };
+
+  const jobTravado = integracao.ficha_custo_import_status === 'rodando'
+    && integracao.ficha_custo_import_iniciado_em
+    && Date.now() - new Date(integracao.ficha_custo_import_iniciado_em).getTime() < 30 * 60 * 1000;
+  if (jobTravado) return { pulado: 'já tem uma importação de ficha de custo em andamento' };
+
+  await pool.query(
+    `UPDATE integracoes_wik SET ficha_custo_import_status = 'rodando', ficha_custo_import_resultado = NULL,
+                                 ficha_custo_import_erro = NULL, ficha_custo_import_iniciado_em = now(), atualizado_em = now()
+     WHERE id = $1`,
+    [integracao.id]
+  );
+
+  try {
+    const preview = await montarPreviewFichaCusto(integracao);
+    const aplicado = await aplicarImportacaoFichaCusto(preview.produtos);
+    await pool.query(
+      `UPDATE integracoes_wik SET ficha_custo_import_status = 'idle', ficha_custo_import_resultado = NULL,
+                                   ultimo_erro = NULL, atualizado_em = now() WHERE id = $1`,
+      [integracao.id]
+    );
+    return { ...aplicado, ...preview.resumo };
+  } catch (err) {
+    await pool.query(
+      `UPDATE integracoes_wik SET ficha_custo_import_status = 'erro', ficha_custo_import_erro = $1, ultimo_erro = $1, atualizado_em = now() WHERE id = $2`,
+      [err.message, integracao.id]
+    );
+    throw err;
+  }
+}
+
+module.exports = { montarPreviewFichaCusto, aplicarImportacaoFichaCusto, sincronizarFichaCustoAgora };

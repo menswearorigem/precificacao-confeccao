@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, AlertTriangle, Download } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Download, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
 
 export default function WikImportarProdutosCard() {
@@ -7,8 +7,10 @@ export default function WikImportarProdutosCard() {
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState(null);
   const [erro, setErro] = useState('');
+  const [aviso, setAviso] = useState('');
   const [confirmando, setConfirmando] = useState(false);
   const [resultado, setResultado] = useState(null);
+  const [sincronizandoAgora, setSincronizandoAgora] = useState(false);
 
   useEffect(() => {
     api.get('/wik').then((data) => {
@@ -69,6 +71,27 @@ export default function WikImportarProdutosCard() {
     }
   }
 
+  // Mesma importação, mas dispara e já grava sozinha (sem passar por
+  // conferência) — igual ao que já roda automaticamente a cada 6h.
+  async function atualizarAgora() {
+    setErro('');
+    setAviso('');
+    setResultado(null);
+    setSincronizandoAgora(true);
+    try {
+      const data = await api.post('/wik/produtos/sincronizar-agora', {});
+      if (data.pulado) {
+        setAviso(`Não rodou agora: ${data.pulado}.`);
+      } else {
+        setResultado(data);
+      }
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setSincronizandoAgora(false);
+    }
+  }
+
   return (
     <div className="card" style={{ marginBottom: 18 }}>
       <div className="card-head">Importar catálogo completo de produtos do Wik</div>
@@ -76,13 +99,19 @@ export default function WikImportarProdutosCard() {
         Traz TODOS os produtos ativos cadastrados no Wik (nas 4 empresas: matriz, filial, Hoggar/Miss
         Manu e Origem), com marca, categoria e o estoque de cada variante — usando o maior valor entre
         as lojas quando o mesmo produto aparece em mais de uma. Só cria produtos que ainda não existem
-        aqui (não duplica). Nada é gravado até você confirmar.
+        aqui (não duplica). Além disso, roda sozinho a cada 6 horas pra pegar produtos recém-lançados
+        no Wik sem precisar clicar em nada — os botões abaixo são só pra conferir ou forçar agora.
       </p>
 
-      <button className="btn btn-primary" onClick={iniciar} disabled={loading}>
-        <Download size={13} /> {loading ? 'Buscando no Wik…' : 'Buscar catálogo completo'}
-      </button>
-      {loading && (
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button className="btn btn-primary" onClick={atualizarAgora} disabled={sincronizandoAgora || loading}>
+          <RefreshCw size={13} /> {sincronizandoAgora ? 'Atualizando…' : 'Atualizar agora'}
+        </button>
+        <button className="btn btn-ghost" onClick={iniciar} disabled={loading || sincronizandoAgora}>
+          <Download size={13} /> {loading ? 'Buscando no Wik…' : 'Só conferir (sem aplicar)'}
+        </button>
+      </div>
+      {(loading || sincronizandoAgora) && (
         <p className="page-sub" style={{ marginTop: 8 }}>
           Isso pode levar vários minutos (o Wik só libera 3 requisições por segundo e o catálogo pode
           ser grande). Pode continuar usando o sistema normalmente enquanto espera.
@@ -90,6 +119,7 @@ export default function WikImportarProdutosCard() {
       )}
 
       {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
+      {aviso && <div className="stamp sm tone-saudavel" style={{ marginTop: 10, display: 'inline-flex' }}>{aviso}</div>}
 
       {resultado && (
         <div className="card" style={{ marginTop: 14, borderColor: 'var(--success-ring)' }}>

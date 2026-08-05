@@ -1,6 +1,6 @@
 const pool = require('../db/pool');
 const wik = require('./wik');
-const { obterTokenValido } = require('./wikSync');
+const { buscarIntegracao, obterTokenValido } = require('./wikSync');
 const { resolverEan } = require('./eanResolver');
 
 // Os 4 Ids de Empresa conhecidos (confirmados com a usuária): 192 (Hebron
@@ -185,4 +185,43 @@ async function aplicarImportacaoProdutos(criar) {
   }
 }
 
-module.exports = { montarPreviewProdutos, aplicarImportacaoProdutos, EMP_IDS_PADRAO };
+// Pipeline completo (busca + aplica) usado pelo job automático em segundo
+// plano, pra pegar produtos recém-lançados no Wik sem depender de a usuária
+// clicar em nada. Só CRIA produtos novos (nunca apaga/edita os existentes),
+// então rodar sozinho periodicamente é seguro — mesma trava anti-sobreposição
+// das outras sincronizações.
+async function sincronizarProdutosAgora() {
+  const integracao = await buscarIntegracao();
+  if (!integracao || !integracao.ativo) return { pulado: 'sem credencial ativa' };
+
+  const jobTravado = integracao.produtos_import_status === 'rodando'
+    && integracao.produtos_import_iniciado_em
+    && Date.now() - new Date(integracao.produtos_import_iniciado_em).getTime() < 30 * 60 * 1000;
+  if (jobTravado) return { pulado: 'já tem uma importação de produtos em andamento' };
+
+  await pool.query(
+    `UPDATE integracoes_wik SET produtos_import_status = 'rodando', produtos_import_resultado = NULL,
+                                 produtos_import_erro = NULL, produtos_import_iniciado_em = now(), atualizado_em = now()
+     WHERE id = $1`,
+    [integracao.id]
+  );
+
+  try {
+    const preview = await montarPreviewProdutos(integracao);
+    const aplicado = await aplicarImportacaoProdutos(preview.criar);
+    await pool.query(
+      `UPDATE integracoes_wik SET produtos_import_status = 'idle', produtos_import_resultado = NULL,
+                                   ultimo_erro = NULL, atualizado_em = now() WHERE id = $1`,
+      [integracao.id]
+    );
+    return { ...aplicado, ...preview.resumo };
+  } catch (err) {
+    await pool.query(
+      `UPDATE integracoes_wik SET produtos_import_status = 'erro', produtos_import_erro = $1, ultimo_erro = $1, atualizado_em = now() WHERE id = $2`,
+      [err.message, integracao.id]
+    );
+    throw err;
+  }
+}
+
+module.exports = { montarPreviewProdutos, aplicarImportacaoProdutos, sincronizarProdutosAgora, EMP_IDS_PADRAO };
