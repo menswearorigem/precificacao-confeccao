@@ -62,19 +62,35 @@ async function chamarApiComBase(base, path, token, params) {
 // de curl com "apiwiki" nesse mesmo endpoint. Tenta "wiki_v2" primeiro (é o
 // que a maioria confirma) e só cai pro prefixo alternativo se vier 404, pra
 // não depender de adivinhar certo qual documentação está desatualizada.
+//
+// Erros HTTP 500 do Wik acontecem de vez em quando por instabilidade do
+// lado deles (já vimos um caso de falha ao gravar o próprio log da
+// chamada, sem relação com os dados enviados) — tentamos de novo algumas
+// vezes com espera crescente antes de desistir, em vez de já marcar o
+// produto como erro definitivo.
 async function chamarApi(path, token, params = {}) {
-  let { res, data } = await chamarApiComBase('wiki_v2', path, token, params);
-  if (res.status === 404) {
-    ({ res, data } = await chamarApiComBase('apiwiki', path, token, params));
+  const TENTATIVAS_5XX = 3;
+  let ultimoErro;
+  for (let tentativa = 1; tentativa <= TENTATIVAS_5XX; tentativa += 1) {
+    let { res, data } = await chamarApiComBase('wiki_v2', path, token, params);
+    if (res.status === 404) {
+      ({ res, data } = await chamarApiComBase('apiwiki', path, token, params));
+    }
+    if (res.status >= 500 && tentativa < TENTATIVAS_5XX) {
+      ultimoErro = data;
+      await new Promise((resolve) => setTimeout(resolve, tentativa * 2000));
+      continue;
+    }
+    if (!res.ok || data.success === false) {
+      const detalhes = [];
+      if (data.message) detalhes.push(data.message);
+      if (data.errors && Object.keys(data.errors).length > 0) detalhes.push(JSON.stringify(data.errors));
+      if (detalhes.length === 0) detalhes.push(`corpo bruto: ${JSON.stringify(data).slice(0, 500)}`);
+      throw new Error(`Erro na API do Wik (HTTP ${res.status}, body.status ${data.status}) em ${path}: ${detalhes.join(' | ')}`);
+    }
+    return data;
   }
-  if (!res.ok || data.success === false) {
-    const detalhes = [];
-    if (data.message) detalhes.push(data.message);
-    if (data.errors && Object.keys(data.errors).length > 0) detalhes.push(JSON.stringify(data.errors));
-    if (detalhes.length === 0) detalhes.push(`corpo bruto: ${JSON.stringify(data).slice(0, 500)}`);
-    throw new Error(`Erro na API do Wik (HTTP ${res.status}, body.status ${data.status}) em ${path}: ${detalhes.join(' | ')}`);
-  }
-  return data;
+  throw new Error(`Erro na API do Wik em ${path} (falhou ${TENTATIVAS_5XX}x seguidas com erro interno do servidor): ${JSON.stringify(ultimoErro).slice(0, 300)}`);
 }
 
 // categoria_get devolve os nomes das categorias por id — o produto_get só
@@ -129,10 +145,11 @@ async function buscarProdutoPorReferencia(token, prodReferencia) {
 }
 
 // ---------- Audaces (ficha técnica: materiais/insumos e operações de custo) ----------
-// Ainda não confirmado na prática como o "id" desses endpoints se relaciona
-// com o ProdId do produto (a doc chama de "id do produto ficha tecnica",
-// ambíguo) — por isso ainda não tem uma função de importação em massa,
-// só essas funções básicas pra testar contra um produto real primeiro.
+// Confirmado na prática: o "id" desses dois endpoints é o ProdId do
+// produto (o Wik resolve o FchId da ficha técnica internamente). Note que
+// insumosfichatecnica_get.Qtd é o consumo da GRADE INTEIRA (todos os
+// tamanhos somados), não por peça — divida pelo nº de itens de
+// ListaGrade do produto pra chegar no consumo de uma peça.
 
 async function buscarInsumosFichaTecnica(token, id) {
   const data = await chamarApi('insumosfichatecnica_get', token, { id });
