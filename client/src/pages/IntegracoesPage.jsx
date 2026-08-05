@@ -4,6 +4,7 @@ import { Plug, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
 import { Field } from '../components/ui';
 import WikIntegracaoCard from '../components/WikIntegracaoCard';
+import WikImportarProdutosCard from '../components/WikImportarProdutosCard';
 
 const MARKETPLACES = {
   mercado_livre: {
@@ -128,6 +129,7 @@ export default function IntegracoesPage() {
       {aviso && <div className="stamp sm tone-saudavel" style={{ marginBottom: 12, display: 'inline-flex' }}>{aviso}</div>}
 
       <WikIntegracaoCard />
+      <WikImportarProdutosCard />
 
       {mostrarNova && (
         <div className="card" style={{ marginBottom: 16 }}>

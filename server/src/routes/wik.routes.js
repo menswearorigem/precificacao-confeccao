@@ -4,6 +4,7 @@ const wik = require('../lib/wik');
 const {
   buscarIntegracao, empIdsConfigurados, montarPreviewEstoque, aplicarSincronizacaoEstoque, sincronizarEstoqueAgora,
 } = require('../lib/wikSync');
+const { montarPreviewProdutos, aplicarImportacaoProdutos } = require('../lib/wikProdutosImport');
 
 const router = express.Router();
 
@@ -17,6 +18,7 @@ function paraFora(row) {
     ultimaSincronizacao: row.ultima_sincronizacao,
     ultimoErro: row.ultimo_erro,
     previewStatus: row.preview_status,
+    produtosImportStatus: row.produtos_import_status,
   };
 }
 
@@ -166,6 +168,77 @@ router.post('/estoque/sincronizar-agora', async (req, res, next) => {
     res.json(resultado);
   } catch (err) {
     res.status(422).json({ error: err.message });
+  }
+});
+
+// Importação completa do catálogo (produtos + variantes + estoque
+// consolidado) — separada da sincronização de estoque recorrente, usa
+// colunas de status próprias (produtos_import_*) pra não colidir com ela.
+// É sempre manual (nunca roda sozinha): criar milhares de produtos de uma
+// vez tem um risco bem maior que só atualizar uma quantidade já conhecida.
+router.post('/produtos/preview', async (req, res, next) => {
+  try {
+    const integracao = await buscarIntegracao();
+    if (!integracao) return res.status(400).json({ error: 'Cadastre a credencial do Wik primeiro.' });
+
+    const jobTravado = integracao.produtos_import_status === 'rodando'
+      && integracao.produtos_import_iniciado_em
+      && Date.now() - new Date(integracao.produtos_import_iniciado_em).getTime() < 30 * 60 * 1000;
+    if (jobTravado) return res.json({ status: 'rodando' });
+
+    await pool.query(
+      `UPDATE integracoes_wik SET produtos_import_status = 'rodando', produtos_import_resultado = NULL,
+                                   produtos_import_erro = NULL, produtos_import_iniciado_em = now(), atualizado_em = now()
+       WHERE id = $1`,
+      [integracao.id]
+    );
+    res.json({ status: 'rodando' });
+
+    montarPreviewProdutos(integracao)
+      .then((resultado) => pool.query(
+        `UPDATE integracoes_wik SET produtos_import_status = 'concluido', produtos_import_resultado = $1,
+                                     atualizado_em = now() WHERE id = $2`,
+        [JSON.stringify(resultado), integracao.id]
+      ))
+      .catch((err) => pool.query(
+        `UPDATE integracoes_wik SET produtos_import_status = 'erro', produtos_import_erro = $1, atualizado_em = now() WHERE id = $2`,
+        [err.message, integracao.id]
+      ));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/produtos/preview', async (req, res, next) => {
+  try {
+    const integracao = await buscarIntegracao();
+    if (!integracao) return res.status(400).json({ error: 'Cadastre a credencial do Wik primeiro.' });
+    res.json({
+      status: integracao.produtos_import_status,
+      resultado: integracao.produtos_import_resultado,
+      erro: integracao.produtos_import_erro,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/produtos/confirmar', async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const resultado = await aplicarImportacaoProdutos(body.criar || []);
+
+    const integracao = await buscarIntegracao();
+    if (integracao) {
+      await pool.query(
+        `UPDATE integracoes_wik SET produtos_import_status = 'idle', produtos_import_resultado = NULL WHERE id = $1`,
+        [integracao.id]
+      );
+    }
+
+    res.json(resultado);
+  } catch (err) {
+    next(err);
   }
 });
 

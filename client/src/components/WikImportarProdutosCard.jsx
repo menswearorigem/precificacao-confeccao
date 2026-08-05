@@ -1,0 +1,147 @@
+import { useEffect, useState } from 'react';
+import { CheckCircle2, AlertTriangle, Download } from 'lucide-react';
+import { api } from '../api/client';
+
+export default function WikImportarProdutosCard() {
+  const [integracao, setIntegracao] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const [erro, setErro] = useState('');
+  const [confirmando, setConfirmando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+
+  useEffect(() => {
+    api.get('/wik').then((data) => {
+      setIntegracao(data);
+      if (data?.produtosImportStatus === 'rodando') {
+        setLoading(true);
+        esperar();
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function iniciar() {
+    setErro('');
+    setResultado(null);
+    setPreview(null);
+    setLoading(true);
+    try {
+      await api.post('/wik/produtos/preview', {});
+      await esperar();
+    } catch (err) {
+      setErro(err.message);
+      setLoading(false);
+    }
+  }
+
+  async function esperar() {
+    for (let tentativa = 0; tentativa < 400; tentativa += 1) {
+      const status = await api.get('/wik/produtos/preview');
+      if (status.status === 'concluido') {
+        setPreview(status.resultado);
+        setLoading(false);
+        return;
+      }
+      if (status.status === 'erro') {
+        setErro(status.erro || 'Falha ao buscar produtos no Wik.');
+        setLoading(false);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+    setErro('A busca no Wik está demorando demais — tente de novo em alguns minutos.');
+    setLoading(false);
+  }
+
+  async function confirmar() {
+    if (!preview) return;
+    setConfirmando(true);
+    setErro('');
+    try {
+      const data = await api.post('/wik/produtos/confirmar', { criar: preview.criar });
+      setResultado(data);
+      setPreview(null);
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setConfirmando(false);
+    }
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 18 }}>
+      <div className="card-head">Importar catálogo completo de produtos do Wik</div>
+      <p className="page-sub" style={{ marginTop: -6, marginBottom: 14 }}>
+        Traz TODOS os produtos ativos cadastrados no Wik (nas 4 empresas: matriz, filial, Hoggar/Miss
+        Manu e Origem), com marca, categoria e o estoque de cada variante — usando o maior valor entre
+        as lojas quando o mesmo produto aparece em mais de uma. Só cria produtos que ainda não existem
+        aqui (não duplica). Nada é gravado até você confirmar.
+      </p>
+
+      <button className="btn btn-primary" onClick={iniciar} disabled={loading}>
+        <Download size={13} /> {loading ? 'Buscando no Wik…' : 'Buscar catálogo completo'}
+      </button>
+      {loading && (
+        <p className="page-sub" style={{ marginTop: 8 }}>
+          Isso pode levar vários minutos (o Wik só libera 3 requisições por segundo e o catálogo pode
+          ser grande). Pode continuar usando o sistema normalmente enquanto espera.
+        </p>
+      )}
+
+      {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
+
+      {resultado && (
+        <div className="card" style={{ marginTop: 14, borderColor: 'var(--success-ring)' }}>
+          <div className="card-head" style={{ color: 'var(--success)' }}>
+            <CheckCircle2 size={14} /> Importação concluída
+          </div>
+          <p>
+            {resultado.produtosCriados} produto(s) novo(s) criado(s), {resultado.variantesCriadas} variante(s) de estoque criada(s).
+            {resultado.ignorados.length > 0 && ` ${resultado.ignorados.length} referência(s) já existiam e foram ignoradas.`}
+          </p>
+        </div>
+      )}
+
+      {preview && (
+        <div style={{ marginTop: 14 }}>
+          <div className="form-grid" style={{ marginBottom: 12 }}>
+            <div><span className="field-label">Produtos ativos no Wik</span><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{preview.resumo.totalProdutosWik}</div></div>
+            <div><span className="field-label">Novos pra criar</span><div className="mono" style={{ fontSize: 18, fontWeight: 700, color: 'var(--success)' }}>{preview.resumo.novosParaCriar}</div></div>
+            <div><span className="field-label">Já existentes (ignorados)</span><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{preview.resumo.jaExistentesIgnorados}</div></div>
+            <div><span className="field-label">Sem marca/categoria</span><div className="mono" style={{ fontSize: 18, fontWeight: 700, color: preview.resumo.semMarcaOuCategoria > 0 ? 'var(--danger)' : undefined }}>{preview.resumo.semMarcaOuCategoria}</div></div>
+          </div>
+
+          {preview.resumo.semMarcaOuCategoria > 0 && (
+            <div className="login-error" style={{ marginBottom: 12 }}>
+              <AlertTriangle size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
+              {preview.resumo.semMarcaOuCategoria} produto(s) não tinham marca/categoria em nenhuma linha de
+              estoque do Wik (produto sem saldo cadastrado em lugar nenhum) — serão criados mesmo assim, só
+              que sem marca/categoria preenchida. Dá pra completar depois na ficha do produto.
+            </div>
+          )}
+
+          <table className="data-table" style={{ marginBottom: 10 }}>
+            <thead><tr><th>Referência</th><th>Descrição</th><th>Marca</th><th>Categoria</th><th>Variantes</th></tr></thead>
+            <tbody>
+              {preview.criar.slice(0, 200).map((p, i) => (
+                <tr key={i}>
+                  <td className="mono">{p.referencia}</td>
+                  <td>{p.descricao}</td>
+                  <td>{p.marca || '—'}</td>
+                  <td>{p.categoria || '—'}</td>
+                  <td className="mono">{p.variantes.length}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {preview.criar.length > 200 && <p className="page-sub">Mostrando 200 de {preview.criar.length}.</p>}
+
+          <button className="btn btn-primary" onClick={confirmar} disabled={confirmando || preview.criar.length === 0}>
+            {confirmando ? 'Gravando…' : `Confirmar importação de ${preview.criar.length} produto(s)`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
