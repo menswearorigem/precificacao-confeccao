@@ -73,11 +73,66 @@ async function encontrarOuCriarCliente(client, pedidoGenerico) {
   return rows[0].id;
 }
 
+// Remove acento e qualquer caractere que não seja letra/número, e deixa
+// tudo maiúsculo — pra comparar cor/tamanho sem se importar com espaço,
+// hífen ou acentuação diferente entre o que foi digitado no SKU do Mercado
+// Livre e o que está cadastrado no estoque (ex.: "Terra Cota" vs "TERRA
+// COTA" vs "TERRA-COTA" batem todos igual).
+function normalizarComparacao(valor) {
+  return String(valor || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9]/g, '')
+    .toUpperCase();
+}
+
+// Padrão de referência da usuária pra anúncio individual: "REF-COR-TAMANHO"
+// (ex.: "OG1192-AZUL-M"). A referência nunca tem hífen e o tamanho é sempre
+// o último pedaço, então tudo que sobrar no meio é a cor — junta de novo
+// (com espaço) pra dar conta de cor composta tipo "TERRA COTA", mesmo que
+// no SKU tenha vindo com hífen no lugar do espaço. Kits usam
+// "KIT-QUANTIDADE-REF-COR-TAMANHO" — ainda não tratados aqui de propósito
+// (só os anúncios individuais por enquanto).
+function partirSkuIndividual(sku) {
+  const partes = String(sku || '').trim().split('-').filter(Boolean);
+  if (partes.length < 3) return null;
+  if (normalizarComparacao(partes[0]) === 'KIT') return null;
+  return { referencia: partes[0], cor: partes.slice(1, -1).join(' '), tamanho: partes[partes.length - 1] };
+}
+
 // O SKU (cadastrado no anúncio pra bater com a própria referência do
 // produto) é a fonte principal de casamento — o EAN do marketplace pode ser
 // diferente do EAN de produção, então só entra como último recurso.
 async function encontrarVariante(client, { eanExterno, skuExterno }) {
   if (skuExterno) {
+    const partido = partirSkuIndividual(skuExterno);
+    if (partido) {
+      const { rows: variantesDoProduto } = await client.query(
+        `SELECT v.*, p.referencia, p.descricao FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id WHERE p.referencia ILIKE $1`,
+        [partido.referencia]
+      );
+      if (variantesDoProduto.length > 0) {
+        const corAlvo = normalizarComparacao(partido.cor);
+        const tamanhoAlvo = normalizarComparacao(partido.tamanho);
+        const variante = variantesDoProduto.find(
+          (v) => normalizarComparacao(v.cor) === corAlvo && normalizarComparacao(v.tamanho) === tamanhoAlvo
+        );
+        if (variante) return variante;
+        // Achou o produto pela referência, mas essa cor/tamanho específica
+        // não existe no estoque cadastrado (grade diferente, erro de
+        // digitação no anúncio etc.) — ainda assim vincula o produto (o
+        // custo da peça é calculado por produto, não por variante
+        // específica), só sem uma variante de estoque pra apontar.
+        return {
+          id: null,
+          produto_id: variantesDoProduto[0].produto_id,
+          referencia: variantesDoProduto[0].referencia,
+          descricao: variantesDoProduto[0].descricao,
+          cor: partido.cor,
+          tamanho: partido.tamanho,
+        };
+      }
+    }
+
     let r = await client.query(
       `SELECT v.*, p.referencia, p.descricao FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id WHERE p.referencia = $1 ORDER BY v.id LIMIT 1`,
       [skuExterno]
