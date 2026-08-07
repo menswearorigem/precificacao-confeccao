@@ -6,7 +6,14 @@ const { sincronizarProdutosAgora } = require('./lib/wikProdutosImport');
 const { sincronizarFichaCustoAgora } = require('./lib/wikFichaCustoImport');
 
 const PORT = process.env.PORT || 3000;
-const SYNC_INTERVAL_MS = 15 * 60 * 1000;
+// Pedidos novos + valor recebido do marketplace — intervalo mais curto que
+// os outros porque é a informação que mais muda minuto a minuto (pedido
+// pago, pagamento confirmado, saldo liberado). Cada ciclo é só uma
+// dúzia de chamadas na API do Mercado Livre (pedidos + no máximo 50
+// pagamentos a reconferir), bem dentro do limite generoso da API deles —
+// se algum dia começar a bater rate limit, aparece em "Última tentativa
+// falhou" na tela de Integrações, e dá pra alongar esse intervalo de novo.
+const SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const WIK_SYNC_INTERVAL_MS = 15 * 60 * 1000;
 // Catálogo (produtos novos) e Ficha de Custo mudam bem menos que o estoque
 // (que muda o tempo todo com vendas/reposição) — 6h é intervalo suficiente

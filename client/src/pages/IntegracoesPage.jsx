@@ -139,7 +139,7 @@ export default function IntegracoesPage() {
           <h2>Integrações com Marketplaces</h2>
           <p className="page-sub">
             Conecte o Mercado Livre e a Shopee pra puxar os pedidos pagos automaticamente pra dentro
-            do sistema (a cada 15 minutos), como pedidos de venda em aberto, prontos pra revisar e faturar.
+            do sistema (a cada 5 minutos), como pedidos de venda em aberto, prontos pra revisar e faturar.
           </p>
         </div>
         <button className="btn btn-primary" onClick={() => setMostrarNova((v) => !v)}>

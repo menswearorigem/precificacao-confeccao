@@ -468,11 +468,12 @@ async function sincronizarTodasAtivas() {
 }
 
 // No plano gratuito do Render o serviço "dorme" após um tempo sem tráfego, e
-// o setInterval de 15min (index.js) só roda enquanto o processo está
+// o setInterval de 5min (index.js) só roda enquanto o processo está
 // acordado — ou seja, pode passar horas sem sincronizar sozinho. Como
 // paliativo, as telas de Marketplace disparam essa checagem oportunista a
 // cada carregamento; o cooldown evita chamar a API dos marketplaces a cada
-// requisição enquanto o usuário navega.
+// requisição enquanto o usuário navega. Mesmo intervalo do setInterval de
+// fundo, pra não ficar mais frouxo que ele quando o serviço está acordado.
 const COOLDOWN_MS = 5 * 60 * 1000;
 let ultimaChamadaOportunista = 0;
 
