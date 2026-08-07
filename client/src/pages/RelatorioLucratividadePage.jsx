@@ -292,6 +292,75 @@ function ResumoProdutoTab({ resumoProduto, serieDiaria, config, busca }) {
   );
 }
 
+function DiagnosticoPagamento({ pedidoId }) {
+  const [diagnostico, setDiagnostico] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+  const [mostrarJson, setMostrarJson] = useState(false);
+  const [erro, setErro] = useState('');
+
+  async function buscar() {
+    setCarregando(true);
+    setErro('');
+    try {
+      const data = await api.get(`/pedidos/${pedidoId}/diagnostico-marketplace`);
+      setDiagnostico(data);
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  if (!diagnostico && !carregando && !erro) {
+    return (
+      <button type="button" className="btn btn-ghost" style={{ marginTop: 10 }} onClick={buscar}>
+        Ver diagnóstico do pagamento (dados crus do Mercado Livre)
+      </button>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 10, border: '1px dashed var(--border)', borderRadius: 8, padding: 12 }}>
+      {carregando && <p className="page-sub">Buscando na API do Mercado Livre…</p>}
+      {erro && <div className="login-error">{erro}</div>}
+      {diagnostico && (
+        <>
+          <div className="row-line"><span>payment_id gravado hoje</span><span className="mono">{diagnostico.pagamentoIdGravadoAtualmente || '—'}</span></div>
+          <div className="row-line"><span>valor recebido gravado hoje</span><span className="mono">{diagnostico.valorRecebidoGravadoAtualmente != null ? brl(Number(diagnostico.valorRecebidoGravadoAtualmente)) : '—'}</span></div>
+          <div className="row-line"><span>id(s) que o critério atual escolheria</span><span className="mono">{diagnostico.idsQueOCriterioAtualEscolheria.join(', ') || '—'}</span></div>
+          <div className="row-line"><span>pack_id (pedido combinado)</span><span className="mono">{diagnostico.packId || 'não é pack'}</span></div>
+          <div className="row-line"><span>frete (shipping.cost)</span><span className="mono">{diagnostico.shipping?.cost != null ? brl(Number(diagnostico.shipping.cost)) : '—'}</span></div>
+          {diagnostico.pagamentos.map((pg) => (
+            <div key={pg.id} style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border-soft)' }}>
+              <div style={{ fontWeight: 600, fontSize: 12.5 }}>Pagamento {pg.id} — status no pedido: {pg.statusNoPedido}</div>
+              {pg.erro && <div className="login-error" style={{ marginTop: 4 }}>{pg.erro}</div>}
+              {pg.dados && (
+                <>
+                  <div className="row-line"><span>status do pagamento</span><span className="mono">{pg.dados.status} {pg.dados.status_detail ? `(${pg.dados.status_detail})` : ''}</span></div>
+                  <div className="row-line"><span>transaction_amount</span><span className="mono">{pg.dados.transaction_amount != null ? brl(pg.dados.transaction_amount) : '—'}</span></div>
+                  <div className="row-line"><span>net_received_amount</span><span className="mono">{pg.dados.transaction_details?.net_received_amount != null ? brl(pg.dados.transaction_details.net_received_amount) : '—'}</span></div>
+                  <div className="row-line"><span>total_paid_amount</span><span className="mono">{pg.dados.transaction_details?.total_paid_amount != null ? brl(pg.dados.transaction_details.total_paid_amount) : '—'}</span></div>
+                  {(pg.dados.fee_details || []).map((fd, i) => (
+                    <div className="row-line" key={i}><span>tarifa: {fd.type}</span><span className="mono">-{brl(fd.amount)}</span></div>
+                  ))}
+                </>
+              )}
+            </div>
+          ))}
+          <button type="button" className="btn btn-ghost" style={{ marginTop: 8 }} onClick={() => setMostrarJson((v) => !v)}>
+            {mostrarJson ? 'Esconder' : 'Ver'} JSON completo (pedido + pagamentos)
+          </button>
+          {mostrarJson && (
+            <pre style={{ marginTop: 8, maxHeight: 400, overflow: 'auto', fontSize: 11, background: 'var(--surface-alt)', padding: 8, borderRadius: 6 }}>
+              {JSON.stringify(diagnostico, null, 2)}
+            </pre>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function VendaDetalheCard({ p, config }) {
   const [aberto, setAberto] = useState(false);
   const itemUnico = p.itens?.length === 1 ? p.itens[0] : null;
@@ -373,6 +442,8 @@ function VendaDetalheCard({ p, config }) {
               <span className="venda-breakdown-valor">{brl(p.lucro)}</span>
             </div>
           </div>
+
+          {p.canal_venda === 'Mercado Livre' && <DiagnosticoPagamento pedidoId={p.id} />}
         </div>
       )}
     </div>

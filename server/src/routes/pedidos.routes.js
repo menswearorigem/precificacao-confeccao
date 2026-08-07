@@ -7,6 +7,7 @@ const { pctImpostosEmpresa } = require('../lib/calc');
 const { calcularTaxaEsperadaPedido } = require('../lib/marketplaceTaxaCalc');
 const { parseArquivoPedidos } = require('../lib/pedidoImportParsers');
 const { importarPedido, sincronizarSeNecessario, encontrarVariante, corrigirPagamentosHistorico } = require('../lib/marketplaceSync');
+const mercadoLivre = require('../lib/marketplaces/mercadoLivre');
 const { recalcularTotais } = require('../lib/pedidoRecalculo');
 const produtosRoutes = require('./produtos.routes');
 
@@ -282,6 +283,69 @@ router.post('/marketplace/revincular-custos', async (req, res, next) => {
     next(err);
   } finally {
     client.release();
+  }
+});
+
+// Diagnóstico bruto do pagamento de um pedido de marketplace — pra
+// investigar discrepância entre o valor recebido calculado aqui e o que o
+// próprio painel do marketplace mostra, sem precisar adivinhar: devolve a
+// resposta crua da API do pedido (com pack_id, forma de envio) e de cada
+// pagamento associado (com o detalhamento de tarifas do Mercado Pago), lado
+// a lado com o que o sistema está usando hoje (qual(is) payment_id(s) estão
+// gravados, e quais o critério atual escolheria de novo).
+router.get('/:id/diagnostico-marketplace', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM pedidos_venda WHERE id = $1', [req.params.id]);
+    const pedido = rows[0];
+    if (!pedido) return res.status(404).json({ error: 'Pedido não encontrado.' });
+    if (!pedido.origem_marketplace || !pedido.origem_pedido_id) {
+      return res.status(400).json({ error: 'Esse pedido não veio de marketplace — não tem o que diagnosticar.' });
+    }
+    if (pedido.origem_marketplace !== 'mercado_livre') {
+      return res.status(400).json({ error: 'Diagnóstico disponível só pra Mercado Livre por enquanto.' });
+    }
+
+    let integracao = null;
+    if (pedido.origem_integracao_id) {
+      const r = await pool.query('SELECT * FROM integracoes_marketplace WHERE id = $1', [pedido.origem_integracao_id]);
+      integracao = r.rows[0] || null;
+    }
+    if (!integracao) {
+      const r = await pool.query(
+        `SELECT * FROM integracoes_marketplace WHERE marketplace = $1 AND ativo = TRUE AND access_token IS NOT NULL ORDER BY id LIMIT 1`,
+        [pedido.origem_marketplace]
+      );
+      integracao = r.rows[0] || null;
+    }
+    if (!integracao) return res.status(400).json({ error: 'Nenhuma integração autorizada encontrada pra buscar esse pedido.' });
+
+    const order = await mercadoLivre.buscarPedidoPorId(pedido.origem_pedido_id, integracao.access_token);
+    const idsPeloCriterioAtual = mercadoLivre.idsPagamentosAprovados(order);
+
+    const pagamentos = [];
+    for (const p of order.payments || []) {
+      try {
+        const dados = await mercadoLivre.buscarUmPagamento(p.id, integracao.access_token);
+        pagamentos.push({ id: String(p.id), statusNoPedido: p.status, dados });
+      } catch (err) {
+        pagamentos.push({ id: String(p.id), statusNoPedido: p.status, erro: err.message });
+      }
+    }
+
+    res.json({
+      pedidoIdInterno: pedido.id,
+      numero: pedido.numero,
+      origemPedidoId: pedido.origem_pedido_id,
+      pagamentoIdGravadoAtualmente: pedido.pagamento_id_marketplace,
+      valorRecebidoGravadoAtualmente: pedido.valor_recebido_marketplace,
+      idsQueOCriterioAtualEscolheria: idsPeloCriterioAtual,
+      packId: order.pack_id || null,
+      shipping: order.shipping || null,
+      order,
+      pagamentos,
+    });
+  } catch (err) {
+    next(err);
   }
 });
 

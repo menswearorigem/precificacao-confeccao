@@ -300,6 +300,7 @@ module.exports = {
   buscarPedidos,
   buscarPedidoPorId,
   buscarValorRecebido,
+  buscarUmPagamento,
   idsPagamentosAprovados,
   mapearPedido,
 };
