@@ -325,8 +325,11 @@ async function preencherPagamentoId(integracao) {
     } catch (err) {
       // Erro de verdade (ex.: pedido não existe mais, token sem permissão)
       // — guarda pra aparecer na tela em vez de falhar em silêncio pra
-      // sempre; ainda tenta de novo no próximo ciclo.
-      ultimoErro = err.message;
+      // sempre; ainda tenta de novo no próximo ciclo. Identifica QUAL
+      // pedido falhou — senão, um pedido problemático (ex.: apagado do
+      // Mercado Livre) fica escondendo pra sempre o erro de qualquer outro
+      // pedido, já que só o último erro do ciclo é guardado.
+      ultimoErro = `Pedido #${pedido.origem_pedido_id}: ${err.message}`;
     }
   }
   return ultimoErro;
@@ -381,7 +384,7 @@ async function corrigirPagamentoId(integracao, { incluirLiberados = false, limit
         await pool.query('UPDATE pedidos_venda SET valor_recebido_atualizado_em = now() WHERE id = $1 AND valor_recebido_marketplace IS NULL', [pedido.id]);
       }
     } catch (err) {
-      ultimoErro = err.message;
+      ultimoErro = `Pedido #${pedido.origem_pedido_id}: ${err.message}`;
     }
   }
   return { corrigidos, verificados: pedidos.length, ultimoErro };
@@ -432,7 +435,7 @@ async function atualizarValoresRecebidos(integracao) {
     // ML eles vieram, então tenta com essa integração; se o pagamento for
     // de outra conta, a API simplesmente nega e o erro é ignorado.
     const { rows: pendentes } = await pool.query(
-      `SELECT id, pagamento_id_marketplace FROM pedidos_venda
+      `SELECT id, origem_pedido_id, pagamento_id_marketplace FROM pedidos_venda
        WHERE origem_marketplace = 'mercado_livre' AND pagamento_id_marketplace IS NOT NULL
          AND (origem_integracao_id = $1 OR origem_integracao_id IS NULL)
          AND (valor_recebido_status IS NULL OR valor_recebido_status != 'liberado')
@@ -464,7 +467,7 @@ async function atualizarValoresRecebidos(integracao) {
           [valorRecebido, liberado ? 'liberado' : 'confirmado', dataLiberacao, pedido.id]
         );
       } catch (err) {
-        ultimoErro = err.message;
+        ultimoErro = `Pedido #${pedido.origem_pedido_id}: ${err.message}`;
       }
     }
 
