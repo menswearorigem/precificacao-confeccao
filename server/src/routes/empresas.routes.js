@@ -14,6 +14,8 @@ const EDITABLE_FIELDS = [
   'iss',
   'simples_aliquota',
   'outros_impostos',
+  'usa_aliquota_media',
+  'aliquota_media_pct',
   'ativo',
   'ordem',
 ];

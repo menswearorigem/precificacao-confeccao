@@ -8,6 +8,12 @@
 
 function pctImpostosEmpresa(empresa) {
   if (!empresa) return 0;
+  // Alíquota média provisória: pra empresa que ainda não tem o detalhamento
+  // fiscal completo (ICMS/PIS/COFINS/IPI/ISS ou % do Simples) à mão, essa
+  // opção usa uma única % estimada no lugar do cálculo detalhado — em todo
+  // lugar que usa essa função (Ficha de Custo, formação de preço,
+  // lucratividade de marketplace), não só num cálculo específico.
+  if (empresa.usa_aliquota_media) return Number(empresa.aliquota_media_pct) || 0;
   const outros = Number(empresa.outros_impostos) || 0;
   if (empresa.regime_tributario === 'Simples Nacional') {
     return (Number(empresa.simples_aliquota) || 0) + outros;

@@ -73,7 +73,29 @@ export default function EmpresasPage() {
             </Field>
           </div>
 
-          {emp.regime_tributario === 'Simples Nacional' ? (
+          <div className="form-grid" style={{ marginTop: 14 }}>
+            <Field label="Usar alíquota média provisória?" hint="Ative se ainda não tem os dados fiscais detalhados — usa uma % única no lugar do detalhamento abaixo, em todos os cálculos (Ficha de Custo, preço e lucratividade).">
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={emp.usa_aliquota_media}
+                  onChange={(e) => updateEmpresa(emp.id, { usa_aliquota_media: e.target.checked })}
+                />
+                {emp.usa_aliquota_media ? 'Sim' : 'Não'}
+              </label>
+            </Field>
+            {emp.usa_aliquota_media && (
+              <Field label="% média de imposto (provisório)">
+                <NumInput
+                  value={emp.aliquota_media_pct * 100}
+                  onChange={(v) => updateEmpresa(emp.id, { aliquota_media_pct: (Number(v) || 0) / 100 })}
+                  suffix="%"
+                />
+              </Field>
+            )}
+          </div>
+
+          {emp.usa_aliquota_media ? null : emp.regime_tributario === 'Simples Nacional' ? (
             <div className="form-grid" style={{ marginTop: 14 }}>
               <Field
                 label="Alíquota efetiva do Simples Nacional"
@@ -106,24 +128,28 @@ export default function EmpresasPage() {
             </div>
           )}
 
-          <div className="form-grid" style={{ marginTop: 14 }}>
-            <Field label="Outros impostos / taxas fiscais">
-              <NumInput
-                value={emp.outros_impostos * 100}
-                onChange={(v) => updateEmpresa(emp.id, { outros_impostos: (Number(v) || 0) / 100 })}
-                suffix="%"
-              />
-            </Field>
-          </div>
+          {!emp.usa_aliquota_media && (
+            <div className="form-grid" style={{ marginTop: 14 }}>
+              <Field label="Outros impostos / taxas fiscais">
+                <NumInput
+                  value={emp.outros_impostos * 100}
+                  onChange={(v) => updateEmpresa(emp.id, { outros_impostos: (Number(v) || 0) / 100 })}
+                  suffix="%"
+                />
+              </Field>
+            </div>
+          )}
 
           <div className="total-banner" style={{ marginTop: 14 }}>
             % total de impostos sobre o preço de venda
             <span className="mono">
               {(
-                (emp.regime_tributario === 'Simples Nacional'
-                  ? Number(emp.simples_aliquota)
-                  : Number(emp.icms) + Number(emp.pis) + Number(emp.cofins) + Number(emp.ipi) + Number(emp.iss)) +
-                Number(emp.outros_impostos)
+                emp.usa_aliquota_media
+                  ? Number(emp.aliquota_media_pct)
+                  : (emp.regime_tributario === 'Simples Nacional'
+                      ? Number(emp.simples_aliquota)
+                      : Number(emp.icms) + Number(emp.pis) + Number(emp.cofins) + Number(emp.ipi) + Number(emp.iss)) +
+                    Number(emp.outros_impostos)
               ).toLocaleString('pt-BR', { style: 'percent', minimumFractionDigits: 1 })}
             </span>
           </div>
