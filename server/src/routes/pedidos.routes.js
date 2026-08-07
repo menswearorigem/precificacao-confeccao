@@ -393,6 +393,12 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
       return it.kit_id ? mapaCustoKit.get(it.kit_id) : mapaCusto.get(it.produto_id);
     }
 
+    const produtoIdsComItem = [...new Set(itens.map((it) => it.produto_id).filter(Boolean))];
+    const { rows: fotoRows } = produtoIdsComItem.length > 0
+      ? await pool.query('SELECT produto_id FROM produto_fotos WHERE produto_id = ANY($1)', [produtoIdsComItem])
+      : { rows: [] };
+    const idsComFoto = new Set(fotoRows.map((f) => f.produto_id));
+
     // Custo de embalagem fixo por PEDIDO (não por peça, nem em kit) — só
     // entra quando dá pra usar o cálculo real (ver `calculoReal` abaixo).
     const custoEmbalagemConfig = Number(ctx.config.custo_embalagem_marketplace) || 0;
@@ -438,6 +444,10 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
       return {
         id: p.id,
         numero: p.numero,
+        // Número do pedido no marketplace (o que a vendedora reconhece de
+        // verdade) — cai pro número interno só quando não veio de marketplace
+        // (pedido lançado à mão, sem número externo nenhum).
+        numeroExibicao: p.origem_pedido_id || String(p.numero),
         data_pedido: p.data_pedido,
         cliente_nome: p.cliente_nome,
         canal_venda: p.canal_venda,
@@ -470,6 +480,7 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
           valorUnitario: Number(it.valor_unitario) || 0,
           totalItem: Number(it.total) || 0,
           custoUnitario: custoDoItem(it)?.custoPeca || 0,
+          temFoto: it.produto_id ? idsComFoto.has(it.produto_id) : false,
         })),
       };
     });
@@ -534,6 +545,7 @@ router.get('/relatorio-lucratividade/resumo-produto', async (req, res, next) => 
             produtoId: it.produtoId,
             referencia: it.referencia || it.skuExterno || '—',
             descricao: it.descricao || it.tituloExterno || '',
+            temFoto: it.temFoto,
             unidadesVendidas: 0,
             totalFaturado: 0,
             totalCusto: 0,
@@ -555,6 +567,7 @@ router.get('/relatorio-lucratividade/resumo-produto', async (req, res, next) => 
         produtoId: x.produtoId,
         referencia: x.referencia,
         descricao: x.descricao,
+        temFoto: x.temFoto,
         unidadesVendidas: x.unidadesVendidas,
         precoMedio: x.unidadesVendidas > 0 ? x.totalFaturado / x.unidadesVendidas : 0,
         custoUnitarioMedio: x.unidadesVendidas > 0 ? x.totalCusto / x.unidadesVendidas : 0,

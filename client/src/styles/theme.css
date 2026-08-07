@@ -813,6 +813,61 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
 }
 .expand-toggle:hover { color: var(--terracotta); }
 
+/* ---------- cartão de venda detalhada (aba "Vendas" da Lucratividade) ---------- */
+.venda-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow-xs);
+  transition: box-shadow 0.2s var(--ease);
+}
+.venda-card:hover { box-shadow: var(--shadow-sm); }
+.venda-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  cursor: pointer;
+}
+.venda-card-header:hover { background: var(--border-soft); }
+.venda-card-titulo { font-family: var(--font-display); font-weight: 600; font-size: 15px; color: var(--leather-deep); }
+.venda-card-sub { font-size: 11.5px; color: var(--ink-soft); margin-top: 2px; }
+.venda-card-lucro { font-family: var(--font-mono); font-weight: 700; font-size: 15.5px; color: var(--leather-deep); }
+.venda-card-body { padding: 4px 18px 18px; border-top: 1px solid var(--border-soft); }
+
+.venda-item-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border-soft); }
+.venda-item-titulo { font-weight: 600; font-size: 13px; color: var(--ink); }
+.venda-item-sub { font-size: 11px; color: var(--ink-soft); margin-top: 2px; }
+
+.venda-breakdown { margin-top: 4px; }
+.venda-breakdown-row { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px dashed var(--border-soft); font-size: 12.5px; }
+.venda-breakdown-row:last-child { border-bottom: none; }
+.venda-breakdown-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--border-soft);
+  color: var(--leather);
+  flex-shrink: 0;
+}
+.venda-breakdown-label { flex: 1; color: var(--ink-soft); }
+.venda-breakdown-valor { font-family: var(--font-mono); font-weight: 600; color: var(--ink); }
+.venda-breakdown-row.destaque {
+  margin-top: 8px;
+  padding: 14px 0 2px;
+  border-top: 2px solid var(--border);
+  border-bottom: none;
+}
+.venda-breakdown-row.destaque .venda-breakdown-icon { background: rgba(181, 101, 29, 0.14); color: var(--terracotta); }
+.venda-breakdown-row.destaque .venda-breakdown-label { font-weight: 700; color: var(--leather-deep); font-size: 13.5px; }
+.venda-breakdown-row.destaque .venda-breakdown-valor { font-size: 17px; color: var(--terracotta); }
+
 .total-banner {
   display: flex;
   justify-content: space-between;

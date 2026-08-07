@@ -1,9 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, Printer, RefreshCw, X } from 'lucide-react';
+import {
+  ArrowDown, ArrowUp, Banknote, Box, ChevronDown, ChevronUp, Landmark,
+  Percent, Printer, RefreshCw, ShoppingBag, Tag, TrendingUp, X,
+} from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
 import { DateInput } from '../components/ui';
+import FotoProduto from '../components/FotoProduto';
+
+// Paleta categórica combinando com a identidade do sistema (terracota,
+// verde-azulado e ameixa — as mesmas famílias de cor já usadas em
+// --terracotta-bright / --teal-bright / --plum-bright), validada pra
+// contraste e distinção entre daltonismo antes de virar cor de gráfico.
+const COR_FATURAMENTO = '#d17a2a';
+const COR_LIQUIDO = '#0d9488';
+const COR_LUCRO = '#7c4577';
+const FONTE_GRAFICO = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
 function trintaDiasAtras() {
   const d = new Date();
@@ -69,13 +82,15 @@ function VincularItensModal({ pedido, onClose, onVinculado }) {
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
       <div className="card" style={{ maxWidth: 680, width: '92%', maxHeight: '82vh', overflowY: 'auto' }}>
         <div className="card-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>Vincular produto — Pedido #{pedido.numero}</span>
+          <span>Vincular produto — Pedido {pedido.numeroExibicao || `#${pedido.numero}`}</span>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
         {erro && <div className="login-error" style={{ marginBottom: 10 }}>{erro}</div>}
 
         {pedido.itens.map((item) => (
-          <div key={item.id} style={{ borderBottom: '1px solid var(--border-soft)', padding: '12px 0' }}>
+          <div key={item.id} style={{ display: 'flex', gap: 12, borderBottom: '1px solid var(--border-soft)', padding: '12px 0' }}>
+            <FotoProduto produtoId={item.produtoId} temFoto={item.temFoto} size={44} alt={item.referencia || item.tituloExterno} />
+            <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 600 }}>{item.tituloExterno || 'Item sem título'}</div>
             <div style={{ fontSize: 12, color: 'var(--ink-soft)' }}>
               SKU do anúncio: {item.skuExterno || '—'} · Qtd: {item.quantidade}
@@ -125,6 +140,7 @@ function VincularItensModal({ pedido, onClose, onVinculado }) {
                 <button className="btn btn-ghost" style={{ marginTop: 8 }} onClick={() => setEditando(null)}>Cancelar</button>
               </div>
             )}
+            </div>
           </div>
         ))}
       </div>
@@ -132,33 +148,57 @@ function VincularItensModal({ pedido, onClose, onVinculado }) {
   );
 }
 
+function TooltipGrafico({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{
+      background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10,
+      padding: '10px 14px', boxShadow: 'var(--shadow-md)', fontFamily: FONTE_GRAFICO,
+    }}>
+      <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 13, color: 'var(--leather-deep)', marginBottom: 6 }}>{label}</div>
+      {payload.map((item) => (
+        <div key={item.dataKey} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, padding: '2px 0' }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
+          <span style={{ color: 'var(--ink-soft)' }}>{item.name}</span>
+          <span className="mono" style={{ marginLeft: 'auto', fontWeight: 600, color: 'var(--ink)' }}>{brl(item.value)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function GraficoLucratividade({ serie }) {
   const dados = serie.map((d) => ({ ...d, dataLabel: dataBr(d.data) }));
+  const tickStyle = { fontSize: 11.5, fontFamily: FONTE_GRAFICO, fill: 'var(--ink-soft)' };
   return (
-    <ResponsiveContainer width="100%" height={280}>
+    <ResponsiveContainer width="100%" height={300}>
       <AreaChart data={dados} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="corFaturamento" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#7c5cff" stopOpacity={0.35} />
-            <stop offset="95%" stopColor="#7c5cff" stopOpacity={0.02} />
+            <stop offset="5%" stopColor={COR_FATURAMENTO} stopOpacity={0.22} />
+            <stop offset="95%" stopColor={COR_FATURAMENTO} stopOpacity={0.01} />
           </linearGradient>
           <linearGradient id="corLiquido" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#3e6e90" stopOpacity={0.35} />
-            <stop offset="95%" stopColor="#3e6e90" stopOpacity={0.02} />
+            <stop offset="5%" stopColor={COR_LIQUIDO} stopOpacity={0.22} />
+            <stop offset="95%" stopColor={COR_LIQUIDO} stopOpacity={0.01} />
           </linearGradient>
           <linearGradient id="corLucro" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#5b7553" stopOpacity={0.4} />
-            <stop offset="95%" stopColor="#5b7553" stopOpacity={0.03} />
+            <stop offset="5%" stopColor={COR_LUCRO} stopOpacity={0.24} />
+            <stop offset="95%" stopColor={COR_LUCRO} stopOpacity={0.01} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" />
-        <XAxis dataKey="dataLabel" tick={{ fontSize: 11 }} />
-        <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => brl(v)} width={90} />
-        <Tooltip formatter={(v) => brl(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-        <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Area type="monotone" dataKey="faturamento" name="Faturamento" stroke="#7c5cff" fill="url(#corFaturamento)" strokeWidth={2} />
-        <Area type="monotone" dataKey="liquidoMarketplace" name="Líq. do Marketplace" stroke="#3e6e90" fill="url(#corLiquido)" strokeWidth={2} />
-        <Area type="monotone" dataKey="lucro" name="Lucro Bruto" stroke="#5b7553" fill="url(#corLucro)" strokeWidth={2} />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+        <XAxis dataKey="dataLabel" tick={tickStyle} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
+        <YAxis tick={tickStyle} tickFormatter={(v) => brl(v)} width={92} axisLine={false} tickLine={false} />
+        <Tooltip content={<TooltipGrafico />} />
+        <Legend
+          wrapperStyle={{ fontFamily: FONTE_GRAFICO, fontSize: 12.5, color: 'var(--ink-soft)', paddingTop: 8 }}
+          iconType="circle"
+          iconSize={8}
+        />
+        <Area type="monotone" dataKey="faturamento" name="Faturamento" stroke={COR_FATURAMENTO} fill="url(#corFaturamento)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+        <Area type="monotone" dataKey="liquidoMarketplace" name="Líq. do Marketplace" stroke={COR_LIQUIDO} fill="url(#corLiquido)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+        <Area type="monotone" dataKey="lucro" name="Lucro Bruto" stroke={COR_LUCRO} fill="url(#corLucro)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -225,8 +265,13 @@ function ResumoProdutoTab({ resumoProduto, serieDiaria, config, busca }) {
             {produtosExibidos.map((p) => (
               <tr key={p.produtoId || p.referencia}>
                 <td>
-                  <strong className="mono">{p.referencia}</strong>
-                  {p.descricao && <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{p.descricao}</div>}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <FotoProduto produtoId={p.produtoId} temFoto={p.temFoto} size={36} alt={p.referencia} />
+                    <div>
+                      <strong className="mono">{p.referencia}</strong>
+                      {p.descricao && <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{p.descricao}</div>}
+                    </div>
+                  </div>
                 </td>
                 <td className="mono">{brl(p.precoMedio)}</td>
                 <td className="mono">{brl(p.custoUnitarioMedio)}</td>
@@ -249,52 +294,83 @@ function ResumoProdutoTab({ resumoProduto, serieDiaria, config, busca }) {
 
 function VendaDetalheCard({ p, config }) {
   const [aberto, setAberto] = useState(false);
+  const itemUnico = p.itens?.length === 1 ? p.itens[0] : null;
 
   return (
-    <div className="card" style={{ marginBottom: 12 }}>
-      <div
-        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
-        onClick={() => setAberto((v) => !v)}
-      >
-        <span>
-          <strong>Pedido #{p.numero}</strong>
-          <span className="page-sub" style={{ marginLeft: 8 }}>{dataBr(String(p.data_pedido).slice(0, 10))} · {p.canal_venda || '—'}</span>
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span className="mono" style={{ fontWeight: 700 }}>{brl(p.lucro)}</span>
+    <div className="venda-card">
+      <div className="venda-card-header" onClick={() => setAberto((v) => !v)}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {itemUnico && (
+            <FotoProduto produtoId={itemUnico.produtoId} temFoto={itemUnico.temFoto} size={44} alt={itemUnico.referencia || itemUnico.tituloExterno} />
+          )}
+          <div>
+            <div className="venda-card-titulo">Pedido {p.numeroExibicao}</div>
+            <div className="venda-card-sub">{dataBr(String(p.data_pedido).slice(0, 10))} · {p.canal_venda || '—'}</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span className="venda-card-lucro">{brl(p.lucro)}</span>
           <MargemPill valor={p.margemPct} config={config} />
-          {aberto ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          {aberto ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
         </div>
       </div>
 
       {aberto && (
-        <div style={{ marginTop: 12 }}>
+        <div className="venda-card-body">
           {(p.itens || []).map((it) => (
-            <div key={it.id} className="row-line" style={{ alignItems: 'flex-start' }}>
-              <span>
-                {it.tituloExterno || it.descricao || 'Item sem título'}
-                <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>SKU: {it.skuExterno || '—'} · Qtd: {it.quantidade}</div>
-              </span>
+            <div key={it.id} className="venda-item-row">
+              <FotoProduto produtoId={it.produtoId} temFoto={it.temFoto} size={40} alt={it.referencia || it.tituloExterno} />
+              <div style={{ flex: 1 }}>
+                <div className="venda-item-titulo">{it.tituloExterno || it.descricao || 'Item sem título'}</div>
+                <div className="venda-item-sub">SKU: {it.skuExterno || '—'} · Qtd: {it.quantidade}</div>
+              </div>
               <span className="mono">{brl(it.totalItem)}</span>
             </div>
           ))}
 
-          <div style={{ borderTop: '1px dashed var(--border)', marginTop: 6, paddingTop: 6 }}>
-            <div className="row-line"><span>Total dos Itens</span><span className="mono">{brl(p.receita)}</span></div>
+          <div className="venda-breakdown">
+            <div className="venda-breakdown-row">
+              <span className="venda-breakdown-icon"><ShoppingBag size={15} /></span>
+              <span className="venda-breakdown-label">Total dos Itens</span>
+              <span className="venda-breakdown-valor">{brl(p.receita)}</span>
+            </div>
             {p.taxaMarketplace > 0 && (
-              <div className="row-line"><span>Taxa de Marketplace</span><span className="mono">-{brl(p.taxaMarketplace)}</span></div>
+              <div className="venda-breakdown-row">
+                <span className="venda-breakdown-icon"><Percent size={15} /></span>
+                <span className="venda-breakdown-label">Taxa de Marketplace</span>
+                <span className="venda-breakdown-valor">-{brl(p.taxaMarketplace)}</span>
+              </div>
             )}
-            <div className="row-line"><span>Custo do Produto</span><span className="mono">-{brl(p.custoPeca)}</span></div>
+            <div className="venda-breakdown-row">
+              <span className="venda-breakdown-icon"><Tag size={15} /></span>
+              <span className="venda-breakdown-label">Custo do Produto</span>
+              <span className="venda-breakdown-valor">-{brl(p.custoPeca)}</span>
+            </div>
             {p.custoEmbalagem > 0 && (
-              <div className="row-line"><span>Custo de Embalagem</span><span className="mono">-{brl(p.custoEmbalagem)}</span></div>
+              <div className="venda-breakdown-row">
+                <span className="venda-breakdown-icon"><Box size={15} /></span>
+                <span className="venda-breakdown-label">Custo de Embalagem</span>
+                <span className="venda-breakdown-valor">-{brl(p.custoEmbalagem)}</span>
+              </div>
             )}
-            <div className="row-line"><span>Imposto</span><span className="mono">-{brl(p.imposto)}</span></div>
+            <div className="venda-breakdown-row">
+              <span className="venda-breakdown-icon"><Landmark size={15} /></span>
+              <span className="venda-breakdown-label">Imposto</span>
+              <span className="venda-breakdown-valor">-{brl(p.imposto)}</span>
+            </div>
             {p.calculoReal && (
-              <div className="row-line"><span>Valor Recebido (líquido do marketplace)</span><span className="mono">{brl(p.valorRecebido)}</span></div>
+              <div className="venda-breakdown-row">
+                <span className="venda-breakdown-icon"><Banknote size={15} /></span>
+                <span className="venda-breakdown-label">Valor Recebido (líquido do marketplace)</span>
+                <span className="venda-breakdown-valor">{brl(p.valorRecebido)}</span>
+              </div>
             )}
-            <div className="row-line strong big">
-              <span>Lucro do Pedido {!p.calculoReal && <span className="stamp sm tone-neutro" style={{ marginLeft: 6 }}>estimativa</span>}</span>
-              <span className="mono">{brl(p.lucro)}</span>
+            <div className="venda-breakdown-row destaque">
+              <span className="venda-breakdown-icon"><TrendingUp size={16} /></span>
+              <span className="venda-breakdown-label">
+                Lucro do Pedido {!p.calculoReal && <span className="stamp sm tone-neutro" style={{ marginLeft: 6 }}>estimativa</span>}
+              </span>
+              <span className="venda-breakdown-valor">{brl(p.lucro)}</span>
             </div>
           </div>
         </div>
@@ -391,6 +467,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
     const termo = busca.trim().toLowerCase();
     const filtrados = !termo ? relatorio.pedidos : relatorio.pedidos.filter((p) => {
       if (String(p.numero).toLowerCase().includes(termo)) return true;
+      if (String(p.numeroExibicao || '').toLowerCase().includes(termo)) return true;
       if ((p.cliente_nome || '').toLowerCase().includes(termo)) return true;
       return (p.itens || []).some((it) => (
         (it.skuExterno || '').toLowerCase().includes(termo) || (it.referencia || '').toLowerCase().includes(termo)
@@ -560,15 +637,18 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                       const qtdVinculados = isMarketplace ? (p.itens || []).filter((it) => it.produtoId).length : 0;
                       return (
                         <tr key={p.id}>
-                          <td className="mono">#{p.numero}</td>
+                          <td className="mono">{p.numeroExibicao}</td>
                           <td className="mono">{new Date(p.data_pedido).toLocaleDateString('pt-BR')}</td>
                           {isMarketplace ? (
                             <td>
                               {itemUnico ? (
-                                <>
-                                  <div>{itemUnico.tituloExterno || 'Item sem título'}</div>
-                                  <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>SKU: {itemUnico.skuExterno || '—'}</div>
-                                </>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <FotoProduto produtoId={itemUnico.produtoId} temFoto={itemUnico.temFoto} size={32} alt={itemUnico.referencia || itemUnico.tituloExterno} />
+                                  <div>
+                                    <div>{itemUnico.tituloExterno || 'Item sem título'}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>SKU: {itemUnico.skuExterno || '—'}</div>
+                                  </div>
+                                </div>
                               ) : (
                                 <span>{p.itens?.length || 0} itens</span>
                               )}
