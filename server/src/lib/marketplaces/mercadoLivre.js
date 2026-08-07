@@ -171,6 +171,25 @@ async function buscarPedidos({ accessToken, sellerId, desde }) {
   return pedidos;
 }
 
+// IDs de pagamento que representam de verdade o dinheiro da venda.
+//
+// `order.payments` pode ter mais de uma entrada: uma tentativa de cartão
+// recusada antes de o comprador pagar via Pix, por exemplo, ou (mais raro)
+// um pagamento dividido em duas formas — nesses casos usar sempre o
+// primeiro da lista (como o código fazia antes) pode pegar um pagamento
+// rejeitado/cancelado, ou só uma fatia de um pagamento dividido, gerando um
+// "valor recebido" bem menor do que o real. Filtra só os aprovados —
+// aprovado é o único status que representa dinheiro que efetivamente entrou
+// — e devolve todos (não só o primeiro), pra somar depois.
+function idsPagamentosAprovados(order) {
+  const aprovados = (order.payments || []).filter((p) => p.status === 'approved');
+  if (aprovados.length > 0) return aprovados.map((p) => String(p.id));
+  // Pedido "paid" sem nenhum pagamento com status "approved" no retorno é
+  // inesperado, mas ainda assim guarda o primeiro da lista como último
+  // recurso — melhor um diagnóstico pra investigar do que ficar sem nada.
+  return order.payments?.[0]?.id ? [String(order.payments[0].id)] : [];
+}
+
 // Valor líquido de verdade repassado pelo Mercado Livre por pedido.
 //
 // Tentativa anterior usava a API de Faturamento (billing/integration), que
@@ -183,28 +202,51 @@ async function buscarPedidos({ accessToken, sellerId, desde }) {
 // coisa que ainda pode estar no futuro é a DISPONIBILIDADE do dinheiro no
 // saldo (money_release_date) — por isso reporta os dois separados: o valor
 // (que já é o valor final) e se já foi liberado ou não.
-async function buscarValorRecebido({ pagamentoId, accessToken }) {
+async function buscarUmPagamento(pagamentoId, accessToken) {
   // Tenta primeiro o host do Mercado Pago (o documentado/correto pra esse
   // endpoint); se não achar por algum motivo (ex.: token com outro
   // relacionamento de conta), tenta o host do Mercado Livre como reforço
   // antes de desistir.
-  let pagamento;
   try {
-    pagamento = await chamarApiComBase(MP_API_BASE, `/v1/payments/${pagamentoId}`, accessToken);
+    return await chamarApiComBase(MP_API_BASE, `/v1/payments/${pagamentoId}`, accessToken);
   } catch {
-    pagamento = await chamarApiComBase(API_BASE, `/payments/${pagamentoId}`, accessToken);
+    return chamarApiComBase(API_BASE, `/payments/${pagamentoId}`, accessToken);
   }
-  const valorRecebido = pagamento.transaction_details?.net_received_amount;
-  const dataLiberacao = pagamento.money_release_date || null;
-  if (valorRecebido == null) {
-    // Chamada deu certo mas não achou o campo esperado — provavelmente o
-    // formato real da resposta é diferente do que a documentação descreve.
-    // Guarda a resposta inteira (cortada, pra não estourar o tamanho do
-    // campo de erro) pra dar pra ajustar o parsing sem precisar adivinhar.
-    return { valorRecebido: null, dataLiberacao: null, liberado: false, diagnostico: JSON.stringify(pagamento, null, 2).slice(0, 4000) };
+}
+
+// `pagamentoId` pode ser mais de um id junto (separado por vírgula) quando
+// o pedido teve mais de um pagamento aprovado (pagamento dividido em duas
+// formas) — ver idsPagamentosAprovados. Soma o valor líquido de cada um; a
+// liberação só conta como completa quando TODOS já passaram da própria
+// data de liberação (dinheiro parcial não é dinheiro liberado).
+async function buscarValorRecebido({ pagamentoId, accessToken }) {
+  const ids = String(pagamentoId || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (ids.length === 0) {
+    return { valorRecebido: null, dataLiberacao: null, liberado: false, diagnostico: 'Nenhum id de pagamento associado ao pedido.' };
   }
-  const liberado = Boolean(dataLiberacao) && new Date(dataLiberacao).getTime() <= Date.now();
-  return { valorRecebido: Number(valorRecebido), dataLiberacao, liberado, diagnostico: null };
+
+  let somaValorRecebido = 0;
+  let maiorDataLiberacao = null;
+  let todosLiberados = true;
+  for (const id of ids) {
+    const pagamento = await buscarUmPagamento(id, accessToken);
+    const valor = pagamento.transaction_details?.net_received_amount;
+    if (valor == null) {
+      // Chamada deu certo mas não achou o campo esperado — provavelmente o
+      // formato real da resposta é diferente do que a documentação
+      // descreve. Guarda a resposta inteira (cortada, pra não estourar o
+      // tamanho do campo de erro) pra dar pra ajustar o parsing sem
+      // precisar adivinhar.
+      return { valorRecebido: null, dataLiberacao: null, liberado: false, diagnostico: JSON.stringify(pagamento, null, 2).slice(0, 4000) };
+    }
+    somaValorRecebido += Number(valor);
+    const dataLib = pagamento.money_release_date || null;
+    if (!dataLib || new Date(dataLib).getTime() > Date.now()) todosLiberados = false;
+    if (dataLib && (!maiorDataLiberacao || new Date(dataLib) > new Date(maiorDataLiberacao))) {
+      maiorDataLiberacao = dataLib;
+    }
+  }
+  return { valorRecebido: somaValorRecebido, dataLiberacao: maiorDataLiberacao, liberado: todosLiberados, diagnostico: null };
 }
 
 // Converte um pedido do Mercado Livre pro formato genérico usado pelo
@@ -220,7 +262,8 @@ function mapearPedido(order) {
   }));
 
   const formaPagamento = order.payments?.[0]?.payment_method_id === 'pix' ? 'pix' : 'outro';
-  const pagamentoIdExterno = order.payments?.[0]?.id ? String(order.payments[0].id) : null;
+  const idsAprovados = idsPagamentosAprovados(order);
+  const pagamentoIdExterno = idsAprovados.length > 0 ? idsAprovados.join(',') : null;
 
   // sale_fee é a comissão que o Mercado Livre cobra por item vendido — vem
   // como número simples na maioria dos casos, mas em alguns retornos vem
@@ -257,5 +300,6 @@ module.exports = {
   buscarPedidos,
   buscarPedidoPorId,
   buscarValorRecebido,
+  idsPagamentosAprovados,
   mapearPedido,
 };

@@ -314,9 +314,9 @@ async function preencherPagamentoId(integracao) {
   for (const pedido of semPagamentoId) {
     try {
       const order = await mercadoLivre.buscarPedidoPorId(pedido.origem_pedido_id, integracao.access_token);
-      const paymentId = order.payments?.[0]?.id ? String(order.payments[0].id) : null;
-      if (paymentId) {
-        await pool.query('UPDATE pedidos_venda SET pagamento_id_marketplace = $1 WHERE id = $2', [paymentId, pedido.id]);
+      const ids = mercadoLivre.idsPagamentosAprovados(order);
+      if (ids.length > 0) {
+        await pool.query('UPDATE pedidos_venda SET pagamento_id_marketplace = $1 WHERE id = $2', [ids.join(','), pedido.id]);
       } else {
         // Chamada deu certo mas o pedido não tem nenhum pagamento associado
         // — não é erro transitório, não adianta tentar de novo sozinho.
@@ -332,10 +332,92 @@ async function preencherPagamentoId(integracao) {
   return ultimoErro;
 }
 
+// Corrige o(s) payment_id de pedidos que JÁ têm um pagamento_id_marketplace
+// gravado, mas que pode estar errado — bug histórico: o sistema sempre
+// pegava só o PRIMEIRO pagamento da lista do pedido, que às vezes é uma
+// tentativa recusada (comprador tentou um cartão, foi negado, pagou de
+// novo por Pix) ou só uma fatia de um pagamento dividido em duas formas —
+// nos dois casos o "valor recebido" saía bem menor do que o valor real da
+// venda. Recalcula usando o mesmo critério corrigido de
+// idsPagamentosAprovados; se o id mudou, joga fora o valor recebido antigo
+// (calculado em cima do pagamento errado) pra ser buscado de novo do zero.
+//
+// `incluirLiberados` controla se pedidos já marcados "liberado" também são
+// reconferidos: no dia a dia (chamado a cada ciclo de sincronização) fica
+// desligado, porque "liberado" já é considerado definitivo e reconferir
+// pra sempre seria gasto de chamada à toa; a correção do histórico (botão
+// "Revincular custos e impostos") liga isso de propósito, já que pedidos
+// antigos com o bug podem estar "liberados" com um valor errado gravado
+// como se fosse final.
+async function corrigirPagamentoId(integracao, { incluirLiberados = false, limite = 30 } = {}) {
+  const condicaoLiberado = incluirLiberados ? '' : `AND (valor_recebido_status IS NULL OR valor_recebido_status != 'liberado')`;
+  const { rows: pedidos } = await pool.query(
+    `SELECT id, origem_pedido_id, pagamento_id_marketplace FROM pedidos_venda
+     WHERE origem_marketplace = 'mercado_livre' AND pagamento_id_marketplace IS NOT NULL
+       AND (origem_integracao_id = $1 OR origem_integracao_id IS NULL)
+       ${condicaoLiberado}
+     ORDER BY valor_recebido_atualizado_em ASC NULLS FIRST LIMIT $2`,
+    [integracao.id, limite]
+  );
+  let corrigidos = 0;
+  let ultimoErro = null;
+  for (const pedido of pedidos) {
+    try {
+      const order = await mercadoLivre.buscarPedidoPorId(pedido.origem_pedido_id, integracao.access_token);
+      const ids = mercadoLivre.idsPagamentosAprovados(order);
+      const novoId = ids.length > 0 ? ids.join(',') : null;
+      if (novoId && novoId !== pedido.pagamento_id_marketplace) {
+        await pool.query(
+          `UPDATE pedidos_venda
+           SET pagamento_id_marketplace = $1, valor_recebido_marketplace = NULL, valor_recebido_status = NULL, valor_recebido_liberacao_em = NULL, valor_recebido_atualizado_em = NULL
+           WHERE id = $2`,
+          [novoId, pedido.id]
+        );
+        corrigidos += 1;
+      } else {
+        // Já está certo — marca como "conferido agora" (mesmo sem mudar
+        // nada) pra não ficar sempre no topo da fila de prioridade e dar
+        // vez pros próximos pedidos ainda não conferidos.
+        await pool.query('UPDATE pedidos_venda SET valor_recebido_atualizado_em = now() WHERE id = $1 AND valor_recebido_marketplace IS NULL', [pedido.id]);
+      }
+    } catch (err) {
+      ultimoErro = err.message;
+    }
+  }
+  return { corrigidos, verificados: pedidos.length, ultimoErro };
+}
+
+// Roda a correção de payment_id (incluindo pedidos já "liberados") em todas
+// as integrações ativas e autorizadas — usado pelo botão manual "Revincular
+// custos e impostos", já que é uma correção de dado histórico, não algo pra
+// rodar sozinho pra sempre em todo ciclo automático.
+async function corrigirPagamentosHistorico() {
+  const { rows: integracoes } = await pool.query(
+    `SELECT * FROM integracoes_marketplace WHERE ativo = TRUE AND access_token IS NOT NULL AND marketplace = 'mercado_livre'`
+  );
+  let corrigidos = 0;
+  let verificados = 0;
+  let ultimoErro = null;
+  for (const integracao of integracoes) {
+    try {
+      await garantirTokenValido(integracao);
+      const resultado = await corrigirPagamentoId(integracao, { incluirLiberados: true, limite: 50 });
+      corrigidos += resultado.corrigidos;
+      verificados += resultado.verificados;
+      if (resultado.ultimoErro) ultimoErro = resultado.ultimoErro;
+    } catch (err) {
+      ultimoErro = err.message;
+    }
+  }
+  return { corrigidos, verificados, ultimoErro };
+}
+
 async function atualizarValoresRecebidos(integracao) {
   if (integracao.marketplace !== 'mercado_livre') return;
   try {
     let ultimoErro = await preencherPagamentoId(integracao);
+    const correcao = await corrigirPagamentoId(integracao, { incluirLiberados: false, limite: 30 });
+    if (correcao.ultimoErro) ultimoErro = correcao.ultimoErro;
 
     // Limitado a 50 por ciclo — cada pedido é uma chamada própria
     // (GET /payments/:id não aceita lote), então processar tudo de uma vez
@@ -493,4 +575,5 @@ module.exports = {
   importarPedido,
   encontrarVariante,
   atualizarValoresRecebidos,
+  corrigirPagamentosHistorico,
 };

@@ -6,7 +6,7 @@ const { getCalcContext } = require('../lib/calcContext');
 const { pctImpostosEmpresa } = require('../lib/calc');
 const { calcularTaxaEsperadaPedido } = require('../lib/marketplaceTaxaCalc');
 const { parseArquivoPedidos } = require('../lib/pedidoImportParsers');
-const { importarPedido, sincronizarSeNecessario, encontrarVariante } = require('../lib/marketplaceSync');
+const { importarPedido, sincronizarSeNecessario, encontrarVariante, corrigirPagamentosHistorico } = require('../lib/marketplaceSync');
 const { recalcularTotais } = require('../lib/pedidoRecalculo');
 const produtosRoutes = require('./produtos.routes');
 
@@ -261,11 +261,21 @@ router.post('/marketplace/revincular-custos', async (req, res, next) => {
     const pedidosAtualizados = atualizadosComIntegracao + atualizadosSemIntegracao;
     await client.query('COMMIT');
 
+    // Corrige o payment_id de pedidos que pegaram o pagamento errado (bug
+    // histórico: sempre pegava o primeiro pagamento do pedido, mesmo
+    // quando não era o aprovado ou era só parte de um pagamento dividido —
+    // ver comentário de corrigirPagamentoId em marketplaceSync.js). Faz
+    // chamada de rede pra API do Mercado Livre, por isso roda depois do
+    // COMMIT acima, fora da transação de banco.
+    const correcaoPagamentos = await corrigirPagamentosHistorico();
+
     res.json({
       verificados: semVinculo.length,
       vinculados,
       semCorrespondencia: semVinculo.length - vinculados,
       pedidosAtualizados,
+      pagamentosVerificados: correcaoPagamentos.verificados,
+      pagamentosCorrigidos: correcaoPagamentos.corrigidos,
     });
   } catch (err) {
     await client.query('ROLLBACK');

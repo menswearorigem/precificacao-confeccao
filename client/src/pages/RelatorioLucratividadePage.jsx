@@ -546,6 +546,9 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
               Verificados {resultadoRevinculo.verificados} itens sem vínculo: {resultadoRevinculo.vinculados} foram
               vinculados agora{resultadoRevinculo.semCorrespondencia > 0 ? `, ${resultadoRevinculo.semCorrespondencia} continuam sem correspondência (SKU não bate com nenhuma referência cadastrada — use "Vincular produto" pra fazer manualmente)` : ''}.
               {resultadoRevinculo.pedidosAtualizados > 0 ? ` ${resultadoRevinculo.pedidosAtualizados} pedido(s) ganharam empresa/% de nota fiscal.` : ''}
+              {resultadoRevinculo.pagamentosCorrigidos > 0
+                ? ` Conferidos ${resultadoRevinculo.pagamentosVerificados} pagamentos: ${resultadoRevinculo.pagamentosCorrigidos} estavam com o pagamento errado vinculado (valor recebido será buscado de novo no próximo ciclo).`
+                : (resultadoRevinculo.pagamentosVerificados > 0 ? ` Conferidos ${resultadoRevinculo.pagamentosVerificados} pagamentos, nenhum precisou de correção.` : '')}
             </div>
           )}
           {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
