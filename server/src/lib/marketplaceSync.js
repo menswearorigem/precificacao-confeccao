@@ -290,32 +290,45 @@ async function importarPedido(client, pedidoGenerico, integracaoId) {
 // Pedidos importados ANTES dessa funcionalidade existir não têm o
 // payment_id guardado (a coluna é nova) — descobre buscando o pedido de
 // novo no Mercado Livre, só pra pegar esse id (não precisa mais disso
-// depois, os próximos ciclos já usam o payment_id salvo aqui).
+// depois, os próximos ciclos já usam o payment_id salvo aqui). Prioriza os
+// pedidos MAIS ANTIGOS primeiro (não os mais recentes) — assim, se sobrar
+// mais de 30 pedidos faltando, quem já entrou no ciclo mas ainda não foi
+// preenchido não fica pra trás pra sempre perdendo a vaga pros que acabam
+// de chegar (foi exatamente o bug: pedidos antigos nunca eram alcançados).
 async function preencherPagamentoId(integracao) {
   const { rows: semPagamentoId } = await pool.query(
     `SELECT id, origem_pedido_id FROM pedidos_venda
      WHERE origem_marketplace = 'mercado_livre' AND pagamento_id_marketplace IS NULL
        AND (origem_integracao_id = $1 OR origem_integracao_id IS NULL)
-     ORDER BY data_pedido DESC LIMIT 30`,
+     ORDER BY data_pedido ASC LIMIT 30`,
     [integracao.id]
   );
+  let ultimoErro = null;
   for (const pedido of semPagamentoId) {
     try {
       const order = await mercadoLivre.buscarPedidoPorId(pedido.origem_pedido_id, integracao.access_token);
       const paymentId = order.payments?.[0]?.id ? String(order.payments[0].id) : null;
       if (paymentId) {
         await pool.query('UPDATE pedidos_venda SET pagamento_id_marketplace = $1 WHERE id = $2', [paymentId, pedido.id]);
+      } else {
+        // Chamada deu certo mas o pedido não tem nenhum pagamento associado
+        // — não é erro transitório, não adianta tentar de novo sozinho.
+        ultimoErro = `Pedido #${pedido.origem_pedido_id} não tem nenhum pagamento associado no Mercado Livre.`;
       }
-    } catch {
-      // tenta de novo no próximo ciclo
+    } catch (err) {
+      // Erro de verdade (ex.: pedido não existe mais, token sem permissão)
+      // — guarda pra aparecer na tela em vez de falhar em silêncio pra
+      // sempre; ainda tenta de novo no próximo ciclo.
+      ultimoErro = err.message;
     }
   }
+  return ultimoErro;
 }
 
 async function atualizarValoresRecebidos(integracao) {
   if (integracao.marketplace !== 'mercado_livre') return;
   try {
-    await preencherPagamentoId(integracao);
+    let ultimoErro = await preencherPagamentoId(integracao);
 
     // Limitado a 50 por ciclo — cada pedido é uma chamada própria
     // (GET /payments/:id não aceita lote), então processar tudo de uma vez
@@ -337,9 +350,14 @@ async function atualizarValoresRecebidos(integracao) {
        ORDER BY valor_recebido_atualizado_em ASC NULLS FIRST LIMIT 50`,
       [integracao.id]
     );
-    if (pendentes.length === 0) return;
+    // Mesmo sem nada pra buscar valor recebido agora, ainda grava um erro
+    // do preenchimento de payment_id acima, se tiver acontecido algum —
+    // senão ficaria escondido pra sempre nesse caminho de saída.
+    if (pendentes.length === 0) {
+      await pool.query('UPDATE integracoes_marketplace SET ultimo_erro_faturamento = $1 WHERE id = $2', [ultimoErro, integracao.id]);
+      return;
+    }
 
-    let ultimoErro = null;
     for (const pedido of pendentes) {
       try {
         const { valorRecebido, dataLiberacao, liberado, diagnostico } = await mercadoLivre.buscarValorRecebido({
