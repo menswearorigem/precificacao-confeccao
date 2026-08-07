@@ -228,20 +228,28 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
             )}
             {isMarketplace && (
               <button className="btn btn-ghost" onClick={revincularCustos} disabled={revinculando}>
-                <RefreshCw size={14} /> {revinculando ? 'Revinculando…' : 'Revincular custos não encontrados'}
+                <RefreshCw size={14} /> {revinculando ? 'Revinculando…' : 'Revincular custos e impostos'}
               </button>
             )}
           </div>
           {temItemSemCusto && (
             <div className="login-error" style={{ marginTop: 10, background: 'var(--tone-atencao-bg, #fff3cd)' }}>
               Alguns pedidos têm itens sem produto vinculado (marcados "parcial" — o custo deles não entra na conta).
-              {isMarketplace ? ' Use "Vincular produto" na linha do pedido, ou "Revincular custos não encontrados" pra tentar de novo automaticamente.' : ''}
+              {isMarketplace ? ' Use "Vincular produto" na linha do pedido, ou "Revincular custos e impostos" pra tentar de novo automaticamente.' : ''}
             </div>
+          )}
+          {isMarketplace && (
+            <p className="page-sub" style={{ marginTop: 10 }}>
+              Pedidos com o selo "estimativa" ainda não têm empresa/% de nota fiscal gravados (foram importados antes
+              de configurar isso na integração) — use "Revincular custos e impostos" depois de configurar a
+              integração em Integrações para preenchê-los nos pedidos já existentes.
+            </p>
           )}
           {resultadoRevinculo && (
             <div className="login-error" style={{ marginTop: 10, background: 'var(--tone-elevada-bg, #d4edda)', color: '#155724' }}>
               Verificados {resultadoRevinculo.verificados} itens sem vínculo: {resultadoRevinculo.vinculados} foram
               vinculados agora{resultadoRevinculo.semCorrespondencia > 0 ? `, ${resultadoRevinculo.semCorrespondencia} continuam sem correspondência (SKU não bate com nenhuma referência cadastrada — use "Vincular produto" pra fazer manualmente)` : ''}.
+              {resultadoRevinculo.pedidosAtualizados > 0 ? ` ${resultadoRevinculo.pedidosAtualizados} pedido(s) ganharam empresa/% de nota fiscal.` : ''}
             </div>
           )}
           {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}

@@ -189,6 +189,16 @@ router.post('/importar-marketplace/confirmar', async (req, res, next) => {
 // pedido. O SKU original do marketplace fica preservado (em sku_externo, ou
 // em `referencia` nos itens antigos de antes dessa coluna existir), então dá
 // pra tentar de novo sem precisar re-importar nada.
+//
+// Também preenche empresa_id/pct_nota_fiscal dos pedidos que ficaram sem
+// esse dado — todo pedido importado ANTES da integração ter uma empresa/%
+// de nota fiscal configurados (ou antes dessa funcionalidade existir) nunca
+// vai ganhar esses campos sozinho, já que eles só são gravados no momento
+// da importação. Só preenche o que está NULL (nunca sobrescreve um valor já
+// gravado, pra manter o mesmo espírito de "congelado na venda" da
+// taxa_marketplace) — pedidos sem produto vinculado usam essa mesma rota
+// pra reprocessar tudo de uma vez, é o botão "Revincular custos não
+// encontrados" da tela de Lucratividade.
 router.post('/marketplace/revincular-custos', async (req, res, next) => {
   const client = await pool.connect();
   try {
@@ -213,9 +223,25 @@ router.post('/marketplace/revincular-custos', async (req, res, next) => {
       );
       vinculados += 1;
     }
+
+    const { rowCount: pedidosAtualizados } = await client.query(
+      `UPDATE pedidos_venda pv
+       SET empresa_id = COALESCE(pv.empresa_id, im.empresa_id),
+           pct_nota_fiscal = COALESCE(pv.pct_nota_fiscal, im.pct_nota_fiscal)
+       FROM integracoes_marketplace im
+       WHERE pv.origem_integracao_id = im.id
+         AND pv.origem_marketplace IS NOT NULL
+         AND (pv.empresa_id IS NULL OR pv.pct_nota_fiscal IS NULL)
+         AND (im.empresa_id IS NOT NULL OR im.pct_nota_fiscal IS NOT NULL)`
+    );
     await client.query('COMMIT');
 
-    res.json({ verificados: semVinculo.length, vinculados, semCorrespondencia: semVinculo.length - vinculados });
+    res.json({
+      verificados: semVinculo.length,
+      vinculados,
+      semCorrespondencia: semVinculo.length - vinculados,
+      pedidosAtualizados,
+    });
   } catch (err) {
     await client.query('ROLLBACK');
     next(err);
