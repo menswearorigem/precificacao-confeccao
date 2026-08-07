@@ -89,9 +89,7 @@ function normalizarComparacao(valor) {
 // (ex.: "OG1192-AZUL-M"). A referência nunca tem hífen e o tamanho é sempre
 // o último pedaço, então tudo que sobrar no meio é a cor — junta de novo
 // (com espaço) pra dar conta de cor composta tipo "TERRA COTA", mesmo que
-// no SKU tenha vindo com hífen no lugar do espaço. Kits usam
-// "KIT-QUANTIDADE-REF-COR-TAMANHO" — ainda não tratados aqui de propósito
-// (só os anúncios individuais por enquanto).
+// no SKU tenha vindo com hífen no lugar do espaço.
 function partirSkuIndividual(sku) {
   const partes = String(sku || '').trim().split('-').filter(Boolean);
   if (partes.length < 3) return null;
@@ -99,37 +97,101 @@ function partirSkuIndividual(sku) {
   return { referencia: partes[0], cor: partes.slice(1, -1).join(' '), tamanho: partes[partes.length - 1] };
 }
 
+// Padrão de kit da usuária: "KIT-QUANTIDADE-REF-COR-TAMANHO" (ex.:
+// "KIT-3-OG1192-AZUL-M" = 3 peças da mesma referência/cor/tamanho).
+function partirSkuKit(sku) {
+  const partes = String(sku || '').trim().split('-').filter(Boolean);
+  if (partes.length < 5) return null;
+  if (normalizarComparacao(partes[0]) !== 'KIT') return null;
+  const quantidade = Number(partes[1]);
+  if (!Number.isFinite(quantidade) || quantidade <= 0) return null;
+  return { quantidade, referencia: partes[2], cor: partes.slice(3, -1).join(' '), tamanho: partes[partes.length - 1] };
+}
+
+// Acha o produto pela referência e, se possível, a variante exata de
+// cor/tamanho — usado tanto pro casamento de anúncio individual quanto,
+// dentro dele, pro produto-base de um kit.
+async function buscarProdutoEVariante(client, referencia, cor, tamanho) {
+  const { rows: variantesDoProduto } = await client.query(
+    `SELECT v.*, p.referencia, p.descricao FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id WHERE p.referencia ILIKE $1`,
+    [referencia]
+  );
+  if (variantesDoProduto.length === 0) return null;
+
+  const corAlvo = normalizarComparacao(cor);
+  const tamanhoAlvo = normalizarComparacao(tamanho);
+  const variante = variantesDoProduto.find(
+    (v) => normalizarComparacao(v.cor) === corAlvo && normalizarComparacao(v.tamanho) === tamanhoAlvo
+  );
+  if (variante) return variante;
+  // Achou o produto pela referência, mas essa cor/tamanho específica não
+  // existe no estoque cadastrado (grade diferente, erro de digitação no
+  // anúncio etc.) — ainda assim vincula o produto (o custo da peça é
+  // calculado por produto, não por variante específica), só sem uma
+  // variante de estoque pra apontar.
+  return {
+    id: null,
+    produto_id: variantesDoProduto[0].produto_id,
+    referencia: variantesDoProduto[0].referencia,
+    descricao: variantesDoProduto[0].descricao,
+    cor,
+    tamanho,
+  };
+}
+
+// Acha um kit manual já gerado automaticamente pra esse produto+quantidade
+// (kit de UMA referência só, exatamente como o padrão de SKU de kit
+// descreve) antes de criar um novo, pra não duplicar a cada pedido novo do
+// mesmo kit — reaproveita a tela de Kits Manuais que já existia.
+async function encontrarOuCriarKit(client, { produtoId, quantidade, referencia, cor, tamanho }) {
+  const { rows: existentes } = await client.query(
+    `SELECT km.id FROM kits_manuais km
+     WHERE (SELECT COUNT(*) FROM kits_manuais_itens WHERE kit_id = km.id) = 1
+       AND EXISTS (
+         SELECT 1 FROM kits_manuais_itens WHERE kit_id = km.id AND produto_id = $1 AND quantidade = $2
+       )
+     LIMIT 1`,
+    [produtoId, quantidade]
+  );
+  if (existentes.length > 0) return existentes[0].id;
+
+  const nome = `Kit ${quantidade}x — ${referencia} ${cor} ${tamanho}`.replace(/\s+/g, ' ').trim();
+  const { rows } = await client.query('INSERT INTO kits_manuais (nome) VALUES ($1) RETURNING id', [nome]);
+  const kitId = rows[0].id;
+  await client.query(
+    'INSERT INTO kits_manuais_itens (kit_id, produto_id, quantidade, ordem) VALUES ($1, $2, $3, 1)',
+    [kitId, produtoId, quantidade]
+  );
+  return kitId;
+}
+
 // O SKU (cadastrado no anúncio pra bater com a própria referência do
 // produto) é a fonte principal de casamento — o EAN do marketplace pode ser
 // diferente do EAN de produção, então só entra como último recurso.
 async function encontrarVariante(client, { eanExterno, skuExterno }) {
   if (skuExterno) {
-    const partido = partirSkuIndividual(skuExterno);
-    if (partido) {
-      const { rows: variantesDoProduto } = await client.query(
-        `SELECT v.*, p.referencia, p.descricao FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id WHERE p.referencia ILIKE $1`,
-        [partido.referencia]
-      );
-      if (variantesDoProduto.length > 0) {
-        const corAlvo = normalizarComparacao(partido.cor);
-        const tamanhoAlvo = normalizarComparacao(partido.tamanho);
-        const variante = variantesDoProduto.find(
-          (v) => normalizarComparacao(v.cor) === corAlvo && normalizarComparacao(v.tamanho) === tamanhoAlvo
-        );
-        if (variante) return variante;
-        // Achou o produto pela referência, mas essa cor/tamanho específica
-        // não existe no estoque cadastrado (grade diferente, erro de
-        // digitação no anúncio etc.) — ainda assim vincula o produto (o
-        // custo da peça é calculado por produto, não por variante
-        // específica), só sem uma variante de estoque pra apontar.
+    const kit = partirSkuKit(skuExterno);
+    if (kit) {
+      const base = await buscarProdutoEVariante(client, kit.referencia, kit.cor, kit.tamanho);
+      if (base) {
+        const kitId = await encontrarOuCriarKit(client, {
+          produtoId: base.produto_id, quantidade: kit.quantidade, referencia: base.referencia, cor: kit.cor, tamanho: kit.tamanho,
+        });
         return {
           id: null,
-          produto_id: variantesDoProduto[0].produto_id,
-          referencia: variantesDoProduto[0].referencia,
-          descricao: variantesDoProduto[0].descricao,
-          cor: partido.cor,
-          tamanho: partido.tamanho,
+          produto_id: base.produto_id,
+          referencia: base.referencia,
+          descricao: `Kit ${kit.quantidade}x — ${base.descricao}`,
+          cor: kit.cor,
+          tamanho: kit.tamanho,
+          kit_id: kitId,
         };
+      }
+    } else {
+      const partido = partirSkuIndividual(skuExterno);
+      if (partido) {
+        const variante = await buscarProdutoEVariante(client, partido.referencia, partido.cor, partido.tamanho);
+        if (variante) return variante;
       }
     }
 
@@ -190,8 +252,8 @@ async function importarPedido(client, pedidoGenerico, integracaoId) {
     const total = item.quantidade * item.valorUnitario;
     await client.query(
       `INSERT INTO pedido_itens
-        (pedido_id, variante_id, produto_id, referencia, descricao, cor, tamanho, quantidade, valor_unitario, total, ordem, tipo_anuncio_marketplace, titulo_externo, sku_externo)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        (pedido_id, variante_id, produto_id, referencia, descricao, cor, tamanho, quantidade, valor_unitario, total, ordem, tipo_anuncio_marketplace, titulo_externo, sku_externo, kit_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [
         pedidoId,
         variante?.id || null,
@@ -207,6 +269,7 @@ async function importarPedido(client, pedidoGenerico, integracaoId) {
         item.tipoAnuncio || null,
         item.tituloExterno || null,
         item.skuExterno || null,
+        variante?.kit_id || null,
       ]
     );
     ordem += 1;

@@ -321,7 +321,12 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                       {isMarketplace && (
                         <td>
                           {itemUnico ? (
-                            itemUnico.produtoId ? <span className="mono">{itemUnico.referencia}</span> : <span className="stamp sm tone-atencao">sem vínculo</span>
+                            itemUnico.produtoId ? (
+                              <>
+                                <span className="mono">{itemUnico.referencia}</span>{' '}
+                                {itemUnico.kitId && <span className="stamp sm tone-neutro">kit</span>}
+                              </>
+                            ) : <span className="stamp sm tone-atencao">sem vínculo</span>
                           ) : (
                             <span>{qtdVinculados}/{p.itens?.length || 0} vinculados</span>
                           )}

@@ -206,9 +206,9 @@ router.post('/marketplace/revincular-custos', async (req, res, next) => {
       if (!variante) continue;
       await client.query(
         `UPDATE pedido_itens
-         SET produto_id = $1, variante_id = $2, referencia = $3, descricao = $4, cor = $5, tamanho = $6
-         WHERE id = $7`,
-        [variante.produto_id, variante.id, variante.referencia, variante.descricao, variante.cor || '', variante.tamanho || '', item.id]
+         SET produto_id = $1, variante_id = $2, referencia = $3, descricao = $4, cor = $5, tamanho = $6, kit_id = $7
+         WHERE id = $8`,
+        [variante.produto_id, variante.id, variante.referencia, variante.descricao, variante.cor || '', variante.tamanho || '', variante.kit_id || null, item.id]
       );
       vinculados += 1;
     }
@@ -227,6 +227,8 @@ router.post('/marketplace/revincular-custos', async (req, res, next) => {
 // marketplace — usado quando o casamento automático por SKU/EAN não achou
 // nada, ou achou o produto errado. Preserva titulo_externo/sku_externo (o
 // que o cliente pediu de verdade no anúncio) mesmo trocando o vínculo.
+// Zera kit_id de propósito: essa tela escolhe sempre uma variante única, e
+// se o item estava vinculado a um kit antes, esse vínculo deixa de valer.
 router.put('/itens/:itemId/produto', async (req, res, next) => {
   try {
     const { varianteId } = req.body || {};
@@ -241,7 +243,7 @@ router.put('/itens/:itemId/produto', async (req, res, next) => {
 
     const { rows } = await pool.query(
       `UPDATE pedido_itens
-       SET produto_id = $1, variante_id = $2, referencia = $3, descricao = $4, cor = $5, tamanho = $6
+       SET produto_id = $1, variante_id = $2, referencia = $3, descricao = $4, cor = $5, tamanho = $6, kit_id = NULL
        WHERE id = $7 RETURNING *`,
       [variante.produto_id, variante.id, variante.referencia, variante.descricao, variante.cor || '', variante.tamanho || '', req.params.itemId]
     );
@@ -275,6 +277,37 @@ async function mapaCustoPorProduto(produtoIds, ctx) {
       });
     } catch {
       mapa.set(id, { custoPeca: 0, imposto: 0 });
+    }
+  }
+  return mapa;
+}
+
+// Mesma ideia acima, mas pro custo de um KIT inteiro (soma o custo de cada
+// item do kit já multiplicado pela quantidade DAQUELE item dentro do kit —
+// ex.: kit de 3 peças da mesma referência conta 3x o custo de uma peça).
+// Usado quando o item do pedido está vinculado a um kit (kit_id), não a um
+// produto avulso — o resultado entra na mesma conta de "custo por peça
+// vendida" de baixo, só que multiplicado pela quantidade de KITS vendidos
+// (não de peças), já que 1 unidade vendida = 1 kit inteiro.
+async function mapaCustoPorKit(kitIds, ctx) {
+  const mapa = new Map();
+  for (const kitId of kitIds) {
+    if (kitId === null || kitId === undefined || mapa.has(kitId)) continue;
+    try {
+      const { rows: itensKit } = await pool.query('SELECT produto_id, quantidade FROM kits_manuais_itens WHERE kit_id = $1', [kitId]);
+      let custoPeca = 0;
+      let imposto = 0;
+      for (const item of itensKit) {
+        const produtoRow = await produtosRoutes.fetchProdutoRow(pool, item.produto_id);
+        const materiais = await produtosRoutes.fetchMateriais(pool, item.produto_id);
+        const custosIndustriais = await produtosRoutes.fetchCustosIndustriais(pool, item.produto_id);
+        const calculo = produtosRoutes.buildCalculo(produtoRow, materiais, custosIndustriais, ctx);
+        custoPeca += (Number(calculo.custoTotal.subtotalProducao) || 0) * item.quantidade;
+        imposto += (Number(calculo.custoTotal.impostosRS) || 0) * item.quantidade;
+      }
+      mapa.set(kitId, { custoPeca, imposto });
+    } catch {
+      mapa.set(kitId, { custoPeca: 0, imposto: 0 });
     }
   }
   return mapa;
@@ -317,12 +350,20 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
 
     const ctx = await getCalcContext();
     const mapaCusto = await mapaCustoPorProduto(itens.map((it) => it.produto_id), ctx);
+    const mapaCustoKit = await mapaCustoPorKit(itens.map((it) => it.kit_id), ctx);
+    // Item vinculado a um kit usa o custo do kit inteiro (já multiplicado
+    // pelas peças que tem dentro); os demais usam o custo de uma peça só —
+    // nos dois casos, it.quantidade (quantas unidades foram vendidas —
+    // kits ou peças avulsas) ainda multiplica por fora, mais abaixo.
+    function custoDoItem(it) {
+      return it.kit_id ? mapaCustoKit.get(it.kit_id) : mapaCusto.get(it.produto_id);
+    }
 
     const resultado = pedidos.map((p) => {
       const itensDoPedido = itens.filter((it) => it.pedido_id === p.id);
-      const custoPeca = itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * (mapaCusto.get(it.produto_id)?.custoPeca || 0), 0);
-      const imposto = itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * (mapaCusto.get(it.produto_id)?.imposto || 0), 0);
-      const semCusto = itensDoPedido.some((it) => !it.produto_id || !mapaCusto.has(it.produto_id));
+      const custoPeca = itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * (custoDoItem(it)?.custoPeca || 0), 0);
+      const imposto = itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * (custoDoItem(it)?.imposto || 0), 0);
+      const semCusto = itensDoPedido.some((it) => (it.kit_id ? !mapaCustoKit.has(it.kit_id) : !it.produto_id || !mapaCusto.has(it.produto_id)));
       const taxaMarketplace = Number(p.taxa_marketplace) || 0;
       const frete = Number(p.valor_frete) || 0;
       const custo = custoPeca + imposto;
@@ -354,6 +395,7 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
           quantidade: Number(it.quantidade),
           produtoId: it.produto_id,
           varianteId: it.variante_id,
+          kitId: it.kit_id,
           referencia: it.produto_id ? it.referencia : null,
           descricao: it.produto_id ? it.descricao : null,
           cor: it.cor,
