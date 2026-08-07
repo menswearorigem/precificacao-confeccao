@@ -224,7 +224,8 @@ router.post('/marketplace/revincular-custos', async (req, res, next) => {
       vinculados += 1;
     }
 
-    const { rowCount: pedidosAtualizados } = await client.query(
+    // Pedidos com origem_integracao_id conhecida — casamento exato.
+    const { rowCount: atualizadosComIntegracao } = await client.query(
       `UPDATE pedidos_venda pv
        SET empresa_id = COALESCE(pv.empresa_id, im.empresa_id),
            pct_nota_fiscal = COALESCE(pv.pct_nota_fiscal, im.pct_nota_fiscal)
@@ -234,6 +235,30 @@ router.post('/marketplace/revincular-custos', async (req, res, next) => {
          AND (pv.empresa_id IS NULL OR pv.pct_nota_fiscal IS NULL)
          AND (im.empresa_id IS NOT NULL OR im.pct_nota_fiscal IS NOT NULL)`
     );
+    // Pedidos SEM origem_integracao_id (importados por planilha, ou de
+    // antes dessa coluna existir de verdade) nunca batiam com o UPDATE
+    // acima — "= im.id" nunca é verdadeiro contra NULL — e por isso
+    // ficavam pra sempre sem empresa/% de nota fiscal mesmo depois de
+    // configurar a integração, o que travava o cálculo real de imposto
+    // pra esses pedidos. Só preenche esse caso quando existe exatamente
+    // UMA integração configurada pra aquele marketplace — com mais de uma
+    // não dá pra adivinhar de qual loja o pedido veio.
+    const { rowCount: atualizadosSemIntegracao } = await client.query(
+      `UPDATE pedidos_venda pv
+       SET empresa_id = COALESCE(pv.empresa_id, unica.empresa_id),
+           pct_nota_fiscal = COALESCE(pv.pct_nota_fiscal, unica.pct_nota_fiscal)
+       FROM (
+         SELECT marketplace, MIN(empresa_id) AS empresa_id, MIN(pct_nota_fiscal) AS pct_nota_fiscal
+         FROM integracoes_marketplace
+         WHERE empresa_id IS NOT NULL OR pct_nota_fiscal IS NOT NULL
+         GROUP BY marketplace
+         HAVING COUNT(*) = 1
+       ) unica
+       WHERE pv.origem_integracao_id IS NULL
+         AND pv.origem_marketplace = unica.marketplace
+         AND (pv.empresa_id IS NULL OR pv.pct_nota_fiscal IS NULL)`
+    );
+    const pedidosAtualizados = atualizadosComIntegracao + atualizadosSemIntegracao;
     await client.query('COMMIT');
 
     res.json({
