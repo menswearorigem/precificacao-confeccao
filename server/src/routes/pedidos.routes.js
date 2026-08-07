@@ -410,7 +410,16 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
       const semCusto = itensDoPedido.some((it) => (it.kit_id ? !mapaCustoKit.has(it.kit_id) : !it.produto_id || !mapaCusto.has(it.produto_id)));
       const taxaMarketplace = Number(p.taxa_marketplace) || 0;
       const frete = Number(p.valor_frete) || 0;
-      const receita = Number(p.total_liquido);
+      // Base da lucratividade é o valor de VENDA do produto (soma do que
+      // cada item vendeu), não o total que o cliente pagou no fim — no
+      // marketplace, o que o cliente paga costuma vir com frete e taxa de
+      // parcelamento embutidos que são dinheiro de terceiro (comprador,
+      // transportadora, financeira), não da loja, e inflavam a receita (e
+      // por tabela erravam o % de lucro) sem ter custo correspondente.
+      // Pedido manual não tem esse problema — o frete ali é uma cobrança
+      // que a própria loja decide e recebe, então continua contando.
+      const receitaItens = itensDoPedido.reduce((s, it) => s + Number(it.total), 0);
+      const receita = p.origem_marketplace ? receitaItens : Number(p.total_liquido);
       const valorRecebido = p.valor_recebido_marketplace !== null ? Number(p.valor_recebido_marketplace) : null;
       const pctNotaFiscal = p.pct_nota_fiscal !== null ? Number(p.pct_nota_fiscal) : null;
       const empresaVinculada = p.empresa_id ? mapaEmpresas.get(p.empresa_id) : null;
