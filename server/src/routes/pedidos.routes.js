@@ -3,6 +3,7 @@ const multer = require('multer');
 const pool = require('../db/pool');
 const { registrarMovimento } = require('../lib/estoqueMovimento');
 const { getCalcContext } = require('../lib/calcContext');
+const { pctImpostosEmpresa } = require('../lib/calc');
 const { calcularTaxaEsperadaPedido } = require('../lib/marketplaceTaxaCalc');
 const { parseArquivoPedidos } = require('../lib/pedidoImportParsers');
 const { importarPedido, sincronizarSeNecessario, encontrarVariante } = require('../lib/marketplaceSync');
@@ -337,7 +338,7 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
       return res.json({
         pedidos: [],
         totalGeral: {
-          receita: 0, custoPeca: 0, imposto: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, margemPct: 0,
+          receita: 0, custoPeca: 0, imposto: 0, custoEmbalagem: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, margemPct: 0,
           valorRecebidoLiberado: 0, valorRecebidoConfirmado: 0, valorRecebidoSemConfirmacao: 0,
         },
       });
@@ -347,6 +348,12 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
       `SELECT * FROM pedido_itens WHERE pedido_id = ANY($1)`,
       [pedidos.map((p) => p.id)]
     );
+
+    const empresaIds = [...new Set(pedidos.map((p) => p.empresa_id).filter(Boolean))];
+    const { rows: empresasRows } = empresaIds.length > 0
+      ? await pool.query('SELECT * FROM empresas WHERE id = ANY($1)', [empresaIds])
+      : { rows: [] };
+    const mapaEmpresas = new Map(empresasRows.map((e) => [e.id, e]));
 
     const ctx = await getCalcContext();
     const mapaCusto = await mapaCustoPorProduto(itens.map((it) => it.produto_id), ctx);
@@ -359,16 +366,47 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
       return it.kit_id ? mapaCustoKit.get(it.kit_id) : mapaCusto.get(it.produto_id);
     }
 
+    // Custo de embalagem fixo por PEDIDO (não por peça, nem em kit) — só
+    // entra quando dá pra usar o cálculo real (ver `calculoReal` abaixo).
+    const custoEmbalagemConfig = Number(ctx.config.custo_embalagem_marketplace) || 0;
+
     const resultado = pedidos.map((p) => {
       const itensDoPedido = itens.filter((it) => it.pedido_id === p.id);
       const custoPeca = itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * (custoDoItem(it)?.custoPeca || 0), 0);
-      const imposto = itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * (custoDoItem(it)?.imposto || 0), 0);
+      const impostoEstimado = itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * (custoDoItem(it)?.imposto || 0), 0);
       const semCusto = itensDoPedido.some((it) => (it.kit_id ? !mapaCustoKit.has(it.kit_id) : !it.produto_id || !mapaCusto.has(it.produto_id)));
       const taxaMarketplace = Number(p.taxa_marketplace) || 0;
       const frete = Number(p.valor_frete) || 0;
-      const custo = custoPeca + imposto;
       const receita = Number(p.total_liquido);
-      const lucro = receita - custo - taxaMarketplace;
+      const valorRecebido = p.valor_recebido_marketplace !== null ? Number(p.valor_recebido_marketplace) : null;
+      const pctNotaFiscal = p.pct_nota_fiscal !== null ? Number(p.pct_nota_fiscal) : null;
+      const empresaVinculada = p.empresa_id ? mapaEmpresas.get(p.empresa_id) : null;
+
+      // Cálculo REAL (a partir do valor de verdade recebido do Mercado
+      // Livre) só é possível quando já temos os três ingredientes: o valor
+      // recebido confirmado, a empresa (CNPJ, base do % de imposto) e o %
+      // de nota fiscal — os dois últimos vêm "congelados" no pedido desde a
+      // importação (ver marketplaceSync.importarPedido). Sem algum deles,
+      // cai pro cálculo antigo por estimativa (preço de venda - custo -
+      // taxa cobrada), igual pedidos manuais e os ainda não confirmados.
+      const calculoReal = p.canal_venda === 'Mercado Livre' && valorRecebido !== null && empresaVinculada && pctNotaFiscal !== null;
+
+      let imposto;
+      let custoEmbalagem;
+      let custo;
+      let lucro;
+      if (calculoReal) {
+        const valorNotaFiscal = receita * pctNotaFiscal;
+        imposto = valorNotaFiscal * pctImpostosEmpresa(empresaVinculada);
+        custoEmbalagem = custoEmbalagemConfig;
+        custo = custoPeca + imposto + custoEmbalagem;
+        lucro = valorRecebido - custoPeca - custoEmbalagem - imposto;
+      } else {
+        imposto = impostoEstimado;
+        custoEmbalagem = 0;
+        custo = custoPeca + imposto;
+        lucro = receita - custo - taxaMarketplace;
+      }
       const margemPct = receita > 0 ? lucro / receita : 0;
       return {
         id: p.id,
@@ -379,13 +417,15 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
         receita,
         custoPeca,
         imposto,
+        custoEmbalagem,
         frete,
         custo,
         taxaMarketplace,
         lucro,
         margemPct,
+        calculoReal,
         custoIncompleto: semCusto,
-        valorRecebido: p.valor_recebido_marketplace !== null ? Number(p.valor_recebido_marketplace) : null,
+        valorRecebido,
         valorRecebidoStatus: p.valor_recebido_status,
         valorRecebidoLiberacaoEm: p.valor_recebido_liberacao_em,
         itens: itensDoPedido.map((it) => ({
@@ -416,6 +456,7 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
           receita: acc.receita + p.receita,
           custoPeca: acc.custoPeca + p.custoPeca,
           imposto: acc.imposto + p.imposto,
+          custoEmbalagem: acc.custoEmbalagem + p.custoEmbalagem,
           frete: acc.frete + p.frete,
           taxaMarketplace: acc.taxaMarketplace + p.taxaMarketplace,
           custo: acc.custo + p.custo,
@@ -425,7 +466,7 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
           valorRecebidoSemConfirmacao: acc.valorRecebidoSemConfirmacao + (ehML && p.valorRecebido === null ? 1 : 0),
         };
       },
-      { receita: 0, custoPeca: 0, imposto: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, valorRecebidoLiberado: 0, valorRecebidoConfirmado: 0, valorRecebidoSemConfirmacao: 0 }
+      { receita: 0, custoPeca: 0, imposto: 0, custoEmbalagem: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, valorRecebidoLiberado: 0, valorRecebidoConfirmado: 0, valorRecebidoSemConfirmacao: 0 }
     );
     totalGeral.margemPct = totalGeral.receita > 0 ? totalGeral.lucro / totalGeral.receita : 0;
 

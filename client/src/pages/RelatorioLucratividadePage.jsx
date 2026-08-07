@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Printer, RefreshCw, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowDown, ArrowUp, Printer, RefreshCw, X } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
 import { DateInput } from '../components/ui';
@@ -119,6 +119,8 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
   const [dataInicio, setDataInicio] = useState(trintaDiasAtras());
   const [dataFim, setDataFim] = useState(hoje());
   const [canalVenda, setCanalVenda] = useState('');
+  const [busca, setBusca] = useState('');
+  const [ordemData, setOrdemData] = useState('asc');
   const [relatorio, setRelatorio] = useState(null);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
@@ -162,13 +164,33 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
   const isMarketplace = origemFiltro === 'marketplace';
   const modalPedido = isMarketplace ? relatorio?.pedidos.find((p) => p.id === modalPedidoId) : null;
 
+  // Filtro por texto (nº do pedido, cliente, SKU e referência do produto) e
+  // ordenação por data são feitos aqui em cima do que já veio do servidor —
+  // não precisa buscar de novo pra digitar ou trocar a ordem.
+  const pedidosExibidos = useMemo(() => {
+    if (!relatorio) return [];
+    const termo = busca.trim().toLowerCase();
+    const filtrados = !termo ? relatorio.pedidos : relatorio.pedidos.filter((p) => {
+      if (String(p.numero).toLowerCase().includes(termo)) return true;
+      if ((p.cliente_nome || '').toLowerCase().includes(termo)) return true;
+      return (p.itens || []).some((it) => (
+        (it.skuExterno || '').toLowerCase().includes(termo) || (it.referencia || '').toLowerCase().includes(termo)
+      ));
+    });
+    const ordenados = [...filtrados].sort((a, b) => {
+      const diff = new Date(a.data_pedido) - new Date(b.data_pedido);
+      return ordemData === 'asc' ? diff : -diff;
+    });
+    return ordenados;
+  }, [relatorio, busca, ordemData]);
+
   return (
     <div className="page-wide">
       <div className="no-print">
         <h2>{titulo}</h2>
         <p className="page-sub">
           {isMarketplace
-            ? 'Lucro real de cada pedido vindo de marketplace: preço de venda menos o custo de produção, impostos, frete e a taxa cobrada pela plataforma.'
+            ? 'Lucro real de cada pedido vindo de marketplace: valor de verdade recebido do Mercado Livre menos o custo de produção, embalagem e imposto (quando o valor recebido já está confirmado). Pedidos ainda sem confirmação usam uma estimativa (marcada como "estimativa") baseada no preço de venda.'
             : 'Lucro real de cada pedido lançado manualmente: preço de venda menos o custo de produção (o mesmo custo usado na Ficha de Custo).'}
         </p>
 
@@ -185,6 +207,14 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
             <div className="field">
               <span className="field-label">Canal de venda</span>
               <input placeholder="Ex: Mercado Livre, Shopee..." value={canalVenda} onChange={(e) => setCanalVenda(e.target.value)} />
+            </div>
+            <div className="field">
+              <span className="field-label">Buscar</span>
+              <input
+                placeholder="Nº do pedido, cliente, SKU ou referência..."
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+              />
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
@@ -233,6 +263,9 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
             <div className="row-line"><span>Receita no Período</span><span className="mono" style={{ fontWeight: 700 }}>{brl(relatorio.totalGeral.receita)}</span></div>
             <div className="row-line"><span>Custo de Peça (matéria-prima, mão de obra e indireto)</span><span className="mono">{brl(relatorio.totalGeral.custoPeca)}</span></div>
             <div className="row-line"><span>Impostos</span><span className="mono">{brl(relatorio.totalGeral.imposto)}</span></div>
+            {isMarketplace && (
+              <div className="row-line"><span>Custo de Embalagem</span><span className="mono">{brl(relatorio.totalGeral.custoEmbalagem)}</span></div>
+            )}
             <div className="row-line"><span>Frete</span><span className="mono">{brl(relatorio.totalGeral.frete)}</span></div>
             <div className="row-line"><span>Taxas de Marketplace</span><span className="mono">{brl(relatorio.totalGeral.taxaMarketplace)}</span></div>
             <div className="row-line strong"><span>Lucro Líquido</span><span className="mono">{brl(relatorio.totalGeral.lucro)}</span></div>
@@ -259,11 +292,23 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
           </div>
 
           <div className="card no-print">
-            <div className="card-head">Pedidos no Período ({relatorio.pedidos.length})</div>
+            <div className="card-head">
+              Pedidos no Período ({pedidosExibidos.length}{pedidosExibidos.length !== relatorio.pedidos.length ? ` de ${relatorio.pedidos.length}` : ''})
+            </div>
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Nº</th><th>Data</th>
+                  <th>Nº</th>
+                  <th>
+                    <button
+                      type="button"
+                      onClick={() => setOrdemData((o) => (o === 'asc' ? 'desc' : 'asc'))}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer' }}
+                      title={ordemData === 'asc' ? 'Mais antigo primeiro' : 'Mais novo primeiro'}
+                    >
+                      Data {ordemData === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
+                    </button>
+                  </th>
                   {isMarketplace ? <th>Item Pedido</th> : <th>Cliente</th>}
                   <th>Canal</th>
                   <th>Receita</th><th>Custo</th><th>Taxa Marketplace</th><th>Lucro</th><th>Margem</th>
@@ -273,7 +318,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                 </tr>
               </thead>
               <tbody>
-                {relatorio.pedidos.map((p) => {
+                {pedidosExibidos.map((p) => {
                   const itemUnico = isMarketplace && p.itens?.length === 1 ? p.itens[0] : null;
                   const qtdVinculados = isMarketplace ? (p.itens || []).filter((it) => it.produtoId).length : 0;
                   return (
@@ -301,7 +346,10 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                         {p.custoIncompleto && <span className="stamp sm tone-atencao" style={{ marginLeft: 6 }}>parcial</span>}
                       </td>
                       <td className="mono">{p.taxaMarketplace ? brl(p.taxaMarketplace) : '—'}</td>
-                      <td className="mono" style={{ fontWeight: 700 }}>{brl(p.lucro)}</td>
+                      <td className="mono" style={{ fontWeight: 700 }}>
+                        {brl(p.lucro)}
+                        {isMarketplace && !p.calculoReal && <span className="stamp sm tone-neutro" style={{ marginLeft: 6 }}>estimativa</span>}
+                      </td>
                       <td className="mono">{pct(p.margemPct)}</td>
                       {isMarketplace && (
                         <td className="mono">
@@ -342,7 +390,9 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                     </tr>
                   );
                 })}
-                {relatorio.pedidos.length === 0 && <tr><td colSpan="11">Nenhum pedido no período.</td></tr>}
+                {pedidosExibidos.length === 0 && (
+                  <tr><td colSpan="11">{busca ? 'Nenhum pedido encontrado para essa busca.' : 'Nenhum pedido no período.'}</td></tr>
+                )}
               </tbody>
             </table>
           </div>

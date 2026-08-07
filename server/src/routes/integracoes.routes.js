@@ -24,6 +24,8 @@ function paraFora(row) {
     contaExternaId: row.conta_externa_id,
     ativo: row.ativo,
     usaFreteSubsidiado: row.usa_frete_subsidiado,
+    empresaId: row.empresa_id,
+    pctNotaFiscal: row.pct_nota_fiscal,
     ultimaSincronizacao: row.ultima_sincronizacao,
     ultimoErro: row.ultimo_erro,
     ultimoErroFaturamento: row.ultimo_erro_faturamento,
@@ -62,7 +64,7 @@ router.post('/', async (req, res, next) => {
 
 router.put('/:id', async (req, res, next) => {
   try {
-    const { nome, client_id, client_secret, ativo, usa_frete_subsidiado } = req.body || {};
+    const { nome, client_id, client_secret, ativo, usa_frete_subsidiado, empresa_id, pct_nota_fiscal } = req.body || {};
     const updates = [];
     const values = [];
     let i = 1;
@@ -71,6 +73,8 @@ router.put('/:id', async (req, res, next) => {
     if (client_secret !== undefined && client_secret !== '') { updates.push(`client_secret = $${i}`); values.push(client_secret); i += 1; }
     if (ativo !== undefined) { updates.push(`ativo = $${i}`); values.push(ativo); i += 1; }
     if (usa_frete_subsidiado !== undefined) { updates.push(`usa_frete_subsidiado = $${i}`); values.push(usa_frete_subsidiado); i += 1; }
+    if (empresa_id !== undefined) { updates.push(`empresa_id = $${i}`); values.push(empresa_id || null); i += 1; }
+    if (pct_nota_fiscal !== undefined) { updates.push(`pct_nota_fiscal = $${i}`); values.push(pct_nota_fiscal === '' ? null : pct_nota_fiscal); i += 1; }
     if (updates.length === 0) return res.status(400).json({ error: 'Nada para atualizar.' });
     updates.push('atualizado_em = now()');
     values.push(req.params.id);

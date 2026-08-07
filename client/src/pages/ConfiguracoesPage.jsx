@@ -91,9 +91,23 @@ export default function ConfiguracoesPage() {
         <div className="form-grid">{renderPctFields(PCT_FIELDS_ALERTA)}</div>
       </div>
 
-      <div className="card">
+      <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-head">Parâmetros de Kits (marketplace)</div>
         <div className="form-grid">{renderPctFields(PCT_FIELDS_KIT)}</div>
+      </div>
+
+      <div className="card">
+        <div className="card-head">Lucratividade de Marketplace</div>
+        <div className="form-grid">
+          <Field label="Custo de embalagem por pedido">
+            <NumInput
+              value={config.custo_embalagem_marketplace}
+              onChange={(v) => updateField('custo_embalagem_marketplace', Number(v) || 0)}
+              onBlur={handleBlurSave}
+              suffix="R$"
+            />
+          </Field>
+        </div>
       </div>
     </div>
   );

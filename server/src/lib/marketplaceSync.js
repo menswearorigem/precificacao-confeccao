@@ -218,7 +218,12 @@ async function encontrarVariante(client, { eanExterno, skuExterno }) {
   return null;
 }
 
-async function importarPedido(client, pedidoGenerico, integracaoId) {
+// `integracao` é a linha completa de integracoes_marketplace (não só o id) —
+// usada pra "congelar" no pedido, no momento da importação, a empresa (CNPJ)
+// e o % de nota fiscal configurados ali (mesma lógica de taxa_marketplace:
+// se a integração mudar depois, pedidos já importados não mudam junto).
+// É null pra importação manual por planilha (sem integração associada).
+async function importarPedido(client, pedidoGenerico, integracao) {
   const { rows: existentes } = await client.query(
     'SELECT id FROM pedidos_venda WHERE origem_marketplace = $1 AND origem_pedido_id = $2',
     [pedidoGenerico.marketplace, pedidoGenerico.idExterno]
@@ -228,11 +233,12 @@ async function importarPedido(client, pedidoGenerico, integracaoId) {
   const clienteId = await encontrarOuCriarCliente(client, pedidoGenerico);
 
   const { rows } = await client.query(
-    `INSERT INTO pedidos_venda (data_pedido, cliente_id, operacao, canal_venda, valor_frete, taxa_marketplace, forma_pagamento_marketplace, observacao, origem_marketplace, origem_pedido_id, origem_integracao_id, pagamento_id_marketplace)
-     VALUES ($1, $2, 'Venda', $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+    `INSERT INTO pedidos_venda (data_pedido, cliente_id, empresa_id, operacao, canal_venda, valor_frete, taxa_marketplace, forma_pagamento_marketplace, observacao, origem_marketplace, origem_pedido_id, origem_integracao_id, pagamento_id_marketplace, pct_nota_fiscal)
+     VALUES ($1, $2, $3, 'Venda', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
     [
       pedidoGenerico.dataPedido || new Date().toISOString().slice(0, 10),
       clienteId,
+      integracao?.empresa_id || null,
       LABEL[pedidoGenerico.marketplace],
       pedidoGenerico.valorFrete || 0,
       pedidoGenerico.taxaMarketplace ?? null,
@@ -240,8 +246,9 @@ async function importarPedido(client, pedidoGenerico, integracaoId) {
       `Pedido ${pedidoGenerico.numeroExterno} importado automaticamente do ${LABEL[pedidoGenerico.marketplace]}.`,
       pedidoGenerico.marketplace,
       pedidoGenerico.idExterno,
-      integracaoId,
+      integracao?.id || null,
       pedidoGenerico.pagamentoIdExterno || null,
+      integracao?.pct_nota_fiscal ?? null,
     ]
   );
   const pedidoId = rows[0].id;
@@ -415,7 +422,7 @@ async function sincronizarIntegracao(integracaoId) {
     try {
       await client.query('BEGIN');
       for (const pedidoGenerico of pedidosGenericos) {
-        const ok = await importarPedido(client, pedidoGenerico, integracao.id);
+        const ok = await importarPedido(client, pedidoGenerico, integracao);
         if (ok) importados += 1;
       }
       await client.query('COMMIT');

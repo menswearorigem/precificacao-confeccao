@@ -19,6 +19,7 @@ const FIELDS = [
   'desconto_kit_pct',
   'margem_alvo_kit_pct',
   'producao_mensal_pecas',
+  'custo_embalagem_marketplace',
 ];
 
 router.get('/', async (req, res, next) => {

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Plug, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, Select } from '../components/ui';
+import { Field, NumInput, Select } from '../components/ui';
 import WikIntegracaoCard from '../components/WikIntegracaoCard';
 import WikImportarProdutosCard from '../components/WikImportarProdutosCard';
 import WikImportarFichaCustoCard from '../components/WikImportarFichaCustoCard';
@@ -33,6 +33,7 @@ function hoje(iso) {
 export default function IntegracoesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [integracoes, setIntegracoes] = useState([]);
+  const [empresas, setEmpresas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [mostrarNova, setMostrarNova] = useState(false);
   const [nova, setNova] = useState({ marketplace: 'mercado_livre', nome: 'Loja principal', client_id: '', client_secret: '' });
@@ -49,6 +50,7 @@ export default function IntegracoesPage() {
   }
 
   useEffect(load, []);
+  useEffect(() => { api.get('/empresas').then(setEmpresas); }, []);
 
   useEffect(() => {
     const conectado = searchParams.get('conectado');
@@ -109,6 +111,24 @@ export default function IntegracoesPage() {
 
   async function alternarFreteSubsidiado(item) {
     await api.put(`/integracoes/${item.id}`, { usa_frete_subsidiado: !item.usaFreteSubsidiado });
+    load();
+  }
+
+  function editarCampoLocal(id, campo, valor) {
+    setIntegracoes((lista) => lista.map((it) => (it.id === id ? { ...it, [campo]: valor } : it)));
+  }
+
+  async function salvarEmpresa(item, empresaIdStr) {
+    const empresaId = empresaIdStr || null;
+    editarCampoLocal(item.id, 'empresaId', empresaId);
+    await api.put(`/integracoes/${item.id}`, { empresa_id: empresaId });
+    load();
+  }
+
+  async function salvarPctNotaFiscal(item) {
+    await api.put(`/integracoes/${item.id}`, {
+      pct_nota_fiscal: item.pctNotaFiscal === '' || item.pctNotaFiscal == null ? null : item.pctNotaFiscal,
+    });
     load();
   }
 
@@ -219,6 +239,19 @@ export default function IntegracoesPage() {
                   <input type="checkbox" checked={item.usaFreteSubsidiado} onChange={() => alternarFreteSubsidiado(item)} />
                   {item.usaFreteSubsidiado ? 'Sim' : 'Não'}
                 </label>
+              </Field>
+              <Field label="Empresa (CNPJ) usada como base de imposto">
+                <Select value={item.empresaId || ''} onChange={(e) => salvarEmpresa(item, e.target.value)} placeholder="Nenhuma vinculada">
+                  {empresas.map((e) => <option key={e.id} value={e.id}>{e.nome}</option>)}
+                </Select>
+              </Field>
+              <Field label="% do valor vendido que sai na Nota Fiscal">
+                <NumInput
+                  value={item.pctNotaFiscal != null ? Number(item.pctNotaFiscal) * 100 : ''}
+                  onChange={(v) => editarCampoLocal(item.id, 'pctNotaFiscal', v === '' ? '' : Number(v) / 100)}
+                  onBlur={() => salvarPctNotaFiscal(item)}
+                  suffix="%"
+                />
               </Field>
             </div>
 
