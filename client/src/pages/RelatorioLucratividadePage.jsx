@@ -329,6 +329,10 @@ function DiagnosticoPagamento({ pedidoId }) {
           <div className="row-line"><span>valor recebido gravado hoje</span><span className="mono">{diagnostico.valorRecebidoGravadoAtualmente != null ? brl(Number(diagnostico.valorRecebidoGravadoAtualmente)) : '—'}</span></div>
           <div className="row-line"><span>id(s) que o critério atual escolheria</span><span className="mono">{diagnostico.idsQueOCriterioAtualEscolheria.join(', ') || '—'}</span></div>
           <div className="row-line"><span>pack_id (pedido combinado)</span><span className="mono">{diagnostico.packId || 'não é pack'}</span></div>
+          <div className="row-line" style={{ background: 'var(--tone-atencao-bg, #fff3cd)' }}>
+            <span>ID do envio (compare com o número que aparece no painel do ML)</span>
+            <span className="mono">{diagnostico.shippingId || '—'}</span>
+          </div>
           <div className="row-line"><span>frete (shipping.cost)</span><span className="mono">{diagnostico.shipping?.cost != null ? brl(Number(diagnostico.shipping.cost)) : '—'}</span></div>
           {diagnostico.pagamentos.map((pg) => (
             <div key={pg.id} style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border-soft)' }}>

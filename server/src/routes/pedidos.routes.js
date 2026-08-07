@@ -340,6 +340,14 @@ router.get('/:id/diagnostico-marketplace', async (req, res, next) => {
       valorRecebidoGravadoAtualmente: pedido.valor_recebido_marketplace,
       idsQueOCriterioAtualEscolheria: idsPeloCriterioAtual,
       packId: order.pack_id || null,
+      // Hipótese a confirmar: o "número da venda" que aparece pro vendedor
+      // no painel do Mercado Livre (inclusive na tela de Envios, que é onde
+      // ela normalmente confere/pesquisa) pode ser o ID do ENVIO, não o ID
+      // do PEDIDO que a API de /orders devolve como order.id — são
+      // identificadores diferentes no Mercado Livre. Expõe os dois aqui pra
+      // comparar direto: se shippingId bater com o número que aparece no
+      // painel, o número exibido no relatório deveria trocar pra esse.
+      shippingId: order.shipping?.id || null,
       shipping: order.shipping || null,
       order,
       pagamentos,
