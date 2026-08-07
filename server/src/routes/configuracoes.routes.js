@@ -20,6 +20,8 @@ const FIELDS = [
   'margem_alvo_kit_pct',
   'producao_mensal_pecas',
   'custo_embalagem_marketplace',
+  'margem_pedido_vermelho_max',
+  'margem_pedido_amarelo_max',
 ];
 
 router.get('/', async (req, res, next) => {

@@ -107,6 +107,22 @@ export default function ConfiguracoesPage() {
               suffix="R$"
             />
           </Field>
+          <Field label="Pílula vermelha até (margem crítica)" hint="Margem igual ou abaixo disso aparece em vermelho.">
+            <NumInput
+              value={Number(config.margem_pedido_vermelho_max) * 100}
+              onChange={(v) => updateField('margem_pedido_vermelho_max', (Number(v) || 0) / 100)}
+              onBlur={handleBlurSave}
+              suffix="%"
+            />
+          </Field>
+          <Field label="Pílula amarela até (margem de atenção)" hint="Acima do vermelho e até aqui aparece em amarelo; acima disso, verde.">
+            <NumInput
+              value={Number(config.margem_pedido_amarelo_max) * 100}
+              onChange={(v) => updateField('margem_pedido_amarelo_max', (Number(v) || 0) / 100)}
+              onBlur={handleBlurSave}
+              suffix="%"
+            />
+          </Field>
         </div>
       </div>
     </div>

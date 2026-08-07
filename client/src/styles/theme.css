@@ -766,6 +766,53 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
 .row-line.strong { font-weight: 700; color: var(--leather-deep); }
 .row-line.big { font-size: 14.5px; color: var(--leather-dark); border-bottom: none; padding-top: 10px; }
 
+/* ---------- faixa de indicadores (cartões de KPI lado a lado) ---------- */
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-xs);
+}
+.stat-card { background: var(--surface); padding: 13px 16px; display: flex; flex-direction: column; gap: 4px; }
+.stat-card-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-faint); font-weight: 600; }
+.stat-card-value { font-size: 18px; font-weight: 700; color: var(--leather-deep); }
+@media (max-width: 640px) { .stat-strip { grid-template-columns: repeat(2, 1fr); } }
+
+/* ---------- sub-abas dentro de uma página ---------- */
+.subtab-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.subtab-btn {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.subtab-btn.active { background: var(--terracotta); border-color: var(--terracotta); color: #fff; }
+
+.expand-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px;
+  background: none;
+  border: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+.expand-toggle:hover { color: var(--terracotta); }
+
 .total-banner {
   display: flex;
   justify-content: space-between;

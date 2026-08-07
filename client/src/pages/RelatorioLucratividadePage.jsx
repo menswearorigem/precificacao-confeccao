@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, Printer, RefreshCw, X } from 'lucide-react';
+import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, Printer, RefreshCw, X } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
 import { DateInput } from '../components/ui';
@@ -16,6 +17,22 @@ function hoje() {
 
 function dataBr(iso) {
   return new Date(`${iso}T00:00:00`).toLocaleDateString('pt-BR');
+}
+
+// Faixas de cor configuráveis (Configurações > Lucratividade de Marketplace):
+// margem até "vermelho_max" é crítica, até "amarelo_max" é de atenção, acima
+// disso é saudável — mesma linguagem visual dos selos usados no resto do app.
+function tonePorMargem(valor, config) {
+  if (!config) return 'tone-neutro';
+  const vermelho = Number(config.margem_pedido_vermelho_max);
+  const amarelo = Number(config.margem_pedido_amarelo_max);
+  if (valor <= vermelho) return 'tone-prejuizo';
+  if (valor <= amarelo) return 'tone-atencao';
+  return 'tone-saudavel';
+}
+
+function MargemPill({ valor, config }) {
+  return <span className={'stamp sm ' + tonePorMargem(valor, config)}>{pct(valor)}</span>;
 }
 
 function VincularItensModal({ pedido, onClose, onVinculado }) {
@@ -115,6 +132,192 @@ function VincularItensModal({ pedido, onClose, onVinculado }) {
   );
 }
 
+function GraficoLucratividade({ serie }) {
+  const dados = serie.map((d) => ({ ...d, dataLabel: dataBr(d.data) }));
+  return (
+    <ResponsiveContainer width="100%" height={280}>
+      <AreaChart data={dados} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id="corFaturamento" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#7c5cff" stopOpacity={0.35} />
+            <stop offset="95%" stopColor="#7c5cff" stopOpacity={0.02} />
+          </linearGradient>
+          <linearGradient id="corLiquido" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#3e6e90" stopOpacity={0.35} />
+            <stop offset="95%" stopColor="#3e6e90" stopOpacity={0.02} />
+          </linearGradient>
+          <linearGradient id="corLucro" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#5b7553" stopOpacity={0.4} />
+            <stop offset="95%" stopColor="#5b7553" stopOpacity={0.03} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" />
+        <XAxis dataKey="dataLabel" tick={{ fontSize: 11 }} />
+        <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => brl(v)} width={90} />
+        <Tooltip formatter={(v) => brl(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+        <Legend wrapperStyle={{ fontSize: 12 }} />
+        <Area type="monotone" dataKey="faturamento" name="Faturamento" stroke="#7c5cff" fill="url(#corFaturamento)" strokeWidth={2} />
+        <Area type="monotone" dataKey="liquidoMarketplace" name="Líq. do Marketplace" stroke="#3e6e90" fill="url(#corLiquido)" strokeWidth={2} />
+        <Area type="monotone" dataKey="lucro" name="Lucro Bruto" stroke="#5b7553" fill="url(#corLucro)" strokeWidth={2} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+function ResumoProdutoTab({ resumoProduto, serieDiaria, config, busca }) {
+  const [expandido, setExpandido] = useState(true);
+
+  const produtosExibidos = useMemo(() => {
+    const produtos = resumoProduto?.produtos || [];
+    const termo = busca.trim().toLowerCase();
+    if (!termo) return produtos;
+    return produtos.filter((p) => (
+      (p.referencia || '').toLowerCase().includes(termo) || (p.descricao || '').toLowerCase().includes(termo)
+    ));
+  }, [resumoProduto, busca]);
+
+  if (!resumoProduto || !serieDiaria) return null;
+  const r = serieDiaria.resumo;
+
+  return (
+    <>
+      <div className="stat-strip">
+        <div className="stat-card"><span className="stat-card-label">Faturamento</span><span className="stat-card-value">{brl(r.faturamento)}</span></div>
+        <div className="stat-card"><span className="stat-card-label">Líq. do Marketplace</span><span className="stat-card-value">{brl(r.liquidoMarketplace)}</span></div>
+        <div className="stat-card"><span className="stat-card-label">Lucro Bruto</span><span className="stat-card-value">{brl(r.lucroBruto)}</span></div>
+        <div className="stat-card">
+          <span className="stat-card-label">Margem</span>
+          <span className="stat-card-value"><MargemPill valor={r.margemPct} config={config} /></span>
+        </div>
+      </div>
+
+      <button type="button" className="expand-toggle" onClick={() => setExpandido((v) => !v)}>
+        {expandido ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+      </button>
+
+      {expandido && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-head">Histórico de Lucratividade</div>
+          {serieDiaria.serie.length > 0 ? (
+            <GraficoLucratividade serie={serieDiaria.serie} />
+          ) : (
+            <p className="page-sub">Sem vendas no período pra montar o gráfico.</p>
+          )}
+          <div className="stat-strip" style={{ marginTop: 16, marginBottom: 0 }}>
+            <div className="stat-card"><span className="stat-card-label">Número de Vendas</span><span className="stat-card-value">{r.numeroVendas}</span></div>
+            <div className="stat-card"><span className="stat-card-label">Unidades Vendidas</span><span className="stat-card-value">{r.numeroUnidadesVendidas}</span></div>
+            <div className="stat-card"><span className="stat-card-label">Ticket Médio</span><span className="stat-card-value">{brl(r.ticketMedio)}</span></div>
+            <div className="stat-card"><span className="stat-card-label">Retorno Sobre Investimento</span><span className="stat-card-value">{pct(r.roiPct)}</span></div>
+          </div>
+        </div>
+      )}
+
+      <div className="card">
+        <div className="card-head">Resumo por Produto ({produtosExibidos.length})</div>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Produto</th><th>Preço Médio</th><th>Custo Unit. Médio</th><th>Unid. Vendidas</th>
+              <th>Total Faturado</th><th>Represent.</th><th>Lucro</th><th>Margem</th>
+            </tr>
+          </thead>
+          <tbody>
+            {produtosExibidos.map((p) => (
+              <tr key={p.produtoId || p.referencia}>
+                <td>
+                  <strong className="mono">{p.referencia}</strong>
+                  {p.descricao && <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{p.descricao}</div>}
+                </td>
+                <td className="mono">{brl(p.precoMedio)}</td>
+                <td className="mono">{brl(p.custoUnitarioMedio)}</td>
+                <td className="mono">{p.unidadesVendidas}</td>
+                <td className="mono">{brl(p.totalFaturado)}</td>
+                <td className="mono">{pct(p.representatividadePct)}</td>
+                <td className="mono" style={{ fontWeight: 700 }}>{brl(p.lucro)}</td>
+                <td><MargemPill valor={p.margemPct} config={config} /></td>
+              </tr>
+            ))}
+            {produtosExibidos.length === 0 && (
+              <tr><td colSpan="8">{busca ? 'Nenhum produto encontrado para essa busca.' : 'Nenhum produto no período.'}</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function VendaDetalheCard({ p, config }) {
+  const [aberto, setAberto] = useState(false);
+
+  return (
+    <div className="card" style={{ marginBottom: 12 }}>
+      <div
+        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+        onClick={() => setAberto((v) => !v)}
+      >
+        <span>
+          <strong>Pedido #{p.numero}</strong>
+          <span className="page-sub" style={{ marginLeft: 8 }}>{dataBr(String(p.data_pedido).slice(0, 10))} · {p.canal_venda || '—'}</span>
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="mono" style={{ fontWeight: 700 }}>{brl(p.lucro)}</span>
+          <MargemPill valor={p.margemPct} config={config} />
+          {aberto ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </div>
+      </div>
+
+      {aberto && (
+        <div style={{ marginTop: 12 }}>
+          {(p.itens || []).map((it) => (
+            <div key={it.id} className="row-line" style={{ alignItems: 'flex-start' }}>
+              <span>
+                {it.tituloExterno || it.descricao || 'Item sem título'}
+                <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>SKU: {it.skuExterno || '—'} · Qtd: {it.quantidade}</div>
+              </span>
+              <span className="mono">{brl(it.totalItem)}</span>
+            </div>
+          ))}
+
+          <div style={{ borderTop: '1px dashed var(--border)', marginTop: 6, paddingTop: 6 }}>
+            <div className="row-line"><span>Total dos Itens</span><span className="mono">{brl(p.receita)}</span></div>
+            {p.taxaMarketplace > 0 && (
+              <div className="row-line"><span>Taxa de Marketplace</span><span className="mono">-{brl(p.taxaMarketplace)}</span></div>
+            )}
+            <div className="row-line"><span>Custo do Produto</span><span className="mono">-{brl(p.custoPeca)}</span></div>
+            {p.custoEmbalagem > 0 && (
+              <div className="row-line"><span>Custo de Embalagem</span><span className="mono">-{brl(p.custoEmbalagem)}</span></div>
+            )}
+            <div className="row-line"><span>Imposto</span><span className="mono">-{brl(p.imposto)}</span></div>
+            {p.calculoReal && (
+              <div className="row-line"><span>Valor Recebido (líquido do marketplace)</span><span className="mono">{brl(p.valorRecebido)}</span></div>
+            )}
+            <div className="row-line strong big">
+              <span>Lucro do Pedido {!p.calculoReal && <span className="stamp sm tone-neutro" style={{ marginLeft: 6 }}>estimativa</span>}</span>
+              <span className="mono">{brl(p.lucro)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VendasTab({ pedidos, config, busca }) {
+  if (pedidos.length === 0) {
+    return (
+      <div className="card">
+        <p className="page-sub">{busca ? 'Nenhum pedido encontrado para essa busca.' : 'Nenhum pedido no período.'}</p>
+      </div>
+    );
+  }
+  return (
+    <div>
+      {pedidos.map((p) => <VendaDetalheCard key={p.id} p={p} config={config} />)}
+    </div>
+  );
+}
+
 export default function RelatorioLucratividadePage({ origemFiltro }) {
   const [dataInicio, setDataInicio] = useState(trintaDiasAtras());
   const [dataFim, setDataFim] = useState(hoje());
@@ -122,11 +325,19 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
   const [busca, setBusca] = useState('');
   const [ordemData, setOrdemData] = useState('asc');
   const [relatorio, setRelatorio] = useState(null);
+  const [resumoProduto, setResumoProduto] = useState(null);
+  const [serieDiaria, setSerieDiaria] = useState(null);
+  const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
   const [revinculando, setRevinculando] = useState(false);
   const [resultadoRevinculo, setResultadoRevinculo] = useState(null);
   const [modalPedidoId, setModalPedidoId] = useState(null);
+  const [subTab, setSubTab] = useState('pedidos');
+
+  const isMarketplace = origemFiltro === 'marketplace';
+
+  useEffect(() => { api.get('/configuracoes').then(setConfig).catch(() => {}); }, []);
 
   function gerar() {
     setLoading(true);
@@ -136,8 +347,17 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
     if (dataFim) params.set('data_fim', dataFim);
     if (canalVenda) params.set('canal_venda', canalVenda);
     if (origemFiltro) params.set('origem', origemFiltro);
-    return api.get(`/pedidos/relatorio-lucratividade?${params.toString()}`)
-      .then((data) => setRelatorio(data))
+    const qs = params.toString();
+    const chamadas = [api.get(`/pedidos/relatorio-lucratividade?${qs}`)];
+    if (isMarketplace) {
+      chamadas.push(api.get(`/pedidos/relatorio-lucratividade/resumo-produto?${qs}`));
+      chamadas.push(api.get(`/pedidos/relatorio-lucratividade/serie-diaria?${qs}`));
+    }
+    return Promise.all(chamadas)
+      .then(([rel, rp, sd]) => {
+        setRelatorio(rel);
+        if (isMarketplace) { setResumoProduto(rp); setSerieDiaria(sd); }
+      })
       .catch((err) => setErro(err.message))
       .finally(() => setLoading(false));
   }
@@ -161,7 +381,6 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
 
   const titulo = origemFiltro === 'marketplace' ? 'Lucratividade de Marketplace' : 'Lucratividade';
   const temItemSemCusto = relatorio?.pedidos.some((p) => p.custoIncompleto);
-  const isMarketplace = origemFiltro === 'marketplace';
   const modalPedido = isMarketplace ? relatorio?.pedidos.find((p) => p.id === modalPedidoId) : null;
 
   // Filtro por texto (nº do pedido, cliente, SKU e referência do produto) e
@@ -211,7 +430,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
             <div className="field">
               <span className="field-label">Buscar</span>
               <input
-                placeholder="Nº do pedido, cliente, SKU ou referência..."
+                placeholder={subTab === 'resumoProduto' ? 'Referência ou descrição do produto...' : 'Nº do pedido, cliente, SKU ou referência...'}
                 value={busca}
                 onChange={(e) => setBusca(e.target.value)}
               />
@@ -256,6 +475,14 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
         </div>
       </div>
 
+      {isMarketplace && relatorio && (
+        <div className="subtab-row no-print">
+          <button type="button" className={'subtab-btn' + (subTab === 'pedidos' ? ' active' : '')} onClick={() => setSubTab('pedidos')}>Pedidos</button>
+          <button type="button" className={'subtab-btn' + (subTab === 'resumoProduto' ? ' active' : '')} onClick={() => setSubTab('resumoProduto')}>Resumo por Produto</button>
+          <button type="button" className={'subtab-btn' + (subTab === 'vendas' ? ' active' : '')} onClick={() => setSubTab('vendas')}>Vendas</button>
+        </div>
+      )}
+
       {relatorio && (
         <>
           <div className="print-only" style={{ marginBottom: 12 }}>
@@ -266,144 +493,156 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
             </p>
           </div>
 
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div className="card-head no-print">Resumo por Categoria</div>
-            <div className="row-line"><span>Receita no Período</span><span className="mono" style={{ fontWeight: 700 }}>{brl(relatorio.totalGeral.receita)}</span></div>
-            <div className="row-line"><span>Custo de Peça (matéria-prima, mão de obra e indireto)</span><span className="mono">{brl(relatorio.totalGeral.custoPeca)}</span></div>
-            <div className="row-line"><span>Impostos</span><span className="mono">{brl(relatorio.totalGeral.imposto)}</span></div>
-            {isMarketplace && (
-              <div className="row-line"><span>Custo de Embalagem</span><span className="mono">{brl(relatorio.totalGeral.custoEmbalagem)}</span></div>
-            )}
-            <div className="row-line"><span>Frete</span><span className="mono">{brl(relatorio.totalGeral.frete)}</span></div>
-            <div className="row-line"><span>Taxas de Marketplace</span><span className="mono">{brl(relatorio.totalGeral.taxaMarketplace)}</span></div>
-            <div className="row-line strong"><span>Lucro Líquido</span><span className="mono">{brl(relatorio.totalGeral.lucro)}</span></div>
-            <div className="row-line"><span>Margem</span><span className="mono">{pct(relatorio.totalGeral.margemPct)}</span></div>
-            {isMarketplace && (
-              <>
-                <div className="row-line">
-                  <span>Valor Liberado no Saldo (Mercado Livre)</span>
-                  <span className="mono">{brl(relatorio.totalGeral.valorRecebidoLiberado)}</span>
-                </div>
-                <div className="row-line">
-                  <span>Valor Confirmado, Ainda Retido (Mercado Livre)</span>
-                  <span className="mono">{brl(relatorio.totalGeral.valorRecebidoConfirmado)}</span>
-                </div>
-                {relatorio.totalGeral.valorRecebidoSemConfirmacao > 0 && (
-                  <div className="row-line">
-                    <span>Sem Confirmação Ainda</span>
-                    <span className="mono">{relatorio.totalGeral.valorRecebidoSemConfirmacao} pedido(s)</span>
-                  </div>
+          {(!isMarketplace || subTab === 'pedidos') && (
+            <>
+              <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-head no-print">Resumo por Categoria</div>
+                <div className="row-line"><span>Receita no Período</span><span className="mono" style={{ fontWeight: 700 }}>{brl(relatorio.totalGeral.receita)}</span></div>
+                <div className="row-line"><span>Custo de Peça (matéria-prima, mão de obra e indireto)</span><span className="mono">{brl(relatorio.totalGeral.custoPeca)}</span></div>
+                <div className="row-line"><span>Impostos</span><span className="mono">{brl(relatorio.totalGeral.imposto)}</span></div>
+                {isMarketplace && (
+                  <div className="row-line"><span>Custo de Embalagem</span><span className="mono">{brl(relatorio.totalGeral.custoEmbalagem)}</span></div>
                 )}
-              </>
-            )}
-            <div className="row-line no-print"><span>Pedidos no Período</span><span className="mono">{relatorio.pedidos.length}</span></div>
-          </div>
+                <div className="row-line"><span>Frete</span><span className="mono">{brl(relatorio.totalGeral.frete)}</span></div>
+                <div className="row-line"><span>Taxas de Marketplace</span><span className="mono">{brl(relatorio.totalGeral.taxaMarketplace)}</span></div>
+                <div className="row-line strong"><span>Lucro Líquido</span><span className="mono">{brl(relatorio.totalGeral.lucro)}</span></div>
+                <div className="row-line"><span>Margem</span><MargemPill valor={relatorio.totalGeral.margemPct} config={config} /></div>
+                {isMarketplace && (
+                  <>
+                    <div className="row-line">
+                      <span>Valor Liberado no Saldo (Mercado Livre)</span>
+                      <span className="mono">{brl(relatorio.totalGeral.valorRecebidoLiberado)}</span>
+                    </div>
+                    <div className="row-line">
+                      <span>Valor Confirmado, Ainda Retido (Mercado Livre)</span>
+                      <span className="mono">{brl(relatorio.totalGeral.valorRecebidoConfirmado)}</span>
+                    </div>
+                    {relatorio.totalGeral.valorRecebidoSemConfirmacao > 0 && (
+                      <div className="row-line">
+                        <span>Sem Confirmação Ainda</span>
+                        <span className="mono">{relatorio.totalGeral.valorRecebidoSemConfirmacao} pedido(s)</span>
+                      </div>
+                    )}
+                  </>
+                )}
+                <div className="row-line no-print"><span>Pedidos no Período</span><span className="mono">{relatorio.pedidos.length}</span></div>
+              </div>
 
-          <div className="card no-print">
-            <div className="card-head">
-              Pedidos no Período ({pedidosExibidos.length}{pedidosExibidos.length !== relatorio.pedidos.length ? ` de ${relatorio.pedidos.length}` : ''})
-            </div>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Nº</th>
-                  <th>
-                    <button
-                      type="button"
-                      onClick={() => setOrdemData((o) => (o === 'asc' ? 'desc' : 'asc'))}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer' }}
-                      title={ordemData === 'asc' ? 'Mais antigo primeiro' : 'Mais novo primeiro'}
-                    >
-                      Data {ordemData === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
-                    </button>
-                  </th>
-                  {isMarketplace ? <th>Item Pedido</th> : <th>Cliente</th>}
-                  <th>Canal</th>
-                  <th>Receita</th><th>Custo</th><th>Taxa Marketplace</th><th>Lucro</th><th>Margem</th>
-                  {isMarketplace && <th>Valor Recebido (ML)</th>}
-                  {isMarketplace && <th>Produto Vinculado</th>}
-                  {isMarketplace && <th />}
-                </tr>
-              </thead>
-              <tbody>
-                {pedidosExibidos.map((p) => {
-                  const itemUnico = isMarketplace && p.itens?.length === 1 ? p.itens[0] : null;
-                  const qtdVinculados = isMarketplace ? (p.itens || []).filter((it) => it.produtoId).length : 0;
-                  return (
-                    <tr key={p.id}>
-                      <td className="mono">#{p.numero}</td>
-                      <td className="mono">{new Date(p.data_pedido).toLocaleDateString('pt-BR')}</td>
-                      {isMarketplace ? (
-                        <td>
-                          {itemUnico ? (
-                            <>
-                              <div>{itemUnico.tituloExterno || 'Item sem título'}</div>
-                              <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>SKU: {itemUnico.skuExterno || '—'}</div>
-                            </>
-                          ) : (
-                            <span>{p.itens?.length || 0} itens</span>
-                          )}
-                        </td>
-                      ) : (
-                        <td>{p.cliente_nome || '—'}</td>
-                      )}
-                      <td>{p.canal_venda || '—'}</td>
-                      <td className="mono">{brl(p.receita)}</td>
-                      <td className="mono">
-                        {brl(p.custo)}
-                        {p.custoIncompleto && <span className="stamp sm tone-atencao" style={{ marginLeft: 6 }}>parcial</span>}
-                      </td>
-                      <td className="mono">{p.taxaMarketplace ? brl(p.taxaMarketplace) : '—'}</td>
-                      <td className="mono" style={{ fontWeight: 700 }}>
-                        {brl(p.lucro)}
-                        {isMarketplace && !p.calculoReal && <span className="stamp sm tone-neutro" style={{ marginLeft: 6 }}>estimativa</span>}
-                      </td>
-                      <td className="mono">{pct(p.margemPct)}</td>
-                      {isMarketplace && (
-                        <td className="mono">
-                          {p.canal_venda !== 'Mercado Livre' ? '—' : p.valorRecebido != null ? (
-                            <>
-                              {brl(p.valorRecebido)}{' '}
-                              <span className={'stamp sm ' + (p.valorRecebidoStatus === 'liberado' ? 'tone-elevada' : 'tone-atencao')}>
-                                {p.valorRecebidoStatus === 'liberado' ? 'liberado' : 'confirmado'}
-                              </span>
-                              {p.valorRecebidoStatus !== 'liberado' && p.valorRecebidoLiberacaoEm && (
-                                <div className="page-sub" style={{ marginTop: 2 }}>libera em {dataBr(p.valorRecebidoLiberacaoEm.slice(0, 10))}</div>
-                              )}
-                            </>
-                          ) : 'sem confirmação ainda'}
-                        </td>
-                      )}
-                      {isMarketplace && (
-                        <td>
-                          {itemUnico ? (
-                            itemUnico.produtoId ? (
-                              <>
-                                <span className="mono">{itemUnico.referencia}</span>{' '}
-                                {itemUnico.kitId && <span className="stamp sm tone-neutro">kit</span>}
-                              </>
-                            ) : <span className="stamp sm tone-atencao">sem vínculo</span>
-                          ) : (
-                            <span>{qtdVinculados}/{p.itens?.length || 0} vinculados</span>
-                          )}
-                        </td>
-                      )}
-                      {isMarketplace && (
-                        <td>
-                          <button className="btn btn-ghost" onClick={() => setModalPedidoId(p.id)}>
-                            {p.custoIncompleto ? 'Vincular produto' : 'Alterar produto'}
-                          </button>
-                        </td>
-                      )}
+              <div className="card no-print">
+                <div className="card-head">
+                  Pedidos no Período ({pedidosExibidos.length}{pedidosExibidos.length !== relatorio.pedidos.length ? ` de ${relatorio.pedidos.length}` : ''})
+                </div>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Nº</th>
+                      <th>
+                        <button
+                          type="button"
+                          onClick={() => setOrdemData((o) => (o === 'asc' ? 'desc' : 'asc'))}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer' }}
+                          title={ordemData === 'asc' ? 'Mais antigo primeiro' : 'Mais novo primeiro'}
+                        >
+                          Data {ordemData === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
+                        </button>
+                      </th>
+                      {isMarketplace ? <th>Item Pedido</th> : <th>Cliente</th>}
+                      <th>Canal</th>
+                      <th>Receita</th><th>Custo</th><th>Taxa Marketplace</th><th>Lucro</th><th>Margem</th>
+                      {isMarketplace && <th>Valor Recebido (ML)</th>}
+                      {isMarketplace && <th>Produto Vinculado</th>}
+                      {isMarketplace && <th />}
                     </tr>
-                  );
-                })}
-                {pedidosExibidos.length === 0 && (
-                  <tr><td colSpan="11">{busca ? 'Nenhum pedido encontrado para essa busca.' : 'Nenhum pedido no período.'}</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody>
+                    {pedidosExibidos.map((p) => {
+                      const itemUnico = isMarketplace && p.itens?.length === 1 ? p.itens[0] : null;
+                      const qtdVinculados = isMarketplace ? (p.itens || []).filter((it) => it.produtoId).length : 0;
+                      return (
+                        <tr key={p.id}>
+                          <td className="mono">#{p.numero}</td>
+                          <td className="mono">{new Date(p.data_pedido).toLocaleDateString('pt-BR')}</td>
+                          {isMarketplace ? (
+                            <td>
+                              {itemUnico ? (
+                                <>
+                                  <div>{itemUnico.tituloExterno || 'Item sem título'}</div>
+                                  <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>SKU: {itemUnico.skuExterno || '—'}</div>
+                                </>
+                              ) : (
+                                <span>{p.itens?.length || 0} itens</span>
+                              )}
+                            </td>
+                          ) : (
+                            <td>{p.cliente_nome || '—'}</td>
+                          )}
+                          <td>{p.canal_venda || '—'}</td>
+                          <td className="mono">{brl(p.receita)}</td>
+                          <td className="mono">
+                            {brl(p.custo)}
+                            {p.custoIncompleto && <span className="stamp sm tone-atencao" style={{ marginLeft: 6 }}>parcial</span>}
+                          </td>
+                          <td className="mono">{p.taxaMarketplace ? brl(p.taxaMarketplace) : '—'}</td>
+                          <td className="mono" style={{ fontWeight: 700 }}>
+                            {brl(p.lucro)}
+                            {isMarketplace && !p.calculoReal && <span className="stamp sm tone-neutro" style={{ marginLeft: 6 }}>estimativa</span>}
+                          </td>
+                          <td><MargemPill valor={p.margemPct} config={config} /></td>
+                          {isMarketplace && (
+                            <td className="mono">
+                              {p.canal_venda !== 'Mercado Livre' ? '—' : p.valorRecebido != null ? (
+                                <>
+                                  {brl(p.valorRecebido)}{' '}
+                                  <span className={'stamp sm ' + (p.valorRecebidoStatus === 'liberado' ? 'tone-elevada' : 'tone-atencao')}>
+                                    {p.valorRecebidoStatus === 'liberado' ? 'liberado' : 'confirmado'}
+                                  </span>
+                                  {p.valorRecebidoStatus !== 'liberado' && p.valorRecebidoLiberacaoEm && (
+                                    <div className="page-sub" style={{ marginTop: 2 }}>libera em {dataBr(p.valorRecebidoLiberacaoEm.slice(0, 10))}</div>
+                                  )}
+                                </>
+                              ) : 'sem confirmação ainda'}
+                            </td>
+                          )}
+                          {isMarketplace && (
+                            <td>
+                              {itemUnico ? (
+                                itemUnico.produtoId ? (
+                                  <>
+                                    <span className="mono">{itemUnico.referencia}</span>{' '}
+                                    {itemUnico.kitId && <span className="stamp sm tone-neutro">kit</span>}
+                                  </>
+                                ) : <span className="stamp sm tone-atencao">sem vínculo</span>
+                              ) : (
+                                <span>{qtdVinculados}/{p.itens?.length || 0} vinculados</span>
+                              )}
+                            </td>
+                          )}
+                          {isMarketplace && (
+                            <td>
+                              <button className="btn btn-ghost" onClick={() => setModalPedidoId(p.id)}>
+                                {p.custoIncompleto ? 'Vincular produto' : 'Alterar produto'}
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                    {pedidosExibidos.length === 0 && (
+                      <tr><td colSpan="11">{busca ? 'Nenhum pedido encontrado para essa busca.' : 'Nenhum pedido no período.'}</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {isMarketplace && subTab === 'resumoProduto' && (
+            <ResumoProdutoTab resumoProduto={resumoProduto} serieDiaria={serieDiaria} config={config} busca={busca} />
+          )}
+
+          {isMarketplace && subTab === 'vendas' && (
+            <VendasTab pedidos={pedidosExibidos} config={config} busca={busca} />
+          )}
         </>
       )}
 

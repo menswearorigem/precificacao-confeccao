@@ -340,40 +340,41 @@ async function mapaCustoPorKit(kitIds, ctx) {
   return mapa;
 }
 
-router.get('/relatorio-lucratividade', async (req, res, next) => {
-  try {
-    const { data_inicio, data_fim, canal_venda, origem } = req.query;
-    if (origem === 'marketplace') sincronizarSeNecessario();
-    const conditions = ["pv.situacao != 'cancelado'"];
-    const values = [];
-    let i = 1;
-    if (data_inicio) { conditions.push(`pv.data_pedido >= $${i}`); values.push(data_inicio); i += 1; }
-    if (data_fim) { conditions.push(`pv.data_pedido <= $${i}`); values.push(data_fim); i += 1; }
-    if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
-    if (origem === 'marketplace') conditions.push('pv.origem_marketplace IS NOT NULL');
-    if (origem === 'manual') conditions.push('pv.origem_marketplace IS NULL');
-    const where = `WHERE ${conditions.join(' AND ')}`;
+// Motor central do relatório de lucratividade — usado pela rota "por
+// pedido" (a original) e pelas duas rotas novas de "resumo por produto" e
+// "série diária", pra garantir que os três olhem pro mesmo número de lucro
+// por pedido (mesma fórmula, mesmos filtros), só organizado de formas
+// diferentes.
+async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem }) {
+  if (origem === 'marketplace') sincronizarSeNecessario();
+  const conditions = ["pv.situacao != 'cancelado'"];
+  const values = [];
+  let i = 1;
+  if (data_inicio) { conditions.push(`pv.data_pedido >= $${i}`); values.push(data_inicio); i += 1; }
+  if (data_fim) { conditions.push(`pv.data_pedido <= $${i}`); values.push(data_fim); i += 1; }
+  if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
+  if (origem === 'marketplace') conditions.push('pv.origem_marketplace IS NOT NULL');
+  if (origem === 'manual') conditions.push('pv.origem_marketplace IS NULL');
+  const where = `WHERE ${conditions.join(' AND ')}`;
 
-    const { rows: pedidos } = await pool.query(
-      `SELECT pv.*, c.nome AS cliente_nome
-       FROM pedidos_venda pv LEFT JOIN clientes c ON c.id = pv.cliente_id
-       ${where} ORDER BY pv.data_pedido, pv.id`,
-      values
-    );
-    if (pedidos.length === 0) {
-      return res.json({
-        pedidos: [],
-        totalGeral: {
-          receita: 0, custoPeca: 0, imposto: 0, custoEmbalagem: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, margemPct: 0,
-          valorRecebidoLiberado: 0, valorRecebidoConfirmado: 0, valorRecebidoSemConfirmacao: 0,
-        },
-      });
-    }
+  const { rows: pedidos } = await pool.query(
+    `SELECT pv.*, c.nome AS cliente_nome
+     FROM pedidos_venda pv LEFT JOIN clientes c ON c.id = pv.cliente_id
+     ${where} ORDER BY pv.data_pedido, pv.id`,
+    values
+  );
+  const totalGeralVazio = {
+    receita: 0, custoPeca: 0, imposto: 0, custoEmbalagem: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, margemPct: 0,
+    valorRecebidoLiberado: 0, valorRecebidoConfirmado: 0, valorRecebidoSemConfirmacao: 0,
+  };
+  if (pedidos.length === 0) {
+    return { resultado: [], totalGeral: totalGeralVazio };
+  }
 
-    const { rows: itens } = await pool.query(
-      `SELECT * FROM pedido_itens WHERE pedido_id = ANY($1)`,
-      [pedidos.map((p) => p.id)]
-    );
+  const { rows: itens } = await pool.query(
+    `SELECT * FROM pedido_itens WHERE pedido_id = ANY($1)`,
+    [pedidos.map((p) => p.id)]
+  );
 
     const empresaIds = [...new Set(pedidos.map((p) => p.empresa_id).filter(Boolean))];
     const { rows: empresasRows } = empresaIds.length > 0
@@ -466,6 +467,9 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
           descricao: it.produto_id ? it.descricao : null,
           cor: it.cor,
           tamanho: it.tamanho,
+          valorUnitario: Number(it.valor_unitario) || 0,
+          totalItem: Number(it.total) || 0,
+          custoUnitario: custoDoItem(it)?.custoPeca || 0,
         })),
       };
     });
@@ -496,7 +500,122 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
     );
     totalGeral.margemPct = totalGeral.receita > 0 ? totalGeral.lucro / totalGeral.receita : 0;
 
+  return { resultado, totalGeral };
+}
+
+router.get('/relatorio-lucratividade', async (req, res, next) => {
+  try {
+    const { data_inicio, data_fim, canal_venda, origem } = req.query;
+    const { resultado, totalGeral } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem });
     res.json({ pedidos: resultado, totalGeral });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Resumo agregado por produto — mesmos pedidos/itens do relatório acima,
+// só que somados por produto em vez de por pedido. Como o lucro "de
+// verdade" (calculoReal) é calculado no nível do PEDIDO (o valor recebido
+// só existe por pedido, não por item), aloca o lucro de cada pedido entre
+// seus itens proporcionalmente à receita de cada item dentro daquele
+// pedido — assim a soma dos lucros alocados bate exatamente com o lucro do
+// pedido inteiro, e cada produto carrega sua fatia justa.
+router.get('/relatorio-lucratividade/resumo-produto', async (req, res, next) => {
+  try {
+    const { data_inicio, data_fim, canal_venda, origem } = req.query;
+    const { resultado } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem });
+
+    const porProduto = new Map();
+    for (const p of resultado) {
+      for (const it of p.itens) {
+        const chave = it.produtoId || `sem-vinculo:${it.skuExterno || it.id}`;
+        if (!porProduto.has(chave)) {
+          porProduto.set(chave, {
+            produtoId: it.produtoId,
+            referencia: it.referencia || it.skuExterno || '—',
+            descricao: it.descricao || it.tituloExterno || '',
+            unidadesVendidas: 0,
+            totalFaturado: 0,
+            totalCusto: 0,
+            lucro: 0,
+          });
+        }
+        const acc = porProduto.get(chave);
+        const shareReceita = p.receita > 0 ? it.totalItem / p.receita : 0;
+        acc.unidadesVendidas += it.quantidade;
+        acc.totalFaturado += it.totalItem;
+        acc.totalCusto += it.quantidade * it.custoUnitario;
+        acc.lucro += p.lucro * shareReceita;
+      }
+    }
+
+    const totalFaturadoGeral = [...porProduto.values()].reduce((s, x) => s + x.totalFaturado, 0);
+    const produtos = [...porProduto.values()]
+      .map((x) => ({
+        produtoId: x.produtoId,
+        referencia: x.referencia,
+        descricao: x.descricao,
+        unidadesVendidas: x.unidadesVendidas,
+        precoMedio: x.unidadesVendidas > 0 ? x.totalFaturado / x.unidadesVendidas : 0,
+        custoUnitarioMedio: x.unidadesVendidas > 0 ? x.totalCusto / x.unidadesVendidas : 0,
+        totalFaturado: x.totalFaturado,
+        representatividadePct: totalFaturadoGeral > 0 ? x.totalFaturado / totalFaturadoGeral : 0,
+        lucro: x.lucro,
+        margemPct: x.totalFaturado > 0 ? x.lucro / x.totalFaturado : 0,
+      }))
+      .sort((a, b) => b.totalFaturado - a.totalFaturado);
+
+    res.json({ produtos });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Série diária (pro gráfico) + indicadores gerais do período — mesma base
+// de cálculo do relatório por pedido, só agrupada por dia.
+router.get('/relatorio-lucratividade/serie-diaria', async (req, res, next) => {
+  try {
+    const { data_inicio, data_fim, canal_venda, origem } = req.query;
+    const { resultado } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem });
+
+    const porDia = new Map();
+    for (const p of resultado) {
+      const dia = p.data_pedido.toISOString().slice(0, 10);
+      if (!porDia.has(dia)) porDia.set(dia, { data: dia, faturamento: 0, liquidoMarketplace: 0, lucro: 0 });
+      const acc = porDia.get(dia);
+      acc.faturamento += p.receita;
+      acc.liquidoMarketplace += p.calculoReal ? p.valorRecebido : p.receita - p.taxaMarketplace;
+      acc.lucro += p.lucro;
+    }
+    const serie = [...porDia.values()]
+      .sort((a, b) => a.data.localeCompare(b.data))
+      .map((d) => ({ ...d, margemPct: d.faturamento > 0 ? d.lucro / d.faturamento : 0 }));
+
+    const faturamento = resultado.reduce((s, p) => s + p.receita, 0);
+    const liquidoMarketplace = resultado.reduce((s, p) => s + (p.calculoReal ? p.valorRecebido : p.receita - p.taxaMarketplace), 0);
+    const lucroBruto = resultado.reduce((s, p) => s + p.lucro, 0);
+    const numeroVendas = resultado.length;
+    const numeroUnidadesVendidas = resultado.reduce((s, p) => s + p.itens.reduce((si, it) => si + it.quantidade, 0), 0);
+    const ticketMedio = numeroVendas > 0 ? faturamento / numeroVendas : 0;
+    // ROI = lucro sobre tudo que a venda "consumiu" antes de virar lucro
+    // (receita - lucro) — cobre custo do produto, imposto, embalagem, taxa
+    // de marketplace e frete de uma vez, sem precisar decompor de novo.
+    const custoTotalInvestido = faturamento - lucroBruto;
+    const roiPct = custoTotalInvestido > 0 ? lucroBruto / custoTotalInvestido : 0;
+
+    res.json({
+      serie,
+      resumo: {
+        faturamento,
+        liquidoMarketplace,
+        lucroBruto,
+        margemPct: faturamento > 0 ? lucroBruto / faturamento : 0,
+        numeroVendas,
+        numeroUnidadesVendidas,
+        ticketMedio,
+        roiPct,
+      },
+    });
   } catch (err) {
     next(err);
   }
