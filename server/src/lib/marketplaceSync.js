@@ -471,6 +471,39 @@ async function corrigirAnunciosIdHistorico(integracao, { limite = 30 } = {}) {
   return { pedidosVerificados: pedidos.length, itensCorrigidos };
 }
 
+// Mesmo problema do backfill de anúncio, só que pro pack_id_marketplace (ver
+// migração 0027): pedido importado antes de essa coluna existir nunca foi
+// agrupado como "compra em pacote" na Lucratividade, mesmo sendo uma — ficava
+// pra sempre como se fosse um pedido avulso, com um número que a vendedora
+// nunca reconhece no painel do Mercado Livre e o valor recebido do pagamento
+// compartilhado batendo só nele (e não nos outros itens do mesmo pacote).
+// Usa string vazia (não NULL) pra marcar "já verificado, não é pacote" —
+// senão esse pedido (a maioria, já que a maior parte das vendas não é
+// pacote) ficaria sendo reconferido pra sempre a cada ciclo, sem necessidade.
+async function corrigirPackIdHistorico(integracao, { limite = 30 } = {}) {
+  if (integracao.marketplace !== 'mercado_livre') return { pedidosVerificados: 0, pedidosComPacote: 0 };
+  const { rows: pedidos } = await pool.query(
+    `SELECT id, origem_pedido_id FROM pedidos_venda
+     WHERE origem_integracao_id = $1 AND origem_marketplace = 'mercado_livre' AND pack_id_marketplace IS NULL
+     ORDER BY id DESC
+     LIMIT $2`,
+    [integracao.id, limite]
+  );
+  let pedidosComPacote = 0;
+  for (const pedido of pedidos) {
+    try {
+      const order = await mercadoLivre.buscarPedidoPorId(pedido.origem_pedido_id, integracao.access_token);
+      const packId = order.pack_id ? String(order.pack_id) : '';
+      await pool.query('UPDATE pedidos_venda SET pack_id_marketplace = $1 WHERE id = $2', [packId, pedido.id]);
+      if (packId) pedidosComPacote += 1;
+    } catch {
+      // pedido pontual falhando não deve travar o lote inteiro — só fica
+      // pra tentar de novo no próximo ciclo
+    }
+  }
+  return { pedidosVerificados: pedidos.length, pedidosComPacote };
+}
+
 // Mesma ideia de corrigirPagamentosHistorico, mas pro backfill de ID de
 // anúncio: roda em todas as integrações ativas do Mercado Livre de uma vez
 // (usada pelo botão manual "Revincular custos e impostos", que quer um
@@ -493,6 +526,27 @@ async function corrigirAnunciosIdTodasIntegracoes({ limite = 40 } = {}) {
     }
   }
   return { pedidosVerificados, itensCorrigidos };
+}
+
+// Mesma ideia, pro backfill de pack_id (botão manual, lote maior).
+async function corrigirPackIdTodasIntegracoes({ limite = 40 } = {}) {
+  const { rows: integracoes } = await pool.query(
+    `SELECT * FROM integracoes_marketplace WHERE ativo = TRUE AND access_token IS NOT NULL AND marketplace = 'mercado_livre'`
+  );
+  let pedidosVerificados = 0;
+  let pedidosComPacote = 0;
+  for (const integracao of integracoes) {
+    try {
+      await garantirTokenValido(integracao);
+      const resultado = await corrigirPackIdHistorico(integracao, { limite });
+      pedidosVerificados += resultado.pedidosVerificados;
+      pedidosComPacote += resultado.pedidosComPacote;
+    } catch {
+      // integração pontual falhando (token revogado etc.) não deve travar
+      // as outras
+    }
+  }
+  return { pedidosVerificados, pedidosComPacote };
 }
 
 async function atualizarValoresRecebidos(integracao) {
@@ -658,8 +712,10 @@ async function sincronizarIntegracao(integracaoId) {
     await atualizarValoresRecebidos(integracao);
     // Lote pequeno a cada ciclo (self-limiting) — vai dando conta do
     // histórico aos poucos sem sobrecarregar a API; pra um catch-up maior
-    // de uma vez, ver corrigirAnunciosIdTodasIntegracoes (botão manual).
+    // de uma vez, ver corrigirAnunciosIdTodasIntegracoes/corrigirPackIdTodasIntegracoes
+    // (botão manual).
     await corrigirAnunciosIdHistorico(integracao, { limite: 15 });
+    await corrigirPackIdHistorico(integracao, { limite: 15 });
 
     await pool.query(
       `UPDATE integracoes_marketplace SET ultima_sincronizacao = now(), ultimo_erro = NULL, atualizado_em = now() WHERE id = $1`,
@@ -724,4 +780,6 @@ module.exports = {
   garantirTokenValido,
   corrigirAnunciosIdHistorico,
   corrigirAnunciosIdTodasIntegracoes,
+  corrigirPackIdHistorico,
+  corrigirPackIdTodasIntegracoes,
 };

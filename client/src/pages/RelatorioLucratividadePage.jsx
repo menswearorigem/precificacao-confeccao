@@ -675,6 +675,9 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
               {resultadoRevinculo.pedidosVerificadosAnuncio > 0
                 ? ` Conferidos ${resultadoRevinculo.pedidosVerificadosAnuncio} pedido(s) sem ID de anúncio: ${resultadoRevinculo.itensAnuncioCorrigidos} item(ns) foram preenchidos (clique de novo se ainda restarem — corrige em lotes).`
                 : ''}
+              {resultadoRevinculo.pedidosVerificadosPacote > 0
+                ? ` Conferidos ${resultadoRevinculo.pedidosVerificadosPacote} pedido(s) sem dado de pacote: ${resultadoRevinculo.pedidosComPacoteCorrigidos} eram compra em pacote e passam a aparecer agrupados (clique de novo se ainda restarem — corrige em lotes).`
+                : ''}
             </div>
           )}
           {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}

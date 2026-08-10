@@ -6,7 +6,7 @@ const { getCalcContext } = require('../lib/calcContext');
 const { pctImpostosEmpresa } = require('../lib/calc');
 const { calcularTaxaEsperadaPedido } = require('../lib/marketplaceTaxaCalc');
 const { parseArquivoPedidos } = require('../lib/pedidoImportParsers');
-const { importarPedido, sincronizarSeNecessario, encontrarVariante, corrigirPagamentosHistorico, corrigirAnunciosIdTodasIntegracoes } = require('../lib/marketplaceSync');
+const { importarPedido, sincronizarSeNecessario, encontrarVariante, corrigirPagamentosHistorico, corrigirAnunciosIdTodasIntegracoes, corrigirPackIdTodasIntegracoes } = require('../lib/marketplaceSync');
 const mercadoLivre = require('../lib/marketplaces/mercadoLivre');
 const { recalcularTotais } = require('../lib/pedidoRecalculo');
 const produtosRoutes = require('./produtos.routes');
@@ -275,6 +275,12 @@ router.post('/marketplace/revincular-custos', async (req, res, next) => {
     // já que é um clique deliberado da usuária pedindo o catch-up.
     const correcaoAnuncios = await corrigirAnunciosIdTodasIntegracoes({ limite: 60 });
 
+    // Preenche o pack_id (ver migração 0027) em pedidos importados antes
+    // desse dado existir — sem isso, uma compra em pacote feita antes desse
+    // recurso existir nunca é agrupada num card só na Lucratividade (fica
+    // pra sempre como se cada item fosse um pedido avulso).
+    const correcaoPacotes = await corrigirPackIdTodasIntegracoes({ limite: 60 });
+
     res.json({
       verificados: semVinculo.length,
       vinculados,
@@ -284,6 +290,8 @@ router.post('/marketplace/revincular-custos', async (req, res, next) => {
       pagamentosCorrigidos: correcaoPagamentos.corrigidos,
       pedidosVerificadosAnuncio: correcaoAnuncios.pedidosVerificados,
       itensAnuncioCorrigidos: correcaoAnuncios.itensCorrigidos,
+      pedidosVerificadosPacote: correcaoPacotes.pedidosVerificados,
+      pedidosComPacoteCorrigidos: correcaoPacotes.pedidosComPacote,
     });
   } catch (err) {
     await client.query('ROLLBACK');
