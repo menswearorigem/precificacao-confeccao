@@ -326,7 +326,15 @@ router.get('/:id/diagnostico-marketplace', async (req, res, next) => {
     }
     if (!integracao) return res.status(400).json({ error: 'Nenhuma integração autorizada encontrada pra buscar esse pedido.' });
 
-    const order = await mercadoLivre.buscarPedidoPorId(pedido.origem_pedido_id, integracao.access_token);
+    let order;
+    try {
+      order = await mercadoLivre.buscarPedidoPorId(pedido.origem_pedido_id, integracao.access_token);
+    } catch (err) {
+      // Erro da API do Mercado Livre (token expirado, rate limit, pedido não
+      // encontrado etc.) não deve virar um "Erro interno do servidor" genérico
+      // e sem contexto — devolve o motivo de verdade pra dar pra investigar.
+      return res.status(502).json({ error: `Não foi possível buscar o pedido #${pedido.origem_pedido_id} no Mercado Livre agora: ${err.message}` });
+    }
     const idsPeloCriterioAtual = mercadoLivre.idsPagamentosAprovados(order);
 
     const pagamentos = [];
@@ -472,7 +480,7 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
   if (origem === 'manual') conditions.push('pv.origem_marketplace IS NULL');
   const where = `WHERE ${conditions.join(' AND ')}`;
 
-  const { rows: pedidos } = await pool.query(
+  const { rows: pedidosBrutos } = await pool.query(
     `SELECT pv.*, c.nome AS cliente_nome
      FROM pedidos_venda pv LEFT JOIN clientes c ON c.id = pv.cliente_id
      ${where} ORDER BY pv.data_pedido, pv.id`,
@@ -482,14 +490,71 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
     receita: 0, custoPeca: 0, imposto: 0, custoEmbalagem: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, margemPct: 0,
     valorRecebidoLiberado: 0, valorRecebidoConfirmado: 0, valorRecebidoSemConfirmacao: 0,
   };
-  if (pedidos.length === 0) {
+  if (pedidosBrutos.length === 0) {
     return { resultado: [], totalGeral: totalGeralVazio };
   }
 
   const { rows: itens } = await pool.query(
     `SELECT * FROM pedido_itens WHERE pedido_id = ANY($1)`,
-    [pedidos.map((p) => p.id)]
+    [pedidosBrutos.map((p) => p.id)]
   );
+
+  // Junta num card só as "suborders" que o Mercado Livre cria quando o
+  // comprador leva mais de um anúncio diferente num carrinho só (o chamado
+  // "pacote"): cada item vira um order.id PRÓPRIO, mas todos compartilham o
+  // mesmo pack_id_marketplace (gravado na importação) e — o ponto que
+  // causava os números errados — o MESMO pagamento no Mercado Livre, porque
+  // o pacote é cobrado do comprador de uma vez só. Sem agrupar aqui, cada
+  // suborder virava um card próprio, cada um mostrando o valor líquido do
+  // PACOTE INTEIRO (não a fatia daquele item) contra o custo de só 1 peça —
+  // e nenhum dos números batia com o "número do pedido" que a tela do
+  // Mercado Livre mostra pra ela (que é sempre o pack_id, nunca o order.id
+  // de cada suborder individual — por isso pareciam "pedidos que não
+  // existem"). Pedido avulso (sem pacote) passa direto, sem agrupar nada.
+  const grupos = new Map();
+  for (const p of pedidosBrutos) {
+    const chave = p.pack_id_marketplace ? `pack:${p.pack_id_marketplace}` : `solo:${p.id}`;
+    if (!grupos.has(chave)) grupos.set(chave, []);
+    grupos.get(chave).push(p);
+  }
+  const pedidos = [...grupos.values()].map((membros) => {
+    const primario = membros.reduce((a, b) => (a.id < b.id ? a : b));
+    if (membros.length === 1) return { ...primario, _membros: membros };
+    // Valor recebido NÃO é aditivo entre irmãos do mesmo pacote — todos
+    // apontam pro mesmo pagamento (mesmo id, mesmo valor líquido do pacote
+    // inteiro); soma-se o valor líquido uma única vez por id de pagamento
+    // DISTINTO (cobre também o caso raro de o Mercado Livre dividir o
+    // pagamento de verdade entre os itens, em vez de compartilhar).
+    const pagamentosUnicos = new Map();
+    for (const m of membros) {
+      if (m.pagamento_id_marketplace && m.valor_recebido_marketplace !== null) {
+        if (!pagamentosUnicos.has(m.pagamento_id_marketplace)) pagamentosUnicos.set(m.pagamento_id_marketplace, m);
+      }
+    }
+    const distintos = [...pagamentosUnicos.values()];
+    const valorRecebidoSomado = distintos.length > 0
+      ? distintos.reduce((s, m) => s + Number(m.valor_recebido_marketplace), 0)
+      : null;
+    const todosLiberados = distintos.length > 0 && distintos.every((m) => m.valor_recebido_status === 'liberado');
+    const liberacaoMaisTardia = distintos.reduce((maior, m) => (
+      m.valor_recebido_liberacao_em && (!maior || new Date(m.valor_recebido_liberacao_em) > new Date(maior))
+        ? m.valor_recebido_liberacao_em
+        : maior
+    ), null);
+    return {
+      ...primario,
+      // Número que a usuária reconhece de verdade pra uma compra em pacote é
+      // o pack_id (é o que a tela do Mercado Livre mostra) — nunca o
+      // order.id de um item avulso dentro dele.
+      origem_pedido_id: primario.pack_id_marketplace,
+      valor_frete: membros.reduce((s, m) => s + (Number(m.valor_frete) || 0), 0),
+      taxa_marketplace: membros.reduce((s, m) => s + (Number(m.taxa_marketplace) || 0), 0),
+      valor_recebido_marketplace: valorRecebidoSomado,
+      valor_recebido_status: valorRecebidoSomado === null ? null : (todosLiberados ? 'liberado' : 'confirmado'),
+      valor_recebido_liberacao_em: liberacaoMaisTardia,
+      _membros: membros,
+    };
+  });
 
     const empresaIds = [...new Set(pedidos.map((p) => p.empresa_id).filter(Boolean))];
     const { rows: empresasRows } = empresaIds.length > 0
@@ -519,7 +584,8 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
     const custoEmbalagemConfig = Number(ctx.config.custo_embalagem_marketplace) || 0;
 
     const resultado = pedidos.map((p) => {
-      const itensDoPedido = itens.filter((it) => it.pedido_id === p.id);
+      const idsMembros = new Set(p._membros.map((m) => m.id));
+      const itensDoPedido = itens.filter((it) => idsMembros.has(it.pedido_id));
       const custoPeca = itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * (custoDoItem(it)?.custoPeca || 0), 0);
       const impostoEstimado = itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * (custoDoItem(it)?.imposto || 0), 0);
       const semCusto = itensDoPedido.some((it) => (it.kit_id ? !mapaCustoKit.has(it.kit_id) : !it.produto_id || !mapaCusto.has(it.produto_id)));
@@ -583,6 +649,10 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
         // verdade) — cai pro número interno só quando não veio de marketplace
         // (pedido lançado à mão, sem número externo nenhum).
         numeroExibicao: p.origem_pedido_id || String(p.numero),
+        // Card representa mais de uma suborder do Mercado Livre agrupada
+        // (compra em pacote) — usado no front pra mostrar o selo "pacote" e
+        // não confundir com um pedido comum de item único.
+        pacote: p._membros.length > 1,
         data_pedido: p.data_pedido,
         cliente_nome: p.cliente_nome,
         canal_venda: p.canal_venda,

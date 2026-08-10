@@ -382,7 +382,10 @@ function VendaDetalheCard({ p, config }) {
             <FotoProduto produtoId={itemUnico.produtoId} temFoto={itemUnico.temFoto} size={44} alt={itemUnico.referencia || itemUnico.tituloExterno} />
           )}
           <div>
-            <div className="venda-card-titulo">Pedido {p.numeroExibicao}</div>
+            <div className="venda-card-titulo">
+              Pedido {p.numeroExibicao}
+              {p.pacote && <span className="stamp sm tone-neutro" style={{ marginLeft: 8 }} title="Compra com mais de um anúncio no mesmo carrinho — o Mercado Livre paga tudo junto, então os itens entram num card só.">pacote</span>}
+            </div>
             <div className="venda-card-sub">{dataBr(String(p.data_pedido).slice(0, 10))} · {p.canal_venda || '—'}</div>
           </div>
         </div>
@@ -763,7 +766,10 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                       const qtdVinculados = isMarketplace ? (p.itens || []).filter((it) => it.produtoId).length : 0;
                       return (
                         <tr key={p.id}>
-                          <td className="mono">{p.numeroExibicao}</td>
+                          <td className="mono">
+                            {p.numeroExibicao}
+                            {p.pacote && <span className="stamp sm tone-neutro" style={{ marginLeft: 6 }} title="Compra com mais de um anúncio no mesmo carrinho, agrupada num card só.">pacote</span>}
+                          </td>
                           <td className="mono">{new Date(p.data_pedido).toLocaleDateString('pt-BR')}</td>
                           {isMarketplace ? (
                             <td>
