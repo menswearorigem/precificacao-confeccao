@@ -89,7 +89,8 @@ export default function IntegracoesPage() {
     setSincronizandoId(id);
     try {
       const resultado = await api.post(`/integracoes/${id}/sincronizar`, {});
-      setAviso(`${resultado.pedidosImportados} pedido(s) novo(s) importado(s) (${resultado.pedidosEncontrados} encontrado(s) no total).`);
+      const cancelados = resultado.pedidosCancelados > 0 ? ` ${resultado.pedidosCancelados} pedido(s) cancelado(s) no marketplace foi(ram) atualizado(s) aqui também.` : '';
+      setAviso(`${resultado.pedidosImportados} pedido(s) novo(s) importado(s) (${resultado.pedidosEncontrados} encontrado(s) no total).${cancelados}`);
       load();
     } catch (err) {
       setErro(err.message);

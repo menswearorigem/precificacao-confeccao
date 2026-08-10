@@ -177,6 +177,35 @@ async function buscarPedidos({ accessToken, sellerId, desde }) {
   return pedidos;
 }
 
+// IDs (externos) de pedidos que o Mercado Livre marca como cancelados,
+// criados a partir de `desde` — usado pra detectar pedido que a gente já
+// importou como pago e que DEPOIS foi cancelado/estornado do lado do ML
+// (devolução, contestação etc.). Sem isso, um pedido assim ficava "aberto"
+// pra sempre no nosso sistema, contando faturamento que o próprio Mercado
+// Livre não conta mais — inflando nosso total acima do real. Só os ids
+// interessam aqui (não itens/pagamento), por isso não reaproveita
+// buscarPedidos.
+async function buscarIdsPedidosCancelados({ accessToken, sellerId, desde }) {
+  const ids = [];
+  let offset = 0;
+  const limit = 50;
+  for (let pagina = 0; pagina < 20; pagina += 1) {
+    const params = new URLSearchParams({
+      seller: sellerId,
+      'order.status': 'cancelled',
+      sort: 'date_desc',
+      offset: String(offset),
+      limit: String(limit),
+    });
+    if (desde) params.set('order.date_created.from', desde);
+    const data = await chamarApi(`/orders/search?${params.toString()}`, accessToken);
+    ids.push(...(data.results || []).map((o) => String(o.id)));
+    if (!data.results || data.results.length < limit) break;
+    offset += limit;
+  }
+  return ids;
+}
+
 // IDs de pagamento que representam de verdade o dinheiro da venda.
 //
 // `order.payments` pode ter mais de uma entrada: uma tentativa de cartão
@@ -304,6 +333,7 @@ module.exports = {
   renovarToken,
   buscarUsuario,
   buscarPedidos,
+  buscarIdsPedidosCancelados,
   buscarPedidoPorId,
   buscarValorRecebido,
   buscarUmPagamento,

@@ -7,6 +7,7 @@ const pool = require('../db/pool');
 const mercadoLivre = require('./marketplaces/mercadoLivre');
 const shopee = require('./marketplaces/shopee');
 const { recalcularTotais } = require('./pedidoRecalculo');
+const { registrarMovimento } = require('./estoqueMovimento');
 
 const LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee' };
 
@@ -498,6 +499,61 @@ async function atualizarValoresRecebidos(integracao) {
 // Sincroniza uma conexão específica: renova token, busca pedidos desde a
 // última sincronização (ou dos últimos 7 dias, na primeira vez) e importa
 // os que ainda não existem. Retorna quantos pedidos novos entraram.
+// Cancelamento/devolução costuma acontecer bem depois do pagamento (troca,
+// arrependimento, contestação) — usa uma janela maior que a de
+// ressincronização de pagamento pra não perder cancelamentos tardios.
+const JANELA_CANCELAMENTO_MS = 30 * 24 * 60 * 60 * 1000;
+
+// Marca como cancelado, no nosso banco, qualquer pedido que a gente importou
+// como pago mas que o Mercado Livre cancelou depois (devolução, contestação
+// etc.) — sem isso, esse pedido ficava "aberto" pra sempre contando
+// faturamento que o próprio Mercado Livre já não conta mais, inflando os
+// nossos números acima do real. Só mexe em pedidos que ainda não estão
+// cancelados aqui (não reabre nada, não duplica trabalho).
+async function sincronizarCancelamentos(integracao) {
+  if (integracao.marketplace !== 'mercado_livre') return 0;
+  const desde = new Date(Date.now() - JANELA_CANCELAMENTO_MS);
+  const idsCancelados = await mercadoLivre.buscarIdsPedidosCancelados({
+    accessToken: integracao.access_token,
+    sellerId: integracao.conta_externa_id,
+    desde: desde.toISOString(),
+  });
+  if (idsCancelados.length === 0) return 0;
+
+  const client = await pool.connect();
+  let afetados = 0;
+  try {
+    await client.query('BEGIN');
+    const { rows: pedidos } = await client.query(
+      `SELECT id, numero, situacao FROM pedidos_venda
+       WHERE origem_marketplace = 'mercado_livre' AND origem_pedido_id = ANY($1) AND situacao != 'cancelado'`,
+      [idsCancelados]
+    );
+    for (const pedido of pedidos) {
+      // Pedido de marketplace normalmente fica "aberto" (nunca chega a ser
+      // faturado à mão) — mas se alguém faturou manualmente antes de o
+      // Mercado Livre cancelar, precisa estornar o estoque igual a rota
+      // /pedidos/:id/cancelar faz, senão a baixa de estoque fica errada.
+      if (pedido.situacao === 'faturado') {
+        const { rows: itens } = await client.query('SELECT * FROM pedido_itens WHERE pedido_id = $1', [pedido.id]);
+        for (const item of itens) {
+          if (!item.variante_id) continue;
+          await registrarMovimento(client, item.variante_id, 'entrada', Number(item.quantidade), `Estorno do pedido de venda #${pedido.numero} (cancelado pelo Mercado Livre)`);
+        }
+      }
+      await client.query(`UPDATE pedidos_venda SET situacao = 'cancelado', cancelado_em = now(), updated_at = now() WHERE id = $1`, [pedido.id]);
+      afetados += 1;
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+  return afetados;
+}
+
 async function sincronizarIntegracao(integracaoId) {
   const { rows } = await pool.query('SELECT * FROM integracoes_marketplace WHERE id = $1', [integracaoId]);
   const integracao = rows[0];
@@ -530,13 +586,14 @@ async function sincronizarIntegracao(integracaoId) {
       client.release();
     }
 
+    const cancelados = await sincronizarCancelamentos(integracao);
     await atualizarValoresRecebidos(integracao);
 
     await pool.query(
       `UPDATE integracoes_marketplace SET ultima_sincronizacao = now(), ultimo_erro = NULL, atualizado_em = now() WHERE id = $1`,
       [integracaoId]
     );
-    return { pedidosEncontrados: pedidosGenericos.length, pedidosImportados: importados };
+    return { pedidosEncontrados: pedidosGenericos.length, pedidosImportados: importados, pedidosCancelados: cancelados };
   } catch (err) {
     await pool.query(
       `UPDATE integracoes_marketplace SET ultimo_erro = $1, atualizado_em = now() WHERE id = $2`,
@@ -591,4 +648,5 @@ module.exports = {
   encontrarVariante,
   atualizarValoresRecebidos,
   corrigirPagamentosHistorico,
+  sincronizarCancelamentos,
 };
