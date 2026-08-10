@@ -337,6 +337,36 @@ function mapearPedido(order) {
   };
 }
 
+// Site Brasil fixo — esse sistema só opera com integrações do Mercado
+// Livre Brasil (MLB), então não precisa perguntar/guardar isso em lugar
+// nenhum.
+const SITE_BRASIL = 'MLB';
+
+// Termos mais buscados no Mercado Livre (atualiza semanalmente) — os 10
+// primeiros são os de maior crescimento, os 20 seguintes os mais buscados
+// no geral, e os 20 últimos as tendências mais populares da semana.
+// categoryId opcional: sem ele, é a tendência do Brasil inteiro.
+async function buscarTendencias({ accessToken, categoryId }) {
+  const path = categoryId ? `/trends/${SITE_BRASIL}/${categoryId}` : `/trends/${SITE_BRASIL}`;
+  const data = await chamarApi(path, accessToken);
+  return Array.isArray(data) ? data.map((t) => ({ keyword: t.keyword, url: t.url })) : [];
+}
+
+// Categorias de primeiro nível do Mercado Livre Brasil (ex.: "Calçados,
+// Roupas e Bolsas") — usadas tanto pro seletor de categoria da Tendência
+// quanto pra Distribuição de Anúncios.
+async function buscarCategorias({ accessToken }) {
+  const data = await chamarApi(`/sites/${SITE_BRASIL}/categories`, accessToken);
+  return Array.isArray(data) ? data.map((c) => ({ id: c.id, nome: c.name })) : [];
+}
+
+// Detalhe de uma categoria — usa só o total de anúncios publicados nela,
+// pra calcular a distribuição percentual entre categorias.
+async function buscarDetalheCategoria({ accessToken, categoryId }) {
+  const data = await chamarApi(`/categories/${categoryId}`, accessToken);
+  return { id: data.id, nome: data.name, totalAnuncios: Number(data.total_items_in_this_category) || 0 };
+}
+
 module.exports = {
   buildAuthorizeUrl,
   trocarCodigoPorToken,
@@ -349,4 +379,7 @@ module.exports = {
   buscarUmPagamento,
   idsPagamentosAprovados,
   mapearPedido,
+  buscarTendencias,
+  buscarCategorias,
+  buscarDetalheCategoria,
 };

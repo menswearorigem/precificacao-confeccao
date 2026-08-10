@@ -3,6 +3,7 @@ import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContai
 import {
   ArrowDownRight, ArrowUpRight, Banknote, ShoppingCart, CheckCircle2,
   Users, TrendingUp, Store, Boxes, PackageMinus, Handshake, ShoppingBag,
+  Flame, Layers,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
@@ -579,6 +580,155 @@ function EntradaSaidaTab({ filtros }) {
   );
 }
 
+// Posição na lista de tendências indica o tipo (documentação do Mercado
+// Livre): os 10 primeiros são os termos com maior crescimento, os 20
+// seguintes são os mais buscados no geral, e os 20 últimos são as
+// tendências mais populares da semana.
+function faixaTendencia(indice) {
+  if (indice < 10) return { label: 'Maior crescimento', tone: 'tone-saudavel', Icone: Flame };
+  if (indice < 30) return { label: 'Mais buscado', tone: 'tone-atencao', Icone: TrendingUp };
+  return { label: 'Popular da semana', tone: 'tone-neutro', Icone: Layers };
+}
+
+function CategoriasTab({ integracoes }) {
+  const integracaoML = useMemo(() => integracoes.find((i) => i.marketplace === 'mercado_livre' && i.conectado), [integracoes]);
+  const [subView, setSubView] = useState('tendencia');
+  const [escopo, setEscopo] = useState('pais');
+  const [categorias, setCategorias] = useState([]);
+  const [categoriaId, setCategoriaId] = useState('');
+  const [tendencias, setTendencias] = useState(null);
+  const [distribuicao, setDistribuicao] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState('');
+
+  useEffect(() => {
+    if (!integracaoML) return;
+    api.get(`/integracoes/${integracaoML.id}/categorias`).then((d) => setCategorias(d.categorias)).catch(() => {});
+  }, [integracaoML]);
+
+  function buscarTendencias() {
+    setCarregando(true);
+    setErro('');
+    const qs = escopo === 'categoria' && categoriaId ? `?categoria_id=${categoriaId}` : '';
+    api.get(`/integracoes/${integracaoML.id}/tendencias${qs}`)
+      .then((d) => setTendencias(d.tendencias))
+      .catch((err) => setErro(err.message))
+      .finally(() => setCarregando(false));
+  }
+
+  function buscarDistribuicao() {
+    setCarregando(true);
+    setErro('');
+    api.get(`/integracoes/${integracaoML.id}/distribuicao-categorias`)
+      .then(setDistribuicao)
+      .catch((err) => setErro(err.message))
+      .finally(() => setCarregando(false));
+  }
+
+  if (!integracaoML) {
+    return (
+      <div className="card">
+        <p className="page-sub">
+          Conecte e autorize uma integração do Mercado Livre em "Integrações" pra usar essa aba — ela busca dados
+          direto da API pública de categorias/tendências do Mercado Livre (não depende de vendas registradas aqui).
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <p className="page-sub">
+        Dados da plataforma inteira do Mercado Livre (não só da sua loja) — atualizado semanalmente pelo próprio
+        Mercado Livre. Usa a conexão "{integracaoML.nome}" pra consultar.
+      </p>
+      <div className="subtab-row">
+        <button type="button" className={'subtab-btn' + (subView === 'tendencia' ? ' active' : '')} onClick={() => setSubView('tendencia')}>Tendência</button>
+        <button type="button" className={'subtab-btn' + (subView === 'distribuicao' ? ' active' : '')} onClick={() => setSubView('distribuicao')}>Distribuição de Anúncios</button>
+      </div>
+
+      {subView === 'tendencia' && (
+        <div className="card">
+          <div className="card-head">Termos Mais Buscados</div>
+          <div className="form-grid" style={{ marginBottom: 12 }}>
+            <div className="field">
+              <span className="field-label">Escopo</span>
+              <Select value={escopo} onChange={(e) => setEscopo(e.target.value)}>
+                <option value="pais">Brasil inteiro</option>
+                <option value="categoria">Uma categoria específica</option>
+              </Select>
+            </div>
+            {escopo === 'categoria' && (
+              <div className="field">
+                <span className="field-label">Categoria</span>
+                <Select value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)}>
+                  <option value="">Selecione...</option>
+                  {categorias.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                </Select>
+              </div>
+            )}
+          </div>
+          <button className="btn btn-primary" onClick={buscarTendencias} disabled={carregando || (escopo === 'categoria' && !categoriaId)}>
+            {carregando ? 'Buscando…' : 'Buscar Tendências'}
+          </button>
+          {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
+          {tendencias && (
+            <div style={{ overflowX: 'auto', marginTop: 14 }}>
+              <table className="data-table">
+                <thead><tr><th>Posição</th><th>Termo Buscado</th><th>Tipo</th><th /></tr></thead>
+                <tbody>
+                  {tendencias.map((t, i) => {
+                    const faixa = faixaTendencia(i);
+                    return (
+                      <tr key={t.keyword + i}>
+                        <td className="mono">{i + 1}</td>
+                        <td>{t.keyword}</td>
+                        <td><span className={'stamp sm ' + faixa.tone}><faixa.Icone size={11} style={{ marginRight: 3, verticalAlign: -1 }} />{faixa.label}</span></td>
+                        <td>{t.url && <a href={t.url} target="_blank" rel="noreferrer" className="btn btn-ghost">Ver no Mercado Livre</a>}</td>
+                      </tr>
+                    );
+                  })}
+                  {tendencias.length === 0 && <tr><td colSpan="4">Sem dados de tendência disponíveis agora.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {subView === 'distribuicao' && (
+        <div className="card">
+          <div className="card-head">Distribuição de Anúncios entre Categorias</div>
+          <p className="page-sub">
+            % do total de anúncios ativos em cada categoria de primeiro nível do Mercado Livre Brasil — pode
+            demorar alguns segundos (consulta uma por uma).
+          </p>
+          <button className="btn btn-primary" onClick={buscarDistribuicao} disabled={carregando}>
+            {carregando ? 'Carregando…' : 'Carregar Distribuição'}
+          </button>
+          {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
+          {distribuicao && (
+            <div style={{ marginTop: 14 }}>
+              {distribuicao.distribuicao.map((c) => (
+                <div key={c.id} style={{ marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 3 }}>
+                    <span>{c.nome}</span>
+                    <span className="mono">{pct(c.pct)} · {c.totalAnuncios.toLocaleString('pt-BR')} anúncios</span>
+                  </div>
+                  <div style={{ background: 'var(--surface-alt)', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+                    <div style={{ width: `${Math.max(c.pct * 100, 1)}%`, height: '100%', background: COR_PRINCIPAL, borderRadius: 4 }} />
+                  </div>
+                </div>
+              ))}
+              {distribuicao.distribuicao.length === 0 && <p className="page-sub">Sem dados de distribuição disponíveis agora.</p>}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 function ShopeeTab({ filtros }) {
   const filtrosShopee = useMemo(() => ({ ...filtros, canal_venda: 'Shopee' }), [filtros]);
   const [resumo, setResumo] = useState(null);
@@ -623,6 +773,7 @@ const TABS = [
   { key: 'vendasPorAnuncio', label: 'Vendas por Anúncio' },
   { key: 'abc', label: 'Análise ABC' },
   { key: 'estoque', label: 'Entrada e Saída' },
+  { key: 'categorias', label: 'Categorias' },
   { key: 'shopee', label: 'Shopee' },
 ];
 
@@ -727,6 +878,7 @@ export default function MetricasMarketplacePage() {
           {subTab === 'vendasPorAnuncio' && <VendasPorAnuncioTab filtros={filtrosAplicados} busca={busca} />}
           {subTab === 'abc' && <AnaliseABCTab filtros={filtrosAplicados} busca={busca} />}
           {subTab === 'estoque' && <EntradaSaidaTab filtros={filtrosAplicados} />}
+          {subTab === 'categorias' && <CategoriasTab integracoes={integracoes} />}
           {subTab === 'shopee' && <ShopeeTab filtros={filtrosAplicados} />}
         </>
       )}

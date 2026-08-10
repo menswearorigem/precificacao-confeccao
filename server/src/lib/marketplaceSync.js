@@ -651,4 +651,5 @@ module.exports = {
   atualizarValoresRecebidos,
   corrigirPagamentosHistorico,
   sincronizarCancelamentos,
+  garantirTokenValido,
 };

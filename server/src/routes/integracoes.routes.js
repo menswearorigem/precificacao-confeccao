@@ -3,7 +3,7 @@ const express = require('express');
 const pool = require('../db/pool');
 const mercadoLivre = require('../lib/marketplaces/mercadoLivre');
 const shopee = require('../lib/marketplaces/shopee');
-const { sincronizarIntegracao, sincronizarSeNecessario } = require('../lib/marketplaceSync');
+const { sincronizarIntegracao, sincronizarSeNecessario, garantirTokenValido } = require('../lib/marketplaceSync');
 
 const router = express.Router();
 
@@ -135,6 +135,65 @@ router.post('/:id/sincronizar', async (req, res, next) => {
     res.json(resultado);
   } catch (err) {
     res.status(422).json({ error: err.message });
+  }
+});
+
+// Busca a integração de Mercado Livre já autorizada, com o token renovado —
+// base comum das rotas de Análise de Categorias abaixo (tendência,
+// distribuição de anúncios), que usam a API pública de categorias/tendências
+// do próprio Mercado Livre, não dados de pedidos nossos.
+async function integracaoMercadoLivreAutorizada(id) {
+  const { rows } = await pool.query('SELECT * FROM integracoes_marketplace WHERE id = $1', [id]);
+  const integracao = rows[0];
+  if (!integracao) { const e = new Error('Integração não encontrada.'); e.status = 404; throw e; }
+  if (integracao.marketplace !== 'mercado_livre') { const e = new Error('Essa análise só existe pro Mercado Livre.'); e.status = 400; throw e; }
+  if (!integracao.access_token) { const e = new Error('Essa integração ainda não foi autorizada.'); e.status = 400; throw e; }
+  return garantirTokenValido(integracao);
+}
+
+router.get('/:id/categorias', async (req, res, next) => {
+  try {
+    const integracao = await integracaoMercadoLivreAutorizada(req.params.id);
+    const categorias = await mercadoLivre.buscarCategorias({ accessToken: integracao.access_token });
+    res.json({ categorias });
+  } catch (err) {
+    res.status(err.status || 422).json({ error: err.message });
+  }
+});
+
+router.get('/:id/tendencias', async (req, res, next) => {
+  try {
+    const integracao = await integracaoMercadoLivreAutorizada(req.params.id);
+    const tendencias = await mercadoLivre.buscarTendencias({ accessToken: integracao.access_token, categoryId: req.query.categoria_id || null });
+    res.json({ tendencias });
+  } catch (err) {
+    res.status(err.status || 422).json({ error: err.message });
+  }
+});
+
+// Distribuição de anúncios entre as categorias de primeiro nível do
+// Mercado Livre Brasil (% do total de anúncios ativos na plataforma em
+// cada categoria) — é um dado da PLATAFORMA inteira, não da loja da
+// vendedora, útil pra enxergar onde tem mais concorrência/demanda.
+router.get('/:id/distribuicao-categorias', async (req, res, next) => {
+  try {
+    const integracao = await integracaoMercadoLivreAutorizada(req.params.id);
+    const categorias = await mercadoLivre.buscarCategorias({ accessToken: integracao.access_token });
+    const detalhes = [];
+    for (const cat of categorias) {
+      try {
+        detalhes.push(await mercadoLivre.buscarDetalheCategoria({ accessToken: integracao.access_token, categoryId: cat.id }));
+      } catch {
+        // categoria pontual falhando não deve derrubar a lista inteira
+      }
+    }
+    const totalGeral = detalhes.reduce((s, c) => s + c.totalAnuncios, 0);
+    const distribuicao = detalhes
+      .map((c) => ({ ...c, pct: totalGeral > 0 ? c.totalAnuncios / totalGeral : 0 }))
+      .sort((a, b) => b.totalAnuncios - a.totalAnuncios);
+    res.json({ distribuicao, totalGeral });
+  } catch (err) {
+    res.status(err.status || 422).json({ error: err.message });
   }
 });
 
