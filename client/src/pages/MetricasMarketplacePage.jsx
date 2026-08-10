@@ -361,7 +361,7 @@ function PorLojaTab({ filtros }) {
   );
 }
 
-function VendasPorProdutoTab({ filtros, busca }) {
+function VendasPorAnuncioTab({ filtros, busca }) {
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState('');
 
@@ -369,75 +369,70 @@ function VendasPorProdutoTab({ filtros, busca }) {
     const params = new URLSearchParams(filtros);
     params.set('origem', 'marketplace');
     setErro('');
-    api.get(`/pedidos/relatorio-lucratividade/resumo-produto?${params.toString()}`).then(setDados).catch((err) => setErro(err.message));
+    api.get(`/pedidos/relatorio-lucratividade/resumo-anuncio?${params.toString()}`).then(setDados).catch((err) => setErro(err.message));
   }, [filtros]);
 
-  const produtosExibidos = useMemo(() => {
-    const produtos = dados?.produtos || [];
+  const anunciosExibidos = useMemo(() => {
+    const anuncios = dados?.anuncios || [];
     const termo = busca.trim().toLowerCase();
-    if (!termo) return produtos;
-    return produtos.filter((p) => (p.referencia || '').toLowerCase().includes(termo) || (p.descricao || '').toLowerCase().includes(termo));
+    if (!termo) return anuncios;
+    return anuncios.filter((a) => (
+      (a.referencia || '').toLowerCase().includes(termo)
+      || (a.descricao || '').toLowerCase().includes(termo)
+      || (a.anuncioId || '').toLowerCase().includes(termo)
+    ));
   }, [dados, busca]);
-
-  const totais = useMemo(() => {
-    const produtos = dados?.produtos || [];
-    const unidades = produtos.reduce((s, p) => s + p.unidadesVendidas, 0);
-    const faturado = produtos.reduce((s, p) => s + p.totalFaturado, 0);
-    return {
-      produtosVendidos: produtos.length,
-      unidadesVendidas: unidades,
-      totalFaturado: faturado,
-      precoMedio: unidades > 0 ? faturado / unidades : 0,
-    };
-  }, [dados]);
 
   if (erro) return <div className="login-error">{erro}</div>;
   if (!dados) return <p className="page-sub">Carregando…</p>;
 
   return (
     <>
-      <p className="page-sub">
-        Agrupado por produto vinculado (o ID do anúncio do marketplace ainda não é guardado — quando isso for
-        implementado, essa visão passa a mostrar cada anúncio separadamente, mesmo quando dois anúncios apontam pro
-        mesmo produto).
-      </p>
       <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-        <div className="stat-card"><span className="stat-card-label">Produtos Vendidos</span><span className="stat-card-value">{totais.produtosVendidos}</span></div>
-        <div className="stat-card"><span className="stat-card-label">Unidades Vendidas</span><span className="stat-card-value">{totais.unidadesVendidas}</span></div>
-        <div className="stat-card"><span className="stat-card-label">Total Faturado</span><span className="stat-card-value">{brl(totais.totalFaturado)}</span></div>
-        <div className="stat-card"><span className="stat-card-label">Preço Médio</span><span className="stat-card-value">{brl(totais.precoMedio)}</span></div>
+        <div className="stat-card"><span className="stat-card-label">Anúncios Vendidos</span><span className="stat-card-value">{dados.totais.anunciosVendidos}</span></div>
+        <div className="stat-card"><span className="stat-card-label">Unidades Vendidas</span><span className="stat-card-value">{dados.totais.unidadesVendidas}</span></div>
+        <div className="stat-card"><span className="stat-card-label">Total Faturado</span><span className="stat-card-value">{brl(dados.totais.totalFaturado)}</span></div>
+        <div className="stat-card"><span className="stat-card-label">Preço Médio</span><span className="stat-card-value">{brl(dados.totais.precoMedio)}</span></div>
       </div>
       <div className="card">
-        <div className="card-head">Vendas por Produto ({produtosExibidos.length})</div>
+        <div className="card-head">Vendas por Anúncio ({anunciosExibidos.length})</div>
         <div style={{ overflowX: 'auto' }}>
           <table className="data-table">
             <thead>
               <tr>
-                <th>Produto</th><th>Unid. Vendidas</th><th>Preço Médio</th><th>Total Faturado</th><th>Representatividade</th>
+                <th>Produto</th><th>ID do Anúncio</th><th>Pedidos Válidos</th>
+                <th>Unid. Vendidas</th><th>Preço Médio</th><th>Total Faturado</th>
               </tr>
             </thead>
             <tbody>
-              {produtosExibidos.map((p) => (
-                <tr key={p.produtoId || p.referencia}>
+              {anunciosExibidos.map((a) => (
+                <tr key={a.anuncioId || `sem-anuncio:${a.referencia}`}>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <FotoProduto produtoId={p.produtoId} temFoto={p.temFoto} size={36} alt={p.referencia} />
+                      <FotoProduto produtoId={a.produtoId} temFoto={a.temFoto} size={36} alt={a.referencia} />
                       <div>
-                        <strong className="mono">{p.referencia}</strong>
-                        {p.descricao && <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{p.descricao}</div>}
+                        <strong className="mono">{a.referencia}</strong>
+                        {a.descricao && <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{a.descricao}</div>}
                       </div>
                     </div>
                   </td>
-                  <td className="mono">{p.unidadesVendidas}</td>
-                  <td className="mono">{brl(p.precoMedio)}</td>
-                  <td className="mono" style={{ fontWeight: 700 }}>{brl(p.totalFaturado)}</td>
-                  <td className="mono">{pct(p.representatividadePct)}</td>
+                  <td className="mono">
+                    {a.anuncioId || <span className="stamp sm tone-neutro">sem ID gravado</span>}
+                  </td>
+                  <td className="mono">{a.pedidosValidos}</td>
+                  <td className="mono">{a.unidadesVendidas}</td>
+                  <td className="mono">{brl(a.precoMedio)}</td>
+                  <td className="mono" style={{ fontWeight: 700 }}>{brl(a.totalFaturado)}</td>
                 </tr>
               ))}
-              {produtosExibidos.length === 0 && <tr><td colSpan="5">{busca ? 'Nenhum produto encontrado para essa busca.' : 'Nenhum produto no período.'}</td></tr>}
+              {anunciosExibidos.length === 0 && <tr><td colSpan="6">{busca ? 'Nenhum anúncio encontrado para essa busca.' : 'Nenhum anúncio no período.'}</td></tr>}
             </tbody>
           </table>
         </div>
+        <p className="page-sub" style={{ marginTop: 10 }}>
+          Itens marcados "sem ID gravado" foram importados antes de guardarmos o ID do anúncio — agrupados por SKU
+          enquanto isso. Novos pedidos sincronizados já trazem o ID de verdade.
+        </p>
       </div>
     </>
   );
@@ -625,7 +620,7 @@ function ShopeeTab({ filtros }) {
 const TABS = [
   { key: 'visaoGeral', label: 'Visão Geral' },
   { key: 'porLoja', label: 'Por Loja' },
-  { key: 'vendasPorProduto', label: 'Vendas por Produto' },
+  { key: 'vendasPorAnuncio', label: 'Vendas por Anúncio' },
   { key: 'abc', label: 'Análise ABC' },
   { key: 'estoque', label: 'Entrada e Saída' },
   { key: 'shopee', label: 'Shopee' },
@@ -702,10 +697,10 @@ export default function MetricasMarketplacePage() {
               ))}
             </Select>
           </div>
-          {(subTab === 'vendasPorProduto' || subTab === 'abc') && (
+          {(subTab === 'vendasPorAnuncio' || subTab === 'abc') && (
             <div className="field">
               <span className="field-label">Buscar Produto</span>
-              <input placeholder="Referência ou descrição..." value={busca} onChange={(e) => setBusca(e.target.value)} />
+              <input placeholder="Referência, descrição ou ID do anúncio..." value={busca} onChange={(e) => setBusca(e.target.value)} />
             </div>
           )}
         </div>
@@ -729,7 +724,7 @@ export default function MetricasMarketplacePage() {
         <>
           {subTab === 'visaoGeral' && <VisaoGeralTab filtros={filtrosAplicados} />}
           {subTab === 'porLoja' && <PorLojaTab filtros={filtrosAplicados} />}
-          {subTab === 'vendasPorProduto' && <VendasPorProdutoTab filtros={filtrosAplicados} busca={busca} />}
+          {subTab === 'vendasPorAnuncio' && <VendasPorAnuncioTab filtros={filtrosAplicados} busca={busca} />}
           {subTab === 'abc' && <AnaliseABCTab filtros={filtrosAplicados} busca={busca} />}
           {subTab === 'estoque' && <EntradaSaidaTab filtros={filtrosAplicados} />}
           {subTab === 'shopee' && <ShopeeTab filtros={filtrosAplicados} />}

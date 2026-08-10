@@ -294,6 +294,10 @@ function mapearPedido(order) {
     quantidade: Number(oi.quantity) || 1,
     valorUnitario: Number(oi.unit_price) || 0,
     tipoAnuncio: oi.tipoAnuncio || null,
+    // ID do anúncio de verdade (ex.: MLB123456789) — já vem no pedido, só
+    // nunca tinha sido guardado. Permite separar "Vendas por Anúncio" de
+    // "Vendas por Produto" (um produto pode ter vários anúncios).
+    anuncioIdExterno: oi.item?.id ? String(oi.item.id) : null,
   }));
 
   const formaPagamento = order.payments?.[0]?.payment_method_id === 'pix' ? 'pix' : 'outro';

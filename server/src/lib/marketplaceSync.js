@@ -272,8 +272,8 @@ async function importarPedido(client, pedidoGenerico, integracao) {
     const total = item.quantidade * item.valorUnitario;
     await client.query(
       `INSERT INTO pedido_itens
-        (pedido_id, variante_id, produto_id, referencia, descricao, cor, tamanho, quantidade, valor_unitario, total, ordem, tipo_anuncio_marketplace, titulo_externo, sku_externo, kit_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+        (pedido_id, variante_id, produto_id, referencia, descricao, cor, tamanho, quantidade, valor_unitario, total, ordem, tipo_anuncio_marketplace, titulo_externo, sku_externo, kit_id, anuncio_id_marketplace)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
       [
         pedidoId,
         variante?.id || null,
@@ -290,6 +290,7 @@ async function importarPedido(client, pedidoGenerico, integracao) {
         item.tituloExterno || null,
         item.skuExterno || null,
         variante?.kit_id || null,
+        item.anuncioIdExterno || null,
       ]
     );
     ordem += 1;

@@ -597,6 +597,7 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
           id: it.id,
           tituloExterno: it.titulo_externo || it.descricao || '',
           skuExterno: it.sku_externo || (it.produto_id ? null : it.referencia),
+          anuncioId: it.anuncio_id_marketplace || null,
           quantidade: Number(it.quantidade),
           produtoId: it.produto_id,
           varianteId: it.variante_id,
@@ -707,6 +708,67 @@ router.get('/relatorio-lucratividade/resumo-produto', async (req, res, next) => 
       .sort((a, b) => b.totalFaturado - a.totalFaturado);
 
     res.json({ produtos });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Igual ao resumo por produto, mas agrupado pelo ID do ANÚNCIO de verdade
+// (ex.: MLB123456789) — um produto pode ter mais de um anúncio (cores
+// diferentes, promoções, segunda conta), e cada anúncio pode vender e
+// converter de forma bem diferente. Item de pedido sem anúncio gravado
+// (importado antes desse campo existir, ou de planilha manual) cai numa
+// chave "sem-anuncio" baseada no SKU, pra não sumir do relatório.
+router.get('/relatorio-lucratividade/resumo-anuncio', async (req, res, next) => {
+  try {
+    const { data_inicio, data_fim, canal_venda, origem, origem_integracao_id } = req.query;
+    const { resultado } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem, origem_integracao_id });
+
+    const porAnuncio = new Map();
+    for (const p of resultado) {
+      for (const it of p.itens) {
+        const chave = it.anuncioId || `sem-anuncio:${it.skuExterno || it.id}`;
+        if (!porAnuncio.has(chave)) {
+          porAnuncio.set(chave, {
+            anuncioId: it.anuncioId,
+            produtoId: it.produtoId,
+            referencia: it.referencia || it.skuExterno || '—',
+            descricao: it.descricao || it.tituloExterno || '',
+            temFoto: it.temFoto,
+            unidadesVendidas: 0,
+            totalFaturado: 0,
+            pedidosValidos: new Set(),
+          });
+        }
+        const acc = porAnuncio.get(chave);
+        acc.unidadesVendidas += it.quantidade;
+        acc.totalFaturado += it.totalItem;
+        acc.pedidosValidos.add(p.id);
+      }
+    }
+
+    const anuncios = [...porAnuncio.values()]
+      .map((x) => ({
+        anuncioId: x.anuncioId,
+        produtoId: x.produtoId,
+        referencia: x.referencia,
+        descricao: x.descricao,
+        temFoto: x.temFoto,
+        unidadesVendidas: x.unidadesVendidas,
+        pedidosValidos: x.pedidosValidos.size,
+        precoMedio: x.unidadesVendidas > 0 ? x.totalFaturado / x.unidadesVendidas : 0,
+        totalFaturado: x.totalFaturado,
+      }))
+      .sort((a, b) => b.totalFaturado - a.totalFaturado);
+
+    const totais = {
+      anunciosVendidos: anuncios.length,
+      unidadesVendidas: anuncios.reduce((s, a) => s + a.unidadesVendidas, 0),
+      totalFaturado: anuncios.reduce((s, a) => s + a.totalFaturado, 0),
+    };
+    totais.precoMedio = totais.unidadesVendidas > 0 ? totais.totalFaturado / totais.unidadesVendidas : 0;
+
+    res.json({ anuncios, totais });
   } catch (err) {
     next(err);
   }
