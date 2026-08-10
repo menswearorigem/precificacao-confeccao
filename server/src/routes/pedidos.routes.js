@@ -957,6 +957,7 @@ router.get('/metricas/por-loja', async (req, res, next) => {
           integracaoId: p.origem_integracao_id,
           nome: integracao?.nome || (p.origem_integracao_id ? p.canal_venda : 'Sem integração (importado manualmente)'),
           canalVenda: p.canal_venda,
+          marketplace: integracao?.marketplace || null,
           pedidos: [],
         });
       }
@@ -964,10 +965,39 @@ router.get('/metricas/por-loja', async (req, res, next) => {
     }
 
     const lojas = [...porLoja.values()]
-      .map((l) => ({ integracaoId: l.integracaoId, nome: l.nome, canalVenda: l.canalVenda, ...resumirPedidosMarketplace(l.pedidos) }))
+      .map((l) => ({ integracaoId: l.integracaoId, nome: l.nome, canalVenda: l.canalVenda, marketplace: l.marketplace, ...resumirPedidosMarketplace(l.pedidos) }))
       .sort((a, b) => b.valorVendasValidas - a.valorVendasValidas);
 
-    res.json({ lojas });
+    // Série diária por loja (valor de vendas válidas), pro gráfico
+    // empilhado — cada loja vira uma chave dinâmica no objeto do dia, no
+    // mesmo formato que o Recharts espera pra um AreaChart empilhado.
+    const diasComVenda = new Map();
+    for (const p of pedidos) {
+      if (p.situacao === 'cancelado') continue;
+      const chave = p.origem_integracao_id || 'sem-integracao';
+      const nome = porLoja.get(chave).nome;
+      const dia = p.data_pedido.toISOString().slice(0, 10);
+      if (!diasComVenda.has(dia)) diasComVenda.set(dia, {});
+      const acc = diasComVenda.get(dia);
+      acc[nome] = (acc[nome] || 0) + (Number(p.receita) || 0);
+    }
+    let serieDiaria;
+    if (data_inicio && data_fim) {
+      serieDiaria = [];
+      const cursor = new Date(`${data_inicio}T00:00:00`);
+      const fim = new Date(`${data_fim}T00:00:00`);
+      while (cursor <= fim) {
+        const chave = cursor.toISOString().slice(0, 10);
+        serieDiaria.push({ data: chave, ...(diasComVenda.get(chave) || {}) });
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    } else {
+      serieDiaria = [...diasComVenda.entries()]
+        .map(([data, valores]) => ({ data, ...valores }))
+        .sort((a, b) => a.data.localeCompare(b.data));
+    }
+
+    res.json({ lojas, serieDiaria });
   } catch (err) {
     next(err);
   }

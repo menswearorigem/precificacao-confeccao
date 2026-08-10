@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts';
 import {
   ArrowDownRight, ArrowUpRight, Banknote, ShoppingCart, CheckCircle2,
-  Users, TrendingUp, Store, Boxes, PackageMinus,
+  Users, TrendingUp, Store, Boxes, PackageMinus, Handshake, ShoppingBag,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
@@ -14,10 +14,51 @@ const COR_ANTERIOR = '#9c7a3c';
 const COR_SECUNDARIA = '#0d9488';
 const FONTE_GRAFICO = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
+// Paleta validada pro gráfico empilhado "Por Loja" (terracota, verde-azulado,
+// ameixa, azul) — passou em contraste, distinção entre daltonismo e leitura
+// normal (validador dataviz, modo claro). Repete em ciclo se houver mais de
+// 4 lojas.
+const PALETA_LOJAS = ['#d17a2a', '#0d9488', '#7c4577', '#3a6fb5'];
+
 // Mesmo rótulo que o backend usa (marketplaceSync.js LABEL) — pra traduzir
 // entre o campo interno de cada integração ('mercado_livre') e o valor de
 // canal_venda gravado no pedido ('Mercado Livre'), usado como filtro de Plataforma.
 const PLATAFORMA_LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee' };
+
+// Cores oficiais de cada marca — usadas só no selo/ícone de identificação da
+// loja (não no gráfico, que usa a paleta acima pra manter contraste entre
+// lojas da MESMA plataforma). Não são os logos exatos (sem acesso ao
+// arquivo de imagem), mas usam a cor de marca + um ícone representativo —
+// vetorial, então fica nítido em qualquer tamanho/resolução.
+const PLATAFORMA_MARCA = {
+  mercado_livre: { cor: '#FFE600', corIcone: '#2d2d6b', Icone: Handshake },
+  shopee: { cor: '#EE4D2D', corIcone: '#ffffff', Icone: ShoppingBag },
+};
+
+function IconePlataforma({ marketplace, size = 24 }) {
+  const marca = PLATAFORMA_MARCA[marketplace];
+  if (!marca) {
+    return (
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        width: size, height: size, borderRadius: '50%', background: 'var(--surface-alt)',
+        border: '1px solid var(--border)', flexShrink: 0,
+      }}>
+        <Store size={size * 0.56} color="var(--ink-faint)" strokeWidth={2.2} />
+      </span>
+    );
+  }
+  const { cor, corIcone, Icone } = marca;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      width: size, height: size, borderRadius: '50%', background: cor,
+      boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.08)', flexShrink: 0,
+    }}>
+      <Icone size={size * 0.56} color={corIcone} strokeWidth={2.4} />
+    </span>
+  );
+}
 
 function trintaDiasAtras() {
   const d = new Date();
@@ -230,6 +271,42 @@ function VisaoGeralTab({ filtros }) {
   );
 }
 
+// Gráfico empilhado de vendas válidas por dia, uma área por loja — cada
+// loja pega uma cor da paleta validada (cicla se houver mais de 4).
+function GraficoPorLoja({ serieDiaria, lojas }) {
+  const dados = useMemo(() => serieDiaria.map((d) => {
+    const linha = { data: d.data, dataLabel: dataBr(d.data) };
+    for (const l of lojas) linha[l.nome] = d[l.nome] || 0;
+    return linha;
+  }), [serieDiaria, lojas]);
+  const tickStyle = { fontSize: 11.5, fontFamily: FONTE_GRAFICO, fill: 'var(--ink-soft)' };
+
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <AreaChart data={dados} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+        <XAxis dataKey="dataLabel" tick={tickStyle} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
+        <YAxis tick={tickStyle} tickFormatter={(v) => brl(v)} width={92} axisLine={false} tickLine={false} />
+        <Tooltip content={<TooltipVendas />} />
+        <Legend wrapperStyle={{ fontFamily: FONTE_GRAFICO, fontSize: 12.5, color: 'var(--ink-soft)', paddingTop: 8 }} iconType="circle" iconSize={8} />
+        {lojas.map((l, i) => (
+          <Area
+            key={l.nome}
+            type="monotone"
+            dataKey={l.nome}
+            name={l.nome}
+            stackId="1"
+            stroke={PALETA_LOJAS[i % PALETA_LOJAS.length]}
+            fill={PALETA_LOJAS[i % PALETA_LOJAS.length]}
+            fillOpacity={0.55}
+            strokeWidth={1.5}
+          />
+        ))}
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
 function PorLojaTab({ filtros }) {
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState('');
@@ -244,7 +321,12 @@ function PorLojaTab({ filtros }) {
   if (!dados) return <p className="page-sub">Carregando…</p>;
 
   return (
-    <div className="card">
+    <>
+      <div className="card">
+        <div className="card-head">Vendas Válidas por Dia, por Loja</div>
+        {dados.lojas.length > 0 ? <GraficoPorLoja serieDiaria={dados.serieDiaria} lojas={dados.lojas} /> : <p className="page-sub">Sem vendas no período pra montar o gráfico.</p>}
+      </div>
+      <div className="card">
       <div className="card-head">Vendas por Loja ({dados.lojas.length})</div>
       <div style={{ overflowX: 'auto' }}>
         <table className="data-table">
@@ -257,7 +339,10 @@ function PorLojaTab({ filtros }) {
           <tbody>
             {dados.lojas.map((l) => (
               <tr key={l.integracaoId || 'sem-integracao'}>
-                <td><Store size={13} style={{ marginRight: 5, verticalAlign: -2 }} />{l.nome}</td>
+                <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <IconePlataforma marketplace={l.marketplace} size={22} />
+                  {l.nome}
+                </td>
                 <td>{l.canalVenda || '—'}</td>
                 <td className="mono">{brl(l.valorTotalVendas)}</td>
                 <td className="mono">{l.totalPedidos}</td>
@@ -271,7 +356,8 @@ function PorLojaTab({ filtros }) {
           </tbody>
         </table>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
