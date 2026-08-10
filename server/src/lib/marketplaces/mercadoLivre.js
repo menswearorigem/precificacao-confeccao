@@ -323,6 +323,12 @@ function mapearPedido(order) {
     taxaMarketplace,
     formaPagamento,
     pagamentoIdExterno,
+    // Pedidos do mesmo carrinho/checkout compartilham um pack_id, mas cada
+    // um mantém seu próprio order.id (viram pedidos separados aqui) — o
+    // Mercado Livre conta isso como UMA venda só no painel dele. Guardado
+    // pra contagem de "pedidos"/"vendas" nas métricas poder agrupar do
+    // mesmo jeito.
+    packId: order.pack_id ? String(order.pack_id) : null,
     itens,
   };
 }

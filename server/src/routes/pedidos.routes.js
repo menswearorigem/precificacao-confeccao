@@ -801,7 +801,7 @@ async function buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda, or
   if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
   if (origem_integracao_id) { conditions.push(`pv.origem_integracao_id = $${i}`); values.push(origem_integracao_id); i += 1; }
   const { rows } = await pool.query(
-    `SELECT pv.id, pv.situacao, pv.cliente_id, pv.data_pedido, pv.canal_venda, pv.origem_integracao_id,
+    `SELECT pv.id, pv.situacao, pv.cliente_id, pv.data_pedido, pv.canal_venda, pv.origem_integracao_id, pv.pack_id_marketplace,
             COALESCE((SELECT SUM(pi.total) FROM pedido_itens pi WHERE pi.pedido_id = pv.id), 0) AS receita
      FROM pedidos_venda pv WHERE ${conditions.join(' AND ')}`,
     values
@@ -809,28 +809,36 @@ async function buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda, or
   return rows;
 }
 
+// Pedidos do mesmo carrinho/checkout no Mercado Livre compartilham um
+// pack_id_marketplace, mas viram pedidos SEPARADOS aqui (cada um com seu
+// próprio order.id) — o próprio painel do Mercado Livre conta isso como UMA
+// venda só. Pra "Total de Pedidos"/"Pedidos Válidos" baterem com o número
+// que a vendedora vê lá, agrupa por pack_id na CONTAGEM (pedido sem pack
+// conta sozinho); o valor em R$ soma tudo normalmente, sem agrupar — é
+// dinheiro de verdade de cada item, não duplica nem some.
 function resumirPedidosMarketplace(pedidos) {
   let valorTotalVendas = 0;
   let valorVendasValidas = 0;
-  let totalPedidos = 0;
-  let pedidosValidos = 0;
+  const gruposTotal = new Set();
+  const gruposValidos = new Set();
   const clientesValidos = new Set();
   for (const p of pedidos) {
     const receita = Number(p.receita) || 0;
+    const grupo = p.pack_id_marketplace || `pedido:${p.id}`;
     valorTotalVendas += receita;
-    totalPedidos += 1;
+    gruposTotal.add(grupo);
     if (p.situacao !== 'cancelado') {
       valorVendasValidas += receita;
-      pedidosValidos += 1;
+      gruposValidos.add(grupo);
       if (p.cliente_id) clientesValidos.add(p.cliente_id);
     }
   }
   const clientes = clientesValidos.size;
   return {
     valorTotalVendas,
-    totalPedidos,
+    totalPedidos: gruposTotal.size,
     valorVendasValidas,
-    pedidosValidos,
+    pedidosValidos: gruposValidos.size,
     clientes,
     vendasPorCliente: clientes > 0 ? valorVendasValidas / clientes : 0,
   };
@@ -871,12 +879,14 @@ router.get('/metricas/serie', async (req, res, next) => {
     for (const p of pedidos) {
       if (p.situacao === 'cancelado') continue;
       const dia = p.data_pedido.toISOString().slice(0, 10);
-      if (!porDia.has(dia)) porDia.set(dia, { data: dia, valorVendas: 0, pedidos: 0 });
+      if (!porDia.has(dia)) porDia.set(dia, { data: dia, valorVendas: 0, grupos: new Set() });
       const acc = porDia.get(dia);
       acc.valorVendas += Number(p.receita) || 0;
-      acc.pedidos += 1;
+      acc.grupos.add(p.pack_id_marketplace || `pedido:${p.id}`);
     }
-    const serie = [...porDia.values()].sort((a, b) => a.data.localeCompare(b.data));
+    const serie = [...porDia.values()]
+      .map((d) => ({ data: d.data, valorVendas: d.valorVendas, pedidos: d.grupos.size }))
+      .sort((a, b) => a.data.localeCompare(b.data));
     res.json({ serie });
   } catch (err) {
     next(err);

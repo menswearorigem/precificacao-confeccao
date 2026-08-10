@@ -245,8 +245,8 @@ async function importarPedido(client, pedidoGenerico, integracao) {
   const clienteId = await encontrarOuCriarCliente(client, pedidoGenerico);
 
   const { rows } = await client.query(
-    `INSERT INTO pedidos_venda (data_pedido, cliente_id, empresa_id, operacao, canal_venda, valor_frete, taxa_marketplace, forma_pagamento_marketplace, observacao, origem_marketplace, origem_pedido_id, origem_integracao_id, pagamento_id_marketplace, pct_nota_fiscal)
-     VALUES ($1, $2, $3, 'Venda', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+    `INSERT INTO pedidos_venda (data_pedido, cliente_id, empresa_id, operacao, canal_venda, valor_frete, taxa_marketplace, forma_pagamento_marketplace, observacao, origem_marketplace, origem_pedido_id, origem_integracao_id, pagamento_id_marketplace, pct_nota_fiscal, pack_id_marketplace)
+     VALUES ($1, $2, $3, 'Venda', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
     [
       pedidoGenerico.dataPedido || new Date().toISOString().slice(0, 10),
       clienteId,
@@ -261,6 +261,7 @@ async function importarPedido(client, pedidoGenerico, integracao) {
       integracao?.id || null,
       pedidoGenerico.pagamentoIdExterno || null,
       integracao?.pct_nota_fiscal ?? null,
+      pedidoGenerico.packId || null,
     ]
   );
   const pedidoId = rows[0].id;
