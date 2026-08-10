@@ -606,34 +606,32 @@ async function sincronizarAdsDias(integracao, dias) {
 
   let registros = 0;
   let ultimoErro = null;
+  // Busca métricas de TODOS os anúncios do anunciante de uma vez por dia
+  // (não por campanha — o endpoint de busca de anúncios já cobre todas as
+  // campanhas juntas), bem mais barato que abrir uma chamada por campanha.
   for (let i = 0; i < dias; i += 1) {
     const dia = formatarDataISO(new Date(Date.now() - i * 24 * 60 * 60 * 1000));
-    for (const campanha of campanhas) {
-      try {
-        const metricas = await mercadoLivre.buscarMetricasAnunciosCampanhaPorDia({
-          accessToken: integracao.access_token, advertiserId, campaignId: campanha.id, data: dia,
-        });
-        for (const m of metricas) {
-          await pool.query(
-            `INSERT INTO ads_metricas_diarias
-              (origem_integracao_id, anuncio_id_marketplace, campanha_id, campanha_nome, data, impressoes, cliques, custo, vendas_diretas_qtd, vendas_diretas_valor, vendas_indiretas_qtd, vendas_indiretas_valor, atualizado_em)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
-             ON CONFLICT (origem_integracao_id, anuncio_id_marketplace, data) DO UPDATE SET
-               campanha_id = EXCLUDED.campanha_id, campanha_nome = EXCLUDED.campanha_nome,
-               impressoes = EXCLUDED.impressoes, cliques = EXCLUDED.cliques, custo = EXCLUDED.custo,
-               vendas_diretas_qtd = EXCLUDED.vendas_diretas_qtd, vendas_diretas_valor = EXCLUDED.vendas_diretas_valor,
-               vendas_indiretas_qtd = EXCLUDED.vendas_indiretas_qtd, vendas_indiretas_valor = EXCLUDED.vendas_indiretas_valor,
-               atualizado_em = now()`,
-            [
-              integracao.id, String(m.itemId), campanha.id, campanha.nome, dia,
-              m.impressoes, m.cliques, m.custo, m.vendasDiretasQtd, m.vendasDiretasValor, m.vendasIndiretasQtd, m.vendasIndiretasValor,
-            ]
-          );
-          registros += 1;
-        }
-      } catch (err) {
-        ultimoErro = `Campanha ${campanha.nome} (${dia}): ${err.message}`;
+    try {
+      const metricas = await mercadoLivre.buscarMetricasAnunciosPorDia({ accessToken: integracao.access_token, advertiserId, data: dia });
+      for (const m of metricas) {
+        await pool.query(
+          `INSERT INTO ads_metricas_diarias
+            (origem_integracao_id, anuncio_id_marketplace, data, impressoes, cliques, custo, vendas_diretas_qtd, vendas_diretas_valor, vendas_indiretas_qtd, vendas_indiretas_valor, atualizado_em)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now())
+           ON CONFLICT (origem_integracao_id, anuncio_id_marketplace, data) DO UPDATE SET
+             impressoes = EXCLUDED.impressoes, cliques = EXCLUDED.cliques, custo = EXCLUDED.custo,
+             vendas_diretas_qtd = EXCLUDED.vendas_diretas_qtd, vendas_diretas_valor = EXCLUDED.vendas_diretas_valor,
+             vendas_indiretas_qtd = EXCLUDED.vendas_indiretas_qtd, vendas_indiretas_valor = EXCLUDED.vendas_indiretas_valor,
+             atualizado_em = now()`,
+          [
+            integracao.id, String(m.itemId), dia,
+            m.impressoes, m.cliques, m.custo, m.vendasDiretasQtd, m.vendasDiretasValor, m.vendasIndiretasQtd, m.vendasIndiretasValor,
+          ]
+        );
+        registros += 1;
       }
+    } catch (err) {
+      ultimoErro = `Dia ${dia}: ${err.message}`;
     }
   }
   await pool.query('UPDATE integracoes_marketplace SET ultimo_erro_ads = $1 WHERE id = $2', [ultimoErro, integracao.id]).catch(() => {});
