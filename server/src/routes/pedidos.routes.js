@@ -497,6 +497,8 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
   const totalGeralVazio = {
     receita: 0, custoPeca: 0, imposto: 0, custoEmbalagem: 0, custoAds: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, margemPct: 0,
     valorRecebidoLiberado: 0, valorRecebidoConfirmado: 0, valorRecebidoSemConfirmacao: 0, custoAdsNaoAtribuido: 0,
+    lucroBruto: 0, margemBrutaPct: 0, tacos: 0, mpaPct: 0, numeroVendas: 0, numeroUnidadesVendidas: 0, ticketMedio: 0, roiPct: 0,
+    liquidoMarketplace: 0,
   };
   if (pedidosBrutos.length === 0) {
     return { resultado: [], totalGeral: totalGeralVazio };
@@ -786,6 +788,27 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
     // pra não sumir da conta e a soma de Ads bater com o extrato real dela.
     totalGeral.custoAdsNaoAtribuido = custoAdsNaoAtribuido;
 
+    // Indicadores no mesmo padrão do painel de referência (Gestor Seller):
+    // "Lucro"/"Margem" acima já são o resultado DEPOIS de Ads (o número real
+    // que sobra) — aqui do lado mostra também o ANTES de Ads (lucroBruto),
+    // TACOS (gasto de Ads sobre o faturamento TOTAL, diferente de ACOS que
+    // olha só a venda atribuída ao anúncio) e MPA (a mesma margem de cima,
+    // com nome explícito de "margem pós Ads" pra ficar lado a lado com a
+    // margem bruta na tela).
+    totalGeral.lucroBruto = totalGeral.lucro + totalGeral.custoAds;
+    totalGeral.margemBrutaPct = totalGeral.receita > 0 ? totalGeral.lucroBruto / totalGeral.receita : 0;
+    totalGeral.tacos = totalGeral.receita > 0 ? totalGeral.custoAds / totalGeral.receita : 0;
+    totalGeral.mpaPct = totalGeral.margemPct;
+    totalGeral.liquidoMarketplace = resultado.reduce((s, p) => s + (p.calculoReal ? p.valorRecebido : p.receita - p.taxaMarketplace), 0);
+    totalGeral.numeroVendas = resultado.length;
+    totalGeral.numeroUnidadesVendidas = resultado.reduce((s, p) => s + p.itens.reduce((si, it) => si + it.quantidade, 0), 0);
+    totalGeral.ticketMedio = totalGeral.numeroVendas > 0 ? totalGeral.receita / totalGeral.numeroVendas : 0;
+    // ROI = lucro (já pós Ads) sobre tudo que a venda "consumiu" antes de
+    // virar lucro (receita - lucro) — cobre custo do produto, imposto,
+    // embalagem, taxa de marketplace, frete e Ads de uma vez.
+    const custoTotalInvestido = totalGeral.receita - totalGeral.lucro;
+    totalGeral.roiPct = custoTotalInvestido > 0 ? totalGeral.lucro / custoTotalInvestido : 0;
+
   return { resultado, totalGeral };
 }
 
@@ -825,6 +848,7 @@ router.get('/relatorio-lucratividade/resumo-produto', async (req, res, next) => 
             totalFaturado: 0,
             totalCusto: 0,
             lucro: 0,
+            custoAds: 0,
           });
         }
         const acc = porProduto.get(chave);
@@ -832,25 +856,37 @@ router.get('/relatorio-lucratividade/resumo-produto', async (req, res, next) => 
         acc.unidadesVendidas += it.quantidade;
         acc.totalFaturado += it.totalItem;
         acc.totalCusto += it.quantidade * it.custoUnitario;
+        // p.lucro já é pós Ads (rateado por dia/anúncio) — aloca junto com o
+        // custo de Ads pra dar pra reconstruir os dois: bruto (antes de Ads)
+        // e pós Ads, no mesmo padrão do painel de referência.
         acc.lucro += p.lucro * shareReceita;
+        acc.custoAds += p.custoAds * shareReceita;
       }
     }
 
     const totalFaturadoGeral = [...porProduto.values()].reduce((s, x) => s + x.totalFaturado, 0);
     const produtos = [...porProduto.values()]
-      .map((x) => ({
-        produtoId: x.produtoId,
-        referencia: x.referencia,
-        descricao: x.descricao,
-        temFoto: x.temFoto,
-        unidadesVendidas: x.unidadesVendidas,
-        precoMedio: x.unidadesVendidas > 0 ? x.totalFaturado / x.unidadesVendidas : 0,
-        custoUnitarioMedio: x.unidadesVendidas > 0 ? x.totalCusto / x.unidadesVendidas : 0,
-        totalFaturado: x.totalFaturado,
-        representatividadePct: totalFaturadoGeral > 0 ? x.totalFaturado / totalFaturadoGeral : 0,
-        lucro: x.lucro,
-        margemPct: x.totalFaturado > 0 ? x.lucro / x.totalFaturado : 0,
-      }))
+      .map((x) => {
+        const lucroBruto = x.lucro + x.custoAds;
+        return {
+          produtoId: x.produtoId,
+          referencia: x.referencia,
+          descricao: x.descricao,
+          temFoto: x.temFoto,
+          unidadesVendidas: x.unidadesVendidas,
+          precoMedio: x.unidadesVendidas > 0 ? x.totalFaturado / x.unidadesVendidas : 0,
+          custoUnitarioMedio: x.unidadesVendidas > 0 ? x.totalCusto / x.unidadesVendidas : 0,
+          totalFaturado: x.totalFaturado,
+          representatividadePct: totalFaturadoGeral > 0 ? x.totalFaturado / totalFaturadoGeral : 0,
+          lucroBruto,
+          margemBrutaPct: x.totalFaturado > 0 ? lucroBruto / x.totalFaturado : 0,
+          custoAds: x.custoAds,
+          // Mantém "lucro"/"margemPct" como já eram (pós Ads, o número real)
+          // — front rotula como "Lucro Pós Ads"/"MPA".
+          lucro: x.lucro,
+          margemPct: x.totalFaturado > 0 ? x.lucro / x.totalFaturado : 0,
+        };
+      })
       .sort((a, b) => b.totalFaturado - a.totalFaturado);
 
     res.json({ produtos });
@@ -925,7 +961,7 @@ router.get('/relatorio-lucratividade/resumo-anuncio', async (req, res, next) => 
 router.get('/relatorio-lucratividade/serie-diaria', async (req, res, next) => {
   try {
     const { data_inicio, data_fim, canal_venda, origem, origem_integracao_id } = req.query;
-    const { resultado } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem, origem_integracao_id });
+    const { resultado, totalGeral } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem, origem_integracao_id });
 
     const porDia = new Map();
     for (const p of resultado) {
@@ -940,29 +976,25 @@ router.get('/relatorio-lucratividade/serie-diaria', async (req, res, next) => {
       .sort((a, b) => a.data.localeCompare(b.data))
       .map((d) => ({ ...d, margemPct: d.faturamento > 0 ? d.lucro / d.faturamento : 0 }));
 
-    const faturamento = resultado.reduce((s, p) => s + p.receita, 0);
-    const liquidoMarketplace = resultado.reduce((s, p) => s + (p.calculoReal ? p.valorRecebido : p.receita - p.taxaMarketplace), 0);
-    const lucroBruto = resultado.reduce((s, p) => s + p.lucro, 0);
-    const numeroVendas = resultado.length;
-    const numeroUnidadesVendidas = resultado.reduce((s, p) => s + p.itens.reduce((si, it) => si + it.quantidade, 0), 0);
-    const ticketMedio = numeroVendas > 0 ? faturamento / numeroVendas : 0;
-    // ROI = lucro sobre tudo que a venda "consumiu" antes de virar lucro
-    // (receita - lucro) — cobre custo do produto, imposto, embalagem, taxa
-    // de marketplace e frete de uma vez, sem precisar decompor de novo.
-    const custoTotalInvestido = faturamento - lucroBruto;
-    const roiPct = custoTotalInvestido > 0 ? lucroBruto / custoTotalInvestido : 0;
-
+    // Reaproveita o mesmo totalGeral do relatório por pedido — mesma fonte
+    // de verdade que a aba "Pedidos" usa, pra "Resumo por Produto" nunca
+    // mostrar um número diferente do resto da tela por causa de contas
+    // duplicadas em dois lugares.
     res.json({
       serie,
       resumo: {
-        faturamento,
-        liquidoMarketplace,
-        lucroBruto,
-        margemPct: faturamento > 0 ? lucroBruto / faturamento : 0,
-        numeroVendas,
-        numeroUnidadesVendidas,
-        ticketMedio,
-        roiPct,
+        faturamento: totalGeral.receita,
+        liquidoMarketplace: totalGeral.liquidoMarketplace,
+        lucroBruto: totalGeral.lucroBruto,
+        margemPct: totalGeral.margemBrutaPct,
+        custoAds: totalGeral.custoAds,
+        lucroPosAds: totalGeral.lucro,
+        mpaPct: totalGeral.mpaPct,
+        tacos: totalGeral.tacos,
+        numeroVendas: totalGeral.numeroVendas,
+        numeroUnidadesVendidas: totalGeral.numeroUnidadesVendidas,
+        ticketMedio: totalGeral.ticketMedio,
+        roiPct: totalGeral.roiPct,
       },
     });
   } catch (err) {

@@ -254,44 +254,61 @@ function ResumoProdutoTab({ resumoProduto, serieDiaria, config, busca }) {
             <div className="stat-card"><span className="stat-card-label">Ticket Médio</span><span className="stat-card-value">{brl(r.ticketMedio)}</span></div>
             <div className="stat-card"><span className="stat-card-label">Retorno Sobre Investimento</span><span className="stat-card-value">{pct(r.roiPct)}</span></div>
           </div>
+          {r.custoAds > 0 && (
+            <div className="stat-strip" style={{ marginTop: 12, marginBottom: 0 }}>
+              <div className="stat-card"><span className="stat-card-label">Valor em Ads</span><span className="stat-card-value">{brl(r.custoAds)}</span></div>
+              <div className="stat-card"><span className="stat-card-label">TACOS</span><span className="stat-card-value">{pct(r.tacos)}</span></div>
+              <div className="stat-card"><span className="stat-card-label">Lucro Pós Ads</span><span className="stat-card-value">{brl(r.lucroPosAds)}</span></div>
+              <div className="stat-card">
+                <span className="stat-card-label">MPA</span>
+                <span className="stat-card-value"><MargemPill valor={r.mpaPct} config={config} /></span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       <div className="card">
         <div className="card-head">Resumo por Produto ({produtosExibidos.length})</div>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Produto</th><th>Preço Médio</th><th>Custo Unit. Médio</th><th>Unid. Vendidas</th>
-              <th>Total Faturado</th><th>Represent.</th><th>Lucro</th><th>Margem</th>
-            </tr>
-          </thead>
-          <tbody>
-            {produtosExibidos.map((p) => (
-              <tr key={p.produtoId || p.referencia}>
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <FotoProduto produtoId={p.produtoId} temFoto={p.temFoto} size={36} alt={p.referencia} />
-                    <div>
-                      <strong className="mono">{p.referencia}</strong>
-                      {p.descricao && <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{p.descricao}</div>}
-                    </div>
-                  </div>
-                </td>
-                <td className="mono">{brl(p.precoMedio)}</td>
-                <td className="mono">{brl(p.custoUnitarioMedio)}</td>
-                <td className="mono">{p.unidadesVendidas}</td>
-                <td className="mono">{brl(p.totalFaturado)}</td>
-                <td className="mono">{pct(p.representatividadePct)}</td>
-                <td className="mono" style={{ fontWeight: 700 }}>{brl(p.lucro)}</td>
-                <td><MargemPill valor={p.margemPct} config={config} /></td>
+        <div style={{ overflowX: 'auto' }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Produto</th><th>Preço Médio</th><th>Custo Unit. Médio</th><th>Unid. Vendidas</th>
+                <th>Total Faturado</th><th>Represent.</th><th>Lucro Bruto</th><th>Margem Bruta</th>
+                <th>Custo Ads</th><th>Lucro Pós Ads</th><th>MPA</th>
               </tr>
-            ))}
-            {produtosExibidos.length === 0 && (
-              <tr><td colSpan="8">{busca ? 'Nenhum produto encontrado para essa busca.' : 'Nenhum produto no período.'}</td></tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {produtosExibidos.map((p) => (
+                <tr key={p.produtoId || p.referencia}>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <FotoProduto produtoId={p.produtoId} temFoto={p.temFoto} size={36} alt={p.referencia} />
+                      <div>
+                        <strong className="mono">{p.referencia}</strong>
+                        {p.descricao && <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{p.descricao}</div>}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="mono">{brl(p.precoMedio)}</td>
+                  <td className="mono">{brl(p.custoUnitarioMedio)}</td>
+                  <td className="mono">{p.unidadesVendidas}</td>
+                  <td className="mono">{brl(p.totalFaturado)}</td>
+                  <td className="mono">{pct(p.representatividadePct)}</td>
+                  <td className="mono" style={{ fontWeight: 700 }}>{brl(p.lucroBruto)}</td>
+                  <td><MargemPill valor={p.margemBrutaPct} config={config} /></td>
+                  <td className="mono">{p.custoAds > 0 ? brl(p.custoAds) : '—'}</td>
+                  <td className="mono" style={{ fontWeight: 700 }}>{brl(p.lucro)}</td>
+                  <td><MargemPill valor={p.margemPct} config={config} /></td>
+                </tr>
+              ))}
+              {produtosExibidos.length === 0 && (
+                <tr><td colSpan="11">{busca ? 'Nenhum produto encontrado para essa busca.' : 'Nenhum produto no período.'}</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </>
   );
@@ -713,22 +730,35 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
             <>
               <div className="card" style={{ marginBottom: 16 }}>
                 <div className="card-head no-print">Resumo por Categoria</div>
-                <div className="row-line"><span>Receita no Período</span><span className="mono" style={{ fontWeight: 700 }}>{brl(relatorio.totalGeral.receita)}</span></div>
-                <div className="row-line"><span>Custo de Peça (matéria-prima, mão de obra e indireto)</span><span className="mono">{brl(relatorio.totalGeral.custoPeca)}</span></div>
-                <div className="row-line"><span>Impostos</span><span className="mono">{brl(relatorio.totalGeral.imposto)}</span></div>
-                {isMarketplace && (
-                  <div className="row-line"><span>Custo de Embalagem</span><span className="mono">{brl(relatorio.totalGeral.custoEmbalagem)}</span></div>
-                )}
-                <div className="row-line"><span>Frete</span><span className="mono">{brl(relatorio.totalGeral.frete)}</span></div>
-                <div className="row-line"><span>Taxas de Marketplace</span><span className="mono">{brl(relatorio.totalGeral.taxaMarketplace)}</span></div>
-                {isMarketplace && relatorio.totalGeral.custoAds > 0 && (
-                  <div className="row-line"><span>Custo de Ads</span><span className="mono">{brl(relatorio.totalGeral.custoAds)}</span></div>
-                )}
-                <div className="row-line strong"><span>Lucro Líquido</span><span className="mono">{brl(relatorio.totalGeral.lucro)}</span></div>
-                <div className="row-line"><span>Margem</span><MargemPill valor={relatorio.totalGeral.margemPct} config={config} /></div>
-                {isMarketplace && (
+                {isMarketplace ? (
                   <>
-                    <div className="row-line">
+                    <div className="stat-strip">
+                      <div className="stat-card"><span className="stat-card-label">Faturamento</span><span className="stat-card-value">{brl(relatorio.totalGeral.receita)}</span></div>
+                      <div className="stat-card"><span className="stat-card-label">Líq. do Marketplace</span><span className="stat-card-value">{brl(relatorio.totalGeral.liquidoMarketplace)}</span></div>
+                      <div className="stat-card"><span className="stat-card-label">Lucro Bruto</span><span className="stat-card-value">{brl(relatorio.totalGeral.lucroBruto)}</span></div>
+                      <div className="stat-card">
+                        <span className="stat-card-label">Margem</span>
+                        <span className="stat-card-value"><MargemPill valor={relatorio.totalGeral.margemBrutaPct} config={config} /></span>
+                      </div>
+                    </div>
+                    <div className="stat-strip" style={{ marginTop: 12 }}>
+                      <div className="stat-card"><span className="stat-card-label">Número de Vendas</span><span className="stat-card-value">{relatorio.totalGeral.numeroVendas}</span></div>
+                      <div className="stat-card"><span className="stat-card-label">Unidades Vendidas</span><span className="stat-card-value">{relatorio.totalGeral.numeroUnidadesVendidas}</span></div>
+                      <div className="stat-card"><span className="stat-card-label">Ticket Médio</span><span className="stat-card-value">{brl(relatorio.totalGeral.ticketMedio)}</span></div>
+                      <div className="stat-card"><span className="stat-card-label">Retorno Sobre Investimento</span><span className="stat-card-value">{pct(relatorio.totalGeral.roiPct)}</span></div>
+                    </div>
+                    {relatorio.totalGeral.custoAds > 0 && (
+                      <div className="stat-strip" style={{ marginTop: 12 }}>
+                        <div className="stat-card"><span className="stat-card-label">Valor em Ads</span><span className="stat-card-value">{brl(relatorio.totalGeral.custoAds)}</span></div>
+                        <div className="stat-card"><span className="stat-card-label">TACOS</span><span className="stat-card-value">{pct(relatorio.totalGeral.tacos)}</span></div>
+                        <div className="stat-card"><span className="stat-card-label">Lucro Pós Ads</span><span className="stat-card-value">{brl(relatorio.totalGeral.lucro)}</span></div>
+                        <div className="stat-card">
+                          <span className="stat-card-label">MPA</span>
+                          <span className="stat-card-value"><MargemPill valor={relatorio.totalGeral.mpaPct} config={config} /></span>
+                        </div>
+                      </div>
+                    )}
+                    <div className="row-line" style={{ marginTop: 12 }}>
                       <span>Valor Liberado no Saldo (Mercado Livre)</span>
                       <span className="mono">{brl(relatorio.totalGeral.valorRecebidoLiberado)}</span>
                     </div>
@@ -748,9 +778,20 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                         <span className="mono">{brl(relatorio.totalGeral.custoAdsNaoAtribuido)}</span>
                       </div>
                     )}
+                    <div className="row-line no-print"><span>Pedidos no Período</span><span className="mono">{relatorio.pedidos.length}</span></div>
+                  </>
+                ) : (
+                  <>
+                    <div className="row-line"><span>Receita no Período</span><span className="mono" style={{ fontWeight: 700 }}>{brl(relatorio.totalGeral.receita)}</span></div>
+                    <div className="row-line"><span>Custo de Peça (matéria-prima, mão de obra e indireto)</span><span className="mono">{brl(relatorio.totalGeral.custoPeca)}</span></div>
+                    <div className="row-line"><span>Impostos</span><span className="mono">{brl(relatorio.totalGeral.imposto)}</span></div>
+                    <div className="row-line"><span>Frete</span><span className="mono">{brl(relatorio.totalGeral.frete)}</span></div>
+                    <div className="row-line"><span>Taxas de Marketplace</span><span className="mono">{brl(relatorio.totalGeral.taxaMarketplace)}</span></div>
+                    <div className="row-line strong"><span>Lucro Líquido</span><span className="mono">{brl(relatorio.totalGeral.lucro)}</span></div>
+                    <div className="row-line"><span>Margem</span><MargemPill valor={relatorio.totalGeral.margemPct} config={config} /></div>
+                    <div className="row-line no-print"><span>Pedidos no Período</span><span className="mono">{relatorio.pedidos.length}</span></div>
                   </>
                 )}
-                <div className="row-line no-print"><span>Pedidos no Período</span><span className="mono">{relatorio.pedidos.length}</span></div>
               </div>
 
               <div className="card no-print">
