@@ -31,7 +31,7 @@ async function chamarToken(body) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
     body: new URLSearchParams(body).toString(),
   });
-  const data = await res.json();
+  const data = await lerRespostaJson(res, '/oauth/token');
   if (!res.ok) {
     throw new Error(data.message || data.error_description || `Erro ao obter token do Mercado Livre (${res.status})`);
   }
@@ -57,11 +57,30 @@ function renovarToken({ clientId, clientSecret, refreshToken }) {
   });
 }
 
+// Lê a resposta como texto primeiro (nunca direto res.json()) porque
+// algumas respostas de erro do Mercado Livre voltam com corpo vazio (204,
+// ou um proxy/gateway intermediário devolvendo nada) — chamar res.json()
+// direto nesse caso explode com "Unexpected end of JSON input", um erro
+// sem nenhuma pista do que realmente aconteceu. Aqui sempre dá pra saber
+// pelo menos o status HTTP e o começo do corpo de verdade.
+async function lerRespostaJson(res, path) {
+  const texto = await res.text();
+  if (!texto) {
+    if (!res.ok) throw new Error(`Erro na API do Mercado Livre (${res.status}, resposta vazia): ${path}`);
+    return {};
+  }
+  try {
+    return JSON.parse(texto);
+  } catch {
+    throw new Error(`Resposta inesperada da API do Mercado Livre (${res.status}, não é JSON): ${path} — ${texto.slice(0, 300)}`);
+  }
+}
+
 async function chamarApiComBase(base, path, accessToken) {
   const res = await fetch(`${base}${path}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  const data = await res.json();
+  const data = await lerRespostaJson(res, path);
   if (!res.ok) {
     throw new Error(data.message || `Erro na API do Mercado Livre (${res.status}): ${path}`);
   }
@@ -437,7 +456,7 @@ async function chamarApiAds(path, accessToken) {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { Authorization: `Bearer ${accessToken}`, 'Api-Version': ADS_API_VERSION },
   });
-  const data = await res.json();
+  const data = await lerRespostaJson(res, path);
   if (!res.ok) {
     throw new Error(data.message || `Erro na API de Publicidade do Mercado Livre (${res.status}): ${path}`);
   }
