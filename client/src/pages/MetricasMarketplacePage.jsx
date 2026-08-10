@@ -21,6 +21,10 @@ const FONTE_GRAFICO = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', s
 // 4 lojas.
 const PALETA_LOJAS = ['#d17a2a', '#0d9488', '#7c4577', '#3a6fb5'];
 
+// Botão que parece um link de texto (breadcrumb de categoria) — sem classe
+// própria no CSS do app, então só um estilo inline reutilizado.
+const LINK_STYLE = { background: 'none', border: 'none', color: 'var(--terracotta)', cursor: 'pointer', padding: 0, font: 'inherit' };
+
 // Mesmo rótulo que o backend usa (marketplaceSync.js LABEL) — pra traduzir
 // entre o campo interno de cada integração ('mercado_livre') e o valor de
 // canal_venda gravado no pedido ('Mercado Livre'), usado como filtro de Plataforma.
@@ -823,37 +827,97 @@ function ConcorrentesTab({ integracoes }) {
   );
 }
 
+// Navegador de categorias com aprofundamento (Todas > Roupas > Camisas >
+// Camisas Sociais...) — clica numa categoria da lista pra entrar nela, ou
+// no "migalha de pão" do topo pra voltar. Serve tanto pra só EXPLORAR a
+// distribuição (Distribuição de Anúncios) quanto pra ESCOLHER uma
+// categoria específica (Tendência), via `modoSelecao`/`onSelecionar`.
+function CategoriaBrowser({ integracaoId, modoSelecao, onSelecionar }) {
+  const [pilha, setPilha] = useState([]);
+  const [dados, setDados] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState('');
+  const [iniciado, setIniciado] = useState(false);
+  const categoriaAtual = pilha.length > 0 ? pilha[pilha.length - 1] : null;
+
+  useEffect(() => {
+    if (!iniciado) return;
+    setCarregando(true);
+    setErro('');
+    const qs = categoriaAtual ? `?categoria_id=${categoriaAtual.id}` : '';
+    api.get(`/integracoes/${integracaoId}/distribuicao-categorias${qs}`)
+      .then(setDados)
+      .catch((err) => setErro(err.message))
+      .finally(() => setCarregando(false));
+  }, [integracaoId, categoriaAtual?.id, iniciado]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!iniciado) {
+    return (
+      <button className="btn btn-primary" onClick={() => setIniciado(true)}>Carregar Categorias</button>
+    );
+  }
+
+  return (
+    <div>
+      <div className="page-sub" style={{ marginBottom: 10 }}>
+        <button type="button" onClick={() => setPilha([])} style={pilha.length === 0 ? { ...LINK_STYLE, fontWeight: 700, color: 'var(--ink)' } : LINK_STYLE}>Todas as Categorias</button>
+        {pilha.map((c, i) => (
+          <span key={c.id}>
+            {' › '}
+            <button type="button" onClick={() => setPilha((p) => p.slice(0, i + 1))} style={i === pilha.length - 1 ? { ...LINK_STYLE, fontWeight: 700, color: 'var(--ink)' } : LINK_STYLE}>
+              {c.nome}
+            </button>
+          </span>
+        ))}
+      </div>
+      {modoSelecao && categoriaAtual && (
+        <button className="btn btn-primary" style={{ marginBottom: 10 }} onClick={() => onSelecionar(categoriaAtual.id, categoriaAtual.nome)}>
+          Usar "{categoriaAtual.nome}" pra Tendência
+        </button>
+      )}
+      {carregando && <p className="page-sub">Carregando…</p>}
+      {erro && <div className="login-error">{erro}</div>}
+      {dados && !carregando && (
+        <>
+          {dados.distribuicao.map((c) => (
+            <div key={c.id} style={{ marginBottom: 10, cursor: 'pointer' }} onClick={() => setPilha((p) => [...p, { id: c.id, nome: c.nome }])}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 3 }}>
+                <span>{c.nome} ›</span>
+                <span className="mono">{pct(c.pct)} · {c.totalAnuncios.toLocaleString('pt-BR')} anúncios</span>
+              </div>
+              <div style={{ background: 'var(--surface-alt)', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+                <div style={{ width: `${Math.max(c.pct * 100, 1)}%`, height: '100%', background: COR_PRINCIPAL, borderRadius: 4 }} />
+              </div>
+            </div>
+          ))}
+          {dados.distribuicao.length === 0 && <p className="page-sub">Essa categoria não tem subcategorias — chegou no fim da árvore.</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
 function CategoriasTab({ integracoes }) {
   const integracaoML = useMemo(() => integracoes.find((i) => i.marketplace === 'mercado_livre' && i.conectado), [integracoes]);
   const [subView, setSubView] = useState('tendencia');
   const [escopo, setEscopo] = useState('pais');
-  const [categorias, setCategorias] = useState([]);
-  const [categoriaId, setCategoriaId] = useState('');
+  const [categoriaEscolhida, setCategoriaEscolhida] = useState(null);
   const [tendencias, setTendencias] = useState(null);
-  const [distribuicao, setDistribuicao] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
 
-  useEffect(() => {
-    if (!integracaoML) return;
-    api.get(`/integracoes/${integracaoML.id}/categorias`).then((d) => setCategorias(d.categorias)).catch(() => {});
-  }, [integracaoML]);
+  function mudarEscopo(valor) {
+    setEscopo(valor);
+    setCategoriaEscolhida(null);
+    setTendencias(null);
+  }
 
   function buscarTendencias() {
     setCarregando(true);
     setErro('');
-    const qs = escopo === 'categoria' && categoriaId ? `?categoria_id=${categoriaId}` : '';
+    const qs = escopo === 'categoria' && categoriaEscolhida ? `?categoria_id=${categoriaEscolhida.id}` : '';
     api.get(`/integracoes/${integracaoML.id}/tendencias${qs}`)
       .then((d) => setTendencias(d.tendencias))
-      .catch((err) => setErro(err.message))
-      .finally(() => setCarregando(false));
-  }
-
-  function buscarDistribuicao() {
-    setCarregando(true);
-    setErro('');
-    api.get(`/integracoes/${integracaoML.id}/distribuicao-categorias`)
-      .then(setDistribuicao)
       .catch((err) => setErro(err.message))
       .finally(() => setCarregando(false));
   }
@@ -883,25 +947,25 @@ function CategoriasTab({ integracoes }) {
       {subView === 'tendencia' && (
         <div className="card">
           <div className="card-head">Termos Mais Buscados</div>
-          <div className="form-grid" style={{ marginBottom: 12 }}>
-            <div className="field">
-              <span className="field-label">Escopo</span>
-              <Select value={escopo} onChange={(e) => setEscopo(e.target.value)}>
-                <option value="pais">Brasil inteiro</option>
-                <option value="categoria">Uma categoria específica</option>
-              </Select>
-            </div>
-            {escopo === 'categoria' && (
-              <div className="field">
-                <span className="field-label">Categoria</span>
-                <Select value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)}>
-                  <option value="">Selecione...</option>
-                  {categorias.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                </Select>
-              </div>
-            )}
+          <div className="field" style={{ marginBottom: 12, maxWidth: 320 }}>
+            <span className="field-label">Escopo</span>
+            <Select value={escopo} onChange={(e) => mudarEscopo(e.target.value)}>
+              <option value="pais">Brasil inteiro</option>
+              <option value="categoria">Uma categoria específica (com subcategorias)</option>
+            </Select>
           </div>
-          <button className="btn btn-primary" onClick={buscarTendencias} disabled={carregando || (escopo === 'categoria' && !categoriaId)}>
+          {escopo === 'categoria' && !categoriaEscolhida && (
+            <div style={{ marginBottom: 14 }}>
+              <CategoriaBrowser integracaoId={integracaoML.id} modoSelecao onSelecionar={(id, nome) => setCategoriaEscolhida({ id, nome })} />
+            </div>
+          )}
+          {escopo === 'categoria' && categoriaEscolhida && (
+            <p className="page-sub">
+              Categoria escolhida: <strong>{categoriaEscolhida.nome}</strong>{' '}
+              <button type="button" onClick={() => setCategoriaEscolhida(null)} style={LINK_STYLE}>(trocar)</button>
+            </p>
+          )}
+          <button className="btn btn-primary" onClick={buscarTendencias} disabled={carregando || (escopo === 'categoria' && !categoriaEscolhida)}>
             {carregando ? 'Buscando…' : 'Buscar Tendências'}
           </button>
           {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
@@ -933,29 +997,10 @@ function CategoriasTab({ integracoes }) {
         <div className="card">
           <div className="card-head">Distribuição de Anúncios entre Categorias</div>
           <p className="page-sub">
-            % do total de anúncios ativos em cada categoria de primeiro nível do Mercado Livre Brasil — pode
-            demorar alguns segundos (consulta uma por uma).
+            % do total de anúncios ativos em cada categoria — clique numa categoria da lista pra ver as
+            subcategorias dela e ir aprofundando.
           </p>
-          <button className="btn btn-primary" onClick={buscarDistribuicao} disabled={carregando}>
-            {carregando ? 'Carregando…' : 'Carregar Distribuição'}
-          </button>
-          {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
-          {distribuicao && (
-            <div style={{ marginTop: 14 }}>
-              {distribuicao.distribuicao.map((c) => (
-                <div key={c.id} style={{ marginBottom: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 3 }}>
-                    <span>{c.nome}</span>
-                    <span className="mono">{pct(c.pct)} · {c.totalAnuncios.toLocaleString('pt-BR')} anúncios</span>
-                  </div>
-                  <div style={{ background: 'var(--surface-alt)', borderRadius: 4, height: 8, overflow: 'hidden' }}>
-                    <div style={{ width: `${Math.max(c.pct * 100, 1)}%`, height: '100%', background: COR_PRINCIPAL, borderRadius: 4 }} />
-                  </div>
-                </div>
-              ))}
-              {distribuicao.distribuicao.length === 0 && <p className="page-sub">Sem dados de distribuição disponíveis agora.</p>}
-            </div>
-          )}
+          <CategoriaBrowser integracaoId={integracaoML.id} />
         </div>
       )}
     </>

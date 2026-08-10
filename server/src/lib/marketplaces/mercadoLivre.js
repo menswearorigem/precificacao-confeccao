@@ -364,7 +364,16 @@ async function buscarCategorias({ accessToken }) {
 // pra calcular a distribuição percentual entre categorias.
 async function buscarDetalheCategoria({ accessToken, categoryId }) {
   const data = await chamarApi(`/categories/${categoryId}`, accessToken);
-  return { id: data.id, nome: data.name, totalAnuncios: Number(data.total_items_in_this_category) || 0 };
+  // children_categories já vem com o total de anúncios de cada subcategoria
+  // dentro da MESMA resposta — dá pra montar um nível de aprofundamento
+  // inteiro (Roupas > Camisas > Camisas Sociais...) sem chamada extra.
+  const filhos = Array.isArray(data.children_categories) ? data.children_categories : [];
+  return {
+    id: data.id,
+    nome: data.name,
+    totalAnuncios: Number(data.total_items_in_this_category) || 0,
+    subcategorias: filhos.map((c) => ({ id: c.id, nome: c.name, totalAnuncios: Number(c.total_items_in_this_category) || 0 })),
+  };
 }
 
 // Opiniões (avaliações) de um anúncio — nota média, total e a distribuição

@@ -669,6 +669,9 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
               {resultadoRevinculo.pagamentosCorrigidos > 0
                 ? ` Conferidos ${resultadoRevinculo.pagamentosVerificados} pagamentos: ${resultadoRevinculo.pagamentosCorrigidos} estavam com o pagamento errado vinculado (valor recebido será buscado de novo no próximo ciclo).`
                 : (resultadoRevinculo.pagamentosVerificados > 0 ? ` Conferidos ${resultadoRevinculo.pagamentosVerificados} pagamentos, nenhum precisou de correção.` : '')}
+              {resultadoRevinculo.pedidosVerificadosAnuncio > 0
+                ? ` Conferidos ${resultadoRevinculo.pedidosVerificadosAnuncio} pedido(s) sem ID de anúncio: ${resultadoRevinculo.itensAnuncioCorrigidos} item(ns) foram preenchidos (clique de novo se ainda restarem — corrige em lotes).`
+                : ''}
             </div>
           )}
           {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}

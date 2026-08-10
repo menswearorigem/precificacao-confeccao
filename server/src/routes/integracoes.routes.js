@@ -175,9 +175,29 @@ router.get('/:id/tendencias', async (req, res, next) => {
 // Mercado Livre Brasil (% do total de anúncios ativos na plataforma em
 // cada categoria) — é um dado da PLATAFORMA inteira, não da loja da
 // vendedora, útil pra enxergar onde tem mais concorrência/demanda.
+// Sem `categoria_id`: distribuição entre as categorias de PRIMEIRO NÍVEL
+// (uma chamada por categoria, pra pegar o total de cada uma). Com
+// `categoria_id`: aprofunda pras SUBcategorias daquela categoria — só 1
+// chamada nesse caso, porque a resposta de /categories/{id} já traz o
+// total de cada filha junto (ver buscarDetalheCategoria).
 router.get('/:id/distribuicao-categorias', async (req, res, next) => {
   try {
     const integracao = await integracaoMercadoLivreAutorizada(req.params.id);
+    const categoriaId = req.query.categoria_id || null;
+
+    if (categoriaId) {
+      const detalhe = await mercadoLivre.buscarDetalheCategoria({ accessToken: integracao.access_token, categoryId: categoriaId });
+      const totalGeral = detalhe.totalAnuncios;
+      const distribuicao = detalhe.subcategorias
+        .map((c) => ({ ...c, pct: totalGeral > 0 ? c.totalAnuncios / totalGeral : 0 }))
+        .sort((a, b) => b.totalAnuncios - a.totalAnuncios);
+      return res.json({
+        distribuicao,
+        totalGeral,
+        categoriaAtual: { id: detalhe.id, nome: detalhe.nome, totalAnuncios: detalhe.totalAnuncios },
+      });
+    }
+
     const categorias = await mercadoLivre.buscarCategorias({ accessToken: integracao.access_token });
     const detalhes = [];
     for (const cat of categorias) {
@@ -191,7 +211,7 @@ router.get('/:id/distribuicao-categorias', async (req, res, next) => {
     const distribuicao = detalhes
       .map((c) => ({ ...c, pct: totalGeral > 0 ? c.totalAnuncios / totalGeral : 0 }))
       .sort((a, b) => b.totalAnuncios - a.totalAnuncios);
-    res.json({ distribuicao, totalGeral });
+    res.json({ distribuicao, totalGeral, categoriaAtual: null });
   } catch (err) {
     res.status(err.status || 422).json({ error: err.message });
   }

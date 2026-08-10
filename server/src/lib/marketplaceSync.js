@@ -429,6 +429,72 @@ async function corrigirPagamentosHistorico() {
   return { corrigidos, verificados, ultimoErro };
 }
 
+// Pedido importado antes de existir a coluna anuncio_id_marketplace (ver
+// migração 0028) ficou com os itens sem esse dado — busca o pedido de novo
+// na API do Mercado Livre (que sempre traz o ID do anúncio de cada item) e
+// preenche retroativamente. Casa cada item nosso com o item do pedido
+// primeiro pelo SKU (mais confiável); se não achar por SKU, cai pra
+// posição — cobre pedido com item sem SKU gravado ou repetido.
+async function corrigirAnunciosIdHistorico(integracao, { limite = 30 } = {}) {
+  if (integracao.marketplace !== 'mercado_livre') return { pedidosVerificados: 0, itensCorrigidos: 0 };
+  const { rows: pedidos } = await pool.query(
+    `SELECT DISTINCT pv.id, pv.origem_pedido_id
+     FROM pedidos_venda pv JOIN pedido_itens pi ON pi.pedido_id = pv.id
+     WHERE pv.origem_integracao_id = $1 AND pv.origem_marketplace = 'mercado_livre' AND pi.anuncio_id_marketplace IS NULL
+     ORDER BY pv.id DESC
+     LIMIT $2`,
+    [integracao.id, limite]
+  );
+  let itensCorrigidos = 0;
+  for (const pedido of pedidos) {
+    try {
+      const order = await mercadoLivre.buscarPedidoPorId(pedido.origem_pedido_id, integracao.access_token);
+      const orderItems = order.order_items || [];
+      const { rows: itens } = await pool.query('SELECT * FROM pedido_itens WHERE pedido_id = $1 ORDER BY ordem', [pedido.id]);
+      const usados = new Set();
+      for (const item of itens) {
+        if (item.anuncio_id_marketplace) continue;
+        let indice = orderItems.findIndex((oi, i) => !usados.has(i) && oi.item?.seller_sku && oi.item.seller_sku === item.sku_externo);
+        if (indice < 0) indice = orderItems.findIndex((oi, i) => !usados.has(i));
+        const oi = indice >= 0 ? orderItems[indice] : null;
+        if (oi?.item?.id) {
+          usados.add(indice);
+          await pool.query('UPDATE pedido_itens SET anuncio_id_marketplace = $1 WHERE id = $2', [String(oi.item.id), item.id]);
+          itensCorrigidos += 1;
+        }
+      }
+    } catch {
+      // pedido pontual falhando (ex.: "Order do not exists") não deve
+      // travar o lote inteiro — só fica pra tentar de novo no próximo ciclo
+    }
+  }
+  return { pedidosVerificados: pedidos.length, itensCorrigidos };
+}
+
+// Mesma ideia de corrigirPagamentosHistorico, mas pro backfill de ID de
+// anúncio: roda em todas as integrações ativas do Mercado Livre de uma vez
+// (usada pelo botão manual "Revincular custos e impostos", que quer um
+// lote maior que o do ciclo automático).
+async function corrigirAnunciosIdTodasIntegracoes({ limite = 40 } = {}) {
+  const { rows: integracoes } = await pool.query(
+    `SELECT * FROM integracoes_marketplace WHERE ativo = TRUE AND access_token IS NOT NULL AND marketplace = 'mercado_livre'`
+  );
+  let pedidosVerificados = 0;
+  let itensCorrigidos = 0;
+  for (const integracao of integracoes) {
+    try {
+      await garantirTokenValido(integracao);
+      const resultado = await corrigirAnunciosIdHistorico(integracao, { limite });
+      pedidosVerificados += resultado.pedidosVerificados;
+      itensCorrigidos += resultado.itensCorrigidos;
+    } catch {
+      // integração pontual falhando (token revogado etc.) não deve travar
+      // as outras
+    }
+  }
+  return { pedidosVerificados, itensCorrigidos };
+}
+
 async function atualizarValoresRecebidos(integracao) {
   if (integracao.marketplace !== 'mercado_livre') return;
   try {
@@ -590,6 +656,10 @@ async function sincronizarIntegracao(integracaoId) {
 
     const cancelados = await sincronizarCancelamentos(integracao);
     await atualizarValoresRecebidos(integracao);
+    // Lote pequeno a cada ciclo (self-limiting) — vai dando conta do
+    // histórico aos poucos sem sobrecarregar a API; pra um catch-up maior
+    // de uma vez, ver corrigirAnunciosIdTodasIntegracoes (botão manual).
+    await corrigirAnunciosIdHistorico(integracao, { limite: 15 });
 
     await pool.query(
       `UPDATE integracoes_marketplace SET ultima_sincronizacao = now(), ultimo_erro = NULL, atualizado_em = now() WHERE id = $1`,
@@ -652,4 +722,6 @@ module.exports = {
   corrigirPagamentosHistorico,
   sincronizarCancelamentos,
   garantirTokenValido,
+  corrigirAnunciosIdHistorico,
+  corrigirAnunciosIdTodasIntegracoes,
 };

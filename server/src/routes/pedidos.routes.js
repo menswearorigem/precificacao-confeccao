@@ -6,7 +6,7 @@ const { getCalcContext } = require('../lib/calcContext');
 const { pctImpostosEmpresa } = require('../lib/calc');
 const { calcularTaxaEsperadaPedido } = require('../lib/marketplaceTaxaCalc');
 const { parseArquivoPedidos } = require('../lib/pedidoImportParsers');
-const { importarPedido, sincronizarSeNecessario, encontrarVariante, corrigirPagamentosHistorico } = require('../lib/marketplaceSync');
+const { importarPedido, sincronizarSeNecessario, encontrarVariante, corrigirPagamentosHistorico, corrigirAnunciosIdTodasIntegracoes } = require('../lib/marketplaceSync');
 const mercadoLivre = require('../lib/marketplaces/mercadoLivre');
 const { recalcularTotais } = require('../lib/pedidoRecalculo');
 const produtosRoutes = require('./produtos.routes');
@@ -270,6 +270,11 @@ router.post('/marketplace/revincular-custos', async (req, res, next) => {
     // COMMIT acima, fora da transação de banco.
     const correcaoPagamentos = await corrigirPagamentosHistorico();
 
+    // Preenche o ID do anúncio (ver migração 0028) em pedidos importados
+    // antes desse dado existir — lote maior que o do ciclo automático,
+    // já que é um clique deliberado da usuária pedindo o catch-up.
+    const correcaoAnuncios = await corrigirAnunciosIdTodasIntegracoes({ limite: 60 });
+
     res.json({
       verificados: semVinculo.length,
       vinculados,
@@ -277,6 +282,8 @@ router.post('/marketplace/revincular-custos', async (req, res, next) => {
       pedidosAtualizados,
       pagamentosVerificados: correcaoPagamentos.verificados,
       pagamentosCorrigidos: correcaoPagamentos.corrigidos,
+      pedidosVerificadosAnuncio: correcaoAnuncios.pedidosVerificados,
+      itensAnuncioCorrigidos: correcaoAnuncios.itensCorrigidos,
     });
   } catch (err) {
     await client.query('ROLLBACK');
