@@ -761,6 +761,197 @@ router.get('/relatorio-lucratividade/serie-diaria', async (req, res, next) => {
   }
 });
 
+// ---------- métricas de marketplace (volume de vendas, não lucro) ----------
+// Um segundo painel, separado da Lucratividade: enquanto aquela é focada em
+// custo/imposto/lucro por pedido, este é sobre VOLUME de vendas — quanto se
+// vendeu, quantos pedidos, quantos clientes, comparado com o período
+// anterior — no estilo de dashboards de analytics de marketplace (UpSeller,
+// etc.). Usa sempre origem_marketplace (pedidos de canal próprio não entram).
+
+// Período imediatamente anterior, com a MESMA quantidade de dias do período
+// pedido — usado pra calcular a variação % mostrada nos cartões.
+function periodoAnterior(dataInicio, dataFim) {
+  const inicio = new Date(`${dataInicio}T00:00:00`);
+  const fim = new Date(`${dataFim}T00:00:00`);
+  const diasPeriodo = Math.round((fim - inicio) / 86400000) + 1;
+  const fimAnterior = new Date(inicio);
+  fimAnterior.setDate(fimAnterior.getDate() - 1);
+  const inicioAnterior = new Date(fimAnterior);
+  inicioAnterior.setDate(inicioAnterior.getDate() - (diasPeriodo - 1));
+  return {
+    data_inicio: inicioAnterior.toISOString().slice(0, 10),
+    data_fim: fimAnterior.toISOString().slice(0, 10),
+  };
+}
+
+function variacaoPct(atual, anterior) {
+  if (anterior > 0) return (atual - anterior) / anterior;
+  return atual > 0 ? 1 : 0;
+}
+
+// Busca os pedidos de marketplace do período (id, situação, cliente,
+// integração/loja e receita já somada dos itens) — base compartilhada pelos
+// cálculos de resumo, por-loja e série diária desse painel.
+async function buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda, origem_integracao_id }) {
+  const conditions = ['pv.origem_marketplace IS NOT NULL'];
+  const values = [];
+  let i = 1;
+  if (data_inicio) { conditions.push(`pv.data_pedido >= $${i}`); values.push(data_inicio); i += 1; }
+  if (data_fim) { conditions.push(`pv.data_pedido <= $${i}`); values.push(data_fim); i += 1; }
+  if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
+  if (origem_integracao_id) { conditions.push(`pv.origem_integracao_id = $${i}`); values.push(origem_integracao_id); i += 1; }
+  const { rows } = await pool.query(
+    `SELECT pv.id, pv.situacao, pv.cliente_id, pv.data_pedido, pv.canal_venda, pv.origem_integracao_id,
+            COALESCE((SELECT SUM(pi.total) FROM pedido_itens pi WHERE pi.pedido_id = pv.id), 0) AS receita
+     FROM pedidos_venda pv WHERE ${conditions.join(' AND ')}`,
+    values
+  );
+  return rows;
+}
+
+function resumirPedidosMarketplace(pedidos) {
+  let valorTotalVendas = 0;
+  let valorVendasValidas = 0;
+  let totalPedidos = 0;
+  let pedidosValidos = 0;
+  const clientesValidos = new Set();
+  for (const p of pedidos) {
+    const receita = Number(p.receita) || 0;
+    valorTotalVendas += receita;
+    totalPedidos += 1;
+    if (p.situacao !== 'cancelado') {
+      valorVendasValidas += receita;
+      pedidosValidos += 1;
+      if (p.cliente_id) clientesValidos.add(p.cliente_id);
+    }
+  }
+  const clientes = clientesValidos.size;
+  return {
+    valorTotalVendas,
+    totalPedidos,
+    valorVendasValidas,
+    pedidosValidos,
+    clientes,
+    vendasPorCliente: clientes > 0 ? valorVendasValidas / clientes : 0,
+  };
+}
+
+// Cartões de resumo (Valor Total de Vendas, Total de Pedidos, Valor de
+// Vendas Válidas, Pedidos Válidos, Clientes, Vendas por Cliente) com
+// variação % contra o período anterior de mesma duração.
+router.get('/metricas/resumo', async (req, res, next) => {
+  try {
+    const { data_inicio, data_fim, canal_venda, comparar } = req.query;
+    const pedidosAtual = await buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda });
+    const atual = resumirPedidosMarketplace(pedidosAtual);
+
+    let anterior = null;
+    let variacao = null;
+    let periodoAnteriorDatas = null;
+    if (comparar !== '0' && data_inicio && data_fim) {
+      periodoAnteriorDatas = periodoAnterior(data_inicio, data_fim);
+      const pedidosAnterior = await buscarPedidosMarketplace({ ...periodoAnteriorDatas, canal_venda });
+      anterior = resumirPedidosMarketplace(pedidosAnterior);
+      variacao = {};
+      for (const campo of Object.keys(atual)) variacao[campo] = variacaoPct(atual[campo], anterior[campo]);
+    }
+
+    res.json({ atual, anterior, variacao, periodoAnteriorDatas });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Série diária de vendas válidas (R$) e nº de pedidos válidos, pro gráfico.
+router.get('/metricas/serie', async (req, res, next) => {
+  try {
+    const { data_inicio, data_fim, canal_venda } = req.query;
+    const pedidos = await buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda });
+    const porDia = new Map();
+    for (const p of pedidos) {
+      if (p.situacao === 'cancelado') continue;
+      const dia = p.data_pedido.toISOString().slice(0, 10);
+      if (!porDia.has(dia)) porDia.set(dia, { data: dia, valorVendas: 0, pedidos: 0 });
+      const acc = porDia.get(dia);
+      acc.valorVendas += Number(p.receita) || 0;
+      acc.pedidos += 1;
+    }
+    const serie = [...porDia.values()].sort((a, b) => a.data.localeCompare(b.data));
+    res.json({ serie });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Mesmo resumo de cima, mas quebrado por loja/integração — cada conta
+// conectada (Mercado Livre, Shopee...) vira uma linha, mais uma linha
+// "Sem integração" pra pedidos importados manualmente por planilha.
+router.get('/metricas/por-loja', async (req, res, next) => {
+  try {
+    const { data_inicio, data_fim, canal_venda } = req.query;
+    const pedidos = await buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda });
+
+    const integracaoIds = [...new Set(pedidos.map((p) => p.origem_integracao_id).filter(Boolean))];
+    const { rows: integracoes } = integracaoIds.length > 0
+      ? await pool.query('SELECT id, marketplace, nome FROM integracoes_marketplace WHERE id = ANY($1)', [integracaoIds])
+      : { rows: [] };
+    const mapaIntegracoes = new Map(integracoes.map((i) => [i.id, i]));
+
+    const porLoja = new Map();
+    for (const p of pedidos) {
+      const chave = p.origem_integracao_id || 'sem-integracao';
+      if (!porLoja.has(chave)) {
+        const integracao = mapaIntegracoes.get(p.origem_integracao_id);
+        porLoja.set(chave, {
+          integracaoId: p.origem_integracao_id,
+          nome: integracao?.nome || (p.origem_integracao_id ? p.canal_venda : 'Sem integração (importado manualmente)'),
+          canalVenda: p.canal_venda,
+          pedidos: [],
+        });
+      }
+      porLoja.get(chave).pedidos.push(p);
+    }
+
+    const lojas = [...porLoja.values()]
+      .map((l) => ({ integracaoId: l.integracaoId, nome: l.nome, canalVenda: l.canalVenda, ...resumirPedidosMarketplace(l.pedidos) }))
+      .sort((a, b) => b.valorVendasValidas - a.valorVendasValidas);
+
+    res.json({ lojas });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Entrada e Saída: unidades vendidas por dia (saída de estoque motivada por
+// venda) — usa direto os itens do pedido, não o ledger de estoque_movimentos,
+// porque pedido de marketplace só gera baixa de estoque de verdade se/quando
+// alguém clicar em "Faturar" manualmente (nem sempre acontece) — a
+// quantidade vendida no pedido é o sinal confiável e sempre disponível.
+router.get('/metricas/movimento-estoque', async (req, res, next) => {
+  try {
+    const { data_inicio, data_fim, canal_venda } = req.query;
+    const conditions = ["pv.origem_marketplace IS NOT NULL", "pv.situacao != 'cancelado'"];
+    const values = [];
+    let i = 1;
+    if (data_inicio) { conditions.push(`pv.data_pedido >= $${i}`); values.push(data_inicio); i += 1; }
+    if (data_fim) { conditions.push(`pv.data_pedido <= $${i}`); values.push(data_fim); i += 1; }
+    if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
+    const { rows } = await pool.query(
+      `SELECT pv.data_pedido::text AS data, COALESCE(SUM(pi.quantidade), 0) AS unidades, COUNT(DISTINCT pv.id) AS pedidos
+       FROM pedidos_venda pv JOIN pedido_itens pi ON pi.pedido_id = pv.id
+       WHERE ${conditions.join(' AND ')}
+       GROUP BY pv.data_pedido ORDER BY pv.data_pedido`,
+      values
+    );
+    const serie = rows.map((r) => ({ data: r.data, unidades: Number(r.unidades), pedidos: Number(r.pedidos) }));
+    const totalUnidades = serie.reduce((s, d) => s + d.unidades, 0);
+    const totalPedidos = serie.reduce((s, d) => s + d.pedidos, 0);
+    res.json({ serie, totalUnidades, totalPedidos });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/relatorio-taxas', async (req, res, next) => {
   try {
     const { data_inicio, data_fim, canal_venda } = req.query;

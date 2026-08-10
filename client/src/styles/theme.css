@@ -781,6 +781,9 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
 .stat-card { background: var(--surface); padding: 13px 16px; display: flex; flex-direction: column; gap: 4px; }
 .stat-card-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-faint); font-weight: 600; }
 .stat-card-value { font-size: 18px; font-weight: 700; color: var(--leather-deep); }
+.stat-card-delta { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600; width: fit-content; }
+.stat-card-delta.up { color: var(--success); }
+.stat-card-delta.down { color: var(--danger); }
 @media (max-width: 640px) { .stat-strip { grid-template-columns: repeat(2, 1fr); } }
 
 /* ---------- sub-abas dentro de uma página ---------- */

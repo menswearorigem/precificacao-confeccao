@@ -35,6 +35,7 @@ import ComprasListPage from './pages/ComprasListPage';
 import CompraFormPage from './pages/CompraFormPage';
 import RelatorioComprasPage from './pages/RelatorioComprasPage';
 import RelatorioLucratividadePage from './pages/RelatorioLucratividadePage';
+import MetricasMarketplacePage from './pages/MetricasMarketplacePage';
 import RelatorioTaxasPage from './pages/RelatorioTaxasPage';
 import ImportarPedidosPage from './pages/ImportarPedidosPage';
 import ViagensListPage from './pages/ViagensListPage';
@@ -96,6 +97,7 @@ function AppRoutes() {
                   <Route path="/vendas/lucratividade" element={<RelatorioLucratividadePage origemFiltro="manual" />} />
                   <Route path="/marketplace/pedidos" element={<PedidosListPage origemFiltro="marketplace" />} />
                   <Route path="/marketplace/lucratividade" element={<RelatorioLucratividadePage origemFiltro="marketplace" />} />
+                  <Route path="/marketplace/metricas" element={<MetricasMarketplacePage />} />
                   <Route path="/marketplace/taxas" element={<RelatorioTaxasPage />} />
                   <Route path="/marketplace/importar-pedidos" element={<ImportarPedidosPage />} />
                   <Route path="/viagens" element={<ViagensListPage />} />

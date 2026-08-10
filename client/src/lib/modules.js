@@ -3,6 +3,7 @@ import {
   FlaskConical, LayoutDashboard, Boxes, FileText, List as ListIcon,
   Warehouse, Barcode, Tags, Printer, Users, ClipboardList, ShoppingCart,
   Truck, BarChart3, ShieldCheck, Plug, TrendingUp, ReceiptText, Store, Plane,
+  LineChart,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -51,6 +52,7 @@ export const MODULES = [
     pages: [
       { to: '/marketplace/pedidos', label: 'Pedidos', icon: ClipboardList },
       { to: '/marketplace/lucratividade', label: 'Lucratividade', icon: TrendingUp },
+      { to: '/marketplace/metricas', label: 'Métricas', icon: LineChart },
       { to: '/marketplace/taxas', label: 'Taxas Cobradas', icon: ReceiptText },
       { to: '/marketplace/importar-pedidos', label: 'Importar Pedidos', icon: Upload },
     ],
