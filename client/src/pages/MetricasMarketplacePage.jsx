@@ -65,6 +65,13 @@ function IconePlataforma({ marketplace, size = 24 }) {
   );
 }
 
+// ROAS é multiplicador (2.0 = "a cada R$1 investido em Ads, voltam R$2 em
+// venda"), não porcentagem — formata como "2,0x" em vez de passar pelo
+// pct() (que espera fração e mostra "%").
+function roas(valor) {
+  return valor != null ? `${valor.toFixed(1).replace('.', ',')}x` : '—';
+}
+
 function trintaDiasAtras() {
   const d = new Date();
   d.setDate(d.getDate() - 30);
@@ -886,7 +893,11 @@ function PublicidadeTab({ integracoes }) {
     impressoes: acc.impressoes + (c.metricas.impressoes || 0),
     vendasDiretas: acc.vendasDiretas + (c.metricas.vendasDiretasValor || 0),
   }), { custo: 0, cliques: 0, impressoes: 0, vendasDiretas: 0 });
-  const acosGeral = totais && totais.vendasDiretas > 0 ? totais.custo / totais.vendasDiretas : null;
+  // ROAS (retorno sobre o investimento em publicidade — receita atribuída
+  // dividida pelo gasto) em vez de ACOS: é o indicador que o próprio
+  // Mercado Livre passou a priorizar (ver nota da documentação oficial:
+  // "o sistema agora prioriza o ROAS em vez do ACOS").
+  const roasGeral = totais && totais.custo > 0 ? totais.vendasDiretas / totais.custo : null;
 
   return (
     <div>
@@ -935,7 +946,7 @@ function PublicidadeTab({ integracoes }) {
           <div className="stat-card"><span className="stat-card-label"><Megaphone size={13} style={{ marginRight: 4, verticalAlign: -2 }} />Gasto com Ads</span><span className="stat-card-value">{brl(totais.custo)}</span></div>
           <div className="stat-card"><span className="stat-card-label"><MousePointerClick size={13} style={{ marginRight: 4, verticalAlign: -2 }} />Cliques</span><span className="stat-card-value">{totais.cliques.toLocaleString('pt-BR')}</span></div>
           <div className="stat-card"><span className="stat-card-label"><Eye size={13} style={{ marginRight: 4, verticalAlign: -2 }} />Impressões</span><span className="stat-card-value">{totais.impressoes.toLocaleString('pt-BR')}</span></div>
-          <div className="stat-card"><span className="stat-card-label">ACOS Geral</span><span className="stat-card-value">{acosGeral != null ? pct(acosGeral) : '—'}</span></div>
+          <div className="stat-card"><span className="stat-card-label">ROAS Geral</span><span className="stat-card-value">{roas(roasGeral)}</span></div>
         </div>
       )}
 
@@ -945,7 +956,7 @@ function PublicidadeTab({ integracoes }) {
           <div style={{ overflowX: 'auto' }}>
             <table className="data-table">
               <thead>
-                <tr><th>Campanha</th><th>Status</th><th>Estratégia</th><th>ACOS Alvo</th><th>Custo</th><th>Cliques</th><th>Impressões</th><th>CPC</th><th>ACOS</th></tr>
+                <tr><th>Campanha</th><th>Status</th><th>Estratégia</th><th>ROAS Alvo</th><th>Custo</th><th>Cliques</th><th>Impressões</th><th>CPC</th><th>ROAS</th></tr>
               </thead>
               <tbody>
                 {campanhas.map((c) => (
@@ -953,12 +964,12 @@ function PublicidadeTab({ integracoes }) {
                     <td>{c.nome}</td>
                     <td><span className={'stamp sm ' + (c.status === 'active' ? 'tone-saudavel' : 'tone-neutro')}>{c.status || '—'}</span></td>
                     <td>{c.estrategia || '—'}</td>
-                    <td className="mono">{c.acosAlvo != null ? pct(c.acosAlvo) : '—'}</td>
+                    <td className="mono">{roas(c.roasAlvo)}</td>
                     <td className="mono">{brl(c.metricas.custo)}</td>
                     <td className="mono">{c.metricas.cliques.toLocaleString('pt-BR')}</td>
                     <td className="mono">{c.metricas.impressoes.toLocaleString('pt-BR')}</td>
                     <td className="mono">{c.metricas.cpc != null ? brl(c.metricas.cpc) : '—'}</td>
-                    <td className="mono">{c.metricas.acos != null ? pct(c.metricas.acos) : '—'}</td>
+                    <td className="mono">{roas(c.metricas.roas)}</td>
                   </tr>
                 ))}
                 {campanhas.length === 0 && <tr><td colSpan="9">Nenhuma campanha no período.</td></tr>}
