@@ -197,6 +197,91 @@ router.get('/:id/distribuicao-categorias', async (req, res, next) => {
   }
 });
 
+// Reputação do vendedor (nota, vendas, reclamações, cancelamentos,
+// despacho com atraso) — vem junto no /users/me, não precisa de chamada
+// própria. "Objetivo" mostrado no front é uma referência de mercado (não
+// vem da API do Mercado Livre), pra dar uma noção de onde a conta está.
+router.get('/:id/reputacao', async (req, res, next) => {
+  try {
+    const integracao = await integracaoMercadoLivreAutorizada(req.params.id);
+    const usuario = await mercadoLivre.buscarUsuario(integracao.access_token);
+    const rep = usuario.seller_reputation || {};
+    const metrics = rep.metrics || {};
+    res.json({
+      nickname: usuario.nickname || null,
+      levelId: rep.level_id || null,
+      powerSellerStatus: rep.power_seller_status || null,
+      vendas: Number(metrics.sales?.completed) || 0,
+      reclamacoesPct: metrics.claims?.rate != null ? Number(metrics.claims.rate) : null,
+      canceladosPct: metrics.cancellations?.rate != null ? Number(metrics.cancellations.rate) : null,
+      despachoAtrasoPct: metrics.delayed_handling_time?.rate != null ? Number(metrics.delayed_handling_time.rate) : null,
+    });
+  } catch (err) {
+    res.status(err.status || 422).json({ error: err.message });
+  }
+});
+
+// Anúncios mais vendidos dessa loja com ID gravado (ver migração
+// 0028_anuncio_id_marketplace) — base comum de Opiniões e Concorrentes,
+// que consultam a API do Mercado Livre item por item (por isso o limite).
+async function anunciosMaisVendidos(integracaoId, limite = 25) {
+  const { rows } = await pool.query(
+    `SELECT pi.anuncio_id_marketplace AS anuncio_id, pi.referencia, pi.descricao, pi.produto_id,
+            SUM(pi.quantidade) AS unidades
+     FROM pedido_itens pi JOIN pedidos_venda pv ON pv.id = pi.pedido_id
+     WHERE pv.origem_integracao_id = $1 AND pi.anuncio_id_marketplace IS NOT NULL AND pv.situacao != 'cancelado'
+     GROUP BY pi.anuncio_id_marketplace, pi.referencia, pi.descricao, pi.produto_id
+     ORDER BY unidades DESC
+     LIMIT $2`,
+    [integracaoId, limite]
+  );
+  return rows;
+}
+
+router.get('/:id/opinioes', async (req, res, next) => {
+  try {
+    const integracao = await integracaoMercadoLivreAutorizada(req.params.id);
+    const anuncios = await anunciosMaisVendidos(integracao.id);
+    if (anuncios.length === 0) {
+      return res.json({ opinioes: [], aviso: 'Nenhum pedido dessa loja tem o ID do anúncio gravado ainda — só pedidos sincronizados a partir de agora trazem esse dado.' });
+    }
+    const opinioes = [];
+    for (const a of anuncios) {
+      try {
+        const dados = await mercadoLivre.buscarOpinioesAnuncio({ accessToken: integracao.access_token, itemId: a.anuncio_id });
+        opinioes.push({ ...dados, referencia: a.referencia, descricao: a.descricao, produtoId: a.produto_id });
+      } catch (err) {
+        opinioes.push({ itemId: a.anuncio_id, referencia: a.referencia, descricao: a.descricao, produtoId: a.produto_id, erro: err.message });
+      }
+    }
+    res.json({ opinioes });
+  } catch (err) {
+    res.status(err.status || 422).json({ error: err.message });
+  }
+});
+
+router.get('/:id/concorrentes', async (req, res, next) => {
+  try {
+    const integracao = await integracaoMercadoLivreAutorizada(req.params.id);
+    const anuncios = await anunciosMaisVendidos(integracao.id);
+    if (anuncios.length === 0) {
+      return res.json({ concorrentes: [], aviso: 'Nenhum pedido dessa loja tem o ID do anúncio gravado ainda — só pedidos sincronizados a partir de agora trazem esse dado.' });
+    }
+    const concorrentes = [];
+    for (const a of anuncios) {
+      try {
+        const dados = await mercadoLivre.buscarConcorrenciaAnuncio({ accessToken: integracao.access_token, itemId: a.anuncio_id });
+        concorrentes.push({ ...dados, referencia: a.referencia, descricao: a.descricao, produtoId: a.produto_id });
+      } catch (err) {
+        concorrentes.push({ itemId: a.anuncio_id, referencia: a.referencia, descricao: a.descricao, produtoId: a.produto_id, erro: err.message });
+      }
+    }
+    res.json({ concorrentes });
+  } catch (err) {
+    res.status(err.status || 422).json({ error: err.message });
+  }
+});
+
 module.exports = router;
 
 // ---------- callbacks (sem autenticação — chamados pelo redirect do marketplace) ----------

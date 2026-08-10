@@ -3,7 +3,7 @@ import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContai
 import {
   ArrowDownRight, ArrowUpRight, Banknote, ShoppingCart, CheckCircle2,
   Users, TrendingUp, Store, Boxes, PackageMinus, Handshake, ShoppingBag,
-  Flame, Layers,
+  Flame, Layers, Star, ShieldCheck, Swords,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
@@ -590,6 +590,239 @@ function faixaTendencia(indice) {
   return { label: 'Popular da semana', tone: 'tone-neutro', Icone: Layers };
 }
 
+// Cor do nível de reputação do Mercado Livre (level_id: 5_green é o
+// melhor, 1_red o pior, null/"newbie" é quem ainda não tem histórico
+// suficiente).
+const REPUTACAO_TONE = {
+  '5_green': 'tone-saudavel',
+  '4_light_green': 'tone-saudavel',
+  '3_yellow': 'tone-atencao',
+  '2_orange': 'tone-atencao',
+  '1_red': 'tone-prejuizo',
+};
+const REPUTACAO_LABEL = {
+  '5_green': 'Excelente', '4_light_green': 'Boa', '3_yellow': 'Regular', '2_orange': 'Baixa', '1_red': 'Crítica',
+};
+
+// Referências de mercado só pra dar contexto visual (não vêm da API do
+// Mercado Livre) — mesma ordem de grandeza mostrada em painéis do gênero.
+const META_RECLAMACOES = 0.02;
+const META_CANCELADOS = 0.015;
+const META_DESPACHO_ATRASO = 0.10;
+
+function MetricaComMeta({ valor, meta }) {
+  if (valor === null || valor === undefined) return <span className="mono">—</span>;
+  const dentro = valor <= meta;
+  return (
+    <span className="mono">
+      {pct(valor)} <span style={{ fontSize: 11, color: dentro ? 'var(--success)' : 'var(--danger)' }}>(meta ≤{pct(meta)})</span>
+    </span>
+  );
+}
+
+function ReputacaoTab({ integracoes }) {
+  const lojasML = useMemo(() => integracoes.filter((i) => i.marketplace === 'mercado_livre' && i.conectado), [integracoes]);
+  const [dados, setDados] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState('');
+
+  function buscar() {
+    setCarregando(true);
+    setErro('');
+    Promise.all(lojasML.map((loja) => (
+      api.get(`/integracoes/${loja.id}/reputacao`)
+        .then((d) => ({ ...d, lojaNome: loja.nome, integracaoId: loja.id, ok: true }))
+        .catch((err) => ({ lojaNome: loja.nome, integracaoId: loja.id, ok: false, erro: err.message }))
+    )))
+      .then(setDados)
+      .catch((err) => setErro(err.message))
+      .finally(() => setCarregando(false));
+  }
+
+  if (lojasML.length === 0) {
+    return <div className="card"><p className="page-sub">Conecte e autorize uma integração do Mercado Livre em "Integrações" pra usar essa aba.</p></div>;
+  }
+
+  return (
+    <div className="card">
+      <div className="card-head">Reputação por Loja</div>
+      <button className="btn btn-primary" onClick={buscar} disabled={carregando}>
+        {carregando ? 'Buscando…' : 'Buscar Reputação'}
+      </button>
+      {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
+      {dados && (
+        <div style={{ overflowX: 'auto', marginTop: 14 }}>
+          <table className="data-table">
+            <thead>
+              <tr><th>Loja</th><th>Reputação</th><th>Vendas</th><th>Reclamações</th><th>Cancelados por Você</th><th>Despacho com Atraso</th></tr>
+            </thead>
+            <tbody>
+              {dados.map((d) => (
+                <tr key={d.integracaoId}>
+                  <td><ShieldCheck size={13} style={{ marginRight: 5, verticalAlign: -2 }} />{d.lojaNome}</td>
+                  {d.ok ? (
+                    <>
+                      <td><span className={'stamp sm ' + (REPUTACAO_TONE[d.levelId] || 'tone-neutro')}>{REPUTACAO_LABEL[d.levelId] || 'Sem histórico'}</span></td>
+                      <td className="mono">{d.vendas.toLocaleString('pt-BR')}</td>
+                      <td><MetricaComMeta valor={d.reclamacoesPct} meta={META_RECLAMACOES} /></td>
+                      <td><MetricaComMeta valor={d.canceladosPct} meta={META_CANCELADOS} /></td>
+                      <td><MetricaComMeta valor={d.despachoAtrasoPct} meta={META_DESPACHO_ATRASO} /></td>
+                    </>
+                  ) : (
+                    <td colSpan="5" className="login-error" style={{ margin: 0 }}>{d.erro}</td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OpinioesTab({ integracoes }) {
+  const integracaoML = useMemo(() => integracoes.find((i) => i.marketplace === 'mercado_livre' && i.conectado), [integracoes]);
+  const [dados, setDados] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState('');
+
+  function buscar() {
+    setCarregando(true);
+    setErro('');
+    api.get(`/integracoes/${integracaoML.id}/opinioes`)
+      .then(setDados)
+      .catch((err) => setErro(err.message))
+      .finally(() => setCarregando(false));
+  }
+
+  if (!integracaoML) {
+    return <div className="card"><p className="page-sub">Conecte e autorize uma integração do Mercado Livre em "Integrações" pra usar essa aba.</p></div>;
+  }
+
+  return (
+    <div className="card">
+      <div className="card-head">Opiniões dos Anúncios Mais Vendidos — {integracaoML.nome}</div>
+      <p className="page-sub">Consulta os até 25 anúncios com mais unidades vendidas nessa loja (item por item, pode demorar).</p>
+      <button className="btn btn-primary" onClick={buscar} disabled={carregando}>
+        {carregando ? 'Buscando…' : 'Buscar Opiniões'}
+      </button>
+      {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
+      {dados?.aviso && <div className="login-error" style={{ marginTop: 10, background: 'var(--tone-atencao-bg, #fff3cd)' }}>{dados.aviso}</div>}
+      {dados?.opinioes?.length > 0 && (
+        <div style={{ overflowX: 'auto', marginTop: 14 }}>
+          <table className="data-table">
+            <thead>
+              <tr><th>Produto</th><th>ID do Anúncio</th><th>Qualificação</th><th>Avaliações</th><th>5★</th><th>4★</th><th>3★</th><th>2★</th><th>1★</th></tr>
+            </thead>
+            <tbody>
+              {dados.opinioes.map((o) => (
+                <tr key={o.itemId}>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <FotoProduto produtoId={o.produtoId} temFoto={false} size={32} alt={o.referencia} />
+                      <div>
+                        <strong className="mono">{o.referencia}</strong>
+                        {o.descricao && <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{o.descricao}</div>}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="mono">{o.itemId}</td>
+                  {o.erro ? (
+                    <td colSpan="7" className="login-error" style={{ margin: 0 }}>{o.erro}</td>
+                  ) : (
+                    <>
+                      <td className="mono"><Star size={11} style={{ marginRight: 3, verticalAlign: -1, color: '#c9962c' }} />{o.notaMedia.toFixed(1)}</td>
+                      <td className="mono">{o.totalAvaliacoes}</td>
+                      <td className="mono">{o.estrelas[5]}</td>
+                      <td className="mono">{o.estrelas[4]}</td>
+                      <td className="mono">{o.estrelas[3]}</td>
+                      <td className="mono">{o.estrelas[2]}</td>
+                      <td className="mono">{o.estrelas[1]}</td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConcorrentesTab({ integracoes }) {
+  const integracaoML = useMemo(() => integracoes.find((i) => i.marketplace === 'mercado_livre' && i.conectado), [integracoes]);
+  const [dados, setDados] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState('');
+
+  function buscar() {
+    setCarregando(true);
+    setErro('');
+    api.get(`/integracoes/${integracaoML.id}/concorrentes`)
+      .then(setDados)
+      .catch((err) => setErro(err.message))
+      .finally(() => setCarregando(false));
+  }
+
+  if (!integracaoML) {
+    return <div className="card"><p className="page-sub">Conecte e autorize uma integração do Mercado Livre em "Integrações" pra usar essa aba.</p></div>;
+  }
+
+  return (
+    <div className="card">
+      <div className="card-head">Concorrência dos Anúncios Mais Vendidos — {integracaoML.nome}</div>
+      <p className="page-sub">
+        Só funciona pra anúncio que participa do modo catálogo do Mercado Livre (a maioria dos anúncios normais não
+        participa) — consulta os até 25 mais vendidos dessa loja, item por item.
+      </p>
+      <button className="btn btn-primary" onClick={buscar} disabled={carregando}>
+        {carregando ? 'Buscando…' : 'Buscar Concorrência'}
+      </button>
+      {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
+      {dados?.aviso && <div className="login-error" style={{ marginTop: 10, background: 'var(--tone-atencao-bg, #fff3cd)' }}>{dados.aviso}</div>}
+      {dados?.concorrentes?.length > 0 && (
+        <div style={{ overflowX: 'auto', marginTop: 14 }}>
+          <table className="data-table">
+            <thead>
+              <tr><th>Produto</th><th>ID do Anúncio</th><th>Participa do Catálogo?</th><th>Situação</th><th>Preço Atual</th><th>Preço pra Ganhar</th></tr>
+            </thead>
+            <tbody>
+              {dados.concorrentes.map((c) => (
+                <tr key={c.itemId}>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <FotoProduto produtoId={c.produtoId} temFoto={false} size={32} alt={c.referencia} />
+                      <div>
+                        <strong className="mono">{c.referencia}</strong>
+                        {c.descricao && <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{c.descricao}</div>}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="mono">{c.itemId}</td>
+                  <td>{c.participaCatalogo ? <span className="stamp sm tone-saudavel">Sim</span> : <span className="stamp sm tone-neutro">Não</span>}</td>
+                  <td>
+                    {c.erro ? <span className="login-error" style={{ margin: 0, display: 'inline-block', padding: '2px 8px' }}>{c.erro}</span>
+                      : c.participaCatalogo ? (
+                        <span className={'stamp sm ' + (c.ganhando ? 'tone-saudavel' : 'tone-prejuizo')}>
+                          <Swords size={11} style={{ marginRight: 3, verticalAlign: -1 }} />
+                          {c.ganhando ? 'Ganhando a disputa' : 'Perdendo a disputa'}
+                        </span>
+                      ) : '—'}
+                  </td>
+                  <td className="mono">{c.precoAtual ? brl(c.precoAtual) : '—'}</td>
+                  <td className="mono">{c.precoParaGanhar != null ? brl(c.precoParaGanhar) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CategoriasTab({ integracoes }) {
   const integracaoML = useMemo(() => integracoes.find((i) => i.marketplace === 'mercado_livre' && i.conectado), [integracoes]);
   const [subView, setSubView] = useState('tendencia');
@@ -773,6 +1006,9 @@ const TABS = [
   { key: 'vendasPorAnuncio', label: 'Vendas por Anúncio' },
   { key: 'abc', label: 'Análise ABC' },
   { key: 'estoque', label: 'Entrada e Saída' },
+  { key: 'reputacao', label: 'Reputação' },
+  { key: 'opinioes', label: 'Opiniões' },
+  { key: 'concorrentes', label: 'Concorrentes' },
   { key: 'categorias', label: 'Categorias' },
   { key: 'shopee', label: 'Shopee' },
 ];
@@ -878,6 +1114,9 @@ export default function MetricasMarketplacePage() {
           {subTab === 'vendasPorAnuncio' && <VendasPorAnuncioTab filtros={filtrosAplicados} busca={busca} />}
           {subTab === 'abc' && <AnaliseABCTab filtros={filtrosAplicados} busca={busca} />}
           {subTab === 'estoque' && <EntradaSaidaTab filtros={filtrosAplicados} />}
+          {subTab === 'reputacao' && <ReputacaoTab integracoes={integracoes} />}
+          {subTab === 'opinioes' && <OpinioesTab integracoes={integracoes} />}
+          {subTab === 'concorrentes' && <ConcorrentesTab integracoes={integracoes} />}
           {subTab === 'categorias' && <CategoriasTab integracoes={integracoes} />}
           {subTab === 'shopee' && <ShopeeTab filtros={filtrosAplicados} />}
         </>

@@ -367,6 +367,52 @@ async function buscarDetalheCategoria({ accessToken, categoryId }) {
   return { id: data.id, nome: data.name, totalAnuncios: Number(data.total_items_in_this_category) || 0 };
 }
 
+// Opiniões (avaliações) de um anúncio — nota média, total e a distribuição
+// por estrela. O formato exato da distribuição varia um pouco entre
+// versões da API (chave numérica "1".."5" ou nomeada "one_star".."five_star"),
+// então tenta os dois formatos em vez de travar num só.
+async function buscarOpinioesAnuncio({ accessToken, itemId }) {
+  const data = await chamarApi(`/reviews/item/${itemId}`, accessToken);
+  const bruto = data.rating_levels || {};
+  const estrelas = {
+    5: Number(bruto['5'] ?? bruto.five_star ?? 0),
+    4: Number(bruto['4'] ?? bruto.four_star ?? 0),
+    3: Number(bruto['3'] ?? bruto.three_star ?? 0),
+    2: Number(bruto['2'] ?? bruto.two_star ?? 0),
+    1: Number(bruto['1'] ?? bruto.one_star ?? 0),
+  };
+  return {
+    itemId,
+    notaMedia: Number(data.rating_average) || 0,
+    totalAvaliacoes: Number(data.total ?? data.paging?.total) || 0,
+    estrelas,
+  };
+}
+
+// Verifica se um anúncio participa do sistema de catálogo/comparação de
+// preço do Mercado Livre (a maioria dos anúncios normais NÃO participa —
+// só quem publica em modo catálogo) e, se participar, busca a posição de
+// preço frente aos concorrentes do mesmo produto.
+async function buscarConcorrenciaAnuncio({ accessToken, itemId }) {
+  const item = await chamarApi(`/items/${itemId}`, accessToken);
+  if (!item.catalog_listing || !item.catalog_product_id) {
+    return { itemId, participaCatalogo: false };
+  }
+  try {
+    const disputa = await chamarApi(`/items/${itemId}/price_to_win`, accessToken);
+    return {
+      itemId,
+      participaCatalogo: true,
+      status: disputa.status || null,
+      ganhando: disputa.status === 'you_are_winning' || disputa.status === 'winning',
+      precoAtual: Number(disputa.current_price?.amount ?? item.price) || 0,
+      precoParaGanhar: disputa.price_to_win?.amount != null ? Number(disputa.price_to_win.amount) : null,
+    };
+  } catch (err) {
+    return { itemId, participaCatalogo: true, erro: err.message };
+  }
+}
+
 module.exports = {
   buildAuthorizeUrl,
   trocarCodigoPorToken,
@@ -382,4 +428,6 @@ module.exports = {
   buscarTendencias,
   buscarCategorias,
   buscarDetalheCategoria,
+  buscarOpinioesAnuncio,
+  buscarConcorrenciaAnuncio,
 };
