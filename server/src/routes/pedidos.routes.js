@@ -544,17 +544,28 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
       let custoEmbalagem;
       let custo;
       let lucro;
+      // Taxa de marketplace pra EXIBIÇÃO: quando o cálculo é real, o valor
+      // capturado na importação (sale_fee) é só a comissão "clássica" e não
+      // bate com o que o Mercado Livre de fato reteve (financiamento,
+      // parcelamento, subsídio de frete etc. também saem do valor líquido).
+      // Usar a diferença receita - valorRecebido garante que a soma exibida
+      // (Total dos Itens - Taxa - Custo - Embalagem - Imposto) sempre bate
+      // exatamente com o Lucro do Pedido, em vez de mostrar um número que
+      // não reconcilia com o Valor Recebido real ao lado dele.
+      let taxaMarketplaceExibicao;
       if (calculoReal) {
         const valorNotaFiscal = receita * pctNotaFiscal;
         imposto = valorNotaFiscal * pctImpostosEmpresa(empresaVinculada);
         custoEmbalagem = custoEmbalagemConfig;
         custo = custoPeca + imposto + custoEmbalagem;
         lucro = valorRecebido - custoPeca - custoEmbalagem - imposto;
+        taxaMarketplaceExibicao = receita - valorRecebido;
       } else {
         imposto = impostoEstimado;
         custoEmbalagem = 0;
         custo = custoPeca + imposto;
         lucro = receita - custo - taxaMarketplace;
+        taxaMarketplaceExibicao = taxaMarketplace;
       }
       const margemPct = receita > 0 ? lucro / receita : 0;
       return {
@@ -573,7 +584,7 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
         custoEmbalagem,
         frete,
         custo,
-        taxaMarketplace,
+        taxaMarketplace: taxaMarketplaceExibicao,
         lucro,
         margemPct,
         calculoReal,

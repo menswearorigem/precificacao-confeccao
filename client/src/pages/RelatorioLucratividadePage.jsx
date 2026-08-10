@@ -410,7 +410,9 @@ function VendaDetalheCard({ p, config }) {
             {p.taxaMarketplace > 0 && (
               <div className="venda-breakdown-row">
                 <span className="venda-breakdown-icon"><Percent size={15} /></span>
-                <span className="venda-breakdown-label">Taxa de Marketplace</span>
+                <span className="venda-breakdown-label">
+                  {p.calculoReal ? 'Taxas e Descontos do Mercado Livre' : 'Taxa de Marketplace'}
+                </span>
                 <span className="venda-breakdown-valor">-{brl(p.taxaMarketplace)}</span>
               </div>
             )}
