@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
-import { DateInput } from '../components/ui';
+import { DateInput, Select } from '../components/ui';
 import FotoProduto from '../components/FotoProduto';
 
 // Paleta categórica combinando com a identidade do sistema (terracota,
@@ -17,6 +17,11 @@ const COR_FATURAMENTO = '#d17a2a';
 const COR_LIQUIDO = '#0d9488';
 const COR_LUCRO = '#7c4577';
 const FONTE_GRAFICO = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+
+// Mesmo rótulo usado no backend (marketplaceSync.js LABEL) — traduz entre o
+// campo interno de cada integração ('mercado_livre') e o canal_venda
+// gravado no pedido ('Mercado Livre'), usado no filtro de Plataforma.
+const PLATAFORMA_LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee' };
 
 function trintaDiasAtras() {
   const d = new Date();
@@ -475,6 +480,8 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
   const [dataInicio, setDataInicio] = useState(trintaDiasAtras());
   const [dataFim, setDataFim] = useState(hoje());
   const [canalVenda, setCanalVenda] = useState('');
+  const [lojaId, setLojaId] = useState('');
+  const [integracoes, setIntegracoes] = useState([]);
   const [busca, setBusca] = useState('');
   const [ordemData, setOrdemData] = useState('asc');
   const [relatorio, setRelatorio] = useState(null);
@@ -491,6 +498,18 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
   const isMarketplace = origemFiltro === 'marketplace';
 
   useEffect(() => { api.get('/configuracoes').then(setConfig).catch(() => {}); }, []);
+  useEffect(() => { if (isMarketplace) api.get('/integracoes').then(setIntegracoes).catch(() => {}); }, [isMarketplace]);
+
+  const lojasDisponiveis = useMemo(() => (
+    integracoes.filter((i) => !canalVenda || PLATAFORMA_LABEL[i.marketplace] === canalVenda)
+  ), [integracoes, canalVenda]);
+
+  function mudarPlataforma(valor) {
+    setCanalVenda(valor);
+    if (lojaId && !integracoes.some((i) => String(i.id) === String(lojaId) && (!valor || PLATAFORMA_LABEL[i.marketplace] === valor))) {
+      setLojaId('');
+    }
+  }
 
   function gerar() {
     setLoading(true);
@@ -499,6 +518,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
     if (dataInicio) params.set('data_inicio', dataInicio);
     if (dataFim) params.set('data_fim', dataFim);
     if (canalVenda) params.set('canal_venda', canalVenda);
+    if (isMarketplace && lojaId) params.set('origem_integracao_id', lojaId);
     if (origemFiltro) params.set('origem', origemFiltro);
     const qs = params.toString();
     const chamadas = [api.get(`/pedidos/relatorio-lucratividade?${qs}`)];
@@ -577,10 +597,33 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
               <span className="field-label">Data Fim</span>
               <DateInput value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
             </div>
-            <div className="field">
-              <span className="field-label">Canal de venda</span>
-              <input placeholder="Ex: Mercado Livre, Shopee..." value={canalVenda} onChange={(e) => setCanalVenda(e.target.value)} />
-            </div>
+            {isMarketplace ? (
+              <>
+                <div className="field">
+                  <span className="field-label">Plataforma</span>
+                  <Select value={canalVenda} onChange={(e) => mudarPlataforma(e.target.value)}>
+                    <option value="">Todas as plataformas</option>
+                    {Object.values(PLATAFORMA_LABEL).map((label) => (
+                      <option key={label} value={label}>{label}</option>
+                    ))}
+                  </Select>
+                </div>
+                <div className="field">
+                  <span className="field-label">Loja</span>
+                  <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)}>
+                    <option value="">Todas as lojas</option>
+                    {lojasDisponiveis.map((i) => (
+                      <option key={i.id} value={i.id}>{i.nome || PLATAFORMA_LABEL[i.marketplace]}</option>
+                    ))}
+                  </Select>
+                </div>
+              </>
+            ) : (
+              <div className="field">
+                <span className="field-label">Canal de venda</span>
+                <input placeholder="Ex: Mercado Livre, Shopee..." value={canalVenda} onChange={(e) => setCanalVenda(e.target.value)} />
+              </div>
+            )}
             <div className="field">
               <span className="field-label">Buscar</span>
               <input

@@ -452,7 +452,7 @@ async function mapaCustoPorKit(kitIds, ctx) {
 // "série diária", pra garantir que os três olhem pro mesmo número de lucro
 // por pedido (mesma fórmula, mesmos filtros), só organizado de formas
 // diferentes.
-async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem }) {
+async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem, origem_integracao_id }) {
   if (origem === 'marketplace') sincronizarSeNecessario();
   const conditions = ["pv.situacao != 'cancelado'"];
   const values = [];
@@ -460,6 +460,7 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
   if (data_inicio) { conditions.push(`pv.data_pedido >= $${i}`); values.push(data_inicio); i += 1; }
   if (data_fim) { conditions.push(`pv.data_pedido <= $${i}`); values.push(data_fim); i += 1; }
   if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
+  if (origem_integracao_id) { conditions.push(`pv.origem_integracao_id = $${i}`); values.push(origem_integracao_id); i += 1; }
   if (origem === 'marketplace') conditions.push('pv.origem_marketplace IS NOT NULL');
   if (origem === 'manual') conditions.push('pv.origem_marketplace IS NULL');
   const where = `WHERE ${conditions.join(' AND ')}`;
@@ -643,8 +644,8 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
 
 router.get('/relatorio-lucratividade', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, canal_venda, origem } = req.query;
-    const { resultado, totalGeral } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem });
+    const { data_inicio, data_fim, canal_venda, origem, origem_integracao_id } = req.query;
+    const { resultado, totalGeral } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem, origem_integracao_id });
     res.json({ pedidos: resultado, totalGeral });
   } catch (err) {
     next(err);
@@ -660,8 +661,8 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
 // pedido inteiro, e cada produto carrega sua fatia justa.
 router.get('/relatorio-lucratividade/resumo-produto', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, canal_venda, origem } = req.query;
-    const { resultado } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem });
+    const { data_inicio, data_fim, canal_venda, origem, origem_integracao_id } = req.query;
+    const { resultado } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem, origem_integracao_id });
 
     const porProduto = new Map();
     for (const p of resultado) {
@@ -715,8 +716,8 @@ router.get('/relatorio-lucratividade/resumo-produto', async (req, res, next) => 
 // de cálculo do relatório por pedido, só agrupada por dia.
 router.get('/relatorio-lucratividade/serie-diaria', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, canal_venda, origem } = req.query;
-    const { resultado } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem });
+    const { data_inicio, data_fim, canal_venda, origem, origem_integracao_id } = req.query;
+    const { resultado } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem, origem_integracao_id });
 
     const porDia = new Map();
     for (const p of resultado) {
@@ -834,14 +835,51 @@ function resumirPedidosMarketplace(pedidos) {
     }
   }
   const clientes = clientesValidos.size;
+  const totalPedidos = gruposTotal.size;
+  const pedidosValidos = gruposValidos.size;
   return {
     valorTotalVendas,
-    totalPedidos: gruposTotal.size,
+    totalPedidos,
     valorVendasValidas,
-    pedidosValidos: gruposValidos.size,
+    pedidosValidos,
+    pedidosCancelados: totalPedidos - pedidosValidos,
+    valorVendasCanceladas: valorTotalVendas - valorVendasValidas,
     clientes,
     vendasPorCliente: clientes > 0 ? valorVendasValidas / clientes : 0,
   };
+}
+
+// Agrupa em objetos do mesmo formato de resumirPedidosMarketplace, um por
+// dia — usado tanto pra tabela diária quanto pro gráfico da Visão Geral.
+function agruparPedidosPorDia(pedidos) {
+  const porDia = new Map();
+  for (const p of pedidos) {
+    const dia = p.data_pedido.toISOString().slice(0, 10);
+    if (!porDia.has(dia)) porDia.set(dia, []);
+    porDia.get(dia).push(p);
+  }
+  return [...porDia.entries()]
+    .map(([data, lista]) => ({ data, ...resumirPedidosMarketplace(lista) }))
+    .sort((a, b) => a.data.localeCompare(b.data));
+}
+
+const DIA_VAZIO = { totalPedidos: 0, valorTotalVendas: 0, pedidosValidos: 0, valorVendasValidas: 0, pedidosCancelados: 0, valorVendasCanceladas: 0, clientes: 0, vendasPorCliente: 0 };
+
+// Completa os dias sem nenhuma venda com zero, pra série contínua no
+// gráfico e pra comparação por ÍNDICE do dia bater com o período anterior
+// (dia 1 do período atual sobre dia 1 do anterior, mesmo que sejam datas
+// de calendário bem diferentes).
+function preencherDiasVazios(dataInicio, dataFim, listaPorDia) {
+  const mapa = new Map(listaPorDia.map((d) => [d.data, d]));
+  const resultado = [];
+  const cursor = new Date(`${dataInicio}T00:00:00`);
+  const fim = new Date(`${dataFim}T00:00:00`);
+  while (cursor <= fim) {
+    const chave = cursor.toISOString().slice(0, 10);
+    resultado.push(mapa.get(chave) || { data: chave, ...DIA_VAZIO });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return resultado;
 }
 
 // Cartões de resumo (Valor Total de Vendas, Total de Pedidos, Valor de
@@ -849,8 +887,8 @@ function resumirPedidosMarketplace(pedidos) {
 // variação % contra o período anterior de mesma duração.
 router.get('/metricas/resumo', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, canal_venda, comparar } = req.query;
-    const pedidosAtual = await buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda });
+    const { data_inicio, data_fim, canal_venda, origem_integracao_id, comparar } = req.query;
+    const pedidosAtual = await buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda, origem_integracao_id });
     const atual = resumirPedidosMarketplace(pedidosAtual);
 
     let anterior = null;
@@ -858,7 +896,7 @@ router.get('/metricas/resumo', async (req, res, next) => {
     let periodoAnteriorDatas = null;
     if (comparar !== '0' && data_inicio && data_fim) {
       periodoAnteriorDatas = periodoAnterior(data_inicio, data_fim);
-      const pedidosAnterior = await buscarPedidosMarketplace({ ...periodoAnteriorDatas, canal_venda });
+      const pedidosAnterior = await buscarPedidosMarketplace({ ...periodoAnteriorDatas, canal_venda, origem_integracao_id });
       anterior = resumirPedidosMarketplace(pedidosAnterior);
       variacao = {};
       for (const campo of Object.keys(atual)) variacao[campo] = variacaoPct(atual[campo], anterior[campo]);
@@ -870,24 +908,27 @@ router.get('/metricas/resumo', async (req, res, next) => {
   }
 });
 
-// Série diária de vendas válidas (R$) e nº de pedidos válidos, pro gráfico.
+// Série diária completa (mesmas colunas do resumo, uma linha por dia) — usada
+// tanto pra tabela diária quanto pro gráfico da Visão Geral. Quando
+// `comparar` está ligado, também traz a série do período anterior alinhada
+// por ÍNDICE do dia (não pela data real), pra sobrepor no mesmo eixo.
 router.get('/metricas/serie', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, canal_venda } = req.query;
-    const pedidos = await buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda });
-    const porDia = new Map();
-    for (const p of pedidos) {
-      if (p.situacao === 'cancelado') continue;
-      const dia = p.data_pedido.toISOString().slice(0, 10);
-      if (!porDia.has(dia)) porDia.set(dia, { data: dia, valorVendas: 0, grupos: new Set() });
-      const acc = porDia.get(dia);
-      acc.valorVendas += Number(p.receita) || 0;
-      acc.grupos.add(p.pack_id_marketplace || `pedido:${p.id}`);
+    const { data_inicio, data_fim, canal_venda, origem_integracao_id, comparar } = req.query;
+    const pedidos = await buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda, origem_integracao_id });
+    const porDiaLista = agruparPedidosPorDia(pedidos);
+    const serie = data_inicio && data_fim ? preencherDiasVazios(data_inicio, data_fim, porDiaLista) : porDiaLista;
+
+    let serieAnterior = null;
+    if (comparar !== '0' && data_inicio && data_fim) {
+      const per = periodoAnterior(data_inicio, data_fim);
+      const pedidosAnterior = await buscarPedidosMarketplace({ ...per, canal_venda, origem_integracao_id });
+      const porDiaAnteriorLista = agruparPedidosPorDia(pedidosAnterior);
+      serieAnterior = preencherDiasVazios(per.data_inicio, per.data_fim, porDiaAnteriorLista)
+        .map((d, indice) => ({ indice, valorVendasValidas: d.valorVendasValidas, pedidosValidos: d.pedidosValidos }));
     }
-    const serie = [...porDia.values()]
-      .map((d) => ({ data: d.data, valorVendas: d.valorVendas, pedidos: d.grupos.size }))
-      .sort((a, b) => a.data.localeCompare(b.data));
-    res.json({ serie });
+
+    res.json({ serie, serieAnterior });
   } catch (err) {
     next(err);
   }
@@ -898,8 +939,8 @@ router.get('/metricas/serie', async (req, res, next) => {
 // "Sem integração" pra pedidos importados manualmente por planilha.
 router.get('/metricas/por-loja', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, canal_venda } = req.query;
-    const pedidos = await buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda });
+    const { data_inicio, data_fim, canal_venda, origem_integracao_id } = req.query;
+    const pedidos = await buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda, origem_integracao_id });
 
     const integracaoIds = [...new Set(pedidos.map((p) => p.origem_integracao_id).filter(Boolean))];
     const { rows: integracoes } = integracaoIds.length > 0
@@ -939,13 +980,14 @@ router.get('/metricas/por-loja', async (req, res, next) => {
 // quantidade vendida no pedido é o sinal confiável e sempre disponível.
 router.get('/metricas/movimento-estoque', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, canal_venda } = req.query;
+    const { data_inicio, data_fim, canal_venda, origem_integracao_id } = req.query;
     const conditions = ["pv.origem_marketplace IS NOT NULL", "pv.situacao != 'cancelado'"];
     const values = [];
     let i = 1;
     if (data_inicio) { conditions.push(`pv.data_pedido >= $${i}`); values.push(data_inicio); i += 1; }
     if (data_fim) { conditions.push(`pv.data_pedido <= $${i}`); values.push(data_fim); i += 1; }
     if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
+    if (origem_integracao_id) { conditions.push(`pv.origem_integracao_id = $${i}`); values.push(origem_integracao_id); i += 1; }
     const { rows } = await pool.query(
       `SELECT pv.data_pedido::text AS data, COALESCE(SUM(pi.quantidade), 0) AS unidades, COUNT(DISTINCT pv.id) AS pedidos
        FROM pedidos_venda pv JOIN pedido_itens pi ON pi.pedido_id = pv.id
@@ -964,13 +1006,14 @@ router.get('/metricas/movimento-estoque', async (req, res, next) => {
 
 router.get('/relatorio-taxas', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, canal_venda } = req.query;
+    const { data_inicio, data_fim, canal_venda, origem_integracao_id } = req.query;
     const conditions = ["pv.situacao != 'cancelado'", 'pv.origem_marketplace IS NOT NULL'];
     const values = [];
     let i = 1;
     if (data_inicio) { conditions.push(`pv.data_pedido >= $${i}`); values.push(data_inicio); i += 1; }
     if (data_fim) { conditions.push(`pv.data_pedido <= $${i}`); values.push(data_fim); i += 1; }
     if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
+    if (origem_integracao_id) { conditions.push(`pv.origem_integracao_id = $${i}`); values.push(origem_integracao_id); i += 1; }
     const where = `WHERE ${conditions.join(' AND ')}`;
 
     const { rows: pedidos } = await pool.query(
@@ -1048,7 +1091,7 @@ router.get('/relatorio-taxas', async (req, res, next) => {
 
 router.get('/', async (req, res, next) => {
   try {
-    const { busca, situacao, origem } = req.query;
+    const { busca, situacao, origem, canal_venda, origem_integracao_id } = req.query;
     if (origem === 'marketplace') sincronizarSeNecessario();
     const conditions = [];
     const values = [];
@@ -1056,6 +1099,8 @@ router.get('/', async (req, res, next) => {
     if (situacao) { conditions.push(`pv.situacao = $${i}`); values.push(situacao); i += 1; }
     if (origem === 'marketplace') conditions.push('pv.origem_marketplace IS NOT NULL');
     if (origem === 'manual') conditions.push('pv.origem_marketplace IS NULL');
+    if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
+    if (origem_integracao_id) { conditions.push(`pv.origem_integracao_id = $${i}`); values.push(origem_integracao_id); i += 1; }
     if (busca) {
       conditions.push(`(c.nome ILIKE $${i} OR pv.numero::text = $${i + 1})`);
       values.push(`%${busca}%`, busca);

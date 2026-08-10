@@ -1,17 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts';
 import {
   ArrowDownRight, ArrowUpRight, Banknote, ShoppingCart, CheckCircle2,
   Users, TrendingUp, Store, Boxes, PackageMinus,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
-import { DateInput } from '../components/ui';
+import { DateInput, Select } from '../components/ui';
 import FotoProduto from '../components/FotoProduto';
 
 const COR_PRINCIPAL = '#d17a2a';
+const COR_ANTERIOR = '#9c7a3c';
 const COR_SECUNDARIA = '#0d9488';
 const FONTE_GRAFICO = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+
+// Mesmo rótulo que o backend usa (marketplaceSync.js LABEL) — pra traduzir
+// entre o campo interno de cada integração ('mercado_livre') e o valor de
+// canal_venda gravado no pedido ('Mercado Livre'), usado como filtro de Plataforma.
+const PLATAFORMA_LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee' };
 
 function trintaDiasAtras() {
   const d = new Date();
@@ -36,7 +42,7 @@ function VariacaoBadge({ valor }) {
   );
 }
 
-function CardsResumo({ resumo, formatadores }) {
+function CardsResumo({ resumo }) {
   if (!resumo) return null;
   const { atual, variacao } = resumo;
   const campos = [
@@ -52,7 +58,7 @@ function CardsResumo({ resumo, formatadores }) {
       {campos.map((c) => (
         <div className="stat-card" key={c.chave}>
           <span className="stat-card-label"><c.icon size={11} style={{ marginRight: 4, verticalAlign: -2 }} />{c.label}</span>
-          <span className="stat-card-value">{(formatadores?.[c.chave] || c.fmt)(atual[c.chave])}</span>
+          <span className="stat-card-value">{c.fmt(atual[c.chave])}</span>
           {variacao && <VariacaoBadge valor={variacao[c.chave]} />}
         </div>
       ))}
@@ -73,7 +79,7 @@ function TooltipVendas({ active, payload, label }) {
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
           <span style={{ color: 'var(--ink-soft)' }}>{item.name}</span>
           <span className="mono" style={{ marginLeft: 'auto', fontWeight: 600, color: 'var(--ink)' }}>
-            {item.dataKey === 'valorVendas' ? brl(item.value) : item.value}
+            {item.dataKey === 'unidades' ? item.value : brl(item.value)}
           </span>
         </div>
       ))}
@@ -81,11 +87,18 @@ function TooltipVendas({ active, payload, label }) {
   );
 }
 
-function GraficoSerie({ serie }) {
-  const dados = serie.map((d) => ({ ...d, dataLabel: dataBr(d.data) }));
+// Sobrepõe a série atual (linha sólida) com a série do período anterior
+// (linha tracejada) — alinhadas por ÍNDICE do dia (dia 1 sobre dia 1), não
+// pela data real, pra dar pra comparar visualmente o formato da curva.
+function GraficoComparativo({ serie, serieAnterior }) {
+  const dados = serie.map((d, i) => ({
+    dataLabel: dataBr(d.data),
+    valorVendas: d.valorVendasValidas,
+    valorVendasAnterior: serieAnterior ? serieAnterior[i]?.valorVendasValidas : undefined,
+  }));
   const tickStyle = { fontSize: 11.5, fontFamily: FONTE_GRAFICO, fill: 'var(--ink-soft)' };
   return (
-    <ResponsiveContainer width="100%" height={280}>
+    <ResponsiveContainer width="100%" height={300}>
       <AreaChart data={dados} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="corVendas" x1="0" y1="0" x2="0" y2="1">
@@ -97,15 +110,93 @@ function GraficoSerie({ serie }) {
         <XAxis dataKey="dataLabel" tick={tickStyle} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
         <YAxis tick={tickStyle} tickFormatter={(v) => brl(v)} width={92} axisLine={false} tickLine={false} />
         <Tooltip content={<TooltipVendas />} />
-        <Area type="monotone" dataKey="valorVendas" name="Vendas Válidas" stroke={COR_PRINCIPAL} fill="url(#corVendas)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+        <Legend wrapperStyle={{ fontFamily: FONTE_GRAFICO, fontSize: 12.5, color: 'var(--ink-soft)', paddingTop: 8 }} iconType="plainline" />
+        {serieAnterior && (
+          <Area type="monotone" dataKey="valorVendasAnterior" name="Período Anterior" stroke={COR_ANTERIOR} strokeDasharray="5 4" fill="none" strokeWidth={1.75} dot={false} />
+        )}
+        <Area type="monotone" dataKey="valorVendas" name="Vendas Válidas" stroke={COR_PRINCIPAL} fill="url(#corVendas)" strokeWidth={2.25} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
       </AreaChart>
     </ResponsiveContainer>
+  );
+}
+
+function GraficoSimples({ serie, dataKey = 'valorVendasValidas', nome = 'Vendas Válidas', cor = COR_PRINCIPAL }) {
+  const dados = serie.map((d) => ({ ...d, dataLabel: dataBr(d.data) }));
+  const tickStyle = { fontSize: 11.5, fontFamily: FONTE_GRAFICO, fill: 'var(--ink-soft)' };
+  return (
+    <ResponsiveContainer width="100%" height={280}>
+      <AreaChart data={dados} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id="corVendasSimples" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={cor} stopOpacity={0.22} />
+            <stop offset="95%" stopColor={cor} stopOpacity={0.01} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+        <XAxis dataKey="dataLabel" tick={tickStyle} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
+        <YAxis tick={tickStyle} tickFormatter={(v) => brl(v)} width={92} axisLine={false} tickLine={false} />
+        <Tooltip content={<TooltipVendas />} />
+        <Area type="monotone" dataKey={dataKey} name={nome} stroke={cor} fill="url(#corVendasSimples)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+// Tabela diária completa (mesmas colunas dos cards de resumo, uma linha por
+// dia), com a linha "Resumo" fixa no topo somando o período inteiro.
+function TabelaDiaria({ resumo, serie }) {
+  return (
+    <div className="card no-print">
+      <div className="card-head">Detalhamento Diário</div>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Data</th><th>Total de Pedidos</th><th>Valor Total de Vendas</th>
+              <th>Pedidos Válidos</th><th>Valor de Vendas Válidas</th>
+              <th>Pedidos Cancelados</th><th>Valor de Vendas Canceladas</th>
+              <th>Clientes</th><th>Vendas por Cliente</th>
+            </tr>
+          </thead>
+          <tbody>
+            {resumo && (
+              <tr style={{ fontWeight: 700, background: 'var(--surface-alt)' }}>
+                <td>Resumo</td>
+                <td className="mono">{resumo.totalPedidos}</td>
+                <td className="mono">{brl(resumo.valorTotalVendas)}</td>
+                <td className="mono">{resumo.pedidosValidos}</td>
+                <td className="mono">{brl(resumo.valorVendasValidas)}</td>
+                <td className="mono">{resumo.pedidosCancelados}</td>
+                <td className="mono">{brl(resumo.valorVendasCanceladas)}</td>
+                <td className="mono">{resumo.clientes}</td>
+                <td className="mono">{brl(resumo.vendasPorCliente)}</td>
+              </tr>
+            )}
+            {[...serie].reverse().map((d) => (
+              <tr key={d.data}>
+                <td className="mono">{dataBr(d.data)}</td>
+                <td className="mono">{d.totalPedidos}</td>
+                <td className="mono">{brl(d.valorTotalVendas)}</td>
+                <td className="mono">{d.pedidosValidos}</td>
+                <td className="mono">{brl(d.valorVendasValidas)}</td>
+                <td className="mono">{d.pedidosCancelados}</td>
+                <td className="mono">{brl(d.valorVendasCanceladas)}</td>
+                <td className="mono">{d.clientes}</td>
+                <td className="mono">{brl(d.vendasPorCliente)}</td>
+              </tr>
+            ))}
+            {serie.length === 0 && <tr><td colSpan="9">Nenhuma venda no período.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
 function VisaoGeralTab({ filtros }) {
   const [resumo, setResumo] = useState(null);
   const [serie, setSerie] = useState(null);
+  const [serieAnterior, setSerieAnterior] = useState(null);
   const [erro, setErro] = useState('');
 
   useEffect(() => {
@@ -113,14 +204,14 @@ function VisaoGeralTab({ filtros }) {
     setErro('');
     Promise.all([
       api.get(`/pedidos/metricas/resumo?${params.toString()}`),
-      api.get(`/pedidos/metricas/serie?${params.toString()}`),
+      api.get(`/pedidos/metricas/serie?${params.toString()}&comparar=1`),
     ])
-      .then(([r, s]) => { setResumo(r); setSerie(s.serie); })
+      .then(([r, s]) => { setResumo(r); setSerie(s.serie); setSerieAnterior(s.serieAnterior); })
       .catch((err) => setErro(err.message));
   }, [filtros]);
 
   if (erro) return <div className="login-error">{erro}</div>;
-  if (!resumo) return <p className="page-sub">Carregando…</p>;
+  if (!resumo || !serie) return <p className="page-sub">Carregando…</p>;
 
   return (
     <>
@@ -132,8 +223,9 @@ function VisaoGeralTab({ filtros }) {
       )}
       <div className="card">
         <div className="card-head">Vendas Válidas por Dia</div>
-        {serie && serie.length > 0 ? <GraficoSerie serie={serie} /> : <p className="page-sub">Sem vendas no período pra montar o gráfico.</p>}
+        {serie.length > 0 ? <GraficoComparativo serie={serie} serieAnterior={serieAnterior} /> : <p className="page-sub">Sem vendas no período pra montar o gráfico.</p>}
       </div>
+      <TabelaDiaria resumo={resumo.atual} serie={serie} />
     </>
   );
 }
@@ -154,29 +246,31 @@ function PorLojaTab({ filtros }) {
   return (
     <div className="card">
       <div className="card-head">Vendas por Loja ({dados.lojas.length})</div>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Loja</th><th>Canal</th><th>Valor Total</th><th>Total de Pedidos</th>
-            <th>Valor de Vendas Válidas</th><th>Pedidos Válidos</th><th>Clientes</th><th>Vendas por Cliente</th>
-          </tr>
-        </thead>
-        <tbody>
-          {dados.lojas.map((l) => (
-            <tr key={l.integracaoId || 'sem-integracao'}>
-              <td><Store size={13} style={{ marginRight: 5, verticalAlign: -2 }} />{l.nome}</td>
-              <td>{l.canalVenda || '—'}</td>
-              <td className="mono">{brl(l.valorTotalVendas)}</td>
-              <td className="mono">{l.totalPedidos}</td>
-              <td className="mono">{brl(l.valorVendasValidas)}</td>
-              <td className="mono">{l.pedidosValidos}</td>
-              <td className="mono">{l.clientes}</td>
-              <td className="mono">{brl(l.vendasPorCliente)}</td>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Loja</th><th>Canal</th><th>Valor Total</th><th>Total de Pedidos</th>
+              <th>Valor de Vendas Válidas</th><th>Pedidos Válidos</th><th>Clientes</th><th>Vendas por Cliente</th>
             </tr>
-          ))}
-          {dados.lojas.length === 0 && <tr><td colSpan="8">Nenhuma venda no período.</td></tr>}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {dados.lojas.map((l) => (
+              <tr key={l.integracaoId || 'sem-integracao'}>
+                <td><Store size={13} style={{ marginRight: 5, verticalAlign: -2 }} />{l.nome}</td>
+                <td>{l.canalVenda || '—'}</td>
+                <td className="mono">{brl(l.valorTotalVendas)}</td>
+                <td className="mono">{l.totalPedidos}</td>
+                <td className="mono">{brl(l.valorVendasValidas)}</td>
+                <td className="mono">{l.pedidosValidos}</td>
+                <td className="mono">{l.clientes}</td>
+                <td className="mono">{brl(l.vendasPorCliente)}</td>
+              </tr>
+            ))}
+            {dados.lojas.length === 0 && <tr><td colSpan="8">Nenhuma venda no período.</td></tr>}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -199,40 +293,67 @@ function VendasPorProdutoTab({ filtros, busca }) {
     return produtos.filter((p) => (p.referencia || '').toLowerCase().includes(termo) || (p.descricao || '').toLowerCase().includes(termo));
   }, [dados, busca]);
 
+  const totais = useMemo(() => {
+    const produtos = dados?.produtos || [];
+    const unidades = produtos.reduce((s, p) => s + p.unidadesVendidas, 0);
+    const faturado = produtos.reduce((s, p) => s + p.totalFaturado, 0);
+    return {
+      produtosVendidos: produtos.length,
+      unidadesVendidas: unidades,
+      totalFaturado: faturado,
+      precoMedio: unidades > 0 ? faturado / unidades : 0,
+    };
+  }, [dados]);
+
   if (erro) return <div className="login-error">{erro}</div>;
   if (!dados) return <p className="page-sub">Carregando…</p>;
 
   return (
-    <div className="card">
-      <div className="card-head">Vendas por Produto ({produtosExibidos.length})</div>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Produto</th><th>Unid. Vendidas</th><th>Preço Médio</th><th>Total Faturado</th><th>Representatividade</th>
-          </tr>
-        </thead>
-        <tbody>
-          {produtosExibidos.map((p) => (
-            <tr key={p.produtoId || p.referencia}>
-              <td>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <FotoProduto produtoId={p.produtoId} temFoto={p.temFoto} size={36} alt={p.referencia} />
-                  <div>
-                    <strong className="mono">{p.referencia}</strong>
-                    {p.descricao && <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{p.descricao}</div>}
-                  </div>
-                </div>
-              </td>
-              <td className="mono">{p.unidadesVendidas}</td>
-              <td className="mono">{brl(p.precoMedio)}</td>
-              <td className="mono" style={{ fontWeight: 700 }}>{brl(p.totalFaturado)}</td>
-              <td className="mono">{pct(p.representatividadePct)}</td>
-            </tr>
-          ))}
-          {produtosExibidos.length === 0 && <tr><td colSpan="5">{busca ? 'Nenhum produto encontrado para essa busca.' : 'Nenhum produto no período.'}</td></tr>}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <p className="page-sub">
+        Agrupado por produto vinculado (o ID do anúncio do marketplace ainda não é guardado — quando isso for
+        implementado, essa visão passa a mostrar cada anúncio separadamente, mesmo quando dois anúncios apontam pro
+        mesmo produto).
+      </p>
+      <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+        <div className="stat-card"><span className="stat-card-label">Produtos Vendidos</span><span className="stat-card-value">{totais.produtosVendidos}</span></div>
+        <div className="stat-card"><span className="stat-card-label">Unidades Vendidas</span><span className="stat-card-value">{totais.unidadesVendidas}</span></div>
+        <div className="stat-card"><span className="stat-card-label">Total Faturado</span><span className="stat-card-value">{brl(totais.totalFaturado)}</span></div>
+        <div className="stat-card"><span className="stat-card-label">Preço Médio</span><span className="stat-card-value">{brl(totais.precoMedio)}</span></div>
+      </div>
+      <div className="card">
+        <div className="card-head">Vendas por Produto ({produtosExibidos.length})</div>
+        <div style={{ overflowX: 'auto' }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Produto</th><th>Unid. Vendidas</th><th>Preço Médio</th><th>Total Faturado</th><th>Representatividade</th>
+              </tr>
+            </thead>
+            <tbody>
+              {produtosExibidos.map((p) => (
+                <tr key={p.produtoId || p.referencia}>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <FotoProduto produtoId={p.produtoId} temFoto={p.temFoto} size={36} alt={p.referencia} />
+                      <div>
+                        <strong className="mono">{p.referencia}</strong>
+                        {p.descricao && <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{p.descricao}</div>}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="mono">{p.unidadesVendidas}</td>
+                  <td className="mono">{brl(p.precoMedio)}</td>
+                  <td className="mono" style={{ fontWeight: 700 }}>{brl(p.totalFaturado)}</td>
+                  <td className="mono">{pct(p.representatividadePct)}</td>
+                </tr>
+              ))}
+              {produtosExibidos.length === 0 && <tr><td colSpan="5">{busca ? 'Nenhum produto encontrado para essa busca.' : 'Nenhum produto no período.'}</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -295,31 +416,33 @@ function AnaliseABCTab({ filtros, busca }) {
       </div>
       <div className="card">
         <div className="card-head">Curva ABC de Produtos ({exibidos.length})</div>
-        <table className="data-table">
-          <thead>
-            <tr><th>Classe</th><th>Produto</th><th>Total Faturado</th><th>Representatividade</th><th>Acumulado</th></tr>
-          </thead>
-          <tbody>
-            {exibidos.map((p) => (
-              <tr key={p.produtoId || p.referencia}>
-                <td><span className={'stamp sm ' + (p.classe === 'A' ? 'tone-saudavel' : p.classe === 'B' ? 'tone-atencao' : 'tone-neutro')}>{p.classe}</span></td>
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <FotoProduto produtoId={p.produtoId} temFoto={p.temFoto} size={32} alt={p.referencia} />
-                    <div>
-                      <strong className="mono">{p.referencia}</strong>
-                      {p.descricao && <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{p.descricao}</div>}
+        <div style={{ overflowX: 'auto' }}>
+          <table className="data-table">
+            <thead>
+              <tr><th>Classe</th><th>Produto</th><th>Total Faturado</th><th>Representatividade</th><th>Acumulado</th></tr>
+            </thead>
+            <tbody>
+              {exibidos.map((p) => (
+                <tr key={p.produtoId || p.referencia}>
+                  <td><span className={'stamp sm ' + (p.classe === 'A' ? 'tone-saudavel' : p.classe === 'B' ? 'tone-atencao' : 'tone-neutro')}>{p.classe}</span></td>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <FotoProduto produtoId={p.produtoId} temFoto={p.temFoto} size={32} alt={p.referencia} />
+                      <div>
+                        <strong className="mono">{p.referencia}</strong>
+                        {p.descricao && <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{p.descricao}</div>}
+                      </div>
                     </div>
-                  </div>
-                </td>
-                <td className="mono">{brl(p.totalFaturado)}</td>
-                <td className="mono">{pct(p.representatividadePct)}</td>
-                <td className="mono">{pct(p.acumuladoPct)}</td>
-              </tr>
-            ))}
-            {exibidos.length === 0 && <tr><td colSpan="5">{busca ? 'Nenhum produto encontrado para essa busca.' : 'Nenhum produto no período.'}</td></tr>}
-          </tbody>
-        </table>
+                  </td>
+                  <td className="mono">{brl(p.totalFaturado)}</td>
+                  <td className="mono">{pct(p.representatividadePct)}</td>
+                  <td className="mono">{pct(p.acumuladoPct)}</td>
+                </tr>
+              ))}
+              {exibidos.length === 0 && <tr><td colSpan="5">{busca ? 'Nenhum produto encontrado para essa busca.' : 'Nenhum produto no período.'}</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </div>
     </>
   );
@@ -386,7 +509,7 @@ function ShopeeTab({ filtros }) {
     setErro('');
     Promise.all([
       api.get(`/pedidos/metricas/resumo?${params.toString()}`),
-      api.get(`/pedidos/metricas/serie?${params.toString()}`),
+      api.get(`/pedidos/metricas/serie?${params.toString()}&comparar=0`),
     ])
       .then(([r, s]) => { setResumo(r); setSerie(s.serie); })
       .catch((err) => setErro(err.message));
@@ -405,7 +528,7 @@ function ShopeeTab({ filtros }) {
           <CardsResumo resumo={resumo} />
           <div className="card">
             <div className="card-head">Vendas Válidas por Dia (Shopee)</div>
-            {serie && serie.length > 0 ? <GraficoSerie serie={serie} /> : <p className="page-sub">Sem vendas de Shopee no período.</p>}
+            {serie && serie.length > 0 ? <GraficoSimples serie={serie} /> : <p className="page-sub">Sem vendas de Shopee no período.</p>}
           </div>
         </>
       )}
@@ -425,14 +548,33 @@ const TABS = [
 export default function MetricasMarketplacePage() {
   const [dataInicio, setDataInicio] = useState(trintaDiasAtras());
   const [dataFim, setDataFim] = useState(hoje());
-  const [canalVenda, setCanalVenda] = useState('');
+  const [plataforma, setPlataforma] = useState('');
+  const [lojaId, setLojaId] = useState('');
   const [busca, setBusca] = useState('');
   const [subTab, setSubTab] = useState('visaoGeral');
   const [filtrosAplicados, setFiltrosAplicados] = useState(null);
+  const [integracoes, setIntegracoes] = useState([]);
+
+  useEffect(() => { api.get('/integracoes').then(setIntegracoes).catch(() => {}); }, []);
+
+  // Loja só mostra as integrações da Plataforma escolhida (ou todas, se
+  // nenhuma plataforma foi selecionada ainda) — evita listar "Shopee X"
+  // quando o filtro de Plataforma já está em Mercado Livre.
+  const lojasDisponiveis = useMemo(() => (
+    integracoes.filter((i) => !plataforma || PLATAFORMA_LABEL[i.marketplace] === plataforma)
+  ), [integracoes, plataforma]);
+
+  function mudarPlataforma(valor) {
+    setPlataforma(valor);
+    if (lojaId && !integracoes.some((i) => String(i.id) === String(lojaId) && (!valor || PLATAFORMA_LABEL[i.marketplace] === valor))) {
+      setLojaId('');
+    }
+  }
 
   function gerar() {
     const f = { data_inicio: dataInicio, data_fim: dataFim };
-    if (canalVenda) f.canal_venda = canalVenda;
+    if (plataforma) f.canal_venda = plataforma;
+    if (lojaId) f.origem_integracao_id = lojaId;
     setFiltrosAplicados(f);
   }
 
@@ -457,8 +599,22 @@ export default function MetricasMarketplacePage() {
             <DateInput value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
           </div>
           <div className="field">
-            <span className="field-label">Canal de venda</span>
-            <input placeholder="Ex: Mercado Livre, Shopee..." value={canalVenda} onChange={(e) => setCanalVenda(e.target.value)} />
+            <span className="field-label">Plataforma</span>
+            <Select value={plataforma} onChange={(e) => mudarPlataforma(e.target.value)}>
+              <option value="">Todas as plataformas</option>
+              {Object.values(PLATAFORMA_LABEL).map((label) => (
+                <option key={label} value={label}>{label}</option>
+              ))}
+            </Select>
+          </div>
+          <div className="field">
+            <span className="field-label">Loja</span>
+            <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)}>
+              <option value="">Todas as lojas</option>
+              {lojasDisponiveis.map((i) => (
+                <option key={i.id} value={i.id}>{i.nome || PLATAFORMA_LABEL[i.marketplace]}</option>
+              ))}
+            </Select>
           </div>
           {(subTab === 'vendasPorProduto' || subTab === 'abc') && (
             <div className="field">

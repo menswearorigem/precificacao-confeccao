@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Printer } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
-import { DateInput } from '../components/ui';
+import { DateInput, Select } from '../components/ui';
 
 function trintaDiasAtras() {
   const d = new Date();
@@ -14,13 +14,31 @@ function hoje() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Mesmo rótulo usado no backend (marketplaceSync.js LABEL).
+const PLATAFORMA_LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee' };
+
 export default function RelatorioTaxasPage() {
   const [dataInicio, setDataInicio] = useState(trintaDiasAtras());
   const [dataFim, setDataFim] = useState(hoje());
   const [canalVenda, setCanalVenda] = useState('');
+  const [lojaId, setLojaId] = useState('');
+  const [integracoes, setIntegracoes] = useState([]);
   const [relatorio, setRelatorio] = useState(null);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
+
+  useEffect(() => { api.get('/integracoes').then(setIntegracoes).catch(() => {}); }, []);
+
+  const lojasDisponiveis = useMemo(() => (
+    integracoes.filter((i) => !canalVenda || PLATAFORMA_LABEL[i.marketplace] === canalVenda)
+  ), [integracoes, canalVenda]);
+
+  function mudarPlataforma(valor) {
+    setCanalVenda(valor);
+    if (lojaId && !integracoes.some((i) => String(i.id) === String(lojaId) && (!valor || PLATAFORMA_LABEL[i.marketplace] === valor))) {
+      setLojaId('');
+    }
+  }
 
   function gerar() {
     setLoading(true);
@@ -29,6 +47,7 @@ export default function RelatorioTaxasPage() {
     if (dataInicio) params.set('data_inicio', dataInicio);
     if (dataFim) params.set('data_fim', dataFim);
     if (canalVenda) params.set('canal_venda', canalVenda);
+    if (lojaId) params.set('origem_integracao_id', lojaId);
     api.get(`/pedidos/relatorio-taxas?${params.toString()}`)
       .then((data) => setRelatorio(data))
       .catch((err) => setErro(err.message))
@@ -61,8 +80,22 @@ export default function RelatorioTaxasPage() {
               <DateInput value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
             </div>
             <div className="field">
-              <span className="field-label">Canal de venda</span>
-              <input placeholder="Ex: Mercado Livre, Shopee..." value={canalVenda} onChange={(e) => setCanalVenda(e.target.value)} />
+              <span className="field-label">Plataforma</span>
+              <Select value={canalVenda} onChange={(e) => mudarPlataforma(e.target.value)}>
+                <option value="">Todas as plataformas</option>
+                {Object.values(PLATAFORMA_LABEL).map((label) => (
+                  <option key={label} value={label}>{label}</option>
+                ))}
+              </Select>
+            </div>
+            <div className="field">
+              <span className="field-label">Loja</span>
+              <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)}>
+                <option value="">Todas as lojas</option>
+                {lojasDisponiveis.map((i) => (
+                  <option key={i.id} value={i.id}>{i.nome || PLATAFORMA_LABEL[i.marketplace]}</option>
+                ))}
+              </Select>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
