@@ -3,7 +3,7 @@ const express = require('express');
 const pool = require('../db/pool');
 const mercadoLivre = require('../lib/marketplaces/mercadoLivre');
 const shopee = require('../lib/marketplaces/shopee');
-const { sincronizarIntegracao, sincronizarSeNecessario, garantirTokenValido } = require('../lib/marketplaceSync');
+const { sincronizarIntegracao, sincronizarSeNecessario, garantirTokenValido, sincronizarAdsDias } = require('../lib/marketplaceSync');
 
 const router = express.Router();
 
@@ -29,6 +29,8 @@ function paraFora(row) {
     ultimaSincronizacao: row.ultima_sincronizacao,
     ultimoErro: row.ultimo_erro,
     ultimoErroFaturamento: row.ultimo_erro_faturamento,
+    advertiserIdAds: row.advertiser_id_ads,
+    ultimoErroAds: row.ultimo_erro_ads,
   };
 }
 
@@ -212,6 +214,96 @@ router.get('/:id/distribuicao-categorias', async (req, res, next) => {
       .map((c) => ({ ...c, pct: totalGeral > 0 ? c.totalAnuncios / totalGeral : 0 }))
       .sort((a, b) => b.totalAnuncios - a.totalAnuncios);
     res.json({ distribuicao, totalGeral, categoriaAtual: null });
+  } catch (err) {
+    res.status(err.status || 422).json({ error: err.message });
+  }
+});
+
+// ---------- Publicidade (Product Ads / Mercado Ads) ----------
+// Precisa do produto "Publicidade" habilitado no app dela no painel de
+// desenvolvedores do Mercado Livre — sem isso, buscarAdvertiserIdAds não
+// acha nenhum anunciante e essas rotas devolvem esse aviso em vez de dado.
+async function integracaoComAdvertiserAds(id) {
+  const integracao = await integracaoMercadoLivreAutorizada(id);
+  if (!integracao.advertiser_id_ads) {
+    // Pode ser a primeira vez (nunca sincronizou Ads ainda) — tenta achar o
+    // advertiser_id na hora, sem esperar o próximo ciclo automático.
+    const resultado = await sincronizarAdsDias(integracao, 1);
+    const { rows } = await pool.query('SELECT advertiser_id_ads, ultimo_erro_ads FROM integracoes_marketplace WHERE id = $1', [integracao.id]);
+    integracao.advertiser_id_ads = rows[0]?.advertiser_id_ads || null;
+    if (!integracao.advertiser_id_ads) {
+      const e = new Error(rows[0]?.ultimo_erro_ads || 'Publicidade (Product Ads) não está habilitada pra essa conta ainda — confira se o Product Ads está ativo no Mercado Livre e se o produto "Publicidade" foi adicionado ao app no painel de desenvolvedores, depois reconecte a integração.');
+      e.status = 400;
+      throw e;
+    }
+    void resultado;
+  }
+  return integracao;
+}
+
+router.get('/:id/ads/campanhas', async (req, res, next) => {
+  try {
+    const integracao = await integracaoComAdvertiserAds(req.params.id);
+    const dataInicio = req.query.data_inicio || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const dataFim = req.query.data_fim || new Date().toISOString().slice(0, 10);
+    const campanhas = await mercadoLivre.buscarCampanhasAds({
+      accessToken: integracao.access_token, advertiserId: integracao.advertiser_id_ads, dataInicio, dataFim,
+    });
+    res.json({ campanhas });
+  } catch (err) {
+    res.status(err.status || 422).json({ error: err.message });
+  }
+});
+
+// Anúncios com gasto de Ads no período, a partir do que já foi sincronizado
+// pra ads_metricas_diarias (o mesmo dado usado pra ratear o custo na
+// Lucratividade — mostrar esse aqui garante que os dois batem). Junta com
+// pedido_itens só pra mostrar título/foto (melhor esforço; anúncio anunciado
+// mas nunca vendido não tem correspondência aí, fica só com o ID).
+router.get('/:id/ads/anuncios', async (req, res, next) => {
+  try {
+    const integracao = await integracaoMercadoLivreAutorizada(req.params.id);
+    const dataInicio = req.query.data_inicio || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const dataFim = req.query.data_fim || new Date().toISOString().slice(0, 10);
+    const { rows } = await pool.query(
+      `SELECT
+         m.anuncio_id_marketplace AS anuncio_id,
+         SUM(m.impressoes) AS impressoes,
+         SUM(m.cliques) AS cliques,
+         SUM(m.custo) AS custo,
+         (SELECT pi.titulo_externo FROM pedido_itens pi WHERE pi.anuncio_id_marketplace = m.anuncio_id_marketplace AND pi.titulo_externo IS NOT NULL LIMIT 1) AS titulo,
+         (SELECT pi.produto_id FROM pedido_itens pi WHERE pi.anuncio_id_marketplace = m.anuncio_id_marketplace AND pi.produto_id IS NOT NULL LIMIT 1) AS produto_id,
+         (SELECT pi.referencia FROM pedido_itens pi WHERE pi.anuncio_id_marketplace = m.anuncio_id_marketplace AND pi.produto_id IS NOT NULL LIMIT 1) AS referencia
+       FROM ads_metricas_diarias m
+       WHERE m.origem_integracao_id = $1 AND m.data >= $2 AND m.data <= $3
+       GROUP BY m.anuncio_id_marketplace
+       ORDER BY SUM(m.custo) DESC`,
+      [integracao.id, dataInicio, dataFim]
+    );
+    const anuncios = rows.map((r) => ({
+      anuncioId: r.anuncio_id,
+      titulo: r.titulo,
+      produtoId: r.produto_id,
+      referencia: r.referencia,
+      impressoes: Number(r.impressoes) || 0,
+      cliques: Number(r.cliques) || 0,
+      custo: Number(r.custo) || 0,
+      cpc: Number(r.cliques) > 0 ? Number(r.custo) / Number(r.cliques) : 0,
+    }));
+    res.json({ anuncios });
+  } catch (err) {
+    res.status(err.status || 422).json({ error: err.message });
+  }
+});
+
+// Catch-up manual — sincroniza até 90 dias pra trás (o máximo que a API de
+// Ads aceita) em vez de esperar o ciclo automático (que só reconfere uma
+// janela pequena, pra não martelar a API à toa).
+router.post('/:id/ads/sincronizar', async (req, res, next) => {
+  try {
+    const integracao = await integracaoMercadoLivreAutorizada(req.params.id);
+    const resultado = await sincronizarAdsDias(integracao, 90);
+    res.json(resultado);
   } catch (err) {
     res.status(err.status || 422).json({ error: err.message });
   }

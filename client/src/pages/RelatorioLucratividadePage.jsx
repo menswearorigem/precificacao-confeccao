@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import {
-  ArrowDown, ArrowUp, Banknote, Box, ChevronDown, ChevronUp, Landmark,
+  ArrowDown, ArrowUp, Banknote, Box, ChevronDown, ChevronUp, Landmark, Megaphone,
   Percent, Printer, RefreshCw, ShoppingBag, Tag, TrendingUp, X,
 } from 'lucide-react';
 import { api } from '../api/client';
@@ -441,6 +441,13 @@ function VendaDetalheCard({ p, config }) {
               <span className="venda-breakdown-label">Imposto</span>
               <span className="venda-breakdown-valor">-{brl(p.imposto)}</span>
             </div>
+            {p.custoAds > 0 && (
+              <div className="venda-breakdown-row">
+                <span className="venda-breakdown-icon"><Megaphone size={15} /></span>
+                <span className="venda-breakdown-label">Custo de Ads (rateado do dia)</span>
+                <span className="venda-breakdown-valor">-{brl(p.custoAds)}</span>
+              </div>
+            )}
             {p.calculoReal && (
               <div className="venda-breakdown-row">
                 <span className="venda-breakdown-icon"><Banknote size={15} /></span>
@@ -714,6 +721,9 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                 )}
                 <div className="row-line"><span>Frete</span><span className="mono">{brl(relatorio.totalGeral.frete)}</span></div>
                 <div className="row-line"><span>Taxas de Marketplace</span><span className="mono">{brl(relatorio.totalGeral.taxaMarketplace)}</span></div>
+                {isMarketplace && relatorio.totalGeral.custoAds > 0 && (
+                  <div className="row-line"><span>Custo de Ads</span><span className="mono">{brl(relatorio.totalGeral.custoAds)}</span></div>
+                )}
                 <div className="row-line strong"><span>Lucro Líquido</span><span className="mono">{brl(relatorio.totalGeral.lucro)}</span></div>
                 <div className="row-line"><span>Margem</span><MargemPill valor={relatorio.totalGeral.margemPct} config={config} /></div>
                 {isMarketplace && (
@@ -730,6 +740,12 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                       <div className="row-line">
                         <span>Sem Confirmação Ainda</span>
                         <span className="mono">{relatorio.totalGeral.valorRecebidoSemConfirmacao} pedido(s)</span>
+                      </div>
+                    )}
+                    {relatorio.totalGeral.custoAdsNaoAtribuido > 0 && (
+                      <div className="row-line">
+                        <span>Gasto de Ads sem venda correspondente no dia</span>
+                        <span className="mono">{brl(relatorio.totalGeral.custoAdsNaoAtribuido)}</span>
                       </div>
                     )}
                   </>

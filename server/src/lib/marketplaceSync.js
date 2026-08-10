@@ -549,6 +549,132 @@ async function corrigirPackIdTodasIntegracoes({ limite = 40 } = {}) {
   return { pedidosVerificados, pedidosComPacote };
 }
 
+// ---------- Publicidade (Product Ads / Mercado Ads) ----------
+// Puxa o custo de Ads dia a dia por anúncio, pra dar pra ratear em cima das
+// vendas de verdade daquele dia na Lucratividade (ver calcularRelatorioPedidos
+// em pedidos.routes.js). Reconfere sempre uma janela recente pequena a cada
+// ciclo automático (a atribuição de venda a um clique de anúncio pode mudar
+// nos primeiros dias) e oferece um catch-up maior (até 90 dias, o máximo que
+// a API aceita) pelo botão manual.
+function formatarDataISO(data) {
+  return data.toISOString().slice(0, 10);
+}
+
+const JANELA_ADS_AUTOMATICA_DIAS = 3;
+
+async function garantirAdvertiserIdAds(integracao) {
+  if (integracao.advertiser_id_ads) return integracao.advertiser_id_ads;
+  const advertiserId = await mercadoLivre.buscarAdvertiserIdAds({ accessToken: integracao.access_token });
+  if (advertiserId) {
+    await pool.query('UPDATE integracoes_marketplace SET advertiser_id_ads = $1 WHERE id = $2', [advertiserId, integracao.id]);
+    integracao.advertiser_id_ads = advertiserId;
+  }
+  return advertiserId;
+}
+
+async function sincronizarAdsDias(integracao, dias) {
+  if (integracao.marketplace !== 'mercado_livre') return { diasSincronizados: 0, registros: 0, campanhas: 0 };
+
+  let advertiserId;
+  try {
+    advertiserId = await garantirAdvertiserIdAds(integracao);
+  } catch (err) {
+    await pool.query('UPDATE integracoes_marketplace SET ultimo_erro_ads = $1 WHERE id = $2', [err.message, integracao.id]).catch(() => {});
+    return { diasSincronizados: 0, registros: 0, campanhas: 0 };
+  }
+  if (!advertiserId) {
+    await pool.query(
+      `UPDATE integracoes_marketplace SET ultimo_erro_ads = $1 WHERE id = $2`,
+      ['Nenhum anunciante de Publicidade encontrado nessa conta — confira se o Product Ads está ativo no Mercado Livre e se o produto "Publicidade" foi habilitado pro app no painel de desenvolvedores.', integracao.id]
+    ).catch(() => {});
+    return { diasSincronizados: 0, registros: 0, campanhas: 0 };
+  }
+
+  let campanhas;
+  try {
+    const hoje = new Date();
+    campanhas = await mercadoLivre.buscarCampanhasAds({
+      accessToken: integracao.access_token,
+      advertiserId,
+      dataInicio: formatarDataISO(new Date(hoje.getTime() - 90 * 24 * 60 * 60 * 1000)),
+      dataFim: formatarDataISO(hoje),
+    });
+  } catch (err) {
+    await pool.query('UPDATE integracoes_marketplace SET ultimo_erro_ads = $1 WHERE id = $2', [err.message, integracao.id]).catch(() => {});
+    return { diasSincronizados: 0, registros: 0, campanhas: 0 };
+  }
+
+  let registros = 0;
+  let ultimoErro = null;
+  for (let i = 0; i < dias; i += 1) {
+    const dia = formatarDataISO(new Date(Date.now() - i * 24 * 60 * 60 * 1000));
+    for (const campanha of campanhas) {
+      try {
+        const metricas = await mercadoLivre.buscarMetricasAnunciosCampanhaPorDia({
+          accessToken: integracao.access_token, advertiserId, campaignId: campanha.id, data: dia,
+        });
+        for (const m of metricas) {
+          await pool.query(
+            `INSERT INTO ads_metricas_diarias
+              (origem_integracao_id, anuncio_id_marketplace, campanha_id, campanha_nome, data, impressoes, cliques, custo, vendas_diretas_qtd, vendas_diretas_valor, vendas_indiretas_qtd, vendas_indiretas_valor, atualizado_em)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
+             ON CONFLICT (origem_integracao_id, anuncio_id_marketplace, data) DO UPDATE SET
+               campanha_id = EXCLUDED.campanha_id, campanha_nome = EXCLUDED.campanha_nome,
+               impressoes = EXCLUDED.impressoes, cliques = EXCLUDED.cliques, custo = EXCLUDED.custo,
+               vendas_diretas_qtd = EXCLUDED.vendas_diretas_qtd, vendas_diretas_valor = EXCLUDED.vendas_diretas_valor,
+               vendas_indiretas_qtd = EXCLUDED.vendas_indiretas_qtd, vendas_indiretas_valor = EXCLUDED.vendas_indiretas_valor,
+               atualizado_em = now()`,
+            [
+              integracao.id, String(m.itemId), campanha.id, campanha.nome, dia,
+              m.impressoes, m.cliques, m.custo, m.vendasDiretasQtd, m.vendasDiretasValor, m.vendasIndiretasQtd, m.vendasIndiretasValor,
+            ]
+          );
+          registros += 1;
+        }
+      } catch (err) {
+        ultimoErro = `Campanha ${campanha.nome} (${dia}): ${err.message}`;
+      }
+    }
+  }
+  await pool.query('UPDATE integracoes_marketplace SET ultimo_erro_ads = $1 WHERE id = $2', [ultimoErro, integracao.id]).catch(() => {});
+  return { diasSincronizados: dias, registros, campanhas: campanhas.length };
+}
+
+// Catch-up manual (botão) — janela bem maior, o máximo que a API aceita.
+async function sincronizarAdsTodasIntegracoes({ dias = 90 } = {}) {
+  const { rows: integracoes } = await pool.query(
+    `SELECT * FROM integracoes_marketplace WHERE ativo = TRUE AND access_token IS NOT NULL AND marketplace = 'mercado_livre'`
+  );
+  let registros = 0;
+  let diasSincronizados = 0;
+  for (const integracao of integracoes) {
+    try {
+      await garantirTokenValido(integracao);
+      const resultado = await sincronizarAdsDias(integracao, dias);
+      registros += resultado.registros;
+      diasSincronizados = Math.max(diasSincronizados, resultado.diasSincronizados);
+    } catch {
+      // integração pontual falhando não deve travar as outras
+    }
+  }
+  return { registros, diasSincronizados };
+}
+
+// Métricas de Ads não precisam da mesma urgência dos pedidos (o dinheiro já
+// foi gasto, não muda em minutos) — reconfere no máximo a cada 30min por
+// integração, mesmo rodando dentro do ciclo de 5min de pedidos, pra não
+// martelar a API de Publicidade à toa.
+const ADS_SYNC_COOLDOWN_MS = 30 * 60 * 1000;
+const ultimaSincronizacaoAdsPorIntegracao = new Map();
+
+async function sincronizarAdsSeNecessario(integracao) {
+  if (integracao.marketplace !== 'mercado_livre') return;
+  const ultima = ultimaSincronizacaoAdsPorIntegracao.get(integracao.id) || 0;
+  if (Date.now() - ultima < ADS_SYNC_COOLDOWN_MS) return;
+  ultimaSincronizacaoAdsPorIntegracao.set(integracao.id, Date.now());
+  await sincronizarAdsDias(integracao, JANELA_ADS_AUTOMATICA_DIAS);
+}
+
 async function atualizarValoresRecebidos(integracao) {
   if (integracao.marketplace !== 'mercado_livre') return;
   try {
@@ -716,6 +842,7 @@ async function sincronizarIntegracao(integracaoId) {
     // (botão manual).
     await corrigirAnunciosIdHistorico(integracao, { limite: 15 });
     await corrigirPackIdHistorico(integracao, { limite: 15 });
+    await sincronizarAdsSeNecessario(integracao);
 
     await pool.query(
       `UPDATE integracoes_marketplace SET ultima_sincronizacao = now(), ultimo_erro = NULL, atualizado_em = now() WHERE id = $1`,
@@ -782,4 +909,6 @@ module.exports = {
   corrigirAnunciosIdTodasIntegracoes,
   corrigirPackIdHistorico,
   corrigirPackIdTodasIntegracoes,
+  sincronizarAdsDias,
+  sincronizarAdsTodasIntegracoes,
 };

@@ -422,6 +422,106 @@ async function buscarConcorrenciaAnuncio({ accessToken, itemId }) {
   }
 }
 
+// ---------- Publicidade (Product Ads / Mercado Ads) ----------
+// Endpoints e nomes de campo aqui são o melhor entendimento possível a
+// partir de documentação de terceiros (developers.mercadolivre.com.br está
+// bloqueado nesse ambiente de desenvolvimento) — igual as outras
+// integrações novas dessa leva (Categorias, Reputação, Opiniões), só fica
+// confirmado de verdade depois que a usuária conectar e a gente ver a
+// resposta real. Requer o produto "Publicidade" habilitado no app dela no
+// painel de desenvolvedores do Mercado Livre — sem isso, toda chamada aqui
+// devolve 403/404 (ver integracoes.routes.js pra a mensagem de orientação).
+const ADS_API_VERSION = '2';
+
+async function chamarApiAds(path, accessToken) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { Authorization: `Bearer ${accessToken}`, 'Api-Version': ADS_API_VERSION },
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.message || `Erro na API de Publicidade do Mercado Livre (${res.status}): ${path}`);
+  }
+  return data;
+}
+
+// Precisa desse ID pra qualquer chamada de Publicidade — busca uma vez e
+// fica guardado na integração (integracoes_marketplace.advertiser_id_ads).
+async function buscarAdvertiserIdAds({ accessToken }) {
+  const data = await chamarApiAds('/advertising/advertisers?product_id=PADS', accessToken);
+  const advertisers = Array.isArray(data.advertisers) ? data.advertisers : (Array.isArray(data) ? data : []);
+  const doBrasil = advertisers.find((a) => a.site_id === SITE_BRASIL) || advertisers[0];
+  return doBrasil ? String(doBrasil.advertiser_id) : null;
+}
+
+function extrairMetricasAds(m) {
+  return {
+    impressoes: Number(m.prints ?? m.impressions) || 0,
+    cliques: Number(m.clicks) || 0,
+    custo: Number(m.cost) || 0,
+    cpc: m.cpc != null ? Number(m.cpc) : null,
+    ctr: m.ctr != null ? Number(m.ctr) : null,
+    acos: m.acos != null ? Number(m.acos) : null,
+    vendasDiretasValor: m.direct_items_amount != null ? Number(m.direct_items_amount) : null,
+    vendasDiretasQtd: m.direct_items_quantity != null ? Number(m.direct_items_quantity) : null,
+    vendasIndiretasValor: m.indirect_items_amount != null ? Number(m.indirect_items_amount) : null,
+    vendasIndiretasQtd: m.indirect_items_quantity != null ? Number(m.indirect_items_quantity) : null,
+  };
+}
+
+// Campanhas de Product Ads com as métricas agregadas do período (a API
+// aceita até 90 dias de janela pra trás). Usada pra tela de visão geral de
+// Publicidade — não pro rateio por pedido (que precisa de granularidade
+// diária por anúncio, ver buscarMetricasAnunciosCampanhaPorDia).
+async function buscarCampanhasAds({ accessToken, advertiserId, dataInicio, dataFim }) {
+  const params = new URLSearchParams({
+    date_from: dataInicio,
+    date_to: dataFim,
+    metrics: 'clicks,prints,cost,cpc,ctr,acos,direct_items_amount,indirect_items_amount',
+  });
+  const data = await chamarApiAds(`/advertising/advertisers/${advertiserId}/product_ads/campaigns?${params.toString()}`, accessToken);
+  const campanhas = data.results || data.campaigns || [];
+  return campanhas.map((c) => ({
+    id: String(c.id ?? c.campaign_id),
+    nome: c.name || c.campaign_name || `Campanha ${c.id ?? c.campaign_id}`,
+    status: c.status || null,
+    estrategia: c.strategy || null,
+    acosAlvo: c.acos_target != null ? Number(c.acos_target) : null,
+    orcamentoDiario: c.budget != null ? Number(c.budget) : (c.daily_budget != null ? Number(c.daily_budget) : null),
+    metricas: extrairMetricasAds(c.metrics || c),
+  }));
+}
+
+// Anúncios de uma campanha com as métricas de UM dia específico — é o
+// vínculo (item_id) que permite ratear o custo de Ads pro anúncio (e daí
+// pro pedido) certo em calcularRelatorioPedidos. Uma chamada por dia (em vez
+// de um único range com quebra diária) pra não depender de um parâmetro de
+// agregação cujo nome exato não dá pra confirmar sem a documentação oficial.
+async function buscarMetricasAnunciosCampanhaPorDia({ accessToken, advertiserId, campaignId, data: dia }) {
+  const resultados = [];
+  let offset = 0;
+  for (let pagina = 0; pagina < 40; pagina += 1) {
+    const params = new URLSearchParams({
+      date_from: dia,
+      date_to: dia,
+      metrics: 'clicks,prints,cost,direct_items_amount,indirect_items_amount',
+      limit: '50',
+      offset: String(offset),
+    });
+    const resposta = await chamarApiAds(
+      `/advertising/advertisers/${advertiserId}/product_ads/campaigns/${campaignId}/ads?${params.toString()}`,
+      accessToken
+    );
+    const itens = resposta.results || resposta.ads || [];
+    resultados.push(...itens);
+    const total = resposta.paging?.total ?? itens.length;
+    offset += itens.length;
+    if (itens.length === 0 || offset >= total) break;
+  }
+  return resultados
+    .map((a) => ({ itemId: a.item_id ?? a.id, ...extrairMetricasAds(a.metrics || a) }))
+    .filter((a) => a.itemId);
+}
+
 module.exports = {
   buildAuthorizeUrl,
   trocarCodigoPorToken,
@@ -439,4 +539,7 @@ module.exports = {
   buscarDetalheCategoria,
   buscarOpinioesAnuncio,
   buscarConcorrenciaAnuncio,
+  buscarAdvertiserIdAds,
+  buscarCampanhasAds,
+  buscarMetricasAnunciosCampanhaPorDia,
 };

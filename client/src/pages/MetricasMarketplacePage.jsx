@@ -3,7 +3,7 @@ import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContai
 import {
   ArrowDownRight, ArrowUpRight, Banknote, ShoppingCart, CheckCircle2,
   Users, TrendingUp, Store, Boxes, PackageMinus, Handshake, ShoppingBag,
-  Flame, Layers, Star, ShieldCheck, Swords,
+  Flame, Layers, Star, ShieldCheck, Swords, Megaphone, MousePointerClick, Eye, RefreshCw,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
@@ -827,6 +827,184 @@ function ConcorrentesTab({ integracoes }) {
   );
 }
 
+// Publicidade (Product Ads / Mercado Ads): visão geral de campanhas (gasto,
+// cliques, impressões, ACOS) e o gasto por anúncio já sincronizado — o
+// MESMO dado usado pra ratear o custo de Ads na Lucratividade (ver
+// ads_metricas_diarias/calcularRelatorioPedidos no backend), pra bater
+// certinho com o que aparece lá. Precisa do Product Ads habilitado na conta
+// e do produto "Publicidade" adicionado ao app dela no painel de
+// desenvolvedores do Mercado Livre — sem isso, a busca volta com um aviso
+// explicando o que falta.
+function PublicidadeTab({ integracoes }) {
+  const lojasML = useMemo(() => integracoes.filter((i) => i.marketplace === 'mercado_livre' && i.conectado), [integracoes]);
+  const [lojaId, setLojaId] = useState('');
+  const [dataInicio, setDataInicio] = useState(trintaDiasAtras());
+  const [dataFim, setDataFim] = useState(hoje());
+  const [campanhas, setCampanhas] = useState(null);
+  const [anuncios, setAnuncios] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState('');
+  const [sincronizando, setSincronizando] = useState(false);
+  const [resultadoSync, setResultadoSync] = useState(null);
+
+  useEffect(() => {
+    if (!lojaId && lojasML.length > 0) setLojaId(String(lojasML[0].id));
+  }, [lojasML, lojaId]);
+
+  function buscar() {
+    if (!lojaId) return;
+    setCarregando(true);
+    setErro('');
+    const qs = `?data_inicio=${dataInicio}&data_fim=${dataFim}`;
+    Promise.all([
+      api.get(`/integracoes/${lojaId}/ads/campanhas${qs}`),
+      api.get(`/integracoes/${lojaId}/ads/anuncios${qs}`),
+    ])
+      .then(([c, a]) => { setCampanhas(c.campanhas); setAnuncios(a.anuncios); })
+      .catch((err) => { setErro(err.message); setCampanhas(null); setAnuncios(null); })
+      .finally(() => setCarregando(false));
+  }
+
+  function sincronizarHistorico() {
+    if (!lojaId) return;
+    setSincronizando(true);
+    setResultadoSync(null);
+    setErro('');
+    api.post(`/integracoes/${lojaId}/ads/sincronizar`, {})
+      .then((r) => { setResultadoSync(r); buscar(); })
+      .catch((err) => setErro(err.message))
+      .finally(() => setSincronizando(false));
+  }
+
+  if (lojasML.length === 0) {
+    return <div className="card"><p className="page-sub">Conecte e autorize uma integração do Mercado Livre em "Integrações" pra usar essa aba.</p></div>;
+  }
+
+  const totais = campanhas && campanhas.reduce((acc, c) => ({
+    custo: acc.custo + (c.metricas.custo || 0),
+    cliques: acc.cliques + (c.metricas.cliques || 0),
+    impressoes: acc.impressoes + (c.metricas.impressoes || 0),
+    vendasDiretas: acc.vendasDiretas + (c.metricas.vendasDiretasValor || 0),
+  }), { custo: 0, cliques: 0, impressoes: 0, vendasDiretas: 0 });
+  const acosGeral = totais && totais.vendasDiretas > 0 ? totais.custo / totais.vendasDiretas : null;
+
+  return (
+    <div>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="form-grid">
+          {lojasML.length > 1 && (
+            <div className="field">
+              <span className="field-label">Loja</span>
+              <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)}>
+                {lojasML.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
+              </Select>
+            </div>
+          )}
+          <div className="field">
+            <span className="field-label">Data Início</span>
+            <DateInput value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+          </div>
+          <div className="field">
+            <span className="field-label">Data Fim</span>
+            <DateInput value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+          <button className="btn btn-primary" onClick={buscar} disabled={carregando}>
+            {carregando ? 'Buscando…' : 'Buscar Publicidade'}
+          </button>
+          <button className="btn btn-ghost" onClick={sincronizarHistorico} disabled={sincronizando}>
+            <RefreshCw size={14} /> {sincronizando ? 'Sincronizando…' : 'Sincronizar histórico (90 dias)'}
+          </button>
+        </div>
+        <p className="page-sub" style={{ marginTop: 10 }}>
+          O gasto por anúncio mostrado aqui é o mesmo usado pra ratear o custo de Ads na Lucratividade. "Sincronizar
+          histórico" busca até 90 dias pra trás direto na API do Mercado Livre (o ciclo automático só reconfere os
+          últimos dias, pra não sobrecarregar a API à toa).
+        </p>
+        {resultadoSync && (
+          <div className="login-error" style={{ marginTop: 10, background: 'var(--tone-elevada-bg, #d4edda)', color: '#155724' }}>
+            Sincronizados {resultadoSync.registros} registro(s) de {resultadoSync.campanhas} campanha(s) nos últimos {resultadoSync.diasSincronizados} dias.
+          </div>
+        )}
+        {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
+      </div>
+
+      {totais && (
+        <div className="stat-strip" style={{ marginBottom: 16 }}>
+          <div className="stat-card"><span className="stat-card-label"><Megaphone size={13} style={{ marginRight: 4, verticalAlign: -2 }} />Gasto com Ads</span><span className="stat-card-value">{brl(totais.custo)}</span></div>
+          <div className="stat-card"><span className="stat-card-label"><MousePointerClick size={13} style={{ marginRight: 4, verticalAlign: -2 }} />Cliques</span><span className="stat-card-value">{totais.cliques.toLocaleString('pt-BR')}</span></div>
+          <div className="stat-card"><span className="stat-card-label"><Eye size={13} style={{ marginRight: 4, verticalAlign: -2 }} />Impressões</span><span className="stat-card-value">{totais.impressoes.toLocaleString('pt-BR')}</span></div>
+          <div className="stat-card"><span className="stat-card-label">ACOS Geral</span><span className="stat-card-value">{acosGeral != null ? pct(acosGeral) : '—'}</span></div>
+        </div>
+      )}
+
+      {campanhas && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-head">Campanhas ({campanhas.length})</div>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table">
+              <thead>
+                <tr><th>Campanha</th><th>Status</th><th>Estratégia</th><th>ACOS Alvo</th><th>Custo</th><th>Cliques</th><th>Impressões</th><th>CPC</th><th>ACOS</th></tr>
+              </thead>
+              <tbody>
+                {campanhas.map((c) => (
+                  <tr key={c.id}>
+                    <td>{c.nome}</td>
+                    <td><span className={'stamp sm ' + (c.status === 'active' ? 'tone-saudavel' : 'tone-neutro')}>{c.status || '—'}</span></td>
+                    <td>{c.estrategia || '—'}</td>
+                    <td className="mono">{c.acosAlvo != null ? pct(c.acosAlvo) : '—'}</td>
+                    <td className="mono">{brl(c.metricas.custo)}</td>
+                    <td className="mono">{c.metricas.cliques.toLocaleString('pt-BR')}</td>
+                    <td className="mono">{c.metricas.impressoes.toLocaleString('pt-BR')}</td>
+                    <td className="mono">{c.metricas.cpc != null ? brl(c.metricas.cpc) : '—'}</td>
+                    <td className="mono">{c.metricas.acos != null ? pct(c.metricas.acos) : '—'}</td>
+                  </tr>
+                ))}
+                {campanhas.length === 0 && <tr><td colSpan="9">Nenhuma campanha no período.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {anuncios && (
+        <div className="card">
+          <div className="card-head">Gasto por Anúncio ({anuncios.length})</div>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table">
+              <thead>
+                <tr><th>Produto</th><th>ID do Anúncio</th><th>Custo</th><th>Cliques</th><th>Impressões</th><th>CPC</th></tr>
+              </thead>
+              <tbody>
+                {anuncios.map((a) => (
+                  <tr key={a.anuncioId}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <FotoProduto produtoId={a.produtoId} temFoto={false} size={32} alt={a.referencia || a.titulo} />
+                        <div>
+                          <strong className="mono">{a.referencia || '—'}</strong>
+                          {a.titulo && <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{a.titulo}</div>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="mono">{a.anuncioId}</td>
+                    <td className="mono">{brl(a.custo)}</td>
+                    <td className="mono">{a.cliques.toLocaleString('pt-BR')}</td>
+                    <td className="mono">{a.impressoes.toLocaleString('pt-BR')}</td>
+                    <td className="mono">{a.cpc > 0 ? brl(a.cpc) : '—'}</td>
+                  </tr>
+                ))}
+                {anuncios.length === 0 && <tr><td colSpan="6">Nenhum gasto de Ads sincronizado ainda nesse período — clique em "Sincronizar histórico".</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Navegador de categorias com aprofundamento (Todas > Roupas > Camisas >
 // Camisas Sociais...) — clica numa categoria da lista pra entrar nela, ou
 // no "migalha de pão" do topo pra voltar. Serve tanto pra só EXPLORAR a
@@ -1054,6 +1232,7 @@ const TABS = [
   { key: 'reputacao', label: 'Reputação' },
   { key: 'opinioes', label: 'Opiniões' },
   { key: 'concorrentes', label: 'Concorrentes' },
+  { key: 'publicidade', label: 'Publicidade' },
   { key: 'categorias', label: 'Categorias' },
   { key: 'shopee', label: 'Shopee' },
 ];
@@ -1162,6 +1341,7 @@ export default function MetricasMarketplacePage() {
           {subTab === 'reputacao' && <ReputacaoTab integracoes={integracoes} />}
           {subTab === 'opinioes' && <OpinioesTab integracoes={integracoes} />}
           {subTab === 'concorrentes' && <ConcorrentesTab integracoes={integracoes} />}
+          {subTab === 'publicidade' && <PublicidadeTab integracoes={integracoes} />}
           {subTab === 'categorias' && <CategoriasTab integracoes={integracoes} />}
           {subTab === 'shopee' && <ShopeeTab filtros={filtrosAplicados} />}
         </>

@@ -495,8 +495,8 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
     values
   );
   const totalGeralVazio = {
-    receita: 0, custoPeca: 0, imposto: 0, custoEmbalagem: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, margemPct: 0,
-    valorRecebidoLiberado: 0, valorRecebidoConfirmado: 0, valorRecebidoSemConfirmacao: 0,
+    receita: 0, custoPeca: 0, imposto: 0, custoEmbalagem: 0, custoAds: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, margemPct: 0,
+    valorRecebidoLiberado: 0, valorRecebidoConfirmado: 0, valorRecebidoSemConfirmacao: 0, custoAdsNaoAtribuido: 0,
   };
   if (pedidosBrutos.length === 0) {
     return { resultado: [], totalGeral: totalGeralVazio };
@@ -506,6 +506,55 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
     `SELECT * FROM pedido_itens WHERE pedido_id = ANY($1)`,
     [pedidosBrutos.map((p) => p.id)]
   );
+
+  // Rateio do custo de Ads (Publicidade do Mercado Livre — ver
+  // ads_metricas_diarias, alimentada por marketplaceSync.sincronizarAdsDias):
+  // o custo diário de cada anúncio é dividido entre as unidades de VERDADE
+  // vendidas daquele anúncio naquele dia (não pelas métricas de venda que a
+  // própria API de Ads reporta, pra ficar consistente com o que a
+  // Lucratividade já mostra) — cada pedido carrega sua fatia proporcional.
+  const pedidoIdParaContextoAds = new Map(
+    pedidosBrutos.map((p) => [p.id, { integracaoId: p.origem_integracao_id, dia: p.data_pedido.toISOString().slice(0, 10) }])
+  );
+  const totalUnidadesPorChaveAds = new Map();
+  for (const it of itens) {
+    if (!it.anuncio_id_marketplace) continue;
+    const contexto = pedidoIdParaContextoAds.get(it.pedido_id);
+    if (!contexto || !contexto.integracaoId) continue;
+    const chave = `${contexto.integracaoId}:${it.anuncio_id_marketplace}:${contexto.dia}`;
+    totalUnidadesPorChaveAds.set(chave, (totalUnidadesPorChaveAds.get(chave) || 0) + Number(it.quantidade));
+  }
+  const integracaoIdsAds = [...new Set(pedidosBrutos.map((p) => p.origem_integracao_id).filter(Boolean))];
+  const datasAds = [...new Set(pedidosBrutos.map((p) => p.data_pedido.toISOString().slice(0, 10)))];
+  const custoPorUnidadeAds = new Map();
+  let custoAdsNaoAtribuido = 0;
+  if (integracaoIdsAds.length > 0) {
+    const { rows: adsRows } = await pool.query(
+      `SELECT origem_integracao_id, anuncio_id_marketplace, data, custo FROM ads_metricas_diarias
+       WHERE origem_integracao_id = ANY($1) AND data = ANY($2::date[]) AND custo > 0`,
+      [integracaoIdsAds, datasAds]
+    );
+    for (const r of adsRows) {
+      const chave = `${r.origem_integracao_id}:${r.anuncio_id_marketplace}:${r.data.toISOString().slice(0, 10)}`;
+      const totalUnidades = totalUnidadesPorChaveAds.get(chave);
+      if (totalUnidades > 0) {
+        custoPorUnidadeAds.set(chave, Number(r.custo) / totalUnidades);
+      } else {
+        // Teve gasto de Ads nesse anúncio nesse dia, mas nenhuma venda NOSSA
+        // registrada pra atribuir — fica como gasto solto (mostrado à parte
+        // no total geral, não em nenhum card específico).
+        custoAdsNaoAtribuido += Number(r.custo);
+      }
+    }
+  }
+  function custoAdsDoItem(it) {
+    if (!it.anuncio_id_marketplace) return 0;
+    const contexto = pedidoIdParaContextoAds.get(it.pedido_id);
+    if (!contexto) return 0;
+    const chave = `${contexto.integracaoId}:${it.anuncio_id_marketplace}:${contexto.dia}`;
+    const porUnidade = custoPorUnidadeAds.get(chave);
+    return porUnidade ? porUnidade * Number(it.quantidade) : 0;
+  }
 
   // Junta num card só as "suborders" que o Mercado Livre cria quando o
   // comprador leva mais de um anúncio diferente num carrinho só (o chamado
@@ -635,18 +684,23 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
       // exatamente com o Lucro do Pedido, em vez de mostrar um número que
       // não reconcilia com o Valor Recebido real ao lado dele.
       let taxaMarketplaceExibicao;
+      // Custo de Ads (Publicidade) já rateado por dia/anúncio — ver
+      // custoAdsDoItem logo no início da função, calculado a partir de
+      // ads_metricas_diarias. Entra igual nos dois modos de cálculo (real ou
+      // estimativa), sempre reduzindo o lucro do pedido.
+      const custoAds = itensDoPedido.reduce((s, it) => s + custoAdsDoItem(it), 0);
       if (calculoReal) {
         const valorNotaFiscal = receita * pctNotaFiscal;
         imposto = valorNotaFiscal * pctImpostosEmpresa(empresaVinculada);
         custoEmbalagem = custoEmbalagemConfig;
         custo = custoPeca + imposto + custoEmbalagem;
-        lucro = valorRecebido - custoPeca - custoEmbalagem - imposto;
+        lucro = valorRecebido - custoPeca - custoEmbalagem - imposto - custoAds;
         taxaMarketplaceExibicao = receita - valorRecebido;
       } else {
         imposto = impostoEstimado;
         custoEmbalagem = 0;
         custo = custoPeca + imposto;
-        lucro = receita - custo - taxaMarketplace;
+        lucro = receita - custo - taxaMarketplace - custoAds;
         taxaMarketplaceExibicao = taxaMarketplace;
       }
       const margemPct = receita > 0 ? lucro / receita : 0;
@@ -668,6 +722,7 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
         custoPeca,
         imposto,
         custoEmbalagem,
+        custoAds,
         frete,
         custo,
         taxaMarketplace: taxaMarketplaceExibicao,
@@ -712,6 +767,7 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
           custoPeca: acc.custoPeca + p.custoPeca,
           imposto: acc.imposto + p.imposto,
           custoEmbalagem: acc.custoEmbalagem + p.custoEmbalagem,
+          custoAds: acc.custoAds + p.custoAds,
           frete: acc.frete + p.frete,
           taxaMarketplace: acc.taxaMarketplace + p.taxaMarketplace,
           custo: acc.custo + p.custo,
@@ -721,9 +777,14 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
           valorRecebidoSemConfirmacao: acc.valorRecebidoSemConfirmacao + (ehML && p.valorRecebido === null ? 1 : 0),
         };
       },
-      { receita: 0, custoPeca: 0, imposto: 0, custoEmbalagem: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, valorRecebidoLiberado: 0, valorRecebidoConfirmado: 0, valorRecebidoSemConfirmacao: 0 }
+      { receita: 0, custoPeca: 0, imposto: 0, custoEmbalagem: 0, custoAds: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, valorRecebidoLiberado: 0, valorRecebidoConfirmado: 0, valorRecebidoSemConfirmacao: 0 }
     );
     totalGeral.margemPct = totalGeral.receita > 0 ? totalGeral.lucro / totalGeral.receita : 0;
+    // Gasto de Ads que não deu pra atribuir a nenhum pedido específico (teve
+    // clique/custo naquele anúncio naquele dia, mas nenhuma venda NOSSA
+    // registrada pra dividir) — não está em nenhum card, só no total geral,
+    // pra não sumir da conta e a soma de Ads bater com o extrato real dela.
+    totalGeral.custoAdsNaoAtribuido = custoAdsNaoAtribuido;
 
   return { resultado, totalGeral };
 }

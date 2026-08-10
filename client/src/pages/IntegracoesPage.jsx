@@ -268,6 +268,12 @@ export default function IntegracoesPage() {
                 }}>{item.ultimoErroFaturamento}</pre>
               </div>
             )}
+            {item.marketplace === 'mercado_livre' && item.ultimoErroAds && (
+              <div className="login-error" style={{ marginTop: (item.ultimoErro || item.ultimoErroFaturamento) ? 8 : 0 }}>
+                <div style={{ marginBottom: 6 }}>Publicidade (Product Ads):</div>
+                {item.ultimoErroAds}
+              </div>
+            )}
           </div>
         );
       })}
