@@ -702,6 +702,9 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
               {resultadoRevinculo.pedidosVerificadosPacote > 0
                 ? ` Conferidos ${resultadoRevinculo.pedidosVerificadosPacote} pedido(s) sem dado de pacote: ${resultadoRevinculo.pedidosComPacoteCorrigidos} eram compra em pacote e passam a aparecer agrupados (clique de novo se ainda restarem — corrige em lotes).`
                 : ''}
+              {resultadoRevinculo.itensFantasmaRemovidos > 0
+                ? ` Removidos ${resultadoRevinculo.itensFantasmaRemovidos} item(ns) fantasma (mesmo SKU duplicado com valor zerado, de ${resultadoRevinculo.pedidosComItemFantasma} pedido(s)) que estavam cobrando custo sem receita correspondente.`
+                : ''}
             </div>
           )}
           {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}

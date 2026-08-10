@@ -6,7 +6,7 @@ const { getCalcContext } = require('../lib/calcContext');
 const { pctImpostosEmpresa } = require('../lib/calc');
 const { calcularTaxaEsperadaPedido } = require('../lib/marketplaceTaxaCalc');
 const { parseArquivoPedidos } = require('../lib/pedidoImportParsers');
-const { importarPedido, sincronizarSeNecessario, encontrarVariante, corrigirPagamentosHistorico, corrigirAnunciosIdTodasIntegracoes, corrigirPackIdTodasIntegracoes } = require('../lib/marketplaceSync');
+const { importarPedido, sincronizarSeNecessario, encontrarVariante, corrigirPagamentosHistorico, corrigirAnunciosIdTodasIntegracoes, corrigirPackIdTodasIntegracoes, limparItensFantasmaHistorico } = require('../lib/marketplaceSync');
 const mercadoLivre = require('../lib/marketplaces/mercadoLivre');
 const { recalcularTotais } = require('../lib/pedidoRecalculo');
 const produtosRoutes = require('./produtos.routes');
@@ -281,6 +281,11 @@ router.post('/marketplace/revincular-custos', async (req, res, next) => {
     // pra sempre como se cada item fosse um pedido avulso).
     const correcaoPacotes = await corrigirPackIdTodasIntegracoes({ limite: 60 });
 
+    // Remove item fantasma (mesmo SKU duplicado com valor zerado — ver
+    // comentário de removerItensFantasmaDuplicados em marketplaceSync.js)
+    // já importado em pedidos antigos, antes desse filtro existir.
+    const limpezaFantasma = await limparItensFantasmaHistorico({ limite: 200 });
+
     res.json({
       verificados: semVinculo.length,
       vinculados,
@@ -292,6 +297,8 @@ router.post('/marketplace/revincular-custos', async (req, res, next) => {
       itensAnuncioCorrigidos: correcaoAnuncios.itensCorrigidos,
       pedidosVerificadosPacote: correcaoPacotes.pedidosVerificados,
       pedidosComPacoteCorrigidos: correcaoPacotes.pedidosComPacote,
+      itensFantasmaRemovidos: limpezaFantasma.itensRemovidos,
+      pedidosComItemFantasma: limpezaFantasma.pedidosAfetados,
     });
   } catch (err) {
     await client.query('ROLLBACK');

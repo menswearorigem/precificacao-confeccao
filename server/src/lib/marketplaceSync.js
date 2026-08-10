@@ -230,6 +230,36 @@ async function encontrarVariante(client, { eanExterno, skuExterno }) {
   return null;
 }
 
+// Quirk observado do Mercado Livre em pedidos que fazem parte de um
+// "pacote" (carrinho com mais de um item comprado junto): às vezes o
+// order_items de UM suborder específico vem contaminado com item(ns) de
+// OUTRO suborder do mesmo pacote — mesmo SKU repetido, mas com valor
+// zerado (a venda de verdade está registrada no OUTRO pedido, não nesse).
+// Sem filtrar isso, o pedido cobrava o custo de produção do item fantasma
+// (contando como se tivesse vendido de novo) sem nenhuma receita
+// correspondente, derrubando a margem de forma artificial. Só remove
+// quando tem outro item com o MESMO SKU já com preço de verdade — não
+// mexe em item legitimamente sozinho com valor zero (ex.: brinde
+// declarado como tal, sem duplicata).
+function removerItensFantasmaDuplicados(itens) {
+  const porSku = new Map();
+  for (const item of itens) {
+    if (!item.skuExterno) continue;
+    if (!porSku.has(item.skuExterno)) porSku.set(item.skuExterno, []);
+    porSku.get(item.skuExterno).push(item);
+  }
+  const descartar = new Set();
+  for (const grupo of porSku.values()) {
+    if (grupo.length < 2) continue;
+    const temPrecificado = grupo.some((it) => Number(it.valorUnitario) > 0);
+    if (!temPrecificado) continue;
+    for (const it of grupo) {
+      if (Number(it.valorUnitario) === 0) descartar.add(it);
+    }
+  }
+  return itens.filter((it) => !descartar.has(it));
+}
+
 // `integracao` é a linha completa de integracoes_marketplace (não só o id) —
 // usada pra "congelar" no pedido, no momento da importação, a empresa (CNPJ)
 // e o % de nota fiscal configurados ali (mesma lógica de taxa_marketplace:
@@ -267,7 +297,7 @@ async function importarPedido(client, pedidoGenerico, integracao) {
   const pedidoId = rows[0].id;
 
   let ordem = 1;
-  for (const item of pedidoGenerico.itens) {
+  for (const item of removerItensFantasmaDuplicados(pedidoGenerico.itens)) {
     const variante = await encontrarVariante(client, { eanExterno: item.eanExterno, skuExterno: item.skuExterno });
     const total = item.quantidade * item.valorUnitario;
     await client.query(
@@ -547,6 +577,48 @@ async function corrigirPackIdTodasIntegracoes({ limite = 40 } = {}) {
     }
   }
   return { pedidosVerificados, pedidosComPacote };
+}
+
+// Limpa item fantasma já importado (ver removerItensFantasmaDuplicados —
+// esse aqui é o mesmo problema, só que em pedido que já estava no banco
+// ANTES desse filtro existir na importação). Não precisa de token nem
+// chamada à API — é só uma limpeza local do que já está gravado, então
+// roda pra todas as integrações de uma vez, sem precisar de token válido
+// (útil até pra pedido cujo origem_pedido_id não existe mais no Mercado
+// Livre pra reconferir).
+async function limparItensFantasmaHistorico({ limite = 200 } = {}) {
+  const { rows: duplicatas } = await pool.query(
+    `SELECT pi.id, pi.pedido_id
+     FROM pedido_itens pi
+     JOIN pedidos_venda pv ON pv.id = pi.pedido_id
+     WHERE pv.origem_marketplace = 'mercado_livre'
+       AND pi.sku_externo IS NOT NULL
+       AND pi.valor_unitario = 0
+       AND EXISTS (
+         SELECT 1 FROM pedido_itens pi2
+         WHERE pi2.pedido_id = pi.pedido_id AND pi2.sku_externo = pi.sku_externo AND pi2.valor_unitario > 0
+       )
+     LIMIT $1`,
+    [limite]
+  );
+  if (duplicatas.length === 0) return { itensRemovidos: 0, pedidosAfetados: 0 };
+
+  const pedidoIdsAfetados = [...new Set(duplicatas.map((d) => d.pedido_id))];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM pedido_itens WHERE id = ANY($1)', [duplicatas.map((d) => d.id)]);
+    for (const pedidoId of pedidoIdsAfetados) {
+      await recalcularTotais(client, pedidoId);
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+  return { itensRemovidos: duplicatas.length, pedidosAfetados: pedidoIdsAfetados.length };
 }
 
 // ---------- Publicidade (Product Ads / Mercado Ads) ----------
@@ -872,6 +944,13 @@ async function sincronizarTodasAtivas() {
       console.error(`[marketplace-sync] falha na integração ${id}:`, err.message);
     }
   }
+  // Limpeza local (não é por integração, não precisa de token) — lote
+  // pequeno a cada ciclo; catch-up maior pelo botão manual.
+  try {
+    await limparItensFantasmaHistorico({ limite: 30 });
+  } catch (err) {
+    console.error('[marketplace-sync] falha ao limpar itens fantasma:', err.message);
+  }
 }
 
 // No plano gratuito do Render o serviço "dorme" após um tempo sem tráfego, e
@@ -909,4 +988,5 @@ module.exports = {
   corrigirPackIdTodasIntegracoes,
   sincronizarAdsDias,
   sincronizarAdsTodasIntegracoes,
+  limparItensFantasmaHistorico,
 };
