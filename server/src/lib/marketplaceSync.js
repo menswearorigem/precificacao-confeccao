@@ -10,6 +10,17 @@ const { recalcularTotais } = require('./pedidoRecalculo');
 
 const LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee' };
 
+// Toda sincronização reexamina pelo menos essa janela pra trás, mesmo que o
+// último ciclo tenha rodado há poucos minutos — pedido criado hoje mas que só
+// vira "pago" um pouco depois (boleto, Pix pendente, análise de pagamento)
+// só aparece na API do Mercado Livre quando filtramos por
+// order.date_created a partir dessa janela; se o cursor de "desde" avançasse
+// só pra frente a cada ciclo, um pedido assim nunca mais seria encontrado
+// depois que a data dele ficasse pra trás do cursor — sumiria pra sempre,
+// mesmo tendo sido pago de verdade. Reimportar pedido já existente é
+// inofensivo (importarPedido ignora o que já está no banco).
+const JANELA_RESSINCRONIZACAO_MS = 7 * 24 * 60 * 60 * 1000;
+
 async function garantirTokenValido(integracao) {
   const expiraEm = integracao.token_expira_em ? new Date(integracao.token_expira_em).getTime() : 0;
   const margem = 5 * 60 * 1000; // renova com 5min de folga
@@ -496,9 +507,10 @@ async function sincronizarIntegracao(integracaoId) {
 
   try {
     await garantirTokenValido(integracao);
-    const desde = integracao.ultima_sincronizacao
+    const janelaMinima = new Date(Date.now() - JANELA_RESSINCRONIZACAO_MS);
+    const desde = integracao.ultima_sincronizacao && new Date(integracao.ultima_sincronizacao) < janelaMinima
       ? new Date(integracao.ultima_sincronizacao)
-      : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      : janelaMinima;
 
     const pedidosGenericos = await buscarPedidosDoMarketplace(integracao, desde);
 

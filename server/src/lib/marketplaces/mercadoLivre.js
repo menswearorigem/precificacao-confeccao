@@ -102,6 +102,13 @@ function extrairAtributo(lista, id) {
   return (lista || []).find((a) => a.id === id)?.value_name || null;
 }
 
+// Cache de detalhe de anúncio (tipo/SKU/GTIN) entre chamadas de buscarPedidos
+// — cada sincronização agora reexamina uma janela de dias pra trás (não só
+// os pedidos novíssimos), então o mesmo anúncio aparece de novo em ciclos
+// seguidos; sem esse cache no nível do módulo, a gente repetiria a mesma
+// chamada GET /items/:id a cada 5 minutos pra sempre.
+const itemDetalheCache = new Map();
+
 // O SKU "oficial" fica no atributo SELLER_SKU — pra anúncio com variação
 // (cor/tamanho, o caso comum de roupa) esse atributo mora dentro da
 // variação específica, não no anúncio como um todo, então tem que achar a
@@ -144,21 +151,20 @@ async function buscarPedidos({ accessToken, sellerId, desde }) {
     offset += limit;
   }
 
-  const itemDetalhePorId = new Map();
   for (const order of pedidos) {
     for (const oi of order.order_items || []) {
       const itemId = oi.item?.id;
-      if (!itemId || itemDetalhePorId.has(itemId)) continue;
+      if (!itemId || itemDetalheCache.has(itemId)) continue;
       try {
-        itemDetalhePorId.set(itemId, await chamarApi(`/items/${itemId}`, accessToken));
+        itemDetalheCache.set(itemId, await chamarApi(`/items/${itemId}`, accessToken));
       } catch {
-        itemDetalhePorId.set(itemId, null);
+        itemDetalheCache.set(itemId, null);
       }
     }
   }
   for (const order of pedidos) {
     for (const oi of order.order_items || []) {
-      const item = itemDetalhePorId.get(oi.item?.id);
+      const item = itemDetalheCache.get(oi.item?.id);
       oi.tipoAnuncio = item ? mapearTipoAnuncio(item.listing_type_id) : 'classico';
       oi.eanExterno = item ? extrairGtin(item) : null;
       // sku direto no pedido (quando o ML já resolve) tem prioridade; só
