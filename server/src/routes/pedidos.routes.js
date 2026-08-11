@@ -442,6 +442,76 @@ router.get('/:id/diagnostico-marketplace', async (req, res, next) => {
   }
 });
 
+// Investiga um número de pedido do Mercado Livre que a vendedora viu direto
+// no painel deles — antes mesmo de saber se ele existe no nosso sistema.
+// Busca ao vivo na API (pra mostrar os itens reais do pedido, mesmo que a
+// gente nunca tenha importado ele) e cruza com o que já temos gravado pelo
+// mesmo pack_id, pra revelar buracos: itens do pacote que o Mercado Livre
+// confirma que existem mas que nunca viraram pedido/item aqui.
+router.get('/marketplace/buscar-por-origem/:origemPedidoId', async (req, res, next) => {
+  try {
+    const origemPedidoId = String(req.params.origemPedidoId).trim();
+
+    const { rows: integracoes } = await pool.query(
+      `SELECT * FROM integracoes_marketplace WHERE marketplace = 'mercado_livre' AND ativo = TRUE AND access_token IS NOT NULL ORDER BY id LIMIT 1`
+    );
+    const integracao = integracoes[0] || null;
+    if (!integracao) return res.status(400).json({ error: 'Nenhuma integração do Mercado Livre autorizada encontrada.' });
+
+    let order = null;
+    let erroBusca = null;
+    try {
+      order = await mercadoLivre.buscarPedidoPorIdDetalhado(origemPedidoId, integracao.access_token);
+    } catch (err) {
+      erroBusca = err.message;
+    }
+
+    const { rows: local } = await pool.query(
+      `SELECT id, numero, data_pedido, situacao, pack_id_marketplace, origem_pedido_id
+       FROM pedidos_venda WHERE origem_marketplace = 'mercado_livre' AND origem_pedido_id = $1`,
+      [origemPedidoId]
+    );
+
+    let pedidosDoMesmoPack = [];
+    let itensLocaisDoPack = [];
+    const packId = order?.pack_id ? String(order.pack_id) : null;
+    if (packId) {
+      const { rows } = await pool.query(
+        `SELECT id, numero, data_pedido, situacao, origem_pedido_id FROM pedidos_venda
+         WHERE origem_marketplace = 'mercado_livre' AND pack_id_marketplace = $1 ORDER BY id`,
+        [packId]
+      );
+      pedidosDoMesmoPack = rows;
+      if (rows.length > 0) {
+        const { rows: itens } = await pool.query(
+          `SELECT pi.pedido_id, pi.sku_externo, pi.titulo_externo, pi.quantidade, pi.valor_unitario, pi.total
+           FROM pedido_itens pi WHERE pi.pedido_id = ANY($1::int[]) ORDER BY pi.pedido_id`,
+          [rows.map((r) => r.id)]
+        );
+        itensLocaisDoPack = itens;
+      }
+    }
+
+    res.json({
+      origemPedidoId,
+      encontradoLocalmente: local.length > 0,
+      pedidoLocal: local[0] || null,
+      erroBuscaAoVivo: erroBusca,
+      packId,
+      itensNoMercadoLivre: order?.order_items?.map((it) => ({
+        skuExterno: it.skuExterno || null,
+        titulo: it.item?.title || null,
+        quantidade: it.quantity,
+        valorUnitario: it.unit_price,
+      })) || null,
+      pedidosDoMesmoPackNoSistema: pedidosDoMesmoPack,
+      itensLocaisDoPack,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Vincula (ou troca) manualmente o produto de um item de pedido de
 // marketplace — usado quando o casamento automático por SKU/EAN não achou
 // nada, ou achou o produto errado. Preserva titulo_externo/sku_externo (o

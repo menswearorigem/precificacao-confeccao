@@ -109,6 +109,31 @@ async function buscarPedidoPorId(orderId, accessToken) {
   return chamarApi(`/orders/${orderId}`, accessToken);
 }
 
+// Igual buscarPedidoPorId, mas enriquece os itens com o SKU de verdade
+// (mesma lógica de buscarPedidos: busca o detalhe do anúncio e resolve o
+// SELLER_SKU pela variação) — o pedido puro não traz isso quando o anúncio
+// tem variação de cor/tamanho, então sem esse passo o SKU vem nulo. Usado
+// pelo diagnóstico "buscar por número de pedido", onde o ponto é justamente
+// conferir quais SKUs esse pedido específico contém.
+async function buscarPedidoPorIdDetalhado(orderId, accessToken) {
+  const order = await chamarApi(`/orders/${orderId}`, accessToken);
+  for (const oi of order.order_items || []) {
+    const itemId = oi.item?.id;
+    let item = null;
+    if (itemId) {
+      try {
+        item = await chamarApi(`/items/${itemId}`, accessToken);
+      } catch {
+        item = null;
+      }
+    }
+    oi.eanExterno = item ? extrairGtin(item) : null;
+    oi.skuExterno = oi.item?.seller_sku || oi.item?.seller_custom_field
+      || (item ? extrairSku(item, oi.item?.variation_id) : null);
+  }
+  return order;
+}
+
 // gold_special = anúncio Clássico · gold_pro = anúncio Premium — os únicos
 // dois tipos vendidos hoje em dia; qualquer outro (formatos antigos/grátis)
 // cai como "classico" por aproximação, já que não tem comissão própria nas
@@ -562,6 +587,7 @@ module.exports = {
   buscarPedidos,
   buscarIdsPedidosCancelados,
   buscarPedidoPorId,
+  buscarPedidoPorIdDetalhado,
   buscarValorRecebido,
   buscarUmPagamento,
   idsPagamentosAprovados,

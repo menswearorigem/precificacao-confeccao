@@ -552,6 +552,125 @@ function DuplicatasSuspeitas({ duplicatas }) {
   );
 }
 
+// Ferramenta de investigação: dado um número de pedido visto direto no
+// painel do Mercado Livre, busca ao vivo na API (mesmo que a gente nunca
+// tenha importado ele) e cruza com o que já está gravado no sistema pelo
+// mesmo pack_id — pra achar item de pacote que sumiu (existe no Mercado
+// Livre mas nunca virou pedido/item aqui).
+function BuscarPedidoOrigem() {
+  const [aberto, setAberto] = useState(false);
+  const [numero, setNumero] = useState('');
+  const [buscando, setBuscando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState('');
+
+  async function buscar() {
+    if (!numero.trim()) return;
+    setBuscando(true);
+    setErro('');
+    setResultado(null);
+    try {
+      const data = await api.get(`/pedidos/marketplace/buscar-por-origem/${encodeURIComponent(numero.trim())}`);
+      setResultado(data);
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setBuscando(false);
+    }
+  }
+
+  return (
+    <div className="card no-print" style={{ marginBottom: 16 }}>
+      <div className="card-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>Buscar pedido do Mercado Livre por número</span>
+        <button type="button" className="btn btn-ghost" onClick={() => setAberto((v) => !v)}>
+          {aberto ? 'Esconder' : 'Abrir'}
+        </button>
+      </div>
+      {aberto && (
+        <div>
+          <p className="page-sub" style={{ marginTop: 0 }}>
+            Cole aqui o número de um pedido (ou pacote) visto direto no painel do Mercado Livre pra conferir se ele
+            existe no nosso sistema, quais itens o Mercado Livre diz que ele tem, e — se for pacote — quais outros
+            pedidos do mesmo pacote já estão gravados aqui.
+          </p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              style={{ maxWidth: 260 }}
+              placeholder="Ex.: 2000014452213069"
+              value={numero}
+              onChange={(e) => setNumero(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') buscar(); }}
+            />
+            <button type="button" className="btn" disabled={buscando} onClick={buscar}>
+              {buscando ? 'Buscando…' : 'Buscar'}
+            </button>
+          </div>
+          {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
+          {resultado && (
+            <div style={{ marginTop: 12 }}>
+              <p>
+                <strong>Existe no nosso sistema?</strong>{' '}
+                {resultado.encontradoLocalmente
+                  ? `Sim — pedido #${resultado.pedidoLocal.numero} (situação: ${resultado.pedidoLocal.situacao}).`
+                  : 'Não — esse número de pedido nunca foi importado pra cá.'}
+              </p>
+              {resultado.erroBuscaAoVivo && (
+                <p className="page-sub">Não consegui confirmar ao vivo no Mercado Livre agora: {resultado.erroBuscaAoVivo}</p>
+              )}
+              {resultado.itensNoMercadoLivre && (
+                <>
+                  <p style={{ marginBottom: 4 }}><strong>Itens desse pedido segundo o Mercado Livre agora:</strong>{resultado.packId ? ` (pacote ${resultado.packId})` : ''}</p>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="data-table">
+                      <thead><tr><th>SKU</th><th>Título</th><th>Qtd</th><th>Valor Unit.</th></tr></thead>
+                      <tbody>
+                        {resultado.itensNoMercadoLivre.map((it, i) => (
+                          <tr key={i}>
+                            <td className="mono">{it.skuExterno || '—'}</td>
+                            <td>{it.titulo || '—'}</td>
+                            <td className="mono">{it.quantidade}</td>
+                            <td className="mono">{brl(it.valorUnitario)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+              {resultado.pedidosDoMesmoPackNoSistema?.length > 0 && (
+                <>
+                  <p style={{ margin: '12px 0 4px' }}><strong>Outros pedidos do mesmo pacote já gravados no sistema:</strong></p>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="data-table">
+                      <thead><tr><th>Pedido</th><th>Nº externo</th><th>Situação</th><th>SKU</th><th>Qtd</th><th>Valor</th></tr></thead>
+                      <tbody>
+                        {resultado.itensLocaisDoPack.map((it, i) => {
+                          const pv = resultado.pedidosDoMesmoPackNoSistema.find((p) => p.id === it.pedido_id);
+                          return (
+                            <tr key={i}>
+                              <td className="mono">{pv?.numero}</td>
+                              <td className="mono">{pv?.origem_pedido_id}</td>
+                              <td>{pv?.situacao}</td>
+                              <td className="mono">{it.sku_externo}</td>
+                              <td className="mono">{it.quantidade}</td>
+                              <td className="mono">{brl(it.total)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function RelatorioLucratividadePage({ origemFiltro }) {
   const [dataInicio, setDataInicio] = useState(trintaDiasAtras());
   const [dataFim, setDataFim] = useState(hoje());
@@ -764,6 +883,8 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
           {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
         </div>
       </div>
+
+      {isMarketplace && <BuscarPedidoOrigem />}
 
       {isMarketplace && duplicatas?.totalPossivelExcesso > 0 && (
         <DuplicatasSuspeitas duplicatas={duplicatas} />
