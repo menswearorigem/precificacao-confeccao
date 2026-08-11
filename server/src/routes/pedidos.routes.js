@@ -448,6 +448,13 @@ router.get('/:id/diagnostico-marketplace', async (req, res, next) => {
 // gente nunca tenha importado ele) e cruza com o que já temos gravado pelo
 // mesmo pack_id, pra revelar buracos: itens do pacote que o Mercado Livre
 // confirma que existem mas que nunca viraram pedido/item aqui.
+//
+// O número que aparece na tela do vendedor nem sempre é o order.id que
+// /orders/:id espera — pode ser o ID do ENVIO ou do PACOTE (identificadores
+// diferentes no Mercado Livre). Se a busca direta como pedido falhar, tenta
+// resolver como envio (/shipments/:id → order_id) e, por último, como
+// pacote (/marketplace/orders/pack/:id → primeiro pedido do pacote) antes
+// de desistir.
 router.get('/marketplace/buscar-por-origem/:origemPedidoId', async (req, res, next) => {
   try {
     const origemPedidoId = String(req.params.origemPedidoId).trim();
@@ -460,16 +467,52 @@ router.get('/marketplace/buscar-por-origem/:origemPedidoId', async (req, res, ne
 
     let order = null;
     let erroBusca = null;
+    let resolvidoComo = null;
+    let origemResolvida = origemPedidoId;
+
     try {
       order = await mercadoLivre.buscarPedidoPorIdDetalhado(origemPedidoId, integracao.access_token);
+      resolvidoComo = 'pedido';
     } catch (err) {
       erroBusca = err.message;
     }
 
+    if (!order) {
+      try {
+        const envio = await mercadoLivre.buscarEnvioPorId(origemPedidoId, integracao.access_token);
+        if (envio?.order_id) {
+          order = await mercadoLivre.buscarPedidoPorIdDetalhado(String(envio.order_id), integracao.access_token);
+          resolvidoComo = 'envio';
+          origemResolvida = String(envio.order_id);
+          erroBusca = null;
+        }
+      } catch {
+        // mantém o erro da tentativa como pedido — mais provável de ajudar a investigar
+      }
+    }
+
+    if (!order) {
+      try {
+        const pacote = await mercadoLivre.buscarPedidosDoPack(origemPedidoId, integracao.access_token);
+        const idsPedidosPack = (pacote?.orders || [])
+          .map((o) => (o && typeof o === 'object' ? o.id : o))
+          .filter(Boolean);
+        if (idsPedidosPack.length > 0) {
+          order = await mercadoLivre.buscarPedidoPorIdDetalhado(String(idsPedidosPack[0]), integracao.access_token);
+          resolvidoComo = 'pacote';
+          origemResolvida = String(idsPedidosPack[0]);
+          erroBusca = null;
+        }
+      } catch {
+        // idem
+      }
+    }
+
+    const idsParaBuscarLocal = origemResolvida === origemPedidoId ? [origemPedidoId] : [origemPedidoId, origemResolvida];
     const { rows: local } = await pool.query(
       `SELECT id, numero, data_pedido, situacao, pack_id_marketplace, origem_pedido_id
-       FROM pedidos_venda WHERE origem_marketplace = 'mercado_livre' AND origem_pedido_id = $1`,
-      [origemPedidoId]
+       FROM pedidos_venda WHERE origem_marketplace = 'mercado_livre' AND origem_pedido_id = ANY($1::text[])`,
+      [idsParaBuscarLocal]
     );
 
     let pedidosDoMesmoPack = [];
@@ -494,6 +537,8 @@ router.get('/marketplace/buscar-por-origem/:origemPedidoId', async (req, res, ne
 
     res.json({
       origemPedidoId,
+      resolvidoComo,
+      origemResolvida: origemResolvida !== origemPedidoId ? origemResolvida : null,
       encontradoLocalmente: local.length > 0,
       pedidoLocal: local[0] || null,
       erroBuscaAoVivo: erroBusca,

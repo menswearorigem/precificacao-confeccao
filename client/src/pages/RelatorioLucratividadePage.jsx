@@ -615,8 +615,14 @@ function BuscarPedidoOrigem() {
                   ? `Sim — pedido #${resultado.pedidoLocal.numero} (situação: ${resultado.pedidoLocal.situacao}).`
                   : 'Não — esse número de pedido nunca foi importado pra cá.'}
               </p>
+              {resultado.resolvidoComo === 'envio' && (
+                <p className="page-sub">Esse número não era um pedido — era o número do ENVIO. Encontrei o pedido de verdade (#{resultado.origemResolvida}) a partir dele.</p>
+              )}
+              {resultado.resolvidoComo === 'pacote' && (
+                <p className="page-sub">Esse número não era um pedido — era o número do PACOTE. Mostrando um dos pedidos desse pacote (#{resultado.origemResolvida}).</p>
+              )}
               {resultado.erroBuscaAoVivo && (
-                <p className="page-sub">Não consegui confirmar ao vivo no Mercado Livre agora: {resultado.erroBuscaAoVivo}</p>
+                <p className="page-sub">Não consegui confirmar ao vivo no Mercado Livre agora, nem como pedido, envio ou pacote: {resultado.erroBuscaAoVivo}</p>
               )}
               {resultado.itensNoMercadoLivre && (
                 <>

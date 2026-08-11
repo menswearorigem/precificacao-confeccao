@@ -134,6 +134,23 @@ async function buscarPedidoPorIdDetalhado(orderId, accessToken) {
   return order;
 }
 
+// O número que a vendedora vê no painel de Vendas do Mercado Livre nem
+// sempre é o order.id que a API de /orders devolve — pode ser o ID do
+// ENVIO, um identificador diferente. Envio tem seu próprio recurso
+// (/shipments/:id) que devolve o order_id de verdade, então isso serve de
+// fallback quando /orders/:id dá 404 pra um número visto na tela do vendedor.
+async function buscarEnvioPorId(shipmentId, accessToken) {
+  return chamarApi(`/shipments/${shipmentId}`, accessToken);
+}
+
+// Todos os pedidos de um mesmo pacote (compra com mais de um anúncio
+// diferente, que o Mercado Livre divide num order por anúncio mas agrupa
+// num pack_id comum). Usa o recurso dedicado — mais direto que tentar achar
+// os pedidos irmãos varrendo /orders/search por data.
+async function buscarPedidosDoPack(packId, accessToken) {
+  return chamarApi(`/marketplace/orders/pack/${packId}`, accessToken);
+}
+
 // gold_special = anúncio Clássico · gold_pro = anúncio Premium — os únicos
 // dois tipos vendidos hoje em dia; qualquer outro (formatos antigos/grátis)
 // cai como "classico" por aproximação, já que não tem comissão própria nas
@@ -588,6 +605,8 @@ module.exports = {
   buscarIdsPedidosCancelados,
   buscarPedidoPorId,
   buscarPedidoPorIdDetalhado,
+  buscarEnvioPorId,
+  buscarPedidosDoPack,
   buscarValorRecebido,
   buscarUmPagamento,
   idsPagamentosAprovados,
