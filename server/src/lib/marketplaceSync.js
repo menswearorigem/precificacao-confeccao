@@ -910,20 +910,33 @@ async function sincronizarIntegracao(integracaoId) {
 
     const pedidosGenericos = await buscarPedidosDoMarketplace(integracao, desde);
 
-    const client = await pool.connect();
+    // Cada pedido na sua PRÓPRIA transação — antes era um BEGIN/COMMIT só
+    // pro lote inteiro, o que significava que UM pedido problemático (SKU
+    // com dado inesperado, corrida de chave duplicada, qualquer exceção)
+    // desfazia a importação de TODOS os outros pedidos do lote, incluindo
+    // os que já tinham dado certo. Pior: como isso interrompe o ciclo antes
+    // de atualizar ultima_sincronizacao, o mesmo pedido problemático voltava
+    // a aparecer (e travar tudo de novo) em TODO ciclo seguinte, pra
+    // sempre — pedidos novos legítimos que caíssem atrás dele na mesma
+    // janela nunca chegavam a ser salvos. Isolando por pedido, um problema
+    // pontual falha só aquele pedido (log guardado, tenta de novo no
+    // próximo ciclo) e os demais são salvos normalmente.
     let importados = 0;
-    try {
-      await client.query('BEGIN');
-      for (const pedidoGenerico of pedidosGenericos) {
+    let ultimoErroImportacao = null;
+    for (const pedidoGenerico of pedidosGenericos) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
         const ok = await importarPedido(client, pedidoGenerico, integracao);
+        await client.query('COMMIT');
         if (ok) importados += 1;
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        ultimoErroImportacao = `Pedido ${pedidoGenerico.idExterno}: ${err.message}`;
+        console.error(`[marketplace-sync] falha ao importar pedido ${pedidoGenerico.idExterno} (integração ${integracaoId}):`, err.message);
+      } finally {
+        client.release();
       }
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
     }
 
     const cancelados = await sincronizarCancelamentos(integracao);
@@ -937,8 +950,8 @@ async function sincronizarIntegracao(integracaoId) {
     await sincronizarAdsSeNecessario(integracao);
 
     await pool.query(
-      `UPDATE integracoes_marketplace SET ultima_sincronizacao = now(), ultimo_erro = NULL, atualizado_em = now() WHERE id = $1`,
-      [integracaoId]
+      `UPDATE integracoes_marketplace SET ultima_sincronizacao = now(), ultimo_erro = $1, atualizado_em = now() WHERE id = $2`,
+      [ultimoErroImportacao, integracaoId]
     );
     return { pedidosEncontrados: pedidosGenericos.length, pedidosImportados: importados, pedidosCancelados: cancelados };
   } catch (err) {
