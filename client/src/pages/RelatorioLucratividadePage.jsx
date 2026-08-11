@@ -503,6 +503,54 @@ function VendasTab({ pedidos, config, busca }) {
   );
 }
 
+// Aviso de venda possivelmente contada duas vezes entre pedidos do mesmo
+// pacote (mesmo SKU + preço + quantidade em mais de um pedido do mesmo
+// pack_id_marketplace — ver rota /marketplace/duplicatas-suspeitas). Só
+// informativo por enquanto: diferente do item fantasma com valor zero (que
+// já corrige sozinho), aqui a receita pode estar inflada e a correção
+// automática exige mais confiança antes de mexer nos números sozinha.
+function DuplicatasSuspeitas({ duplicatas }) {
+  const [aberto, setAberto] = useState(false);
+  return (
+    <div className="card no-print" style={{ marginBottom: 16, borderColor: 'var(--tone-atencao-border, #e0b84a)' }}>
+      <div className="card-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>Possível receita duplicada entre pedidos de pacote</span>
+        <button type="button" className="btn btn-ghost" onClick={() => setAberto((v) => !v)}>
+          {aberto ? 'Esconder' : 'Ver detalhes'}
+        </button>
+      </div>
+      <p className="page-sub" style={{ marginTop: 0 }}>
+        Achei {duplicatas.grupos.length} item(ns) com o mesmo SKU, preço e quantidade aparecendo em mais de um
+        pedido dentro do mesmo pacote do Mercado Livre — pode ser a mesma venda contada duas vezes (até
+        <strong> {brl(duplicatas.totalPossivelExcesso)}</strong> de receita possivelmente duplicada no período). Ainda não
+        corrijo isso sozinho — quero ter mais certeza antes de mexer em número de receita. Se puder, confira um desses
+        pedidos direto no Mercado Livre e me avise se realmente é a mesma venda repetida.
+      </p>
+      {aberto && (
+        <div style={{ overflowX: 'auto' }}>
+          <table className="data-table">
+            <thead>
+              <tr><th>Pacote</th><th>SKU</th><th>Valor Unit.</th><th>Qtd</th><th>Pedidos</th><th>Possível Excesso</th></tr>
+            </thead>
+            <tbody>
+              {duplicatas.grupos.map((g, i) => (
+                <tr key={i}>
+                  <td className="mono">{g.packId}</td>
+                  <td className="mono">{g.skuExterno}</td>
+                  <td className="mono">{brl(g.valorUnitario)}</td>
+                  <td className="mono">{g.quantidade}</td>
+                  <td className="mono">{g.pedidos.join(', ')}</td>
+                  <td className="mono" style={{ fontWeight: 700 }}>{brl(g.possivelExcesso)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function RelatorioLucratividadePage({ origemFiltro }) {
   const [dataInicio, setDataInicio] = useState(trintaDiasAtras());
   const [dataFim, setDataFim] = useState(hoje());
@@ -514,6 +562,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
   const [relatorio, setRelatorio] = useState(null);
   const [resumoProduto, setResumoProduto] = useState(null);
   const [serieDiaria, setSerieDiaria] = useState(null);
+  const [duplicatas, setDuplicatas] = useState(null);
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
@@ -552,11 +601,15 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
     if (isMarketplace) {
       chamadas.push(api.get(`/pedidos/relatorio-lucratividade/resumo-produto?${qs}`));
       chamadas.push(api.get(`/pedidos/relatorio-lucratividade/serie-diaria?${qs}`));
+      const qsData = new URLSearchParams();
+      if (dataInicio) qsData.set('data_inicio', dataInicio);
+      if (dataFim) qsData.set('data_fim', dataFim);
+      chamadas.push(api.get(`/pedidos/marketplace/duplicatas-suspeitas?${qsData.toString()}`));
     }
     return Promise.all(chamadas)
-      .then(([rel, rp, sd]) => {
+      .then(([rel, rp, sd, dup]) => {
         setRelatorio(rel);
-        if (isMarketplace) { setResumoProduto(rp); setSerieDiaria(sd); }
+        if (isMarketplace) { setResumoProduto(rp); setSerieDiaria(sd); setDuplicatas(dup); }
       })
       .catch((err) => setErro(err.message))
       .finally(() => setLoading(false));
@@ -710,6 +763,10 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
           {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
         </div>
       </div>
+
+      {isMarketplace && duplicatas?.totalPossivelExcesso > 0 && (
+        <DuplicatasSuspeitas duplicatas={duplicatas} />
+      )}
 
       {isMarketplace && relatorio && (
         <div className="subtab-row no-print">

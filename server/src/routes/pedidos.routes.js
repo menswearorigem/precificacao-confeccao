@@ -308,7 +308,62 @@ router.post('/marketplace/revincular-custos', async (req, res, next) => {
   }
 });
 
-// Diagnóstico bruto do pagamento de um pedido de marketplace — pra
+// Diagnóstico: procura item com o MESMO sku_externo + valor_unitario +
+// quantidade aparecendo em MAIS de um pedido DIFERENTE dentro do mesmo
+// pacote (pack_id_marketplace) — sinal forte do mesmo problema do item
+// fantasma (ver removerItensFantasmaDuplicados/limparItensFantasmaHistorico
+// em marketplaceSync.js), só que aqui o item veio com o preço de verdade
+// (não zerado) em MAIS de um pedido do pacote, contando a mesma venda como
+// se fosse duas — infla a receita em vez do custo. Só informativo por
+// enquanto (não mexe em nada sozinho): a correção de receita duplicada
+// precisa de mais confiança antes de mudar automaticamente, diferente do
+// item fantasma com valor zero (que era seguro remover na hora).
+router.get('/marketplace/duplicatas-suspeitas', async (req, res, next) => {
+  try {
+    const { data_inicio, data_fim } = req.query;
+    const conditions = [
+      `pv.origem_marketplace = 'mercado_livre'`,
+      `pv.pack_id_marketplace IS NOT NULL AND pv.pack_id_marketplace != ''`,
+      `pv.situacao != 'cancelado'`,
+      `pi.valor_unitario > 0`,
+    ];
+    const values = [];
+    let i = 1;
+    if (data_inicio) { conditions.push(`pv.data_pedido >= $${i}`); values.push(data_inicio); i += 1; }
+    if (data_fim) { conditions.push(`pv.data_pedido <= $${i}`); values.push(data_fim); i += 1; }
+    const { rows } = await pool.query(
+      `SELECT pv.pack_id_marketplace AS pack_id, pi.sku_externo, pi.valor_unitario, pi.quantidade,
+              COUNT(DISTINCT pv.id) AS pedidos_distintos, SUM(pi.total) AS total_somado,
+              array_agg(DISTINCT pv.origem_pedido_id) AS pedidos
+       FROM pedido_itens pi
+       JOIN pedidos_venda pv ON pv.id = pi.pedido_id
+       WHERE ${conditions.join(' AND ')}
+       GROUP BY pv.pack_id_marketplace, pi.sku_externo, pi.valor_unitario, pi.quantidade
+       HAVING COUNT(DISTINCT pv.id) > 1
+       ORDER BY SUM(pi.total) DESC`,
+      values
+    );
+    const grupos = rows.map((r) => ({
+      packId: r.pack_id,
+      skuExterno: r.sku_externo,
+      valorUnitario: Number(r.valor_unitario),
+      quantidade: Number(r.quantidade),
+      pedidosDistintos: Number(r.pedidos_distintos),
+      totalSomado: Number(r.total_somado),
+      // Se for de fato o mesmo item duplicado (não uma coincidência de 2
+      // vendas reais iguais no mesmo pacote), só UMA das ocorrências é
+      // venda de verdade — o resto é o quanto pode estar inflando a receita.
+      possivelExcesso: Number(r.total_somado) - Number(r.valor_unitario) * Number(r.quantidade),
+      pedidos: r.pedidos,
+    }));
+    const totalPossivelExcesso = grupos.reduce((s, g) => s + g.possivelExcesso, 0);
+    res.json({ grupos, totalPossivelExcesso });
+  } catch (err) {
+    next(err);
+  }
+});
+
+
 // investigar discrepância entre o valor recebido calculado aqui e o que o
 // próprio painel do marketplace mostra, sem precisar adivinhar: devolve a
 // resposta crua da API do pedido (com pack_id, forma de envio) e de cada
