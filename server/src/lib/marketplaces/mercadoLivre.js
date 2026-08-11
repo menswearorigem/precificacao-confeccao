@@ -63,16 +63,22 @@ function renovarToken({ clientId, clientSecret, refreshToken }) {
 // direto nesse caso explode com "Unexpected end of JSON input", um erro
 // sem nenhuma pista do que realmente aconteceu. Aqui sempre dá pra saber
 // pelo menos o status HTTP e o começo do corpo de verdade.
+function erroComStatus(mensagem, status) {
+  const e = new Error(mensagem);
+  e.status = status;
+  return e;
+}
+
 async function lerRespostaJson(res, path) {
   const texto = await res.text();
   if (!texto) {
-    if (!res.ok) throw new Error(`Erro na API do Mercado Livre (${res.status}, resposta vazia): ${path}`);
+    if (!res.ok) throw erroComStatus(`Erro na API do Mercado Livre (${res.status}, resposta vazia): ${path}`, res.status);
     return {};
   }
   try {
     return JSON.parse(texto);
   } catch {
-    throw new Error(`Resposta inesperada da API do Mercado Livre (${res.status}, não é JSON): ${path} — ${texto.slice(0, 300)}`);
+    throw erroComStatus(`Resposta inesperada da API do Mercado Livre (${res.status}, não é JSON): ${path} — ${texto.slice(0, 300)}`, res.status);
   }
 }
 
@@ -82,7 +88,7 @@ async function chamarApiComBase(base, path, accessToken) {
   });
   const data = await lerRespostaJson(res, path);
   if (!res.ok) {
-    throw new Error(data.message || `Erro na API do Mercado Livre (${res.status}): ${path}`);
+    throw erroComStatus(data.message || `Erro na API do Mercado Livre (${res.status}): ${path}`, res.status);
   }
   return data;
 }
@@ -455,7 +461,7 @@ async function chamarApiAds(path, accessToken, versao = '2') {
   });
   const data = await lerRespostaJson(res, path);
   if (!res.ok) {
-    throw new Error(data.message || data.description || `Erro na API de Publicidade do Mercado Livre (${res.status}): ${path}`);
+    throw erroComStatus(data.message || data.description || `Erro na API de Publicidade do Mercado Livre (${res.status}): ${path}`, res.status);
   }
   return data;
 }

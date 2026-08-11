@@ -346,10 +346,32 @@ async function importarPedido(client, pedidoGenerico, integracao) {
 // mais de 30 pedidos faltando, quem já entrou no ciclo mas ainda não foi
 // preenchido não fica pra trás pra sempre perdendo a vaga pros que acabam
 // de chegar (foi exatamente o bug: pedidos antigos nunca eram alcançados).
+// Busca o pedido de novo no Mercado Livre pros backfills abaixo (payment_id,
+// ID de anúncio, pack_id) — usada no lugar de chamar mercadoLivre.buscarPedidoPorId
+// direto porque, quando o Mercado Livre confirma 404 (pedido apagado/não
+// existe mais), marca origem_indisponivel = true pra esse pedido parar de
+// ser selecionado nas próximas rodadas. Sem isso, um pedido assim ficava
+// tentando de novo A CADA CICLO PRA SEMPRE — como nunca tinha sucesso, nunca
+// saía da fila (que prioriza "nunca tentado"/mais antigo primeiro), sempre
+// ocupando uma vaga do lote e escondendo o erro de outro pedido atrás do
+// mesmo erro repetido ciclo após ciclo. Erro transitório (rede, limite de
+// taxa, token) continua sendo tentado de novo normalmente — só 404
+// confirmado é permanente.
+async function buscarPedidoOuMarcarIndisponivel(pedido, integracao) {
+  try {
+    return await mercadoLivre.buscarPedidoPorId(pedido.origem_pedido_id, integracao.access_token);
+  } catch (err) {
+    if (err.status === 404) {
+      await pool.query('UPDATE pedidos_venda SET origem_indisponivel = TRUE WHERE id = $1', [pedido.id]).catch(() => {});
+    }
+    throw err;
+  }
+}
+
 async function preencherPagamentoId(integracao) {
   const { rows: semPagamentoId } = await pool.query(
     `SELECT id, origem_pedido_id FROM pedidos_venda
-     WHERE origem_marketplace = 'mercado_livre' AND pagamento_id_marketplace IS NULL
+     WHERE origem_marketplace = 'mercado_livre' AND pagamento_id_marketplace IS NULL AND NOT origem_indisponivel
        AND (origem_integracao_id = $1 OR origem_integracao_id IS NULL)
      ORDER BY data_pedido ASC LIMIT 30`,
     [integracao.id]
@@ -357,7 +379,7 @@ async function preencherPagamentoId(integracao) {
   let ultimoErro = null;
   for (const pedido of semPagamentoId) {
     try {
-      const order = await mercadoLivre.buscarPedidoPorId(pedido.origem_pedido_id, integracao.access_token);
+      const order = await buscarPedidoOuMarcarIndisponivel(pedido, integracao);
       const ids = mercadoLivre.idsPagamentosAprovados(order);
       if (ids.length > 0) {
         await pool.query('UPDATE pedidos_venda SET pagamento_id_marketplace = $1 WHERE id = $2', [ids.join(','), pedido.id]);
@@ -400,7 +422,7 @@ async function corrigirPagamentoId(integracao, { incluirLiberados = false, limit
   const condicaoLiberado = incluirLiberados ? '' : `AND (valor_recebido_status IS NULL OR valor_recebido_status != 'liberado')`;
   const { rows: pedidos } = await pool.query(
     `SELECT id, origem_pedido_id, pagamento_id_marketplace FROM pedidos_venda
-     WHERE origem_marketplace = 'mercado_livre' AND pagamento_id_marketplace IS NOT NULL
+     WHERE origem_marketplace = 'mercado_livre' AND pagamento_id_marketplace IS NOT NULL AND NOT origem_indisponivel
        AND (origem_integracao_id = $1 OR origem_integracao_id IS NULL)
        ${condicaoLiberado}
      ORDER BY valor_recebido_atualizado_em ASC NULLS FIRST LIMIT $2`,
@@ -410,7 +432,7 @@ async function corrigirPagamentoId(integracao, { incluirLiberados = false, limit
   let ultimoErro = null;
   for (const pedido of pedidos) {
     try {
-      const order = await mercadoLivre.buscarPedidoPorId(pedido.origem_pedido_id, integracao.access_token);
+      const order = await buscarPedidoOuMarcarIndisponivel(pedido, integracao);
       const ids = mercadoLivre.idsPagamentosAprovados(order);
       const novoId = ids.length > 0 ? ids.join(',') : null;
       if (novoId && novoId !== pedido.pagamento_id_marketplace) {
@@ -470,7 +492,7 @@ async function corrigirAnunciosIdHistorico(integracao, { limite = 30 } = {}) {
   const { rows: pedidos } = await pool.query(
     `SELECT DISTINCT pv.id, pv.origem_pedido_id
      FROM pedidos_venda pv JOIN pedido_itens pi ON pi.pedido_id = pv.id
-     WHERE pv.origem_integracao_id = $1 AND pv.origem_marketplace = 'mercado_livre' AND pi.anuncio_id_marketplace IS NULL
+     WHERE pv.origem_integracao_id = $1 AND pv.origem_marketplace = 'mercado_livre' AND pi.anuncio_id_marketplace IS NULL AND NOT pv.origem_indisponivel
      ORDER BY pv.id DESC
      LIMIT $2`,
     [integracao.id, limite]
@@ -478,7 +500,7 @@ async function corrigirAnunciosIdHistorico(integracao, { limite = 30 } = {}) {
   let itensCorrigidos = 0;
   for (const pedido of pedidos) {
     try {
-      const order = await mercadoLivre.buscarPedidoPorId(pedido.origem_pedido_id, integracao.access_token);
+      const order = await buscarPedidoOuMarcarIndisponivel(pedido, integracao);
       const orderItems = order.order_items || [];
       const { rows: itens } = await pool.query('SELECT * FROM pedido_itens WHERE pedido_id = $1 ORDER BY ordem', [pedido.id]);
       const usados = new Set();
@@ -514,7 +536,7 @@ async function corrigirPackIdHistorico(integracao, { limite = 30 } = {}) {
   if (integracao.marketplace !== 'mercado_livre') return { pedidosVerificados: 0, pedidosComPacote: 0 };
   const { rows: pedidos } = await pool.query(
     `SELECT id, origem_pedido_id FROM pedidos_venda
-     WHERE origem_integracao_id = $1 AND origem_marketplace = 'mercado_livre' AND pack_id_marketplace IS NULL
+     WHERE origem_integracao_id = $1 AND origem_marketplace = 'mercado_livre' AND pack_id_marketplace IS NULL AND NOT origem_indisponivel
      ORDER BY id DESC
      LIMIT $2`,
     [integracao.id, limite]
@@ -522,7 +544,7 @@ async function corrigirPackIdHistorico(integracao, { limite = 30 } = {}) {
   let pedidosComPacote = 0;
   for (const pedido of pedidos) {
     try {
-      const order = await mercadoLivre.buscarPedidoPorId(pedido.origem_pedido_id, integracao.access_token);
+      const order = await buscarPedidoOuMarcarIndisponivel(pedido, integracao);
       const packId = order.pack_id ? String(order.pack_id) : '';
       await pool.query('UPDATE pedidos_venda SET pack_id_marketplace = $1 WHERE id = $2', [packId, pedido.id]);
       if (packId) pedidosComPacote += 1;

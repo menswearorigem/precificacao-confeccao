@@ -794,6 +794,11 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
         margemPct,
         calculoReal,
         custoIncompleto: semCusto,
+        // Algum pedido desse card não existe mais no Mercado Livre quando
+        // tentamos rebuscar (confirmado 404) — dado desse pedido específico
+        // (valor recebido, pack_id, ID de anúncio) pode ter ficado
+        // incompleto pra sempre, sem jeito de reconferir.
+        indisponivelNoMarketplace: p._membros.some((m) => m.origem_indisponivel),
         valorRecebido,
         valorRecebidoStatus: p.valor_recebido_status,
         valorRecebidoLiberacaoEm: p.valor_recebido_liberacao_em,

@@ -402,6 +402,7 @@ function VendaDetalheCard({ p, config }) {
             <div className="venda-card-titulo">
               Pedido {p.numeroExibicao}
               {p.pacote && <span className="stamp sm tone-neutro" style={{ marginLeft: 8 }} title="Compra com mais de um anúncio no mesmo carrinho — o Mercado Livre paga tudo junto, então os itens entram num card só.">pacote</span>}
+              {p.indisponivelNoMarketplace && <span className="stamp sm tone-atencao" style={{ marginLeft: 8 }} title="Esse pedido não existe mais no Mercado Livre quando tentamos rebuscar — algum dado (valor recebido, pacote, ID de anúncio) pode ter ficado incompleto pra sempre.">sumiu do ML</span>}
             </div>
             <div className="venda-card-sub">{dataBr(String(p.data_pedido).slice(0, 10))} · {p.canal_venda || '—'}</div>
           </div>
