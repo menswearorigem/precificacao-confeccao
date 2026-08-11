@@ -469,12 +469,18 @@ router.get('/marketplace/buscar-por-origem/:origemPedidoId', async (req, res, ne
     let erroBusca = null;
     let resolvidoComo = null;
     let origemResolvida = origemPedidoId;
+    // Guarda o erro de CADA tentativa separado (não só a primeira) — se as
+    // três derem 404 o número realmente não existe em nenhuma forma; se uma
+    // delas der um erro diferente (403, rota inválida etc.) isso é uma pista
+    // bem diferente de "não existe".
+    const tentativas = { pedido: null, envio: null, pacote: null };
 
     try {
       order = await mercadoLivre.buscarPedidoPorIdDetalhado(origemPedidoId, integracao.access_token);
       resolvidoComo = 'pedido';
     } catch (err) {
       erroBusca = err.message;
+      tentativas.pedido = { mensagem: err.message, status: err.status || null };
     }
 
     if (!order) {
@@ -485,9 +491,11 @@ router.get('/marketplace/buscar-por-origem/:origemPedidoId', async (req, res, ne
           resolvidoComo = 'envio';
           origemResolvida = String(envio.order_id);
           erroBusca = null;
+        } else {
+          tentativas.envio = { mensagem: 'Resposta do envio não trouxe order_id.', status: null };
         }
-      } catch {
-        // mantém o erro da tentativa como pedido — mais provável de ajudar a investigar
+      } catch (err) {
+        tentativas.envio = { mensagem: err.message, status: err.status || null };
       }
     }
 
@@ -502,9 +510,11 @@ router.get('/marketplace/buscar-por-origem/:origemPedidoId', async (req, res, ne
           resolvidoComo = 'pacote';
           origemResolvida = String(idsPedidosPack[0]);
           erroBusca = null;
+        } else {
+          tentativas.pacote = { mensagem: 'Resposta do pacote não trouxe nenhum pedido.', status: null };
         }
-      } catch {
-        // idem
+      } catch (err) {
+        tentativas.pacote = { mensagem: err.message, status: err.status || null };
       }
     }
 
@@ -542,6 +552,7 @@ router.get('/marketplace/buscar-por-origem/:origemPedidoId', async (req, res, ne
       encontradoLocalmente: local.length > 0,
       pedidoLocal: local[0] || null,
       erroBuscaAoVivo: erroBusca,
+      tentativas,
       packId,
       itensNoMercadoLivre: order?.order_items?.map((it) => ({
         skuExterno: it.skuExterno || null,

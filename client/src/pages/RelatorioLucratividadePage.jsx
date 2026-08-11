@@ -622,7 +622,14 @@ function BuscarPedidoOrigem() {
                 <p className="page-sub">Esse número não era um pedido — era o número do PACOTE. Mostrando um dos pedidos desse pacote (#{resultado.origemResolvida}).</p>
               )}
               {resultado.erroBuscaAoVivo && (
-                <p className="page-sub">Não consegui confirmar ao vivo no Mercado Livre agora, nem como pedido, envio ou pacote: {resultado.erroBuscaAoVivo}</p>
+                <>
+                  <p className="page-sub">Não consegui confirmar ao vivo no Mercado Livre agora, nem como pedido, envio ou pacote:</p>
+                  <ul className="page-sub" style={{ marginTop: 0 }}>
+                    <li>Como pedido: {resultado.tentativas?.pedido ? `${resultado.tentativas.pedido.mensagem}${resultado.tentativas.pedido.status ? ` (status ${resultado.tentativas.pedido.status})` : ''}` : '—'}</li>
+                    <li>Como envio: {resultado.tentativas?.envio ? `${resultado.tentativas.envio.mensagem}${resultado.tentativas.envio.status ? ` (status ${resultado.tentativas.envio.status})` : ''}` : '—'}</li>
+                    <li>Como pacote: {resultado.tentativas?.pacote ? `${resultado.tentativas.pacote.mensagem}${resultado.tentativas.pacote.status ? ` (status ${resultado.tentativas.pacote.status})` : ''}` : '—'}</li>
+                  </ul>
+                </>
               )}
               {resultado.itensNoMercadoLivre && (
                 <>
