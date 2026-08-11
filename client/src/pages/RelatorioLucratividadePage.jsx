@@ -819,7 +819,17 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                         </div>
                       </div>
                     )}
-                    <div className="row-line" style={{ marginTop: 12 }}>
+                    {relatorio.totalGeral.frete > 0 && (
+                      <div className="row-line" style={{ marginTop: 12 }}>
+                        <span>
+                          Frete (não entra no Faturamento acima — é dinheiro do comprador/transportadora, não da
+                          loja; se estiver comparando com outra ferramenta que inclui frete no total de vendas, some
+                          esse valor pra bater: {brl(relatorio.totalGeral.receita + relatorio.totalGeral.frete)})
+                        </span>
+                        <span className="mono">{brl(relatorio.totalGeral.frete)}</span>
+                      </div>
+                    )}
+                    <div className="row-line" style={{ marginTop: relatorio.totalGeral.frete > 0 ? 0 : 12 }}>
                       <span>Valor Liberado no Saldo (Mercado Livre)</span>
                       <span className="mono">{brl(relatorio.totalGeral.valorRecebidoLiberado)}</span>
                     </div>
