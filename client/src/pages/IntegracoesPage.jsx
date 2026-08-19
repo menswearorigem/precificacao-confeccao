@@ -240,11 +240,26 @@ export default function IntegracoesPage() {
             </button>
           );
         })}
+        <button
+          type="button"
+          className={'subtab-btn' + (subTab === 'wik' ? ' active' : '')}
+          onClick={() => { setSubTab('wik'); setMostrarNova(false); setExpandidoId(null); }}
+        >
+          Wik Sistemas (ERP)
+        </button>
       </div>
 
       {erro && <div className="login-error" style={{ marginBottom: 12 }}>{erro}</div>}
       {aviso && <div className="stamp sm tone-saudavel" style={{ marginBottom: 12, display: 'inline-flex' }}>{aviso}</div>}
 
+      {subTab === 'wik' ? (
+        <>
+          <WikIntegracaoCard />
+          <WikImportarProdutosCard />
+          <WikImportarFichaCustoCard />
+          <WikFichaCustoDiagnosticoCard />
+        </>
+      ) : (
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <MarketplaceLogo marketplace={subTab} />
@@ -424,11 +439,7 @@ export default function IntegracoesPage() {
           </div>
         )}
       </div>
-
-      <WikIntegracaoCard />
-      <WikImportarProdutosCard />
-      <WikImportarFichaCustoCard />
-      <WikFichaCustoDiagnosticoCard />
+      )}
     </div>
   );
 }
