@@ -616,19 +616,30 @@ function BuscarPedidoOrigem() {
                   : 'Não — esse número de pedido nunca foi importado pra cá.'}
               </p>
               {resultado.resolvidoComo === 'envio' && (
-                <p className="page-sub">Esse número não era um pedido — era o número do ENVIO. Encontrei o pedido de verdade (#{resultado.origemResolvida}) a partir dele.</p>
+                <p className="page-sub">Esse número não era um pedido — era o número do ENVIO. Encontrei o pedido de verdade (#{resultado.origemResolvida}) a partir dele{resultado.lojaResolvida ? ` na loja "${resultado.lojaResolvida}"` : ''}.</p>
               )}
               {resultado.resolvidoComo === 'pacote' && (
-                <p className="page-sub">Esse número não era um pedido — era o número do PACOTE. Mostrando um dos pedidos desse pacote (#{resultado.origemResolvida}).</p>
+                <p className="page-sub">Esse número não era um pedido — era o número do PACOTE. Mostrando um dos pedidos desse pacote (#{resultado.origemResolvida}){resultado.lojaResolvida ? ` na loja "${resultado.lojaResolvida}"` : ''}.</p>
               )}
-              {resultado.erroBuscaAoVivo && (
+              {resultado.resolvidoComo === 'pedido' && resultado.lojaResolvida && (
+                <p className="page-sub">Achado na loja "{resultado.lojaResolvida}".</p>
+              )}
+              {!resultado.resolvidoComo && (
                 <>
-                  <p className="page-sub">Não consegui confirmar ao vivo no Mercado Livre agora, nem como pedido, envio ou pacote:</p>
-                  <ul className="page-sub" style={{ marginTop: 0 }}>
-                    <li>Como pedido: {resultado.tentativas?.pedido ? `${resultado.tentativas.pedido.mensagem}${resultado.tentativas.pedido.status ? ` (status ${resultado.tentativas.pedido.status})` : ''}` : '—'}</li>
-                    <li>Como envio: {resultado.tentativas?.envio ? `${resultado.tentativas.envio.mensagem}${resultado.tentativas.envio.status ? ` (status ${resultado.tentativas.envio.status})` : ''}` : '—'}</li>
-                    <li>Como pacote: {resultado.tentativas?.pacote ? `${resultado.tentativas.pacote.mensagem}${resultado.tentativas.pacote.status ? ` (status ${resultado.tentativas.pacote.status})` : ''}` : '—'}</li>
-                  </ul>
+                  <p className="page-sub">
+                    Não consegui confirmar ao vivo no Mercado Livre agora, nem como pedido, envio ou pacote — testei em
+                    {resultado.tentativasPorLoja.length > 1 ? ` todas as ${resultado.tentativasPorLoja.length} lojas conectadas:` : ' a loja conectada:'}
+                  </p>
+                  {resultado.tentativasPorLoja.map((t, i) => (
+                    <div key={i} style={{ marginBottom: 8 }}>
+                      {resultado.tentativasPorLoja.length > 1 && <p className="page-sub" style={{ marginBottom: 2, fontWeight: 600 }}>{t.loja}</p>}
+                      <ul className="page-sub" style={{ marginTop: 0 }}>
+                        <li>Como pedido: {t.tentativas.pedido ? `${t.tentativas.pedido.mensagem}${t.tentativas.pedido.status ? ` (status ${t.tentativas.pedido.status})` : ''}` : '—'}</li>
+                        <li>Como envio: {t.tentativas.envio ? `${t.tentativas.envio.mensagem}${t.tentativas.envio.status ? ` (status ${t.tentativas.envio.status})` : ''}` : '—'}</li>
+                        <li>Como pacote: {t.tentativas.pacote ? `${t.tentativas.pacote.mensagem}${t.tentativas.pacote.status ? ` (status ${t.tentativas.pacote.status})` : ''}` : '—'}</li>
+                      </ul>
+                    </div>
+                  ))}
                 </>
               )}
               {resultado.itensNoMercadoLivre && (

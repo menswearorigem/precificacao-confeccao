@@ -442,6 +442,59 @@ router.get('/:id/diagnostico-marketplace', async (req, res, next) => {
   }
 });
 
+// Tenta resolver um número visto no painel do vendedor como pedido, envio ou
+// pacote — nessa ordem — usando o token de UMA integração específica.
+// Devolve o pedido (se achou) e o detalhe de cada tentativa que falhou, pra
+// dar pra somar o diagnóstico de várias lojas quando a primeira não bate.
+async function tentarResolverPedido(origemPedidoId, integracao) {
+  let order = null;
+  let resolvidoComo = null;
+  let origemResolvida = origemPedidoId;
+  const tentativas = { pedido: null, envio: null, pacote: null };
+
+  try {
+    order = await mercadoLivre.buscarPedidoPorIdDetalhado(origemPedidoId, integracao.access_token);
+    resolvidoComo = 'pedido';
+  } catch (err) {
+    tentativas.pedido = { mensagem: err.message, status: err.status || null };
+  }
+
+  if (!order) {
+    try {
+      const envio = await mercadoLivre.buscarEnvioPorId(origemPedidoId, integracao.access_token);
+      if (envio?.order_id) {
+        order = await mercadoLivre.buscarPedidoPorIdDetalhado(String(envio.order_id), integracao.access_token);
+        resolvidoComo = 'envio';
+        origemResolvida = String(envio.order_id);
+      } else {
+        tentativas.envio = { mensagem: 'Resposta do envio não trouxe order_id.', status: null };
+      }
+    } catch (err) {
+      tentativas.envio = { mensagem: err.message, status: err.status || null };
+    }
+  }
+
+  if (!order) {
+    try {
+      const pacote = await mercadoLivre.buscarPedidosDoPack(origemPedidoId, integracao.access_token);
+      const idsPedidosPack = (pacote?.orders || [])
+        .map((o) => (o && typeof o === 'object' ? o.id : o))
+        .filter(Boolean);
+      if (idsPedidosPack.length > 0) {
+        order = await mercadoLivre.buscarPedidoPorIdDetalhado(String(idsPedidosPack[0]), integracao.access_token);
+        resolvidoComo = 'pacote';
+        origemResolvida = String(idsPedidosPack[0]);
+      } else {
+        tentativas.pacote = { mensagem: 'Resposta do pacote não trouxe nenhum pedido.', status: null };
+      }
+    } catch (err) {
+      tentativas.pacote = { mensagem: err.message, status: err.status || null };
+    }
+  }
+
+  return { order, resolvidoComo, origemResolvida, tentativas };
+}
+
 // Investiga um número de pedido do Mercado Livre que a vendedora viu direto
 // no painel deles — antes mesmo de saber se ele existe no nosso sistema.
 // Busca ao vivo na API (pra mostrar os itens reais do pedido, mesmo que a
@@ -455,66 +508,38 @@ router.get('/:id/diagnostico-marketplace', async (req, res, next) => {
 // resolver como envio (/shipments/:id → order_id) e, por último, como
 // pacote (/marketplace/orders/pack/:id → primeiro pedido do pacote) antes
 // de desistir.
+//
+// Testa em TODAS as lojas do Mercado Livre conectadas (não só a primeira) —
+// com mais de uma loja, o pedido pode pertencer a qualquer uma delas, e
+// tentar só numa loja com o token errado sempre daria "não existe" mesmo o
+// pedido sendo real na outra.
 router.get('/marketplace/buscar-por-origem/:origemPedidoId', async (req, res, next) => {
   try {
     const origemPedidoId = String(req.params.origemPedidoId).trim();
 
     const { rows: integracoes } = await pool.query(
-      `SELECT * FROM integracoes_marketplace WHERE marketplace = 'mercado_livre' AND ativo = TRUE AND access_token IS NOT NULL ORDER BY id LIMIT 1`
+      `SELECT * FROM integracoes_marketplace WHERE marketplace = 'mercado_livre' AND ativo = TRUE AND access_token IS NOT NULL ORDER BY id`
     );
-    const integracao = integracoes[0] || null;
-    if (!integracao) return res.status(400).json({ error: 'Nenhuma integração do Mercado Livre autorizada encontrada.' });
+    if (integracoes.length === 0) return res.status(400).json({ error: 'Nenhuma integração do Mercado Livre autorizada encontrada.' });
 
     let order = null;
-    let erroBusca = null;
     let resolvidoComo = null;
     let origemResolvida = origemPedidoId;
-    // Guarda o erro de CADA tentativa separado (não só a primeira) — se as
-    // três derem 404 o número realmente não existe em nenhuma forma; se uma
-    // delas der um erro diferente (403, rota inválida etc.) isso é uma pista
-    // bem diferente de "não existe".
-    const tentativas = { pedido: null, envio: null, pacote: null };
+    let lojaResolvida = null;
+    // Guarda o resultado de cada tentativa por LOJA (não só pedido/envio/pacote)
+    // — com mais de uma loja conectada, "não existe" só é conclusivo se
+    // nenhuma delas achou nada.
+    const tentativasPorLoja = [];
 
-    try {
-      order = await mercadoLivre.buscarPedidoPorIdDetalhado(origemPedidoId, integracao.access_token);
-      resolvidoComo = 'pedido';
-    } catch (err) {
-      erroBusca = err.message;
-      tentativas.pedido = { mensagem: err.message, status: err.status || null };
-    }
-
-    if (!order) {
-      try {
-        const envio = await mercadoLivre.buscarEnvioPorId(origemPedidoId, integracao.access_token);
-        if (envio?.order_id) {
-          order = await mercadoLivre.buscarPedidoPorIdDetalhado(String(envio.order_id), integracao.access_token);
-          resolvidoComo = 'envio';
-          origemResolvida = String(envio.order_id);
-          erroBusca = null;
-        } else {
-          tentativas.envio = { mensagem: 'Resposta do envio não trouxe order_id.', status: null };
-        }
-      } catch (err) {
-        tentativas.envio = { mensagem: err.message, status: err.status || null };
-      }
-    }
-
-    if (!order) {
-      try {
-        const pacote = await mercadoLivre.buscarPedidosDoPack(origemPedidoId, integracao.access_token);
-        const idsPedidosPack = (pacote?.orders || [])
-          .map((o) => (o && typeof o === 'object' ? o.id : o))
-          .filter(Boolean);
-        if (idsPedidosPack.length > 0) {
-          order = await mercadoLivre.buscarPedidoPorIdDetalhado(String(idsPedidosPack[0]), integracao.access_token);
-          resolvidoComo = 'pacote';
-          origemResolvida = String(idsPedidosPack[0]);
-          erroBusca = null;
-        } else {
-          tentativas.pacote = { mensagem: 'Resposta do pacote não trouxe nenhum pedido.', status: null };
-        }
-      } catch (err) {
-        tentativas.pacote = { mensagem: err.message, status: err.status || null };
+    for (const integracao of integracoes) {
+      const resultado = await tentarResolverPedido(origemPedidoId, integracao);
+      tentativasPorLoja.push({ loja: integracao.nome, tentativas: resultado.tentativas });
+      if (resultado.order) {
+        order = resultado.order;
+        resolvidoComo = resultado.resolvidoComo;
+        origemResolvida = resultado.origemResolvida;
+        lojaResolvida = integracao.nome;
+        break;
       }
     }
 
@@ -549,10 +574,10 @@ router.get('/marketplace/buscar-por-origem/:origemPedidoId', async (req, res, ne
       origemPedidoId,
       resolvidoComo,
       origemResolvida: origemResolvida !== origemPedidoId ? origemResolvida : null,
+      lojaResolvida,
       encontradoLocalmente: local.length > 0,
       pedidoLocal: local[0] || null,
-      erroBuscaAoVivo: erroBusca,
-      tentativas,
+      tentativasPorLoja,
       packId,
       itensNoMercadoLivre: order?.order_items?.map((it) => ({
         skuExterno: it.skuExterno || null,
