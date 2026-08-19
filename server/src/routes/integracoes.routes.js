@@ -46,17 +46,39 @@ router.get('/', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
-    const { marketplace, nome, client_id, client_secret } = req.body || {};
+    const { marketplace, nome, client_id, client_secret, copiar_credenciais_de } = req.body || {};
     if (!MARKETPLACES_VALIDOS.includes(marketplace)) {
       return res.status(400).json({ error: 'Marketplace inválido.' });
     }
-    if (!client_id || !client_secret) {
+
+    let clientId = client_id;
+    let clientSecret = client_secret;
+    // Reaproveita o Client ID/Secret de uma conexão já cadastrada do mesmo
+    // marketplace — o secret nunca é devolvido pro navegador (só um booleano
+    // "temClientSecret"), então pra cadastrar uma segunda loja do mesmo app
+    // sem precisar caçar o secret de novo no painel do Mercado Livre/Shopee,
+    // essa cópia acontece só aqui no servidor.
+    if (copiar_credenciais_de) {
+      const { rows } = await pool.query(
+        'SELECT client_id, client_secret, marketplace FROM integracoes_marketplace WHERE id = $1',
+        [copiar_credenciais_de]
+      );
+      const origem = rows[0];
+      if (!origem) return res.status(400).json({ error: 'Conexão de origem das credenciais não encontrada.' });
+      if (origem.marketplace !== marketplace) {
+        return res.status(400).json({ error: 'A conexão de origem das credenciais é de outro marketplace.' });
+      }
+      clientId = origem.client_id;
+      clientSecret = origem.client_secret;
+    }
+
+    if (!clientId || !clientSecret) {
       return res.status(400).json({ error: 'Informe as credenciais do app (Client ID/Secret ou Partner ID/Key).' });
     }
     const { rows } = await pool.query(
       `INSERT INTO integracoes_marketplace (marketplace, nome, client_id, client_secret)
        VALUES ($1, $2, $3, $4) RETURNING *`,
-      [marketplace, nome || 'Loja principal', client_id, client_secret]
+      [marketplace, nome || 'Loja principal', clientId, clientSecret]
     );
     res.status(201).json(paraFora(rows[0]));
   } catch (err) {

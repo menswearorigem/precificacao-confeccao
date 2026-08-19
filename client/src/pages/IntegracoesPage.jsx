@@ -36,7 +36,7 @@ export default function IntegracoesPage() {
   const [empresas, setEmpresas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [mostrarNova, setMostrarNova] = useState(false);
-  const [nova, setNova] = useState({ marketplace: 'mercado_livre', nome: 'Loja principal', client_id: '', client_secret: '' });
+  const [nova, setNova] = useState({ marketplace: 'mercado_livre', nome: 'Loja principal', client_id: '', client_secret: '', copiar_credenciais_de: '' });
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
   const [sincronizandoId, setSincronizandoId] = useState(null);
@@ -65,7 +65,7 @@ export default function IntegracoesPage() {
     setErro('');
     try {
       await api.post('/integracoes', nova);
-      setNova({ marketplace: 'mercado_livre', nome: 'Loja principal', client_id: '', client_secret: '' });
+      setNova({ marketplace: 'mercado_livre', nome: 'Loja principal', client_id: '', client_secret: '', copiar_credenciais_de: '' });
       setMostrarNova(false);
       load();
     } catch (err) {
@@ -151,35 +151,68 @@ export default function IntegracoesPage() {
       {erro && <div className="login-error" style={{ marginBottom: 12 }}>{erro}</div>}
       {aviso && <div className="stamp sm tone-saudavel" style={{ marginBottom: 12, display: 'inline-flex' }}>{aviso}</div>}
 
-      {mostrarNova && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="card-head">Nova Conexão</div>
-          <form onSubmit={criar}>
-            <div className="form-grid">
-              <Field label="Marketplace">
-                <Select
-                  value={nova.marketplace}
-                  onChange={(e) => setNova((n) => ({ ...n, marketplace: e.target.value }))}
-                >
-                  <option value="mercado_livre">Mercado Livre</option>
-                  <option value="shopee">Shopee</option>
-                </Select>
-              </Field>
-              <Field label="Nome (só pra identificar)">
-                <input value={nova.nome} onChange={(e) => setNova((n) => ({ ...n, nome: e.target.value }))} />
-              </Field>
-              <Field label={MARKETPLACES[nova.marketplace].campoId}>
-                <input value={nova.client_id} onChange={(e) => setNova((n) => ({ ...n, client_id: e.target.value }))} />
-              </Field>
-              <Field label={MARKETPLACES[nova.marketplace].campoSecret}>
-                <input type="password" value={nova.client_secret} onChange={(e) => setNova((n) => ({ ...n, client_secret: e.target.value }))} />
-              </Field>
-            </div>
-            <p className="page-sub" style={{ marginTop: 6 }}>{MARKETPLACES[nova.marketplace].ajuda}</p>
-            <button className="btn btn-primary" type="submit" style={{ marginTop: 10 }}>Salvar conexão</button>
-          </form>
-        </div>
-      )}
+      {mostrarNova && (() => {
+        const candidatasCopia = integracoes.filter((it) => it.marketplace === nova.marketplace && it.temClientSecret);
+        const copiando = Boolean(nova.copiar_credenciais_de);
+        return (
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-head">Nova Conexão</div>
+            <form onSubmit={criar}>
+              <div className="form-grid">
+                <Field label="Marketplace">
+                  <Select
+                    value={nova.marketplace}
+                    onChange={(e) => setNova((n) => ({ ...n, marketplace: e.target.value, copiar_credenciais_de: '' }))}
+                  >
+                    <option value="mercado_livre">Mercado Livre</option>
+                    <option value="shopee">Shopee</option>
+                  </Select>
+                </Field>
+                <Field label="Nome (só pra identificar)">
+                  <input value={nova.nome} onChange={(e) => setNova((n) => ({ ...n, nome: e.target.value }))} />
+                </Field>
+              </div>
+
+              {candidatasCopia.length > 0 && (
+                <div className="form-grid" style={{ marginTop: 10 }}>
+                  <Field label="Credenciais do app">
+                    <Select
+                      value={nova.copiar_credenciais_de}
+                      onChange={(e) => setNova((n) => ({ ...n, copiar_credenciais_de: e.target.value, client_id: '', client_secret: '' }))}
+                    >
+                      <option value="">Digitar {MARKETPLACES[nova.marketplace].campoId}/{MARKETPLACES[nova.marketplace].campoSecret} novos</option>
+                      {candidatasCopia.map((it) => (
+                        <option key={it.id} value={it.id}>Usar as mesmas de "{it.nome}"</option>
+                      ))}
+                    </Select>
+                  </Field>
+                </div>
+              )}
+
+              {!copiando && (
+                <div className="form-grid" style={{ marginTop: 10 }}>
+                  <Field label={MARKETPLACES[nova.marketplace].campoId}>
+                    <input value={nova.client_id} onChange={(e) => setNova((n) => ({ ...n, client_id: e.target.value }))} />
+                  </Field>
+                  <Field label={MARKETPLACES[nova.marketplace].campoSecret}>
+                    <input type="password" value={nova.client_secret} onChange={(e) => setNova((n) => ({ ...n, client_secret: e.target.value }))} />
+                  </Field>
+                </div>
+              )}
+
+              {copiando ? (
+                <p className="page-sub" style={{ marginTop: 6 }}>
+                  Vai usar o mesmo app já cadastrado — só falta clicar em "Conectar" nessa nova linha depois de salvar e
+                  logar com a conta dessa outra loja.
+                </p>
+              ) : (
+                <p className="page-sub" style={{ marginTop: 6 }}>{MARKETPLACES[nova.marketplace].ajuda}</p>
+              )}
+              <button className="btn btn-primary" type="submit" style={{ marginTop: 10 }}>Salvar conexão</button>
+            </form>
+          </div>
+        );
+      })()}
 
       {!loading && integracoes.length === 0 && (
         <div className="card">
