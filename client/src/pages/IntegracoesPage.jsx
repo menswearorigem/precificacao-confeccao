@@ -151,11 +151,6 @@ export default function IntegracoesPage() {
       {erro && <div className="login-error" style={{ marginBottom: 12 }}>{erro}</div>}
       {aviso && <div className="stamp sm tone-saudavel" style={{ marginBottom: 12, display: 'inline-flex' }}>{aviso}</div>}
 
-      <WikIntegracaoCard />
-      <WikImportarProdutosCard />
-      <WikImportarFichaCustoCard />
-      <WikFichaCustoDiagnosticoCard />
-
       {mostrarNova && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-head">Nova Conexão</div>
@@ -277,6 +272,11 @@ export default function IntegracoesPage() {
           </div>
         );
       })}
+
+      <WikIntegracaoCard />
+      <WikImportarProdutosCard />
+      <WikImportarFichaCustoCard />
+      <WikFichaCustoDiagnosticoCard />
     </div>
   );
 }
