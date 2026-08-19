@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shirt } from 'lucide-react';
 import { api } from '../api/client';
 import { getDefaultPath } from '../lib/modules';
+import logoHbnHub from '../assets/logo-hbn-hub.png';
 
 export default function LoginPage({ onLoggedIn }) {
   const [setupNeeded, setSetupNeeded] = useState(null);
@@ -20,7 +20,7 @@ export default function LoginPage({ onLoggedIn }) {
   return (
     <div className="login-screen">
       <div className="login-brand-panel">
-        <div className="login-brand-mark"><Shirt size={24} /></div>
+        <div className="login-brand-mark"><img src={logoHbnHub} alt="" /></div>
         <div className="login-brand-copy">
           <div className="eyebrow">Sistema de gestão têxtil</div>
           <h1>HBN <em>Hub</em></h1>

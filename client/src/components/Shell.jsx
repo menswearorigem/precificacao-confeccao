@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Shirt, LogOut, Menu, X } from 'lucide-react';
+import { LogOut, Menu, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getVisibleModules } from '../lib/modules';
+import logoHbnHub from '../assets/logo-hbn-hub.png';
 
 function findActiveModule(pathname, visibleModules) {
   for (const mod of visibleModules) {
@@ -37,7 +38,7 @@ export default function Shell({ children }) {
           <button className="mobile-menu-btn" onClick={() => setMenuAberto((v) => !v)} aria-label="Abrir menu">
             {menuAberto ? <X size={20} /> : <Menu size={20} />}
           </button>
-          <div className="brand-mark"><Shirt size={20} /></div>
+          <div className="brand-mark"><img src={logoHbnHub} alt="" /></div>
           <div>
             <div className="brand-name">HBN Hub</div>
             <div className="brand-sub">Miss Manu · Origem · Hoggar · Hebron</div>

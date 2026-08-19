@@ -124,15 +124,16 @@ button, input, select, textarea { font-family: inherit; }
 .brand-mark {
   width: 40px;
   height: 40px;
-  border-radius: 11px;
-  background: linear-gradient(150deg, var(--terracotta-bright), var(--terracotta) 55%, #8a4a15 100%);
+  border-radius: 10px;
+  background: #f4efe4;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
   flex-shrink: 0;
-  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -2px 4px rgba(0, 0, 0, 0.15);
+  padding: 4px;
+  box-shadow: var(--shadow-sm);
 }
+.brand-mark img { width: 100%; height: 100%; object-fit: contain; }
 
 .brand-name {
   font-family: var(--font-display);
@@ -965,16 +966,17 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
 }
 .login-brand-mark {
   position: relative;
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
-  background: linear-gradient(150deg, var(--terracotta-bright), var(--terracotta) 60%, #8a4a15 100%);
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
+  background: #f4efe4;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  padding: 8px;
+  box-shadow: var(--shadow-md);
 }
+.login-brand-mark img { width: 100%; height: 100%; object-fit: contain; }
 .login-brand-copy { position: relative; max-width: 440px; }
 .login-brand-copy .eyebrow {
   font-size: 11.5px;
