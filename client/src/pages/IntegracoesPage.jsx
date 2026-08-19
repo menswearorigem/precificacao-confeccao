@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Plug, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Pencil, Plug, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
 import { Field, NumInput, Select } from '../components/ui';
 import WikIntegracaoCard from '../components/WikIntegracaoCard';
@@ -8,6 +8,9 @@ import WikImportarProdutosCard from '../components/WikImportarProdutosCard';
 import WikImportarFichaCustoCard from '../components/WikImportarFichaCustoCard';
 import WikFichaCustoDiagnosticoCard from '../components/WikFichaCustoDiagnosticoCard';
 
+// Sem arquivo de logo oficial de cada marketplace (o app não tem pipeline de
+// imagem estática) — em vez disso, um selo com a cor de marca de cada um,
+// que já dá pra reconhecer rápido igual um logo faria.
 const MARKETPLACES = {
   mercado_livre: {
     label: 'Mercado Livre',
@@ -15,6 +18,9 @@ const MARKETPLACES = {
     campoId: 'Client ID',
     campoSecret: 'Client Secret',
     ajuda: 'Crie um app em developers.mercadolivre.com.br e registre o Client ID/Secret aqui.',
+    corFundo: '#FFE600',
+    corTexto: '#2D3277',
+    sigla: 'ML',
   },
   shopee: {
     label: 'Shopee',
@@ -22,6 +28,9 @@ const MARKETPLACES = {
     campoId: 'Partner ID',
     campoSecret: 'Partner Key',
     ajuda: 'Gere o Partner ID/Key no Shopee Open Platform (Seller Center) e registre aqui.',
+    corFundo: '#EE4D2D',
+    corTexto: '#ffffff',
+    sigla: 'S',
   },
 };
 
@@ -30,16 +39,74 @@ function hoje(iso) {
   return new Date(iso).toLocaleString('pt-BR');
 }
 
+function MarketplaceLogo({ marketplace, size = 30 }) {
+  const info = MARKETPLACES[marketplace];
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+      <span style={{
+        width: size, height: size, borderRadius: '50%', background: info.corFundo, color: info.corTexto,
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: size * 0.4, flexShrink: 0,
+      }}>{info.sigla}</span>
+      <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: size * 0.6, color: 'var(--leather-deep)' }}>
+        {info.label}
+      </span>
+    </span>
+  );
+}
+
+function NomeLojaEditavel({ nome, onSalvar }) {
+  const [editando, setEditando] = useState(false);
+  const [valor, setValor] = useState(nome);
+
+  useEffect(() => { setValor(nome); }, [nome]);
+
+  async function salvar() {
+    setEditando(false);
+    if (valor.trim() && valor.trim() !== nome) await onSalvar(valor.trim());
+    else setValor(nome);
+  }
+
+  if (editando) {
+    return (
+      <input
+        value={valor}
+        autoFocus
+        onChange={(e) => setValor(e.target.value)}
+        onBlur={salvar}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+          if (e.key === 'Escape') { setValor(nome); setEditando(false); }
+        }}
+        style={{ maxWidth: 200, fontWeight: 600 }}
+      />
+    );
+  }
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+      {nome}
+      <button
+        type="button" className="icon-btn" title="Alterar nome da loja"
+        onClick={() => setEditando(true)} style={{ padding: 3 }}
+      >
+        <Pencil size={12} />
+      </button>
+    </span>
+  );
+}
+
 export default function IntegracoesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [integracoes, setIntegracoes] = useState([]);
   const [empresas, setEmpresas] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [subTab, setSubTab] = useState('mercado_livre');
   const [mostrarNova, setMostrarNova] = useState(false);
   const [nova, setNova] = useState({ marketplace: 'mercado_livre', nome: 'Loja principal', client_id: '', client_secret: '', copiar_credenciais_de: '' });
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
   const [sincronizandoId, setSincronizandoId] = useState(null);
+  const [expandidoId, setExpandidoId] = useState(null);
 
   function load() {
     setLoading(true);
@@ -60,12 +127,17 @@ export default function IntegracoesPage() {
     if (conectado || erroParam) setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams]);
 
+  function abrirNova() {
+    setNova((n) => ({ ...n, marketplace: subTab, copiar_credenciais_de: '' }));
+    setMostrarNova(true);
+  }
+
   async function criar(e) {
     e.preventDefault();
     setErro('');
     try {
       await api.post('/integracoes', nova);
-      setNova({ marketplace: 'mercado_livre', nome: 'Loja principal', client_id: '', client_secret: '', copiar_credenciais_de: '' });
+      setNova({ marketplace: subTab, nome: 'Loja principal', client_id: '', client_secret: '', copiar_credenciais_de: '' });
       setMostrarNova(false);
       load();
     } catch (err) {
@@ -115,6 +187,11 @@ export default function IntegracoesPage() {
     load();
   }
 
+  async function salvarNome(item, novoNome) {
+    await api.put(`/integracoes/${item.id}`, { nome: novoNome });
+    load();
+  }
+
   function editarCampoLocal(id, campo, valor) {
     setIntegracoes((lista) => lista.map((it) => (it.id === id ? { ...it, [campo]: valor } : it)));
   }
@@ -133,6 +210,11 @@ export default function IntegracoesPage() {
     load();
   }
 
+  const infoAtual = MARKETPLACES[subTab];
+  const doTabAtual = integracoes.filter((it) => it.marketplace === subTab);
+  const candidatasCopia = integracoes.filter((it) => it.marketplace === nova.marketplace && it.temClientSecret);
+  const copiando = Boolean(nova.copiar_credenciais_de);
+
   return (
     <div className="page-wide">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
@@ -143,31 +225,39 @@ export default function IntegracoesPage() {
             do sistema (a cada 5 minutos), como pedidos de venda em aberto, prontos pra revisar e faturar.
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setMostrarNova((v) => !v)}>
-          <Plus size={14} /> Nova conexão
-        </button>
+      </div>
+
+      <div className="subtab-row">
+        {Object.entries(MARKETPLACES).map(([chave, info]) => {
+          const total = integracoes.filter((it) => it.marketplace === chave).length;
+          return (
+            <button
+              key={chave} type="button"
+              className={'subtab-btn' + (subTab === chave ? ' active' : '')}
+              onClick={() => { setSubTab(chave); setMostrarNova(false); setExpandidoId(null); }}
+            >
+              {info.label} {total > 0 && <span style={{ opacity: 0.75 }}>· {total}</span>}
+            </button>
+          );
+        })}
       </div>
 
       {erro && <div className="login-error" style={{ marginBottom: 12 }}>{erro}</div>}
       {aviso && <div className="stamp sm tone-saudavel" style={{ marginBottom: 12, display: 'inline-flex' }}>{aviso}</div>}
 
-      {mostrarNova && (() => {
-        const candidatasCopia = integracoes.filter((it) => it.marketplace === nova.marketplace && it.temClientSecret);
-        const copiando = Boolean(nova.copiar_credenciais_de);
-        return (
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div className="card-head">Nova Conexão</div>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <MarketplaceLogo marketplace={subTab} />
+          <button className="btn btn-primary" onClick={abrirNova}>
+            <Plus size={14} /> Conectar loja
+          </button>
+        </div>
+
+        {mostrarNova && (
+          <div className="card" style={{ margin: '0 0 16px', background: 'var(--surface-soft, rgba(0,0,0,0.02))' }}>
+            <div className="card-head">Nova conexão — {infoAtual.label}</div>
             <form onSubmit={criar}>
               <div className="form-grid">
-                <Field label="Marketplace">
-                  <Select
-                    value={nova.marketplace}
-                    onChange={(e) => setNova((n) => ({ ...n, marketplace: e.target.value, copiar_credenciais_de: '' }))}
-                  >
-                    <option value="mercado_livre">Mercado Livre</option>
-                    <option value="shopee">Shopee</option>
-                  </Select>
-                </Field>
                 <Field label="Nome (só pra identificar)">
                   <input value={nova.nome} onChange={(e) => setNova((n) => ({ ...n, nome: e.target.value }))} />
                 </Field>
@@ -180,7 +270,7 @@ export default function IntegracoesPage() {
                       value={nova.copiar_credenciais_de}
                       onChange={(e) => setNova((n) => ({ ...n, copiar_credenciais_de: e.target.value, client_id: '', client_secret: '' }))}
                     >
-                      <option value="">Digitar {MARKETPLACES[nova.marketplace].campoId}/{MARKETPLACES[nova.marketplace].campoSecret} novos</option>
+                      <option value="">Digitar {infoAtual.campoId}/{infoAtual.campoSecret} novos</option>
                       {candidatasCopia.map((it) => (
                         <option key={it.id} value={it.id}>Usar as mesmas de "{it.nome}"</option>
                       ))}
@@ -191,10 +281,10 @@ export default function IntegracoesPage() {
 
               {!copiando && (
                 <div className="form-grid" style={{ marginTop: 10 }}>
-                  <Field label={MARKETPLACES[nova.marketplace].campoId}>
+                  <Field label={infoAtual.campoId}>
                     <input value={nova.client_id} onChange={(e) => setNova((n) => ({ ...n, client_id: e.target.value }))} />
                   </Field>
-                  <Field label={MARKETPLACES[nova.marketplace].campoSecret}>
+                  <Field label={infoAtual.campoSecret}>
                     <input type="password" value={nova.client_secret} onChange={(e) => setNova((n) => ({ ...n, client_secret: e.target.value }))} />
                   </Field>
                 </div>
@@ -206,105 +296,134 @@ export default function IntegracoesPage() {
                   logar com a conta dessa outra loja.
                 </p>
               ) : (
-                <p className="page-sub" style={{ marginTop: 6 }}>{MARKETPLACES[nova.marketplace].ajuda}</p>
+                <p className="page-sub" style={{ marginTop: 6 }}>{infoAtual.ajuda}</p>
               )}
-              <button className="btn btn-primary" type="submit" style={{ marginTop: 10 }}>Salvar conexão</button>
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <button className="btn btn-primary" type="submit">Salvar conexão</button>
+                <button className="btn btn-ghost" type="button" onClick={() => setMostrarNova(false)}>Cancelar</button>
+              </div>
             </form>
           </div>
-        );
-      })()}
+        )}
 
-      {!loading && integracoes.length === 0 && (
-        <div className="card">
-          <p className="page-sub">Nenhuma conexão cadastrada ainda.</p>
-        </div>
-      )}
+        {!loading && doTabAtual.length === 0 && (
+          <p className="page-sub">Nenhuma loja de {infoAtual.label} conectada ainda.</p>
+        )}
 
-      {!loading && integracoes.map((item) => {
-        const info = MARKETPLACES[item.marketplace];
-        return (
-          <div className="card" style={{ marginBottom: 16 }} key={item.id}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingBottom: 12, borderBottom: '1px solid var(--border-soft)' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 16, color: 'var(--leather-deep)' }}>
-                {item.nome}
-                <span className={'stamp sm ' + info.corTag}>{info.label}</span>
-                {item.conectado ? (
-                  <span className="stamp sm tone-saudavel">Conectado</span>
-                ) : (
-                  <span className="stamp sm tone-neutro">Não autorizado</span>
-                )}
-                {!item.ativo && <span className="stamp sm tone-prejuizo">Desativado</span>}
-              </span>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {!item.conectado && (
-                  <button className="btn btn-primary" onClick={() => conectar(item.id)}>
-                    <Plug size={13} /> Conectar
-                  </button>
-                )}
-                {item.conectado && (
-                  <button className="btn btn-ghost" onClick={() => sincronizar(item.id)} disabled={sincronizandoId === item.id}>
-                    <RefreshCw size={13} /> {sincronizandoId === item.id ? 'Sincronizando…' : 'Sincronizar agora'}
-                  </button>
-                )}
-                <button className="icon-btn" onClick={() => remover(item.id)}><Trash2 size={14} /></button>
-              </div>
-            </div>
-
-            <div className="form-grid" style={{ marginBottom: 10 }}>
-              <Field label={info.campoId}>
-                <input value={item.clientId || ''} disabled style={{ opacity: 0.7 }} />
-              </Field>
-              <Field label="Ativo?">
-                <label className="toggle">
-                  <input type="checkbox" checked={item.ativo} onChange={() => alternarAtivo(item)} />
-                  {item.ativo ? 'Sim' : 'Não'}
-                </label>
-              </Field>
-              <Field label="Última sincronização">
-                <input value={hoje(item.ultimaSincronizacao)} disabled style={{ opacity: 0.7 }} />
-              </Field>
-              <Field label="Usa frete subsidiado?">
-                <label className="toggle">
-                  <input type="checkbox" checked={item.usaFreteSubsidiado} onChange={() => alternarFreteSubsidiado(item)} />
-                  {item.usaFreteSubsidiado ? 'Sim' : 'Não'}
-                </label>
-              </Field>
-              <Field label="Empresa (CNPJ) usada como base de imposto">
-                <Select value={item.empresaId || ''} onChange={(e) => salvarEmpresa(item, e.target.value)} placeholder="Nenhuma vinculada">
-                  {empresas.map((e) => <option key={e.id} value={e.id}>{e.nome}</option>)}
-                </Select>
-              </Field>
-              <Field label="% do valor vendido que sai na Nota Fiscal">
-                <NumInput
-                  value={item.pctNotaFiscal != null ? Number(item.pctNotaFiscal) * 100 : ''}
-                  onChange={(v) => editarCampoLocal(item.id, 'pctNotaFiscal', v === '' ? '' : Number(v) / 100)}
-                  onBlur={() => salvarPctNotaFiscal(item)}
-                  suffix="%"
-                />
-              </Field>
-            </div>
-
-            {item.ultimoErro && (
-              <div className="login-error">Última tentativa falhou: {item.ultimoErro}</div>
-            )}
-            {item.ultimoErroFaturamento && (
-              <div className="login-error" style={{ marginTop: item.ultimoErro ? 8 : 0 }}>
-                <div style={{ marginBottom: 6 }}>Não consegui confirmar o valor recebido de algum pedido:</div>
-                <pre style={{
-                  whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 320, overflowY: 'auto',
-                  background: 'rgba(0,0,0,0.05)', padding: 8, borderRadius: 4, fontSize: 12, margin: 0,
-                }}>{item.ultimoErroFaturamento}</pre>
-              </div>
-            )}
-            {item.marketplace === 'mercado_livre' && item.ultimoErroAds && (
-              <div className="login-error" style={{ marginTop: (item.ultimoErro || item.ultimoErroFaturamento) ? 8 : 0 }}>
-                <div style={{ marginBottom: 6 }}>Publicidade (Product Ads):</div>
-                {item.ultimoErroAds}
-              </div>
-            )}
+        {!loading && doTabAtual.length > 0 && (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Loja</th>
+                  <th>Conta</th>
+                  <th>Status</th>
+                  <th>Ativa?</th>
+                  <th>Última sincronização</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {doTabAtual.map((item) => {
+                  const expandido = expandidoId === item.id;
+                  const temErro = item.ultimoErro || item.ultimoErroFaturamento || (item.marketplace === 'mercado_livre' && item.ultimoErroAds);
+                  return (
+                    <Fragment key={item.id}>
+                      <tr>
+                        <td><NomeLojaEditavel nome={item.nome} onSalvar={(novoNome) => salvarNome(item, novoNome)} /></td>
+                        <td className="mono">{item.contaExternaId || '—'}</td>
+                        <td>
+                          {item.conectado ? (
+                            <span className="stamp sm tone-saudavel">Conectado</span>
+                          ) : (
+                            <span className="stamp sm tone-neutro">Não autorizado</span>
+                          )}
+                          {temErro && <span className="stamp sm tone-prejuizo" style={{ marginLeft: 6 }}>Erro</span>}
+                        </td>
+                        <td>
+                          <label className="toggle">
+                            <input type="checkbox" checked={item.ativo} onChange={() => alternarAtivo(item)} />
+                          </label>
+                        </td>
+                        <td>{hoje(item.ultimaSincronizacao)}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                            {!item.conectado && (
+                              <button className="btn btn-ghost" onClick={() => conectar(item.id)}>
+                                <Plug size={13} /> Conectar
+                              </button>
+                            )}
+                            {item.conectado && (
+                              <button className="btn btn-ghost" onClick={() => sincronizar(item.id)} disabled={sincronizandoId === item.id}>
+                                <RefreshCw size={13} /> {sincronizandoId === item.id ? 'Sincronizando…' : 'Sincronizar agora'}
+                              </button>
+                            )}
+                            <button
+                              type="button" className="btn btn-ghost"
+                              onClick={() => setExpandidoId(expandido ? null : item.id)}
+                            >
+                              Mais {expandido ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                            </button>
+                            <button className="icon-btn" onClick={() => remover(item.id)} title="Remover conexão"><Trash2 size={14} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                      {expandido && (
+                        <tr>
+                          <td colSpan={6} style={{ background: 'var(--surface-soft, rgba(0,0,0,0.02))' }}>
+                            <div className="form-grid" style={{ margin: '8px 0' }}>
+                              <Field label={infoAtual.campoId}>
+                                <input value={item.clientId || ''} disabled style={{ opacity: 0.7 }} />
+                              </Field>
+                              <Field label="Usa frete subsidiado?">
+                                <label className="toggle">
+                                  <input type="checkbox" checked={item.usaFreteSubsidiado} onChange={() => alternarFreteSubsidiado(item)} />
+                                  {item.usaFreteSubsidiado ? 'Sim' : 'Não'}
+                                </label>
+                              </Field>
+                              <Field label="Empresa (CNPJ) usada como base de imposto">
+                                <Select value={item.empresaId || ''} onChange={(e) => salvarEmpresa(item, e.target.value)} placeholder="Nenhuma vinculada">
+                                  {empresas.map((e) => <option key={e.id} value={e.id}>{e.nome}</option>)}
+                                </Select>
+                              </Field>
+                              <Field label="% do valor vendido que sai na Nota Fiscal">
+                                <NumInput
+                                  value={item.pctNotaFiscal != null ? Number(item.pctNotaFiscal) * 100 : ''}
+                                  onChange={(v) => editarCampoLocal(item.id, 'pctNotaFiscal', v === '' ? '' : Number(v) / 100)}
+                                  onBlur={() => salvarPctNotaFiscal(item)}
+                                  suffix="%"
+                                />
+                              </Field>
+                            </div>
+                            {item.ultimoErro && (
+                              <div className="login-error">Última tentativa falhou: {item.ultimoErro}</div>
+                            )}
+                            {item.ultimoErroFaturamento && (
+                              <div className="login-error" style={{ marginTop: item.ultimoErro ? 8 : 0 }}>
+                                <div style={{ marginBottom: 6 }}>Não consegui confirmar o valor recebido de algum pedido:</div>
+                                <pre style={{
+                                  whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 320, overflowY: 'auto',
+                                  background: 'rgba(0,0,0,0.05)', padding: 8, borderRadius: 4, fontSize: 12, margin: 0,
+                                }}>{item.ultimoErroFaturamento}</pre>
+                              </div>
+                            )}
+                            {item.marketplace === 'mercado_livre' && item.ultimoErroAds && (
+                              <div className="login-error" style={{ marginTop: (item.ultimoErro || item.ultimoErroFaturamento) ? 8 : 0 }}>
+                                <div style={{ marginBottom: 6 }}>Publicidade (Product Ads):</div>
+                                {item.ultimoErroAds}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        );
-      })}
+        )}
+      </div>
 
       <WikIntegracaoCard />
       <WikImportarProdutosCard />
