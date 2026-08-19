@@ -57,6 +57,18 @@ async function chamarApiComBase(base, path, token, params) {
   return { res, data };
 }
 
+// "tokenBox" é um objeto { atual: token } em vez de uma string crua — assim,
+// quando o token precisa ser renovado no meio de uma sincronização longa
+// (ver comentário abaixo), a renovação fica visível pra TODAS as chamadas
+// seguintes que compartilham o mesmo box, não só a atual. Se fosse uma
+// string simples, cada função de nível mais alto (listarSaldoEstoque,
+// listarProdutos etc.) continuaria usando o valor antigo já capturado por
+// closure, e cada chamada seguinte bateria de novo no mesmo erro de token
+// expirado, renovando à toa uma vez por chamada.
+function criarTokenBox(token) {
+  return { atual: token };
+}
+
 // A documentação do Wik é inconsistente sobre o prefixo da URL — a maioria
 // das rotas usa "wiki_v2", mas pelo menos "saldo_estoque_get" tem exemplos
 // de curl com "apiwiki" nesse mesmo endpoint. Tenta "wiki_v2" primeiro (é o
@@ -68,13 +80,29 @@ async function chamarApiComBase(base, path, token, params) {
 // chamada, sem relação com os dados enviados) — tentamos de novo algumas
 // vezes com espera crescente antes de desistir, em vez de já marcar o
 // produto como erro definitivo.
-async function chamarApi(path, token, params = {}) {
+//
+// O Wik expira o token bem antes das 4h que a gente assume como padrão
+// quando a resposta de login não traz uma data de expiração explícita —
+// numa sincronização longa (catálogo inteiro, ficha de custo de centenas de
+// produtos, tudo limitado a 3 req/s) o token guardado no banco ainda parece
+// válido pelo relógio, mas o Wik já derrubou a sessão do lado deles. Se
+// `opcoes.renovarToken` for passado, uma resposta 403 do tipo "Token" força
+// um login novo e repete a MESMA chamada uma vez antes de desistir, em vez
+// de derrubar a sincronização inteira no meio do caminho.
+async function chamarApi(path, tokenBox, params = {}, opcoes = {}) {
+  const { renovarToken } = opcoes;
   const TENTATIVAS_5XX = 3;
+  let jaTentouRenovarToken = false;
   let ultimoErro;
   for (let tentativa = 1; tentativa <= TENTATIVAS_5XX; tentativa += 1) {
-    let { res, data } = await chamarApiComBase('wiki_v2', path, token, params);
+    let { res, data } = await chamarApiComBase('wiki_v2', path, tokenBox.atual, params);
     if (res.status === 404) {
-      ({ res, data } = await chamarApiComBase('apiwiki', path, token, params));
+      ({ res, data } = await chamarApiComBase('apiwiki', path, tokenBox.atual, params));
+    }
+    if (res.status === 403 && data.type === 'Token' && renovarToken && !jaTentouRenovarToken) {
+      jaTentouRenovarToken = true;
+      tokenBox.atual = await renovarToken();
+      continue;
     }
     if (res.status >= 500 && tentativa < TENTATIVAS_5XX) {
       ultimoErro = data;
@@ -95,8 +123,8 @@ async function chamarApi(path, token, params = {}) {
 
 // categoria_get devolve os nomes das categorias por id — o produto_get só
 // traz o id (ProdCategoriaId), sem a descrição embutida.
-async function listarCategorias(token) {
-  const data = await chamarApi('categoria_get', token);
+async function listarCategorias(tokenBox, opcoes) {
+  const data = await chamarApi('categoria_get', tokenBox, {}, opcoes);
   const lista = Array.isArray(data.retorno) ? data.retorno : [];
   const mapa = new Map();
   for (const c of lista) mapa.set(c.CatId, c.CatDescricao);
@@ -109,10 +137,10 @@ async function listarCategorias(token) {
 // "id" nenhum. A doc não mostra um envelope de paginação nesse endpoint
 // (diferente do saldo_estoque_get), então paramos só quando a página vier
 // vazia — sem "chutar" um tamanho de página, que pode variar.
-async function listarProdutos(token, { situacao } = {}) {
+async function listarProdutos(tokenBox, { situacao } = {}, opcoes) {
   const produtos = [];
   for (let pagina = 1; pagina <= 5000; pagina += 1) {
-    const data = await chamarApi('produto_get', token, { pagina, prodSituacao: situacao });
+    const data = await chamarApi('produto_get', tokenBox, { pagina, prodSituacao: situacao }, opcoes);
     const lista = Array.isArray(data.retorno) ? data.retorno : (data.retorno?.dados || []);
     if (lista.length === 0) break;
     produtos.push(...lista);
@@ -121,11 +149,11 @@ async function listarProdutos(token, { situacao } = {}) {
 }
 
 // saldo_estoque_get é paginado com envelope {pagina, total, proxima, dados}.
-async function listarSaldoEstoque(token, empId) {
+async function listarSaldoEstoque(tokenBox, empId, opcoes) {
   const linhas = [];
   let pagina = 1;
   for (let seguranca = 0; seguranca < 1000; seguranca += 1) {
-    const data = await chamarApi('saldo_estoque_get', token, { empId, pagina });
+    const data = await chamarApi('saldo_estoque_get', tokenBox, { empId, pagina }, opcoes);
     const retorno = data.retorno || {};
     const dados = retorno.dados || [];
     linhas.push(...dados);
@@ -138,8 +166,8 @@ async function listarSaldoEstoque(token, empId) {
 // Já que produto_get não aceita listar sem filtro, essa é a forma de
 // resolver o ProdId de UM produto específico a partir da referência (não
 // precisa saber o id de antemão).
-async function buscarProdutoPorReferencia(token, prodReferencia) {
-  const data = await chamarApi('produto_get', token, { prodReferencia });
+async function buscarProdutoPorReferencia(tokenBox, prodReferencia, opcoes) {
+  const data = await chamarApi('produto_get', tokenBox, { prodReferencia }, opcoes);
   const lista = Array.isArray(data.retorno) ? data.retorno : (data.retorno?.dados || []);
   return lista[0] || null;
 }
@@ -151,27 +179,27 @@ async function buscarProdutoPorReferencia(token, prodReferencia) {
 // tamanhos somados), não por peça — divida pelo nº de itens de
 // ListaGrade do produto pra chegar no consumo de uma peça.
 
-async function buscarInsumosFichaTecnica(token, id) {
-  const data = await chamarApi('insumosfichatecnica_get', token, { id });
+async function buscarInsumosFichaTecnica(tokenBox, id, opcoes) {
+  const data = await chamarApi('insumosfichatecnica_get', tokenBox, { id }, opcoes);
   return Array.isArray(data.retorno) ? data.retorno : [];
 }
 
-async function buscarOperacoesFichaTecnica(token, id) {
-  const data = await chamarApi('operacoesfichatecnica_get', token, { id });
+async function buscarOperacoesFichaTecnica(tokenBox, id, opcoes) {
+  const data = await chamarApi('operacoesfichatecnica_get', tokenBox, { id }, opcoes);
   return Array.isArray(data.retorno) ? data.retorno : [];
 }
 
-async function buscarMateriaPrima(token, id) {
-  const data = await chamarApi('materiaprima_get', token, { id });
+async function buscarMateriaPrima(tokenBox, id, opcoes) {
+  const data = await chamarApi('materiaprima_get', tokenBox, { id }, opcoes);
   return data.retorno || null;
 }
 
-async function listarOperacoes(token) {
-  const data = await chamarApi('operacoes_get', token);
+async function listarOperacoes(tokenBox, opcoes) {
+  const data = await chamarApi('operacoes_get', tokenBox, {}, opcoes);
   return Array.isArray(data.retorno) ? data.retorno : [];
 }
 
 module.exports = {
-  login, listarCategorias, listarProdutos, listarSaldoEstoque, buscarProdutoPorReferencia,
+  login, criarTokenBox, listarCategorias, listarProdutos, listarSaldoEstoque, buscarProdutoPorReferencia,
   buscarInsumosFichaTecnica, buscarOperacoesFichaTecnica, buscarMateriaPrima, listarOperacoes,
 };

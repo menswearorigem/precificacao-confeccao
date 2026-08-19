@@ -14,6 +14,8 @@ const { buscarIntegracao, obterTokenValido } = require('./wikSync');
 // peça entra como um único item de custo industrial com esse valor total.
 async function montarPreviewFichaCusto(integracao) {
   const token = await obterTokenValido(integracao);
+  const tokenBox = wik.criarTokenBox(token);
+  const opcoesToken = { renovarToken: () => obterTokenValido(integracao, { forcar: true }) };
 
   // Candidatos: produtos sem ficha nenhuma ainda (importação inicial) OU
   // produtos cuja ficha já veio do Wik antes (ficha_custo_origem_wik = TRUE)
@@ -40,7 +42,7 @@ async function montarPreviewFichaCusto(integracao) {
     try {
       // Sempre busca o produto_get (não só quando falta wik_prod_id) — é
       // dele que vem o TabpCusto, a única fonte de custo confirmada.
-      const produtoWik = await wik.buscarProdutoPorReferencia(token, produto.referencia);
+      const produtoWik = await wik.buscarProdutoPorReferencia(tokenBox, produto.referencia, opcoesToken);
       const wikProdId = produtoWik?.ProdId || produto.wik_prod_id || null;
       if (wikProdId && wikProdId !== produto.wik_prod_id) {
         await pool.query('UPDATE produtos SET wik_prod_id = $1 WHERE id = $2', [wikProdId, produto.id]);
@@ -53,8 +55,8 @@ async function montarPreviewFichaCusto(integracao) {
       const itensGrade = Array.isArray(produtoWik?.ListaGrade) ? produtoWik.ListaGrade.length : 0;
 
       const [insumos, operacoes] = await Promise.all([
-        wik.buscarInsumosFichaTecnica(token, wikProdId),
-        wik.buscarOperacoesFichaTecnica(token, wikProdId),
+        wik.buscarInsumosFichaTecnica(tokenBox, wikProdId, opcoesToken),
+        wik.buscarOperacoesFichaTecnica(tokenBox, wikProdId, opcoesToken),
       ]);
 
       if (insumos.length === 0 && operacoes.length === 0 && custoTotalWik == null) {
@@ -67,7 +69,7 @@ async function montarPreviewFichaCusto(integracao) {
       for (const insumo of insumos) {
         if (!unidadeMaterialCache.has(insumo.MatId)) {
           try {
-            const resposta = await wik.buscarMateriaPrima(token, insumo.MatId);
+            const resposta = await wik.buscarMateriaPrima(tokenBox, insumo.MatId, opcoesToken);
             const dados = Array.isArray(resposta) ? resposta[0] : resposta;
             unidadeMaterialCache.set(insumo.MatId, dados?.MatUnd || '');
           } catch {

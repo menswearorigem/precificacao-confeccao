@@ -276,11 +276,13 @@ router.post('/ficha-custo/diagnosticar', async (req, res, next) => {
     const produto = rows[0];
 
     const token = await obterTokenValido(integracao);
+    const tokenBox = wik.criarTokenBox(token);
+    const opcoesToken = { renovarToken: () => obterTokenValido(integracao, { forcar: true }) };
 
     let wikProdId = produto.wik_prod_id;
     let produtoWik = null;
     if (!wikProdId) {
-      produtoWik = await wik.buscarProdutoPorReferencia(token, referencia);
+      produtoWik = await wik.buscarProdutoPorReferencia(tokenBox, referencia, opcoesToken);
       wikProdId = produtoWik?.ProdId || null;
       if (wikProdId) {
         await pool.query('UPDATE produtos SET wik_prod_id = $1 WHERE id = $2', [wikProdId, produto.id]);
@@ -295,9 +297,9 @@ router.post('/ficha-custo/diagnosticar', async (req, res, next) => {
     }
 
     const [insumos, operacoesFicha, operacoesGlobais] = await Promise.all([
-      wik.buscarInsumosFichaTecnica(token, wikProdId).catch((err) => ({ erro: err.message })),
-      wik.buscarOperacoesFichaTecnica(token, wikProdId).catch((err) => ({ erro: err.message })),
-      wik.listarOperacoes(token).catch((err) => ({ erro: err.message })),
+      wik.buscarInsumosFichaTecnica(tokenBox, wikProdId, opcoesToken).catch((err) => ({ erro: err.message })),
+      wik.buscarOperacoesFichaTecnica(tokenBox, wikProdId, opcoesToken).catch((err) => ({ erro: err.message })),
+      wik.listarOperacoes(tokenBox, opcoesToken).catch((err) => ({ erro: err.message })),
     ]);
 
     // A doc de materiaprima_get não mostra campo de custo — testa aqui se
@@ -305,7 +307,7 @@ router.post('/ficha-custo/diagnosticar', async (req, res, next) => {
     // campo que a resposta real trazia).
     let materiaPrimaExemplo = null;
     if (Array.isArray(insumos) && insumos.length > 0) {
-      materiaPrimaExemplo = await wik.buscarMateriaPrima(token, insumos[0].MatId).catch((err) => ({ erro: err.message }));
+      materiaPrimaExemplo = await wik.buscarMateriaPrima(tokenBox, insumos[0].MatId, opcoesToken).catch((err) => ({ erro: err.message }));
     }
 
     res.json({

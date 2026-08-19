@@ -39,16 +39,18 @@ function normalizar(valor) {
 // produto+cor+tamanho — como pedido, usamos o MAIOR valor entre elas.
 async function montarPreviewProdutos(integracao, empIds = EMP_IDS_PADRAO) {
   const token = await obterTokenValido(integracao);
+  const tokenBox = wik.criarTokenBox(token);
+  const opcoesToken = { renovarToken: () => obterTokenValido(integracao, { forcar: true }) };
 
   const estoqueBruto = [];
   for (const empId of empIds) {
-    const saldo = await wik.listarSaldoEstoque(token, empId);
+    const saldo = await wik.listarSaldoEstoque(tokenBox, empId, opcoesToken);
     estoqueBruto.push(...saldo);
   }
   let produtosBrutos = [];
   let produtoGetDisponivel = true;
   try {
-    produtosBrutos = await wik.listarProdutos(token);
+    produtosBrutos = await wik.listarProdutos(tokenBox, {}, opcoesToken);
   } catch {
     produtoGetDisponivel = false; // produto_get não deu certo sem filtro — segue só com o saldo_estoque_get
   }

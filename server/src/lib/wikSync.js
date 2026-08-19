@@ -25,9 +25,15 @@ async function buscarIntegracao() {
 
 // Garante um token válido pra integração, logando de novo se estiver
 // ausente/expirado (o Wik expira o token em 4h e não deixa duas sessões
-// simultâneas com o mesmo login, então evitamos logar à toa).
-async function obterTokenValido(integracao) {
-  const expirado = !integracao.token_expira_em || new Date(integracao.token_expira_em).getTime() - Date.now() < 60 * 1000;
+// simultâneas com o mesmo login, então evitamos logar à toa). Com
+// `forcar: true` ignora o que o banco acha que ainda é válido e login de
+// novo mesmo assim — usado quando o próprio Wik já rejeitou o token com
+// "token inválido ou expirado", ou seja, a validade real do lado deles já
+// passou mesmo com o relógio daqui ainda achando que tinha tempo (a
+// resposta de login às vezes não traz `expiracao`, caindo no padrão de 4h
+// que pode ser bem mais otimista que a validade real).
+async function obterTokenValido(integracao, { forcar = false } = {}) {
+  const expirado = forcar || !integracao.token_expira_em || new Date(integracao.token_expira_em).getTime() - Date.now() < 60 * 1000;
   if (integracao.access_token && !expirado) return integracao.access_token;
 
   const resultado = await wik.login(integracao.email, integracao.senha);
@@ -35,6 +41,12 @@ async function obterTokenValido(integracao) {
     'UPDATE integracoes_wik SET access_token = $1, token_expira_em = $2, atualizado_em = now() WHERE id = $3',
     [resultado.token, resultado.expiraEm, integracao.id]
   );
+  // Mantém o objeto em memória em sincronia — evita logar de novo à toa se
+  // essa mesma chamada rodar mais de uma vez dentro do mesmo processo (ex.:
+  // renovação forçada no meio de uma sincronização longa, seguida de outra
+  // chamada que também checa validade).
+  integracao.access_token = resultado.token;
+  integracao.token_expira_em = resultado.expiraEm;
   return resultado.token;
 }
 
@@ -58,10 +70,12 @@ async function empIdsConfigurados() {
 // CSV/PDF (estoque.routes.js), só que a fonte é a API em vez de um arquivo.
 async function montarPreviewEstoque(integracao, porEmpId) {
   const token = await obterTokenValido(integracao);
+  const tokenBox = wik.criarTokenBox(token);
+  const opcoesToken = { renovarToken: () => obterTokenValido(integracao, { forcar: true }) };
 
   const linhasBrutas = [];
   for (const empId of porEmpId.keys()) {
-    const linhas = await wik.listarSaldoEstoque(token, empId);
+    const linhas = await wik.listarSaldoEstoque(tokenBox, empId, opcoesToken);
     linhasBrutas.push(...linhas);
   }
 
