@@ -23,7 +23,7 @@ export default function LoginPage({ onLoggedIn }) {
         <div className="login-brand-mark"><Shirt size={24} /></div>
         <div className="login-brand-copy">
           <div className="eyebrow">Sistema de gestão têxtil</div>
-          <h1>Formação de <em>Preço</em></h1>
+          <h1>HBN <em>Hub</em></h1>
           <p>
             Precificação, estoque, vendas e compras reunidos num só lugar — pensado pra dar
             clareza de margem em cada peça, do corte à venda.

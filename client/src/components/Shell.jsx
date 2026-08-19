@@ -39,7 +39,7 @@ export default function Shell({ children }) {
           </button>
           <div className="brand-mark"><Shirt size={20} /></div>
           <div>
-            <div className="brand-name">Formação de Preço</div>
+            <div className="brand-name">HBN Hub</div>
             <div className="brand-sub">Miss Manu · Origem · Hoggar · Hebron</div>
           </div>
         </div>
