@@ -8,11 +8,6 @@
 // - Troca/renovação de token: auth.tiktok-shops.com (sem assinatura)
 // - Toda chamada de dado de verdade (lojas autorizadas, produto, pedido...):
 //   open-api.tiktokglobalshop.com (com assinatura HMAC-SHA256)
-//
-// A busca de pedidos (buscarPedidos/mapearPedido) ainda não está pronta: a
-// doc de referência exata do endpoint de listagem/detalhe de pedido (path,
-// parâmetros, formato da resposta) ainda não foi confirmada — só o
-// "Order API overview" (conceitos e status), não o endpoint em si.
 
 const crypto = require('crypto');
 
@@ -94,35 +89,69 @@ async function buscarLojasAutorizadas({ appKey, appSecret, accessToken }) {
   return data.shops || [];
 }
 
-async function buscarPedidos() {
-  throw new Error(
-    'A busca de pedidos da TikTok Shop ainda não está pronta — falta confirmar o endpoint exato de listagem/detalhe de pedido na documentação oficial (o "Order API overview" só descreve os conceitos, não o path/parâmetros do endpoint em si). A conexão da loja (autorização) já funciona normalmente.'
-  );
+async function buscarPedidos({ appKey, appSecret, accessToken, shopCipher, desdeUnix }) {
+  const pedidos = [];
+  let pageToken = '';
+  for (let pagina = 0; pagina < 50; pagina += 1) {
+    const query = {
+      page_size: 100,
+      sort_field: 'create_time',
+      sort_order: 'ASC',
+      shop_cipher: shopCipher,
+    };
+    if (pageToken) query.page_token = pageToken;
+
+    const data = await chamarApi('/order/202309/orders/search', {
+      appKey,
+      appSecret,
+      accessToken,
+      method: 'POST',
+      query,
+      body: { create_time_ge: desdeUnix },
+    });
+
+    // A resposta da listagem já traz pagamento e itens completos — não
+    // precisa de uma segunda chamada de detalhe (diferente da Shopee, que só
+    // devolve o order_sn na listagem). Só entram pedidos com pagamento
+    // efetivado (paid_time preenchido) — pedidos ainda UNPAID/ON_HOLD não são
+    // vendas confirmadas.
+    for (const order of data.orders || []) {
+      if (order.paid_time) pedidos.push(order);
+    }
+
+    if (!data.next_page_token) break;
+    pageToken = data.next_page_token;
+  }
+  return pedidos;
 }
 
 // Converte um pedido da TikTok Shop pro formato genérico usado pelo
 // sincronizador (server/src/lib/marketplaceSync.js) — mesmo formato que
-// mercadoLivre.mapearPedido/shopee.mapearPedido já produzem. O formato de
-// SAÍDA já é o certo; só o mapeamento dos campos de ENTRADA (order.xxx)
-// precisa de ajuste fino quando o endpoint de pedido for confirmado.
+// mercadoLivre.mapearPedido/shopee.mapearPedido já produzem. Campos
+// confirmados na doc "Get Order List".
 function mapearPedido(order) {
   const itens = (order.line_items || []).map((it) => ({
     skuExterno: it.seller_sku || null,
     eanExterno: null,
-    tituloExterno: it.product_name || '',
+    tituloExterno: [it.product_name, it.sku_name].filter(Boolean).join(' - '),
     quantidade: 1,
     valorUnitario: Number(it.sale_price) || 0,
   }));
+
+  // Comissão da plataforma não vem nessa resposta (só na API de Finance,
+  // ainda não integrada) — fica null igual às outras taxas ainda não
+  // confirmadas, em vez de arriscar um valor errado.
+  const formaPagamento = String(order.payment_method_name || '').toLowerCase().includes('pix') ? 'pix' : 'outro';
 
   return {
     marketplace: 'tiktok_shop',
     idExterno: order.id,
     numeroExterno: order.id,
     dataPedido: order.create_time ? new Date(order.create_time * 1000).toISOString().slice(0, 10) : null,
-    clienteNome: order.buyer_email || 'Comprador TikTok Shop',
-    valorFrete: 0,
+    clienteNome: order.recipient_address?.name || order.buyer_nickname || 'Comprador TikTok Shop',
+    valorFrete: Number(order.payment?.shipping_fee) || 0,
     taxaMarketplace: null,
-    formaPagamento: 'outro',
+    formaPagamento,
     itens,
   };
 }
