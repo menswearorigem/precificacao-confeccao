@@ -112,17 +112,30 @@ async function buscarPedidos({ appKey, appSecret, accessToken, shopCipher, desde
 
     // A resposta da listagem já traz pagamento e itens completos — não
     // precisa de uma segunda chamada de detalhe (diferente da Shopee, que só
-    // devolve o order_sn na listagem). Só entram pedidos com pagamento
-    // efetivado (paid_time preenchido) — pedidos ainda UNPAID/ON_HOLD não são
-    // vendas confirmadas.
+    // devolve o order_sn na listagem). Entra todo pedido com pagamento já
+    // aceito: exclui só UNPAID (ainda não pago) e CANCELLED. Não filtra por
+    // `paid_time` porque a TikTok Shop pode deixar esse campo vazio mesmo em
+    // pedidos já pagos (ex.: parado em ON_HOLD, aguardando separação) — usar
+    // só isso como critério deixava pedido de verdade de fora da conta.
     for (const order of data.orders || []) {
-      if (order.paid_time) pedidos.push(order);
+      if (order.status !== 'UNPAID' && order.status !== 'CANCELLED') pedidos.push(order);
     }
 
     if (!data.next_page_token) break;
     pageToken = data.next_page_token;
   }
   return pedidos;
+}
+
+// order.create_time vem em unix timestamp (UTC) — convertendo direto com
+// .toISOString() a data do pedido fica errada pra pedidos feitos à noite no
+// Brasil (ex.: 22h de ontem em BRT já é depois da meia-noite em UTC, então
+// viraria "hoje"). Ajusta pro fuso de Brasília (UTC-3, sem horário de
+// verão desde 2019) antes de extrair a data, pra bater com o dia que a
+// vendedora realmente vê no painel dela.
+function dataPedidoBrasil(timestampSegundos) {
+  const data = new Date(timestampSegundos * 1000 - 3 * 60 * 60 * 1000);
+  return data.toISOString().slice(0, 10);
 }
 
 // Converte um pedido da TikTok Shop pro formato genérico usado pelo
@@ -147,7 +160,7 @@ function mapearPedido(order) {
     marketplace: 'tiktok_shop',
     idExterno: order.id,
     numeroExterno: order.id,
-    dataPedido: order.create_time ? new Date(order.create_time * 1000).toISOString().slice(0, 10) : null,
+    dataPedido: order.create_time ? dataPedidoBrasil(order.create_time) : null,
     clienteNome: order.recipient_address?.name || order.buyer_nickname || 'Comprador TikTok Shop',
     valorFrete: Number(order.payment?.shipping_fee) || 0,
     taxaMarketplace: null,
