@@ -2,24 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Printer } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
-import { DateInput, Select } from '../components/ui';
-
-function trintaDiasAtras() {
-  const d = new Date();
-  d.setDate(d.getDate() - 30);
-  return d.toISOString().slice(0, 10);
-}
-
-function hoje() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-// Mesmo rótulo usado no backend (marketplaceSync.js LABEL).
-const PLATAFORMA_LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee' };
+import { Select } from '../components/ui';
+import { PeriodoFiltro } from '../components/PeriodoFiltro';
+import { periodoDeHoje } from '../lib/periodos';
+import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 
 export default function RelatorioTaxasPage() {
-  const [dataInicio, setDataInicio] = useState(trintaDiasAtras());
-  const [dataFim, setDataFim] = useState(hoje());
+  const [{ inicio: dataInicio, fim: dataFim }, setPeriodo] = useState(periodoDeHoje());
   const [canalVenda, setCanalVenda] = useState('');
   const [lojaId, setLojaId] = useState('');
   const [integracoes, setIntegracoes] = useState([]);
@@ -40,7 +29,7 @@ export default function RelatorioTaxasPage() {
     }
   }
 
-  function gerar() {
+  useEffect(() => {
     setLoading(true);
     setErro('');
     const params = new URLSearchParams();
@@ -52,9 +41,13 @@ export default function RelatorioTaxasPage() {
       .then((data) => setRelatorio(data))
       .catch((err) => setErro(err.message))
       .finally(() => setLoading(false));
-  }
+  }, [dataInicio, dataFim, canalVenda, lojaId]);
 
-  useEffect(gerar, []);
+  const pedidosOrdenados = useMemo(() => {
+    if (!relatorio) return [];
+    // Mais recente primeiro, por padrão.
+    return [...relatorio.pedidos].sort((a, b) => new Date(b.data_pedido) - new Date(a.data_pedido));
+  }, [relatorio]);
 
   const divergentes = relatorio ? relatorio.pedidos.filter((p) => p.divergente) : [];
 
@@ -63,53 +56,36 @@ export default function RelatorioTaxasPage() {
       <div className="no-print">
         <h2>Taxas de Marketplace</h2>
         <p className="page-sub">
-          Compara a taxa que o Mercado Livre/Shopee realmente cobrou em cada pedido importado com o
+          Compara a taxa que o Mercado Livre/Shopee/TikTok Shop realmente cobrou em cada pedido importado com o
           esperado pelas tabelas de comissão + frete cadastradas em Configurações → Taxas de
           Marketplace, pra pegar cobrança divergente do combinado. Só considera pedidos importados
           automaticamente das integrações.
         </p>
 
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="form-grid">
-            <div className="field">
-              <span className="field-label">Data Início</span>
-              <DateInput value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
-            </div>
-            <div className="field">
-              <span className="field-label">Data Fim</span>
-              <DateInput value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
-            </div>
-            <div className="field">
-              <span className="field-label">Plataforma</span>
-              <Select value={canalVenda} onChange={(e) => mudarPlataforma(e.target.value)}>
-                <option value="">Todas as plataformas</option>
-                {Object.values(PLATAFORMA_LABEL).map((label) => (
-                  <option key={label} value={label}>{label}</option>
-                ))}
-              </Select>
-            </div>
-            <div className="field">
-              <span className="field-label">Loja</span>
-              <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)}>
-                <option value="">Todas as lojas</option>
-                {lojasDisponiveis.map((i) => (
-                  <option key={i.id} value={i.id}>{i.nome || PLATAFORMA_LABEL[i.marketplace]}</option>
-                ))}
-              </Select>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button className="btn btn-primary" onClick={gerar} disabled={loading}>
-              {loading ? 'Gerando…' : 'Gerar Relatório'}
-            </button>
+        <div className="filtros-barra">
+          <PeriodoFiltro inicio={dataInicio} fim={dataFim} onChange={({ inicio, fim }) => setPeriodo({ inicio, fim })} />
+          <Select value={canalVenda} onChange={(e) => mudarPlataforma(e.target.value)} style={{ maxWidth: 180 }}>
+            <option value="">Todas as plataformas</option>
+            {Object.values(PLATAFORMA_LABEL).map((label) => (
+              <option key={label} value={label}>{label}</option>
+            ))}
+          </Select>
+          <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)} style={{ maxWidth: 180 }}>
+            <option value="">Todas as lojas</option>
+            {lojasDisponiveis.map((i) => (
+              <option key={i.id} value={i.id}>{i.nome || PLATAFORMA_LABEL[i.marketplace]}</option>
+            ))}
+          </Select>
+          <div className="filtros-barra-acoes">
+            {loading && <span className="page-sub" style={{ margin: 0 }}>Atualizando…</span>}
             {relatorio && (
               <button className="btn btn-ghost" onClick={() => window.print()}>
                 <Printer size={14} /> Imprimir
               </button>
             )}
           </div>
-          {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
         </div>
+        {erro && <div className="login-error" style={{ marginBottom: 16 }}>{erro}</div>}
       </div>
 
       {relatorio && (
@@ -141,7 +117,7 @@ export default function RelatorioTaxasPage() {
                 </tr>
               </thead>
               <tbody>
-                {relatorio.pedidos.map((p) => (
+                {pedidosOrdenados.map((p) => (
                   <tr key={p.id}>
                     <td className="mono">#{p.numero}</td>
                     <td className="mono">{new Date(p.data_pedido).toLocaleDateString('pt-BR')}</td>

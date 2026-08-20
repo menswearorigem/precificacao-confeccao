@@ -4,6 +4,9 @@ import { Plus, Search, ChevronRight } from 'lucide-react';
 import { api } from '../api/client';
 import { brl } from '../lib/format';
 import { Select } from '../components/ui';
+import { PeriodoFiltro } from '../components/PeriodoFiltro';
+import { periodoDeHoje } from '../lib/periodos';
+import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 
 const SITUACAO_TONE = {
   aberto: 'tone-atencao',
@@ -17,9 +20,6 @@ const SITUACAO_LABEL = {
   cancelado: 'Cancelado',
 };
 
-// Mesmo rótulo usado no backend (marketplaceSync.js LABEL).
-const PLATAFORMA_LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee' };
-
 export default function PedidosListPage({ origemFiltro }) {
   const navigate = useNavigate();
   const isMarketplace = origemFiltro === 'marketplace';
@@ -28,6 +28,7 @@ export default function PedidosListPage({ origemFiltro }) {
   const [situacao, setSituacao] = useState('');
   const [plataforma, setPlataforma] = useState('');
   const [lojaId, setLojaId] = useState('');
+  const [{ inicio: dataInicio, fim: dataFim }, setPeriodo] = useState(periodoDeHoje());
   const [integracoes, setIntegracoes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [criando, setCriando] = useState(false);
@@ -53,18 +54,21 @@ export default function PedidosListPage({ origemFiltro }) {
     if (origemFiltro) params.set('origem', origemFiltro);
     if (isMarketplace && plataforma) params.set('canal_venda', plataforma);
     if (isMarketplace && lojaId) params.set('origem_integracao_id', lojaId);
+    if (isMarketplace && dataInicio) params.set('data_inicio', dataInicio);
+    if (isMarketplace && dataFim) params.set('data_fim', dataFim);
     api.get(`/pedidos?${params.toString()}`).then((data) => {
       setPedidos(data);
       setLoading(false);
     });
   }
 
-  useEffect(load, [situacao, plataforma, lojaId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function handleBuscaSubmit(e) {
-    e.preventDefault();
-    load();
-  }
+  // Busca por texto entra na hora (sem precisar apertar Enter/clicar em
+  // nada) — só um pequeno atraso pra não disparar uma chamada a cada tecla.
+  useEffect(() => {
+    const t = setTimeout(load, busca ? 350 : 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [situacao, plataforma, lojaId, dataInicio, dataFim, busca]);
 
   async function novoPedido() {
     setCriando(true);
@@ -83,7 +87,7 @@ export default function PedidosListPage({ origemFiltro }) {
           <h2>{origemFiltro === 'marketplace' ? 'Pedidos de Marketplace' : 'Pedidos de Venda'}</h2>
           <p className="page-sub">
             {origemFiltro === 'marketplace'
-              ? 'Pedidos importados do Mercado Livre, Shopee e demais marketplaces (sincronização automática ou planilha).'
+              ? 'Pedidos importados do Mercado Livre, Shopee, TikTok Shop e demais marketplaces (sincronização automática ou planilha).'
               : 'Pedidos lançados manualmente (loja física, WhatsApp etc). Versão de teste — ainda não emite nota fiscal.'}
           </p>
         </div>
@@ -94,39 +98,40 @@ export default function PedidosListPage({ origemFiltro }) {
         )}
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <form onSubmit={handleBuscaSubmit} style={{ display: 'flex', gap: 8, flex: 1, minWidth: 220 }}>
-            <input
-              placeholder="Buscar por cliente ou nº do pedido"
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-            />
-            <button className="btn btn-ghost" type="submit"><Search size={14} /></button>
-          </form>
-          <Select value={situacao} onChange={(e) => setSituacao(e.target.value)} style={{ maxWidth: 200 }}>
-            <option value="">Todas as situações</option>
-            <option value="aberto">Aberto</option>
-            <option value="faturado">Faturado</option>
-            <option value="cancelado">Cancelado</option>
-          </Select>
-          {isMarketplace && (
-            <>
-              <Select value={plataforma} onChange={(e) => mudarPlataforma(e.target.value)} style={{ maxWidth: 200 }}>
-                <option value="">Todas as plataformas</option>
-                {Object.values(PLATAFORMA_LABEL).map((label) => (
-                  <option key={label} value={label}>{label}</option>
-                ))}
-              </Select>
-              <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)} style={{ maxWidth: 200 }}>
-                <option value="">Todas as lojas</option>
-                {lojasDisponiveis.map((i) => (
-                  <option key={i.id} value={i.id}>{i.nome || PLATAFORMA_LABEL[i.marketplace]}</option>
-                ))}
-              </Select>
-            </>
-          )}
+      <div className="filtros-barra">
+        {isMarketplace && (
+          <PeriodoFiltro inicio={dataInicio} fim={dataFim} onChange={({ inicio, fim }) => setPeriodo({ inicio, fim })} />
+        )}
+        <div className="filtros-barra-busca">
+          <Search size={14} />
+          <input
+            placeholder="Buscar por cliente ou nº do pedido"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+          />
         </div>
+        <Select value={situacao} onChange={(e) => setSituacao(e.target.value)} style={{ maxWidth: 170 }}>
+          <option value="">Todas as situações</option>
+          <option value="aberto">Aberto</option>
+          <option value="faturado">Faturado</option>
+          <option value="cancelado">Cancelado</option>
+        </Select>
+        {isMarketplace && (
+          <>
+            <Select value={plataforma} onChange={(e) => mudarPlataforma(e.target.value)} style={{ maxWidth: 180 }}>
+              <option value="">Todas as plataformas</option>
+              {Object.values(PLATAFORMA_LABEL).map((label) => (
+                <option key={label} value={label}>{label}</option>
+              ))}
+            </Select>
+            <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)} style={{ maxWidth: 180 }}>
+              <option value="">Todas as lojas</option>
+              {lojasDisponiveis.map((i) => (
+                <option key={i.id} value={i.id}>{i.nome || PLATAFORMA_LABEL[i.marketplace]}</option>
+              ))}
+            </Select>
+          </>
+        )}
       </div>
 
       <div className="card">
@@ -162,7 +167,7 @@ export default function PedidosListPage({ origemFiltro }) {
         </table>
         {!loading && pedidos.length === 0 && (
           <div style={{ padding: '20px 4px', color: 'var(--ink-soft)', fontSize: 13 }}>
-            Nenhum pedido encontrado.
+            Nenhum pedido encontrado{isMarketplace ? ' no período.' : '.'}
           </div>
         )}
       </div>

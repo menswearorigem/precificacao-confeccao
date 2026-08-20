@@ -8,6 +8,7 @@ import {
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
 import { DateInput, Select } from '../components/ui';
+import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import FotoProduto from '../components/FotoProduto';
 
 const COR_PRINCIPAL = '#d17a2a';
@@ -25,10 +26,6 @@ const PALETA_LOJAS = ['#d17a2a', '#0d9488', '#7c4577', '#3a6fb5'];
 // própria no CSS do app, então só um estilo inline reutilizado.
 const LINK_STYLE = { background: 'none', border: 'none', color: 'var(--terracotta)', cursor: 'pointer', padding: 0, font: 'inherit' };
 
-// Mesmo rótulo que o backend usa (marketplaceSync.js LABEL) — pra traduzir
-// entre o campo interno de cada integração ('mercado_livre') e o valor de
-// canal_venda gravado no pedido ('Mercado Livre'), usado como filtro de Plataforma.
-const PLATAFORMA_LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee' };
 
 // Cores oficiais de cada marca — usadas só no selo/ícone de identificação da
 // loja (não no gráfico, que usa a paleta acima pra manter contraste entre

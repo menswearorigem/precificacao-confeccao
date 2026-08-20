@@ -2,11 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import {
   ArrowDown, ArrowUp, Banknote, Box, ChevronDown, ChevronUp, Landmark, Megaphone,
-  Percent, Printer, RefreshCw, ShoppingBag, Tag, TrendingUp, X,
+  Percent, Printer, RefreshCw, Search, ShoppingBag, Tag, TrendingUp, X,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
-import { DateInput, Select } from '../components/ui';
+import { Select } from '../components/ui';
+import { PeriodoFiltro } from '../components/PeriodoFiltro';
+import { periodoDeHoje } from '../lib/periodos';
+import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import FotoProduto from '../components/FotoProduto';
 
 // Paleta categórica combinando com a identidade do sistema (terracota,
@@ -17,21 +20,6 @@ const COR_FATURAMENTO = '#d17a2a';
 const COR_LIQUIDO = '#0d9488';
 const COR_LUCRO = '#7c4577';
 const FONTE_GRAFICO = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-
-// Mesmo rótulo usado no backend (marketplaceSync.js LABEL) — traduz entre o
-// campo interno de cada integração ('mercado_livre') e o canal_venda
-// gravado no pedido ('Mercado Livre'), usado no filtro de Plataforma.
-const PLATAFORMA_LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee' };
-
-function trintaDiasAtras() {
-  const d = new Date();
-  d.setDate(d.getDate() - 30);
-  return d.toISOString().slice(0, 10);
-}
-
-function hoje() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function dataBr(iso) {
   return new Date(`${iso}T00:00:00`).toLocaleDateString('pt-BR');
@@ -696,13 +684,12 @@ function BuscarPedidoOrigem() {
 }
 
 export default function RelatorioLucratividadePage({ origemFiltro }) {
-  const [dataInicio, setDataInicio] = useState(trintaDiasAtras());
-  const [dataFim, setDataFim] = useState(hoje());
+  const [{ inicio: dataInicio, fim: dataFim }, setPeriodo] = useState(periodoDeHoje());
   const [canalVenda, setCanalVenda] = useState('');
   const [lojaId, setLojaId] = useState('');
   const [integracoes, setIntegracoes] = useState([]);
   const [busca, setBusca] = useState('');
-  const [ordemData, setOrdemData] = useState('asc');
+  const [ordemData, setOrdemData] = useState('desc');
   const [relatorio, setRelatorio] = useState(null);
   const [resumoProduto, setResumoProduto] = useState(null);
   const [serieDiaria, setSerieDiaria] = useState(null);
@@ -759,7 +746,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => { gerar(); }, []);
+  useEffect(() => { gerar(); }, [dataInicio, dataFim, canalVenda, lojaId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function revincularCustos() {
     setRevinculando(true);
@@ -811,56 +798,41 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
             : 'Lucro real de cada pedido lançado manualmente: preço de venda menos o custo de produção (o mesmo custo usado na Ficha de Custo).'}
         </p>
 
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="form-grid">
-            <div className="field">
-              <span className="field-label">Data Início</span>
-              <DateInput value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
-            </div>
-            <div className="field">
-              <span className="field-label">Data Fim</span>
-              <DateInput value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
-            </div>
-            {isMarketplace ? (
-              <>
-                <div className="field">
-                  <span className="field-label">Plataforma</span>
-                  <Select value={canalVenda} onChange={(e) => mudarPlataforma(e.target.value)}>
-                    <option value="">Todas as plataformas</option>
-                    {Object.values(PLATAFORMA_LABEL).map((label) => (
-                      <option key={label} value={label}>{label}</option>
-                    ))}
-                  </Select>
-                </div>
-                <div className="field">
-                  <span className="field-label">Loja</span>
-                  <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)}>
-                    <option value="">Todas as lojas</option>
-                    {lojasDisponiveis.map((i) => (
-                      <option key={i.id} value={i.id}>{i.nome || PLATAFORMA_LABEL[i.marketplace]}</option>
-                    ))}
-                  </Select>
-                </div>
-              </>
-            ) : (
-              <div className="field">
-                <span className="field-label">Canal de venda</span>
-                <input placeholder="Ex: Mercado Livre, Shopee..." value={canalVenda} onChange={(e) => setCanalVenda(e.target.value)} />
-              </div>
-            )}
-            <div className="field">
-              <span className="field-label">Buscar</span>
-              <input
-                placeholder={subTab === 'resumoProduto' ? 'Referência ou descrição do produto...' : 'Nº do pedido, cliente, SKU ou referência...'}
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-              />
-            </div>
+        <div className="filtros-barra">
+          <PeriodoFiltro inicio={dataInicio} fim={dataFim} onChange={({ inicio, fim }) => setPeriodo({ inicio, fim })} />
+          {isMarketplace ? (
+            <>
+              <Select value={canalVenda} onChange={(e) => mudarPlataforma(e.target.value)} style={{ maxWidth: 180 }}>
+                <option value="">Todas as plataformas</option>
+                {Object.values(PLATAFORMA_LABEL).map((label) => (
+                  <option key={label} value={label}>{label}</option>
+                ))}
+              </Select>
+              <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)} style={{ maxWidth: 180 }}>
+                <option value="">Todas as lojas</option>
+                {lojasDisponiveis.map((i) => (
+                  <option key={i.id} value={i.id}>{i.nome || PLATAFORMA_LABEL[i.marketplace]}</option>
+                ))}
+              </Select>
+            </>
+          ) : (
+            <input
+              placeholder="Canal de venda: Ex: Mercado Livre, Shopee..."
+              value={canalVenda}
+              onChange={(e) => setCanalVenda(e.target.value)}
+              style={{ maxWidth: 220 }}
+            />
+          )}
+          <div className="filtros-barra-busca">
+            <Search size={14} />
+            <input
+              placeholder={subTab === 'resumoProduto' ? 'Referência ou descrição do produto...' : 'Nº do pedido, cliente, SKU ou referência...'}
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+            />
           </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-            <button className="btn btn-primary" onClick={gerar} disabled={loading}>
-              {loading ? 'Gerando…' : 'Gerar Relatório'}
-            </button>
+          <div className="filtros-barra-acoes">
+            {loading && <span className="page-sub" style={{ margin: 0 }}>Atualizando…</span>}
             {relatorio && (
               <button className="btn btn-ghost" onClick={() => window.print()}>
                 <Printer size={14} /> Imprimir resumo
@@ -872,6 +844,9 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
               </button>
             )}
           </div>
+        </div>
+
+        <div className="card" style={{ marginBottom: 16 }}>
           {temItemSemCusto && (
             <div className="login-error" style={{ marginTop: 10, background: 'var(--tone-atencao-bg, #fff3cd)' }}>
               Alguns pedidos têm itens sem produto vinculado (marcados "parcial" — o custo deles não entra na conta).

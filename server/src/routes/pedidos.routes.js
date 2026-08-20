@@ -1579,7 +1579,7 @@ router.get('/relatorio-taxas', async (req, res, next) => {
 
 router.get('/', async (req, res, next) => {
   try {
-    const { busca, situacao, origem, canal_venda, origem_integracao_id } = req.query;
+    const { busca, situacao, origem, canal_venda, origem_integracao_id, data_inicio, data_fim } = req.query;
     if (origem === 'marketplace') sincronizarSeNecessario();
     const conditions = [];
     const values = [];
@@ -1589,6 +1589,8 @@ router.get('/', async (req, res, next) => {
     if (origem === 'manual') conditions.push('pv.origem_marketplace IS NULL');
     if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
     if (origem_integracao_id) { conditions.push(`pv.origem_integracao_id = $${i}`); values.push(origem_integracao_id); i += 1; }
+    if (data_inicio) { conditions.push(`pv.data_pedido >= $${i}`); values.push(data_inicio); i += 1; }
+    if (data_fim) { conditions.push(`pv.data_pedido <= $${i}`); values.push(data_fim); i += 1; }
     if (busca) {
       conditions.push(`(c.nome ILIKE $${i} OR pv.numero::text = $${i + 1})`);
       values.push(`%${busca}%`, busca);

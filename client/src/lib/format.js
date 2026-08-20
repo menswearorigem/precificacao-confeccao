@@ -8,3 +8,5 @@ export const pct = (n, digits = 1) =>
   `${((Number.isFinite(Number(n)) ? Number(n) : 0) * 100).toFixed(digits)}%`;
 
 export const uid = () => Math.random().toString(36).slice(2, 10);
+
+export const dataBr = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('pt-BR') : '');
