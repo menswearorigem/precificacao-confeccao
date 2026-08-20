@@ -3,11 +3,12 @@ const express = require('express');
 const pool = require('../db/pool');
 const mercadoLivre = require('../lib/marketplaces/mercadoLivre');
 const shopee = require('../lib/marketplaces/shopee');
+const tiktokShop = require('../lib/marketplaces/tiktokShop');
 const { sincronizarIntegracao, sincronizarSeNecessario, garantirTokenValido, sincronizarAdsDias } = require('../lib/marketplaceSync');
 
 const router = express.Router();
 
-const MARKETPLACES_VALIDOS = ['mercado_livre', 'shopee'];
+const MARKETPLACES_VALIDOS = ['mercado_livre', 'shopee', 'tiktok_shop'];
 
 function urlBase(req) {
   return process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
@@ -31,6 +32,7 @@ function paraFora(row) {
     ultimoErroFaturamento: row.ultimo_erro_faturamento,
     advertiserIdAds: row.advertiser_id_ads,
     ultimoErroAds: row.ultimo_erro_ads,
+    tiktokServiceId: row.tiktok_service_id,
   };
 }
 
@@ -47,20 +49,22 @@ router.get('/', async (req, res, next) => {
 router.post('/', async (req, res, next) => {
   try {
     const { marketplace, nome, client_id, client_secret, copiar_credenciais_de } = req.body || {};
+    let tiktok_service_id = req.body?.tiktok_service_id;
     if (!MARKETPLACES_VALIDOS.includes(marketplace)) {
       return res.status(400).json({ error: 'Marketplace inválido.' });
     }
 
     let clientId = client_id;
     let clientSecret = client_secret;
-    // Reaproveita o Client ID/Secret de uma conexão já cadastrada do mesmo
+    // Reaproveita o Client ID/Secret (e, na TikTok Shop, também o Service ID
+    // — é do app, não da loja) de uma conexão já cadastrada do mesmo
     // marketplace — o secret nunca é devolvido pro navegador (só um booleano
     // "temClientSecret"), então pra cadastrar uma segunda loja do mesmo app
-    // sem precisar caçar o secret de novo no painel do Mercado Livre/Shopee,
-    // essa cópia acontece só aqui no servidor.
+    // sem precisar caçar o secret de novo no painel do Mercado Livre/Shopee/
+    // TikTok Shop, essa cópia acontece só aqui no servidor.
     if (copiar_credenciais_de) {
       const { rows } = await pool.query(
-        'SELECT client_id, client_secret, marketplace FROM integracoes_marketplace WHERE id = $1',
+        'SELECT client_id, client_secret, marketplace, tiktok_service_id FROM integracoes_marketplace WHERE id = $1',
         [copiar_credenciais_de]
       );
       const origem = rows[0];
@@ -70,15 +74,19 @@ router.post('/', async (req, res, next) => {
       }
       clientId = origem.client_id;
       clientSecret = origem.client_secret;
+      if (!tiktok_service_id) tiktok_service_id = origem.tiktok_service_id;
     }
 
     if (!clientId || !clientSecret) {
       return res.status(400).json({ error: 'Informe as credenciais do app (Client ID/Secret ou Partner ID/Key).' });
     }
+    if (marketplace === 'tiktok_shop' && !tiktok_service_id) {
+      return res.status(400).json({ error: 'Informe o Service ID do app (tela "App & Service" no Partner Center).' });
+    }
     const { rows } = await pool.query(
-      `INSERT INTO integracoes_marketplace (marketplace, nome, client_id, client_secret)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [marketplace, nome || 'Loja principal', clientId, clientSecret]
+      `INSERT INTO integracoes_marketplace (marketplace, nome, client_id, client_secret, tiktok_service_id)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [marketplace, nome || 'Loja principal', clientId, clientSecret, tiktok_service_id || null]
     );
     res.status(201).json(paraFora(rows[0]));
   } catch (err) {
@@ -88,13 +96,14 @@ router.post('/', async (req, res, next) => {
 
 router.put('/:id', async (req, res, next) => {
   try {
-    const { nome, client_id, client_secret, ativo, usa_frete_subsidiado, empresa_id, pct_nota_fiscal } = req.body || {};
+    const { nome, client_id, client_secret, ativo, usa_frete_subsidiado, empresa_id, pct_nota_fiscal, tiktok_service_id } = req.body || {};
     const updates = [];
     const values = [];
     let i = 1;
     if (nome !== undefined) { updates.push(`nome = $${i}`); values.push(nome); i += 1; }
     if (client_id !== undefined) { updates.push(`client_id = $${i}`); values.push(client_id); i += 1; }
     if (client_secret !== undefined && client_secret !== '') { updates.push(`client_secret = $${i}`); values.push(client_secret); i += 1; }
+    if (tiktok_service_id !== undefined) { updates.push(`tiktok_service_id = $${i}`); values.push(tiktok_service_id || null); i += 1; }
     if (ativo !== undefined) { updates.push(`ativo = $${i}`); values.push(ativo); i += 1; }
     if (usa_frete_subsidiado !== undefined) { updates.push(`usa_frete_subsidiado = $${i}`); values.push(usa_frete_subsidiado); i += 1; }
     if (empresa_id !== undefined) { updates.push(`empresa_id = $${i}`); values.push(empresa_id || null); i += 1; }
@@ -140,12 +149,20 @@ router.get('/:id/conectar', async (req, res, next) => {
         redirectUri: `${urlBase(req)}/api/integracoes/mercado_livre/callback`,
         state,
       });
-    } else {
+    } else if (integracao.marketplace === 'shopee') {
       url = shopee.buildAuthorizeUrl({
         partnerId: integracao.client_id,
         partnerKey: integracao.client_secret,
         redirectUri: `${urlBase(req)}/api/integracoes/shopee/callback?state=${state}`,
       });
+    } else {
+      if (!integracao.tiktok_service_id) {
+        return res.status(400).json({ error: 'Informe o Service ID do app antes de conectar (tela "App & Service" no Partner Center).' });
+      }
+      // A TikTok Shop não recebe redirect_uri na URL de autorização — o
+      // Redirect URL já foi cadastrado uma vez só, direto no app do Partner
+      // Center, e é usado sempre a partir de lá.
+      url = tiktokShop.buildAuthorizeUrl({ serviceId: integracao.tiktok_service_id, state });
     }
     res.json({ url });
   } catch (err) {
@@ -494,8 +511,53 @@ callbackShopee.get('/', async (req, res) => {
   }
 });
 
+const callbackTikTokShop = express.Router();
+callbackTikTokShop.get('/', async (req, res) => {
+  const { code, state, error } = req.query;
+  try {
+    if (error || !code || code === 'null') throw new Error('Autorização recusada ou cancelada na TikTok Shop.');
+    const integracaoId = await consumirState(state);
+    if (!integracaoId) throw new Error('Link de autorização expirado ou inválido. Tente conectar novamente.');
+
+    const { rows } = await pool.query('SELECT * FROM integracoes_marketplace WHERE id = $1', [integracaoId]);
+    const integracao = rows[0];
+    if (!integracao) throw new Error('Integração não encontrada.');
+
+    const tokenData = await tiktokShop.trocarCodigoPorToken({
+      appKey: integracao.client_id,
+      appSecret: integracao.client_secret,
+      code,
+    });
+
+    // A resposta do token não traz a loja em si (só identifica a vendedora)
+    // — precisa de uma segunda chamada pra descobrir shop_id/shop_cipher.
+    const lojas = await tiktokShop.buscarLojasAutorizadas({
+      appKey: integracao.client_id,
+      appSecret: integracao.client_secret,
+      accessToken: tokenData.access_token,
+    });
+    const loja = lojas[0] || null;
+
+    // access_token_expire_in/refresh_token_expire_in já vêm como timestamp
+    // unix absoluto (não como "expira em N segundos" tipo Mercado Livre/Shopee).
+    const expiraEm = new Date((Number(tokenData.access_token_expire_in) || Math.floor(Date.now() / 1000) + 3600) * 1000);
+
+    await pool.query(
+      `UPDATE integracoes_marketplace
+       SET access_token = $1, refresh_token = $2, token_expira_em = $3, conta_externa_id = $4, shop_cipher = $5,
+           ativo = TRUE, ultimo_erro = NULL, atualizado_em = now()
+       WHERE id = $6`,
+      [tokenData.access_token, tokenData.refresh_token, expiraEm, loja ? String(loja.id) : String(tokenData.open_id), loja?.cipher || null, integracaoId]
+    );
+    res.redirect('/integracoes?conectado=tiktok_shop');
+  } catch (err) {
+    res.redirect(`/integracoes?erro=${encodeURIComponent(err.message)}`);
+  }
+});
+
 module.exports.callbackMercadoLivre = callbackMercadoLivre;
 module.exports.callbackShopee = callbackShopee;
+module.exports.callbackTikTokShop = callbackTikTokShop;
 
 // Recebe as notificações (webhooks) do Mercado Livre — exigidas pelo app
 // mesmo não sendo usadas ainda, já que o sistema busca pedidos por

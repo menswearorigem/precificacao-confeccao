@@ -77,6 +77,7 @@ function createApp() {
   // de segurança é o "state" de uso único gravado em integracoes_oauth_state.
   app.use('/api/integracoes/mercado_livre/callback', integracoesRoutes.callbackMercadoLivre);
   app.use('/api/integracoes/shopee/callback', integracoesRoutes.callbackShopee);
+  app.use('/api/integracoes/tiktok_shop/callback', integracoesRoutes.callbackTikTokShop);
   app.use('/api/integracoes/mercado_livre/notificacoes', integracoesRoutes.notificacoesMercadoLivre);
   app.use('/api/integracoes', requireAuth, requireAdmin, integracoesRoutes);
   app.use('/api/wik', requireAuth, requireAdmin, wikRoutes);

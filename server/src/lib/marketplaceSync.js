@@ -6,10 +6,11 @@
 const pool = require('../db/pool');
 const mercadoLivre = require('./marketplaces/mercadoLivre');
 const shopee = require('./marketplaces/shopee');
+const tiktokShop = require('./marketplaces/tiktokShop');
 const { recalcularTotais } = require('./pedidoRecalculo');
 const { registrarMovimento } = require('./estoqueMovimento');
 
-const LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee' };
+const LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee', tiktok_shop: 'TikTok Shop' };
 
 // Toda sincronização reexamina pelo menos essa janela pra trás, mesmo que o
 // último ciclo tenha rodado há poucos minutos — pedido criado hoje mas que só
@@ -27,21 +28,32 @@ async function garantirTokenValido(integracao) {
   const margem = 5 * 60 * 1000; // renova com 5min de folga
   if (!integracao.access_token || Date.now() > expiraEm - margem) {
     let tokenData;
+    let novoExpiraEm;
     if (integracao.marketplace === 'mercado_livre') {
       tokenData = await mercadoLivre.renovarToken({
         clientId: integracao.client_id,
         clientSecret: integracao.client_secret,
         refreshToken: integracao.refresh_token,
       });
-    } else {
+      novoExpiraEm = new Date(Date.now() + (Number(tokenData.expires_in) || 3600) * 1000);
+    } else if (integracao.marketplace === 'shopee') {
       tokenData = await shopee.renovarToken({
         partnerId: integracao.client_id,
         partnerKey: integracao.client_secret,
         refreshToken: integracao.refresh_token,
         shopId: integracao.conta_externa_id,
       });
+      novoExpiraEm = new Date(Date.now() + (Number(tokenData.expires_in) || 3600) * 1000);
+    } else {
+      tokenData = await tiktokShop.renovarToken({
+        appKey: integracao.client_id,
+        appSecret: integracao.client_secret,
+        refreshToken: integracao.refresh_token,
+      });
+      // Diferente do Mercado Livre/Shopee: a TikTok Shop já devolve um
+      // timestamp unix absoluto de expiração, não uma duração em segundos.
+      novoExpiraEm = new Date((Number(tokenData.access_token_expire_in) || Math.floor(Date.now() / 1000) + 3600) * 1000);
     }
-    const novoExpiraEm = new Date(Date.now() + (Number(tokenData.expires_in) || 3600) * 1000);
     await pool.query(
       `UPDATE integracoes_marketplace
        SET access_token = $1, refresh_token = $2, token_expira_em = $3, atualizado_em = now()
@@ -63,14 +75,24 @@ async function buscarPedidosDoMarketplace(integracao, desde) {
     });
     return orders.map(mercadoLivre.mapearPedido);
   }
-  const orders = await shopee.buscarPedidos({
-    partnerId: integracao.client_id,
-    partnerKey: integracao.client_secret,
+  if (integracao.marketplace === 'shopee') {
+    const orders = await shopee.buscarPedidos({
+      partnerId: integracao.client_id,
+      partnerKey: integracao.client_secret,
+      accessToken: integracao.access_token,
+      shopId: integracao.conta_externa_id,
+      desdeUnix: Math.floor(desde.getTime() / 1000),
+    });
+    return orders.map(shopee.mapearPedido);
+  }
+  const orders = await tiktokShop.buscarPedidos({
+    appKey: integracao.client_id,
+    appSecret: integracao.client_secret,
     accessToken: integracao.access_token,
-    shopId: integracao.conta_externa_id,
+    shopCipher: integracao.shop_cipher,
     desdeUnix: Math.floor(desde.getTime() / 1000),
   });
-  return orders.map(shopee.mapearPedido);
+  return orders.map(tiktokShop.mapearPedido);
 }
 
 async function encontrarOuCriarCliente(client, pedidoGenerico) {

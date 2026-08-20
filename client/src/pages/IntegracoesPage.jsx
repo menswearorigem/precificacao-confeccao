@@ -32,6 +32,17 @@ const MARKETPLACES = {
     corTexto: '#ffffff',
     sigla: 'S',
   },
+  tiktok_shop: {
+    label: 'TikTok Shop',
+    corTag: 'tone-neutro',
+    campoId: 'App Key',
+    campoSecret: 'App Secret',
+    campoServiceId: 'Service ID',
+    ajuda: 'Crie o app em Partner Center → App & Service e registre o App Key/Secret e o Service ID aqui.',
+    corFundo: '#000000',
+    corTexto: '#25F4EE',
+    sigla: 'TT',
+  },
 };
 
 function hoje(iso) {
@@ -102,7 +113,7 @@ export default function IntegracoesPage() {
   const [loading, setLoading] = useState(true);
   const [subTab, setSubTab] = useState('mercado_livre');
   const [mostrarNova, setMostrarNova] = useState(false);
-  const [nova, setNova] = useState({ marketplace: 'mercado_livre', nome: 'Loja principal', client_id: '', client_secret: '', copiar_credenciais_de: '' });
+  const [nova, setNova] = useState({ marketplace: 'mercado_livre', nome: 'Loja principal', client_id: '', client_secret: '', tiktok_service_id: '', copiar_credenciais_de: '' });
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
   const [sincronizandoId, setSincronizandoId] = useState(null);
@@ -137,7 +148,7 @@ export default function IntegracoesPage() {
     setErro('');
     try {
       await api.post('/integracoes', nova);
-      setNova({ marketplace: subTab, nome: 'Loja principal', client_id: '', client_secret: '', copiar_credenciais_de: '' });
+      setNova({ marketplace: subTab, nome: 'Loja principal', client_id: '', client_secret: '', tiktok_service_id: '', copiar_credenciais_de: '' });
       setMostrarNova(false);
       load();
     } catch (err) {
@@ -221,7 +232,7 @@ export default function IntegracoesPage() {
         <div>
           <h2>Integrações com Marketplaces</h2>
           <p className="page-sub">
-            Conecte o Mercado Livre e a Shopee pra puxar os pedidos pagos automaticamente pra dentro
+            Conecte o Mercado Livre, a Shopee e a TikTok Shop pra puxar os pedidos pagos automaticamente pra dentro
             do sistema (a cada 5 minutos), como pedidos de venda em aberto, prontos pra revisar e faturar.
           </p>
         </div>
@@ -301,6 +312,18 @@ export default function IntegracoesPage() {
                   </Field>
                   <Field label={infoAtual.campoSecret}>
                     <input type="password" value={nova.client_secret} onChange={(e) => setNova((n) => ({ ...n, client_secret: e.target.value }))} />
+                  </Field>
+                  {infoAtual.campoServiceId && (
+                    <Field label={infoAtual.campoServiceId}>
+                      <input value={nova.tiktok_service_id} onChange={(e) => setNova((n) => ({ ...n, tiktok_service_id: e.target.value }))} />
+                    </Field>
+                  )}
+                </div>
+              )}
+              {copiando && infoAtual.campoServiceId && (
+                <div className="form-grid" style={{ marginTop: 10 }}>
+                  <Field label={`${infoAtual.campoServiceId} (opcional — deixe em branco pra usar o mesmo app)`}>
+                    <input value={nova.tiktok_service_id} onChange={(e) => setNova((n) => ({ ...n, tiktok_service_id: e.target.value }))} />
                   </Field>
                 </div>
               )}
@@ -390,6 +413,11 @@ export default function IntegracoesPage() {
                               <Field label={infoAtual.campoId}>
                                 <input value={item.clientId || ''} disabled style={{ opacity: 0.7 }} />
                               </Field>
+                              {item.marketplace === 'tiktok_shop' && (
+                                <Field label="Service ID">
+                                  <input value={item.tiktokServiceId || ''} disabled style={{ opacity: 0.7 }} />
+                                </Field>
+                              )}
                               <Field label="Usa frete subsidiado?">
                                 <label className="toggle">
                                   <input type="checkbox" checked={item.usaFreteSubsidiado} onChange={() => alternarFreteSubsidiado(item)} />
