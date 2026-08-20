@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Save, Trash2, MapPinCheck } from 'lucide-react';
 import { api } from '../api/client';
 import { Field, Select } from '../components/ui';
+import { confirmar } from '../components/ConfirmDialog';
 
 function emptyFornecedor() {
   return {
@@ -114,7 +115,7 @@ export default function FornecedorFichaPage() {
   }
 
   async function handleRemover() {
-    if (!confirm('Remover este fornecedor?')) return;
+    if (!(await confirmar('Remover este fornecedor?'))) return;
     try {
       await api.del(`/fornecedores/${id}`);
       navigate('/fornecedores');

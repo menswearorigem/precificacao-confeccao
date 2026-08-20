@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { ChevronDown, ChevronUp, Pencil, Plug, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
 import { Field, NumInput, Select } from '../components/ui';
+import { confirmar } from '../components/ConfirmDialog';
 import WikIntegracaoCard from '../components/WikIntegracaoCard';
 import WikImportarProdutosCard from '../components/WikImportarProdutosCard';
 import WikImportarFichaCustoCard from '../components/WikImportarFichaCustoCard';
@@ -187,7 +188,7 @@ export default function IntegracoesPage() {
   }
 
   async function remover(id) {
-    if (!confirm('Remover essa conexão? Os pedidos já importados continuam no sistema.')) return;
+    if (!(await confirmar('Remover essa conexão? Os pedidos já importados continuam no sistema.'))) return;
     await api.del(`/integracoes/${id}`);
     load();
   }

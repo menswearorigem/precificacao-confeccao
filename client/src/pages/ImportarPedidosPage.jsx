@@ -115,8 +115,8 @@ export default function ImportarPedidosPage() {
             <span>Pedidos encontrados ({preview.totalPedidos}){preview.totalJaImportados > 0 && ` — ${preview.totalJaImportados} já importado(s)`}</span>
           </div>
           {preview.pedidos.some((p) => p.itens.some((it) => it.semCorrespondencia)) && (
-            <div className="login-error" style={{ marginBottom: 12, display: 'flex', gap: 6, alignItems: 'center' }}>
-              <AlertTriangle size={14} /> Alguns itens não bateram com nenhuma referência/EAN do estoque — vão entrar só com a descrição, sem baixar estoque ao faturar.
+            <div className="aviso-compacto tone-atencao" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <AlertTriangle size={13} /> Alguns itens não bateram com nenhuma referência/EAN do estoque — vão entrar só com a descrição, sem baixar estoque ao faturar.
             </div>
           )}
           <table className="data-table">

@@ -716,7 +716,7 @@ function OpinioesTab({ integracoes }) {
         {carregando ? 'Buscando…' : 'Buscar Opiniões'}
       </button>
       {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
-      {dados?.aviso && <div className="login-error" style={{ marginTop: 10, background: 'var(--tone-atencao-bg, #fff3cd)' }}>{dados.aviso}</div>}
+      {dados?.aviso && <div className="aviso-compacto tone-atencao">{dados.aviso}</div>}
       {dados?.opinioes?.length > 0 && (
         <div style={{ overflowX: 'auto', marginTop: 14 }}>
           <table className="data-table">
@@ -789,7 +789,7 @@ function ConcorrentesTab({ integracoes }) {
         {carregando ? 'Buscando…' : 'Buscar Concorrência'}
       </button>
       {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
-      {dados?.aviso && <div className="login-error" style={{ marginTop: 10, background: 'var(--tone-atencao-bg, #fff3cd)' }}>{dados.aviso}</div>}
+      {dados?.aviso && <div className="aviso-compacto tone-atencao">{dados.aviso}</div>}
       {dados?.concorrentes?.length > 0 && (
         <div style={{ overflowX: 'auto', marginTop: 14 }}>
           <table className="data-table">
@@ -925,13 +925,12 @@ function PublicidadeTab({ integracoes }) {
             <RefreshCw size={14} /> {sincronizando ? 'Sincronizando…' : 'Sincronizar histórico (90 dias)'}
           </button>
         </div>
-        <p className="page-sub" style={{ marginTop: 10 }}>
+        <p className="aviso-fyi">
           O gasto por anúncio mostrado aqui é o mesmo usado pra ratear o custo de Ads na Lucratividade. "Sincronizar
-          histórico" busca até 90 dias pra trás direto na API do Mercado Livre (o ciclo automático só reconfere os
-          últimos dias, pra não sobrecarregar a API à toa).
+          histórico" busca até 90 dias pra trás direto na API do Mercado Livre.
         </p>
         {resultadoSync && (
-          <div className="login-error" style={{ marginTop: 10, background: 'var(--tone-elevada-bg, #d4edda)', color: '#155724' }}>
+          <div className="aviso-compacto tone-saudavel">
             Sincronizados {resultadoSync.registros} registro(s) de {resultadoSync.campanhas} campanha(s) nos últimos {resultadoSync.diasSincronizados} dias.
           </div>
         )}

@@ -3,6 +3,7 @@ import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Search, Barcode, Upload, 
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { Field, Select } from '../components/ui';
+import { confirmar } from '../components/ConfirmDialog';
 
 function EanEditavel({ variante, onFeito }) {
   const [editando, setEditando] = useState(false);
@@ -277,7 +278,7 @@ export default function EstoquePage() {
   }
 
   async function removerVariante(id) {
-    if (!confirm('Remover esta variante de estoque? O histórico de movimentos dela também será apagado.')) return;
+    if (!(await confirmar('Remover esta variante de estoque? O histórico de movimentos dela também será apagado.'))) return;
     setErro('');
     try {
       await api.del(`/estoque/variantes/${id}`);
@@ -325,7 +326,7 @@ export default function EstoquePage() {
   }
 
   async function excluirSelecionadas() {
-    if (!confirm(`Excluir ${selecionadas.size} variante(s) selecionada(s)? As que já tiverem venda registrada não serão excluídas.`)) return;
+    if (!(await confirmar(`Excluir ${selecionadas.size} variante(s) selecionada(s)? As que já tiverem venda registrada não serão excluídas.`))) return;
     setErro('');
     setAplicandoEmMassa(true);
     let excluidas = 0;

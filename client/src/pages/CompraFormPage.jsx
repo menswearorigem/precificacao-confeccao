@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, UserPlus } from 'lucide-react';
 import { api } from '../api/client';
 import { Field, NumInput, Select, DateInput } from '../components/ui';
+import { confirmar } from '../components/ConfirmDialog';
 import { brl } from '../lib/format';
 
 const SITUACAO_TONE = { pendente: 'tone-atencao', recebido: 'tone-saudavel', cancelado: 'tone-prejuizo' };
@@ -137,7 +138,7 @@ export default function CompraFormPage() {
   }
 
   async function excluirCompra() {
-    if (!confirm('Excluir esta compra? Essa ação não pode ser desfeita.')) return;
+    if (!(await confirmar('Excluir esta compra? Essa ação não pode ser desfeita.'))) return;
     await api.del(`/compras/${id}`);
     navigate('/compras');
   }

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Save, Trash2, MapPinCheck } from 'lucide-react';
 import { api } from '../api/client';
 import { Field, NumInput, Select } from '../components/ui';
+import { confirmar } from '../components/ConfirmDialog';
 
 function emptyCliente() {
   return {
@@ -113,7 +114,7 @@ export default function ClienteFichaPage() {
   }
 
   async function handleRemover() {
-    if (!confirm('Remover este cliente?')) return;
+    if (!(await confirmar('Remover este cliente?'))) return;
     try {
       await api.del(`/clientes/${id}`);
       navigate('/clientes');

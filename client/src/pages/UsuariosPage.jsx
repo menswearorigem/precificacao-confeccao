@@ -3,6 +3,7 @@ import { Plus, Trash2, KeyRound, ShieldCheck } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { Field, Select } from '../components/ui';
+import { confirmar } from '../components/ConfirmDialog';
 
 const MODULOS = [
   { key: 'produto', label: 'Produto' },
@@ -92,7 +93,7 @@ export default function UsuariosPage() {
   }
 
   async function removerUsuario(id) {
-    if (!confirm('Excluir este usuário? Essa ação não pode ser desfeita.')) return;
+    if (!(await confirmar('Excluir este usuário? Essa ação não pode ser desfeita.'))) return;
     try {
       await api.del(`/usuarios/${id}`);
       load();

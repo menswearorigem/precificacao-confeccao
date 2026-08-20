@@ -85,13 +85,13 @@ export default function RelatorioTaxasPage() {
             )}
           </div>
         </div>
-        {erro && <div className="login-error" style={{ marginBottom: 16 }}>{erro}</div>}
+        {erro && <div className="aviso-compacto tone-prejuizo">{erro}</div>}
       </div>
 
       {relatorio && (
         <>
           {relatorio.pendentesSemTaxa > 0 && (
-            <div className="login-error" style={{ marginBottom: 16 }}>
+            <div className="aviso-compacto tone-atencao">
               {relatorio.pendentesSemTaxa} pedido(s) do período ainda sem a taxa disponível (a Shopee só
               libera depois que o pedido é liquidado financeiramente) — não entraram nesta lista.
             </div>

@@ -568,15 +568,12 @@ function BuscarPedidoOrigem() {
   }
 
   return (
-    <div className="card no-print" style={{ marginBottom: 16 }}>
-      <div className="card-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span>Buscar pedido do Mercado Livre por número</span>
-        <button type="button" className="btn btn-ghost" onClick={() => setAberto((v) => !v)}>
-          {aberto ? 'Esconder' : 'Abrir'}
-        </button>
-      </div>
+    <div className="no-print">
+      <button type="button" className="aviso-inline-toggle" onClick={() => setAberto((v) => !v)}>
+        <Search size={13} /> Buscar pedido do Mercado Livre por número {aberto ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+      </button>
       {aberto && (
-        <div>
+        <div className="card" style={{ marginBottom: 16 }}>
           <p className="page-sub" style={{ marginTop: 0 }}>
             Cole aqui o número de um pedido (ou pacote) visto direto no painel do Mercado Livre pra conferir se ele
             existe no nosso sistema, quais itens o Mercado Livre diz que ele tem, e — se for pacote — quais outros
@@ -846,41 +843,38 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
           </div>
         </div>
 
-        <div className="card" style={{ marginBottom: 16 }}>
-          {temItemSemCusto && (
-            <div className="login-error" style={{ marginTop: 10, background: 'var(--tone-atencao-bg, #fff3cd)' }}>
-              Alguns pedidos têm itens sem produto vinculado (marcados "parcial" — o custo deles não entra na conta).
-              {isMarketplace ? ' Use "Vincular produto" na linha do pedido, ou "Revincular custos e impostos" pra tentar de novo automaticamente.' : ''}
-            </div>
-          )}
-          {isMarketplace && (
-            <p className="page-sub" style={{ marginTop: 10 }}>
-              Pedidos com o selo "estimativa" ainda não têm empresa/% de nota fiscal gravados (foram importados antes
-              de configurar isso na integração) — use "Revincular custos e impostos" depois de configurar a
-              integração em Integrações para preenchê-los nos pedidos já existentes.
-            </p>
-          )}
-          {resultadoRevinculo && (
-            <div className="login-error" style={{ marginTop: 10, background: 'var(--tone-elevada-bg, #d4edda)', color: '#155724' }}>
-              Verificados {resultadoRevinculo.verificados} itens sem vínculo: {resultadoRevinculo.vinculados} foram
-              vinculados agora{resultadoRevinculo.semCorrespondencia > 0 ? `, ${resultadoRevinculo.semCorrespondencia} continuam sem correspondência (SKU não bate com nenhuma referência cadastrada — use "Vincular produto" pra fazer manualmente)` : ''}.
-              {resultadoRevinculo.pedidosAtualizados > 0 ? ` ${resultadoRevinculo.pedidosAtualizados} pedido(s) ganharam empresa/% de nota fiscal.` : ''}
-              {resultadoRevinculo.pagamentosCorrigidos > 0
-                ? ` Conferidos ${resultadoRevinculo.pagamentosVerificados} pagamentos: ${resultadoRevinculo.pagamentosCorrigidos} estavam com o pagamento errado vinculado (valor recebido será buscado de novo no próximo ciclo).`
-                : (resultadoRevinculo.pagamentosVerificados > 0 ? ` Conferidos ${resultadoRevinculo.pagamentosVerificados} pagamentos, nenhum precisou de correção.` : '')}
-              {resultadoRevinculo.pedidosVerificadosAnuncio > 0
-                ? ` Conferidos ${resultadoRevinculo.pedidosVerificadosAnuncio} pedido(s) sem ID de anúncio: ${resultadoRevinculo.itensAnuncioCorrigidos} item(ns) foram preenchidos (clique de novo se ainda restarem — corrige em lotes).`
-                : ''}
-              {resultadoRevinculo.pedidosVerificadosPacote > 0
-                ? ` Conferidos ${resultadoRevinculo.pedidosVerificadosPacote} pedido(s) sem dado de pacote: ${resultadoRevinculo.pedidosComPacoteCorrigidos} eram compra em pacote e passam a aparecer agrupados (clique de novo se ainda restarem — corrige em lotes).`
-                : ''}
-              {resultadoRevinculo.itensFantasmaRemovidos > 0
-                ? ` Removidos ${resultadoRevinculo.itensFantasmaRemovidos} item(ns) fantasma (mesmo SKU duplicado com valor zerado, de ${resultadoRevinculo.pedidosComItemFantasma} pedido(s)) que estavam cobrando custo sem receita correspondente.`
-                : ''}
-            </div>
-          )}
-          {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
-        </div>
+        {temItemSemCusto && (
+          <div className="aviso-compacto tone-atencao">
+            Alguns pedidos têm itens sem produto vinculado (marcados "parcial" — o custo deles não entra na conta).
+            {isMarketplace ? ' Use "Vincular produto" na linha do pedido, ou "Revincular custos e impostos" pra tentar de novo.' : ''}
+          </div>
+        )}
+        {isMarketplace && (
+          <p className="aviso-fyi">
+            Pedidos com o selo "estimativa" ainda não têm empresa/% de nota fiscal gravados — use "Revincular custos e
+            impostos" depois de configurar a integração em Integrações para preenchê-los.
+          </p>
+        )}
+        {resultadoRevinculo && (
+          <div className="aviso-compacto tone-saudavel">
+            Verificados {resultadoRevinculo.verificados} itens sem vínculo: {resultadoRevinculo.vinculados} foram
+            vinculados agora{resultadoRevinculo.semCorrespondencia > 0 ? `, ${resultadoRevinculo.semCorrespondencia} continuam sem correspondência (SKU não bate com nenhuma referência cadastrada — use "Vincular produto" pra fazer manualmente)` : ''}.
+            {resultadoRevinculo.pedidosAtualizados > 0 ? ` ${resultadoRevinculo.pedidosAtualizados} pedido(s) ganharam empresa/% de nota fiscal.` : ''}
+            {resultadoRevinculo.pagamentosCorrigidos > 0
+              ? ` Conferidos ${resultadoRevinculo.pagamentosVerificados} pagamentos: ${resultadoRevinculo.pagamentosCorrigidos} estavam com o pagamento errado vinculado (valor recebido será buscado de novo no próximo ciclo).`
+              : (resultadoRevinculo.pagamentosVerificados > 0 ? ` Conferidos ${resultadoRevinculo.pagamentosVerificados} pagamentos, nenhum precisou de correção.` : '')}
+            {resultadoRevinculo.pedidosVerificadosAnuncio > 0
+              ? ` Conferidos ${resultadoRevinculo.pedidosVerificadosAnuncio} pedido(s) sem ID de anúncio: ${resultadoRevinculo.itensAnuncioCorrigidos} item(ns) foram preenchidos (clique de novo se ainda restarem — corrige em lotes).`
+              : ''}
+            {resultadoRevinculo.pedidosVerificadosPacote > 0
+              ? ` Conferidos ${resultadoRevinculo.pedidosVerificadosPacote} pedido(s) sem dado de pacote: ${resultadoRevinculo.pedidosComPacoteCorrigidos} eram compra em pacote e passam a aparecer agrupados (clique de novo se ainda restarem — corrige em lotes).`
+              : ''}
+            {resultadoRevinculo.itensFantasmaRemovidos > 0
+              ? ` Removidos ${resultadoRevinculo.itensFantasmaRemovidos} item(ns) fantasma (mesmo SKU duplicado com valor zerado, de ${resultadoRevinculo.pedidosComItemFantasma} pedido(s)) que estavam cobrando custo sem receita correspondente.`
+              : ''}
+          </div>
+        )}
+        {erro && <div className="aviso-compacto tone-prejuizo">{erro}</div>}
       </div>
 
       {isMarketplace && <BuscarPedidoOrigem />}

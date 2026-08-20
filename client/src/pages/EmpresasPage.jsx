@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
 import { Field, NumInput, Select } from '../components/ui';
+import { confirmar } from '../components/ConfirmDialog';
 
 const REGIMES = ['Simples Nacional', 'Lucro Presumido', 'Lucro Real'];
 
@@ -29,7 +30,7 @@ export default function EmpresasPage() {
   }
 
   async function removeEmpresa(id) {
-    if (!confirm('Remover esta empresa? Só é possível se não houver produtos vinculados a ela.')) return;
+    if (!(await confirmar('Remover esta empresa? Só é possível se não houver produtos vinculados a ela.'))) return;
     try {
       await api.del(`/empresas/${id}`);
       setEmpresas((list) => list.filter((e) => e.id !== id));

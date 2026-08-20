@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { Field, NumInput, Row, Select } from '../components/ui';
+import { confirmar } from '../components/ConfirmDialog';
 import { statusToneClass } from '../lib/statusTone';
 import { brl, pct, uid } from '../lib/format';
 import Lightbox from '../components/Lightbox';
@@ -173,7 +174,7 @@ export default function ProdutoFichaPage() {
   }
 
   async function handleExcluir() {
-    if (!confirm(`Remover o produto "${produto.referencia}"? Essa ação não pode ser desfeita.`)) return;
+    if (!(await confirmar(`Remover o produto "${produto.referencia}"? Essa ação não pode ser desfeita.`))) return;
     await api.del(`/produtos/${id}`);
     navigate('/produtos');
   }
@@ -198,7 +199,7 @@ export default function ProdutoFichaPage() {
   }
 
   async function handleRemoverFoto() {
-    if (!confirm('Remover a foto desse produto?')) return;
+    if (!(await confirmar('Remover a foto desse produto?'))) return;
     await api.del(`/produtos/${id}/foto`);
     setProduto((p) => ({ ...p, temFoto: false }));
   }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Shell from './components/Shell';
+import { ConfirmDialogRoot } from './components/ConfirmDialog';
 import { canAccessPath, getDefaultPath } from './lib/modules';
 import LoginPage from './pages/LoginPage';
 import ConfiguracoesPage from './pages/ConfiguracoesPage';
@@ -130,6 +131,7 @@ export default function App() {
   return (
     <AuthProvider>
       <AppRoutes />
+      <ConfirmDialogRoot />
     </AuthProvider>
   );
 }

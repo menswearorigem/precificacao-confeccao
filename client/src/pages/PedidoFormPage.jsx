@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { Field, NumInput, Select, DateInput } from '../components/ui';
+import { confirmar } from '../components/ConfirmDialog';
 import { brl } from '../lib/format';
 
 const SITUACAO_TONE = { aberto: 'tone-atencao', faturado: 'tone-saudavel', cancelado: 'tone-prejuizo' };
@@ -172,7 +173,7 @@ export default function PedidoFormPage() {
   }
 
   async function faturarPedido() {
-    if (!confirm('Faturar este pedido? O estoque de cada item será baixado automaticamente.')) return;
+    if (!(await confirmar('Faturar este pedido? O estoque de cada item será baixado automaticamente.', { perigo: false, confirmarTexto: 'Faturar' }))) return;
     setError('');
     try {
       const data = await api.post(`/pedidos/${id}/faturar`, {});
@@ -186,7 +187,7 @@ export default function PedidoFormPage() {
     const msg = pedido.situacao === 'faturado'
       ? 'Cancelar este pedido faturado? O estoque de cada item será estornado (devolvido) automaticamente.'
       : 'Cancelar este pedido?';
-    if (!confirm(msg)) return;
+    if (!(await confirmar(msg, { confirmarTexto: 'Cancelar pedido' }))) return;
     setError('');
     try {
       const data = await api.post(`/pedidos/${id}/cancelar`, {});
@@ -197,7 +198,7 @@ export default function PedidoFormPage() {
   }
 
   async function excluirPedido() {
-    if (!confirm('Excluir este pedido em aberto? Essa ação não pode ser desfeita.')) return;
+    if (!(await confirmar('Excluir este pedido em aberto? Essa ação não pode ser desfeita.'))) return;
     await api.del(`/pedidos/${id}`);
     navigate(voltarPara);
   }

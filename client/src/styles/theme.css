@@ -1134,6 +1134,34 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
   padding: 8px 10px;
 }
 
+/* ---------- avisos discretos (Marketplace: hints e alertas pequenos, sem
+   o peso visual de um .card inteiro em volta) ---------- */
+.aviso-compacto {
+  font-size: 11.5px;
+  line-height: 1.45;
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+.aviso-fyi {
+  font-size: 11px;
+  color: var(--ink-faint);
+  margin: 0 0 10px;
+}
+.aviso-inline-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: none;
+  border: none;
+  padding: 4px 0;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+.aviso-inline-toggle:hover { color: var(--terracotta); }
+
 @media (max-width: 900px) {
   .login-screen { flex-direction: column; }
   .login-brand-panel { padding: 34px 28px; flex: none; }
@@ -1490,6 +1518,25 @@ table.ficha-doc-tabela {
   padding: 20px;
 }
 .viagem-modal { max-width: 720px; width: 100%; max-height: 86vh; overflow-y: auto; }
+
+/* ---------- ConfirmDialog (substituto do window.confirm nativo) ---------- */
+.confirm-modal { max-width: 360px; width: 100%; text-align: center; }
+.confirm-modal-icone {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 10px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-alt);
+  color: var(--ink-soft);
+}
+.confirm-modal-icone.perigo { background: var(--danger-bg); color: var(--danger); }
+.confirm-modal-titulo { font-family: var(--font-display); font-size: 17px; font-weight: 600; color: var(--leather-deep); margin-bottom: 6px; }
+.confirm-modal-texto { font-size: 13px; color: var(--ink-soft); margin: 0 0 18px; }
+.confirm-modal-acoes { display: flex; gap: 8px; justify-content: center; }
+.confirm-modal-acoes .btn { flex: 1; justify-content: center; }
 
 .viagem-checkout-itens { display: flex; flex-direction: column; gap: 10px; margin-bottom: 4px; }
 .viagem-checkout-item {

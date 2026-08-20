@@ -3,6 +3,7 @@ import { Plus, Trash2, Boxes } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct, uid } from '../lib/format';
 import { Select } from '../components/ui';
+import { confirmar } from '../components/ConfirmDialog';
 
 function NovoKitForm({ produtos, onCriado }) {
   const [nome, setNome] = useState('');
@@ -86,7 +87,7 @@ function NovoKitForm({ produtos, onCriado }) {
 
 function KitManualCard({ kit, onRemovido }) {
   async function handleRemover() {
-    if (!confirm(`Remover o kit "${kit.nome}"?`)) return;
+    if (!(await confirmar(`Remover o kit "${kit.nome}"?`))) return;
     await api.del(`/kits/manuais/${kit.id}`);
     onRemovido();
   }

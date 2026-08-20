@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { Field } from '../components/ui';
+import { confirmar } from '../components/ConfirmDialog';
 import FotoProduto from '../components/FotoProduto';
 import { brl, pct } from '../lib/format';
 
@@ -85,7 +86,7 @@ export default function ViagemDetailPage() {
   }
 
   async function removerProduto(produtoId) {
-    if (!confirm('Tirar esse produto da viagem? Vendas já feitas continuam registradas.')) return;
+    if (!(await confirmar('Tirar esse produto da viagem? Vendas já feitas continuam registradas.'))) return;
     await api.del(`/viagens/${id}/produtos/${produtoId}`);
     await carregarCatalogo();
   }
@@ -202,7 +203,7 @@ export default function ViagemDetailPage() {
             <button className="btn btn-primary" onClick={() => mudarSituacao('em_andamento')}>Iniciar Viagem</button>
           )}
           {viagem.situacao === 'em_andamento' && (
-            <button className="btn btn-ghost" onClick={() => { if (confirm('Finalizar essa viagem? Ainda dá pra consultar tudo depois.')) mudarSituacao('finalizada'); }}>
+            <button className="btn btn-ghost" onClick={async () => { if (await confirmar('Finalizar essa viagem? Ainda dá pra consultar tudo depois.', { perigo: false })) mudarSituacao('finalizada'); }}>
               Finalizar Viagem
             </button>
           )}
