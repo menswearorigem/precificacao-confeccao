@@ -549,7 +549,11 @@ callbackTikTokShop.get('/', async (req, res) => {
        WHERE id = $6`,
       [tokenData.access_token, tokenData.refresh_token, expiraEm, loja ? String(loja.id) : String(tokenData.open_id), loja?.cipher || null, integracaoId]
     );
-    res.redirect('/integracoes?conectado=tiktok_shop');
+    // Mostra os escopos realmente concedidos nesse token (temporário, só
+    // pra diagnosticar o erro "access scopes... do not contain the required
+    // scope" sem precisar de acesso aos logs do servidor).
+    const escopos = (tokenData.granted_scopes || []).join(',');
+    res.redirect(`/integracoes?conectado=tiktok_shop&escopos=${encodeURIComponent(escopos)}`);
   } catch (err) {
     res.redirect(`/integracoes?erro=${encodeURIComponent(err.message)}`);
   }

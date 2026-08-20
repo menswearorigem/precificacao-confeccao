@@ -133,7 +133,11 @@ export default function IntegracoesPage() {
   useEffect(() => {
     const conectado = searchParams.get('conectado');
     const erroParam = searchParams.get('erro');
-    if (conectado) setAviso(`${MARKETPLACES[conectado]?.label || conectado} conectado com sucesso.`);
+    const escopos = searchParams.get('escopos');
+    if (conectado) {
+      const sufixoEscopos = escopos ? ` Escopos concedidos: ${escopos}` : '';
+      setAviso(`${MARKETPLACES[conectado]?.label || conectado} conectado com sucesso.${sufixoEscopos}`);
+    }
     if (erroParam) setErro(erroParam);
     if (conectado || erroParam) setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams]);
