@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2, AlertTriangle, RefreshCw, Save } from 'lucide-react';
 import { api } from '../api/client';
 import { Field } from './ui';
+import { formatQtd } from '../lib/format';
 
 function hoje(iso) {
   if (!iso) return '—';
@@ -258,7 +259,7 @@ export default function WikIntegracaoCard() {
                 <thead><tr><th>Referência</th><th>Cor</th><th>Tamanho</th><th>Qtd.</th></tr></thead>
                 <tbody>
                   {preview.criar.slice(0, 100).map((v, i) => (
-                    <tr key={i}><td className="mono">{v.referencia}</td><td>{v.cor}</td><td>{v.tamanho}</td><td className="mono">{v.quantidadeNova}</td></tr>
+                    <tr key={i}><td className="mono">{v.referencia}</td><td>{v.cor}</td><td>{v.tamanho}</td><td className="mono">{formatQtd(v.quantidadeNova)}</td></tr>
                   ))}
                 </tbody>
               </table>
@@ -272,8 +273,8 @@ export default function WikIntegracaoCard() {
                   {preview.atualizar.slice(0, 100).map((v, i) => (
                     <tr key={i}>
                       <td className="mono">{v.referencia}</td><td>{v.cor}</td><td>{v.tamanho}</td>
-                      <td className="mono">{v.quantidadeAtual}</td>
-                      <td className="mono" style={{ fontWeight: 700 }}>{v.quantidadeNova}</td>
+                      <td className="mono">{formatQtd(v.quantidadeAtual)}</td>
+                      <td className="mono" style={{ fontWeight: 700 }}>{formatQtd(v.quantidadeNova)}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Search, X, Printer } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, pct } from '../lib/format';
+import { brl, pct, numeroBr } from '../lib/format';
 import { statusToneClass } from '../lib/statusTone';
 
 const MAX_REFERENCIAS = 5;
@@ -207,7 +207,7 @@ function FichaVenda({ ficha, pagina, totalPaginas }) {
               <tr><td>Preço mínimo aceitável:</td><td className="col-total">{brl(formacaoPreco.precoMinimo)}</td></tr>
               <tr><td>Preço ideal:</td><td className="col-total">{brl(formacaoPreco.precoIdeal)}</td></tr>
               <tr><td>Preço premium:</td><td className="col-total">{brl(formacaoPreco.precoPremium)}</td></tr>
-              <tr><td>Markup:</td><td className="col-total">{formacaoPreco.markupMult.toFixed(2)}x</td></tr>
+              <tr><td>Markup:</td><td className="col-total">{numeroBr(formacaoPreco.markupMult)}x</td></tr>
               <tr><td>Lucro estimado:</td><td className="col-total">{brl(formacaoPreco.lucroRS)} ({pct(formacaoPreco.lucroPct)})</td></tr>
               <tr className="linha-forte"><td>Preço de venda praticado:</td><td className="col-total">{brl(formacaoPreco.precoAtivo)}</td></tr>
             </tbody>

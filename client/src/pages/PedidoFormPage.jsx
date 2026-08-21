@@ -6,7 +6,7 @@ import {
 import { api } from '../api/client';
 import { Field, NumInput, Select, DateInput } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
-import { brl } from '../lib/format';
+import { brl, pct, formatQtd } from '../lib/format';
 
 const SITUACAO_TONE = { aberto: 'tone-atencao', faturado: 'tone-saudavel', cancelado: 'tone-prejuizo' };
 const SITUACAO_LABEL = { aberto: 'Aberto', faturado: 'Faturado', cancelado: 'Cancelado' };
@@ -445,7 +445,7 @@ export default function PedidoFormPage() {
                     <input type="number" min="0" max="100" step="0.1" className="mono" value={it.desconto_pct * 100} style={{ width: 64 }}
                       onChange={(e) => setItens((list) => list.map((x) => (x.id === it.id ? { ...x, desconto_pct: (Number(e.target.value) || 0) / 100 } : x)))}
                       onBlur={(e) => atualizarItem(it.id, { desconto_pct: (Number(e.target.value) || 0) / 100 })} />
-                  ) : <span className="mono">{(it.desconto_pct * 100).toFixed(1)}%</span>}
+                  ) : <span className="mono">{pct(it.desconto_pct)}</span>}
                 </td>
                 <td className="mono" style={{ fontWeight: 700 }}>{brl(it.total)}</td>
                 <td>
@@ -464,7 +464,7 @@ export default function PedidoFormPage() {
 
       <div className="card">
         <div className="card-head">Totais</div>
-        <div className="row-line"><span>Quantidade de Peças</span><span className="mono">{pedido.quantidade_pecas}</span></div>
+        <div className="row-line"><span>Quantidade de Peças</span><span className="mono">{formatQtd(pedido.quantidade_pecas)}</span></div>
         <div className="row-line"><span>Total Bruto</span><span className="mono">{brl(pedido.total_bruto)}</span></div>
         <div className="row-line"><span>Total de Descontos</span><span className="mono">{brl(pedido.total_desconto)}</span></div>
         <div className="row-line strong"><span>Total Líquido</span><span className="mono">{brl(pedido.total_liquido)}</span></div>

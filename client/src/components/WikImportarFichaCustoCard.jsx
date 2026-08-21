@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, AlertTriangle, Download, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
+import { brl } from '../lib/format';
 
 export default function WikImportarFichaCustoCard() {
   const [loading, setLoading] = useState(false);
@@ -164,7 +165,7 @@ export default function WikImportarFichaCustoCard() {
                   <td className="mono">{p.materiais.length}</td>
                   <td className="mono">{p.custosIndustriais.length - (p.custoTotalWik != null ? 1 : 0)}</td>
                   <td className="mono" style={{ fontWeight: 700, color: p.custoTotalWik != null ? 'var(--success)' : 'var(--danger)' }}>
-                    {p.custoTotalWik != null ? `R$ ${Number(p.custoTotalWik).toFixed(2)}` : 'sem custo'}
+                    {p.custoTotalWik != null ? brl(p.custoTotalWik) : 'sem custo'}
                   </td>
                 </tr>
               ))}

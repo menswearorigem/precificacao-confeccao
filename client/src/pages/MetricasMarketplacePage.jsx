@@ -6,7 +6,7 @@ import {
   Flame, Layers, Star, ShieldCheck, Swords, Megaphone, MousePointerClick, Eye, RefreshCw, ChevronDown,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, pct } from '../lib/format';
+import { brl, pct, numeroBr } from '../lib/format';
 import { DateInput, Select, StatCard } from '../components/ui';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import FotoProduto from '../components/FotoProduto';
@@ -67,7 +67,7 @@ function IconePlataforma({ marketplace, size = 24 }) {
 // venda"), não porcentagem — formata como "2,0x" em vez de passar pelo
 // pct() (que espera fração e mostra "%").
 function roas(valor) {
-  return valor != null ? `${valor.toFixed(1).replace('.', ',')}x` : '—';
+  return valor != null ? `${numeroBr(valor, 1)}x` : '—';
 }
 
 function trintaDiasAtras() {
@@ -752,7 +752,7 @@ function OpinioesTab({ integracoes }) {
                     <td colSpan="7" className="login-error" style={{ margin: 0 }}>{o.erro}</td>
                   ) : (
                     <>
-                      <td className="mono"><Star size={11} style={{ marginRight: 3, verticalAlign: -1, color: '#c9962c' }} />{o.notaMedia.toFixed(1)}</td>
+                      <td className="mono"><Star size={11} style={{ marginRight: 3, verticalAlign: -1, color: '#c9962c' }} />{numeroBr(o.notaMedia, 1)}</td>
                       <td className="mono">{o.totalAvaliacoes}</td>
                       <td className="mono">{o.estrelas[5]}</td>
                       <td className="mono">{o.estrelas[4]}</td>

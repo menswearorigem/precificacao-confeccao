@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, ChevronRight } from 'lucide-react';
 import { api } from '../api/client';
-import { brl } from '../lib/format';
+import { brl, formatQtd } from '../lib/format';
 import { Select, SkeletonLinhasTabela } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
@@ -158,7 +158,7 @@ export default function PedidosListPage({ origemFiltro }) {
                 <td className="mono">{new Date(p.data_pedido).toLocaleDateString('pt-BR')}</td>
                 <td>{p.cliente_nome || '—'}</td>
                 <td>{p.canal_venda || '—'}</td>
-                <td className="mono">{p.quantidade_pecas}</td>
+                <td className="mono">{formatQtd(p.quantidade_pecas)} {Number(p.quantidade_pecas) === 1 ? 'peça' : 'peças'}</td>
                 <td className="mono">{brl(p.total_liquido)}</td>
                 <td><span className={'stamp sm ' + (SITUACAO_TONE[p.situacao] || 'tone-neutro')}>{SITUACAO_LABEL[p.situacao] || p.situacao}</span></td>
                 <td>

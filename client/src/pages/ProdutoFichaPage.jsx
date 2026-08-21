@@ -8,7 +8,7 @@ import { api } from '../api/client';
 import { Field, NumInput, Row, Select } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import { statusToneClass } from '../lib/statusTone';
-import { brl, pct, uid } from '../lib/format';
+import { brl, pct, uid, numeroBr } from '../lib/format';
 import Lightbox from '../components/Lightbox';
 
 const UNIDADES_FALLBACK = ['un', 'm', 'cm', 'kg', 'g', 'par', 'cj', 'rolo', 'pct'];
@@ -438,7 +438,7 @@ export default function ProdutoFichaPage() {
             <Row label="Preço premium" value={brl(c.formacaoPreco.precoPremium)} />
             <Row label="Preço máximo recomendado" value={brl(c.formacaoPreco.precoMax)} />
             <Row label="Lucro estimado" value={`${brl(c.formacaoPreco.lucroRS)} · ${pct(c.formacaoPreco.lucroPct)}`} strong />
-            <Row label="Markup (mult.)" value={`${c.formacaoPreco.markupMult.toFixed(2)}x`} />
+            <Row label="Markup (mult.)" value={`${numeroBr(c.formacaoPreco.markupMult)}x`} />
           </div>
         </div>
       )}
@@ -447,7 +447,7 @@ export default function ProdutoFichaPage() {
         <div className="grid-2">
           <div className="card">
             <div className="card-head">Indicadores</div>
-            <Row label="Markup" value={`${c.indicadores.markup.toFixed(2)}x`} />
+            <Row label="Markup" value={`${numeroBr(c.indicadores.markup)}x`} />
             <Row label="Margem bruta" value={pct(c.indicadores.margemBruta)} />
             <Row label="Margem de contribuição" value={brl(c.indicadores.margemContribuicao)} />
             <Row label="Lucro líquido estimado" value={brl(c.indicadores.lucroLiquidoEstimado)} />

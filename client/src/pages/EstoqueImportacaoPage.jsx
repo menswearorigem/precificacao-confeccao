@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Upload, CheckCircle2, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { api } from '../api/client';
 import FileDropzone from '../components/FileDropzone';
+import { formatQtd } from '../lib/format';
 
 export default function EstoqueImportacaoPage() {
   const navigate = useNavigate();
@@ -100,7 +101,7 @@ export default function EstoqueImportacaoPage() {
                 <thead><tr><th>Referência</th><th>Cor</th><th>Tamanho</th><th>Qtd.</th></tr></thead>
                 <tbody>
                   {preview.criar.slice(0, 100).map((v, i) => (
-                    <tr key={i}><td className="mono">{v.referencia}</td><td>{v.cor}</td><td>{v.tamanho}</td><td className="mono">{v.quantidadeNova}</td></tr>
+                    <tr key={i}><td className="mono">{v.referencia}</td><td>{v.cor}</td><td>{v.tamanho}</td><td className="mono">{formatQtd(v.quantidadeNova)}</td></tr>
                   ))}
                 </tbody>
               </table>
@@ -114,8 +115,8 @@ export default function EstoqueImportacaoPage() {
                   {preview.atualizar.slice(0, 100).map((v, i) => (
                     <tr key={i}>
                       <td className="mono">{v.referencia}</td><td>{v.cor}</td><td>{v.tamanho}</td>
-                      <td className="mono">{v.quantidadeAtual}</td>
-                      <td className="mono" style={{ fontWeight: v.quantidadeAtual !== v.quantidadeNova ? 700 : 400 }}>{v.quantidadeNova}</td>
+                      <td className="mono">{formatQtd(v.quantidadeAtual)}</td>
+                      <td className="mono" style={{ fontWeight: v.quantidadeAtual !== v.quantidadeNova ? 700 : 400 }}>{formatQtd(v.quantidadeNova)}</td>
                     </tr>
                   ))}
                 </tbody>

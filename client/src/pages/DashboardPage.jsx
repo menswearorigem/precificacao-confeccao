@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Field, Select } from '../components/ui';
 import { api } from '../api/client';
-import { brl, pct } from '../lib/format';
+import { brl, pct, numeroBr } from '../lib/format';
 import { statusToneClass } from '../lib/statusTone';
 
 const DONUT_CORES = {
@@ -145,7 +145,7 @@ export default function DashboardPage() {
             <div style={{ display: 'flex', gap: 28 }}>
               <KpiMini label="Preço sugerido" value={brl(c.formacaoPreco.precoSugerido)} />
               <KpiMini label="Lucro" value={`${brl(c.formacaoPreco.lucroRS)} · ${pct(c.formacaoPreco.lucroPct)}`} />
-              <KpiMini label="Markup" value={`${c.formacaoPreco.markupMult.toFixed(2)}x`} />
+              <KpiMini label="Markup" value={`${numeroBr(c.formacaoPreco.markupMult)}x`} />
             </div>
           </div>
 
