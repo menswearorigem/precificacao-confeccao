@@ -10,6 +10,7 @@ import { confirmar } from '../components/ConfirmDialog';
 import { statusToneClass } from '../lib/statusTone';
 import { brl, pct, uid, numeroBr } from '../lib/format';
 import Lightbox from '../components/Lightbox';
+import HistoricoPrecoCard from '../components/HistoricoPrecoCard';
 
 const UNIDADES_FALLBACK = ['un', 'm', 'cm', 'kg', 'g', 'par', 'cj', 'rolo', 'pct'];
 
@@ -468,6 +469,8 @@ export default function ProdutoFichaPage() {
           </div>
         </div>
       )}
+
+      <HistoricoPrecoCard produtoId={id} />
     </div>
   );
 }
