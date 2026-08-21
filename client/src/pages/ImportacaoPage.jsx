@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Upload, CheckCircle2, AlertTriangle, FileSpreadsheet } from 'lucide-react';
 import { api } from '../api/client';
 import { Select } from '../components/ui';
+import FileDropzone from '../components/FileDropzone';
 
 export default function ImportacaoPage() {
   const fileRef = useRef(null);
@@ -82,7 +83,7 @@ export default function ImportacaoPage() {
         <form onSubmit={handlePreview} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div className="field">
             <span className="field-label">Arquivo (.xlsx, .csv ou .pdf)</span>
-            <input type="file" accept=".xlsx,.csv,.pdf" ref={fileRef} onChange={handleFileChange} />
+            <FileDropzone accept=".xlsx,.csv,.pdf" ref={fileRef} onChange={handleFileChange} formatosTexto="Formatos aceitos: .xlsx, .csv ou .pdf" />
           </div>
           {isCsv && (
             <div className="field">

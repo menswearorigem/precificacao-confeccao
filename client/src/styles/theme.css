@@ -639,6 +639,49 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.6; cursor: not-a
 
 /* ---------- select customizado (substitui o combo padrão do navegador) ---------- */
 
+/* ---------- área de arrastar-e-soltar arquivo (substitui o input cru) ---------- */
+.file-dropzone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: 22px 18px;
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-alt);
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+.file-dropzone:hover, .file-dropzone:focus-visible { border-color: var(--terracotta); background: var(--border-soft); outline: none; }
+.file-dropzone.is-arrastando { border-color: var(--terracotta); background: rgba(181, 101, 29, 0.08); }
+.file-dropzone.is-erro { border-color: var(--danger-ring); background: var(--danger-bg); }
+.file-dropzone-input {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.file-dropzone-icone { color: var(--ink-faint); }
+.file-dropzone.is-arrastando .file-dropzone-icone { color: var(--terracotta); }
+.file-dropzone-texto { display: flex; flex-direction: column; gap: 3px; }
+.file-dropzone-texto strong { font-size: 13px; font-weight: 600; color: var(--ink); }
+.file-dropzone-texto span { font-size: 11.5px; color: var(--ink-soft); }
+.file-dropzone-arquivos { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.file-dropzone-nome {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; font-weight: 600; color: var(--leather-deep);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+  padding: 3px 10px;
+}
+.file-dropzone-trocar { font-size: 11px; color: var(--ink-soft); }
+.file-dropzone-erro { font-size: 11.5px; color: var(--danger); font-weight: 600; }
+
 .select-custom { position: relative; width: 100%; }
 
 .select-custom-trigger {

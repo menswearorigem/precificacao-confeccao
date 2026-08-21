@@ -3,6 +3,7 @@ import { Upload, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { api } from '../api/client';
 import { brl } from '../lib/format';
 import { Select, Checkbox } from '../components/ui';
+import FileDropzone from '../components/FileDropzone';
 
 const FONTES = [
   { key: 'mercado_livre', label: 'Mercado Livre (Vendas → Relatórios → Vendas)' },
@@ -88,7 +89,7 @@ export default function ImportarPedidosPage() {
           </div>
           <div className="field">
             <span className="field-label">Arquivo (.xlsx)</span>
-            <input type="file" accept=".xlsx" ref={fileRef} onChange={() => { setPreview(null); setResultado(null); setError(''); }} />
+            <FileDropzone accept=".xlsx" ref={fileRef} onChange={() => { setPreview(null); setResultado(null); setError(''); }} formatosTexto="Formato aceito: .xlsx" />
           </div>
           <button className="btn btn-primary" type="submit" disabled={loading}>
             <Upload size={14} /> {loading ? 'Processando…' : 'Pré-visualizar'}

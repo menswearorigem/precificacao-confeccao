@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Upload, CheckCircle2, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { api } from '../api/client';
+import FileDropzone from '../components/FileDropzone';
 
 export default function EstoqueImportacaoPage() {
   const navigate = useNavigate();
@@ -72,7 +73,7 @@ export default function EstoqueImportacaoPage() {
         <form onSubmit={handlePreview} style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
           <div className="field">
             <span className="field-label">Arquivo (.csv ou .pdf)</span>
-            <input type="file" accept=".csv,.pdf" ref={fileRef} />
+            <FileDropzone accept=".csv,.pdf" ref={fileRef} formatosTexto="Formatos aceitos: .csv ou .pdf" />
           </div>
           <button className="btn btn-primary" type="submit" disabled={loading}>
             <Upload size={14} /> {loading ? 'Processando…' : 'Pré-visualizar'}
