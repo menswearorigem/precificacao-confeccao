@@ -5,8 +5,19 @@ import { api } from '../api/client';
 import { statusToneClass } from '../lib/statusTone';
 import { brl, pct } from '../lib/format';
 import FotoProduto from '../components/FotoProduto';
-import { Select, SkeletonLinhasTabela } from '../components/ui';
+import { Select, SkeletonLinhasTabela, ThOrdenavel, Paginacao } from '../components/ui';
 import DataTable from '../components/DataTable';
+import { useTabela } from '../lib/useTabela';
+
+const COLUNAS_ORDENAVEIS = {
+  referencia: (p) => p.referencia,
+  descricao: (p) => p.descricao,
+  marca: (p) => p.marca,
+  categoria: (p) => p.categoria,
+  preco: (p) => Number(p.precoAtivo) || 0,
+  margem: (p) => Number(p.lucroPct) || 0,
+  status: (p) => p.status,
+};
 
 export default function ProdutosListPage() {
   const navigate = useNavigate();
@@ -40,6 +51,8 @@ export default function ProdutosListPage() {
     load();
   }
 
+  const tabela = useTabela(produtos, { colunas: COLUNAS_ORDENAVEIS, colunaPadrao: 'referencia' });
+
   return (
     <div className="page-wide">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
@@ -71,6 +84,7 @@ export default function ProdutosListPage() {
             {listas?.categoria.map((c) => <option key={c.id} value={c.valor}>{c.valor}</option>)}
           </Select>
         </div>
+        {!loading && <p className="page-sub" style={{ margin: '10px 0 0' }}>{tabela.totalItens.toLocaleString('pt-BR')} resultado(s)</p>}
       </div>
 
       <div className="card">
@@ -79,19 +93,19 @@ export default function ProdutosListPage() {
           <thead>
             <tr>
               <th />
-              <th>Referência</th>
-              <th>Descrição</th>
-              <th>Marca</th>
-              <th>Categoria</th>
-              <th>Preço</th>
-              <th>Margem</th>
-              <th>Status</th>
+              <ThOrdenavel coluna="referencia" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Referência</ThOrdenavel>
+              <ThOrdenavel coluna="descricao" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Descrição</ThOrdenavel>
+              <ThOrdenavel coluna="marca" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Marca</ThOrdenavel>
+              <ThOrdenavel coluna="categoria" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Categoria</ThOrdenavel>
+              <ThOrdenavel coluna="preco" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Preço</ThOrdenavel>
+              <ThOrdenavel coluna="margem" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Margem</ThOrdenavel>
+              <ThOrdenavel coluna="status" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Status</ThOrdenavel>
               <th />
             </tr>
           </thead>
           <tbody>
             {loading && produtos.length === 0 && <SkeletonLinhasTabela colunas={9} />}
-            {produtos.map((p) => (
+            {tabela.itensPagina.map((p) => (
               <tr key={p.id} className="clickable-row" onClick={() => navigate(`/produtos/${p.id}`)}>
                 <td onClick={(e) => e.stopPropagation()}>
                   <FotoProduto produtoId={p.id} temFoto={p.temFoto} size={36} alt={p.descricao} />
@@ -118,6 +132,7 @@ export default function ProdutosListPage() {
             Nenhum produto encontrado.
           </div>
         )}
+        <Paginacao {...tabela} />
       </div>
     </div>
   );
