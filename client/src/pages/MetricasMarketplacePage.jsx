@@ -82,8 +82,14 @@ function dataBr(iso) {
   return new Date(`${iso}T00:00:00`).toLocaleDateString('pt-BR');
 }
 
-function VariacaoBadge({ valor }) {
+// Base do período anterior quase zero (menos de `limiar` pedidos/reais)
+// vira um "novo" em vez de um percentual gigante e sem significado — a
+// conta em si (variacaoPct no backend) continua certa, só o rótulo muda.
+function VariacaoBadge({ valor, baseAnterior, limiar }) {
   if (valor === null || valor === undefined) return null;
+  if (limiar != null && Math.abs(Number(baseAnterior) || 0) < limiar) {
+    return <span className="stat-card-delta">novo</span>;
+  }
   const positivo = valor >= 0;
   return (
     <span className={'stat-card-delta ' + (positivo ? 'up' : 'down')}>
@@ -93,16 +99,20 @@ function VariacaoBadge({ valor }) {
   );
 }
 
+// Limiar mínimo de base pra variação % fazer sentido — abaixo disso, a
+// conta ainda está certa, só que sem significado prático (1 pedido virando
+// 20 é "novo", não "+1900%"). Campo em dinheiro usa R$500, campo de
+// contagem usa 5.
 function CardsResumo({ resumo }) {
   if (!resumo) return null;
-  const { atual, variacao } = resumo;
+  const { atual, anterior, variacao } = resumo;
   const campos = [
-    { chave: 'valorTotalVendas', label: 'Valor Total de Vendas', icon: Banknote, fmt: brl },
-    { chave: 'totalPedidos', label: 'Total de Pedidos', icon: ShoppingCart, fmt: formatQtd },
-    { chave: 'valorVendasValidas', label: 'Valor de Vendas Válidas', icon: CheckCircle2, fmt: brl },
-    { chave: 'pedidosValidos', label: 'Pedidos Válidos', icon: CheckCircle2, fmt: formatQtd },
-    { chave: 'clientes', label: 'Clientes', icon: Users, fmt: formatQtd },
-    { chave: 'vendasPorCliente', label: 'Vendas por Cliente', icon: TrendingUp, fmt: brl },
+    { chave: 'valorTotalVendas', label: 'Valor Total de Vendas', icon: Banknote, fmt: brl, limiar: 500 },
+    { chave: 'totalPedidos', label: 'Total de Pedidos', icon: ShoppingCart, fmt: formatQtd, limiar: 5 },
+    { chave: 'valorVendasValidas', label: 'Valor de Vendas Válidas', icon: CheckCircle2, fmt: brl, limiar: 500 },
+    { chave: 'pedidosValidos', label: 'Pedidos Válidos', icon: CheckCircle2, fmt: formatQtd, limiar: 5 },
+    { chave: 'clientes', label: 'Clientes', icon: Users, fmt: formatQtd, limiar: 5 },
+    { chave: 'vendasPorCliente', label: 'Vendas por Cliente', icon: TrendingUp, fmt: brl, limiar: 500 },
   ];
   return (
     <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
@@ -112,7 +122,7 @@ function CardsResumo({ resumo }) {
           label={<><c.icon size={11} style={{ marginRight: 4, verticalAlign: -2 }} />{c.label}</>}
           value={c.fmt(atual[c.chave])}
         >
-          {variacao && <VariacaoBadge valor={variacao[c.chave]} />}
+          {variacao && <VariacaoBadge valor={variacao[c.chave]} baseAnterior={anterior?.[c.chave]} limiar={c.limiar} />}
         </StatCard>
       ))}
     </div>
