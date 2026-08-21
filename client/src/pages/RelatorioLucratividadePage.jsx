@@ -5,7 +5,7 @@ import {
   Percent, Printer, RefreshCw, Search, ShoppingBag, Tag, TrendingUp, X,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, pct } from '../lib/format';
+import { brl, pct, formatQtd } from '../lib/format';
 import { Select, StatCard } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
@@ -92,7 +92,7 @@ function VincularItensModal({ pedido, onClose, onVinculado }) {
             <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 600 }}>{item.tituloExterno || 'Item sem título'}</div>
             <div style={{ fontSize: 12, color: 'var(--ink-soft)' }}>
-              SKU do anúncio: {item.skuExterno || '—'} · Qtd: {item.quantidade}
+              SKU do anúncio: {item.skuExterno || '—'} · Qtd: {formatQtd(item.quantidade)}
             </div>
 
             {item.produtoId ? (
@@ -240,8 +240,8 @@ function ResumoProdutoTab({ resumoProduto, serieDiaria, config, busca }) {
             <p className="page-sub">Sem vendas no período pra montar o gráfico.</p>
           )}
           <div className="stat-strip" style={{ marginTop: 16, marginBottom: 0 }}>
-            <StatCard label="Número de Vendas" value={r.numeroVendas} />
-            <StatCard label="Unidades Vendidas" value={r.numeroUnidadesVendidas} />
+            <StatCard label="Número de Vendas" value={formatQtd(r.numeroVendas)} />
+            <StatCard label="Unidades Vendidas" value={formatQtd(r.numeroUnidadesVendidas)} />
             <StatCard label="Ticket Médio" value={brl(r.ticketMedio)} />
             <StatCard label="Retorno Sobre Investimento" value={pct(r.roiPct)} />
           </div>
@@ -281,7 +281,7 @@ function ResumoProdutoTab({ resumoProduto, serieDiaria, config, busca }) {
                   </td>
                   <td className="mono">{brl(p.precoMedio)}</td>
                   <td className="mono">{brl(p.custoUnitarioMedio)}</td>
-                  <td className="mono">{p.unidadesVendidas}</td>
+                  <td className="mono">{formatQtd(p.unidadesVendidas)}</td>
                   <td className="mono">{brl(p.totalFaturado)}</td>
                   <td className="mono">{pct(p.representatividadePct)}</td>
                   <td className="mono" style={{ fontWeight: 700 }}>{brl(p.lucroBruto)}</td>
@@ -409,7 +409,7 @@ function VendaDetalheCard({ p, config }) {
               <FotoProduto produtoId={it.produtoId} temFoto={it.temFoto} size={40} alt={it.referencia || it.tituloExterno} />
               <div style={{ flex: 1 }}>
                 <div className="venda-item-titulo">{it.tituloExterno || it.descricao || 'Item sem título'}</div>
-                <div className="venda-item-sub">SKU: {it.skuExterno || '—'} · Qtd: {it.quantidade}</div>
+                <div className="venda-item-sub">SKU: {it.skuExterno || '—'} · Qtd: {formatQtd(it.quantidade)}</div>
               </div>
               <span className="mono">{brl(it.totalItem)}</span>
             </div>
@@ -527,7 +527,7 @@ function DuplicatasSuspeitas({ duplicatas }) {
                   <td className="mono">{g.packId}</td>
                   <td className="mono">{g.skuExterno}</td>
                   <td className="mono">{brl(g.valorUnitario)}</td>
-                  <td className="mono">{g.quantidade}</td>
+                  <td className="mono">{formatQtd(g.quantidade)}</td>
                   <td className="mono">{g.pedidos.join(', ')}</td>
                   <td className="mono" style={{ fontWeight: 700 }}>{brl(g.possivelExcesso)}</td>
                 </tr>
@@ -638,7 +638,7 @@ function BuscarPedidoOrigem() {
                           <tr key={i}>
                             <td className="mono">{it.skuExterno || '—'}</td>
                             <td>{it.titulo || '—'}</td>
-                            <td className="mono">{it.quantidade}</td>
+                            <td className="mono">{formatQtd(it.quantidade)}</td>
                             <td className="mono">{brl(it.valorUnitario)}</td>
                           </tr>
                         ))}
@@ -662,7 +662,7 @@ function BuscarPedidoOrigem() {
                               <td className="mono">{pv?.origem_pedido_id}</td>
                               <td>{pv?.situacao}</td>
                               <td className="mono">{it.sku_externo}</td>
-                              <td className="mono">{it.quantidade}</td>
+                              <td className="mono">{formatQtd(it.quantidade)}</td>
                               <td className="mono">{brl(it.total)}</td>
                             </tr>
                           );
@@ -914,8 +914,8 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                       <StatCard label="Margem"><MargemPill valor={relatorio.totalGeral.margemBrutaPct} config={config} grande /></StatCard>
                     </div>
                     <div className="stat-strip" style={{ marginTop: 12 }}>
-                      <StatCard label="Número de Vendas" value={relatorio.totalGeral.numeroVendas} />
-                      <StatCard label="Unidades Vendidas" value={relatorio.totalGeral.numeroUnidadesVendidas} />
+                      <StatCard label="Número de Vendas" value={formatQtd(relatorio.totalGeral.numeroVendas)} />
+                      <StatCard label="Unidades Vendidas" value={formatQtd(relatorio.totalGeral.numeroUnidadesVendidas)} />
                       <StatCard label="Ticket Médio" value={brl(relatorio.totalGeral.ticketMedio)} />
                       <StatCard label="Retorno Sobre Investimento" value={pct(relatorio.totalGeral.roiPct)} />
                     </div>

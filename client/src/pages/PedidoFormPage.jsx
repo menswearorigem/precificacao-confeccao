@@ -398,7 +398,7 @@ export default function PedidoFormPage() {
                     <td>{v.descricao}</td>
                     <td>{v.cor}</td>
                     <td>{v.tamanho}</td>
-                    <td className="mono">{v.quantidade}</td>
+                    <td className="mono">{formatQtd(v.quantidade)}</td>
                     <td style={{ textAlign: 'right' }}>
                       <button className="btn btn-dashed" onClick={() => adicionarVariante(v)}>Adicionar</button>
                     </td>

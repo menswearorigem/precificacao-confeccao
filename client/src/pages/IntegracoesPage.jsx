@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp, Pencil, Plug, Plus, RefreshCw, Trash2 } from 'l
 import { api } from '../api/client';
 import { Field, NumInput, Select, Toggle } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
+import { tempoRelativo } from '../lib/format';
 import WikIntegracaoCard from '../components/WikIntegracaoCard';
 import WikImportarProdutosCard from '../components/WikImportarProdutosCard';
 import WikImportarFichaCustoCard from '../components/WikImportarFichaCustoCard';
@@ -45,11 +46,6 @@ const MARKETPLACES = {
     sigla: 'TT',
   },
 };
-
-function hoje(iso) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString('pt-BR');
-}
 
 function MarketplaceLogo({ marketplace, size = 30 }) {
   const info = MARKETPLACES[marketplace];
@@ -388,7 +384,9 @@ export default function IntegracoesPage() {
                             <Toggle checked={item.ativo} onChange={() => alternarAtivo(item)} />
                           </label>
                         </td>
-                        <td>{hoje(item.ultimaSincronizacao)}</td>
+                        <td title={item.ultimaSincronizacao ? new Date(item.ultimaSincronizacao).toLocaleString('pt-BR') : undefined}>
+                          {tempoRelativo(item.ultimaSincronizacao)}
+                        </td>
                         <td>
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                             {!item.conectado && (

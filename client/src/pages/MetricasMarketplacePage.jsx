@@ -6,7 +6,7 @@ import {
   Flame, Layers, Star, ShieldCheck, Swords, Megaphone, MousePointerClick, Eye, RefreshCw, ChevronDown,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, pct, numeroBr } from '../lib/format';
+import { brl, pct, numeroBr, formatQtd } from '../lib/format';
 import { DateInput, Select, StatCard } from '../components/ui';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import FotoProduto from '../components/FotoProduto';
@@ -98,10 +98,10 @@ function CardsResumo({ resumo }) {
   const { atual, variacao } = resumo;
   const campos = [
     { chave: 'valorTotalVendas', label: 'Valor Total de Vendas', icon: Banknote, fmt: brl },
-    { chave: 'totalPedidos', label: 'Total de Pedidos', icon: ShoppingCart, fmt: (v) => v },
+    { chave: 'totalPedidos', label: 'Total de Pedidos', icon: ShoppingCart, fmt: formatQtd },
     { chave: 'valorVendasValidas', label: 'Valor de Vendas Válidas', icon: CheckCircle2, fmt: brl },
-    { chave: 'pedidosValidos', label: 'Pedidos Válidos', icon: CheckCircle2, fmt: (v) => v },
-    { chave: 'clientes', label: 'Clientes', icon: Users, fmt: (v) => v },
+    { chave: 'pedidosValidos', label: 'Pedidos Válidos', icon: CheckCircle2, fmt: formatQtd },
+    { chave: 'clientes', label: 'Clientes', icon: Users, fmt: formatQtd },
     { chave: 'vendasPorCliente', label: 'Vendas por Cliente', icon: TrendingUp, fmt: brl },
   ];
   return (
@@ -216,26 +216,26 @@ function TabelaDiaria({ resumo, serie }) {
             {resumo && (
               <tr style={{ fontWeight: 700, background: 'var(--surface-alt)' }}>
                 <td>Resumo</td>
-                <td className="mono">{resumo.totalPedidos}</td>
+                <td className="mono">{formatQtd(resumo.totalPedidos)}</td>
                 <td className="mono">{brl(resumo.valorTotalVendas)}</td>
-                <td className="mono">{resumo.pedidosValidos}</td>
+                <td className="mono">{formatQtd(resumo.pedidosValidos)}</td>
                 <td className="mono">{brl(resumo.valorVendasValidas)}</td>
-                <td className="mono">{resumo.pedidosCancelados}</td>
+                <td className="mono">{formatQtd(resumo.pedidosCancelados)}</td>
                 <td className="mono">{brl(resumo.valorVendasCanceladas)}</td>
-                <td className="mono">{resumo.clientes}</td>
+                <td className="mono">{formatQtd(resumo.clientes)}</td>
                 <td className="mono">{brl(resumo.vendasPorCliente)}</td>
               </tr>
             )}
             {[...serie].reverse().map((d) => (
               <tr key={d.data}>
                 <td className="mono">{dataBr(d.data)}</td>
-                <td className="mono">{d.totalPedidos}</td>
+                <td className="mono">{formatQtd(d.totalPedidos)}</td>
                 <td className="mono">{brl(d.valorTotalVendas)}</td>
-                <td className="mono">{d.pedidosValidos}</td>
+                <td className="mono">{formatQtd(d.pedidosValidos)}</td>
                 <td className="mono">{brl(d.valorVendasValidas)}</td>
-                <td className="mono">{d.pedidosCancelados}</td>
+                <td className="mono">{formatQtd(d.pedidosCancelados)}</td>
                 <td className="mono">{brl(d.valorVendasCanceladas)}</td>
-                <td className="mono">{d.clientes}</td>
+                <td className="mono">{formatQtd(d.clientes)}</td>
                 <td className="mono">{brl(d.vendasPorCliente)}</td>
               </tr>
             ))}
@@ -360,10 +360,10 @@ function PorLojaTab({ filtros }) {
                 </td>
                 <td>{l.canalVenda || '—'}</td>
                 <td className="mono">{brl(l.valorTotalVendas)}</td>
-                <td className="mono">{l.totalPedidos}</td>
+                <td className="mono">{formatQtd(l.totalPedidos)}</td>
                 <td className="mono">{brl(l.valorVendasValidas)}</td>
-                <td className="mono">{l.pedidosValidos}</td>
-                <td className="mono">{l.clientes}</td>
+                <td className="mono">{formatQtd(l.pedidosValidos)}</td>
+                <td className="mono">{formatQtd(l.clientes)}</td>
                 <td className="mono">{brl(l.vendasPorCliente)}</td>
               </tr>
             ))}
@@ -405,8 +405,8 @@ function VendasPorAnuncioTab({ filtros, busca }) {
   return (
     <>
       <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-        <StatCard label="Anúncios Vendidos" value={dados.totais.anunciosVendidos} />
-        <StatCard label="Unidades Vendidas" value={dados.totais.unidadesVendidas} />
+        <StatCard label="Anúncios Vendidos" value={formatQtd(dados.totais.anunciosVendidos)} />
+        <StatCard label="Unidades Vendidas" value={formatQtd(dados.totais.unidadesVendidas)} />
         <StatCard label="Total Faturado" value={brl(dados.totais.totalFaturado)} />
         <StatCard label="Preço Médio" value={brl(dados.totais.precoMedio)} />
       </div>
@@ -436,8 +436,8 @@ function VendasPorAnuncioTab({ filtros, busca }) {
                   <td className="mono">
                     {a.anuncioId || <span className="stamp sm tone-neutro">sem ID gravado</span>}
                   </td>
-                  <td className="mono">{a.pedidosValidos}</td>
-                  <td className="mono">{a.unidadesVendidas}</td>
+                  <td className="mono">{formatQtd(a.pedidosValidos)}</td>
+                  <td className="mono">{formatQtd(a.unidadesVendidas)}</td>
                   <td className="mono">{brl(a.precoMedio)}</td>
                   <td className="mono" style={{ fontWeight: 700 }}>{brl(a.totalFaturado)}</td>
                 </tr>
@@ -572,11 +572,11 @@ function EntradaSaidaTab({ filtros }) {
       <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
         <StatCard
           label={<><PackageMinus size={11} style={{ marginRight: 4, verticalAlign: -2 }} />Total de Unidades Vendidas (Saída)</>}
-          value={dados.totalUnidades}
+          value={formatQtd(dados.totalUnidades)}
         />
         <StatCard
           label={<><Boxes size={11} style={{ marginRight: 4, verticalAlign: -2 }} />Pedidos com Movimento</>}
-          value={dados.totalPedidos}
+          value={formatQtd(dados.totalPedidos)}
         />
       </div>
       <div className="card">

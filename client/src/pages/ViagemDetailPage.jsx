@@ -8,7 +8,7 @@ import { api } from '../api/client';
 import { Field } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import FotoProduto from '../components/FotoProduto';
-import { brl, pct } from '../lib/format';
+import { brl, pct, formatQtd } from '../lib/format';
 
 const SITUACAO_LABEL = { planejamento: 'Planejamento', em_andamento: 'Em andamento', finalizada: 'Finalizada' };
 const SITUACAO_TONE = { planejamento: 'tone-neutro', em_andamento: 'tone-atencao', finalizada: 'tone-saudavel' };
@@ -417,9 +417,9 @@ function ProdutoCard({ produto, limiteEstoqueBaixo, emCarrinhoPorVariante, podeV
                 <td data-label="Cor / Tam.">{[v.cor, v.tamanho].filter(Boolean).join(' / ') || '—'}</td>
                 <td data-label="Estoque">
                   <span className={'viagem-dot ' + v.statusExibido} title={vStatus.label} />
-                  <span className={'mono' + (v.quantidadeExibida < 0 ? ' viagem-qtd-negativa' : '')}>{v.quantidadeExibida}</span>
+                  <span className={'mono' + (v.quantidadeExibida < 0 ? ' viagem-qtd-negativa' : '')}>{formatQtd(v.quantidadeExibida)}</span>
                 </td>
-                <td className="mono" data-label="Vendido">{v.vendidoNaViagem || '—'}</td>
+                <td className="mono" data-label="Vendido">{v.vendidoNaViagem ? formatQtd(v.vendidoNaViagem) : '—'}</td>
                 <td style={{ textAlign: 'right' }} data-label={entradaAberta ? '+ Entrada' : ''}>
                   {entradaAberta ? (
                     <input
