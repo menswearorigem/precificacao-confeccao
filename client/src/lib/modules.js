@@ -84,6 +84,7 @@ export const MODULES = [
     color: 'var(--success)',
     pages: [
       { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { to: '/ficha-precificacao', label: 'Ficha de Precificação', icon: FileText },
       { to: '/simulador', label: 'Simulador', icon: FlaskConical },
     ],
   },
