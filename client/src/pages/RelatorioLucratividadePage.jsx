@@ -41,10 +41,15 @@ function tonePorMargem(valor, config) {
 // `grande`: usado dentro de .stat-card, lado a lado com Faturamento/Lucro
 // Bruto etc. — em vez do selo pequeno, o valor fica do mesmo tamanho dos
 // outros indicadores, só com a cor semântica aplicada ao texto.
-function MargemPill({ valor, config, grande }) {
-  const tom = tonePorMargem(valor, config);
-  if (grande) return <span className={'stat-card-value ' + tom}>{pct(valor)}</span>;
-  return <span className={'stamp sm ' + tom}>{pct(valor)}</span>;
+// `semVendas`: quando o período não tem nenhuma venda, 0% de margem não é
+// um alarme de verdade — é só ausência de dado. Mostra "—" neutro em vez
+// do selo vermelho de prejuízo, que só faz sentido quando existe venda e
+// a margem é de fato negativa/abaixo do mínimo.
+function MargemPill({ valor, config, grande, semVendas }) {
+  const tom = semVendas ? 'tone-neutro' : tonePorMargem(valor, config);
+  const texto = semVendas ? '—' : pct(valor);
+  if (grande) return <span className={'stat-card-value ' + tom}>{texto}</span>;
+  return <span className={'stamp sm ' + tom}>{texto}</span>;
 }
 
 function VincularItensModal({ pedido, onClose, onVinculado }) {
@@ -224,7 +229,7 @@ function ResumoProdutoTab({ resumoProduto, serieDiaria, config, busca }) {
         <StatCard label="Faturamento" value={brl(r.faturamento)} />
         <StatCard label="Líq. do Marketplace" value={brl(r.liquidoMarketplace)} />
         <StatCard label="Lucro Bruto" value={brl(r.lucroBruto)} />
-        <StatCard label="Margem"><MargemPill valor={r.margemPct} config={config} grande /></StatCard>
+        <StatCard label="Margem"><MargemPill valor={r.margemPct} config={config} grande semVendas={r.numeroVendas === 0} /></StatCard>
       </div>
 
       <button type="button" className="expand-toggle" onClick={() => setExpandido((v) => !v)}>
@@ -250,7 +255,7 @@ function ResumoProdutoTab({ resumoProduto, serieDiaria, config, busca }) {
               <StatCard label="Valor em Ads" value={brl(r.custoAds)} />
               <StatCard label="TACOS" value={pct(r.tacos)} />
               <StatCard label="Lucro Pós Ads" value={brl(r.lucroPosAds)} />
-              <StatCard label="MPA"><MargemPill valor={r.mpaPct} config={config} grande /></StatCard>
+              <StatCard label="MPA"><MargemPill valor={r.mpaPct} config={config} grande semVendas={r.numeroVendas === 0} /></StatCard>
             </div>
           )}
         </div>
@@ -911,7 +916,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                       <StatCard label="Faturamento" value={brl(relatorio.totalGeral.receita)} />
                       <StatCard label="Líq. do Marketplace" value={brl(relatorio.totalGeral.liquidoMarketplace)} />
                       <StatCard label="Lucro Bruto" value={brl(relatorio.totalGeral.lucroBruto)} />
-                      <StatCard label="Margem"><MargemPill valor={relatorio.totalGeral.margemBrutaPct} config={config} grande /></StatCard>
+                      <StatCard label="Margem"><MargemPill valor={relatorio.totalGeral.margemBrutaPct} config={config} grande semVendas={relatorio.totalGeral.numeroVendas === 0} /></StatCard>
                     </div>
                     <div className="stat-strip" style={{ marginTop: 12 }}>
                       <StatCard label="Número de Vendas" value={formatQtd(relatorio.totalGeral.numeroVendas)} />
@@ -924,7 +929,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                         <StatCard label="Valor em Ads" value={brl(relatorio.totalGeral.custoAds)} />
                         <StatCard label="TACOS" value={pct(relatorio.totalGeral.tacos)} />
                         <StatCard label="Lucro Pós Ads" value={brl(relatorio.totalGeral.lucro)} />
-                        <StatCard label="MPA"><MargemPill valor={relatorio.totalGeral.mpaPct} config={config} grande /></StatCard>
+                        <StatCard label="MPA"><MargemPill valor={relatorio.totalGeral.mpaPct} config={config} grande semVendas={relatorio.totalGeral.numeroVendas === 0} /></StatCard>
                       </div>
                     )}
                     {relatorio.totalGeral.frete > 0 && (
@@ -967,7 +972,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                     <div className="row-line"><span>Frete</span><span className="mono">{brl(relatorio.totalGeral.frete)}</span></div>
                     <div className="row-line"><span>Taxas de Marketplace</span><span className="mono">{brl(relatorio.totalGeral.taxaMarketplace)}</span></div>
                     <div className="row-line strong"><span>Lucro Líquido</span><span className="mono">{brl(relatorio.totalGeral.lucro)}</span></div>
-                    <div className="row-line"><span>Margem</span><MargemPill valor={relatorio.totalGeral.margemPct} config={config} /></div>
+                    <div className="row-line"><span>Margem</span><MargemPill valor={relatorio.totalGeral.margemPct} config={config} semVendas={relatorio.pedidos.length === 0} /></div>
                     <div className="row-line no-print"><span>Pedidos no Período</span><span className="mono">{relatorio.pedidos.length}</span></div>
                   </>
                 )}
