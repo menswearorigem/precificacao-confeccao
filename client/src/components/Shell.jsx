@@ -3,6 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { LogOut, Menu, X, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getVisibleModules } from '../lib/modules';
+import BuscaGlobal from './BuscaGlobal';
 import logoHbnHub from '../assets/logo-hbn-hub.png';
 
 const CHAVE_SIDEBAR_COLAPSADO = 'hbn_sidebar_colapsado';
@@ -46,6 +47,7 @@ export default function Shell({ children }) {
 
   return (
     <div className={'shell' + (sidebarColapsado ? ' sidebar-colapsado' : '')}>
+      <BuscaGlobal />
       <header className="shell-header">
         <div className="brand">
           <button className="mobile-menu-btn" onClick={() => setMenuAberto((v) => !v)} aria-label="Abrir menu">

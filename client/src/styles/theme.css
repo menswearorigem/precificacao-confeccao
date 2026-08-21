@@ -1394,6 +1394,54 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
 .alerts-list li { font-size: 12.5px; padding: 9px 13px; border-radius: var(--radius-sm); background: var(--warning-bg); color: var(--warning); }
 .alerts-list li.ok { background: var(--success-bg); color: var(--success); }
 
+/* ---------- busca global (Ctrl/Cmd+K) ---------- */
+.busca-global-backdrop {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(20, 12, 6, 0.5);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 12vh;
+}
+.busca-global-painel {
+  width: min(100% - 32px, 620px);
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  max-height: 70vh;
+}
+.busca-global-campo {
+  display: flex; align-items: center; gap: 10px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--ink-faint);
+  flex-shrink: 0;
+}
+.busca-global-campo input {
+  flex: 1; border: none; outline: none; background: none;
+  font-size: 15px; color: var(--ink); font-family: var(--font-body);
+}
+.busca-global-campo kbd {
+  font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint);
+  border: 1px solid var(--border); border-radius: 5px; padding: 2px 6px;
+}
+.busca-global-resultados { overflow-y: auto; padding: 8px; }
+.busca-global-vazio { padding: 24px 16px; text-align: center; color: var(--ink-faint); font-size: 13px; margin: 0; }
+.busca-global-grupo { margin-bottom: 6px; }
+.busca-global-grupo-titulo {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ink-faint); padding: 8px 10px 4px;
+}
+.busca-global-item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  width: 100%; text-align: left; background: none; border: none; cursor: pointer;
+  padding: 8px 10px; border-radius: var(--radius-sm);
+}
+.busca-global-item.ativo { background: var(--surface-alt); }
+.busca-global-item-label { font-size: 13.5px; color: var(--ink); font-weight: 500; }
+.busca-global-item-sub { font-size: 11.5px; color: var(--ink-soft); }
+
 /* ---------- login ---------- */
 /* Composição única centrada sobre couro — o selo com a logo é a estrela.
    Ver PRECISAO-RESSALVAS.md para o que ficou de fora desta tela e por quê. */
