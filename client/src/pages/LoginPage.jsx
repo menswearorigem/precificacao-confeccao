@@ -86,7 +86,8 @@ function LoginForm({ onSuccess }) {
       await api.post('/auth/login', { nome, senha });
       await onSuccess();
     } catch (err) {
-      setError(`${err.message || 'Não foi possível entrar.'} Confira os dados e tente novamente.`);
+      const sufixo = err.status === 429 ? '' : ' Confira os dados e tente novamente.';
+      setError(`${err.message || 'Não foi possível entrar.'}${sufixo}`);
     } finally {
       setLoading(false);
     }

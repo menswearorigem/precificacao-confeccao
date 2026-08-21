@@ -3,6 +3,7 @@ const pool = require('../db/pool');
 const { createToken, SESSION_HOURS } = require('../lib/authToken');
 const { hashSenha, verificarSenha } = require('../lib/senha');
 const { requireAuth, COOKIE_NAME } = require('../middleware/auth');
+const { verificarBloqueio, registrarFalha, registrarSucesso } = require('../lib/loginRateLimit');
 
 const router = express.Router();
 
@@ -79,13 +80,26 @@ router.post('/login', async (req, res, next) => {
   try {
     const { nome, senha } = req.body || {};
     if (!nome || !senha) return res.status(401).json({ error: 'Nome ou senha incorretos.' });
+
+    const bloqueio = verificarBloqueio(nome);
+    if (bloqueio.bloqueado) {
+      return res.status(429).json({
+        error: `Muitas tentativas com este nome. Tente novamente em ${bloqueio.minutosRestantes} minuto(s).`,
+      });
+    }
+
     const { rows } = await pool.query('SELECT * FROM usuarios WHERE LOWER(nome) = LOWER($1)', [String(nome).trim()]);
     if (rows.length === 0 || !rows[0].ativo) {
+      registrarFalha(nome);
       return res.status(401).json({ error: 'Nome ou senha incorretos.' });
     }
     const ok = await verificarSenha(senha, rows[0].senha_hash);
-    if (!ok) return res.status(401).json({ error: 'Nome ou senha incorretos.' });
+    if (!ok) {
+      registrarFalha(nome);
+      return res.status(401).json({ error: 'Nome ou senha incorretos.' });
+    }
 
+    registrarSucesso(nome);
     setSessionCookie(res, rows[0].id);
     res.json(await perfilCompleto(rows[0].id));
   } catch (err) {
