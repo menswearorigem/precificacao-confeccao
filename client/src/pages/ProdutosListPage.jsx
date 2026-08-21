@@ -5,7 +5,7 @@ import { api } from '../api/client';
 import { statusToneClass } from '../lib/statusTone';
 import { brl, pct } from '../lib/format';
 import FotoProduto from '../components/FotoProduto';
-import { Select, SkeletonLinhasTabela, ThOrdenavel, Paginacao } from '../components/ui';
+import { Select, SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar } from '../components/ui';
 import DataTable from '../components/DataTable';
 import { useTabela } from '../lib/useTabela';
 
@@ -18,6 +18,16 @@ const COLUNAS_ORDENAVEIS = {
   margem: (p) => Number(p.lucroPct) || 0,
   status: (p) => p.status,
 };
+
+const COLUNAS_EXPORTACAO = [
+  { rotulo: 'Referência', valor: (p) => p.referencia },
+  { rotulo: 'Descrição', valor: (p) => p.descricao },
+  { rotulo: 'Marca', valor: (p) => p.marca },
+  { rotulo: 'Categoria', valor: (p) => p.categoria },
+  { rotulo: 'Preço', valor: (p) => brl(p.precoAtivo) },
+  { rotulo: 'Margem', valor: (p) => pct(p.lucroPct) },
+  { rotulo: 'Status', valor: (p) => p.status },
+];
 
 export default function ProdutosListPage() {
   const navigate = useNavigate();
@@ -60,9 +70,12 @@ export default function ProdutosListPage() {
           <h2>Produtos / Referências</h2>
           <p className="page-sub">Cadastro, custo e formação de preço de cada referência.</p>
         </div>
-        <Link to="/produtos/novo" className="btn btn-primary">
-          <Plus size={14} /> Novo produto
-        </Link>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <BotaoExportar nomeBase="produtos" colunas={COLUNAS_EXPORTACAO} itens={tabela.itensOrdenados} disabled={tabela.totalItens === 0} />
+          <Link to="/produtos/novo" className="btn btn-primary">
+            <Plus size={14} /> Novo produto
+          </Link>
+        </div>
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>

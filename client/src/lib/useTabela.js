@@ -63,6 +63,7 @@ export function useTabela(lista, { colunas, colunaPadrao, direcaoPadrao = 'asc',
 
   return {
     itensPagina,
+    itensOrdenados: ordenada,
     totalItens,
     pagina,
     totalPaginas,

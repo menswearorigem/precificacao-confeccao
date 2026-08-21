@@ -1,5 +1,3 @@
-import * as XLSX from 'xlsx';
-
 // Nome de arquivo com a data de hoje em pt-BR, sem caracteres que
 // confundem o sistema de arquivos (ex.: "produtos_21-08-2026").
 export function nomeArquivoComData(prefixo) {
@@ -45,7 +43,11 @@ export function exportarCsv(nomeBase, colunas, itens) {
   baixarBlob(blob, `${nomeArquivoComData(nomeBase)}.csv`);
 }
 
-export function exportarXlsx(nomeBase, colunas, itens) {
+// A biblioteca xlsx é pesada (SheetJS) — carrega sob demanda só quando
+// alguém de fato pede o .xlsx, pra não engordar o bundle de quem nunca
+// exporta nada ou só usa CSV.
+export async function exportarXlsx(nomeBase, colunas, itens) {
+  const XLSX = await import('xlsx');
   const linhas = montarLinhas(itens, colunas);
   const planilha = XLSX.utils.json_to_sheet(linhas, { header: colunas.map((c) => c.rotulo) });
   const livro = XLSX.utils.book_new();
