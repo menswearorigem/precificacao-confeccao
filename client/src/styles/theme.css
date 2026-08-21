@@ -1164,6 +1164,20 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
 }
 .exportar-item:hover { background: var(--border-soft); }
 
+/* ---------- estado vazio (ícone + explicação + ação) ---------- */
+.estado-vazio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 40px 24px;
+  color: var(--ink-soft);
+}
+.estado-vazio svg { color: var(--ink-faint); }
+.estado-vazio-titulo { font-family: var(--font-display); font-weight: 600; font-size: 15px; color: var(--leather-dark); }
+.estado-vazio-descricao { max-width: 420px; font-size: 13px; margin: 0; }
+
 .row-line {
   display: flex;
   justify-content: space-between;

@@ -1,5 +1,6 @@
 import { Children, Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import {
   ChevronDown, Check, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CalendarDays,
   ArrowUp, ArrowDown, ChevronsUpDown,
@@ -98,6 +99,30 @@ export function StatCard({ label, value, children }) {
       <span className="stat-card-label">{label}</span>
       {value !== undefined && <span className="stat-card-value">{value}</span>}
       {children}
+    </div>
+  );
+}
+
+// Estado vazio com ícone + frase explicando o que apareceria ali + botão de
+// ação (opcional, um <Link> quando `href` é passado, ou um <button> comum
+// quando `onAcao` é passado) — no lugar da frase solta ("Nenhum pedido
+// encontrado.") que não dizia o que fazer a respeito.
+export function EstadoVazio({ Icone, titulo, descricao, acaoLabel, href, onAcao, IconeAcao }) {
+  return (
+    <div className="estado-vazio">
+      {Icone && <Icone size={30} />}
+      {titulo && <div className="estado-vazio-titulo">{titulo}</div>}
+      {descricao && <p className="estado-vazio-descricao">{descricao}</p>}
+      {href && (
+        <Link to={href} className="btn btn-primary" style={{ marginTop: 4 }}>
+          {IconeAcao && <IconeAcao size={14} />} {acaoLabel}
+        </Link>
+      )}
+      {onAcao && !href && (
+        <button type="button" className="btn btn-primary" style={{ marginTop: 4 }} onClick={onAcao}>
+          {IconeAcao && <IconeAcao size={14} />} {acaoLabel}
+        </button>
+      )}
     </div>
   );
 }
