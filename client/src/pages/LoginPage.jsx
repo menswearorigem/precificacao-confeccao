@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Eye, EyeOff } from 'lucide-react';
 import { api } from '../api/client';
 import { getDefaultPath } from '../lib/modules';
 import logoHbnHub from '../assets/logo-hbn-hub.png';
@@ -19,31 +20,54 @@ export default function LoginPage({ onLoggedIn }) {
 
   return (
     <div className="login-screen">
-      <div className="login-brand-panel">
-        <div className="login-brand-mark"><img src={logoHbnHub} alt="" /></div>
-        <div className="login-brand-copy">
-          <div className="eyebrow">Sistema de gestão têxtil</div>
-          <h1>HBN <em>Hub</em></h1>
-          <p>
-            Precificação, estoque, vendas e compras reunidos num só lugar — pensado pra dar
-            clareza de margem em cada peça, do corte à venda.
-          </p>
+      <div className="login-seal-wrap">
+        <div className="login-seal">
+          <img src={logoHbnHub} alt="Marca HBN Hub" />
         </div>
-        <div className="login-brand-footer">
-          <span>Miss Manu</span>
-          <span>Origem</span>
-          <span>Hoggar</span>
-          <span>Hebron</span>
-        </div>
+        <div className="login-eyebrow">Sistema de Gestão Têxtil</div>
+        <h1 className="login-wordmark">HBN <em>Hub</em></h1>
       </div>
 
-      <div className="login-form-panel">
-        {setupNeeded === null ? null : setupNeeded ? (
-          <SetupForm onSuccess={handleSuccess} />
-        ) : (
-          <LoginForm onSuccess={handleSuccess} />
-        )}
+      {setupNeeded === null ? null : setupNeeded ? (
+        <SetupForm onSuccess={handleSuccess} />
+      ) : (
+        <LoginForm onSuccess={handleSuccess} />
+      )}
+
+      <div className="login-brands">
+        <span>Miss Manu</span>
+        <span>Origem</span>
+        <span>Hoggar</span>
+        <span>Hebron</span>
       </div>
+    </div>
+  );
+}
+
+function PasswordField({ id, label, value, onChange, autoComplete, autoFocus, hint }) {
+  const [visivel, setVisivel] = useState(false);
+  return (
+    <div className="login-field">
+      <label htmlFor={id} className="login-label">{label}</label>
+      <div className="login-control login-control-btn">
+        <input
+          id={id}
+          type={visivel ? 'text' : 'password'}
+          autoComplete={autoComplete}
+          autoFocus={autoFocus}
+          value={value}
+          onChange={onChange}
+        />
+        <button
+          type="button"
+          className="login-peek"
+          aria-label={visivel ? 'Ocultar senha' : 'Mostrar senha'}
+          onClick={() => setVisivel((v) => !v)}
+        >
+          {visivel ? <EyeOff size={18} /> : <Eye size={18} />}
+        </button>
+      </div>
+      {hint && <span className="login-hint">{hint}</span>}
     </div>
   );
 }
@@ -62,7 +86,7 @@ function LoginForm({ onSuccess }) {
       await api.post('/auth/login', { nome, senha });
       await onSuccess();
     } catch (err) {
-      setError(err.message || 'Nome ou senha incorretos.');
+      setError(`${err.message || 'Não foi possível entrar.'} Confira os dados e tente novamente.`);
     } finally {
       setLoading(false);
     }
@@ -71,19 +95,34 @@ function LoginForm({ onSuccess }) {
   return (
     <form className="login-card" onSubmit={handleSubmit}>
       <h2>Bem-vindo de volta</h2>
-      <p className="page-sub">Entre com seu nome e senha para acessar o sistema.</p>
-      <div className="field" style={{ marginTop: 6, marginBottom: 10, textAlign: 'left' }}>
-        <span className="field-label">Nome</span>
-        <input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} />
+      <p className="login-sub">Entre com seu nome e senha para acessar o sistema.</p>
+
+      {error && <div className="login-alert" role="alert">{error}</div>}
+
+      <div className="login-field">
+        <label htmlFor="login-nome" className="login-label">Usuário</label>
+        <div className="login-control">
+          <input
+            id="login-nome"
+            autoFocus
+            autoComplete="username"
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+          />
+        </div>
       </div>
-      <div className="field" style={{ marginBottom: 14, textAlign: 'left' }}>
-        <span className="field-label">Senha</span>
-        <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} />
-      </div>
-      <button className="btn btn-primary" type="submit" style={{ width: '100%', justifyContent: 'center' }} disabled={loading}>
+
+      <PasswordField
+        id="login-senha"
+        label="Senha"
+        value={senha}
+        onChange={(e) => setSenha(e.target.value)}
+        autoComplete="current-password"
+      />
+
+      <button className="login-enter" type="submit" disabled={loading}>
         {loading ? 'Entrando…' : 'Entrar'}
       </button>
-      {error && <div className="login-error">{error}</div>}
     </form>
   );
 }
@@ -101,7 +140,7 @@ function SetupForm({ onSuccess }) {
     e.preventDefault();
     setError('');
     if (senha !== confirmarSenha) {
-      setError('As senhas não conferem.');
+      setError('As senhas não conferem. Digite a mesma senha nos dois campos.');
       return;
     }
     setLoading(true);
@@ -109,41 +148,45 @@ function SetupForm({ onSuccess }) {
       await api.post('/auth/setup', { appPassword, nome, email, senha });
       await onSuccess();
     } catch (err) {
-      setError(err.message);
+      setError(`${err.message} Confira os dados e tente novamente.`);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <form className="login-card" onSubmit={handleSubmit} style={{ maxWidth: 380 }}>
+    <form className="login-card login-card-setup" onSubmit={handleSubmit}>
       <h2>Configuração inicial</h2>
-      <p className="page-sub">Ainda não existe nenhuma conta — crie a conta de administrador para começar.</p>
-      <div className="field" style={{ marginTop: 6, marginBottom: 10, textAlign: 'left' }}>
-        <span className="field-label">Seu nome</span>
-        <input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} />
+      <p className="login-sub">Ainda não existe nenhuma conta — crie a conta de administrador para começar.</p>
+
+      {error && <div className="login-alert" role="alert">{error}</div>}
+
+      <div className="login-field">
+        <label htmlFor="setup-nome" className="login-label">Seu nome</label>
+        <div className="login-control">
+          <input id="setup-nome" autoFocus autoComplete="name" value={nome} onChange={(e) => setNome(e.target.value)} />
+        </div>
       </div>
-      <div className="field" style={{ marginBottom: 10, textAlign: 'left' }}>
-        <span className="field-label">E-mail</span>
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+      <div className="login-field">
+        <label htmlFor="setup-email" className="login-label">E-mail</label>
+        <div className="login-control">
+          <input id="setup-email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        </div>
       </div>
-      <div className="field" style={{ marginBottom: 10, textAlign: 'left' }}>
-        <span className="field-label">Senha</span>
-        <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} />
-      </div>
-      <div className="field" style={{ marginBottom: 10, textAlign: 'left' }}>
-        <span className="field-label">Confirmar senha</span>
-        <input type="password" value={confirmarSenha} onChange={(e) => setConfirmarSenha(e.target.value)} />
-      </div>
-      <div className="field" style={{ marginBottom: 14, textAlign: 'left' }}>
-        <span className="field-label">Senha de liberação</span>
-        <input type="password" value={appPassword} onChange={(e) => setAppPassword(e.target.value)} />
-        <span className="field-hint">A senha compartilhada que o sistema já usava (APP_PASSWORD).</span>
-      </div>
-      <button className="btn btn-primary" type="submit" style={{ width: '100%', justifyContent: 'center' }} disabled={loading}>
+      <PasswordField id="setup-senha" label="Senha" value={senha} onChange={(e) => setSenha(e.target.value)} autoComplete="new-password" />
+      <PasswordField id="setup-confirmar" label="Confirmar senha" value={confirmarSenha} onChange={(e) => setConfirmarSenha(e.target.value)} autoComplete="new-password" />
+      <PasswordField
+        id="setup-app-senha"
+        label="Senha de liberação"
+        value={appPassword}
+        onChange={(e) => setAppPassword(e.target.value)}
+        autoComplete="off"
+        hint="A senha compartilhada que o sistema já usava (APP_PASSWORD)."
+      />
+
+      <button className="login-enter" type="submit" disabled={loading}>
         {loading ? 'Criando…' : 'Criar conta de administrador'}
       </button>
-      {error && <div className="login-error">{error}</div>}
     </form>
   );
 }
