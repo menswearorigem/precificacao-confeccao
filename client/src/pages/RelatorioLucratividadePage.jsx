@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct, formatQtd } from '../lib/format';
-import { Select, StatCard, ThOrdenavel, Paginacao } from '../components/ui';
+import { Select, StatCard, ThOrdenavel, Paginacao, BotaoExportar } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
@@ -25,6 +25,18 @@ const COLUNAS_PEDIDOS_ORDENAVEIS = {
   lucro: (p) => Number(p.lucro) || 0,
   margem: (p) => Number(p.margemPct) || 0,
 };
+
+const COLUNAS_PEDIDOS_EXPORTACAO = [
+  { rotulo: 'Nº', valor: (p) => p.numeroExibicao || p.numero },
+  { rotulo: 'Data', valor: (p) => new Date(p.data_pedido).toLocaleDateString('pt-BR') },
+  { rotulo: 'Cliente', valor: (p) => p.cliente_nome || '' },
+  { rotulo: 'Canal', valor: (p) => p.canal_venda || '' },
+  { rotulo: 'Receita', valor: (p) => brl(p.receita) },
+  { rotulo: 'Custo', valor: (p) => brl(p.custo) },
+  { rotulo: 'Taxa Marketplace', valor: (p) => (p.taxaMarketplace ? brl(p.taxaMarketplace) : '—') },
+  { rotulo: 'Lucro', valor: (p) => brl(p.lucro) },
+  { rotulo: 'Margem', valor: (p) => pct(p.margemPct) },
+];
 
 // Paleta categórica combinando com a identidade do sistema (terracota,
 // verde-azulado e ameixa — as mesmas famílias de cor já usadas em
@@ -849,6 +861,9 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
           </div>
           <div className="filtros-barra-acoes">
             {loading && <span className="page-sub" style={{ margin: 0 }}>Atualizando…</span>}
+            {relatorio && (
+              <BotaoExportar nomeBase="lucratividade" colunas={COLUNAS_PEDIDOS_EXPORTACAO} itens={tabelaPedidos.itensOrdenados} disabled={tabelaPedidos.totalItens === 0} />
+            )}
             {relatorio && (
               <button className="btn btn-ghost" onClick={() => window.print()}>
                 <Printer size={14} /> Imprimir resumo

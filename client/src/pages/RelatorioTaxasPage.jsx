@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Printer, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
-import { Select, ThOrdenavel, Paginacao, Checkbox } from '../components/ui';
+import { Select, ThOrdenavel, Paginacao, Checkbox, BotaoExportar } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
@@ -21,6 +21,19 @@ const COLUNAS_ORDENAVEIS = {
   pctEsperado: (p) => (p.semTabelaCadastrada ? -Infinity : Number(p.pctEsperado) || 0),
   situacao: (p) => (p.semTabelaCadastrada ? 0 : p.divergente ? 2 : 1),
 };
+
+const COLUNAS_EXPORTACAO = [
+  { rotulo: 'Nº', valor: (p) => p.numero },
+  { rotulo: 'Data', valor: (p) => new Date(p.data_pedido).toLocaleDateString('pt-BR') },
+  { rotulo: 'Canal', valor: (p) => p.canal_venda },
+  { rotulo: 'Receita', valor: (p) => brl(p.receita) },
+  { rotulo: 'Taxa Cobrada', valor: (p) => brl(p.taxaCobrada) },
+  { rotulo: 'Taxa Esperada', valor: (p) => (p.semTabelaCadastrada ? '—' : brl(p.taxaEsperada)) },
+  { rotulo: 'Diferença', valor: (p) => (p.semTabelaCadastrada ? '—' : brl((Number(p.taxaCobrada) || 0) - (Number(p.taxaEsperada) || 0))) },
+  { rotulo: '% Cobrado', valor: (p) => pct(p.pctCobrado) },
+  { rotulo: '% Esperado', valor: (p) => (p.semTabelaCadastrada ? '—' : pct(p.pctEsperado)) },
+  { rotulo: 'Situação', valor: (p) => (p.semTabelaCadastrada ? 'Sem referência' : p.divergente ? 'Divergente' : 'OK') },
+];
 
 export default function RelatorioTaxasPage() {
   const [{ inicio: dataInicio, fim: dataFim }, setPeriodo] = useState(periodoDeHoje());
@@ -125,6 +138,9 @@ export default function RelatorioTaxasPage() {
           </Select>
           <div className="filtros-barra-acoes">
             {loading && <span className="page-sub" style={{ margin: 0 }}>Atualizando…</span>}
+            {relatorio && (
+              <BotaoExportar nomeBase="taxas-marketplace" colunas={COLUNAS_EXPORTACAO} itens={tabela.itensOrdenados} disabled={tabela.totalItens === 0} />
+            )}
             {relatorio && (
               <button className="btn btn-ghost" onClick={() => window.print()}>
                 <Printer size={14} /> Imprimir

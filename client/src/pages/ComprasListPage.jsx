@@ -4,7 +4,7 @@ import { Plus, Search, ChevronRight, BarChart3 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl } from '../lib/format';
 import DataTable from '../components/DataTable';
-import { SkeletonLinhasTabela, ThOrdenavel, Paginacao } from '../components/ui';
+import { SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar } from '../components/ui';
 import { useTabela } from '../lib/useTabela';
 
 const SITUACAO_TONE = { pendente: 'tone-atencao', recebido: 'tone-saudavel', cancelado: 'tone-prejuizo' };
@@ -19,6 +19,16 @@ const COLUNAS_ORDENAVEIS = {
   total: (c) => Number(c.total_liquido) || 0,
   situacao: (c) => c.situacao,
 };
+
+const COLUNAS_EXPORTACAO = [
+  { rotulo: 'Nº', valor: (c) => c.numero },
+  { rotulo: 'Data', valor: (c) => new Date(c.data_compra).toLocaleDateString('pt-BR') },
+  { rotulo: 'Fornecedor', valor: (c) => c.fornecedor_nome || '' },
+  { rotulo: 'Categoria', valor: (c) => c.categoria },
+  { rotulo: 'Documento', valor: (c) => c.numero_documento },
+  { rotulo: 'Total Líquido', valor: (c) => brl(c.total_liquido) },
+  { rotulo: 'Situação', valor: (c) => SITUACAO_LABEL[c.situacao] || c.situacao },
+];
 
 export default function ComprasListPage() {
   const navigate = useNavigate();
@@ -71,6 +81,7 @@ export default function ComprasListPage() {
           <p className="page-sub">Lançamento de todas as compras da empresa — de matéria-prima a material de escritório.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <BotaoExportar nomeBase="compras" colunas={COLUNAS_EXPORTACAO} itens={tabela.itensOrdenados} disabled={tabela.totalItens === 0} />
           <Link to="/compras/relatorio" className="btn btn-ghost"><BarChart3 size={14} /> Relatório</Link>
           <button className="btn btn-primary" onClick={novaCompra} disabled={criando}>
             <Plus size={14} /> Nova compra

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Search, ChevronRight } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, formatQtd } from '../lib/format';
-import { Select, SkeletonLinhasTabela, ThOrdenavel, Paginacao } from '../components/ui';
+import { Select, SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
@@ -31,6 +31,16 @@ const COLUNAS_ORDENAVEIS = {
   total: (p) => Number(p.total_liquido) || 0,
   situacao: (p) => p.situacao,
 };
+
+const COLUNAS_EXPORTACAO = [
+  { rotulo: 'Nº', valor: (p) => p.numero },
+  { rotulo: 'Data', valor: (p) => new Date(p.data_pedido).toLocaleDateString('pt-BR') },
+  { rotulo: 'Cliente', valor: (p) => p.cliente_nome || '' },
+  { rotulo: 'Canal', valor: (p) => p.canal_venda || '' },
+  { rotulo: 'Qtd. Peças', valor: (p) => formatQtd(p.quantidade_pecas) },
+  { rotulo: 'Total Líquido', valor: (p) => brl(p.total_liquido) },
+  { rotulo: 'Situação', valor: (p) => SITUACAO_LABEL[p.situacao] || p.situacao },
+];
 
 export default function PedidosListPage({ origemFiltro }) {
   const navigate = useNavigate();
@@ -105,11 +115,14 @@ export default function PedidosListPage({ origemFiltro }) {
               : 'Pedidos lançados manualmente (loja física, WhatsApp etc). Versão de teste — ainda não emite nota fiscal.'}
           </p>
         </div>
-        {origemFiltro !== 'marketplace' && (
-          <button className="btn btn-primary" onClick={novoPedido} disabled={criando}>
-            <Plus size={14} /> Novo pedido
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <BotaoExportar nomeBase={isMarketplace ? 'pedidos-marketplace' : 'pedidos'} colunas={COLUNAS_EXPORTACAO} itens={tabela.itensOrdenados} disabled={tabela.totalItens === 0} />
+          {origemFiltro !== 'marketplace' && (
+            <button className="btn btn-primary" onClick={novoPedido} disabled={criando}>
+              <Plus size={14} /> Novo pedido
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="filtros-barra">
