@@ -1,12 +1,26 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Printer } from 'lucide-react';
+import { Printer, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
-import { Select } from '../components/ui';
+import { Select, ThOrdenavel, Paginacao, Checkbox } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import DataTable from '../components/DataTable';
+import { useTabela } from '../lib/useTabela';
+
+const COLUNAS_ORDENAVEIS = {
+  numero: (p) => Number(p.numero) || 0,
+  data: (p) => new Date(p.data_pedido).getTime(),
+  canal: (p) => p.canal_venda,
+  receita: (p) => Number(p.receita) || 0,
+  taxaCobrada: (p) => Number(p.taxaCobrada) || 0,
+  taxaEsperada: (p) => (p.semTabelaCadastrada ? -Infinity : Number(p.taxaEsperada) || 0),
+  diferenca: (p) => (p.semTabelaCadastrada ? -Infinity : (Number(p.taxaCobrada) || 0) - (Number(p.taxaEsperada) || 0)),
+  pctCobrado: (p) => Number(p.pctCobrado) || 0,
+  pctEsperado: (p) => (p.semTabelaCadastrada ? -Infinity : Number(p.pctEsperado) || 0),
+  situacao: (p) => (p.semTabelaCadastrada ? 0 : p.divergente ? 2 : 1),
+};
 
 export default function RelatorioTaxasPage() {
   const [{ inicio: dataInicio, fim: dataFim }, setPeriodo] = useState(periodoDeHoje());
@@ -16,6 +30,9 @@ export default function RelatorioTaxasPage() {
   const [relatorio, setRelatorio] = useState(null);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
+  const [somenteDivergentes, setSomenteDivergentes] = useState(false);
+  const [revinculando, setRevinculando] = useState(false);
+  const [avisoRevinculo, setAvisoRevinculo] = useState('');
 
   useEffect(() => { api.get('/integracoes').then(setIntegracoes).catch(() => {}); }, []);
 
@@ -44,13 +61,42 @@ export default function RelatorioTaxasPage() {
       .finally(() => setLoading(false));
   }, [dataInicio, dataFim, canalVenda, lojaId]);
 
-  const pedidosOrdenados = useMemo(() => {
-    if (!relatorio) return [];
-    // Mais recente primeiro, por padrão.
-    return [...relatorio.pedidos].sort((a, b) => new Date(b.data_pedido) - new Date(a.data_pedido));
-  }, [relatorio]);
+  const divergentes = useMemo(() => (relatorio ? relatorio.pedidos.filter((p) => p.divergente) : []), [relatorio]);
+  const totalAnalisados = relatorio ? relatorio.pedidos.length : 0;
+  const pctDivergente = totalAnalisados === 0 ? 0 : divergentes.length / totalAnalisados;
+  // Selo vai de saudável (nenhum divergente) a atenção a prejuízo (a maioria
+  // divergente) — mesma linguagem visual dos outros indicadores do sistema.
+  const toneDivergencia = totalAnalisados === 0 ? 'tone-neutro'
+    : pctDivergente === 0 ? 'tone-saudavel'
+    : pctDivergente >= 0.8 ? 'tone-prejuizo'
+    : 'tone-atencao';
 
-  const divergentes = relatorio ? relatorio.pedidos.filter((p) => p.divergente) : [];
+  const pedidosFiltrados = useMemo(() => {
+    if (!relatorio) return [];
+    return somenteDivergentes ? relatorio.pedidos.filter((p) => p.divergente) : relatorio.pedidos;
+  }, [relatorio, somenteDivergentes]);
+
+  const tabela = useTabela(pedidosFiltrados, { colunas: COLUNAS_ORDENAVEIS, colunaPadrao: 'data', direcaoPadrao: 'desc' });
+
+  async function revincularCustos() {
+    setRevinculando(true);
+    setAvisoRevinculo('');
+    try {
+      const resultado = await api.post('/pedidos/marketplace/revincular-custos', {});
+      setAvisoRevinculo(`Revinculação concluída — ${resultado.vinculados || 0} item(ns) vinculado(s) agora, ${resultado.pedidosAtualizados || 0} pedido(s) com empresa/% de nota fiscal atualizados.`);
+      const params = new URLSearchParams();
+      if (dataInicio) params.set('data_inicio', dataInicio);
+      if (dataFim) params.set('data_fim', dataFim);
+      if (canalVenda) params.set('canal_venda', canalVenda);
+      if (lojaId) params.set('origem_integracao_id', lojaId);
+      const data = await api.get(`/pedidos/relatorio-taxas?${params.toString()}`);
+      setRelatorio(data);
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setRevinculando(false);
+    }
+  }
 
   return (
     <div className="page-wide">
@@ -84,9 +130,15 @@ export default function RelatorioTaxasPage() {
                 <Printer size={14} /> Imprimir
               </button>
             )}
+            {relatorio && (
+              <button className="btn btn-ghost" onClick={revincularCustos} disabled={revinculando}>
+                <RefreshCw size={14} /> {revinculando ? 'Revinculando…' : 'Revincular custos e impostos'}
+              </button>
+            )}
           </div>
         </div>
         {erro && <div className="aviso-compacto tone-prejuizo">{erro}</div>}
+        {avisoRevinculo && <div className="aviso-compacto tone-saudavel">{avisoRevinculo}</div>}
       </div>
 
       {relatorio && (
@@ -97,58 +149,89 @@ export default function RelatorioTaxasPage() {
               libera depois que o pedido é liquidado financeiramente) — não entraram nesta lista.
             </div>
           )}
+          {pctDivergente > 0.8 && (
+            <div className="aviso-compacto tone-prejuizo">
+              Mais de 80% dos pedidos do período estão com taxa divergente — isso quase sempre é tabela de
+              comissão desatualizada, não cobrança errada pedido a pedido. Confira as tabelas em
+              Configurações → Taxas de Marketplace antes de investigar pedido por pedido.
+            </div>
+          )}
 
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="row-line">
-              <span>Pedidos analisados</span><span className="mono">{relatorio.pedidos.length}</span>
+              <span>Pedidos analisados</span><span className="mono">{totalAnalisados}</span>
             </div>
             <div className="row-line strong">
               <span>Divergentes do esperado</span>
-              <span className="mono">{divergentes.length}</span>
+              <span className={'stamp sm ' + toneDivergencia}>{divergentes.length} de {totalAnalisados} · {pct(pctDivergente)}</span>
             </div>
           </div>
 
           <div className="card">
-            <div className="card-head">Pedidos no Período</div>
+            <div className="card-head-linha">
+              <div className="card-head">Pedidos no Período</div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--ink-soft)', cursor: 'pointer' }}>
+                <Checkbox checked={somenteDivergentes} onChange={(e) => setSomenteDivergentes(e.target.checked)} />
+                Só divergentes
+              </label>
+            </div>
+            <p className="page-sub" style={{ marginTop: 0 }}>{tabela.totalItens.toLocaleString('pt-BR')} resultado(s)</p>
             <DataTable>
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Nº</th><th>Data</th><th>Canal</th><th>Receita</th>
-                  <th>Taxa Cobrada</th><th>Taxa Esperada</th><th>% Cobrado</th><th>% Esperado</th><th>Situação</th>
+                  <ThOrdenavel coluna="numero" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Nº</ThOrdenavel>
+                  <ThOrdenavel coluna="data" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Data</ThOrdenavel>
+                  <ThOrdenavel coluna="canal" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Canal</ThOrdenavel>
+                  <ThOrdenavel coluna="receita" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Receita</ThOrdenavel>
+                  <ThOrdenavel coluna="taxaCobrada" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Taxa Cobrada</ThOrdenavel>
+                  <ThOrdenavel coluna="taxaEsperada" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Taxa Esperada</ThOrdenavel>
+                  <ThOrdenavel coluna="diferenca" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Diferença</ThOrdenavel>
+                  <ThOrdenavel coluna="pctCobrado" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>% Cobrado</ThOrdenavel>
+                  <ThOrdenavel coluna="pctEsperado" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>% Esperado</ThOrdenavel>
+                  <ThOrdenavel coluna="situacao" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Situação</ThOrdenavel>
                 </tr>
               </thead>
               <tbody>
-                {pedidosOrdenados.map((p) => (
-                  <tr key={p.id}>
-                    <td className="mono">#{p.numero}</td>
-                    <td className="mono">{new Date(p.data_pedido).toLocaleDateString('pt-BR')}</td>
-                    <td>{p.canal_venda}</td>
-                    <td className="mono">{brl(p.receita)}</td>
-                    <td className="mono">{brl(p.taxaCobrada)}</td>
-                    <td className="mono">
-                      {p.semTabelaCadastrada ? '—' : brl(p.taxaEsperada)}
-                      {!p.semTabelaCadastrada && p.pesoDesconhecido && (
-                        <span className="stamp sm tone-atencao" style={{ marginLeft: 6 }} title="Peso do produto não cadastrado — frete não entrou na conta">só comissão</span>
-                      )}
-                    </td>
-                    <td className="mono">{pct(p.pctCobrado)}</td>
-                    <td className="mono">{p.semTabelaCadastrada ? '— (sem tabela)' : pct(p.pctEsperado)}</td>
-                    <td>
-                      {p.semTabelaCadastrada ? (
-                        <span className="stamp sm tone-neutro">Sem referência</span>
-                      ) : p.divergente ? (
-                        <span className="stamp sm tone-prejuizo">Divergente</span>
-                      ) : (
-                        <span className="stamp sm tone-saudavel">OK</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {relatorio.pedidos.length === 0 && <tr><td colSpan="9">Nenhum pedido de marketplace com taxa disponível no período.</td></tr>}
+                {tabela.itensPagina.map((p) => {
+                  const diferenca = p.semTabelaCadastrada ? null : (Number(p.taxaCobrada) || 0) - (Number(p.taxaEsperada) || 0);
+                  return (
+                    <tr key={p.id}>
+                      <td className="mono">#{p.numero}</td>
+                      <td className="mono">{new Date(p.data_pedido).toLocaleDateString('pt-BR')}</td>
+                      <td>{p.canal_venda}</td>
+                      <td className="mono">{brl(p.receita)}</td>
+                      <td className="mono">{brl(p.taxaCobrada)}</td>
+                      <td className="mono">
+                        {p.semTabelaCadastrada ? '—' : brl(p.taxaEsperada)}
+                        {!p.semTabelaCadastrada && p.pesoDesconhecido && (
+                          <span className="stamp sm tone-atencao" style={{ marginLeft: 6 }} title="Peso do produto não cadastrado — frete não entrou na conta">só comissão</span>
+                        )}
+                      </td>
+                      <td className="mono" style={diferenca != null ? { color: diferenca > 0 ? 'var(--danger)' : diferenca < 0 ? 'var(--success)' : undefined } : undefined}>
+                        {diferenca == null ? '—' : `${diferenca > 0 ? '+' : ''}${brl(diferenca)}`}
+                      </td>
+                      <td className="mono">{pct(p.pctCobrado)}</td>
+                      <td className="mono">{p.semTabelaCadastrada ? '— (sem tabela)' : pct(p.pctEsperado)}</td>
+                      <td>
+                        {p.semTabelaCadastrada ? (
+                          <span className="stamp sm tone-neutro">Sem referência</span>
+                        ) : p.divergente ? (
+                          <span className="stamp sm tone-prejuizo">Divergente</span>
+                        ) : (
+                          <span className="stamp sm tone-saudavel">OK</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {tabela.totalItens === 0 && (
+                  <tr><td colSpan="10">{somenteDivergentes ? 'Nenhum pedido divergente no período.' : 'Nenhum pedido de marketplace com taxa disponível no período.'}</td></tr>
+                )}
               </tbody>
             </table>
             </DataTable>
+            <Paginacao {...tabela} />
           </div>
         </>
 )}
