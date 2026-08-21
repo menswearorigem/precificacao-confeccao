@@ -94,8 +94,8 @@ function KitManualCard({ kit, onRemovido }) {
 
   return (
     <div className="card" style={{ marginBottom: 16 }}>
-      <div className="card-head" style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <span>{kit.nome}</span>
+      <div className="card-head-linha">
+        <div className="card-head">{kit.nome}</div>
         <button className="icon-btn" onClick={handleRemover}><Trash2 size={14} /></button>
       </div>
       <table className="data-table">

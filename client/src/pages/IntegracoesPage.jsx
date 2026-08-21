@@ -277,8 +277,8 @@ export default function IntegracoesPage() {
         </>
       ) : (
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <MarketplaceLogo marketplace={subTab} />
+        <div className="card-head-linha">
+          <div className="card-head"><MarketplaceLogo marketplace={subTab} /></div>
           <button className="btn btn-primary" onClick={abrirNova}>
             <Plus size={14} /> Conectar loja
           </button>

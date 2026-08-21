@@ -145,8 +145,8 @@ export default function MarketplaceTaxasPage() {
       </div>
 
       <div className="card">
-        <div className="card-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>Frete Subsidiado ({freteDoMarketplace.length} faixas)</span>
+        <div className="card-head-linha">
+          <div className="card-head">Frete Subsidiado ({freteDoMarketplace.length} faixas)</div>
           <button className="btn btn-ghost" onClick={() => setMostrarFrete((v) => !v)}>
             {mostrarFrete ? 'Ocultar tabela' : 'Ver tabela'}
           </button>

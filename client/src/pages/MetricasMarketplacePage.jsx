@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
-import { DateInput, Select } from '../components/ui';
+import { DateInput, Select, StatCard } from '../components/ui';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import FotoProduto from '../components/FotoProduto';
 import DataTable from '../components/DataTable';
@@ -107,11 +107,13 @@ function CardsResumo({ resumo }) {
   return (
     <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
       {campos.map((c) => (
-        <div className="stat-card" key={c.chave}>
-          <span className="stat-card-label"><c.icon size={11} style={{ marginRight: 4, verticalAlign: -2 }} />{c.label}</span>
-          <span className="stat-card-value">{c.fmt(atual[c.chave])}</span>
+        <StatCard
+          key={c.chave}
+          label={<><c.icon size={11} style={{ marginRight: 4, verticalAlign: -2 }} />{c.label}</>}
+          value={c.fmt(atual[c.chave])}
+        >
           {variacao && <VariacaoBadge valor={variacao[c.chave]} />}
-        </div>
+        </StatCard>
       ))}
     </div>
   );
@@ -403,10 +405,10 @@ function VendasPorAnuncioTab({ filtros, busca }) {
   return (
     <>
       <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-        <div className="stat-card"><span className="stat-card-label">Anúncios Vendidos</span><span className="stat-card-value">{dados.totais.anunciosVendidos}</span></div>
-        <div className="stat-card"><span className="stat-card-label">Unidades Vendidas</span><span className="stat-card-value">{dados.totais.unidadesVendidas}</span></div>
-        <div className="stat-card"><span className="stat-card-label">Total Faturado</span><span className="stat-card-value">{brl(dados.totais.totalFaturado)}</span></div>
-        <div className="stat-card"><span className="stat-card-label">Preço Médio</span><span className="stat-card-value">{brl(dados.totais.precoMedio)}</span></div>
+        <StatCard label="Anúncios Vendidos" value={dados.totais.anunciosVendidos} />
+        <StatCard label="Unidades Vendidas" value={dados.totais.unidadesVendidas} />
+        <StatCard label="Total Faturado" value={brl(dados.totais.totalFaturado)} />
+        <StatCard label="Preço Médio" value={brl(dados.totais.precoMedio)} />
       </div>
       <div className="card">
         <div className="card-head">Vendas por Anúncio ({anunciosExibidos.length})</div>
@@ -504,11 +506,9 @@ function AnaliseABCTab({ filtros, busca }) {
       </p>
       <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
         {['A', 'B', 'C'].map((classe) => (
-          <div className="stat-card" key={classe}>
-            <span className="stat-card-label">Classe {classe}</span>
-            <span className="stat-card-value">{resumoClasses[classe].produtos} produto(s)</span>
+          <StatCard key={classe} label={`Classe ${classe}`} value={`${resumoClasses[classe].produtos} produto(s)`}>
             <span className="stat-card-delta" style={{ color: 'var(--ink-soft)' }}>{brl(resumoClasses[classe].faturamento)}</span>
-          </div>
+          </StatCard>
         ))}
       </div>
       <div className="card">
@@ -570,14 +570,14 @@ function EntradaSaidaTab({ filtros }) {
         pedido (não depende de "Faturar" o pedido manualmente, que nem sempre acontece pra pedidos de marketplace).
       </p>
       <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-        <div className="stat-card">
-          <span className="stat-card-label"><PackageMinus size={11} style={{ marginRight: 4, verticalAlign: -2 }} />Total de Unidades Vendidas (Saída)</span>
-          <span className="stat-card-value">{dados.totalUnidades}</span>
-        </div>
-        <div className="stat-card">
-          <span className="stat-card-label"><Boxes size={11} style={{ marginRight: 4, verticalAlign: -2 }} />Pedidos com Movimento</span>
-          <span className="stat-card-value">{dados.totalPedidos}</span>
-        </div>
+        <StatCard
+          label={<><PackageMinus size={11} style={{ marginRight: 4, verticalAlign: -2 }} />Total de Unidades Vendidas (Saída)</>}
+          value={dados.totalUnidades}
+        />
+        <StatCard
+          label={<><Boxes size={11} style={{ marginRight: 4, verticalAlign: -2 }} />Pedidos com Movimento</>}
+          value={dados.totalPedidos}
+        />
       </div>
       <div className="card">
         <div className="card-head">Saída de Estoque por Dia</div>
@@ -954,10 +954,10 @@ function PublicidadeTab({ integracoes }) {
 
       {totais && (
         <div className="stat-strip" style={{ marginBottom: 16 }}>
-          <div className="stat-card"><span className="stat-card-label"><Megaphone size={13} style={{ marginRight: 4, verticalAlign: -2 }} />Gasto com Ads</span><span className="stat-card-value">{brl(totais.custo)}</span></div>
-          <div className="stat-card"><span className="stat-card-label"><MousePointerClick size={13} style={{ marginRight: 4, verticalAlign: -2 }} />Cliques</span><span className="stat-card-value">{totais.cliques.toLocaleString('pt-BR')}</span></div>
-          <div className="stat-card"><span className="stat-card-label"><Eye size={13} style={{ marginRight: 4, verticalAlign: -2 }} />Impressões</span><span className="stat-card-value">{totais.impressoes.toLocaleString('pt-BR')}</span></div>
-          <div className="stat-card"><span className="stat-card-label">ROAS Geral</span><span className="stat-card-value">{roas(roasGeral)}</span></div>
+          <StatCard label={<><Megaphone size={13} style={{ marginRight: 4, verticalAlign: -2 }} />Gasto com Ads</>} value={brl(totais.custo)} />
+          <StatCard label={<><MousePointerClick size={13} style={{ marginRight: 4, verticalAlign: -2 }} />Cliques</>} value={totais.cliques.toLocaleString('pt-BR')} />
+          <StatCard label={<><Eye size={13} style={{ marginRight: 4, verticalAlign: -2 }} />Impressões</>} value={totais.impressoes.toLocaleString('pt-BR')} />
+          <StatCard label="ROAS Geral" value={roas(roasGeral)} />
         </div>
       )}
 

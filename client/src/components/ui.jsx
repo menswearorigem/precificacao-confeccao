@@ -80,6 +80,22 @@ export function Toggle({ checked, onChange, disabled, className = '', ...props }
   );
 }
 
+// Cartão de indicador usado em faixas de KPI (dentro de um .stat-strip).
+// `value` cobre o caso comum (número/texto simples, vira um
+// stat-card-value); `children` é extra — tanto serve pra um valor com
+// componente próprio (ex.: MargemPill com cor semântica, que já sai com a
+// classe stat-card-value embutida) quanto pra um selo de variação abaixo do
+// valor (ex.: VariacaoBadge), podendo os dois coexistir.
+export function StatCard({ label, value, children }) {
+  return (
+    <div className="stat-card">
+      <span className="stat-card-label">{label}</span>
+      {value !== undefined && <span className="stat-card-value">{value}</span>}
+      {children}
+    </div>
+  );
+}
+
 export function Row({ label, value, strong, big }) {
   return (
     <div className={'row-line' + (strong ? ' strong' : '') + (big ? ' big' : '')}>

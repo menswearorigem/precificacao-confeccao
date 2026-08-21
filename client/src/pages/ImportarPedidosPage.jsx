@@ -112,8 +112,8 @@ export default function ImportarPedidosPage() {
 
       {preview && (
         <div className="card">
-          <div className="card-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>Pedidos encontrados ({preview.totalPedidos}){preview.totalJaImportados > 0 && ` — ${preview.totalJaImportados} já importado(s)`}</span>
+          <div className="card-head">
+            Pedidos encontrados ({preview.totalPedidos}){preview.totalJaImportados > 0 && ` — ${preview.totalJaImportados} já importado(s)`}
           </div>
           {preview.pedidos.some((p) => p.itens.some((it) => it.semCorrespondencia)) && (
             <div className="aviso-compacto tone-atencao" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>

@@ -49,8 +49,8 @@ export default function EmpresasPage() {
 
       {empresas.map((emp) => (
         <div className="card" style={{ marginBottom: 16 }} key={emp.id}>
-          <div className="card-head" style={{ justifyContent: 'space-between', display: 'flex' }}>
-            <span>{emp.nome || 'Empresa'}</span>
+          <div className="card-head-linha">
+            <div className="card-head">{emp.nome || 'Empresa'}</div>
             <button className="icon-btn" onClick={() => removeEmpresa(emp.id)}>
               <Trash2 size={14} />
             </button>

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
-import { Select } from '../components/ui';
+import { Select, StatCard } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
@@ -38,8 +38,13 @@ function tonePorMargem(valor, config) {
   return 'tone-saudavel';
 }
 
-function MargemPill({ valor, config }) {
-  return <span className={'stamp sm ' + tonePorMargem(valor, config)}>{pct(valor)}</span>;
+// `grande`: usado dentro de .stat-card, lado a lado com Faturamento/Lucro
+// Bruto etc. — em vez do selo pequeno, o valor fica do mesmo tamanho dos
+// outros indicadores, só com a cor semântica aplicada ao texto.
+function MargemPill({ valor, config, grande }) {
+  const tom = tonePorMargem(valor, config);
+  if (grande) return <span className={'stat-card-value ' + tom}>{pct(valor)}</span>;
+  return <span className={'stamp sm ' + tom}>{pct(valor)}</span>;
 }
 
 function VincularItensModal({ pedido, onClose, onVinculado }) {
@@ -75,8 +80,8 @@ function VincularItensModal({ pedido, onClose, onVinculado }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
       <div className="card" style={{ maxWidth: 680, width: '92%', maxHeight: '82vh', overflowY: 'auto' }}>
-        <div className="card-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>Vincular produto — Pedido {pedido.numeroExibicao || `#${pedido.numero}`}</span>
+        <div className="card-head-linha">
+          <div className="card-head">Vincular produto — Pedido {pedido.numeroExibicao || `#${pedido.numero}`}</div>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
         {erro && <div className="login-error" style={{ marginBottom: 10 }}>{erro}</div>}
@@ -216,13 +221,10 @@ function ResumoProdutoTab({ resumoProduto, serieDiaria, config, busca }) {
   return (
     <>
       <div className="stat-strip">
-        <div className="stat-card"><span className="stat-card-label">Faturamento</span><span className="stat-card-value">{brl(r.faturamento)}</span></div>
-        <div className="stat-card"><span className="stat-card-label">Líq. do Marketplace</span><span className="stat-card-value">{brl(r.liquidoMarketplace)}</span></div>
-        <div className="stat-card"><span className="stat-card-label">Lucro Bruto</span><span className="stat-card-value">{brl(r.lucroBruto)}</span></div>
-        <div className="stat-card">
-          <span className="stat-card-label">Margem</span>
-          <span className="stat-card-value"><MargemPill valor={r.margemPct} config={config} /></span>
-        </div>
+        <StatCard label="Faturamento" value={brl(r.faturamento)} />
+        <StatCard label="Líq. do Marketplace" value={brl(r.liquidoMarketplace)} />
+        <StatCard label="Lucro Bruto" value={brl(r.lucroBruto)} />
+        <StatCard label="Margem"><MargemPill valor={r.margemPct} config={config} grande /></StatCard>
       </div>
 
       <button type="button" className="expand-toggle" onClick={() => setExpandido((v) => !v)}>
@@ -238,20 +240,17 @@ function ResumoProdutoTab({ resumoProduto, serieDiaria, config, busca }) {
             <p className="page-sub">Sem vendas no período pra montar o gráfico.</p>
           )}
           <div className="stat-strip" style={{ marginTop: 16, marginBottom: 0 }}>
-            <div className="stat-card"><span className="stat-card-label">Número de Vendas</span><span className="stat-card-value">{r.numeroVendas}</span></div>
-            <div className="stat-card"><span className="stat-card-label">Unidades Vendidas</span><span className="stat-card-value">{r.numeroUnidadesVendidas}</span></div>
-            <div className="stat-card"><span className="stat-card-label">Ticket Médio</span><span className="stat-card-value">{brl(r.ticketMedio)}</span></div>
-            <div className="stat-card"><span className="stat-card-label">Retorno Sobre Investimento</span><span className="stat-card-value">{pct(r.roiPct)}</span></div>
+            <StatCard label="Número de Vendas" value={r.numeroVendas} />
+            <StatCard label="Unidades Vendidas" value={r.numeroUnidadesVendidas} />
+            <StatCard label="Ticket Médio" value={brl(r.ticketMedio)} />
+            <StatCard label="Retorno Sobre Investimento" value={pct(r.roiPct)} />
           </div>
           {r.custoAds > 0 && (
             <div className="stat-strip" style={{ marginTop: 12, marginBottom: 0 }}>
-              <div className="stat-card"><span className="stat-card-label">Valor em Ads</span><span className="stat-card-value">{brl(r.custoAds)}</span></div>
-              <div className="stat-card"><span className="stat-card-label">TACOS</span><span className="stat-card-value">{pct(r.tacos)}</span></div>
-              <div className="stat-card"><span className="stat-card-label">Lucro Pós Ads</span><span className="stat-card-value">{brl(r.lucroPosAds)}</span></div>
-              <div className="stat-card">
-                <span className="stat-card-label">MPA</span>
-                <span className="stat-card-value"><MargemPill valor={r.mpaPct} config={config} /></span>
-              </div>
+              <StatCard label="Valor em Ads" value={brl(r.custoAds)} />
+              <StatCard label="TACOS" value={pct(r.tacos)} />
+              <StatCard label="Lucro Pós Ads" value={brl(r.lucroPosAds)} />
+              <StatCard label="MPA"><MargemPill valor={r.mpaPct} config={config} grande /></StatCard>
             </div>
           )}
         </div>
@@ -502,9 +501,9 @@ function VendasTab({ pedidos, config, busca }) {
 function DuplicatasSuspeitas({ duplicatas }) {
   const [aberto, setAberto] = useState(false);
   return (
-    <div className="card no-print" style={{ marginBottom: 16, borderColor: 'var(--tone-atencao-border, #e0b84a)' }}>
-      <div className="card-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span>Possível receita duplicada entre pedidos de pacote</span>
+    <div className="card no-print" style={{ marginBottom: 16, borderColor: 'var(--warning-ring)' }}>
+      <div className="card-head-linha">
+        <div className="card-head">Possível receita duplicada entre pedidos de pacote</div>
         <button type="button" className="btn btn-ghost" onClick={() => setAberto((v) => !v)}>
           {aberto ? 'Esconder' : 'Ver detalhes'}
         </button>
@@ -909,29 +908,23 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                 {isMarketplace ? (
                   <>
                     <div className="stat-strip">
-                      <div className="stat-card"><span className="stat-card-label">Faturamento</span><span className="stat-card-value">{brl(relatorio.totalGeral.receita)}</span></div>
-                      <div className="stat-card"><span className="stat-card-label">Líq. do Marketplace</span><span className="stat-card-value">{brl(relatorio.totalGeral.liquidoMarketplace)}</span></div>
-                      <div className="stat-card"><span className="stat-card-label">Lucro Bruto</span><span className="stat-card-value">{brl(relatorio.totalGeral.lucroBruto)}</span></div>
-                      <div className="stat-card">
-                        <span className="stat-card-label">Margem</span>
-                        <span className="stat-card-value"><MargemPill valor={relatorio.totalGeral.margemBrutaPct} config={config} /></span>
-                      </div>
+                      <StatCard label="Faturamento" value={brl(relatorio.totalGeral.receita)} />
+                      <StatCard label="Líq. do Marketplace" value={brl(relatorio.totalGeral.liquidoMarketplace)} />
+                      <StatCard label="Lucro Bruto" value={brl(relatorio.totalGeral.lucroBruto)} />
+                      <StatCard label="Margem"><MargemPill valor={relatorio.totalGeral.margemBrutaPct} config={config} grande /></StatCard>
                     </div>
                     <div className="stat-strip" style={{ marginTop: 12 }}>
-                      <div className="stat-card"><span className="stat-card-label">Número de Vendas</span><span className="stat-card-value">{relatorio.totalGeral.numeroVendas}</span></div>
-                      <div className="stat-card"><span className="stat-card-label">Unidades Vendidas</span><span className="stat-card-value">{relatorio.totalGeral.numeroUnidadesVendidas}</span></div>
-                      <div className="stat-card"><span className="stat-card-label">Ticket Médio</span><span className="stat-card-value">{brl(relatorio.totalGeral.ticketMedio)}</span></div>
-                      <div className="stat-card"><span className="stat-card-label">Retorno Sobre Investimento</span><span className="stat-card-value">{pct(relatorio.totalGeral.roiPct)}</span></div>
+                      <StatCard label="Número de Vendas" value={relatorio.totalGeral.numeroVendas} />
+                      <StatCard label="Unidades Vendidas" value={relatorio.totalGeral.numeroUnidadesVendidas} />
+                      <StatCard label="Ticket Médio" value={brl(relatorio.totalGeral.ticketMedio)} />
+                      <StatCard label="Retorno Sobre Investimento" value={pct(relatorio.totalGeral.roiPct)} />
                     </div>
                     {relatorio.totalGeral.custoAds > 0 && (
                       <div className="stat-strip" style={{ marginTop: 12 }}>
-                        <div className="stat-card"><span className="stat-card-label">Valor em Ads</span><span className="stat-card-value">{brl(relatorio.totalGeral.custoAds)}</span></div>
-                        <div className="stat-card"><span className="stat-card-label">TACOS</span><span className="stat-card-value">{pct(relatorio.totalGeral.tacos)}</span></div>
-                        <div className="stat-card"><span className="stat-card-label">Lucro Pós Ads</span><span className="stat-card-value">{brl(relatorio.totalGeral.lucro)}</span></div>
-                        <div className="stat-card">
-                          <span className="stat-card-label">MPA</span>
-                          <span className="stat-card-value"><MargemPill valor={relatorio.totalGeral.mpaPct} config={config} /></span>
-                        </div>
+                        <StatCard label="Valor em Ads" value={brl(relatorio.totalGeral.custoAds)} />
+                        <StatCard label="TACOS" value={pct(relatorio.totalGeral.tacos)} />
+                        <StatCard label="Lucro Pós Ads" value={brl(relatorio.totalGeral.lucro)} />
+                        <StatCard label="MPA"><MargemPill valor={relatorio.totalGeral.mpaPct} config={config} grande /></StatCard>
                       </div>
                     )}
                     {relatorio.totalGeral.frete > 0 && (

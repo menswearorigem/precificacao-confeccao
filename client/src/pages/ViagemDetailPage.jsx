@@ -488,8 +488,8 @@ function CheckoutModal({ itens, total, onAtualizarItem, onRemoverItem, onClose, 
   return (
     <div className="viagem-modal-overlay">
       <div className="card viagem-modal">
-        <div className="card-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>Fechar Venda</span>
+        <div className="card-head-linha">
+          <div className="card-head">Fechar Venda</div>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
 

@@ -436,6 +436,19 @@ h2 + .page-sub { margin-top: 7px; }
   background: var(--terracotta);
   flex-shrink: 0;
 }
+/* Cabeçalho de card com uma ação à direita (botão de fechar, alternar,
+   remover etc.) — o .card-head sozinho não pode ganhar justify-content,
+   porque a barrinha do ::before vira um item de flex junto do título e
+   space-between separa os dois nas pontas em vez de manter a barra colada
+   ao título. */
+.card-head-linha {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 13px;
+}
+.card-head-linha .card-head { margin-bottom: 0; flex: 1; min-width: 0; }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 18px; }
@@ -1099,6 +1112,14 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
 .stat-card-delta { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600; width: fit-content; }
 .stat-card-delta.up { color: var(--success); }
 .stat-card-delta.down { color: var(--danger); }
+/* Reaproveita as cores dos selos de situação (.tone-*) num valor de
+   indicador — sem o fundo/borda do selo, só a cor no texto, pra não ficar
+   menor/diferente dos demais números do mesmo .stat-strip. */
+.stat-card-value.tone-prejuizo, .stat-card-value.tone-abaixo, .stat-card-value.tone-atencao,
+.stat-card-value.tone-saudavel, .stat-card-value.tone-elevada, .stat-card-value.tone-neutro {
+  background: none;
+  border-color: transparent;
+}
 @media (max-width: 640px) { .stat-strip { grid-template-columns: repeat(2, 1fr); } }
 
 /* ---------- sub-abas dentro de uma página ---------- */
