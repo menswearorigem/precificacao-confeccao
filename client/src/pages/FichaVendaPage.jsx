@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Search, X, Printer } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, pct, numeroBr } from '../lib/format';
+import { brl, pct, numeroBr, qtdFracionaria } from '../lib/format';
 import { statusToneClass } from '../lib/statusTone';
 
 const MAX_REFERENCIAS = 5;
@@ -151,7 +151,7 @@ function FichaVenda({ ficha, pagina, totalPaginas }) {
               <tr key={m.id}>
                 <td className="col-esq">{m.material}</td>
                 <td>{m.unidade}</td>
-                <td>{m.quantidade}</td>
+                <td>{qtdFracionaria(m.quantidade)}</td>
                 <td>{brl(m.valor_unitario)}</td>
                 <td>{brl(Number(m.quantidade) * Number(m.valor_unitario))}</td>
               </tr>

@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { Field, Select, Checkbox, Toggle } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import DataTable from '../components/DataTable';
+import { formatQtd } from '../lib/format';
 
 function EanEditavel({ variante, onFeito }) {
   const [editando, setEditando] = useState(false);
@@ -387,7 +388,7 @@ export default function EstoquePage() {
                   <td>{v.cor}</td>
                   <td>{v.tamanho}</td>
                   <td><EanEditavel variante={v} onFeito={() => handleBuscar({ preventDefault: () => {} })} /></td>
-                  <td className="mono">{v.quantidade}</td>
+                  <td className="mono">{formatQtd(v.quantidade)}</td>
                 </tr>
               ))}
               {resultadoBusca.length === 0 && <tr><td colSpan="6">Nada encontrado.</td></tr>}
@@ -430,7 +431,7 @@ export default function EstoquePage() {
                     <td>{v.cor}</td>
                     <td>{v.tamanho}</td>
                     <td><EanEditavel variante={v} onFeito={() => loadVariantes(produtoId)} /></td>
-                    <td className="mono" style={{ fontWeight: 700 }}>{v.quantidade}</td>
+                    <td className="mono" style={{ fontWeight: 700 }}>{formatQtd(v.quantidade)}</td>
                     <td><MovimentoInline variante={v} onFeito={() => loadVariantes(produtoId)} /></td>
                     <td>
                       <label className="toggle">

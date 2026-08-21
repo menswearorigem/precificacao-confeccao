@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer } from 'lucide-react';
 import { api } from '../api/client';
-import { brl } from '../lib/format';
+import { brl, formatQtd } from '../lib/format';
 import { Select, DateInput } from '../components/ui';
 
 function primeiroDiaDoMes() {
@@ -100,7 +100,7 @@ export default function RelatorioComprasPage() {
           <div className="grid-2" style={{ marginBottom: 16 }}>
             <div className="card">
               <div className="row-line"><span>Total Gasto no Período</span><span className="mono" style={{ fontWeight: 700 }}>{brl(relatorio.totalGeral)}</span></div>
-              <div className="row-line"><span>Quantidade de Compras</span><span className="mono">{relatorio.quantidadeCompras}</span></div>
+              <div className="row-line"><span>Quantidade de Compras</span><span className="mono">{formatQtd(relatorio.quantidadeCompras)}</span></div>
               <div className="row-line"><span>Ticket Médio</span><span className="mono">{brl(relatorio.ticketMedio)}</span></div>
             </div>
             <div className="card">
@@ -111,7 +111,7 @@ export default function RelatorioComprasPage() {
                   {relatorio.porCategoria.map((c) => (
                     <tr key={c.categoria}>
                       <td>{c.categoria}</td>
-                      <td className="mono">{c.quantidade}</td>
+                      <td className="mono">{formatQtd(c.quantidade)}</td>
                       <td className="mono">{brl(c.total)}</td>
                     </tr>
                   ))}
@@ -129,7 +129,7 @@ export default function RelatorioComprasPage() {
                 {relatorio.porFornecedor.map((f) => (
                   <tr key={f.fornecedor_nome}>
                     <td>{f.fornecedor_nome}</td>
-                    <td className="mono">{f.quantidade}</td>
+                    <td className="mono">{formatQtd(f.quantidade)}</td>
                     <td className="mono">{brl(f.total)}</td>
                   </tr>
                 ))}

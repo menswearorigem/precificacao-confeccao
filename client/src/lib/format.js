@@ -25,6 +25,13 @@ export const numeroBr = (n, digits = 2) =>
     maximumFractionDigits: digits,
   });
 
+// Quantidade que pode ter fração de verdade (metros de tecido, kg de linha —
+// ao contrário de peças, que são sempre inteiras). Corta zeros à direita
+// (1,5000 -> "1,5", 2,0000 -> "2") em vez de arredondar pra inteiro ou
+// mostrar zeros que a coluna NUMERIC do banco carrega mas não significam nada.
+export const qtdFracionaria = (n) =>
+  (Number.isFinite(Number(n)) ? Number(n) : 0).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+
 export const uid = () => Math.random().toString(36).slice(2, 10);
 
 export const dataBr = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('pt-BR') : '');

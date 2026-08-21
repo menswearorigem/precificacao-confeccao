@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, Boxes } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, pct, uid } from '../lib/format';
+import { brl, pct, uid, formatQtd } from '../lib/format';
 import { Select } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 
@@ -104,7 +104,7 @@ function KitManualCard({ kit, onRemovido }) {
           {kit.itens.map((item) => (
             <tr key={item.id}>
               <td className="mono">{item.referencia}</td>
-              <td>{item.quantidade}</td>
+              <td className="mono">{formatQtd(item.quantidade)}</td>
               <td className="mono">{brl(item.custoUnitario)}</td>
               <td className="mono">{brl(item.precoUnitSugerido)}</td>
             </tr>

@@ -4,6 +4,7 @@ import { Upload, CheckCircle2, AlertTriangle, FileSpreadsheet } from 'lucide-rea
 import { api } from '../api/client';
 import { Select } from '../components/ui';
 import FileDropzone from '../components/FileDropzone';
+import { brl, qtdFracionaria } from '../lib/format';
 
 export default function ImportacaoPage() {
   const fileRef = useRef(null);
@@ -150,7 +151,7 @@ export default function ImportacaoPage() {
                 <thead><tr><th>Referência</th><th>Material</th><th>Un.</th><th>Qtd</th><th>Vlr. unit.</th></tr></thead>
                 <tbody>
                   {preview.materiais.validos.slice(0, 50).map((m, i) => (
-                    <tr key={i}><td className="mono">{m.referencia}</td><td>{m.material}</td><td>{m.unidade}</td><td className="mono">{m.quantidade}</td><td className="mono">{m.valor_unitario}</td></tr>
+                    <tr key={i}><td className="mono">{m.referencia}</td><td>{m.material}</td><td>{m.unidade}</td><td className="mono">{qtdFracionaria(m.quantidade)}</td><td className="mono">{brl(m.valor_unitario)}</td></tr>
                   ))}
                 </tbody>
               </table>
@@ -162,7 +163,7 @@ export default function ImportacaoPage() {
                 <thead><tr><th>Referência</th><th>Tipo</th><th>Observação</th><th>Valor</th></tr></thead>
                 <tbody>
                   {preview.custosIndustriais.validos.slice(0, 50).map((c, i) => (
-                    <tr key={i}><td className="mono">{c.referencia}</td><td>{c.tipo}</td><td>{c.observacao}</td><td className="mono">{c.valor}</td></tr>
+                    <tr key={i}><td className="mono">{c.referencia}</td><td>{c.tipo}</td><td>{c.observacao}</td><td className="mono">{brl(c.valor)}</td></tr>
                   ))}
                 </tbody>
               </table>
