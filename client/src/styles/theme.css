@@ -1125,8 +1125,8 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
 }
 .stat-card { background: var(--surface); padding: 13px 16px; display: flex; flex-direction: column; gap: 4px; }
 .stat-card-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-faint); font-weight: 600; }
-.stat-card-value { font-size: 18px; font-weight: 700; color: var(--leather-deep); }
-.stat-card-delta { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600; width: fit-content; }
+.stat-card-value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 700; color: var(--leather-deep); }
+.stat-card-delta { font-family: var(--font-mono); font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600; width: fit-content; }
 .stat-card-delta.up { color: var(--success); }
 .stat-card-delta.down { color: var(--danger); }
 /* Reaproveita as cores dos selos de situação (.tone-*) num valor de
@@ -1222,7 +1222,7 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
 .venda-card-header:hover { background: var(--border-soft); }
 .venda-card-titulo { font-family: var(--font-display); font-weight: 600; font-size: 15px; color: var(--leather-deep); }
 .venda-card-sub { font-size: 11.5px; color: var(--ink-soft); margin-top: 2px; }
-.venda-card-lucro { font-family: var(--font-mono); font-weight: 700; font-size: 15.5px; color: var(--leather-deep); }
+.venda-card-lucro { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 700; font-size: 15.5px; color: var(--leather-deep); }
 .venda-card-body { padding: 4px 18px 18px; border-top: 1px solid var(--border-soft); }
 
 .venda-item-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border-soft); }
@@ -1244,7 +1244,7 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
   flex-shrink: 0;
 }
 .venda-breakdown-label { flex: 1; color: var(--ink-soft); }
-.venda-breakdown-valor { font-family: var(--font-mono); font-weight: 600; color: var(--ink); }
+.venda-breakdown-valor { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
 .venda-breakdown-row.destaque {
   margin-top: 8px;
   padding: 14px 0 2px;
@@ -1505,7 +1505,7 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
 }
 .ficha-doc-empresa { font-size: 11px; letter-spacing: 0.03em; color: var(--ink-soft); text-transform: uppercase; }
 .ficha-doc-titulo { font-family: var(--font-display); font-size: 18px; font-weight: 600; color: var(--leather-dark); }
-.ficha-doc-meta { text-align: right; font-size: 12px; font-family: var(--font-mono); }
+.ficha-doc-meta { text-align: right; font-size: 12px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 .ficha-doc-campos {
   display: flex;
@@ -1555,6 +1555,7 @@ table.ficha-doc-tabela {
   text-align: center;
   border: 1px solid var(--border);
   font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 .ficha-doc-tabela td.col-esq, .ficha-doc-tabela td.col-cor { text-align: left; font-family: var(--font-body); }
 .ficha-doc-tabela tr:nth-child(even) td { background: var(--surface-alt); }
@@ -1577,7 +1578,7 @@ table.ficha-doc-tabela {
   padding: 5px 10px;
   border: 1px solid var(--border);
 }
-.ficha-doc-resumo td.col-total { text-align: right; font-family: var(--font-mono); font-weight: 700; }
+.ficha-doc-resumo td.col-total { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 700; }
 .ficha-doc-resumo tr.linha-forte td { font-weight: 700; color: var(--leather-deep); background: var(--surface-alt); }
 
 @media print {

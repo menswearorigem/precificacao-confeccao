@@ -98,9 +98,9 @@ function FaixaPreco({ minimo, ideal, premium, ativo }) {
         />
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-soft)' }}>
-        <span>Mínimo {brl(minimo)}</span>
-        <span>Ideal {brl(ideal)}</span>
-        <span>Premium {brl(premium)}</span>
+        <span>Mínimo <span className="mono">{brl(minimo)}</span></span>
+        <span>Ideal <span className="mono">{brl(ideal)}</span></span>
+        <span>Premium <span className="mono">{brl(premium)}</span></span>
       </div>
     </div>
   );

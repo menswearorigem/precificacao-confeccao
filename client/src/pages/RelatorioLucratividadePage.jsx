@@ -511,7 +511,7 @@ function DuplicatasSuspeitas({ duplicatas }) {
       <p className="page-sub" style={{ marginTop: 0 }}>
         Achei {duplicatas.grupos.length} item(ns) com o mesmo SKU, preço e quantidade aparecendo em mais de um
         pedido dentro do mesmo pacote do Mercado Livre — pode ser a mesma venda contada duas vezes (até
-        <strong> {brl(duplicatas.totalPossivelExcesso)}</strong> de receita possivelmente duplicada no período). Ainda não
+        <strong className="mono"> {brl(duplicatas.totalPossivelExcesso)}</strong> de receita possivelmente duplicada no período). Ainda não
         corrijo isso sozinho — quero ter mais certeza antes de mexer em número de receita. Se puder, confira um desses
         pedidos direto no Mercado Livre e me avise se realmente é a mesma venda repetida.
       </p>
@@ -932,7 +932,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                         <span>
                           Frete (não entra no Faturamento acima — é dinheiro do comprador/transportadora, não da
                           loja; se estiver comparando com outra ferramenta que inclui frete no total de vendas, some
-                          esse valor pra bater: {brl(relatorio.totalGeral.receita + relatorio.totalGeral.frete)})
+                          esse valor pra bater: <span className="mono">{brl(relatorio.totalGeral.receita + relatorio.totalGeral.frete)}</span>)
                         </span>
                         <span className="mono">{brl(relatorio.totalGeral.frete)}</span>
                       </div>
