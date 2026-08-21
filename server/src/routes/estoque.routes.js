@@ -610,4 +610,161 @@ router.get('/ficha', async (req, res, next) => {
   }
 });
 
+// Indicadores de Estoque (Onda 4, TAREFA 4.2). O módulo hoje é só busca por
+// referência/EAN, sem indicador nenhum — os campos pra calcular já existem
+// (variante: cor, tamanho, EAN, saldo; produto: custo/preço via o mesmo
+// motor de cálculo de sempre).
+//
+// Regras de precisão aplicadas aqui:
+// - o custo usado é o custo ATUAL da ficha (não existe histórico de custo
+//   por movimentação) — por isso "valor em estoque" é sempre rotulado
+//   "a custo atual" no front, nunca como custo médio ou histórico;
+// - variante cuja referência não tem custo cadastrado (preço sugerido = 0)
+//   NÃO entra na soma de valor em estoque — só é contada à parte;
+// - venda casada com estoque só pela chave exata `pedido_itens.variante_id`
+//   (resolvida na importação/lançamento, nunca por aproximação aqui); item
+//   sem variante vinculada vira "venda não conciliada", nunca é ignorado
+//   nem casado por nome parecido.
+router.get('/indicadores', async (req, res, next) => {
+  try {
+    const { rows: variantes } = await pool.query(`
+      SELECT v.id, v.produto_id, v.cor, v.tamanho, v.ean, v.quantidade, p.referencia, p.descricao
+      FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id
+      WHERE v.ativo = true
+    `);
+
+    const produtoIds = [...new Set(variantes.map((v) => v.produto_id))];
+    const custoPorProduto = new Map();
+    if (produtoIds.length > 0) {
+      const { rows: produtosRows } = await pool.query(`
+        SELECT p.*, e.nome AS empresa_nome, e.regime_tributario, e.icms, e.pis, e.cofins, e.ipi,
+               e.iss, e.simples_aliquota, e.outros_impostos
+        FROM produtos p LEFT JOIN empresas e ON e.id = p.empresa_id
+        WHERE p.id = ANY($1)
+      `, [produtoIds]);
+      const { rows: materiaisRows } = await pool.query('SELECT * FROM materiais WHERE produto_id = ANY($1)', [produtoIds]);
+      const { rows: custosRows } = await pool.query('SELECT * FROM custos_industriais WHERE produto_id = ANY($1)', [produtoIds]);
+      const ctx = await getCalcContext();
+      for (const p of produtosRows) {
+        const materiais = materiaisRows.filter((m) => m.produto_id === p.id);
+        const custosIndustriais = custosRows.filter((c) => c.produto_id === p.id);
+        const calculo = produtosRoutes.buildCalculo(p, materiais, custosIndustriais, ctx);
+        custoPorProduto.set(p.id, {
+          custoProducao: Number(calculo.custoTotal.subtotalProducao) || 0,
+          precoSugerido: Number(calculo.formacaoPreco.precoSugerido) || 0,
+        });
+      }
+    }
+
+    let pecasEmEstoque = 0;
+    let variantesComSaldo = 0;
+    let variantesZeradas = 0;
+    let variantesSemEan = 0;
+    let valorCusto = 0;
+    let valorPrecoSugerido = 0;
+    const variantesSemCusto = new Set();
+    for (const v of variantes) {
+      const qtd = Number(v.quantidade) || 0;
+      pecasEmEstoque += qtd;
+      if (qtd > 0) variantesComSaldo += 1; else variantesZeradas += 1;
+      if (!v.ean) variantesSemEan += 1;
+      const custo = custoPorProduto.get(v.produto_id);
+      if (!custo || custo.precoSugerido === 0) {
+        if (qtd > 0) variantesSemCusto.add(v.id);
+        continue;
+      }
+      valorCusto += qtd * custo.custoProducao;
+      valorPrecoSugerido += qtd * custo.precoSugerido;
+    }
+
+    // ---------- vendas dos últimos 30 dias, só por variante_id exato ----------
+    const { rows: vendasRows } = await pool.query(`
+      SELECT pi.variante_id, SUM(pi.quantidade)::numeric AS unidades
+      FROM pedido_itens pi
+      JOIN pedidos_venda pv ON pv.id = pi.pedido_id
+      WHERE pv.situacao != 'cancelado'
+        AND pv.data_pedido >= CURRENT_DATE - INTERVAL '30 days'
+      GROUP BY pi.variante_id
+    `);
+    const vendas30dPorVariante = new Map();
+    let vendasNaoConciliadas = 0;
+    for (const r of vendasRows) {
+      if (r.variante_id === null) { vendasNaoConciliadas += Number(r.unidades); continue; }
+      vendas30dPorVariante.set(r.variante_id, Number(r.unidades));
+    }
+
+    // ---------- rupturas: saldo zero com venda nos últimos 30 dias ----------
+    const rupturas = variantes
+      .filter((v) => (Number(v.quantidade) || 0) <= 0 && vendas30dPorVariante.has(v.id))
+      .map((v) => ({
+        varianteId: v.id, produtoId: v.produto_id, referencia: v.referencia, descricao: v.descricao,
+        cor: v.cor, tamanho: v.tamanho, vendidoUltimos30d: vendas30dPorVariante.get(v.id),
+      }))
+      .sort((a, b) => b.vendidoUltimos30d - a.vendidoUltimos30d);
+
+    // ---------- curva ABC por valor em estoque a custo, por referência ----------
+    const valorPorProduto = new Map();
+    for (const v of variantes) {
+      const qtd = Number(v.quantidade) || 0;
+      const custo = custoPorProduto.get(v.produto_id);
+      if (qtd <= 0 || !custo || custo.precoSugerido === 0) continue;
+      const valor = qtd * custo.custoProducao;
+      if (!valorPorProduto.has(v.produto_id)) {
+        valorPorProduto.set(v.produto_id, { produtoId: v.produto_id, referencia: v.referencia, descricao: v.descricao, valor: 0 });
+      }
+      valorPorProduto.get(v.produto_id).valor += valor;
+    }
+    const listaValor = [...valorPorProduto.values()].sort((a, b) => b.valor - a.valor);
+    const valorTotalCurva = listaValor.reduce((s, x) => s + x.valor, 0);
+    let acumulado = 0;
+    const curvaAbc = listaValor.map((x) => {
+      acumulado += x.valor;
+      const pctAcumulado = valorTotalCurva > 0 ? acumulado / valorTotalCurva : 0;
+      const classe = pctAcumulado <= 0.8 ? 'A' : pctAcumulado <= 0.95 ? 'B' : 'C';
+      return { ...x, participacaoPct: valorTotalCurva > 0 ? x.valor / valorTotalCurva : 0, pctAcumulado, classe };
+    });
+
+    // ---------- cobertura em dias por referência ----------
+    const saldoPorProduto = new Map();
+    for (const v of variantes) {
+      const qtd = Number(v.quantidade) || 0;
+      if (!saldoPorProduto.has(v.produto_id)) saldoPorProduto.set(v.produto_id, { produtoId: v.produto_id, referencia: v.referencia, descricao: v.descricao, saldo: 0, vendido30d: 0 });
+      const acc = saldoPorProduto.get(v.produto_id);
+      acc.saldo += qtd;
+      acc.vendido30d += vendas30dPorVariante.get(v.id) || 0;
+    }
+    const cobertura = [...saldoPorProduto.values()]
+      .filter((x) => x.saldo > 0)
+      .map((x) => {
+        const mediaDiaria = x.vendido30d / 30;
+        const dias = mediaDiaria > 0 ? x.saldo / mediaDiaria : null;
+        return { ...x, coberturaDias: dias };
+      })
+      .sort((a, b) => {
+        if (a.coberturaDias === null) return 1;
+        if (b.coberturaDias === null) return -1;
+        return a.coberturaDias - b.coberturaDias;
+      });
+
+    res.json({
+      indicadores: {
+        pecasEmEstoque,
+        variantesComSaldo,
+        variantesZeradas,
+        variantesSemEan,
+        valorCusto,
+        valorPrecoSugerido,
+        variantesSemCustoComSaldo: variantesSemCusto.size,
+      },
+      rupturas,
+      curvaAbc,
+      cobertura,
+      vendasNaoConciliadas,
+      totalVariantesAtivas: variantes.length,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;
