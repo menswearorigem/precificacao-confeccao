@@ -246,7 +246,9 @@ function normalizarTexto(valor) {
 
 const LIMITE_RECENTES = 5;
 
-function lerRecentes(chave) {
+// Exportado pra telas como Dashboard/Simulador oferecerem um atalho pras
+// últimas referências consultadas antes mesmo de abrir o Select.
+export function lerRecentes(chave) {
   if (!chave) return [];
   try {
     const lista = JSON.parse(localStorage.getItem(`hbn_select_recentes_${chave}`) || '[]');

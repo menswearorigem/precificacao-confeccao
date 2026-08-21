@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { Field, Select } from '../components/ui';
+import { useEffect, useMemo, useState } from 'react';
+import { LayoutDashboard, History } from 'lucide-react';
+import { Field, Select, EstadoVazio, lerRecentes } from '../components/ui';
 import { api } from '../api/client';
 import { brl, pct, numeroBr } from '../lib/format';
 import { statusToneClass } from '../lib/statusTone';
@@ -122,6 +123,16 @@ export default function DashboardPage() {
 
   const c = detalhe?.calculo;
 
+  // Atalho pras últimas referências consultadas — mesma lista de "recentes"
+  // que o Select já guarda em localStorage, só filtrada pro que ainda existe
+  // no cadastro atual (produto pode ter sido excluído nesse meio-tempo).
+  const recentes = useMemo(() => {
+    if (produtos.length === 0) return [];
+    return lerRecentes('dashboard_produto')
+      .map((id) => produtos.find((p) => String(p.id) === String(id)))
+      .filter(Boolean);
+  }, [produtos]);
+
   return (
     <div className="page-wide">
       <h2>Dashboard Executivo</h2>
@@ -184,6 +195,30 @@ export default function DashboardPage() {
             </div>
           </div>
         </>
+      )}
+
+      {!c && (
+        <div className="card">
+          <EstadoVazio
+            Icone={LayoutDashboard}
+            titulo="Selecione uma referência acima"
+            descricao="O painel mostra a composição do preço de venda (materiais, industrial, indireto, impostos, taxas e lucro), a faixa entre preço mínimo/ideal/premium e os indicadores de custo da referência escolhida."
+          />
+          {recentes.length > 0 && (
+            <div style={{ borderTop: '1px solid var(--border-soft)', marginTop: 4, paddingTop: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--ink-soft)', marginBottom: 10, justifyContent: 'center' }}>
+                <History size={13} /> Últimas consultadas
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+                {recentes.map((p) => (
+                  <button key={p.id} type="button" className="btn btn-ghost sm" onClick={() => setProdutoId(String(p.id))}>
+                    <span className="mono">{p.referencia}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
-import { FlaskConical } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { FlaskConical, History } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, NumInput, Row, Select } from '../components/ui';
+import { Field, NumInput, Row, Select, EstadoVazio, lerRecentes } from '../components/ui';
 import { brl, pct } from '../lib/format';
 import { statusToneClass } from '../lib/statusTone';
 
@@ -59,6 +59,13 @@ export default function SimuladorPage() {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => rodarSimulacao(produtoId, next), 350);
   }
+
+  const recentes = useMemo(() => {
+    if (produtos.length === 0) return [];
+    return lerRecentes('simulador_produto')
+      .map((id) => produtos.find((p) => String(p.id) === String(id)))
+      .filter(Boolean);
+  }, [produtos]);
 
   return (
     <div className="page-wide">
@@ -146,6 +153,30 @@ export default function SimuladorPage() {
             <span className="mono">{brl(resultado.simulado.diferencaRS)} ({pct(resultado.simulado.diferencaPct)})</span>
           </div>
         </>
+      )}
+
+      {!resultado && (
+        <div className="card">
+          <EstadoVazio
+            Icone={FlaskConical}
+            titulo="Selecione uma referência acima"
+            descricao="Ajuste hipoteticamente o custo de tecido/facção, frete, impostos, comissão ou a margem desejada e veja o cenário simulado lado a lado com o atual — sem alterar nenhum dado real do produto."
+          />
+          {recentes.length > 0 && (
+            <div style={{ borderTop: '1px solid var(--border-soft)', marginTop: 4, paddingTop: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--ink-soft)', marginBottom: 10, justifyContent: 'center' }}>
+                <History size={13} /> Últimas consultadas
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+                {recentes.map((p) => (
+                  <button key={p.id} type="button" className="btn btn-ghost sm" onClick={() => handleProdutoChange(String(p.id))}>
+                    <span className="mono">{p.referencia}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
