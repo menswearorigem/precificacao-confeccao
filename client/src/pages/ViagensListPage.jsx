@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plane, Plus, MapPin, CalendarDays, Package, TrendingUp } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, DateInput } from '../components/ui';
+import { Field, DateInput, Skeleton } from '../components/ui';
 import { brl } from '../lib/format';
 
 const SITUACAO_LABEL = { planejamento: 'Planejamento', em_andamento: 'Em andamento', finalizada: 'Finalizada' };
@@ -93,6 +93,18 @@ export default function ViagensListPage() {
               {criando ? 'Criando…' : 'Criar e montar o catálogo'}
             </button>
           </form>
+        </div>
+      )}
+
+      {loading && viagens.length === 0 && (
+        <div className="viagem-grid" style={{ marginTop: 22 }}>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div className="viagem-card" key={i} style={{ cursor: 'default' }}>
+              <Skeleton width="45%" height={18} />
+              <Skeleton width="70%" />
+              <Skeleton width="55%" />
+            </div>
+          ))}
         </div>
       )}
 

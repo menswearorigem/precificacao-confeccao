@@ -1084,6 +1084,23 @@ table.data-table tr.clickable-row:hover { background: rgba(181, 101, 29, 0.075);
 .data-table-outer.densidade-compacta table.data-table td { padding: 5px 8px; }
 table.data-table input, table.data-table select { font-size: 12.5px; padding: 6px 8px; }
 
+/* ---------- esqueleto de carregamento ---------- */
+.skeleton {
+  display: inline-block;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(100deg, var(--border-soft) 30%, var(--border) 50%, var(--border-soft) 70%);
+  background-size: 250% 100%;
+  animation: skeleton-brilho 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-brilho {
+  0% { background-position: 200% 0; }
+  100% { background-position: -50% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; background: var(--border-soft); }
+}
+.skeleton-row td { padding-top: 11px; padding-bottom: 11px; }
+
 .row-line {
   display: flex;
   justify-content: space-between;

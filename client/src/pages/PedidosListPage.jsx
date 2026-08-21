@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Search, ChevronRight } from 'lucide-react';
 import { api } from '../api/client';
 import { brl } from '../lib/format';
-import { Select } from '../components/ui';
+import { Select, SkeletonLinhasTabela } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
@@ -151,6 +151,7 @@ export default function PedidosListPage({ origemFiltro }) {
             </tr>
           </thead>
           <tbody>
+            {loading && pedidos.length === 0 && <SkeletonLinhasTabela colunas={8} />}
             {pedidos.map((p) => (
               <tr key={p.id} className="clickable-row" onClick={() => navigate(`/pedidos/${p.id}`)}>
                 <td className="mono">#{p.numero}</td>

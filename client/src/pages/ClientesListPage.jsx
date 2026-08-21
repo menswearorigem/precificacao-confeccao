@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Plus, ChevronRight, Search } from 'lucide-react';
 import { api } from '../api/client';
 import DataTable from '../components/DataTable';
+import { SkeletonLinhasTabela } from '../components/ui';
 
 export default function ClientesListPage() {
   const navigate = useNavigate();
@@ -65,6 +66,7 @@ export default function ClientesListPage() {
             </tr>
           </thead>
           <tbody>
+            {loading && clientes.length === 0 && <SkeletonLinhasTabela colunas={7} />}
             {clientes.map((c) => (
               <tr key={c.id} className="clickable-row" onClick={() => navigate(`/clientes/${c.id}`)}>
                 <td>{c.nome}</td>

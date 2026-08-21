@@ -96,6 +96,35 @@ export function StatCard({ label, value, children }) {
   );
 }
 
+// Bloco cinza com brilho suave pra ocupar o lugar de algo que ainda está
+// carregando, em vez da tela piscar vazia por um instante. Respeita
+// prefers-reduced-motion via CSS (a animação vira um tom fixo).
+export function Skeleton({ width, height = 14, radius, className = '', style }) {
+  return (
+    <span
+      className={`skeleton${className ? ` ${className}` : ''}`}
+      style={{ width, height, borderRadius: radius, ...style }}
+    />
+  );
+}
+
+// Linhas de esqueleto pra colocar dentro de um <tbody> enquanto a
+// primeira página de uma lista carrega — mesma quantidade de colunas da
+// tabela real, só que com barras cinza no lugar do texto.
+export function SkeletonLinhasTabela({ colunas, linhas = 5 }) {
+  return (
+    <>
+      {Array.from({ length: linhas }).map((_, i) => (
+        <tr key={i} className="skeleton-row">
+          {Array.from({ length: colunas }).map((_, j) => (
+            <td key={j}><Skeleton width={j === 0 ? '60%' : `${60 + ((i + j) % 3) * 10}%`} /></td>
+          ))}
+        </tr>
+      ))}
+    </>
+  );
+}
+
 export function Row({ label, value, strong, big }) {
   return (
     <div className={'row-line' + (strong ? ' strong' : '') + (big ? ' big' : '')}>

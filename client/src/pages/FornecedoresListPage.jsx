@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Plus, ChevronRight, Search } from 'lucide-react';
 import { api } from '../api/client';
+import { SkeletonLinhasTabela } from '../components/ui';
 
 export default function FornecedoresListPage() {
   const navigate = useNavigate();
@@ -62,6 +63,7 @@ export default function FornecedoresListPage() {
             </tr>
           </thead>
           <tbody>
+            {loading && fornecedores.length === 0 && <SkeletonLinhasTabela colunas={6} />}
             {fornecedores.map((f) => (
               <tr key={f.id} className="clickable-row" onClick={() => navigate(`/fornecedores/${f.id}`)}>
                 <td>{f.nome}</td>

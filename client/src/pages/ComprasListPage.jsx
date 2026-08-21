@@ -4,6 +4,7 @@ import { Plus, Search, ChevronRight, BarChart3 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl } from '../lib/format';
 import DataTable from '../components/DataTable';
+import { SkeletonLinhasTabela } from '../components/ui';
 
 const SITUACAO_TONE = { pendente: 'tone-atencao', recebido: 'tone-saudavel', cancelado: 'tone-prejuizo' };
 const SITUACAO_LABEL = { pendente: 'Pendente', recebido: 'Recebido', cancelado: 'Cancelado' };
@@ -111,6 +112,7 @@ export default function ComprasListPage() {
             </tr>
           </thead>
           <tbody>
+            {loading && compras.length === 0 && <SkeletonLinhasTabela colunas={8} />}
             {compras.map((c) => (
               <tr key={c.id} className="clickable-row" onClick={() => navigate(`/compras/${c.id}`)}>
                 <td className="mono">#{c.numero}</td>

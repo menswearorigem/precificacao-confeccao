@@ -5,7 +5,7 @@ import { api } from '../api/client';
 import { statusToneClass } from '../lib/statusTone';
 import { brl, pct } from '../lib/format';
 import FotoProduto from '../components/FotoProduto';
-import { Select } from '../components/ui';
+import { Select, SkeletonLinhasTabela } from '../components/ui';
 import DataTable from '../components/DataTable';
 
 export default function ProdutosListPage() {
@@ -90,6 +90,7 @@ export default function ProdutosListPage() {
             </tr>
           </thead>
           <tbody>
+            {loading && produtos.length === 0 && <SkeletonLinhasTabela colunas={9} />}
             {produtos.map((p) => (
               <tr key={p.id} className="clickable-row" onClick={() => navigate(`/produtos/${p.id}`)}>
                 <td onClick={(e) => e.stopPropagation()}>
