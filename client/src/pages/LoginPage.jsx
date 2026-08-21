@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { getDefaultPath } from '../lib/modules';
-import logoHbnHub from '../assets/logo-hbn-hub.png';
+import TelaEntrada from '../components/TelaEntrada';
+import PasswordField from '../components/PasswordField';
 
 export default function LoginPage({ onLoggedIn }) {
   const [setupNeeded, setSetupNeeded] = useState(null);
@@ -19,56 +19,13 @@ export default function LoginPage({ onLoggedIn }) {
   }
 
   return (
-    <div className="login-screen">
-      <div className="login-seal-wrap">
-        <div className="login-seal">
-          <img src={logoHbnHub} alt="Marca HBN Hub" />
-        </div>
-        <div className="login-eyebrow">Sistema de Gestão Têxtil</div>
-        <h1 className="login-wordmark">HBN <em>Hub</em></h1>
-      </div>
-
+    <TelaEntrada>
       {setupNeeded === null ? null : setupNeeded ? (
         <SetupForm onSuccess={handleSuccess} />
       ) : (
         <LoginForm onSuccess={handleSuccess} />
       )}
-
-      <div className="login-brands">
-        <span>Miss Manu</span>
-        <span>Origem</span>
-        <span>Hoggar</span>
-        <span>Hebron</span>
-      </div>
-    </div>
-  );
-}
-
-function PasswordField({ id, label, value, onChange, autoComplete, autoFocus, hint }) {
-  const [visivel, setVisivel] = useState(false);
-  return (
-    <div className="login-field">
-      <label htmlFor={id} className="login-label">{label}</label>
-      <div className="login-control login-control-btn">
-        <input
-          id={id}
-          type={visivel ? 'text' : 'password'}
-          autoComplete={autoComplete}
-          autoFocus={autoFocus}
-          value={value}
-          onChange={onChange}
-        />
-        <button
-          type="button"
-          className="login-peek"
-          aria-label={visivel ? 'Ocultar senha' : 'Mostrar senha'}
-          onClick={() => setVisivel((v) => !v)}
-        >
-          {visivel ? <EyeOff size={18} /> : <Eye size={18} />}
-        </button>
-      </div>
-      {hint && <span className="login-hint">{hint}</span>}
-    </div>
+    </TelaEntrada>
   );
 }
 
@@ -120,6 +77,10 @@ function LoginForm({ onSuccess }) {
         onChange={(e) => setSenha(e.target.value)}
         autoComplete="current-password"
       />
+
+      <div style={{ textAlign: 'right', marginBottom: 16, marginTop: -6 }}>
+        <Link to="/esqueci-senha" className="login-link">Esqueci minha senha</Link>
+      </div>
 
       <button className="login-enter" type="submit" disabled={loading}>
         {loading ? 'Entrando…' : 'Entrar'}

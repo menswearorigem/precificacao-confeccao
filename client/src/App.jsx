@@ -5,6 +5,8 @@ import Shell from './components/Shell';
 import { ConfirmDialogRoot } from './components/ConfirmDialog';
 import { canAccessPath, getDefaultPath } from './lib/modules';
 import LoginPage from './pages/LoginPage';
+import EsqueciSenhaPage from './pages/EsqueciSenhaPage';
+import RedefinirSenhaPage from './pages/RedefinirSenhaPage';
 import ConfiguracoesPage from './pages/ConfiguracoesPage';
 import EmpresasPage from './pages/EmpresasPage';
 import ListasPage from './pages/ListasPage';
@@ -73,6 +75,8 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage onLoggedIn={refreshUser} />} />
+      <Route path="/esqueci-senha" element={<EsqueciSenhaPage />} />
+      <Route path="/redefinir-senha" element={<RedefinirSenhaPage />} />
       <Route
         path="/*"
         element={

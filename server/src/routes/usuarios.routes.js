@@ -61,7 +61,7 @@ router.post('/', async (req, res, next) => {
     res.status(201).json(await fetchUsuarioCompleto(created[0].id));
   } catch (err) {
     await client.query('ROLLBACK');
-    if (err.code === '23505') return res.status(409).json({ error: 'Já existe uma conta com esse nome ou e-mail.' });
+    if (err.code === '23505') return res.status(409).json({ error: 'Já existe uma conta com esse nome.' });
     next(err);
   } finally {
     client.release();
@@ -103,7 +103,7 @@ router.put('/:id', async (req, res, next) => {
     res.json(await fetchUsuarioCompleto(req.params.id));
   } catch (err) {
     await client.query('ROLLBACK');
-    if (err.code === '23505') return res.status(409).json({ error: 'Já existe uma conta com esse nome ou e-mail.' });
+    if (err.code === '23505') return res.status(409).json({ error: 'Já existe uma conta com esse nome.' });
     next(err);
   } finally {
     client.release();

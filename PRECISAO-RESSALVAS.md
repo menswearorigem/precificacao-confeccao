@@ -33,19 +33,18 @@ pareceria funcionar mas não mudaria nada de verdade. Por isso não entrou.
 
 ## 2. Link "Esqueci minha senha"
 
-**Não foi adicionado.**
+**Atualização (Onda 4.3): implementado.** O dono autorizou explicitamente
+mexer em autenticação pra isso. Agora existe fluxo completo:
+`POST /auth/esqueci-senha` (recebe o nome de usuário, gera um token de
+uso único válido por 1h, guarda só o hash sha256 dele, envia por e-mail
+via SMTP) e `POST /auth/redefinir-senha` (valida o token, troca a senha,
+marca o token como usado). Telas `/esqueci-senha` e `/redefinir-senha` no
+front, e o link "Esqueci minha senha" agora aparece de verdade na tela de
+login. Ver DEPLOY.md pra configurar as variáveis SMTP_* — sem elas, o
+token é gerado mas o e-mail não sai (só um aviso no log do servidor).
 
-O mockup de referência anexado trazia esse link, mas só como proposta
-visual — a própria nota do mockup já avisava que ele "só passa a funcionar
-depois que [o dono] autorizar a parte de acesso, que mexe em autenticação".
-O texto oficial do pedido (Blocos A e B) não pede esse link em nenhum dos
-itens numerados.
-
-Não existe hoje nenhum fluxo de recuperação de senha no backend (sem rota,
-sem envio de e-mail, sem token de redefinição). Um link clicável que não
-leva a lugar nenhum seria pior do que não ter o link — pareceria quebrado.
-Se você quiser esse recurso, é um pedido novo (fluxo de recuperação de
-senha), separado deste redesenho visual.
+Login continua por nome (LOG-02 permanece fora de escopo, por pedido
+explícito do dono).
 
 ## O que foi feito sem ressalva
 

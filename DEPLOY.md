@@ -61,9 +61,25 @@ Ainda na tela de criação (ou depois em **Environment**), adicione:
 | `APP_PASSWORD` | a senha que a equipe vai usar para entrar no sistema (escolha uma senha de verdade, não deixe a padrão) |
 | `SESSION_SECRET` | qualquer texto longo e aleatório (ex: gere com `openssl rand -hex 32`) |
 | `NODE_ENV` | `production` |
-| `APP_URL` | a URL pública do serviço, ex: `https://precificacao-confeccao.onrender.com` (sem barra no final) — usada nas integrações com marketplaces (Mercado Livre/Shopee) pra montar o link de retorno da autorização |
+| `APP_URL` | a URL pública do serviço, ex: `https://precificacao-confeccao.onrender.com` (sem barra no final) — usada nas integrações com marketplaces (Mercado Livre/Shopee) pra montar o link de retorno da autorização, e também no link de "esqueci minha senha" |
 
 Não precisa definir `PORT` — o Render define isso sozinho.
+
+#### E-mail (recuperação de senha)
+
+Sem estas variáveis, o link de "esqueci minha senha" é gerado normalmente
+mas o **e-mail não é enviado** — fica só um aviso no log do servidor. Pra
+funcionar de verdade em produção, defina (exemplo com Gmail, mas qualquer
+provedor SMTP serve — SendGrid, Mailgun, etc.):
+
+| Variável | Valor |
+|---|---|
+| `SMTP_HOST` | ex: `smtp.gmail.com` |
+| `SMTP_PORT` | ex: `587` |
+| `SMTP_SECURE` | `false` para porta 587 (STARTTLS), `true` para porta 465 |
+| `SMTP_USER` | o e-mail/usuário da conta SMTP |
+| `SMTP_PASS` | a senha — no Gmail, precisa ser uma [senha de app](https://myaccount.google.com/apppasswords), não a senha normal da conta |
+| `SMTP_FROM` | o remetente que aparece no e-mail (pode ser igual a `SMTP_USER`) |
 
 4. Clique em **Create Web Service**. O Render vai clonar o repositório,
    instalar, buildar, migrar o banco e subir o servidor. Acompanhe pela aba

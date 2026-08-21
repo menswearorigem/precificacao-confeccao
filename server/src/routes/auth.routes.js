@@ -1,9 +1,12 @@
+const crypto = require('crypto');
 const express = require('express');
 const pool = require('../db/pool');
 const { createToken, SESSION_HOURS } = require('../lib/authToken');
 const { hashSenha, verificarSenha } = require('../lib/senha');
 const { requireAuth, COOKIE_NAME } = require('../middleware/auth');
 const { verificarBloqueio, registrarFalha, registrarSucesso } = require('../lib/loginRateLimit');
+const { excedeuLimite } = require('../lib/resetSenhaRateLimit');
+const { enviarEmail } = require('../lib/mailer');
 
 const router = express.Router();
 
@@ -71,7 +74,7 @@ router.post('/setup', async (req, res, next) => {
     setSessionCookie(res, created[0].id);
     res.status(201).json(await perfilCompleto(created[0].id));
   } catch (err) {
-    if (err.code === '23505') return res.status(409).json({ error: 'Já existe uma conta com esse nome ou e-mail.' });
+    if (err.code === '23505') return res.status(409).json({ error: 'Já existe uma conta com esse nome.' });
     next(err);
   }
 });
@@ -102,6 +105,89 @@ router.post('/login', async (req, res, next) => {
     registrarSucesso(nome);
     setSessionCookie(res, rows[0].id);
     res.json(await perfilCompleto(rows[0].id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+function urlBase(req) {
+  return process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+}
+
+function hashToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+const RESET_VALIDADE_MS = 60 * 60 * 1000; // 1 hora
+
+// Sempre responde a mesma mensagem genérica, exista ou não o nome — pra
+// não confirmar pra quem está tentando adivinhar nomes de usuário quais
+// são válidos (LOG-07 já apontou que o nome sozinho é curto e previsível).
+const MENSAGEM_GENERICA_RESET = {
+  ok: true,
+  mensagem: 'Se o nome existir, um e-mail com instruções de redefinição foi enviado ao endereço cadastrado.',
+};
+
+router.post('/esqueci-senha', async (req, res, next) => {
+  try {
+    const { nome } = req.body || {};
+    if (!nome || !String(nome).trim()) return res.json(MENSAGEM_GENERICA_RESET);
+    if (excedeuLimite(nome)) return res.json(MENSAGEM_GENERICA_RESET);
+
+    const { rows } = await pool.query(
+      'SELECT id, nome, email FROM usuarios WHERE LOWER(nome) = LOWER($1) AND ativo = true',
+      [String(nome).trim()]
+    );
+    if (rows.length === 0) return res.json(MENSAGEM_GENERICA_RESET);
+    const usuario = rows[0];
+
+    const tokenBruto = crypto.randomBytes(32).toString('hex');
+    const expiraEm = new Date(Date.now() + RESET_VALIDADE_MS);
+    await pool.query(
+      'INSERT INTO usuarios_reset_token (usuario_id, token_hash, expira_em) VALUES ($1, $2, $3)',
+      [usuario.id, hashToken(tokenBruto), expiraEm]
+    );
+
+    const link = `${urlBase(req)}/redefinir-senha?token=${tokenBruto}`;
+    await enviarEmail({
+      para: usuario.email,
+      assunto: 'HBN Hub — redefinição de senha',
+      texto:
+        `Olá, ${usuario.nome}.\n\n` +
+        `Foi solicitada a redefinição de senha do seu usuário "${usuario.nome}" no HBN Hub.\n\n` +
+        `Se foi você, clique no link abaixo para criar uma nova senha (válido por 1 hora):\n${link}\n\n` +
+        `Se não foi você, ignore este e-mail — sua senha continua a mesma.`,
+    });
+
+    res.json(MENSAGEM_GENERICA_RESET);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/redefinir-senha', async (req, res, next) => {
+  try {
+    const { token, senhaNova } = req.body || {};
+    if (!token || !senhaNova) return res.status(400).json({ error: 'Token e nova senha são obrigatórios.' });
+    if (senhaNova.length < 6) return res.status(400).json({ error: 'A nova senha precisa ter pelo menos 6 caracteres.' });
+
+    const { rows } = await pool.query(
+      `SELECT id, usuario_id, expira_em, usado_em FROM usuarios_reset_token WHERE token_hash = $1`,
+      [hashToken(token)]
+    );
+    if (rows.length === 0 || rows[0].usado_em) {
+      return res.status(400).json({ error: 'Link de redefinição inválido ou já usado.' });
+    }
+    const registro = rows[0];
+    if (new Date(registro.expira_em).getTime() < Date.now()) {
+      return res.status(400).json({ error: 'Este link expirou. Solicite uma nova redefinição de senha.' });
+    }
+
+    const novoHash = await hashSenha(senhaNova);
+    await pool.query('UPDATE usuarios SET senha_hash = $1, updated_at = now() WHERE id = $2', [novoHash, registro.usuario_id]);
+    await pool.query('UPDATE usuarios_reset_token SET usado_em = now() WHERE id = $1', [registro.id]);
+
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

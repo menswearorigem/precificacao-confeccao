@@ -1610,6 +1610,16 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
   line-height: 1.4;
   color: var(--ink-faint);
 }
+.login-link {
+  font-size: 0.83rem;
+  color: var(--terracotta);
+  text-decoration: none;
+  font-weight: 500;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.16s;
+}
+.login-link:hover { border-bottom-color: var(--terracotta); }
+.login-link:focus-visible { outline: 2px solid var(--terracotta); outline-offset: 2px; }
 .login-enter {
   width: 100%;
   height: 54px;
