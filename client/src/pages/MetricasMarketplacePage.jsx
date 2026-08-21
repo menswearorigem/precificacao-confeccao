@@ -3,13 +3,14 @@ import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContai
 import {
   ArrowDownRight, ArrowUpRight, Banknote, ShoppingCart, CheckCircle2,
   Users, TrendingUp, Store, Boxes, PackageMinus, Handshake, ShoppingBag,
-  Flame, Layers, Star, ShieldCheck, Swords, Megaphone, MousePointerClick, Eye, RefreshCw,
+  Flame, Layers, Star, ShieldCheck, Swords, Megaphone, MousePointerClick, Eye, RefreshCw, ChevronDown,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
 import { DateInput, Select } from '../components/ui';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import FotoProduto from '../components/FotoProduto';
+import DataTable from '../components/DataTable';
 
 const COR_PRINCIPAL = '#d17a2a';
 const COR_ANTERIOR = '#9c7a3c';
@@ -199,6 +200,7 @@ function TabelaDiaria({ resumo, serie }) {
     <div className="card no-print">
       <div className="card-head">Detalhamento Diário</div>
       <div style={{ overflowX: 'auto' }}>
+        <DataTable>
         <table className="data-table">
           <thead>
             <tr>
@@ -238,6 +240,7 @@ function TabelaDiaria({ resumo, serie }) {
             {serie.length === 0 && <tr><td colSpan="9">Nenhuma venda no período.</td></tr>}
           </tbody>
         </table>
+        </DataTable>
       </div>
     </div>
   );
@@ -338,6 +341,7 @@ function PorLojaTab({ filtros }) {
       <div className="card">
       <div className="card-head">Vendas por Loja ({dados.lojas.length})</div>
       <div style={{ overflowX: 'auto' }}>
+        <DataTable>
         <table className="data-table">
           <thead>
             <tr>
@@ -364,6 +368,7 @@ function PorLojaTab({ filtros }) {
             {dados.lojas.length === 0 && <tr><td colSpan="8">Nenhuma venda no período.</td></tr>}
           </tbody>
         </table>
+        </DataTable>
       </div>
       </div>
     </>
@@ -406,6 +411,7 @@ function VendasPorAnuncioTab({ filtros, busca }) {
       <div className="card">
         <div className="card-head">Vendas por Anúncio ({anunciosExibidos.length})</div>
         <div style={{ overflowX: 'auto' }}>
+          <DataTable>
           <table className="data-table">
             <thead>
               <tr>
@@ -437,6 +443,7 @@ function VendasPorAnuncioTab({ filtros, busca }) {
               {anunciosExibidos.length === 0 && <tr><td colSpan="6">{busca ? 'Nenhum anúncio encontrado para essa busca.' : 'Nenhum anúncio no período.'}</td></tr>}
             </tbody>
           </table>
+          </DataTable>
         </div>
         <p className="page-sub" style={{ marginTop: 10 }}>
           Itens marcados "sem ID gravado" foram importados antes de guardarmos o ID do anúncio — agrupados por SKU
@@ -507,6 +514,7 @@ function AnaliseABCTab({ filtros, busca }) {
       <div className="card">
         <div className="card-head">Curva ABC de Produtos ({exibidos.length})</div>
         <div style={{ overflowX: 'auto' }}>
+          <DataTable>
           <table className="data-table">
             <thead>
               <tr><th>Classe</th><th>Produto</th><th>Total Faturado</th><th>Representatividade</th><th>Acumulado</th></tr>
@@ -532,6 +540,7 @@ function AnaliseABCTab({ filtros, busca }) {
               {exibidos.length === 0 && <tr><td colSpan="5">{busca ? 'Nenhum produto encontrado para essa busca.' : 'Nenhum produto no período.'}</td></tr>}
             </tbody>
           </table>
+          </DataTable>
         </div>
       </div>
     </>
@@ -660,6 +669,7 @@ function ReputacaoTab({ integracoes }) {
       {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
       {dados && (
         <div style={{ overflowX: 'auto', marginTop: 14 }}>
+          <DataTable>
           <table className="data-table">
             <thead>
               <tr><th>Loja</th><th>Reputação</th><th>Vendas</th><th>Reclamações</th><th>Cancelados por Você</th><th>Despacho com Atraso</th></tr>
@@ -683,6 +693,7 @@ function ReputacaoTab({ integracoes }) {
               ))}
             </tbody>
           </table>
+          </DataTable>
         </div>
       )}
     </div>
@@ -719,6 +730,7 @@ function OpinioesTab({ integracoes }) {
       {dados?.aviso && <div className="aviso-compacto tone-atencao">{dados.aviso}</div>}
       {dados?.opinioes?.length > 0 && (
         <div style={{ overflowX: 'auto', marginTop: 14 }}>
+          <DataTable>
           <table className="data-table">
             <thead>
               <tr><th>Produto</th><th>ID do Anúncio</th><th>Qualificação</th><th>Avaliações</th><th>5★</th><th>4★</th><th>3★</th><th>2★</th><th>1★</th></tr>
@@ -753,6 +765,7 @@ function OpinioesTab({ integracoes }) {
               ))}
             </tbody>
           </table>
+          </DataTable>
         </div>
       )}
     </div>
@@ -792,6 +805,7 @@ function ConcorrentesTab({ integracoes }) {
       {dados?.aviso && <div className="aviso-compacto tone-atencao">{dados.aviso}</div>}
       {dados?.concorrentes?.length > 0 && (
         <div style={{ overflowX: 'auto', marginTop: 14 }}>
+          <DataTable>
           <table className="data-table">
             <thead>
               <tr><th>Produto</th><th>ID do Anúncio</th><th>Participa do Catálogo?</th><th>Situação</th><th>Preço Atual</th><th>Preço pra Ganhar</th></tr>
@@ -825,6 +839,7 @@ function ConcorrentesTab({ integracoes }) {
               ))}
             </tbody>
           </table>
+          </DataTable>
         </div>
       )}
     </div>
@@ -950,6 +965,7 @@ function PublicidadeTab({ integracoes }) {
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-head">Campanhas ({campanhas.length})</div>
           <div style={{ overflowX: 'auto' }}>
+            <DataTable>
             <table className="data-table">
               <thead>
                 <tr><th>Campanha</th><th>Status</th><th>Estratégia</th><th>ROAS Alvo</th><th>Custo</th><th>Cliques</th><th>Impressões</th><th>CPC</th><th>ROAS</th></tr>
@@ -971,6 +987,7 @@ function PublicidadeTab({ integracoes }) {
                 {campanhas.length === 0 && <tr><td colSpan="9">Nenhuma campanha no período.</td></tr>}
               </tbody>
             </table>
+            </DataTable>
           </div>
         </div>
       )}
@@ -979,6 +996,7 @@ function PublicidadeTab({ integracoes }) {
         <div className="card">
           <div className="card-head">Gasto por Anúncio ({anuncios.length})</div>
           <div style={{ overflowX: 'auto' }}>
+            <DataTable>
             <table className="data-table">
               <thead>
                 <tr><th>Produto</th><th>ID do Anúncio</th><th>Custo</th><th>Cliques</th><th>Impressões</th><th>CPC</th></tr>
@@ -1005,6 +1023,7 @@ function PublicidadeTab({ integracoes }) {
                 {anuncios.length === 0 && <tr><td colSpan="6">Nenhum gasto de Ads sincronizado ainda nesse período — clique em "Sincronizar histórico".</td></tr>}
               </tbody>
             </table>
+            </DataTable>
           </div>
         </div>
       )}
@@ -1156,6 +1175,7 @@ function CategoriasTab({ integracoes }) {
           {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
           {tendencias && (
             <div style={{ overflowX: 'auto', marginTop: 14 }}>
+              <DataTable>
               <table className="data-table">
                 <thead><tr><th>Posição</th><th>Termo Buscado</th><th>Tipo</th><th /></tr></thead>
                 <tbody>
@@ -1173,6 +1193,7 @@ function CategoriasTab({ integracoes }) {
                   {tendencias.length === 0 && <tr><td colSpan="4">Sem dados de tendência disponíveis agora.</td></tr>}
                 </tbody>
               </table>
+              </DataTable>
             </div>
           )}
         </div>
@@ -1244,6 +1265,12 @@ const TABS = [
   { key: 'shopee', label: 'Shopee' },
 ];
 
+// 11 seções quebravam em duas fileiras de chip — deixa as 6 mais usadas
+// visíveis direto e agrupa o resto (menos consultadas no dia a dia) num
+// "Mais ▾", igual um menu de abas com overflow.
+const TABS_VISIVEIS = TABS.slice(0, 6);
+const TABS_MAIS = TABS.slice(6);
+
 export default function MetricasMarketplacePage() {
   const [dataInicio, setDataInicio] = useState(trintaDiasAtras());
   const [dataFim, setDataFim] = useState(hoje());
@@ -1251,6 +1278,8 @@ export default function MetricasMarketplacePage() {
   const [lojaId, setLojaId] = useState('');
   const [busca, setBusca] = useState('');
   const [subTab, setSubTab] = useState('visaoGeral');
+  const [maisAberto, setMaisAberto] = useState(false);
+  const abaEmMais = TABS_MAIS.some((t) => t.key === subTab);
   const [filtrosAplicados, setFiltrosAplicados] = useState(null);
   const [integracoes, setIntegracoes] = useState([]);
 
@@ -1326,16 +1355,44 @@ export default function MetricasMarketplacePage() {
       </div>
 
       <div className="subtab-row">
-        {TABS.map((t) => (
+        {TABS_VISIVEIS.map((t) => (
           <button
             key={t.key}
             type="button"
             className={'subtab-btn' + (subTab === t.key ? ' active' : '')}
-            onClick={() => setSubTab(t.key)}
+            onClick={() => { setSubTab(t.key); setMaisAberto(false); }}
           >
             {t.label}
           </button>
         ))}
+        {TABS_MAIS.length > 0 && (
+          <div className="subtab-mais">
+            <button
+              type="button"
+              className={'subtab-btn' + (abaEmMais ? ' active' : '')}
+              onClick={() => setMaisAberto((v) => !v)}
+            >
+              {abaEmMais ? TABS_MAIS.find((t) => t.key === subTab)?.label : 'Mais'} <ChevronDown size={13} />
+            </button>
+            {maisAberto && (
+              <>
+                <div className="subtab-mais-backdrop" onClick={() => setMaisAberto(false)} />
+                <div className="subtab-mais-menu">
+                  {TABS_MAIS.map((t) => (
+                    <button
+                      key={t.key}
+                      type="button"
+                      className={'subtab-mais-item' + (subTab === t.key ? ' active' : '')}
+                      onClick={() => { setSubTab(t.key); setMaisAberto(false); }}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {filtrosAplicados && (

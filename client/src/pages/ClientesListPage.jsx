@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Plus, ChevronRight, Search } from 'lucide-react';
 import { api } from '../api/client';
+import DataTable from '../components/DataTable';
 
 export default function ClientesListPage() {
   const navigate = useNavigate();
@@ -50,6 +51,7 @@ export default function ClientesListPage() {
       </div>
 
       <div className="card">
+        <DataTable>
         <table className="data-table">
           <thead>
             <tr>
@@ -80,6 +82,7 @@ export default function ClientesListPage() {
             ))}
           </tbody>
         </table>
+        </DataTable>
         {!loading && clientes.length === 0 && (
           <div style={{ padding: '20px 4px', color: 'var(--ink-soft)', fontSize: 13 }}>
             Nenhum cliente encontrado.

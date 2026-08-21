@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { LogOut, Menu, X } from 'lucide-react';
+import { LogOut, Menu, X, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getVisibleModules } from '../lib/modules';
 import logoHbnHub from '../assets/logo-hbn-hub.png';
+
+const CHAVE_SIDEBAR_COLAPSADO = 'hbn_sidebar_colapsado';
 
 function findActiveModule(pathname, visibleModules) {
   for (const mod of visibleModules) {
@@ -21,10 +23,21 @@ export default function Shell({ children }) {
   const visibleModules = getVisibleModules(user);
   const activeModule = findActiveModule(location.pathname, visibleModules);
   const [menuAberto, setMenuAberto] = useState(false);
+  const [sidebarColapsado, setSidebarColapsado] = useState(
+    () => localStorage.getItem(CHAVE_SIDEBAR_COLAPSADO) === '1'
+  );
 
   // fecha o menu (celular) sempre que troca de página, senão fica aberto
   // por cima do conteúdo novo.
   useEffect(() => { setMenuAberto(false); }, [location.pathname]);
+
+  function alternarSidebar() {
+    setSidebarColapsado((v) => {
+      const novo = !v;
+      localStorage.setItem(CHAVE_SIDEBAR_COLAPSADO, novo ? '1' : '0');
+      return novo;
+    });
+  }
 
   async function handleLogout() {
     await logout();
@@ -32,7 +45,7 @@ export default function Shell({ children }) {
   }
 
   return (
-    <div className="shell">
+    <div className={'shell' + (sidebarColapsado ? ' sidebar-colapsado' : '')}>
       <header className="shell-header">
         <div className="brand">
           <button className="mobile-menu-btn" onClick={() => setMenuAberto((v) => !v)} aria-label="Abrir menu">
@@ -66,17 +79,28 @@ export default function Shell({ children }) {
                 className={'sidebar-module' + (isActive ? ' active' : '')}
                 style={{ '--module-color': mod.color }}
                 onClick={() => navigate(mod.pages[0].to)}
+                title={sidebarColapsado ? mod.label : undefined}
               >
                 <span className="module-badge"><Icon size={16} /></span>
                 <span className="module-label">{mod.label}</span>
               </button>
             );
           })}
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={alternarSidebar}
+            title={sidebarColapsado ? 'Expandir menu' : 'Recolher menu'}
+          >
+            {sidebarColapsado ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
+            {!sidebarColapsado && <span>Recolher</span>}
+          </button>
         </nav>
 
         <div className="shell-content">
           {activeModule ? (
             <>
+              {activeModule.pages.length > 1 && (
               <div className="shell-submenu">
                 {activeModule.pages.map(({ to, label, icon: Icon }) => (
                   <NavLink
@@ -90,6 +114,7 @@ export default function Shell({ children }) {
                   </NavLink>
                 ))}
               </div>
+              )}
 
               <main className="shell-main">{children}</main>
             </>

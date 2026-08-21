@@ -55,7 +55,7 @@ export default function ListasPage() {
         perder o histórico dos produtos que já o usam, ou removê-lo por completo.
       </p>
 
-      <div className="shell-nav" style={{ padding: 0, marginBottom: 18, background: 'transparent', border: 'none' }}>
+      <div className="shell-nav" style={{ padding: 0, marginBottom: 18, background: 'transparent', border: 'none', flexWrap: 'wrap', rowGap: 4 }}>
         {TIPOS.map(({ tipo, label }) => (
           <button
             key={tipo}

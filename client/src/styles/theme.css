@@ -44,6 +44,13 @@
   --shadow-md: 0 6px 18px rgba(47, 28, 13, 0.10), 0 2px 6px rgba(47, 28, 13, 0.06);
   --shadow-lg: 0 18px 44px rgba(47, 28, 13, 0.18), 0 6px 16px rgba(47, 28, 13, 0.10);
   --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  /* Largura do conteúdo: telas de tabela/lista usam a larga (--content-wide),
+     formulário/configuração usam a estreita (--content-form) — antes eram
+     larguras fixas (995/1000/1200px) que sobravam ~450px de tela vazios num
+     monitor largo. Abaixo de 900px, o menu vira gaveta e ambas caem pra
+     100% - 32px (ver .page/.page-wide no media query correspondente). */
+  --content-wide: min(100% - 64px, 1680px);
+  --content-form: min(100% - 64px, 1100px);
 }
 
 * { box-sizing: border-box; }
@@ -90,13 +97,15 @@ button, input, select, textarea { font-family: inherit; }
 /* ---------- app shell ---------- */
 
 .shell {
-  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
 .shell-header {
   position: relative;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -200,14 +209,35 @@ button, input, select, textarea { font-family: inherit; }
   flex-shrink: 0;
   position: relative;
   z-index: 3;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   background: linear-gradient(180deg, var(--leather-dark) 0%, var(--leather-deep) 100%);
   display: flex;
   flex-direction: column;
   gap: 7px;
   padding: 26px 12px;
   box-shadow: inset -1px 0 0 rgba(0, 0, 0, 0.18);
+  transition: width 0.18s var(--ease);
 }
+.shell.sidebar-colapsado .shell-sidebar { width: 64px; padding: 26px 10px; }
+.shell.sidebar-colapsado .module-label { display: none; }
+.shell.sidebar-colapsado .sidebar-module { justify-content: center; padding: 6px; gap: 0; }
+.sidebar-toggle {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: auto;
+  padding: 9px 6px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(244, 239, 228, 0.06);
+  color: rgba(244, 239, 228, 0.65);
+  cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.sidebar-toggle:hover { background: rgba(244, 239, 228, 0.12); color: #fbf5e9; }
 .sidebar-module {
   position: relative;
   display: flex;
@@ -259,9 +289,11 @@ button, input, select, textarea { font-family: inherit; }
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 .shell-submenu, .shell-nav {
+  flex-shrink: 0;
   display: flex;
   gap: 2px;
   padding: 11px 20px 0;
@@ -294,6 +326,8 @@ button, input, select, textarea { font-family: inherit; }
   flex: 1;
   background: var(--bg);
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .mobile-menu-btn {
@@ -316,6 +350,10 @@ button, input, select, textarea { font-family: inherit; }
   /* Vira um menu-gaveta que desliza por cima do conteúdo — em vez de uma
      fileira horizontal (com 8 módulos + o submenu embaixo, ficava
      apertado demais pra ler direito num celular). */
+  /* No celular o menu é sempre a gaveta cheia — o botão de recolher (feito
+     pra telas largas, onde sobra espaço horizontal) não faz sentido aqui. */
+  .sidebar-toggle { display: none; }
+  .shell.sidebar-colapsado .shell-sidebar,
   .shell-sidebar {
     position: fixed;
     top: 0;
@@ -339,7 +377,8 @@ button, input, select, textarea { font-family: inherit; }
     z-index: 40;
   }
 
-  .sidebar-module { padding: 9px 18px 9px 6px; }
+  .sidebar-module, .shell.sidebar-colapsado .sidebar-module { padding: 9px 18px 9px 6px; justify-content: flex-start; gap: 12px; }
+  .shell.sidebar-colapsado .module-label { display: inline; }
   .shell-submenu { padding: 10px 14px 0; }
   .nav-link { padding: 9px 12px; font-size: 12.5px; }
 }
@@ -353,8 +392,12 @@ button, input, select, textarea { font-family: inherit; }
 
 /* ---------- generic page/card layout ---------- */
 
-.page { padding: 26px 30px; max-width: 980px; }
-.page-wide { padding: 26px 30px; max-width: 1200px; }
+.page { padding: 26px 30px; max-width: var(--content-form); }
+.page-wide { padding: 26px 30px; max-width: var(--content-wide); }
+
+@media (max-width: 900px) {
+  :root { --content-wide: min(100% - 32px, 1680px); --content-form: min(100% - 32px, 1100px); }
+}
 .page-sub { font-size: 12.5px; color: var(--ink-soft); margin: 6px 0 20px; line-height: 1.5; }
 
 h2 + .page-sub { margin-top: 7px; }
@@ -841,8 +884,54 @@ table.data-table th {
 }
 table.data-table td { padding: 8px 9px; vertical-align: middle; border-bottom: 1px solid var(--border-soft); }
 table.data-table tr:last-child td { border-bottom: none; }
+table.data-table tbody tr:nth-child(even) { background: rgba(42, 29, 16, 0.018); }
+table.data-table tbody tr:hover { background: rgba(181, 101, 29, 0.06); }
 table.data-table tr.clickable-row { cursor: pointer; transition: background 0.12s var(--ease); }
-table.data-table tr.clickable-row:hover { background: rgba(181, 101, 29, 0.055); }
+table.data-table tr.clickable-row:hover { background: rgba(181, 101, 29, 0.075); }
+
+/* ---------- <DataTable> — moldura única de tabela (Onda 1) ---------- */
+.data-table-outer { position: relative; }
+.data-table-outer::before, .data-table-outer::after {
+  content: ''; position: absolute; top: 0; bottom: 0; width: 26px; z-index: 6;
+  pointer-events: none; opacity: 0; transition: opacity 0.15s var(--ease);
+}
+.data-table-outer::before { left: 0; background: linear-gradient(90deg, rgba(42, 29, 16, 0.14), transparent); }
+.data-table-outer::after { right: 0; background: linear-gradient(270deg, rgba(42, 29, 16, 0.14), transparent); }
+.data-table-outer.sombra-esq::before { opacity: 1; }
+.data-table-outer.sombra-dir::after { opacity: 1; }
+.data-table-wrap { overflow-x: auto; }
+
+.data-table-wrap table.data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: var(--surface-alt);
+}
+.data-table-wrap table.data-table tr > *:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--surface);
+}
+.data-table-wrap table.data-table tbody tr:nth-child(even) > *:first-child { background: #f8f2e4; }
+.data-table-wrap table.data-table thead th:first-child { z-index: 5; background: var(--surface-alt); }
+.data-table-wrap table.data-table tbody tr:hover > *:first-child,
+.data-table-wrap table.data-table tbody tr.clickable-row:hover > *:first-child { background: #eee0c8; }
+
+/* Nenhuma célula quebra em mais de uma linha por padrão — a tabela cresce
+   e rola pro lado (já tem o indicador de sombra acima) em vez de esticar a
+   altura da linha. Só corta com reticências (classe .col-truncar, opcional
+   por coluna) quando a própria página pede — célula com botão/ação não
+   pode ser cortada sem querer. */
+.data-table-wrap table.data-table td, .data-table-wrap table.data-table th {
+  white-space: nowrap;
+}
+.data-table-wrap table.data-table .col-truncar {
+  overflow: hidden; text-overflow: ellipsis; max-width: 260px;
+}
+
+.data-table-outer.densidade-compacta table.data-table th,
+.data-table-outer.densidade-compacta table.data-table td { padding: 5px 8px; }
 table.data-table input, table.data-table select { font-size: 12.5px; padding: 6px 8px; }
 
 .row-line {
@@ -889,6 +978,37 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
   cursor: pointer;
 }
 .subtab-btn.active { background: var(--terracotta); border-color: var(--terracotta); color: #fff; }
+
+.subtab-mais { position: relative; }
+.subtab-mais-backdrop { position: fixed; inset: 0; z-index: 29; }
+.subtab-mais-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 180px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.subtab-mais-item {
+  text-align: left;
+  padding: 8px 12px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.subtab-mais-item:hover { background: var(--border-soft); }
+.subtab-mais-item.active { background: var(--terracotta); color: #fff; }
 
 .expand-toggle {
   display: flex;
@@ -1175,6 +1295,10 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
 @media print {
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
   .shell-header, .shell-sidebar, .shell-submenu, .no-print { display: none !important; }
+  /* .shell-main agora rola por dentro (overflow-y:auto com altura travada em
+     100vh) pra manter cabeçalho/menu fixos na tela — na impressão isso
+     cortaria o conteúdo na altura da janela, então volta a fluir normal. */
+  .shell, .shell-body, .shell-content, .shell-main { height: auto; overflow: visible; }
   .shell-main { background: #fff; }
   .page-wide { max-width: 100%; padding: 0; }
   .ficha-page { break-after: page; border: none; box-shadow: none; padding: 0; }

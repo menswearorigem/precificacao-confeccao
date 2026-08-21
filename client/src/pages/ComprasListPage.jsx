@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Search, ChevronRight, BarChart3 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl } from '../lib/format';
+import DataTable from '../components/DataTable';
 
 const SITUACAO_TONE = { pendente: 'tone-atencao', recebido: 'tone-saudavel', cancelado: 'tone-prejuizo' };
 const SITUACAO_LABEL = { pendente: 'Pendente', recebido: 'Recebido', cancelado: 'Cancelado' };
@@ -95,6 +96,7 @@ export default function ComprasListPage() {
       </div>
 
       <div className="card">
+        <DataTable>
         <table className="data-table">
           <thead>
             <tr>
@@ -123,6 +125,7 @@ export default function ComprasListPage() {
             ))}
           </tbody>
         </table>
+        </DataTable>
         {!loading && compras.length === 0 && (
           <div style={{ padding: '20px 4px', color: 'var(--ink-soft)', fontSize: 13 }}>
             Nenhuma compra encontrada.

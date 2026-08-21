@@ -6,6 +6,7 @@ import { Select } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
+import DataTable from '../components/DataTable';
 
 export default function RelatorioTaxasPage() {
   const [{ inicio: dataInicio, fim: dataFim }, setPeriodo] = useState(periodoDeHoje());
@@ -109,6 +110,7 @@ export default function RelatorioTaxasPage() {
 
           <div className="card">
             <div className="card-head">Pedidos no Período</div>
+            <DataTable>
             <table className="data-table">
               <thead>
                 <tr>
@@ -146,9 +148,10 @@ export default function RelatorioTaxasPage() {
                 {relatorio.pedidos.length === 0 && <tr><td colSpan="9">Nenhum pedido de marketplace com taxa disponível no período.</td></tr>}
               </tbody>
             </table>
+            </DataTable>
           </div>
         </>
-      )}
+)}
     </div>
   );
 }

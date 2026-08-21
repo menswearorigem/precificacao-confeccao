@@ -7,6 +7,7 @@ import { Select } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
+import DataTable from '../components/DataTable';
 
 const SITUACAO_TONE = {
   aberto: 'tone-atencao',
@@ -135,6 +136,7 @@ export default function PedidosListPage({ origemFiltro }) {
       </div>
 
       <div className="card">
+        <DataTable>
         <table className="data-table">
           <thead>
             <tr>
@@ -165,6 +167,7 @@ export default function PedidosListPage({ origemFiltro }) {
             ))}
           </tbody>
         </table>
+        </DataTable>
         {!loading && pedidos.length === 0 && (
           <div style={{ padding: '20px 4px', color: 'var(--ink-soft)', fontSize: 13 }}>
             Nenhum pedido encontrado{isMarketplace ? ' no período.' : '.'}

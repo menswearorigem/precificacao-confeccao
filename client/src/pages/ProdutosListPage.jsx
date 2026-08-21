@@ -6,6 +6,7 @@ import { statusToneClass } from '../lib/statusTone';
 import { brl, pct } from '../lib/format';
 import FotoProduto from '../components/FotoProduto';
 import { Select } from '../components/ui';
+import DataTable from '../components/DataTable';
 
 export default function ProdutosListPage() {
   const navigate = useNavigate();
@@ -73,6 +74,7 @@ export default function ProdutosListPage() {
       </div>
 
       <div className="card">
+        <DataTable>
         <table className="data-table">
           <thead>
             <tr>
@@ -109,6 +111,7 @@ export default function ProdutosListPage() {
             ))}
           </tbody>
         </table>
+        </DataTable>
         {!loading && produtos.length === 0 && (
           <div style={{ padding: '20px 4px', color: 'var(--ink-soft)', fontSize: 13 }}>
             Nenhum produto encontrado.

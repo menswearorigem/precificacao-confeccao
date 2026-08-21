@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { Field, Select } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
+import DataTable from '../components/DataTable';
 
 function EanEditavel({ variante, onFeito }) {
   const [editando, setEditando] = useState(false);
@@ -415,6 +416,7 @@ export default function EstoquePage() {
                 </button>
               </div>
             )}
+            <DataTable>
             <table className="data-table" style={{ marginTop: 14 }}>
               <thead>
                 <tr>
@@ -444,6 +446,7 @@ export default function EstoquePage() {
                 )}
               </tbody>
             </table>
+            </DataTable>
             <NovaVarianteForm produtoId={produtoId} onCriada={() => loadVariantes(produtoId)} />
           </>
         )}

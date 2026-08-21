@@ -11,6 +11,7 @@ import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import FotoProduto from '../components/FotoProduto';
+import DataTable from '../components/DataTable';
 
 // Paleta categórica combinando com a identidade do sistema (terracota,
 // verde-azulado e ameixa — as mesmas famílias de cor já usadas em
@@ -258,7 +259,7 @@ function ResumoProdutoTab({ resumoProduto, serieDiaria, config, busca }) {
 
       <div className="card">
         <div className="card-head">Resumo por Produto ({produtosExibidos.length})</div>
-        <div style={{ overflowX: 'auto' }}>
+        <DataTable>
           <table className="data-table">
             <thead>
               <tr>
@@ -296,7 +297,7 @@ function ResumoProdutoTab({ resumoProduto, serieDiaria, config, busca }) {
               )}
             </tbody>
           </table>
-        </div>
+        </DataTable>
       </div>
     </>
   );
@@ -516,7 +517,7 @@ function DuplicatasSuspeitas({ duplicatas }) {
         pedidos direto no Mercado Livre e me avise se realmente é a mesma venda repetida.
       </p>
       {aberto && (
-        <div style={{ overflowX: 'auto' }}>
+        <DataTable>
           <table className="data-table">
             <thead>
               <tr><th>Pacote</th><th>SKU</th><th>Valor Unit.</th><th>Qtd</th><th>Pedidos</th><th>Possível Excesso</th></tr>
@@ -534,7 +535,7 @@ function DuplicatasSuspeitas({ duplicatas }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </DataTable>
       )}
     </div>
   );
@@ -983,6 +984,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                 <div className="card-head">
                   Pedidos no Período ({pedidosExibidos.length}{pedidosExibidos.length !== relatorio.pedidos.length ? ` de ${relatorio.pedidos.length}` : ''})
                 </div>
+                <DataTable>
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -1089,6 +1091,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                     )}
                   </tbody>
                 </table>
+                </DataTable>
               </div>
             </>
           )}
