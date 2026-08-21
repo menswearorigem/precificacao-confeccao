@@ -4,6 +4,7 @@ import { AlertTriangle, ChevronRight, ShieldQuestion } from 'lucide-react';
 import { api } from '../api/client';
 import { pct, formatQtd } from '../lib/format';
 import { Select, Skeleton } from '../components/ui';
+import SeloDeConfianca from '../components/SeloDeConfianca';
 
 function GrupoAlerta({ grupo }) {
   if (grupo.total === 0) return null;
@@ -133,11 +134,12 @@ export default function AlertasPage() {
             </div>
           )}
 
-          <p className="page-sub" style={{ marginTop: 8 }}>
-            {formatQtd(dados.total - dados.avaliadas)} de {formatQtd(dados.total)} referências não têm nenhum custo
-            cadastrado ainda (nem material, nem industrial) — não entram em nenhum grupo acima.
-            <Link to="/qualidade-dados" className="login-link" style={{ marginLeft: 6 }}>ver auditoria completa</Link>
-          </p>
+          <SeloDeConfianca
+            considerado={dados.avaliadas}
+            total={dados.total}
+            unidade="referências"
+            excluidos={[{ label: 'sem nenhum custo cadastrado (nem material, nem industrial)', total: dados.total - dados.avaliadas }]}
+          />
         </>
       )}
     </div>
