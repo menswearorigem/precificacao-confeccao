@@ -1,6 +1,10 @@
 import { Children, Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Check, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CalendarDays } from 'lucide-react';
+import {
+  ChevronDown, Check, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CalendarDays,
+  ArrowUp, ArrowDown, ChevronsUpDown,
+} from 'lucide-react';
+import { TAMANHOS_PAGINA } from '../lib/useTabela';
 
 // Painéis flutuantes (lista do Select, calendário do DateInput) precisam
 // escapar de qualquer ancestral com overflow:hidden/auto (todo .card do
@@ -130,6 +134,51 @@ export function Row({ label, value, strong, big }) {
     <div className={'row-line' + (strong ? ' strong' : '') + (big ? ' big' : '')}>
       <span>{label}</span>
       <span className="mono">{value}</span>
+    </div>
+  );
+}
+
+// Cabeçalho de coluna clicável pra ordenar uma tabela (usado com o hook
+// useTabela) — mostra uma seta de duas pontas discreta quando a coluna
+// não é a ordenação atual, e uma seta cheia na direção certa quando é.
+export function ThOrdenavel({ coluna, atual, direcao, onClick, children, className = '', style }) {
+  const ativa = coluna === atual;
+  return (
+    <th className={className} style={style}>
+      <button
+        type="button"
+        className={'th-ordenavel' + (ativa ? ' is-ativa' : '')}
+        onClick={() => onClick(coluna)}
+      >
+        {children}
+        {ativa ? (direcao === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : <ChevronsUpDown size={12} />}
+      </button>
+    </th>
+  );
+}
+
+// Rodapé de paginação — contagem "mostrando 1–50 de 1.926", seletor de
+// tamanho de página e navegação anterior/próxima. `totalItens` já é o
+// total depois de qualquer filtro/busca aplicado pela própria página.
+export function Paginacao({ pagina, totalPaginas, tamanho, tamanhos = TAMANHOS_PAGINA, totalItens, inicio, fim, setPagina, setTamanho }) {
+  if (totalItens === 0) return null;
+  return (
+    <div className="paginacao-barra">
+      <span className="paginacao-contagem">
+        Mostrando {(inicio + 1).toLocaleString('pt-BR')}–{fim.toLocaleString('pt-BR')} de {totalItens.toLocaleString('pt-BR')}
+      </span>
+      <div className="paginacao-controles">
+        <Select value={String(tamanho)} onChange={(e) => setTamanho(Number(e.target.value))} className="paginacao-tamanho">
+          {tamanhos.map((t) => <option key={t} value={String(t)}>{t} por página</option>)}
+        </Select>
+        <button type="button" className="icon-btn" disabled={pagina <= 1} onClick={() => setPagina(pagina - 1)} aria-label="Página anterior">
+          <ChevronLeft size={16} />
+        </button>
+        <span className="paginacao-pagina">Página {pagina} de {totalPaginas}</span>
+        <button type="button" className="icon-btn" disabled={pagina >= totalPaginas} onClick={() => setPagina(pagina + 1)} aria-label="Próxima página">
+          <ChevronRight size={16} />
+        </button>
+      </div>
     </div>
   );
 }
