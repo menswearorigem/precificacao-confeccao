@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { DensidadeProvider } from './contexts/DensidadeContext';
 import Shell from './components/Shell';
 import { ConfirmDialogRoot } from './components/ConfirmDialog';
 import { canAccessPath, getDefaultPath } from './lib/modules';
@@ -142,8 +143,10 @@ function AppRoutes() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppRoutes />
-      <ConfirmDialogRoot />
+      <DensidadeProvider>
+        <AppRoutes />
+        <ConfirmDialogRoot />
+      </DensidadeProvider>
     </AuthProvider>
   );
 }

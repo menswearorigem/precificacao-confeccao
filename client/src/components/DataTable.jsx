@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
+import { useDensidade } from '../contexts/DensidadeContext';
 
 // Envolve uma <table className="data-table"> já existente (a marcação de
 // cada página continua igual — só a moldura muda) com: cabeçalho fixo ao
 // rolar, primeira coluna congelada, e uma sombra na borda que só aparece
 // quando tem conteúdo escondido daquele lado (senão, tabela estreita nunca
-// precisaria da sombra). Densidade 'confortavel' (padrão) ou 'compacta'
-// controla o espaçamento das células via CSS.
-export default function DataTable({ children, densidade = 'confortavel', className = '' }) {
+// precisaria da sombra). Densidade 'confortavel' ou 'compacta' controla o
+// espaçamento das células via CSS — por padrão segue a preferência global
+// (DensidadeContext, alternada no cabeçalho); passar a prop explicitamente
+// sobrepõe essa preferência só para esta tabela específica.
+export default function DataTable({ children, densidade, className = '' }) {
+  const contexto = useDensidade();
+  const densidadeFinal = densidade || contexto?.densidade || 'confortavel';
   const wrapRef = useRef(null);
   const [sombraEsq, setSombraEsq] = useState(false);
   const [sombraDir, setSombraDir] = useState(false);
@@ -32,7 +37,7 @@ export default function DataTable({ children, densidade = 'confortavel', classNa
 
   const classes = [
     'data-table-outer',
-    `densidade-${densidade}`,
+    `densidade-${densidadeFinal}`,
     sombraEsq && 'sombra-esq',
     sombraDir && 'sombra-dir',
     className,

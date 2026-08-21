@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { LogOut, Menu, X, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { LogOut, Menu, X, ChevronsLeft, ChevronsRight, Sun, Moon, Rows3, AlignJustify } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getVisibleModules } from '../lib/modules';
+import { useTema } from '../lib/useTema';
+import { useDensidade } from '../contexts/DensidadeContext';
 import BuscaGlobal from './BuscaGlobal';
 import logoHbnHub from '../assets/logo-hbn-hub.png';
 
@@ -21,6 +23,8 @@ export default function Shell({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
+  const { tema, setTema } = useTema();
+  const densidadeCtx = useDensidade();
   const visibleModules = getVisibleModules(user);
   const activeModule = findActiveModule(location.pathname, visibleModules);
   const [menuAberto, setMenuAberto] = useState(false);
@@ -60,6 +64,24 @@ export default function Shell({ children }) {
           </div>
         </div>
         <div className="header-actions">
+          {densidadeCtx && (
+            <button
+              type="button"
+              className="icon-toggle-btn"
+              title={densidadeCtx.densidade === 'compacta' ? 'Densidade compacta — clique para confortável' : 'Densidade confortável — clique para compacta'}
+              onClick={() => densidadeCtx.setDensidade(densidadeCtx.densidade === 'compacta' ? 'confortavel' : 'compacta')}
+            >
+              {densidadeCtx.densidade === 'compacta' ? <AlignJustify size={15} /> : <Rows3 size={15} />}
+            </button>
+          )}
+          <button
+            type="button"
+            className="icon-toggle-btn"
+            title={tema === 'dark' ? 'Tema escuro — clique para claro' : 'Tema claro — clique para escuro'}
+            onClick={() => setTema(tema === 'dark' ? 'light' : 'dark')}
+          >
+            {tema === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+          </button>
           {user && <span className="user-badge">{user.nome}</span>}
           <button className="logout-btn" onClick={handleLogout}>
             <LogOut size={13} style={{ marginRight: 6, verticalAlign: -2 }} />
