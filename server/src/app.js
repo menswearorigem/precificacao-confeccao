@@ -24,6 +24,7 @@ const marketplaceTaxasRoutes = require('./routes/marketplaceTaxas.routes');
 const viagensRoutes = require('./routes/viagens.routes');
 const wikRoutes = require('./routes/wik.routes');
 const conferenciaDadosRoutes = require('./routes/conferenciaDados.routes');
+const qualidadeDadosRoutes = require('./routes/qualidadeDados.routes');
 
 const CLIENT_DIST = path.join(__dirname, '..', '..', 'client', 'dist');
 
@@ -83,6 +84,7 @@ function createApp() {
   app.use('/api/integracoes', requireAuth, requireAdmin, integracoesRoutes);
   app.use('/api/wik', requireAuth, requireAdmin, wikRoutes);
   app.use('/api/conferencia-dados', requireAuth, requireAdmin, conferenciaDadosRoutes);
+  app.use('/api/qualidade-dados', requireAuth, requireAdmin, qualidadeDadosRoutes);
 
   // Build do React em produção (um único serviço no Render).
   app.use(express.static(CLIENT_DIST));
