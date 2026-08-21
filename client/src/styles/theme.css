@@ -1134,6 +1134,36 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
 .paginacao-tamanho { min-width: 130px; }
 .paginacao-pagina { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
+.exportar { position: relative; display: inline-block; }
+.exportar-backdrop { position: fixed; inset: 0; z-index: 29; }
+.exportar-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  min-width: 190px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.exportar-item {
+  text-align: left;
+  padding: 8px 12px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.exportar-item:hover { background: var(--border-soft); }
+
 .row-line {
   display: flex;
   justify-content: space-between;

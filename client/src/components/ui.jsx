@@ -5,6 +5,8 @@ import {
   ArrowUp, ArrowDown, ChevronsUpDown,
 } from 'lucide-react';
 import { TAMANHOS_PAGINA } from '../lib/useTabela';
+import { exportarCsv, exportarXlsx } from '../lib/exportar';
+import { Download } from 'lucide-react';
 
 // Painéis flutuantes (lista do Select, calendário do DateInput) precisam
 // escapar de qualquer ancestral com overflow:hidden/auto (todo .card do
@@ -179,6 +181,34 @@ export function Paginacao({ pagina, totalPaginas, tamanho, tamanhos = TAMANHOS_P
           <ChevronRight size={16} />
         </button>
       </div>
+    </div>
+  );
+}
+
+// Botão de exportar (CSV ou XLSX) — recebe as colunas (`{ chave, rotulo,
+// valor(item) }`) e a lista JÁ com o filtro/ordenação aplicados pela
+// própria tela (não só a página visível), e exporta os dois formatos com
+// cabeçalho em português e valor formatado igual à tela.
+export function BotaoExportar({ nomeBase, colunas, itens, disabled }) {
+  const [aberto, setAberto] = useState(false);
+  return (
+    <div className="exportar">
+      <button type="button" className="btn btn-ghost" disabled={disabled} onClick={() => setAberto((v) => !v)}>
+        <Download size={14} /> Exportar
+      </button>
+      {aberto && (
+        <>
+          <div className="exportar-backdrop" onClick={() => setAberto(false)} />
+          <div className="exportar-menu">
+            <button type="button" className="exportar-item" onClick={() => { exportarCsv(nomeBase, colunas, itens); setAberto(false); }}>
+              Exportar como CSV
+            </button>
+            <button type="button" className="exportar-item" onClick={() => { exportarXlsx(nomeBase, colunas, itens); setAberto(false); }}>
+              Exportar como XLSX
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
