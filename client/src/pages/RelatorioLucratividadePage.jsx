@@ -1,17 +1,30 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import {
-  ArrowDown, ArrowUp, Banknote, Box, ChevronDown, ChevronUp, Landmark, Megaphone,
+  Banknote, Box, ChevronDown, ChevronUp, Landmark, Megaphone,
   Percent, Printer, RefreshCw, Search, ShoppingBag, Tag, TrendingUp, X,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct, formatQtd } from '../lib/format';
-import { Select, StatCard } from '../components/ui';
+import { Select, StatCard, ThOrdenavel, Paginacao } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import FotoProduto from '../components/FotoProduto';
 import DataTable from '../components/DataTable';
+import { useTabela } from '../lib/useTabela';
+
+const COLUNAS_PEDIDOS_ORDENAVEIS = {
+  numero: (p) => Number(p.numero) || 0,
+  data: (p) => new Date(p.data_pedido).getTime(),
+  cliente: (p) => p.cliente_nome,
+  canal: (p) => p.canal_venda,
+  receita: (p) => Number(p.receita) || 0,
+  custo: (p) => Number(p.custo) || 0,
+  taxaMarketplace: (p) => Number(p.taxaMarketplace) || 0,
+  lucro: (p) => Number(p.lucro) || 0,
+  margem: (p) => Number(p.margemPct) || 0,
+};
 
 // Paleta categórica combinando com a identidade do sistema (terracota,
 // verde-azulado e ameixa — as mesmas famílias de cor já usadas em
@@ -691,7 +704,6 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
   const [lojaId, setLojaId] = useState('');
   const [integracoes, setIntegracoes] = useState([]);
   const [busca, setBusca] = useState('');
-  const [ordemData, setOrdemData] = useState('desc');
   const [relatorio, setRelatorio] = useState(null);
   const [resumoProduto, setResumoProduto] = useState(null);
   const [serieDiaria, setSerieDiaria] = useState(null);
@@ -772,10 +784,15 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
   // Filtro por texto (nº do pedido, cliente, SKU e referência do produto) e
   // ordenação por data são feitos aqui em cima do que já veio do servidor —
   // não precisa buscar de novo pra digitar ou trocar a ordem.
+  // Filtro de texto sobre o que o servidor já trouxe pro período — a
+  // ordenação e a paginação de exibição ficam a cargo do useTabela logo
+  // abaixo, aplicadas só na tabela "Pedidos no Período" (a aba Vendas usa
+  // esta lista filtrada direto, sem paginar).
   const pedidosExibidos = useMemo(() => {
     if (!relatorio) return [];
     const termo = busca.trim().toLowerCase();
-    const filtrados = !termo ? relatorio.pedidos : relatorio.pedidos.filter((p) => {
+    if (!termo) return relatorio.pedidos;
+    return relatorio.pedidos.filter((p) => {
       if (String(p.numero).toLowerCase().includes(termo)) return true;
       if (String(p.numeroExibicao || '').toLowerCase().includes(termo)) return true;
       if ((p.cliente_nome || '').toLowerCase().includes(termo)) return true;
@@ -783,12 +800,9 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
         (it.skuExterno || '').toLowerCase().includes(termo) || (it.referencia || '').toLowerCase().includes(termo)
       ));
     });
-    const ordenados = [...filtrados].sort((a, b) => {
-      const diff = new Date(a.data_pedido) - new Date(b.data_pedido);
-      return ordemData === 'asc' ? diff : -diff;
-    });
-    return ordenados;
-  }, [relatorio, busca, ordemData]);
+  }, [relatorio, busca]);
+
+  const tabelaPedidos = useTabela(pedidosExibidos, { colunas: COLUNAS_PEDIDOS_ORDENAVEIS, colunaPadrao: 'data', direcaoPadrao: 'desc' });
 
   return (
     <div className="page-wide">
@@ -980,33 +994,30 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
 
               <div className="card no-print">
                 <div className="card-head">
-                  Pedidos no Período ({pedidosExibidos.length}{pedidosExibidos.length !== relatorio.pedidos.length ? ` de ${relatorio.pedidos.length}` : ''})
+                  Pedidos no Período ({tabelaPedidos.totalItens}{tabelaPedidos.totalItens !== relatorio.pedidos.length ? ` de ${relatorio.pedidos.length}` : ''})
                 </div>
                 <DataTable>
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>Nº</th>
-                      <th>
-                        <button
-                          type="button"
-                          onClick={() => setOrdemData((o) => (o === 'asc' ? 'desc' : 'asc'))}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer' }}
-                          title={ordemData === 'asc' ? 'Mais antigo primeiro' : 'Mais novo primeiro'}
-                        >
-                          Data {ordemData === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
-                        </button>
-                      </th>
-                      {isMarketplace ? <th>Item Pedido</th> : <th>Cliente</th>}
-                      <th>Canal</th>
-                      <th>Receita</th><th>Custo</th><th>Taxa Marketplace</th><th>Lucro</th><th>Margem</th>
+                      <ThOrdenavel coluna="numero" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Nº</ThOrdenavel>
+                      <ThOrdenavel coluna="data" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Data</ThOrdenavel>
+                      {isMarketplace ? <th>Item Pedido</th> : (
+                        <ThOrdenavel coluna="cliente" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Cliente</ThOrdenavel>
+                      )}
+                      <ThOrdenavel coluna="canal" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Canal</ThOrdenavel>
+                      <ThOrdenavel coluna="receita" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Receita</ThOrdenavel>
+                      <ThOrdenavel coluna="custo" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Custo</ThOrdenavel>
+                      <ThOrdenavel coluna="taxaMarketplace" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Taxa Marketplace</ThOrdenavel>
+                      <ThOrdenavel coluna="lucro" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Lucro</ThOrdenavel>
+                      <ThOrdenavel coluna="margem" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Margem</ThOrdenavel>
                       {isMarketplace && <th>Valor Recebido (ML)</th>}
                       {isMarketplace && <th>Produto Vinculado</th>}
                       {isMarketplace && <th />}
                     </tr>
                   </thead>
                   <tbody>
-                    {pedidosExibidos.map((p) => {
+                    {tabelaPedidos.itensPagina.map((p) => {
                       const itemUnico = isMarketplace && p.itens?.length === 1 ? p.itens[0] : null;
                       const qtdVinculados = isMarketplace ? (p.itens || []).filter((it) => it.produtoId).length : 0;
                       return (
@@ -1084,12 +1095,13 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                         </tr>
                       );
                     })}
-                    {pedidosExibidos.length === 0 && (
+                    {tabelaPedidos.totalItens === 0 && (
                       <tr><td colSpan="11">{busca ? 'Nenhum pedido encontrado para essa busca.' : 'Nenhum pedido no período.'}</td></tr>
                     )}
                   </tbody>
                 </table>
                 </DataTable>
+                <Paginacao {...tabelaPedidos} />
               </div>
             </>
           )}
