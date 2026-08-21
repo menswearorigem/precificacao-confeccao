@@ -3,7 +3,7 @@ import {
   FlaskConical, LayoutDashboard, Boxes, FileText, List as ListIcon,
   Warehouse, Barcode, Tags, Printer, Users, ClipboardList, ShoppingCart,
   Truck, BarChart3, ShieldCheck, Plug, TrendingUp, ReceiptText, Store, Plane,
-  LineChart, SearchCheck, Layers,
+  LineChart, SearchCheck, Layers, AlertTriangle,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -85,6 +85,7 @@ export const MODULES = [
     pages: [
       { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { to: '/ficha-precificacao', label: 'Ficha de Precificação', icon: FileText },
+      { to: '/alertas', label: 'Central de Alertas', icon: AlertTriangle },
       { to: '/simulador', label: 'Simulador', icon: FlaskConical },
     ],
   },

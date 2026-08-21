@@ -23,6 +23,7 @@ import ImportacaoPage from './pages/ImportacaoPage';
 import SimuladorPage from './pages/SimuladorPage';
 import DashboardPage from './pages/DashboardPage';
 import FichaPrecificacaoPage from './pages/FichaPrecificacaoPage';
+import AlertasPage from './pages/AlertasPage';
 import KitsPage from './pages/KitsPage';
 import FichaTecnicaPage from './pages/FichaTecnicaPage';
 import FichaVendaPage from './pages/FichaVendaPage';
@@ -91,6 +92,7 @@ function AppRoutes() {
                   <Route path="/simulador" element={<SimuladorPage />} />
                   <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/ficha-precificacao" element={<FichaPrecificacaoPage />} />
+                  <Route path="/alertas" element={<AlertasPage />} />
                   <Route path="/kits" element={<KitsPage />} />
                   <Route path="/ficha-tecnica" element={<FichaTecnicaPage />} />
                   <Route path="/estoque" element={<EstoquePage />} />

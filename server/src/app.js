@@ -10,6 +10,7 @@ const listasRoutes = require('./routes/listas.routes');
 const taxasVendaRoutes = require('./routes/taxasVenda.routes');
 const custosIndiretosRoutes = require('./routes/custosIndiretos.routes');
 const produtosRoutes = require('./routes/produtos.routes');
+const alertasRoutes = require('./routes/alertas.routes');
 const importacaoRoutes = require('./routes/importacao.routes');
 const simulacaoRoutes = require('./routes/simulacao.routes');
 const kitsRoutes = require('./routes/kits.routes');
@@ -62,6 +63,7 @@ function createApp() {
   // Análises (dashboard/simulador) trabalha em cima dos mesmos dados de
   // custo/preço do módulo Produto — por isso também libera acesso a produtos.
   app.use('/api/produtos', requireAuth, requireModulo(['produto', 'analises']), produtosRoutes);
+  app.use('/api/alertas', requireAuth, requireModulo(['produto', 'analises']), alertasRoutes);
   app.use('/api/importacao', requireAuth, requireModulo('produto'), importacaoRoutes);
   app.use('/api/kits', requireAuth, requireModulo('produto'), kitsRoutes);
   app.use('/api/ficha-tecnica', requireAuth, requireModulo(['produto', 'vendas']), fichaTecnicaRoutes);
