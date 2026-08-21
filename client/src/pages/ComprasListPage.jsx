@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, Search, ChevronRight, BarChart3 } from 'lucide-react';
+import { Plus, Search, ChevronRight, BarChart3, ShoppingCart } from 'lucide-react';
 import { api } from '../api/client';
 import { brl } from '../lib/format';
 import DataTable from '../components/DataTable';
-import { SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar } from '../components/ui';
+import { SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazio } from '../components/ui';
 import { useTabela } from '../lib/useTabela';
 
 const SITUACAO_TONE = { pendente: 'tone-atencao', recebido: 'tone-saudavel', cancelado: 'tone-prejuizo' };
@@ -154,9 +154,16 @@ export default function ComprasListPage() {
         </table>
         </DataTable>
         {!loading && compras.length === 0 && (
-          <div style={{ padding: '20px 4px', color: 'var(--ink-soft)', fontSize: 13 }}>
-            Nenhuma compra encontrada.
-          </div>
+          <EstadoVazio
+            Icone={ShoppingCart}
+            titulo={busca || categoriaAtiva ? 'Nenhuma compra encontrada' : 'Nenhuma compra lançada ainda'}
+            descricao={busca || categoriaAtiva
+              ? 'Tente outro termo de busca ou limpe o filtro de categoria.'
+              : 'Aqui aparecem todas as compras da empresa — de matéria-prima a material de escritório.'}
+            onAcao={novaCompra}
+            acaoLabel="Nova compra"
+            IconeAcao={Plus}
+          />
         )}
         <Paginacao {...tabela} />
       </div>

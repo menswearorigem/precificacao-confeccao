@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, ChevronRight } from 'lucide-react';
+import { Plus, Search, ChevronRight, ClipboardList, Plug } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, formatQtd } from '../lib/format';
-import { Select, SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar } from '../components/ui';
+import { Select, SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazio } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
@@ -198,9 +198,27 @@ export default function PedidosListPage({ origemFiltro }) {
         </table>
         </DataTable>
         {!loading && pedidos.length === 0 && (
-          <div style={{ padding: '20px 4px', color: 'var(--ink-soft)', fontSize: 13 }}>
-            Nenhum pedido encontrado{isMarketplace ? ' no período.' : '.'}
-          </div>
+          isMarketplace ? (
+            <EstadoVazio
+              Icone={Plug}
+              titulo="Nenhum pedido de marketplace no período"
+              descricao="Pedidos chegam automaticamente das lojas conectadas em Integrações, a cada 5 minutos, ou por importação de planilha."
+              href="/integracoes"
+              acaoLabel="Ver integrações"
+              IconeAcao={Plug}
+            />
+          ) : (
+            <EstadoVazio
+              Icone={ClipboardList}
+              titulo={busca || situacao ? 'Nenhum pedido encontrado' : 'Nenhum pedido lançado ainda'}
+              descricao={busca || situacao
+                ? 'Tente outro termo de busca ou limpe o filtro de situação.'
+                : 'Pedidos lançados manualmente (loja física, WhatsApp etc.) aparecem aqui.'}
+              onAcao={novoPedido}
+              acaoLabel="Novo pedido"
+              IconeAcao={Plus}
+            />
+          )
         )}
         <Paginacao {...tabela} />
       </div>

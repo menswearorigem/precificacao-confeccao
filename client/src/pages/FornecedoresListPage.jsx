@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, ChevronRight, Search } from 'lucide-react';
+import { Plus, ChevronRight, Search, Truck } from 'lucide-react';
 import { api } from '../api/client';
-import { SkeletonLinhasTabela } from '../components/ui';
+import { SkeletonLinhasTabela, EstadoVazio } from '../components/ui';
 
 export default function FornecedoresListPage() {
   const navigate = useNavigate();
@@ -81,9 +81,16 @@ export default function FornecedoresListPage() {
           </tbody>
         </table>
         {!loading && fornecedores.length === 0 && (
-          <div style={{ padding: '20px 4px', color: 'var(--ink-soft)', fontSize: 13 }}>
-            Nenhum fornecedor encontrado.
-          </div>
+          <EstadoVazio
+            Icone={Truck}
+            titulo={busca ? 'Nenhum fornecedor encontrado' : 'Nenhum fornecedor cadastrado ainda'}
+            descricao={busca
+              ? 'Tente buscar por outro nome, CPF/CNPJ ou telefone.'
+              : 'Aqui aparecem os fornecedores usados nos lançamentos de compra.'}
+            href="/fornecedores/novo"
+            acaoLabel="Novo fornecedor"
+            IconeAcao={Plus}
+          />
         )}
       </div>
     </div>

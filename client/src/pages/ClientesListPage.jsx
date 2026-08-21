@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, ChevronRight, Search } from 'lucide-react';
+import { Plus, ChevronRight, Search, Users } from 'lucide-react';
 import { api } from '../api/client';
 import DataTable from '../components/DataTable';
-import { SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar } from '../components/ui';
+import { SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazio } from '../components/ui';
 import { useTabela } from '../lib/useTabela';
 
 const COLUNAS_ORDENAVEIS = {
@@ -111,9 +111,16 @@ export default function ClientesListPage() {
         </table>
         </DataTable>
         {!loading && clientes.length === 0 && (
-          <div style={{ padding: '20px 4px', color: 'var(--ink-soft)', fontSize: 13 }}>
-            Nenhum cliente encontrado.
-          </div>
+          <EstadoVazio
+            Icone={Users}
+            titulo={busca ? 'Nenhum cliente encontrado' : 'Nenhum cliente cadastrado ainda'}
+            descricao={busca
+              ? 'Tente buscar por outro nome, CPF/CNPJ ou telefone.'
+              : 'Aqui aparecem os clientes usados nos pedidos de venda.'}
+            href="/clientes/novo"
+            acaoLabel="Novo cliente"
+            IconeAcao={Plus}
+          />
         )}
         <Paginacao {...tabela} />
       </div>

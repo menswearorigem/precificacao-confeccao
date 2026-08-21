@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, ChevronRight, Search } from 'lucide-react';
+import { Plus, ChevronRight, Search, PackageSearch } from 'lucide-react';
 import { api } from '../api/client';
 import { statusToneClass } from '../lib/statusTone';
 import { brl, pct } from '../lib/format';
 import FotoProduto from '../components/FotoProduto';
-import { Select, SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar } from '../components/ui';
+import { Select, SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazio } from '../components/ui';
 import DataTable from '../components/DataTable';
 import { useTabela } from '../lib/useTabela';
 
@@ -141,9 +141,16 @@ export default function ProdutosListPage() {
         </table>
         </DataTable>
         {!loading && produtos.length === 0 && (
-          <div style={{ padding: '20px 4px', color: 'var(--ink-soft)', fontSize: 13 }}>
-            Nenhum produto encontrado.
-          </div>
+          <EstadoVazio
+            Icone={PackageSearch}
+            titulo={busca || marca || categoria ? 'Nenhum produto encontrado' : 'Nenhum produto cadastrado ainda'}
+            descricao={busca || marca || categoria
+              ? 'Tente outro termo de busca ou limpe os filtros de marca/categoria.'
+              : 'Aqui aparecem as referências cadastradas, com custo, preço e margem de cada uma.'}
+            href="/produtos/novo"
+            acaoLabel="Novo produto"
+            IconeAcao={Plus}
+          />
         )}
         <Paginacao {...tabela} />
       </div>
