@@ -1,3 +1,61 @@
+# Ressalvas — Onda 4 (Inteligência do sistema)
+
+Formato pedido no Bloco 0 do prompt da Onda 4: cada entrada traz o que foi
+pedido, por que não foi feito do jeito pedido, o que seria preciso pra
+fazer direito, e o que foi feito no lugar (ou "nada").
+
+## 1. Gráfico de composição de custo no Dashboard Executivo (TAREFA 4.1)
+
+**O QUE FOI PEDIDO:** um gráfico de composição de custo (material / mão de
+obra / indireto) no novo Dashboard Executivo, no mesmo espírito do donut
+que já existe na Ficha de Precificação.
+
+**POR QUE NÃO FIZ:** a própria Onda 4 manda medir isso primeiro (TAREFA
+4.0), e a auditoria de qualidade do dado mostrou que só 3 de 67 referências
+cadastradas neste ambiente têm custo de material maior que zero — as
+outras 64 têm material zerado ou preço sugerido zerado por falta de dado.
+Um gráfico de composição agregando isso mostraria "material ≈ 0% do custo,
+mão de obra ≈ 100%" pra quase toda a operação — tecnicamente a soma exata
+do que está cadastrado, mas praticamente uma leitura errada (não é que a
+operação não usa material, é que o dado não foi preenchido). Isso é
+exatamente o cenário que o prompt descreve como proibido: "o número
+estaria tecnicamente certo e praticamente errado".
+
+**O QUE SERIA PRECISO:** cadastrar o valor unitário dos materiais nas
+referências que já têm material cadastrado com quantidade > 0 (a lista
+exata está em `/qualidade-dados`, seção "Material cadastrado com valor
+unitário zerado") e completar o custo das referências com preço sugerido
+zerado. Só depois disso o gráfico de composição passa a refletir a
+operação de verdade.
+
+**O QUE FIZ NO LUGAR:** nenhum gráfico de composição de custo no Dashboard
+Executivo. No lugar, o rodapé do painel traz o `<SeloDeConfianca>` com o
+link direto pra auditoria completa, e a auditoria já está pronta e visível
+em `/qualidade-dados`. Quando o dado estiver completo o bastante (a
+auditoria mostrar a maioria das referências com custo de material
+positivo), o gráfico pode ser adicionado — é só ligar a mesma composição
+que a Ficha de Precificação já calcula por referência, agora somada pro
+período.
+
+## 2. Margem consolidada e rankings por produto excluem pedidos com custo incompleto
+
+Não é bem uma ressalva de "não fiz" — é uma decisão de precisão que TOMEI,
+registrada aqui porque muda o número exibido em relação ao que o motor
+`calcularRelatorioPedidos` (usado por Vendas/Marketplace › Lucratividade)
+mostra hoje. Esse motor, ao montar `totalGeral`, trata item sem custo de
+produção conhecido como custo zero — o que já era assim antes desta onda e
+não foi alterado (proibido mexer na fórmula). Só que o Bloco 0 desta onda
+pede explicitamente o oposto pro Dashboard Executivo: "pedido sem custo de
+produção conhecido NÃO entra no cálculo de lucro". Resolvi o conflito
+assim: o Dashboard Executivo recalcula seus PRÓPRIOS totais (margem
+consolidada, ranking por produto, vendas por canal) filtrando fora todo
+pedido com `custoIncompleto = true` ANTES de somar — usando os mesmos
+números de receita/lucro por pedido que o motor já calculou, só mudando
+quais pedidos entram na soma. O quanto ficou de fora aparece no
+`<SeloDeConfianca>` ("N pedidos com custo de produção incompleto").
+
+---
+
 # Ressalvas — redesenho da tela /login
 
 Registro do que ficou de fora do redesenho da tela de login e por quê,

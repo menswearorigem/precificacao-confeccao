@@ -1220,6 +1220,165 @@ router.get('/relatorio-lucratividade/serie-diaria', async (req, res, next) => {
   }
 });
 
+// Dashboard Executivo consolidado (Onda 4, TAREFA 4.1) — visão da operação
+// inteira (todos os canais: manual, marketplace, viagem) num período, ao
+// contrário da Ficha de Precificação (composição de preço de UMA
+// referência) ou da Lucratividade de Marketplace (só marketplace).
+//
+// Reaproveita SEM ALTERAR o motor `calcularRelatorioPedidos` (o mesmo da
+// Lucratividade de Vendas e de Marketplace) — nenhuma fórmula de custo,
+// lucro ou margem é recalculada aqui, só agregada de um jeito novo.
+//
+// Regra de precisão aplicada aqui (ela não é aplicada dentro do motor,
+// que precisa continuar servindo os relatórios existentes exatamente como
+// estão): pedido com item sem custo de produção conhecido
+// (`custoIncompleto`) É EXCLUÍDO da margem consolidada e dos rankings por
+// produto — nunca entra soando como "custo zero". O total de pedidos
+// excluídos por esse motivo é devolvido pra virar o <SeloDeConfianca>.
+router.get('/relatorio-lucratividade/dashboard-executivo', async (req, res, next) => {
+  try {
+    const { data_inicio, data_fim, empresa_id, canal_venda } = req.query;
+    if (!data_inicio || !data_fim) {
+      return res.status(400).json({ error: 'Informe data_inicio e data_fim.' });
+    }
+
+    const [{ resultado: pedidosBrutos }, ctx, { rows: cfgRows }] = await Promise.all([
+      calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda }),
+      getCalcContext(),
+      pool.query('SELECT margem_minima FROM configuracoes WHERE id = 1'),
+    ]);
+    const margemMinima = Number(cfgRows[0]?.margem_minima) || 0;
+
+    // empresa_id não é filtro do motor central (ele não recebe esse
+    // parâmetro) — filtra aqui em cima do resultado já calculado.
+    const pedidos = empresa_id ? pedidosBrutos.filter((p) => String(p.empresa_id) === String(empresa_id)) : pedidosBrutos;
+
+    const { data_inicio: dataInicioAnterior, data_fim: dataFimAnterior } = periodoAnterior(data_inicio, data_fim);
+    const { resultado: pedidosAnterioresBrutos } = await calcularRelatorioPedidos({
+      data_inicio: dataInicioAnterior, data_fim: dataFimAnterior, canal_venda,
+    });
+    const pedidosAnteriores = empresa_id
+      ? pedidosAnterioresBrutos.filter((p) => String(p.empresa_id) === String(empresa_id))
+      : pedidosAnterioresBrutos;
+
+    // ---------- totais do período, excluindo custo incompleto ----------
+    function totaisConsolidados(lista) {
+      const validos = lista.filter((p) => !p.custoIncompleto);
+      const receita = validos.reduce((s, p) => s + p.receita, 0);
+      const lucro = validos.reduce((s, p) => s + p.lucro, 0);
+      const numeroPecas = validos.reduce((s, p) => s + p.itens.reduce((si, it) => si + it.quantidade, 0), 0);
+      return {
+        receita,
+        lucro,
+        margemPct: receita > 0 ? lucro / receita : 0,
+        numeroPedidos: validos.length,
+        numeroPecas,
+        ticketMedio: validos.length > 0 ? receita / validos.length : 0,
+        excluidosPorCustoIncompleto: lista.length - validos.length,
+      };
+    }
+    const atual = totaisConsolidados(pedidos);
+    const anterior = totaisConsolidados(pedidosAnteriores);
+    const variacao = {
+      receita: variacaoPct(atual.receita, anterior.receita),
+      lucro: variacaoPct(atual.lucro, anterior.lucro),
+      numeroPedidos: variacaoPct(atual.numeroPedidos, anterior.numeroPedidos),
+      numeroPecas: variacaoPct(atual.numeroPecas, anterior.numeroPecas),
+      ticketMedio: variacaoPct(atual.ticketMedio, anterior.ticketMedio),
+    };
+
+    // ---------- vendas por canal (só pedidos com custo completo) ----------
+    const validosAtual = pedidos.filter((p) => !p.custoIncompleto);
+    const porCanal = new Map();
+    for (const p of validosAtual) {
+      const canal = p.canal_venda || 'Sem canal';
+      if (!porCanal.has(canal)) porCanal.set(canal, { canal, receita: 0, lucro: 0, numeroPedidos: 0 });
+      const acc = porCanal.get(canal);
+      acc.receita += p.receita;
+      acc.lucro += p.lucro;
+      acc.numeroPedidos += 1;
+    }
+    const vendasPorCanal = [...porCanal.values()]
+      .map((c) => ({ ...c, margemPct: c.receita > 0 ? c.lucro / c.receita : 0, participacaoPct: atual.receita > 0 ? c.receita / atual.receita : 0 }))
+      .sort((a, b) => b.receita - a.receita);
+
+    // ---------- evolução diária (só pedidos com custo completo) ----------
+    const porDia = new Map();
+    for (const p of validosAtual) {
+      const dia = p.data_pedido.toISOString().slice(0, 10);
+      if (!porDia.has(dia)) porDia.set(dia, { receita: 0, lucro: 0 });
+      const acc = porDia.get(dia);
+      acc.receita += p.receita;
+      acc.lucro += p.lucro;
+    }
+    const serieDiaria = [];
+    const cursorDia = new Date(`${data_inicio}T00:00:00`);
+    const fimDia = new Date(`${data_fim}T00:00:00`);
+    while (cursorDia <= fimDia) {
+      const chave = cursorDia.toISOString().slice(0, 10);
+      const acc = porDia.get(chave) || { receita: 0, lucro: 0 };
+      serieDiaria.push({ data: chave, receita: acc.receita, lucro: acc.lucro, margemPct: acc.receita > 0 ? acc.lucro / acc.receita : 0 });
+      cursorDia.setDate(cursorDia.getDate() + 1);
+    }
+
+    // ---------- por produto: top lucro, pior margem, abaixo da mínima ----------
+    // Mesma alocação proporcional do lucro do pedido entre seus itens que
+    // /relatorio-lucratividade/resumo-produto já usa — refeita aqui só pra
+    // poder excluir os pedidos de custo incompleto ANTES de ratear (o
+    // endpoint existente não exclui, e não podemos alterá-lo).
+    const porProduto = new Map();
+    for (const p of validosAtual) {
+      for (const it of p.itens) {
+        if (!it.produtoId) continue; // sem produto vinculado — não dá pra atribuir a nenhuma referência
+        if (!porProduto.has(it.produtoId)) {
+          porProduto.set(it.produtoId, {
+            produtoId: it.produtoId, referencia: it.referencia, descricao: it.descricao,
+            unidadesVendidas: 0, totalFaturado: 0, lucro: 0,
+          });
+        }
+        const acc = porProduto.get(it.produtoId);
+        const shareReceita = p.receita > 0 ? it.totalItem / p.receita : 0;
+        acc.unidadesVendidas += it.quantidade;
+        acc.totalFaturado += it.totalItem;
+        acc.lucro += p.lucro * shareReceita;
+      }
+    }
+    const produtos = [...porProduto.values()].map((x) => ({
+      ...x,
+      margemPct: x.totalFaturado > 0 ? x.lucro / x.totalFaturado : 0,
+    }));
+
+    const topLucro = [...produtos].sort((a, b) => b.lucro - a.lucro).slice(0, 10);
+    // "Volume relevante" pra entrar no ranking de pior margem — 2+ unidades,
+    // pra uma venda avulsa isolada (às vezes com desconto pontual) não
+    // dominar a lista. Critério simples e documentado, não um corte oculto.
+    const topPiorMargem = [...produtos]
+      .filter((p) => p.unidadesVendidas >= 2)
+      .sort((a, b) => a.margemPct - b.margemPct)
+      .slice(0, 10);
+    const abaixoMargemMinima = produtos.filter((p) => p.margemPct < margemMinima).sort((a, b) => a.margemPct - b.margemPct);
+
+    res.json({
+      periodo: { dataInicio: data_inicio, dataFim: data_fim },
+      periodoAnterior: { dataInicio: dataInicioAnterior, dataFim: dataFimAnterior },
+      indicadores: { atual, anterior, variacao },
+      vendasPorCanal,
+      serieDiaria,
+      topLucro,
+      topPiorMargem,
+      margemMinima,
+      abaixoMargemMinima,
+      confianca: {
+        pedidosConsiderados: atual.numeroPedidos,
+        pedidosExcluidosPorCustoIncompleto: atual.excluidosPorCustoIncompleto,
+        totalPedidosPeriodo: pedidos.length,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ---------- métricas de marketplace (volume de vendas, não lucro) ----------
 // Um segundo painel, separado da Lucratividade: enquanto aquela é focada em
 // custo/imposto/lucro por pedido, este é sobre VOLUME de vendas — quanto se

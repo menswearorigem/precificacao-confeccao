@@ -1,243 +1,253 @@
 import { useEffect, useMemo, useState } from 'react';
-import { LayoutDashboard, History } from 'lucide-react';
-import { Field, Select, EstadoVazio, lerRecentes } from '../components/ui';
+import { Link } from 'react-router-dom';
+import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import {
+  ArrowUpRight, ArrowDownRight, Banknote, TrendingUp, ShoppingCart,
+  Package, Receipt, ChevronRight, X,
+} from 'lucide-react';
 import { api } from '../api/client';
-import { brl, pct, numeroBr } from '../lib/format';
-import { statusToneClass } from '../lib/statusTone';
+import { brl, pct, formatQtd, dataBr } from '../lib/format';
+import { StatCard, Select } from '../components/ui';
+import { PeriodoFiltro } from '../components/PeriodoFiltro';
+import SeloDeConfianca from '../components/SeloDeConfianca';
+import { PRESETS_PERIODO } from '../lib/periodos';
 
-const DONUT_CORES = {
-  materiais: '#6b4423',
-  industrial: '#b5651d',
-  indireto: '#c9a876',
-  impostos: '#a93f2b',
-  taxas: '#3e6e90',
-  lucro: '#5b7553',
-};
+const COR_RECEITA = '#d17a2a';
+const COR_LUCRO = '#33512f';
+const FONTE_GRAFICO = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
-function Donut({ fatias }) {
-  const total = fatias.reduce((s, f) => s + Math.max(f.valor, 0), 0);
-  let acc = 0;
-  const stops = fatias.map((f) => {
-    const valor = Math.max(f.valor, 0);
-    const start = total === 0 ? 0 : (acc / total) * 360;
-    acc += valor;
-    const end = total === 0 ? 0 : (acc / total) * 360;
-    return `${f.cor} ${start}deg ${end}deg`;
-  });
-  const gradient = total === 0 ? '#eae1cc 0deg 360deg' : stops.join(', ');
-
+// Mesma guarda de variação percentual da Onda 3 (Marketplace > Métricas):
+// base do período anterior perto de zero vira "novo" em vez de um
+// percentual gigante sem significado prático. A conta em si (variacaoPct
+// no backend) não muda, só o rótulo.
+function VariacaoBadge({ valor, baseAnterior, limiar }) {
+  if (valor === null || valor === undefined) return null;
+  if (limiar != null && Math.abs(Number(baseAnterior) || 0) < limiar) {
+    return <span className="stat-card-delta">novo</span>;
+  }
+  const positivo = valor >= 0;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
-      <div
-        style={{
-          width: 160,
-          height: 160,
-          borderRadius: '50%',
-          background: `conic-gradient(${gradient})`,
-          flexShrink: 0,
-          position: 'relative',
-        }}
-      >
-        <div style={{
-          position: 'absolute', inset: 22, borderRadius: '50%', background: 'var(--surface)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column',
-        }}>
-          <span className="mono" style={{ fontSize: 11, color: 'var(--ink-soft)' }}>preço</span>
-          <span className="mono" style={{ fontSize: 15, fontWeight: 700 }}>{brl(total)}</span>
+    <span className={'stat-card-delta ' + (positivo ? 'up' : 'down')}>
+      {positivo ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+      {pct(Math.abs(valor))}
+    </span>
+  );
+}
+
+function TooltipEvolucao({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', boxShadow: 'var(--shadow-md)', fontFamily: FONTE_GRAFICO }}>
+      <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 13, color: 'var(--leather-deep)', marginBottom: 6 }}>{label}</div>
+      {payload.map((item) => (
+        <div key={item.dataKey} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, padding: '2px 0' }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
+          <span style={{ color: 'var(--ink-soft)' }}>{item.name}</span>
+          <span className="mono" style={{ marginLeft: 'auto', fontWeight: 600, color: 'var(--ink)' }}>{brl(item.value)}</span>
         </div>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {fatias.map((f) => (
-          <div key={f.label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
-            <span style={{ width: 10, height: 10, borderRadius: 3, background: f.cor, display: 'inline-block' }} />
-            <span style={{ minWidth: 90 }}>{f.label}</span>
-            <span className="mono" style={{ color: 'var(--ink-soft)' }}>
-              {brl(f.valor)} · {pct(total === 0 ? 0 : f.valor / total)}
-            </span>
-          </div>
-        ))}
-      </div>
+      ))}
     </div>
   );
 }
 
-function FaixaPreco({ minimo, ideal, premium, ativo }) {
-  const lo = minimo;
-  const hi = Math.max(premium, ativo, ideal) * 1.05;
-  const posOf = (v) => (hi === lo ? 0 : Math.min(100, Math.max(0, ((v - lo) / (hi - lo)) * 100)));
-
+function GraficoEvolucao({ serie }) {
+  const dados = serie.map((d) => ({ ...d, dataLabel: dataBr(d.data) }));
+  const tickStyle = { fontSize: 11.5, fontFamily: FONTE_GRAFICO, fill: 'var(--ink-soft)' };
   return (
-    <div style={{ marginTop: 8 }}>
-      <div style={{ position: 'relative', height: 10, borderRadius: 6, background: 'var(--border-soft)', marginBottom: 8 }}>
-        <div
-          style={{
-            position: 'absolute', left: 0, top: 0, bottom: 0,
-            width: `${posOf(ativo)}%`, background: 'var(--terracotta)', borderRadius: 6,
-          }}
-        />
-        {[
-          { v: minimo, label: 'Mínimo' },
-          { v: ideal, label: 'Ideal' },
-          { v: premium, label: 'Premium' },
-        ].map((marca) => (
-          <div
-            key={marca.label}
-            title={`${marca.label}: ${brl(marca.v)}`}
-            style={{
-              position: 'absolute', left: `${posOf(marca.v)}%`, top: -3, width: 2, height: 16,
-              background: 'var(--leather-dark)', transform: 'translateX(-1px)',
-            }}
-          />
-        ))}
-        <div
-          title={`Preço ativo: ${brl(ativo)}`}
-          style={{
-            position: 'absolute', left: `${posOf(ativo)}%`, top: -5, width: 12, height: 12,
-            borderRadius: '50%', background: 'var(--terracotta)', border: '2px solid var(--surface)',
-            boxShadow: '0 0 0 1px var(--leather-dark)', transform: 'translateX(-6px)',
-          }}
-        />
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-soft)' }}>
-        <span>Mínimo <span className="mono">{brl(minimo)}</span></span>
-        <span>Ideal <span className="mono">{brl(ideal)}</span></span>
-        <span>Premium <span className="mono">{brl(premium)}</span></span>
-      </div>
-    </div>
+    <ResponsiveContainer width="100%" height={300}>
+      <AreaChart data={dados} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id="corReceita" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={COR_RECEITA} stopOpacity={0.22} />
+            <stop offset="95%" stopColor={COR_RECEITA} stopOpacity={0.01} />
+          </linearGradient>
+          <linearGradient id="corLucro" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={COR_LUCRO} stopOpacity={0.22} />
+            <stop offset="95%" stopColor={COR_LUCRO} stopOpacity={0.01} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
+        <XAxis dataKey="dataLabel" tick={tickStyle} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
+        <YAxis tick={tickStyle} tickFormatter={(v) => brl(v)} width={92} axisLine={false} tickLine={false} />
+        <Tooltip content={<TooltipEvolucao />} />
+        <Area type="monotone" dataKey="receita" name="Faturamento" stroke={COR_RECEITA} fill="url(#corReceita)" strokeWidth={2.25} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+        <Area type="monotone" dataKey="lucro" name="Lucro" stroke={COR_LUCRO} fill="url(#corLucro)" strokeWidth={2.25} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+      </AreaChart>
+    </ResponsiveContainer>
   );
 }
 
 export default function DashboardPage() {
-  const [produtos, setProdutos] = useState([]);
-  const [produtoId, setProdutoId] = useState('');
-  const [detalhe, setDetalhe] = useState(null);
+  const [periodo, setPeriodo] = useState(() => PRESETS_PERIODO.find((p) => p.chave === 'esteMes').calcular());
+  const [empresas, setEmpresas] = useState([]);
+  const [empresaId, setEmpresaId] = useState('');
+  const [canalVenda, setCanalVenda] = useState('');
+  const [dados, setDados] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState('');
 
   useEffect(() => {
-    api.get('/produtos').then(setProdutos);
+    api.get('/empresas').then(setEmpresas);
   }, []);
 
   useEffect(() => {
-    if (!produtoId) { setDetalhe(null); return; }
-    api.get(`/produtos/${produtoId}`).then(setDetalhe);
-  }, [produtoId]);
+    setLoading(true);
+    setErro('');
+    const params = new URLSearchParams({ data_inicio: periodo.inicio, data_fim: periodo.fim });
+    if (empresaId) params.set('empresa_id', empresaId);
+    if (canalVenda) params.set('canal_venda', canalVenda);
+    api.get(`/pedidos/relatorio-lucratividade/dashboard-executivo?${params.toString()}`)
+      .then(setDados)
+      .catch((err) => setErro(err.message))
+      .finally(() => setLoading(false));
+  }, [periodo, empresaId, canalVenda]);
 
-  const c = detalhe?.calculo;
+  const indicadores = dados?.indicadores;
 
-  // Atalho pras últimas referências consultadas — mesma lista de "recentes"
-  // que o Select já guarda em localStorage, só filtrada pro que ainda existe
-  // no cadastro atual (produto pode ter sido excluído nesse meio-tempo).
-  const recentes = useMemo(() => {
-    if (produtos.length === 0) return [];
-    return lerRecentes('dashboard_produto')
-      .map((id) => produtos.find((p) => String(p.id) === String(id)))
-      .filter(Boolean);
-  }, [produtos]);
+  const campos = useMemo(() => (!indicadores ? [] : [
+    { chave: 'receita', label: 'Faturamento', icon: Banknote, fmt: brl, limiar: 500 },
+    { chave: 'lucro', label: 'Lucro líquido', icon: TrendingUp, fmt: brl, limiar: 500 },
+    { chave: 'numeroPedidos', label: 'Pedidos', icon: ShoppingCart, fmt: formatQtd, limiar: 5 },
+    { chave: 'numeroPecas', label: 'Peças vendidas', icon: Package, fmt: formatQtd, limiar: 5 },
+    { chave: 'ticketMedio', label: 'Ticket médio', icon: Receipt, fmt: brl, limiar: 500 },
+  ]), [indicadores]);
 
   return (
     <div className="page-wide">
-      <h2>Dashboard Executivo</h2>
-      <p className="page-sub">Painel resumo de precificação de uma referência.</p>
-
-      <div className="card" style={{ marginBottom: 16 }}>
-        <Field label="Referência">
-          <Select value={produtoId} onChange={(e) => setProdutoId(e.target.value)} chaveRecentes="dashboard_produto">
-            <option value="">Selecione uma referência…</option>
-            {produtos.map((p) => (
-              <option key={p.id} value={p.id}>{p.referencia} — {p.descricao}</option>
-            ))}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+        <div>
+          <h2>Dashboard Executivo</h2>
+          <p className="page-sub">Faturamento, lucro e margem consolidados de toda a operação — todos os canais de venda juntos.</p>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <PeriodoFiltro inicio={periodo.inicio} fim={periodo.fim} onChange={setPeriodo} />
+          <Select value={empresaId} onChange={(e) => setEmpresaId(e.target.value)} style={{ minWidth: 160 }}>
+            <option value="">Todas as empresas</option>
+            {empresas.map((e) => (<option key={e.id} value={e.id}>{e.nome}</option>))}
           </Select>
-        </Field>
+        </div>
       </div>
 
-      {c && (
-        <>
-          <div className="stamp-row">
-            <div className={'stamp ' + statusToneClass(c.formacaoPreco.status)}>{c.formacaoPreco.status}</div>
-            <div style={{ display: 'flex', gap: 28 }}>
-              <KpiMini label="Preço sugerido" value={brl(c.formacaoPreco.precoSugerido)} />
-              <KpiMini label="Lucro" value={`${brl(c.formacaoPreco.lucroRS)} · ${pct(c.formacaoPreco.lucroPct)}`} />
-              <KpiMini label="Markup" value={`${numeroBr(c.formacaoPreco.markupMult)}x`} />
-            </div>
-          </div>
-
-          <div className="grid-2" style={{ marginBottom: 16 }}>
-            <KpiCard label="% Custo Materiais" value={pct(c.custoTotal.pctMateriais)} />
-            <KpiCard label="% Mão de Obra Industrial" value={pct(c.custoTotal.pctIndustrial)} />
-            <KpiCard label="% Despesas Indiretas" value={pct(c.custoTotal.pctIndireto)} />
-            <KpiCard label="% Impostos" value={pct(c.custoTotal.pctImpostosDoCusto)} />
-          </div>
-
-          <div className="grid-2">
-            <div className="card">
-              <div className="card-head">Composição do Preço de Venda</div>
-              <Donut
-                fatias={[
-                  { label: 'Materiais', valor: c.custoTotal.totalMateriais, cor: DONUT_CORES.materiais },
-                  { label: 'Industrial', valor: c.custoTotal.totalIndustrial, cor: DONUT_CORES.industrial },
-                  { label: 'Indireto', valor: c.custoTotal.custoIndireto, cor: DONUT_CORES.indireto },
-                  { label: 'Impostos', valor: c.custoTotal.impostosRS, cor: DONUT_CORES.impostos },
-                  { label: 'Taxas', valor: c.custoTotal.taxasRS, cor: DONUT_CORES.taxas },
-                  { label: 'Lucro', valor: c.formacaoPreco.lucroRS, cor: DONUT_CORES.lucro },
-                ]}
-              />
-            </div>
-            <div className="card">
-              <div className="card-head">Onde o preço está</div>
-              <FaixaPreco
-                minimo={c.formacaoPreco.precoMinimo}
-                ideal={c.formacaoPreco.precoIdeal}
-                premium={c.formacaoPreco.precoPremium}
-                ativo={c.formacaoPreco.precoAtivo}
-              />
-              <p className="page-sub" style={{ marginTop: 14 }}>
-                Preço {detalhe.produto.preco_informado ? 'praticado' : 'sugerido'} atual: <strong className="mono">{brl(c.formacaoPreco.precoAtivo)}</strong>
-              </p>
-            </div>
-          </div>
-        </>
-      )}
-
-      {!c && (
-        <div className="card">
-          <EstadoVazio
-            Icone={LayoutDashboard}
-            titulo="Selecione uma referência acima"
-            descricao="O painel mostra a composição do preço de venda (materiais, industrial, indireto, impostos, taxas e lucro), a faixa entre preço mínimo/ideal/premium e os indicadores de custo da referência escolhida."
-          />
-          {recentes.length > 0 && (
-            <div style={{ borderTop: '1px solid var(--border-soft)', marginTop: 4, paddingTop: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--ink-soft)', marginBottom: 10, justifyContent: 'center' }}>
-                <History size={13} /> Últimas consultadas
-              </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
-                {recentes.map((p) => (
-                  <button key={p.id} type="button" className="btn btn-ghost sm" onClick={() => setProdutoId(String(p.id))}>
-                    <span className="mono">{p.referencia}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+      {canalVenda && (
+        <div className="stamp-row" style={{ marginTop: 10 }}>
+          <span className="stamp sm tone-neutro">
+            Canal: {canalVenda}
+            <button type="button" onClick={() => setCanalVenda('')} className="icon-btn" style={{ marginLeft: 6, padding: 0 }}><X size={12} /></button>
+          </span>
         </div>
       )}
+
+      {erro && <div className="login-error" style={{ marginTop: 12 }}>{erro}</div>}
+
+      {!loading && indicadores && (
+        <>
+          <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(5, 1fr)', marginTop: 16 }}>
+            {campos.map((c) => (
+              <StatCard
+                key={c.chave}
+                label={<><c.icon size={11} style={{ marginRight: 4, verticalAlign: -2 }} />{c.label}</>}
+                value={c.fmt(indicadores.atual[c.chave])}
+              >
+                <VariacaoBadge valor={indicadores.variacao[c.chave]} baseAnterior={indicadores.anterior[c.chave]} limiar={c.limiar} />
+              </StatCard>
+            ))}
+            <StatCard
+              label={<><TrendingUp size={11} style={{ marginRight: 4, verticalAlign: -2 }} />Margem consolidada</>}
+              value={pct(indicadores.atual.margemPct)}
+            >
+              <span className="stat-card-delta">{numeroBrDeltaPP(indicadores.atual.margemPct, indicadores.anterior.margemPct)}</span>
+            </StatCard>
+          </div>
+
+          <div className="grid-2" style={{ marginTop: 16 }}>
+            <div className="card">
+              <div className="card-head">Vendas por Canal</div>
+              {dados.vendasPorCanal.length === 0 && <p className="page-sub">Nenhuma venda com custo completo no período.</p>}
+              {dados.vendasPorCanal.map((c) => (
+                <button
+                  key={c.canal}
+                  type="button"
+                  onClick={() => setCanalVenda(c.canal === canalVenda ? '' : c.canal)}
+                  style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%',
+                    background: 'none', border: 'none', borderBottom: '1px solid var(--border-soft)',
+                    padding: '10px 0', cursor: 'pointer', textAlign: 'left',
+                  }}
+                >
+                  <span>{c.canal}</span>
+                  <span style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+                    <span className="mono" style={{ color: 'var(--ink-soft)', fontSize: 12 }}>{pct(c.participacaoPct)}</span>
+                    <span className="mono" style={{ fontWeight: 600 }}>{brl(c.receita)}</span>
+                    <ChevronRight size={14} style={{ color: 'var(--ink-faint)' }} />
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="card">
+              <div className="card-head">Evolução Diária — Faturamento x Lucro</div>
+              <GraficoEvolucao serie={dados.serieDiaria} />
+            </div>
+          </div>
+
+          <div className="grid-2" style={{ marginTop: 16 }}>
+            <div className="card">
+              <div className="card-head">Top 10 Produtos por Lucro</div>
+              <TabelaProdutos produtos={dados.topLucro} />
+            </div>
+            <div className="card">
+              <div className="card-head">Top 10 Produtos que Mais Consomem Margem</div>
+              <p className="page-sub" style={{ margin: '0 0 8px', fontSize: 12 }}>Menor margem, entre produtos com 2 ou mais unidades vendidas no período.</p>
+              <TabelaProdutos produtos={dados.topPiorMargem} />
+            </div>
+          </div>
+
+          {dados.abaixoMargemMinima.length > 0 && (
+            <div className="card" style={{ marginTop: 16 }}>
+              <div className="card-head">Referências Abaixo da Margem Mínima ({formatQtd(dados.abaixoMargemMinima.length)})</div>
+              <p className="page-sub" style={{ margin: '0 0 8px' }}>Margem mínima configurada: {pct(dados.margemMinima)}.</p>
+              <TabelaProdutos produtos={dados.abaixoMargemMinima} limite={50} />
+            </div>
+          )}
+
+          <SeloDeConfianca
+            considerado={dados.confianca.pedidosConsiderados}
+            total={dados.confianca.totalPedidosPeriodo}
+            unidade="pedidos"
+            excluidos={[{ label: 'com custo de produção incompleto', total: dados.confianca.pedidosExcluidosPorCustoIncompleto }]}
+          />
+        </>
+      )}
     </div>
   );
 }
 
-function KpiMini({ label, value }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-      <span style={{ fontSize: 10.5, color: 'var(--ink-soft)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
-      <span className="mono" style={{ fontSize: 16, fontWeight: 700, color: 'var(--leather-dark)' }}>{value}</span>
-    </div>
-  );
+function numeroBrDeltaPP(atual, anterior) {
+  const deltaPontos = (atual - anterior) * 100;
+  const sinal = deltaPontos >= 0 ? '+' : '';
+  return `${sinal}${deltaPontos.toFixed(1).replace('.', ',')} p.p.`;
 }
 
-function KpiCard({ label, value }) {
+function TabelaProdutos({ produtos, limite = 10 }) {
+  if (produtos.length === 0) return <p className="page-sub">Sem dados suficientes no período.</p>;
   return (
-    <div className="card" style={{ textAlign: 'center' }}>
-      <div style={{ fontSize: 10.5, color: 'var(--ink-soft)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
-      <div className="mono" style={{ fontSize: 20, fontWeight: 700, color: 'var(--leather-dark)', marginTop: 4 }}>{value}</div>
-    </div>
+    <table className="data-table">
+      <thead>
+        <tr><th>Referência</th><th>Descrição</th><th>Unid.</th><th>Faturado</th><th>Lucro</th><th>Margem</th></tr>
+      </thead>
+      <tbody>
+        {produtos.slice(0, limite).map((p) => (
+          <tr key={p.produtoId}>
+            <td className="mono">
+              <Link to={`/produtos/${p.produtoId}`} style={{ color: 'inherit' }}>{p.referencia}</Link>
+            </td>
+            <td>{p.descricao || '—'}</td>
+            <td className="mono">{formatQtd(p.unidadesVendidas)}</td>
+            <td className="mono">{brl(p.totalFaturado)}</td>
+            <td className="mono">{brl(p.lucro)}</td>
+            <td className="mono">{pct(p.margemPct)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
