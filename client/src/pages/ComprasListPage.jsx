@@ -4,10 +4,21 @@ import { Plus, Search, ChevronRight, BarChart3 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl } from '../lib/format';
 import DataTable from '../components/DataTable';
-import { SkeletonLinhasTabela } from '../components/ui';
+import { SkeletonLinhasTabela, ThOrdenavel, Paginacao } from '../components/ui';
+import { useTabela } from '../lib/useTabela';
 
 const SITUACAO_TONE = { pendente: 'tone-atencao', recebido: 'tone-saudavel', cancelado: 'tone-prejuizo' };
 const SITUACAO_LABEL = { pendente: 'Pendente', recebido: 'Recebido', cancelado: 'Cancelado' };
+
+const COLUNAS_ORDENAVEIS = {
+  numero: (c) => Number(c.numero) || 0,
+  data: (c) => new Date(c.data_compra).getTime(),
+  fornecedor: (c) => c.fornecedor_nome,
+  categoria: (c) => c.categoria,
+  documento: (c) => c.numero_documento,
+  total: (c) => Number(c.total_liquido) || 0,
+  situacao: (c) => c.situacao,
+};
 
 export default function ComprasListPage() {
   const navigate = useNavigate();
@@ -39,6 +50,8 @@ export default function ComprasListPage() {
     e.preventDefault();
     load();
   }
+
+  const tabela = useTabela(compras, { colunas: COLUNAS_ORDENAVEIS, colunaPadrao: 'data', direcaoPadrao: 'desc' });
 
   async function novaCompra() {
     setCriando(true);
@@ -94,6 +107,7 @@ export default function ComprasListPage() {
           />
           <button className="btn btn-ghost" type="submit"><Search size={14} /></button>
         </form>
+        {!loading && <p className="page-sub" style={{ margin: '10px 0 0' }}>{tabela.totalItens.toLocaleString('pt-BR')} resultado(s)</p>}
       </div>
 
       <div className="card">
@@ -101,19 +115,19 @@ export default function ComprasListPage() {
         <table className="data-table">
           <thead>
             <tr>
-              <th>Nº</th>
-              <th>Data</th>
-              <th>Fornecedor</th>
-              <th>Categoria</th>
-              <th>Documento</th>
-              <th>Total Líquido</th>
-              <th>Situação</th>
+              <ThOrdenavel coluna="numero" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Nº</ThOrdenavel>
+              <ThOrdenavel coluna="data" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Data</ThOrdenavel>
+              <ThOrdenavel coluna="fornecedor" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Fornecedor</ThOrdenavel>
+              <ThOrdenavel coluna="categoria" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Categoria</ThOrdenavel>
+              <ThOrdenavel coluna="documento" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Documento</ThOrdenavel>
+              <ThOrdenavel coluna="total" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Total Líquido</ThOrdenavel>
+              <ThOrdenavel coluna="situacao" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Situação</ThOrdenavel>
               <th />
             </tr>
           </thead>
           <tbody>
             {loading && compras.length === 0 && <SkeletonLinhasTabela colunas={8} />}
-            {compras.map((c) => (
+            {tabela.itensPagina.map((c) => (
               <tr key={c.id} className="clickable-row" onClick={() => navigate(`/compras/${c.id}`)}>
                 <td className="mono">#{c.numero}</td>
                 <td className="mono">{new Date(c.data_compra).toLocaleDateString('pt-BR')}</td>
@@ -133,6 +147,7 @@ export default function ComprasListPage() {
             Nenhuma compra encontrada.
           </div>
         )}
+        <Paginacao {...tabela} />
       </div>
     </div>
   );

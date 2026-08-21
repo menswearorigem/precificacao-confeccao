@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Search, ChevronRight } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, formatQtd } from '../lib/format';
-import { Select, SkeletonLinhasTabela } from '../components/ui';
+import { Select, SkeletonLinhasTabela, ThOrdenavel, Paginacao } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import DataTable from '../components/DataTable';
+import { useTabela } from '../lib/useTabela';
 
 const SITUACAO_TONE = {
   aberto: 'tone-atencao',
@@ -19,6 +20,16 @@ const SITUACAO_LABEL = {
   aberto: 'Aberto',
   faturado: 'Faturado',
   cancelado: 'Cancelado',
+};
+
+const COLUNAS_ORDENAVEIS = {
+  numero: (p) => Number(p.numero) || 0,
+  data: (p) => new Date(p.data_pedido).getTime(),
+  cliente: (p) => p.cliente_nome,
+  canal: (p) => p.canal_venda,
+  qtd: (p) => Number(p.quantidade_pecas) || 0,
+  total: (p) => Number(p.total_liquido) || 0,
+  situacao: (p) => p.situacao,
 };
 
 export default function PedidosListPage({ origemFiltro }) {
@@ -70,6 +81,8 @@ export default function PedidosListPage({ origemFiltro }) {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [situacao, plataforma, lojaId, dataInicio, dataFim, busca]);
+
+  const tabela = useTabela(pedidos, { colunas: COLUNAS_ORDENAVEIS, colunaPadrao: 'data', direcaoPadrao: 'desc' });
 
   async function novoPedido() {
     setCriando(true);
@@ -135,24 +148,26 @@ export default function PedidosListPage({ origemFiltro }) {
         )}
       </div>
 
+      {!loading && <p className="page-sub" style={{ marginTop: -8, marginBottom: 12 }}>{tabela.totalItens.toLocaleString('pt-BR')} resultado(s)</p>}
+
       <div className="card">
         <DataTable>
         <table className="data-table">
           <thead>
             <tr>
-              <th>Nº</th>
-              <th>Data</th>
-              <th>Cliente</th>
-              <th>Canal</th>
-              <th>Qtd. Peças</th>
-              <th>Total Líquido</th>
-              <th>Situação</th>
+              <ThOrdenavel coluna="numero" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Nº</ThOrdenavel>
+              <ThOrdenavel coluna="data" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Data</ThOrdenavel>
+              <ThOrdenavel coluna="cliente" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Cliente</ThOrdenavel>
+              <ThOrdenavel coluna="canal" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Canal</ThOrdenavel>
+              <ThOrdenavel coluna="qtd" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Qtd. Peças</ThOrdenavel>
+              <ThOrdenavel coluna="total" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Total Líquido</ThOrdenavel>
+              <ThOrdenavel coluna="situacao" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Situação</ThOrdenavel>
               <th />
             </tr>
           </thead>
           <tbody>
             {loading && pedidos.length === 0 && <SkeletonLinhasTabela colunas={8} />}
-            {pedidos.map((p) => (
+            {tabela.itensPagina.map((p) => (
               <tr key={p.id} className="clickable-row" onClick={() => navigate(`/pedidos/${p.id}`)}>
                 <td className="mono">#{p.numero}</td>
                 <td className="mono">{new Date(p.data_pedido).toLocaleDateString('pt-BR')}</td>
@@ -174,6 +189,7 @@ export default function PedidosListPage({ origemFiltro }) {
             Nenhum pedido encontrado{isMarketplace ? ' no período.' : '.'}
           </div>
         )}
+        <Paginacao {...tabela} />
       </div>
     </div>
   );
