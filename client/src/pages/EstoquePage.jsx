@@ -398,7 +398,7 @@ export default function EstoquePage() {
 
       <div className="card">
         <Field label="Referência">
-          <Select value={produtoId} onChange={(e) => setProdutoId(e.target.value)}>
+          <Select value={produtoId} onChange={(e) => setProdutoId(e.target.value)} chaveRecentes="estoque_produto">
             <option value="">Selecione uma referência…</option>
             {produtos.map((p) => <option key={p.id} value={p.id}>{p.referencia} — {p.descricao}</option>)}
           </Select>

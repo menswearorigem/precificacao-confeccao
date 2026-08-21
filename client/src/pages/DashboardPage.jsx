@@ -129,7 +129,7 @@ export default function DashboardPage() {
 
       <div className="card" style={{ marginBottom: 16 }}>
         <Field label="Referência">
-          <Select value={produtoId} onChange={(e) => setProdutoId(e.target.value)}>
+          <Select value={produtoId} onChange={(e) => setProdutoId(e.target.value)} chaveRecentes="dashboard_produto">
             <option value="">Selecione uma referência…</option>
             {produtos.map((p) => (
               <option key={p.id} value={p.id}>{p.referencia} — {p.descricao}</option>

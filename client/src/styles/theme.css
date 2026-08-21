@@ -720,29 +720,55 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.6; cursor: not-a
 }
 .select-custom.is-open .select-custom-seta { transform: rotate(180deg); color: var(--terracotta); }
 
-.select-custom-lista {
+.select-custom-painel {
   /* position: fixed (não absolute) de propósito — o topo/esquerda/largura
      vêm por style inline (calculados a partir do gatilho em coordenadas de
      tela), assim o painel escapa de qualquer .card com overflow no caminho
      em vez de ficar cortado por ele. Ver usePosicaoFlutuante em ui.jsx. */
   position: fixed;
   z-index: 1000;
-  max-height: 264px;
-  overflow-y: auto;
-  margin: 0;
-  padding: 6px;
-  list-style: none;
+  display: flex;
+  flex-direction: column;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-lg);
   animation: select-custom-abrir 0.14s var(--ease);
+  overflow: hidden;
 }
+
+.select-custom-busca { padding: 6px 6px 0; flex-shrink: 0; }
+.select-custom-busca input {
+  width: 100%;
+  font-size: 12.5px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+}
+.select-custom-busca input:focus { outline: none; border-color: var(--terracotta); background: var(--surface); }
 
 @keyframes select-custom-abrir {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+.select-custom-lista {
+  max-height: 264px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+}
+.select-custom-secao {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  padding: 8px 9px 4px;
+}
+.select-custom-vazio { padding: 10px 9px; font-size: 12.5px; color: var(--ink-soft); }
 
 .select-custom-opcao {
   display: flex;
@@ -828,7 +854,7 @@ table.data-table .select-custom-lista { font-size: 12.5px; }
 
 .date-custom-painel {
   /* position: fixed (não absolute) de propósito — mesmo motivo do
-     .select-custom-lista acima: topo/esquerda vêm por style inline em
+     .select-custom-painel acima: topo/esquerda vêm por style inline em
      coordenadas de tela, escapando de qualquer .card com overflow. */
   position: fixed;
   z-index: 1000;

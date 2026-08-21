@@ -69,7 +69,7 @@ export default function SimuladorPage() {
 
       <div className="card" style={{ marginBottom: 16 }}>
         <Field label="Referência a simular">
-          <Select value={produtoId} onChange={(e) => handleProdutoChange(e.target.value)}>
+          <Select value={produtoId} onChange={(e) => handleProdutoChange(e.target.value)} chaveRecentes="simulador_produto">
             <option value="">Selecione uma referência…</option>
             {produtos.map((p) => (
               <option key={p.id} value={p.id}>{p.referencia} — {p.descricao}</option>

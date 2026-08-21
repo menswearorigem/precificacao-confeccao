@@ -1,4 +1,4 @@
-import { Children, useEffect, useMemo, useRef, useState } from 'react';
+import { Children, Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CalendarDays } from 'lucide-react';
 
@@ -89,6 +89,35 @@ export function Row({ label, value, strong, big }) {
   );
 }
 
+function normalizarTexto(valor) {
+  return String(valor ?? '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+}
+
+const LIMITE_RECENTES = 5;
+
+function lerRecentes(chave) {
+  if (!chave) return [];
+  try {
+    const lista = JSON.parse(localStorage.getItem(`hbn_select_recentes_${chave}`) || '[]');
+    return Array.isArray(lista) ? lista : [];
+  } catch {
+    return [];
+  }
+}
+
+function gravarRecente(chave, valor) {
+  if (!chave || !valor) return;
+  const atuais = lerRecentes(chave).filter((v) => v !== valor);
+  atuais.unshift(valor);
+  try {
+    localStorage.setItem(`hbn_select_recentes_${chave}`, JSON.stringify(atuais.slice(0, LIMITE_RECENTES)));
+  } catch {
+    // localStorage cheio ou bloqueado — não é crítico, só perde a lista de recentes
+  }
+}
+
 function extrairOpcoes(children) {
   const opcoes = [];
   Children.forEach(children, (child) => {
@@ -104,18 +133,43 @@ function extrairOpcoes(children) {
 // só a tag em qualquer lugar do sistema sem mexer no resto do código) só que
 // com um menu próprio, estilizado como o resto do sistema em vez do combo
 // cinza do navegador.
-export function Select({ value, onChange, children, disabled, className = '', style, placeholder }) {
+export function Select({ value, onChange, children, disabled, className = '', style, placeholder, chaveRecentes }) {
   const [aberto, setAberto] = useState(false);
   const [destaque, setDestaque] = useState(-1);
+  const [filtro, setFiltro] = useState('');
   const raizRef = useRef(null);
   const gatilhoRef = useRef(null);
   const listaRef = useRef(null);
+  const buscaInputRef = useRef(null);
   const buscaRef = useRef({ termo: '', timeout: null });
   const pos = usePosicaoFlutuante(aberto, gatilhoRef);
 
   const opcoes = useMemo(() => extrairOpcoes(children), [children]);
   const valorAtual = value === undefined || value === null ? '' : String(value);
   const selecionada = opcoes.find((o) => o.valor === valorAtual) || null;
+
+  // Lista grande (referência de produto, cliente etc.) ganha uma busca
+  // dentro do próprio painel — antes, digitar só pulava pra primeira letra
+  // igual, o que não ajuda em nada numa lista de centenas de itens.
+  const comBusca = opcoes.length > 15;
+  const recentes = useMemo(() => (comBusca ? lerRecentes(chaveRecentes) : []), [comBusca, chaveRecentes, aberto]);
+
+  const opcoesFiltradas = useMemo(() => {
+    if (!comBusca) return opcoes;
+    if (!filtro) {
+      if (recentes.length === 0) return opcoes;
+      const opcoesRecentes = recentes.map((v) => opcoes.find((o) => o.valor === v)).filter(Boolean);
+      if (opcoesRecentes.length === 0) return opcoes;
+      const resto = opcoes.filter((o) => !recentes.includes(o.valor));
+      return [...opcoesRecentes, ...resto];
+    }
+    const alvo = normalizarTexto(filtro);
+    return opcoes.filter((o) => normalizarTexto(o.rotulo).includes(alvo));
+  }, [opcoes, filtro, comBusca, recentes]);
+  // Quantas opções recentes realmente entraram no topo da lista (pode ser
+  // menos que LIMITE_RECENTES se algum valor recente não existir mais nas
+  // opções atuais) — usado só pra saber onde desenhar os cabeçalhos de seção.
+  const qtdRecentesNoTopo = (!filtro && comBusca) ? recentes.filter((v) => opcoes.some((o) => o.valor === v)).length : 0;
 
   useEffect(() => {
     function aoClicarFora(e) {
@@ -128,10 +182,16 @@ export function Select({ value, onChange, children, disabled, className = '', st
   }, []);
 
   useEffect(() => {
-    if (!aberto) return;
-    const idx = opcoes.findIndex((o) => o.valor === valorAtual);
-    setDestaque(idx >= 0 ? idx : opcoes.findIndex((o) => !o.desabilitada));
+    if (!aberto) { setFiltro(''); return; }
+    if (comBusca) setTimeout(() => buscaInputRef.current?.focus(), 0);
   }, [aberto]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!aberto) return;
+    const idx = opcoesFiltradas.findIndex((o) => o.valor === valorAtual);
+    setDestaque(idx >= 0 ? idx : opcoesFiltradas.findIndex((o) => !o.desabilitada));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aberto, filtro]);
 
   useEffect(() => {
     if (!aberto || !listaRef.current) return;
@@ -140,19 +200,20 @@ export function Select({ value, onChange, children, disabled, className = '', st
   }, [destaque, aberto]);
 
   function confirmar(idx) {
-    const opcao = opcoes[idx];
+    const opcao = opcoesFiltradas[idx];
     if (!opcao || opcao.desabilitada) return;
+    if (chaveRecentes) gravarRecente(chaveRecentes, opcao.valor);
     onChange?.({ target: { value: opcao.valor } });
     setAberto(false);
   }
 
   function mover(direcao) {
-    if (opcoes.length === 0) return;
+    if (opcoesFiltradas.length === 0) return;
     setDestaque((atual) => {
       let idx = atual;
-      for (let i = 0; i < opcoes.length; i += 1) {
-        idx = (idx + direcao + opcoes.length) % opcoes.length;
-        if (!opcoes[idx].desabilitada) return idx;
+      for (let i = 0; i < opcoesFiltradas.length; i += 1) {
+        idx = (idx + direcao + opcoesFiltradas.length) % opcoesFiltradas.length;
+        if (!opcoesFiltradas[idx].desabilitada) return idx;
       }
       return atual;
     });
@@ -184,7 +245,17 @@ export function Select({ value, onChange, children, disabled, className = '', st
     if (e.key === 'ArrowUp') { e.preventDefault(); mover(-1); return; }
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); confirmar(destaque); return; }
     if (e.key === 'Tab') { setAberto(false); return; }
-    if (e.key.length === 1) buscar(e.key);
+    if (!comBusca && e.key.length === 1) buscar(e.key);
+  }
+
+  // A busca digitada dentro do painel reaproveita as mesmas teclas de
+  // navegação (setas/Enter/Esc) do botão-gatilho — só não deixa a tecla
+  // "vazar" pro type-ahead do botão, que não faz sentido aqui.
+  function aoTeclarBusca(e) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); mover(1); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); mover(-1); return; }
+    if (e.key === 'Enter') { e.preventDefault(); confirmar(destaque); return; }
+    if (e.key === 'Escape') { e.preventDefault(); setAberto(false); gatilhoRef.current?.focus(); }
   }
 
   return (
@@ -209,29 +280,52 @@ export function Select({ value, onChange, children, disabled, className = '', st
         <ChevronDown size={14} className="select-custom-seta" />
       </button>
       {aberto && pos && createPortal(
-        <ul
-          className="select-custom-lista"
-          role="listbox"
+        <div
+          className="select-custom-painel"
           ref={listaRef}
           style={{ top: pos.top, left: pos.left, width: pos.width }}
         >
-          {opcoes.map((o, idx) => (
-            <li
-              key={`${o.valor}-${idx}`}
-              role="option"
-              data-idx={idx}
-              aria-selected={o.valor === valorAtual}
-              aria-disabled={o.desabilitada}
-              className={`select-custom-opcao${idx === destaque ? ' is-destaque' : ''}${o.valor === valorAtual ? ' is-selecionada' : ''}${o.desabilitada ? ' is-desabilitada' : ''}`}
-              onMouseEnter={() => !o.desabilitada && setDestaque(idx)}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => confirmar(idx)}
-            >
-              <span>{o.rotulo}</span>
-              {o.valor === valorAtual && <Check size={13} className="select-custom-check" />}
-            </li>
-          ))}
-        </ul>,
+          {comBusca && (
+            <div className="select-custom-busca">
+              <input
+                ref={buscaInputRef}
+                type="text"
+                placeholder="Digite pra filtrar…"
+                value={filtro}
+                onChange={(e) => setFiltro(e.target.value)}
+                onKeyDown={aoTeclarBusca}
+              />
+            </div>
+          )}
+          <ul className="select-custom-lista" role="listbox">
+            {opcoesFiltradas.length === 0 && (
+              <li className="select-custom-vazio">Nada encontrado.</li>
+            )}
+            {opcoesFiltradas.map((o, idx) => (
+              <Fragment key={`${o.valor}-${idx}`}>
+                {!filtro && idx === 0 && qtdRecentesNoTopo > 0 && (
+                  <li className="select-custom-secao">Usadas recentemente</li>
+                )}
+                {!filtro && idx === qtdRecentesNoTopo && qtdRecentesNoTopo > 0 && (
+                  <li className="select-custom-secao">Todas</li>
+                )}
+                <li
+                  role="option"
+                  data-idx={idx}
+                  aria-selected={o.valor === valorAtual}
+                  aria-disabled={o.desabilitada}
+                  className={`select-custom-opcao${idx === destaque ? ' is-destaque' : ''}${o.valor === valorAtual ? ' is-selecionada' : ''}${o.desabilitada ? ' is-desabilitada' : ''}`}
+                  onMouseEnter={() => !o.desabilitada && setDestaque(idx)}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => confirmar(idx)}
+                >
+                  <span>{o.rotulo}</span>
+                  {o.valor === valorAtual && <Check size={13} className="select-custom-check" />}
+                </li>
+              </Fragment>
+            ))}
+          </ul>
+        </div>,
         document.body
       )}
     </div>
