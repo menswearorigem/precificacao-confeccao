@@ -3,7 +3,7 @@ import {
   FlaskConical, LayoutDashboard, Boxes, FileText, List as ListIcon,
   Warehouse, Barcode, Tags, Printer, Users, ClipboardList, ShoppingCart,
   Truck, BarChart3, ShieldCheck, Plug, TrendingUp, ReceiptText, Store, Plane,
-  LineChart,
+  LineChart, SearchCheck,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -101,6 +101,7 @@ export const MODULES = [
       { to: '/custos-indiretos', label: 'Custos Indiretos', icon: Factory },
       { to: '/usuarios', label: 'Usuários', icon: ShieldCheck, adminOnly: true },
       { to: '/integracoes', label: 'Integrações', icon: Plug, adminOnly: true },
+      { to: '/conferencia-dados', label: 'Conferência de Dados', icon: SearchCheck, adminOnly: true },
     ],
   },
 ];
