@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Upload, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { api } from '../api/client';
 import { brl } from '../lib/format';
-import { Select } from '../components/ui';
+import { Select, Checkbox } from '../components/ui';
 
 const FONTES = [
   { key: 'mercado_livre', label: 'Mercado Livre (Vendas → Relatórios → Vendas)' },
@@ -127,8 +127,7 @@ export default function ImportarPedidosPage() {
               {preview.pedidos.map((p) => (
                 <tr key={p.idExterno} style={p.jaImportado ? { opacity: 0.5 } : undefined}>
                   <td>
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={selecionados.has(p.idExterno)}
                       disabled={p.jaImportado}
                       onChange={() => alternarSelecao(p.idExterno)}

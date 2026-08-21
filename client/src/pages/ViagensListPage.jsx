@@ -63,13 +63,13 @@ export default function ViagensListPage() {
           </p>
         </div>
         <button className="btn btn-primary" onClick={() => setMostrarNova((v) => !v)}>
-          <Plus size={14} /> Nova Viagem
+          <Plus size={14} /> Nova viagem
         </button>
       </div>
 
       {mostrarNova && (
         <div className="card viagem-card-nova">
-          <div className="card-head">Nova Viagem</div>
+          <div className="card-head">Nova viagem</div>
           <form onSubmit={criarViagem}>
             <div className="form-grid">
               <Field label="Nome da viagem">

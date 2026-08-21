@@ -2,7 +2,7 @@ import { Fragment, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ChevronDown, ChevronUp, Pencil, Plug, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, NumInput, Select } from '../components/ui';
+import { Field, NumInput, Select, Toggle } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import WikIntegracaoCard from '../components/WikIntegracaoCard';
 import WikImportarProdutosCard from '../components/WikImportarProdutosCard';
@@ -385,7 +385,7 @@ export default function IntegracoesPage() {
                         </td>
                         <td>
                           <label className="toggle">
-                            <input type="checkbox" checked={item.ativo} onChange={() => alternarAtivo(item)} />
+                            <Toggle checked={item.ativo} onChange={() => alternarAtivo(item)} />
                           </label>
                         </td>
                         <td>{hoje(item.ultimaSincronizacao)}</td>
@@ -425,7 +425,7 @@ export default function IntegracoesPage() {
                               )}
                               <Field label="Usa frete subsidiado?">
                                 <label className="toggle">
-                                  <input type="checkbox" checked={item.usaFreteSubsidiado} onChange={() => alternarFreteSubsidiado(item)} />
+                                  <Toggle checked={item.usaFreteSubsidiado} onChange={() => alternarFreteSubsidiado(item)} />
                                   {item.usaFreteSubsidiado ? 'Sim' : 'Não'}
                                 </label>
                               </Field>

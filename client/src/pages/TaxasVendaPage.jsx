@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
-import { NumInput } from '../components/ui';
+import { NumInput, Toggle } from '../components/ui';
 import { pct } from '../lib/format';
 
 export default function TaxasVendaPage() {
@@ -59,7 +59,7 @@ export default function TaxasVendaPage() {
               <td><input value={t.nome} onChange={(e) => update(t.id, { nome: e.target.value })} /></td>
               <td>
                 <label className="toggle">
-                  <input type="checkbox" checked={t.ativo} onChange={(e) => update(t.id, { ativo: e.target.checked })} />
+                  <Toggle checked={t.ativo} onChange={(e) => update(t.id, { ativo: e.target.checked })} />
                   {t.ativo ? 'Sim' : 'Não'}
                 </label>
               </td>

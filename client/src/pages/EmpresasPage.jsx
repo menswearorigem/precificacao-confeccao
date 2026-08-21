@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, NumInput, Select } from '../components/ui';
+import { Field, NumInput, Select, Toggle } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 
 const REGIMES = ['Simples Nacional', 'Lucro Presumido', 'Lucro Real'];
@@ -77,8 +77,7 @@ export default function EmpresasPage() {
           <div className="form-grid" style={{ marginTop: 14 }}>
             <Field label="Usar alíquota média provisória?" hint="Ative se ainda não tem os dados fiscais detalhados — usa uma % única no lugar do detalhamento abaixo, em todos os cálculos (Ficha de Custo, preço e lucratividade).">
               <label className="toggle">
-                <input
-                  type="checkbox"
+                <Toggle
                   checked={emp.usa_aliquota_media}
                   onChange={(e) => updateEmpresa(emp.id, { usa_aliquota_media: e.target.checked })}
                 />

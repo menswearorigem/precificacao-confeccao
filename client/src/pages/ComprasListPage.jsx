@@ -59,7 +59,7 @@ export default function ComprasListPage() {
         <div style={{ display: 'flex', gap: 8 }}>
           <Link to="/compras/relatorio" className="btn btn-ghost"><BarChart3 size={14} /> Relatório</Link>
           <button className="btn btn-primary" onClick={novaCompra} disabled={criando}>
-            <Plus size={14} /> Nova Compra
+            <Plus size={14} /> Nova compra
           </button>
         </div>
       </div>

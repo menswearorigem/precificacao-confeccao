@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Search, Barcode, Upload, Pencil, Check, X, Tags, Printer, Wand2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import { Field, Select } from '../components/ui';
+import { Field, Select, Checkbox, Toggle } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import DataTable from '../components/DataTable';
 
@@ -420,13 +420,13 @@ export default function EstoquePage() {
             <table className="data-table" style={{ marginTop: 14 }}>
               <thead>
                 <tr>
-                  <th><input type="checkbox" checked={variantes.length > 0 && selecionadas.size === variantes.length} onChange={alternarSelecionarTodas} /></th>
+                  <th><Checkbox checked={variantes.length > 0 && selecionadas.size === variantes.length} onChange={alternarSelecionarTodas} /></th>
                   <th>Cor</th><th>Tamanho</th><th>EAN</th><th>Qtd. atual</th><th>Movimentar</th><th>Ativa?</th><th /></tr>
               </thead>
               <tbody>
                 {variantes.map((v) => (
                   <tr key={v.id} style={v.ativo ? undefined : { opacity: 0.55 }}>
-                    <td><input type="checkbox" checked={selecionadas.has(v.id)} onChange={() => alternarSelecao(v.id)} /></td>
+                    <td><Checkbox checked={selecionadas.has(v.id)} onChange={() => alternarSelecao(v.id)} /></td>
                     <td>{v.cor}</td>
                     <td>{v.tamanho}</td>
                     <td><EanEditavel variante={v} onFeito={() => loadVariantes(produtoId)} /></td>
@@ -434,7 +434,7 @@ export default function EstoquePage() {
                     <td><MovimentoInline variante={v} onFeito={() => loadVariantes(produtoId)} /></td>
                     <td>
                       <label className="toggle">
-                        <input type="checkbox" checked={v.ativo} onChange={() => alternarAtivo(v)} />
+                        <Toggle checked={v.ativo} onChange={() => alternarAtivo(v)} />
                         {v.ativo ? 'Sim' : 'Não'}
                       </label>
                     </td>

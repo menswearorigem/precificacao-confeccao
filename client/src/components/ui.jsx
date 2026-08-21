@@ -55,6 +55,31 @@ export function NumInput({ value, onChange, step = '0.01', suffix, ...props }) {
   );
 }
 
+// Substituto do <input type="checkbox"> cru do navegador — mesma API
+// (checked/onChange recebe o evento normal, com target.checked, então troca
+// só a tag em qualquer lugar sem mexer no resto do código). O <input> real
+// continua no DOM (só visualmente escondido) pra manter teclado/leitor de
+// tela funcionando de graça, com foco visível via :focus-visible no irmão.
+export function Checkbox({ checked, onChange, disabled, className = '', ...props }) {
+  return (
+    <label className={`checkbox-custom${disabled ? ' is-disabled' : ''}${className ? ` ${className}` : ''}`}>
+      <input type="checkbox" checked={Boolean(checked)} onChange={onChange} disabled={disabled} {...props} />
+      <span className="checkbox-custom-caixa"><Check size={12} /></span>
+    </label>
+  );
+}
+
+// Mesma ideia, mas com a metáfora de chave liga/desliga — usado quando a
+// pergunta é "ativo ou não" em vez de uma seleção múltipla.
+export function Toggle({ checked, onChange, disabled, className = '', ...props }) {
+  return (
+    <label className={`toggle-custom${disabled ? ' is-disabled' : ''}${className ? ` ${className}` : ''}`}>
+      <input type="checkbox" checked={Boolean(checked)} onChange={onChange} disabled={disabled} {...props} />
+      <span className="toggle-custom-trilho"><span className="toggle-custom-bolinha" /></span>
+    </label>
+  );
+}
+
 export function Row({ label, value, strong, big }) {
   return (
     <div className={'row-line' + (strong ? ' strong' : '') + (big ? ' big' : '')}>

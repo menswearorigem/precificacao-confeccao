@@ -94,7 +94,7 @@ export default function PedidosListPage({ origemFiltro }) {
         </div>
         {origemFiltro !== 'marketplace' && (
           <button className="btn btn-primary" onClick={novoPedido} disabled={criando}>
-            <Plus size={14} /> Novo Pedido
+            <Plus size={14} /> Novo pedido
           </button>
         )}
       </div>

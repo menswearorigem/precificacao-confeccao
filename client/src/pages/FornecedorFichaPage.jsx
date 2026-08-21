@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Save, Trash2, MapPinCheck } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, Select } from '../components/ui';
+import { Field, Select, Checkbox, Toggle } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 
 function emptyFornecedor() {
@@ -181,8 +181,8 @@ export default function FornecedorFichaPage() {
                   disabled={fornecedor.ie_isento}
                   style={{ flex: 1 }}
                 />
-                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, whiteSpace: 'nowrap' }}>
-                  <input type="checkbox" checked={fornecedor.ie_isento} onChange={(e) => set({ ie_isento: e.target.checked, ie: e.target.checked ? '' : fornecedor.ie })} />
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, whiteSpace: 'nowrap' }}>
+                  <Checkbox checked={fornecedor.ie_isento} onChange={(e) => set({ ie_isento: e.target.checked, ie: e.target.checked ? '' : fornecedor.ie })} />
                   Isento
                 </label>
               </div>
@@ -255,7 +255,7 @@ export default function FornecedorFichaPage() {
           </Field>
           <Field label="Ativo?">
             <label className="toggle">
-              <input type="checkbox" checked={fornecedor.ativo} onChange={(e) => set({ ativo: e.target.checked })} />
+              <Toggle checked={fornecedor.ativo} onChange={(e) => set({ ativo: e.target.checked })} />
               {fornecedor.ativo ? 'Sim' : 'Não'}
             </label>
           </Field>

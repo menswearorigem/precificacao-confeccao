@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Save, Trash2, MapPinCheck } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, NumInput, Select } from '../components/ui';
+import { Field, NumInput, Select, Checkbox, Toggle } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 
 function emptyCliente() {
@@ -180,8 +180,8 @@ export default function ClienteFichaPage() {
                   disabled={cliente.ie_isento}
                   style={{ flex: 1 }}
                 />
-                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, whiteSpace: 'nowrap' }}>
-                  <input type="checkbox" checked={cliente.ie_isento} onChange={(e) => set({ ie_isento: e.target.checked, ie: e.target.checked ? '' : cliente.ie })} />
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, whiteSpace: 'nowrap' }}>
+                  <Checkbox checked={cliente.ie_isento} onChange={(e) => set({ ie_isento: e.target.checked, ie: e.target.checked ? '' : cliente.ie })} />
                   Isento
                 </label>
               </div>
@@ -251,7 +251,7 @@ export default function ClienteFichaPage() {
           </Field>
           <Field label="Ativo?">
             <label className="toggle">
-              <input type="checkbox" checked={cliente.ativo} onChange={(e) => set({ ativo: e.target.checked })} />
+              <Toggle checked={cliente.ativo} onChange={(e) => set({ ativo: e.target.checked })} />
               {cliente.ativo ? 'Sim' : 'Não'}
             </label>
           </Field>

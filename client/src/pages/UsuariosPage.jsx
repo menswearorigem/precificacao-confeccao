@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Plus, Trash2, KeyRound, ShieldCheck } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
-import { Field, Select } from '../components/ui';
+import { Field, Select, Checkbox, Toggle } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 
 const MODULOS = [
@@ -121,7 +121,7 @@ export default function UsuariosPage() {
 
       {mostrarNovo && (
         <div className="card" style={{ marginBottom: 16 }}>
-          <div className="card-head">Novo Usuário</div>
+          <div className="card-head">Novo usuário</div>
           <form onSubmit={criarUsuario}>
             <div className="form-grid">
               <Field label="Nome">
@@ -146,7 +146,7 @@ export default function UsuariosPage() {
                 <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 6 }}>
                   {MODULOS.map((m) => (
                     <label key={m.key} className="toggle">
-                      <input type="checkbox" checked={novoUsuario.modulos.includes(m.key)} onChange={() => toggleModuloNovo(m.key)} />
+                      <Checkbox checked={novoUsuario.modulos.includes(m.key)} onChange={() => toggleModuloNovo(m.key)} />
                       {m.label}
                     </label>
                   ))}
@@ -188,8 +188,7 @@ export default function UsuariosPage() {
             </Field>
             <Field label="Ativo?">
               <label className="toggle">
-                <input
-                  type="checkbox"
+                <Toggle
                   checked={u.ativo}
                   disabled={u.id === usuarioAtual.id}
                   onChange={(e) => atualizarUsuario(u.id, { ativo: e.target.checked })}
@@ -205,7 +204,7 @@ export default function UsuariosPage() {
               <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 6 }}>
                 {MODULOS.map((m) => (
                   <label key={m.key} className="toggle">
-                    <input type="checkbox" checked={u.modulos.includes(m.key)} onChange={() => toggleModuloExistente(u, m.key)} />
+                    <Checkbox checked={u.modulos.includes(m.key)} onChange={() => toggleModuloExistente(u, m.key)} />
                     {m.label}
                   </label>
                 ))}

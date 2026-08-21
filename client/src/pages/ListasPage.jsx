@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
+import { Toggle } from '../components/ui';
 
 const TIPOS = [
   { tipo: 'categoria', label: 'Categorias' },
@@ -77,7 +78,7 @@ export default function ListasPage() {
                 <td>{item.valor}</td>
                 <td>
                   <label className="toggle">
-                    <input type="checkbox" checked={item.ativo} onChange={() => toggleAtivo(item)} />
+                    <Toggle checked={item.ativo} onChange={() => toggleAtivo(item)} />
                     {item.ativo ? 'Sim' : 'Não'}
                   </label>
                 </td>
