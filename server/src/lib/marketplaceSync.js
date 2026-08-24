@@ -142,14 +142,33 @@ function partirSkuKit(sku) {
   return { quantidade, referencia: partes[2], cor: partes.slice(3, -1).join(' '), tamanho: partes[partes.length - 1] };
 }
 
+// Fallback pra quando a comparação direta (ILIKE ou igualdade exata) não
+// bate: aplica a MESMA normalização já usada pra comparar cor/tamanho (sem
+// acento, sem espaço/hífen/pontuação, maiúsculo) na referência também —
+// cobre diferença de formatação entre o SKU do anúncio e o cadastro (ex.:
+// "VM034" no anúncio vs "VM 034" cadastrado). Nunca reescreve o cadastro,
+// só compara. Checado no catálogo: nenhum par de referências diferentes
+// colide depois de normalizado (ver server/scripts/checar-colisao-referencia.js).
+async function buscarVariantesPorReferenciaNormalizada(client, referencia) {
+  const alvo = normalizarComparacao(referencia);
+  if (!alvo) return [];
+  const { rows } = await client.query(
+    `SELECT v.*, p.referencia, p.descricao FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id`
+  );
+  return rows.filter((v) => normalizarComparacao(v.referencia) === alvo);
+}
+
 // Acha o produto pela referência e, se possível, a variante exata de
 // cor/tamanho — usado tanto pro casamento de anúncio individual quanto,
 // dentro dele, pro produto-base de um kit.
 async function buscarProdutoEVariante(client, referencia, cor, tamanho) {
-  const { rows: variantesDoProduto } = await client.query(
+  let { rows: variantesDoProduto } = await client.query(
     `SELECT v.*, p.referencia, p.descricao FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id WHERE p.referencia ILIKE $1`,
     [referencia]
   );
+  if (variantesDoProduto.length === 0) {
+    variantesDoProduto = await buscarVariantesPorReferenciaNormalizada(client, referencia);
+  }
   if (variantesDoProduto.length === 0) return null;
 
   const corAlvo = normalizarComparacao(cor);
@@ -234,6 +253,9 @@ async function encontrarVariante(client, { eanExterno, skuExterno }) {
       [skuExterno]
     );
     if (r.rows.length > 0) return r.rows[0];
+
+    const porReferenciaNormalizada = await buscarVariantesPorReferenciaNormalizada(client, skuExterno);
+    if (porReferenciaNormalizada.length > 0) return porReferenciaNormalizada[0];
 
     r = await client.query(
       `SELECT v.*, p.referencia, p.descricao FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id WHERE v.ean = $1`,
@@ -1046,4 +1068,8 @@ module.exports = {
   sincronizarAdsDias,
   sincronizarAdsTodasIntegracoes,
   limparItensFantasmaHistorico,
+  normalizarComparacao,
+  partirSkuIndividual,
+  partirSkuKit,
+  buscarVariantesPorReferenciaNormalizada,
 };
