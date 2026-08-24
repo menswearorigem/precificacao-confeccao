@@ -12,6 +12,7 @@ import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import FotoProduto from '../components/FotoProduto';
 import DataTable from '../components/DataTable';
+import CopiarBotao from '../components/CopiarBotao';
 import { useTabela } from '../lib/useTabela';
 
 const COLUNAS_PEDIDOS_ORDENAVEIS = {
@@ -111,7 +112,10 @@ function VincularItensModal({ pedido, onClose, onVinculado }) {
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
       <div className="card" style={{ maxWidth: 680, width: '92%', maxHeight: '82vh', overflowY: 'auto' }}>
         <div className="card-head-linha">
-          <div className="card-head">Vincular produto — Pedido {pedido.numeroExibicao || `#${pedido.numero}`}</div>
+          <div className="card-head">
+            Vincular produto — Pedido {pedido.numeroExibicao || `#${pedido.numero}`}
+            <CopiarBotao valor={pedido.numeroExibicao || pedido.numero} label="Copiar nº do pedido" />
+          </div>
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
         {erro && <div className="login-error" style={{ marginBottom: 10 }}>{erro}</div>}
@@ -419,6 +423,7 @@ function VendaDetalheCard({ p, config }) {
           <div>
             <div className="venda-card-titulo">
               Pedido {p.numeroExibicao}
+              <CopiarBotao valor={p.numeroExibicao || p.numero} label="Copiar nº do pedido" />
               {p.pacote && <span className="stamp sm tone-neutro" style={{ marginLeft: 8 }} title="Compra com mais de um anúncio no mesmo carrinho — o Mercado Livre paga tudo junto, então os itens entram num card só.">pacote</span>}
               {p.indisponivelNoMarketplace && <span className="stamp sm tone-atencao" style={{ marginLeft: 8 }} title="Esse pedido não existe mais no Mercado Livre quando tentamos rebuscar — algum dado (valor recebido, pacote, ID de anúncio) pode ter ficado incompleto pra sempre.">sumiu do ML</span>}
             </div>
@@ -1015,19 +1020,19 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <ThOrdenavel coluna="numero" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Nº</ThOrdenavel>
-                      <ThOrdenavel coluna="data" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Data</ThOrdenavel>
-                      {isMarketplace ? <th>Item Pedido</th> : (
+                      <ThOrdenavel coluna="numero" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor} style={{ width: 86 }}>Nº</ThOrdenavel>
+                      <ThOrdenavel coluna="data" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor} style={{ width: 84 }}>Data</ThOrdenavel>
+                      {isMarketplace ? <th style={{ maxWidth: 200 }}>Item Pedido</th> : (
                         <ThOrdenavel coluna="cliente" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Cliente</ThOrdenavel>
                       )}
                       <ThOrdenavel coluna="canal" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Canal</ThOrdenavel>
                       <ThOrdenavel coluna="receita" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Receita</ThOrdenavel>
                       <ThOrdenavel coluna="custo" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Custo</ThOrdenavel>
-                      <ThOrdenavel coluna="taxaMarketplace" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Taxa Marketplace</ThOrdenavel>
+                      <ThOrdenavel coluna="taxaMarketplace" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor} title="Taxa Marketplace">Taxa Mkt.</ThOrdenavel>
                       <ThOrdenavel coluna="lucro" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Lucro</ThOrdenavel>
                       <ThOrdenavel coluna="margem" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Margem</ThOrdenavel>
-                      {isMarketplace && <th>Valor Recebido (ML)</th>}
-                      {isMarketplace && <th>Produto Vinculado</th>}
+                      {isMarketplace && <th title="Valor Recebido (Mercado Livre)">Recebido (ML)</th>}
+                      {isMarketplace && <th title="Produto Vinculado">Vínculo</th>}
                       {isMarketplace && <th />}
                     </tr>
                   </thead>
@@ -1037,19 +1042,22 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                       const qtdVinculados = isMarketplace ? (p.itens || []).filter((it) => it.produtoId).length : 0;
                       return (
                         <tr key={p.id}>
-                          <td className="mono">
-                            {p.numeroExibicao}
+                          <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                              {p.numeroExibicao}
+                              <CopiarBotao valor={p.numeroExibicao || p.numero} label="Copiar nº do pedido" />
+                            </span>
                             {p.pacote && <span className="stamp sm tone-neutro" style={{ marginLeft: 6 }} title="Compra com mais de um anúncio no mesmo carrinho, agrupada num card só.">pacote</span>}
                           </td>
                           <td className="mono">{new Date(p.data_pedido).toLocaleDateString('pt-BR')}</td>
                           {isMarketplace ? (
-                            <td>
+                            <td className="col-truncar" style={{ maxWidth: 200 }}>
                               {itemUnico ? (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                                   <FotoProduto produtoId={itemUnico.produtoId} temFoto={itemUnico.temFoto} size={32} alt={itemUnico.referencia || itemUnico.tituloExterno} />
-                                  <div>
-                                    <div>{itemUnico.tituloExterno || 'Item sem título'}</div>
-                                    <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>SKU: {itemUnico.skuExterno || '—'}</div>
+                                  <div style={{ minWidth: 0, flex: 1 }}>
+                                    <div className="col-truncar" title={itemUnico.tituloExterno || 'Item sem título'}>{itemUnico.tituloExterno || 'Item sem título'}</div>
+                                    <div className="col-truncar" style={{ fontSize: 11, color: 'var(--ink-soft)' }} title={`SKU: ${itemUnico.skuExterno || '—'}`}>SKU: {itemUnico.skuExterno || '—'}</div>
                                   </div>
                                 </div>
                               ) : (

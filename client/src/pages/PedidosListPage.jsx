@@ -8,6 +8,7 @@ import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import DataTable from '../components/DataTable';
+import CopiarBotao from '../components/CopiarBotao';
 import { useTabela } from '../lib/useTabela';
 
 const SITUACAO_TONE = {
@@ -168,8 +169,8 @@ export default function PedidosListPage({ origemFiltro }) {
         <table className="data-table">
           <thead>
             <tr>
-              <ThOrdenavel coluna="numero" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Nº</ThOrdenavel>
-              <ThOrdenavel coluna="data" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Data</ThOrdenavel>
+              <ThOrdenavel coluna="numero" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor} style={{ width: 86 }}>Nº</ThOrdenavel>
+              <ThOrdenavel coluna="data" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor} style={{ width: 84 }}>Data</ThOrdenavel>
               <ThOrdenavel coluna="cliente" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Cliente</ThOrdenavel>
               <ThOrdenavel coluna="canal" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Canal</ThOrdenavel>
               <ThOrdenavel coluna="qtd" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Qtd. Peças</ThOrdenavel>
@@ -182,7 +183,12 @@ export default function PedidosListPage({ origemFiltro }) {
             {loading && pedidos.length === 0 && <SkeletonLinhasTabela colunas={8} />}
             {tabela.itensPagina.map((p) => (
               <tr key={p.id} className="clickable-row" onClick={() => navigate(`/pedidos/${p.id}`)}>
-                <td className="mono">#{p.numero}</td>
+                <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                    #{p.numero}
+                    <CopiarBotao valor={p.numero} label="Copiar nº do pedido" />
+                  </span>
+                </td>
                 <td className="mono">{new Date(p.data_pedido).toLocaleDateString('pt-BR')}</td>
                 <td>{p.cliente_nome || '—'}</td>
                 <td>{p.canal_venda || '—'}</td>

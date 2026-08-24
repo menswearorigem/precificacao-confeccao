@@ -7,6 +7,7 @@ import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import DataTable from '../components/DataTable';
+import CopiarBotao from '../components/CopiarBotao';
 import { useTabela } from '../lib/useTabela';
 
 const COLUNAS_ORDENAVEIS = {
@@ -196,8 +197,8 @@ export default function RelatorioTaxasPage() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <ThOrdenavel coluna="numero" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Nº</ThOrdenavel>
-                  <ThOrdenavel coluna="data" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Data</ThOrdenavel>
+                  <ThOrdenavel coluna="numero" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor} style={{ width: 86 }}>Nº</ThOrdenavel>
+                  <ThOrdenavel coluna="data" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor} style={{ width: 84 }}>Data</ThOrdenavel>
                   <ThOrdenavel coluna="canal" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Canal</ThOrdenavel>
                   <ThOrdenavel coluna="receita" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Receita</ThOrdenavel>
                   <ThOrdenavel coluna="taxaCobrada" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Taxa Cobrada</ThOrdenavel>
@@ -213,7 +214,12 @@ export default function RelatorioTaxasPage() {
                   const diferenca = p.semTabelaCadastrada ? null : (Number(p.taxaCobrada) || 0) - (Number(p.taxaEsperada) || 0);
                   return (
                     <tr key={p.id}>
-                      <td className="mono">#{p.numero}</td>
+                      <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                          #{p.numero}
+                          <CopiarBotao valor={p.numero} label="Copiar nº do pedido" />
+                        </span>
+                      </td>
                       <td className="mono">{new Date(p.data_pedido).toLocaleDateString('pt-BR')}</td>
                       <td>{p.canal_venda}</td>
                       <td className="mono">{brl(p.receita)}</td>

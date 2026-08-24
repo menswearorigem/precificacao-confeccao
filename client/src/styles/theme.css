@@ -1141,6 +1141,26 @@ table.data-table .select-custom-lista { font-size: 12.5px; }
 }
 .icon-btn:hover { color: var(--danger); background: var(--danger-bg); }
 
+/* Botão de copiar inline (ao lado de nº de pedido, código etc.) — mesma
+   base do .icon-btn, mas destaca em verde-sucesso (não em vermelho, que é
+   linguagem de "remover" no resto do app) e fica com o ícone Check por um
+   instante como confirmação, sem precisar de toast separado. */
+.copiar-btn {
+  background: transparent;
+  border: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: -2px;
+  flex-shrink: 0;
+  transition: color 0.15s var(--ease), background 0.15s var(--ease);
+}
+.copiar-btn:hover { color: var(--terracotta); background: var(--surface-alt); }
+.copiar-btn.copiado, .copiar-btn.copiado:hover { color: var(--success); }
+
 /* ---------- tables ---------- */
 
 table.data-table { width: 100%; min-width: 480px; border-collapse: collapse; font-size: 12.5px; }
@@ -1200,7 +1220,7 @@ table.data-table tr.clickable-row:hover { background: rgba(181, 101, 29, 0.075);
   white-space: nowrap;
 }
 .data-table-wrap table.data-table .col-truncar {
-  overflow: hidden; text-overflow: ellipsis; max-width: 260px;
+  overflow: hidden; text-overflow: ellipsis; max-width: 260px; white-space: nowrap;
 }
 
 .data-table-outer.densidade-compacta table.data-table th,

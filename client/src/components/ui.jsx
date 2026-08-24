@@ -168,10 +168,10 @@ export function Row({ label, value, strong, big }) {
 // Cabeçalho de coluna clicável pra ordenar uma tabela (usado com o hook
 // useTabela) — mostra uma seta de duas pontas discreta quando a coluna
 // não é a ordenação atual, e uma seta cheia na direção certa quando é.
-export function ThOrdenavel({ coluna, atual, direcao, onClick, children, className = '', style }) {
+export function ThOrdenavel({ coluna, atual, direcao, onClick, children, className = '', style, title }) {
   const ativa = coluna === atual;
   return (
-    <th className={className} style={style}>
+    <th className={className} style={style} title={title}>
       <button
         type="button"
         className={'th-ordenavel' + (ativa ? ' is-ativa' : '')}

@@ -3,11 +3,13 @@ import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContai
 import {
   ArrowDownRight, ArrowUpRight, Banknote, ShoppingCart, CheckCircle2,
   Users, TrendingUp, Store, Boxes, PackageMinus, Handshake, ShoppingBag,
-  Flame, Layers, Star, ShieldCheck, Swords, Megaphone, MousePointerClick, Eye, RefreshCw, ChevronDown,
+  Flame, Layers, Star, ShieldCheck, Swords, Megaphone, MousePointerClick, Eye, RefreshCw, ChevronDown, Search,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct, numeroBr, formatQtd } from '../lib/format';
 import { DateInput, Select, StatCard } from '../components/ui';
+import { PeriodoFiltro } from '../components/PeriodoFiltro';
+import { PRESETS_PERIODO } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import FotoProduto from '../components/FotoProduto';
 import DataTable from '../components/DataTable';
@@ -1281,16 +1283,16 @@ const TABS = [
 const TABS_VISIVEIS = TABS.slice(0, 6);
 const TABS_MAIS = TABS.slice(6);
 
+const PRESET_PADRAO_METRICAS = PRESETS_PERIODO.find((p) => p.chave === '30dias').calcular();
+
 export default function MetricasMarketplacePage() {
-  const [dataInicio, setDataInicio] = useState(trintaDiasAtras());
-  const [dataFim, setDataFim] = useState(hoje());
+  const [{ inicio: dataInicio, fim: dataFim }, setPeriodo] = useState(PRESET_PADRAO_METRICAS);
   const [plataforma, setPlataforma] = useState('');
   const [lojaId, setLojaId] = useState('');
   const [busca, setBusca] = useState('');
   const [subTab, setSubTab] = useState('visaoGeral');
   const [maisAberto, setMaisAberto] = useState(false);
   const abaEmMais = TABS_MAIS.some((t) => t.key === subTab);
-  const [filtrosAplicados, setFiltrosAplicados] = useState(null);
   const [integracoes, setIntegracoes] = useState([]);
 
   useEffect(() => { api.get('/integracoes').then(setIntegracoes).catch(() => {}); }, []);
@@ -1309,14 +1311,14 @@ export default function MetricasMarketplacePage() {
     }
   }
 
-  function gerar() {
+  // Filtro se aplica na hora, sem precisar clicar em nenhum botão — mesmo
+  // padrão já usado em Lucratividade/Pedidos/Taxas de Marketplace.
+  const filtrosAplicados = useMemo(() => {
     const f = { data_inicio: dataInicio, data_fim: dataFim };
     if (plataforma) f.canal_venda = plataforma;
     if (lojaId) f.origem_integracao_id = lojaId;
-    setFiltrosAplicados(f);
-  }
-
-  useEffect(() => { gerar(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    return f;
+  }, [dataInicio, dataFim, plataforma, lojaId]);
 
   return (
     <div className="page-wide">
@@ -1326,42 +1328,26 @@ export default function MetricasMarketplacePage() {
         Lucratividade (que foca em custo/imposto/lucro por pedido).
       </p>
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="form-grid">
-          <div className="field">
-            <span className="field-label">Data Início</span>
-            <DateInput value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
+      <div className="filtros-barra">
+        <PeriodoFiltro inicio={dataInicio} fim={dataFim} onChange={({ inicio, fim }) => setPeriodo({ inicio, fim })} />
+        <Select value={plataforma} onChange={(e) => mudarPlataforma(e.target.value)} style={{ maxWidth: 180 }}>
+          <option value="">Todas as plataformas</option>
+          {Object.values(PLATAFORMA_LABEL).map((label) => (
+            <option key={label} value={label}>{label}</option>
+          ))}
+        </Select>
+        <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)} style={{ maxWidth: 180 }}>
+          <option value="">Todas as lojas</option>
+          {lojasDisponiveis.map((i) => (
+            <option key={i.id} value={i.id}>{i.nome || PLATAFORMA_LABEL[i.marketplace]}</option>
+          ))}
+        </Select>
+        {(subTab === 'vendasPorAnuncio' || subTab === 'abc') && (
+          <div className="filtros-barra-busca">
+            <Search size={14} />
+            <input placeholder="Referência, descrição ou ID do anúncio..." value={busca} onChange={(e) => setBusca(e.target.value)} />
           </div>
-          <div className="field">
-            <span className="field-label">Data Fim</span>
-            <DateInput value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
-          </div>
-          <div className="field">
-            <span className="field-label">Plataforma</span>
-            <Select value={plataforma} onChange={(e) => mudarPlataforma(e.target.value)}>
-              <option value="">Todas as plataformas</option>
-              {Object.values(PLATAFORMA_LABEL).map((label) => (
-                <option key={label} value={label}>{label}</option>
-              ))}
-            </Select>
-          </div>
-          <div className="field">
-            <span className="field-label">Loja</span>
-            <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)}>
-              <option value="">Todas as lojas</option>
-              {lojasDisponiveis.map((i) => (
-                <option key={i.id} value={i.id}>{i.nome || PLATAFORMA_LABEL[i.marketplace]}</option>
-              ))}
-            </Select>
-          </div>
-          {(subTab === 'vendasPorAnuncio' || subTab === 'abc') && (
-            <div className="field">
-              <span className="field-label">Buscar Produto</span>
-              <input placeholder="Referência, descrição ou ID do anúncio..." value={busca} onChange={(e) => setBusca(e.target.value)} />
-            </div>
-          )}
-        </div>
-        <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={gerar}>Gerar Métricas</button>
+        )}
       </div>
 
       <div className="subtab-row">
