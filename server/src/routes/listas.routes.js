@@ -18,6 +18,8 @@ const TIPOS_VALIDOS = new Set([
   'condicao_pagamento',
   'vendedor',
   'categoria_compra',
+  'calendario_categoria',
+  'calendario_tipo_adicao',
 ]);
 
 function checkTipo(req, res, next) {

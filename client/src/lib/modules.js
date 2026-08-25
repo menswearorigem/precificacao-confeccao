@@ -3,7 +3,7 @@ import {
   FlaskConical, LayoutDashboard, Boxes, FileText, List as ListIcon,
   Warehouse, Barcode, Tags, Printer, Users, ClipboardList, ShoppingCart,
   Truck, BarChart3, ShieldCheck, Plug, TrendingUp, ReceiptText, Store, Plane,
-  LineChart, SearchCheck, Layers, AlertTriangle,
+  LineChart, SearchCheck, Layers, AlertTriangle, CalendarDays, UsersRound,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -98,6 +98,7 @@ export const MODULES = [
       { to: '/configuracoes', label: 'Parâmetros', icon: Settings },
       { to: '/empresas', label: 'Empresas', icon: Landmark },
       { to: '/listas', label: 'Listas', icon: ListIcon },
+      { to: '/configuracoes/grupos', label: 'Grupos', icon: UsersRound },
       { to: '/taxas-venda', label: 'Taxas de Venda', icon: Percent },
       { to: '/marketplace-taxas', label: 'Taxas de Marketplace', icon: ReceiptText },
       { to: '/custos-indiretos', label: 'Custos Indiretos', icon: Factory },
@@ -105,6 +106,15 @@ export const MODULES = [
       { to: '/integracoes', label: 'Integrações', icon: Plug, adminOnly: true },
       { to: '/conferencia-dados', label: 'Conferência de Dados', icon: SearchCheck, adminOnly: true },
       { to: '/qualidade-dados', label: 'Qualidade do Dado', icon: Layers, adminOnly: true },
+    ],
+  },
+  {
+    key: 'calendario',
+    label: 'Calendário',
+    icon: CalendarDays,
+    color: 'var(--leather)',
+    pages: [
+      { to: '/calendario', label: 'Calendário', icon: CalendarDays },
     ],
   },
 ];

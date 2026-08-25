@@ -2420,3 +2420,63 @@ table.ficha-doc-tabela {
   cursor: pointer;
 }
 .lightbox-close:hover { background: rgba(255, 255, 255, 0.22); }
+
+/* ---------- Calendário (módulo) ---------- */
+.calendario-grade {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: var(--border-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.calendario-cabecalho-dia {
+  background: var(--surface-alt);
+  padding: 8px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  text-align: center;
+}
+.calendario-dia {
+  background: var(--surface);
+  min-height: 92px;
+  padding: 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: background 0.12s var(--ease);
+}
+.calendario-dia:hover { background: var(--surface-alt); }
+.calendario-dia.fora-do-mes { background: var(--surface-alt); opacity: 0.55; }
+.calendario-dia.hoje .calendario-dia-numero {
+  background: var(--terracotta);
+  color: #fff;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.calendario-dia-numero { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.calendario-dia-eventos { display: flex; flex-direction: column; gap: 3px; }
+.calendario-chip {
+  background: var(--surface-alt);
+  border: none;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 11px;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.calendario-chip:hover { background: var(--border-soft); }
+.calendario-dia-mais { font-size: 10.5px; color: var(--ink-soft); padding: 2px 4px; }

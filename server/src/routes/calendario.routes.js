@@ -154,6 +154,18 @@ router.get('/resumo', async (req, res, next) => {
   }
 });
 
+// Lista leve de usuários ativos (só id/nome) pros seletores de
+// responsável/visibilidade — GET /api/usuarios exige admin, e qualquer
+// usuário do módulo calendário precisa poder escolher responsável/quem vê.
+router.get('/usuarios', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT id, nome FROM usuarios WHERE ativo = TRUE ORDER BY nome');
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/templates', async (req, res, next) => {
   try {
     const { rows } = await pool.query('SELECT * FROM calendario_templates WHERE ativo = TRUE ORDER BY nome');

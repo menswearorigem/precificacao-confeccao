@@ -269,12 +269,27 @@ function gravarRecente(chave, valor) {
   }
 }
 
+// Aceita tanto <option> soltos quanto agrupados em <optgroup label="...">
+// (usado pelo seletor de visibilidade do Calendário — "Grupos"/"Pessoas"
+// como seções visualmente separadas dentro do mesmo Select). Nenhum uso
+// existente passa <optgroup>, então isso não muda nada pra quem já usa
+// Select hoje.
 function extrairOpcoes(children) {
   const opcoes = [];
   Children.forEach(children, (child) => {
-    if (!child || typeof child !== 'object' || !child.props || child.type !== 'option') return;
-    const valor = child.props.value !== undefined ? String(child.props.value) : String(child.props.children ?? '');
-    opcoes.push({ valor, rotulo: child.props.children, desabilitada: Boolean(child.props.disabled) });
+    if (!child || typeof child !== 'object' || !child.props) return;
+    if (child.type === 'option') {
+      const valor = child.props.value !== undefined ? String(child.props.value) : String(child.props.children ?? '');
+      opcoes.push({ valor, rotulo: child.props.children, desabilitada: Boolean(child.props.disabled) });
+      return;
+    }
+    if (child.type === 'optgroup') {
+      Children.forEach(child.props.children, (neto) => {
+        if (!neto || typeof neto !== 'object' || !neto.props || neto.type !== 'option') return;
+        const valor = neto.props.value !== undefined ? String(neto.props.value) : String(neto.props.children ?? '');
+        opcoes.push({ valor, rotulo: neto.props.children, desabilitada: Boolean(neto.props.disabled), grupo: child.props.label });
+      });
+    }
   });
   return opcoes;
 }
@@ -459,6 +474,9 @@ export function Select({ value, onChange, children, disabled, className = '', st
                 )}
                 {!filtro && idx === qtdRecentesNoTopo && qtdRecentesNoTopo > 0 && (
                   <li className="select-custom-secao">Todas</li>
+                )}
+                {o.grupo && o.grupo !== opcoesFiltradas[idx - 1]?.grupo && (
+                  <li className="select-custom-secao">{o.grupo}</li>
                 )}
                 <li
                   role="option"

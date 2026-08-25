@@ -18,6 +18,8 @@ import UsuariosPage from './pages/UsuariosPage';
 import IntegracoesPage from './pages/IntegracoesPage';
 import ConferenciaDadosPage from './pages/ConferenciaDadosPage';
 import QualidadeDadosPage from './pages/QualidadeDadosPage';
+import GruposPage from './pages/GruposPage';
+import CalendarioPage from './pages/CalendarioPage';
 import ProdutosListPage from './pages/ProdutosListPage';
 import ProdutoFichaPage from './pages/ProdutoFichaPage';
 import ImportacaoPage from './pages/ImportacaoPage';
@@ -129,6 +131,8 @@ function AppRoutes() {
                   <Route path="/integracoes" element={<IntegracoesPage />} />
                   <Route path="/conferencia-dados" element={<ConferenciaDadosPage />} />
                   <Route path="/qualidade-dados" element={<QualidadeDadosPage />} />
+                  <Route path="/configuracoes/grupos" element={<GruposPage />} />
+                  <Route path="/calendario" element={<CalendarioPage />} />
                   <Route path="*" element={<Navigate to={getDefaultPath(user) || '/produtos'} replace />} />
                 </Routes>
               </Shell>
