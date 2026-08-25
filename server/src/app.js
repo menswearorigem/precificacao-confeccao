@@ -29,6 +29,8 @@ const conferenciaDadosRoutes = require('./routes/conferenciaDados.routes');
 const qualidadeDadosRoutes = require('./routes/qualidadeDados.routes');
 const diagnosticoReferenciaRoutes = require('./routes/diagnosticoReferencia.routes');
 const diagnosticoEstoqueWikRoutes = require('./routes/diagnosticoEstoqueWik.routes');
+const calendarioRoutes = require('./routes/calendario.routes');
+const gruposRoutes = require('./routes/grupos.routes');
 
 const CLIENT_DIST = path.join(__dirname, '..', '..', 'client', 'dist');
 
@@ -57,6 +59,10 @@ function createApp() {
   // edição (cadastro/config) exige o módulo "configuracoes".
   app.use('/api/listas', requireAuth, listasRoutes);
   app.use('/api/empresas', requireAuth, empresasRoutes);
+  // Grupos alimenta o seletor de visibilidade do Calendário (qualquer
+  // usuário autenticado precisa ler nome/membros pra montar a seção
+  // "Grupos") — só a edição em /configuracoes/grupos exige o módulo.
+  app.use('/api/grupos', requireAuth, gruposRoutes);
 
   app.use('/api/configuracoes', requireAuth, requireModulo('configuracoes'), configuracoesRoutes);
   app.use('/api/taxas-venda', requireAuth, requireModulo('configuracoes'), taxasVendaRoutes);
@@ -79,6 +85,7 @@ function createApp() {
   app.use('/api/fornecedores', requireAuth, requireModulo('compras'), fornecedoresRoutes);
   app.use('/api/compras', requireAuth, requireModulo('compras'), comprasRoutes);
   app.use('/api/viagens', requireAuth, requireModulo('viagens'), viagensRoutes);
+  app.use('/api/calendario', requireAuth, requireModulo('calendario'), calendarioRoutes);
 
   // Callbacks OAuth são chamados pelo redirect do próprio marketplace — sem
   // sessão nossa nesse momento, então ficam fora do requireAuth. A validação
