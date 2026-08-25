@@ -125,6 +125,28 @@ export default function ConfiguracoesPage() {
           </Field>
         </div>
       </div>
+
+      <div className="card">
+        <div className="card-head">Alertas do Calendário</div>
+        <div className="form-grid">
+          <Field label="Primeiro alerta (dias antes do prazo)" hint="A partir de quantos dias antes do prazo um evento aparece no sino de notificações.">
+            <NumInput
+              value={config.calendario_alerta_dias_1}
+              onChange={(v) => updateField('calendario_alerta_dias_1', Math.max(0, Math.round(Number(v) || 0)))}
+              onBlur={handleBlurSave}
+              suffix="dias"
+            />
+          </Field>
+          <Field label="Alerta urgente (dias antes do prazo)" hint="A partir de quantos dias antes do prazo o evento vira urgente (destaque mais forte).">
+            <NumInput
+              value={config.calendario_alerta_dias_2}
+              onChange={(v) => updateField('calendario_alerta_dias_2', Math.max(0, Math.round(Number(v) || 0)))}
+              onBlur={handleBlurSave}
+              suffix="dias"
+            />
+          </Field>
+        </div>
+      </div>
     </div>
   );
 }

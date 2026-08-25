@@ -154,6 +154,49 @@ router.get('/resumo', async (req, res, next) => {
   }
 });
 
+// Itens pro sino de notificações: atrasados + vencendo dentro da janela do
+// primeiro limiar de alerta (configuracoes.calendario_alerta_dias_1),
+// marcando "urgente" quem já entrou no segundo limiar (mais próximo do
+// prazo) ou já atrasado. Mesma regra de visibilidade da listagem.
+router.get('/notificacoes', async (req, res, next) => {
+  try {
+    const { rows: configRows } = await pool.query(
+      'SELECT calendario_alerta_dias_1, calendario_alerta_dias_2 FROM configuracoes WHERE id = 1'
+    );
+    const dias1 = configRows[0]?.calendario_alerta_dias_1 ?? 3;
+    const dias2 = configRows[0]?.calendario_alerta_dias_2 ?? 1;
+
+    const isAdmin = req.user.role === 'admin';
+    const values = [dias1];
+    let visibilidade = '';
+    if (!isAdmin) {
+      const { sql } = condicaoVisibilidade('e', 2);
+      visibilidade = `AND ${sql}`;
+      values.push(req.user.id);
+    }
+    const { rows } = await pool.query(
+      `SELECT e.id, e.titulo, e.data_prevista_fim, e.status
+         FROM calendario_eventos e
+        WHERE e.status NOT IN ('concluido','cancelado')
+          AND e.data_prevista_fim <= CURRENT_DATE + ($1 || ' days')::interval
+          ${visibilidade}
+        ORDER BY e.data_prevista_fim ASC`,
+      values
+    );
+
+    const itens = rows.map((r) => {
+      const atrasado = calcularAtrasado(r.data_prevista_fim, r.status);
+      const dias = diasParaPrazo(r.data_prevista_fim);
+      const nivel = atrasado || (dias !== null && dias <= dias2) ? 'urgente' : 'atencao';
+      return { id: r.id, titulo: r.titulo, atrasado, diasParaPrazo: dias, nivel };
+    });
+
+    res.json({ dias1, dias2, itens });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Lista leve de usuários ativos (só id/nome) pros seletores de
 // responsável/visibilidade — GET /api/usuarios exige admin, e qualquer
 // usuário do módulo calendário precisa poder escolher responsável/quem vê.

@@ -22,6 +22,8 @@ const FIELDS = [
   'custo_embalagem_marketplace',
   'margem_pedido_vermelho_max',
   'margem_pedido_amarelo_max',
+  'calendario_alerta_dias_1',
+  'calendario_alerta_dias_2',
 ];
 
 router.get('/', async (req, res, next) => {

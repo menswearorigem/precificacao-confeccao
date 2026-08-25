@@ -2480,3 +2480,118 @@ table.ficha-doc-tabela {
 }
 .calendario-chip:hover { background: var(--border-soft); }
 .calendario-dia-mais { font-size: 10.5px; color: var(--ink-soft); padding: 2px 4px; }
+
+.sino-contador {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--danger-ring);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 15px;
+  height: 15px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+}
+.sino-painel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 300px;
+  max-height: 360px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  z-index: 200;
+}
+.sino-painel-head {
+  padding: 10px 12px;
+  font-weight: 700;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.sino-painel-lista { display: flex; flex-direction: column; }
+.sino-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 1px solid var(--border-soft);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink);
+}
+.sino-item:last-child { border-bottom: none; }
+.sino-item:hover { background: var(--surface-alt); }
+.sino-item-titulo { font-size: 12.5px; font-weight: 600; }
+.sino-item-prazo { font-size: 11.5px; color: var(--warning); }
+.sino-item.urgente .sino-item-prazo { color: var(--danger); font-weight: 700; }
+
+.view-toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.view-toggle button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  border: none;
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.view-toggle button + button { border-left: 1px solid var(--border); }
+.view-toggle button.active { background: var(--terracotta); color: #fff; }
+
+/* ---------- Calendário — view Kanban ---------- */
+.calendario-kanban {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  gap: 12px;
+  overflow-x: auto;
+}
+.kanban-coluna {
+  background: var(--surface-alt);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  min-height: 200px;
+  transition: outline 0.1s var(--ease);
+}
+.kanban-coluna.sobre-drop { outline: 2px dashed var(--terracotta); outline-offset: -2px; }
+.kanban-coluna-head {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-soft);
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+}
+.kanban-cartao {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  cursor: grab;
+  font-size: 12.5px;
+}
+.kanban-cartao:active { cursor: grabbing; }
+.kanban-cartao.arrastando { opacity: 0.4; }
+.kanban-cartao-titulo { font-weight: 600; margin-bottom: 4px; }
+.kanban-cartao-meta { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--ink-soft); }

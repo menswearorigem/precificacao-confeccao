@@ -6,6 +6,7 @@ import { getVisibleModules } from '../lib/modules';
 import { useTema } from '../lib/useTema';
 import { useDensidade } from '../contexts/DensidadeContext';
 import BuscaGlobal from './BuscaGlobal';
+import SinoCalendario from './SinoCalendario';
 import logoHbnHub from '../assets/logo-hbn-hub.png';
 
 const CHAVE_SIDEBAR_COLAPSADO = 'hbn_sidebar_colapsado';
@@ -64,6 +65,7 @@ export default function Shell({ children }) {
           </div>
         </div>
         <div className="header-actions">
+          {visibleModules.some((mod) => mod.key === 'calendario') && <SinoCalendario />}
           {densidadeCtx && (
             <button
               type="button"
