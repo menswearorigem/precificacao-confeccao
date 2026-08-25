@@ -2,6 +2,7 @@ const pool = require('../db/pool');
 const wik = require('./wik');
 const { resolverEan } = require('./eanResolver');
 const { registrarMovimento } = require('./estoqueMovimento');
+const { normalizarComparacao } = require('./marketplaceSync');
 
 // Vários campos "descritivos" do saldo_estoque_get vêm como "id-DESCRIÇÃO"
 // (ex.: cor: "10-DIVERSAS", grupo: "1 - CALÇA") — aqui só a descrição, sem
@@ -10,12 +11,22 @@ function limparDescricaoWik(valor) {
   return String(valor || '').replace(/^\s*\d+\s*-\s*/, '').trim();
 }
 
-// Chave de comparação ignorando maiúsculas/minúsculas — o Wik manda cor e
-// tamanho em CAIXA ALTA, mas o cadastro local pode estar em outra
-// capitalização (ex.: "Azul" vs "AZUL"), o que faria a variante não bater
-// e criar uma duplicata em vez de atualizar a existente.
+// Chave de comparação normalizada (mesma normalizarComparacao usada no
+// casamento de SKU de marketplace — ver marketplaceSync.js e a correção da
+// Tarefa 1): sem acento, sem espaço/hífen/pontuação, maiúsculo. Aplicada
+// também na REFERÊNCIA, não só cor/tamanho.
+//
+// CORRIGIDO (Tarefa 2): antes só dava .toUpperCase() em cor/tamanho e
+// comparava a referência ao pé da letra — bem mais fraco que a normalização
+// usada do lado do marketplace. Isso é exatamente o que fazia uma variante
+// corrigida à mão (ex.: cor com espaço/hífen diferente do jeito que o Wik
+// manda) nunca mais bater com o saldo do Wik: a chave calculada aqui
+// divergia da chave da variante já existente, a linha do Wik caía no balde
+// "criar" e nascia uma variante duplicada — o saldo do Wik passava a
+// atualizar essa duplicata, enquanto a variante editada ficava congelada
+// pra sempre. Nunca reescreve o cadastro, só compara.
 function chaveVariante(referencia, cor, tamanho) {
-  return `${referencia}::${String(cor || '').toUpperCase()}::${String(tamanho || '').toUpperCase()}`;
+  return `${normalizarComparacao(referencia)}::${normalizarComparacao(cor)}::${normalizarComparacao(tamanho)}`;
 }
 
 async function buscarIntegracao() {
