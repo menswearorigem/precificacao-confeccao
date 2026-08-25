@@ -93,9 +93,13 @@ export function Toggle({ checked, onChange, disabled, className = '', ...props }
 // componente próprio (ex.: MargemPill com cor semântica, que já sai com a
 // classe stat-card-value embutida) quanto pra um selo de variação abaixo do
 // valor (ex.: VariacaoBadge), podendo os dois coexistir.
-export function StatCard({ label, value, children }) {
+// `variant` (opcional: "danger"/"warning"/"success") tinge o fundo do
+// cartão inteiro — pra KPIs onde a cor por si só já diz se é bom ou ruim
+// (ex.: "Atrasados"), em vez dos três cartões de uma faixa saírem todos
+// iguais em bege neutro.
+export function StatCard({ label, value, children, variant }) {
   return (
-    <div className="stat-card">
+    <div className={`stat-card${variant ? ` stat-card-${variant}` : ''}`}>
       <span className="stat-card-label">{label}</span>
       {value !== undefined && <span className="stat-card-value">{value}</span>}
       {children}

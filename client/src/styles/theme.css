@@ -1357,6 +1357,11 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
   background: none;
   border-color: transparent;
 }
+/* Variante de cor do StatCard (prop `variant`) — tinge o cartão inteiro,
+   reaproveitável por qualquer módulo, não só o Calendário. */
+.stat-card.stat-card-danger { background: var(--danger-bg); }
+.stat-card.stat-card-warning { background: var(--warning-bg); }
+.stat-card.stat-card-success { background: var(--success-bg); }
 @media (max-width: 640px) { .stat-strip { grid-template-columns: repeat(2, 1fr); } }
 
 /* ---------- sub-abas dentro de uma página ---------- */
@@ -2453,6 +2458,9 @@ table.ficha-doc-tabela {
 }
 .calendario-dia:hover { background: var(--surface-alt); }
 .calendario-dia.fora-do-mes { background: var(--surface-alt); opacity: 0.55; }
+/* Dia de hoje: contorno na célula inteira + número num círculo preenchido —
+   não só o número com cor diferente. */
+.calendario-dia.hoje { outline: 2px solid var(--terracotta); outline-offset: -2px; }
 .calendario-dia.hoje .calendario-dia-numero {
   background: var(--terracotta);
   color: #fff;
@@ -2465,21 +2473,112 @@ table.ficha-doc-tabela {
 }
 .calendario-dia-numero { font-size: 12.5px; font-weight: 600; color: var(--ink); }
 .calendario-dia-eventos { display: flex; flex-direction: column; gap: 3px; }
+
+/* Tom por situação (atrasado/vencendo/no prazo/concluído) — mesma técnica
+   dos selos .tone-* (fundo tintado + cor de texto), só que com borda
+   esquerda de 3px em vez de borda inteira, no formato de chip/card. Usado
+   igual nas 3 visões (mês, Kanban e a tabela impressa reaproveita os
+   mesmos rótulos em SITUACAO_ROTULO). */
+.calendario-chip, .kanban-cartao {
+  border-left: 3px solid transparent;
+}
+.calendario-tom-atrasado { background: var(--danger-bg); color: var(--danger); }
+.calendario-tom-vencendo { background: var(--warning-bg); color: var(--warning); }
+.calendario-tom-no-prazo { background: var(--surface-alt); color: var(--brass); }
+.calendario-tom-concluido { background: var(--success-bg); color: var(--success); }
+/* Seletor composto (2 classes) de propósito — precisa ganhar de qualquer
+   `border` em bloco de .calendario-chip/.kanban-cartao independente da
+   ordem no arquivo (shorthand "border" reseta os 4 lados, então uma regra
+   de specificity igual e só de border-left-color perderia dependendo de
+   quem vem depois no CSS). */
+.calendario-chip.calendario-tom-atrasado, .kanban-cartao.calendario-tom-atrasado { background: var(--danger-bg); border-left-color: var(--danger-ring); }
+.calendario-chip.calendario-tom-vencendo, .kanban-cartao.calendario-tom-vencendo { background: var(--warning-bg); border-left-color: var(--warning-ring); }
+.calendario-chip.calendario-tom-no-prazo, .kanban-cartao.calendario-tom-no-prazo { background: var(--surface-alt); border-left-color: var(--brass); }
+.calendario-chip.calendario-tom-concluido, .kanban-cartao.calendario-tom-concluido { background: var(--success-bg); border-left-color: var(--success-ring); }
+
+/* Categoria continua visível (cor determinística por texto), só que como um
+   pontinho ao lado do título em vez de dono da borda esquerda — a borda
+   esquerda agora é o sinal mais importante (atrasado/vencendo/etc). */
+.categoria-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 5px;
+  flex-shrink: 0;
+}
+
 .calendario-chip {
   background: var(--surface-alt);
-  border: none;
   border-radius: 4px;
   padding: 3px 6px;
   font-size: 11px;
   text-align: left;
-  color: var(--ink);
+  display: flex;
+  align-items: center;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.calendario-chip:hover { background: var(--border-soft); }
+.calendario-chip:hover { filter: brightness(0.96); }
 .calendario-dia-mais { font-size: 10.5px; color: var(--ink-soft); padding: 2px 4px; }
+
+/* ---------- Calendário — header (mês, navegação, alternância de visão) ---------- */
+.calendario-header-barra {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(155deg, var(--leather-dark) 0%, var(--leather-deep) 100%);
+  color: #f4efe4;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  margin-bottom: 14px;
+  box-shadow: var(--shadow-xs);
+}
+.calendario-header-nav { display: flex; align-items: center; gap: 10px; }
+.calendario-header-titulo {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 600;
+  min-width: 160px;
+  text-align: center;
+}
+.calendario-header-acoes { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.calendario-header-barra .icon-btn { color: rgba(244, 239, 228, 0.85); }
+.calendario-header-barra .icon-btn:hover { background: rgba(244, 239, 228, 0.16); color: #fff; }
+.calendario-header-barra .btn-ghost {
+  background: rgba(244, 239, 228, 0.08);
+  border-color: rgba(244, 239, 228, 0.32);
+  color: #f4efe4;
+}
+.calendario-header-barra .btn-ghost:hover { background: rgba(244, 239, 228, 0.18); }
+.calendario-header-barra .view-toggle { border-color: rgba(244, 239, 228, 0.32); }
+.calendario-header-barra .view-toggle button { background: rgba(244, 239, 228, 0.08); color: #f4efe4; }
+.calendario-header-barra .view-toggle button + button { border-left-color: rgba(244, 239, 228, 0.25); }
+.calendario-header-barra .view-toggle button.active { background: var(--terracotta); color: #fff; }
+
+/* ---------- Calendário — legenda de cores ---------- */
+.calendario-legenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  padding: 10px 4px 4px;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.calendario-legenda-item { display: inline-flex; align-items: center; gap: 6px; }
+.calendario-legenda-quadrado { display: inline-block; width: 11px; height: 11px; border-radius: 3px; }
+/* No quadrinho da legenda usa a cor "ring" (mais saturada), não o fundo
+   tintado pálido — senão vencendo/no-prazo ficam parecidos demais entre si
+   pra servir de legenda. */
+.calendario-legenda-quadrado.calendario-tom-atrasado { background: var(--danger-ring); }
+.calendario-legenda-quadrado.calendario-tom-vencendo { background: var(--warning-ring); }
+.calendario-legenda-quadrado.calendario-tom-no-prazo { background: var(--brass); }
+.calendario-legenda-quadrado.calendario-tom-concluido { background: var(--success-ring); }
 
 .sino-contador {
   position: absolute;

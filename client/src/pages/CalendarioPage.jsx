@@ -7,6 +7,9 @@ import { StatCard, Select } from '../components/ui';
 import EventoCalendarioModal from '../components/EventoCalendarioModal';
 import CalendarioKanban from '../components/CalendarioKanban';
 import { corDaCategoria } from '../lib/corCategoria';
+import { situacaoEvento, situacaoClasse, SITUACAO_ROTULO } from '../lib/situacaoEvento';
+
+const DIAS_ALERTA_PADRAO = 3;
 
 const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const NOMES_MES = [
@@ -46,20 +49,16 @@ function gerarSemanasDoMes(ano, mes) {
   return { semanas, inicioGrade, fimGrade };
 }
 
-function EventoChip({ evento, onClick }) {
-  const cor = corDaCategoria(evento.categoria);
-  const vencendoEmBreve = !evento.atrasado && evento.diasParaPrazo !== null && evento.diasParaPrazo <= 3 && evento.status !== 'concluido' && evento.status !== 'cancelado';
+function EventoChip({ evento, diasAlerta, onClick }) {
+  const situacao = situacaoEvento(evento, diasAlerta);
   return (
     <button
       type="button"
-      className="calendario-chip"
+      className={`calendario-chip ${situacaoClasse(situacao)}`}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
-      style={{
-        borderLeft: `3px solid ${cor}`,
-        outline: evento.atrasado ? '1.5px solid var(--danger)' : vencendoEmBreve ? '1.5px solid var(--warning)' : 'none',
-      }}
       title={evento.titulo}
     >
+      {evento.categoria && <span className="categoria-dot" style={{ background: corDaCategoria(evento.categoria) }} />}
       {evento.titulo}
     </button>
   );
@@ -80,6 +79,7 @@ export default function CalendarioPage() {
   const [busca, setBusca] = useState('');
   const [modal, setModal] = useState(null); // null | { eventoId } | { dataPadrao }
   const [erro, setErro] = useState('');
+  const [diasAlerta, setDiasAlerta] = useState(DIAS_ALERTA_PADRAO);
 
   const { semanas, inicioGrade, fimGrade } = useMemo(
     () => gerarSemanasDoMes(mesAtual.getFullYear(), mesAtual.getMonth()),
@@ -89,6 +89,7 @@ export default function CalendarioPage() {
   useEffect(() => {
     api.get('/listas/calendario_categoria').then(setCategorias).catch(() => {});
     api.get('/calendario/usuarios').then(setUsuarios).catch(() => {});
+    api.get('/configuracoes').then((c) => setDiasAlerta(c.calendario_alerta_dias_1 ?? DIAS_ALERTA_PADRAO)).catch(() => {});
   }, []);
 
   // Vindo do sino de notificações (/calendario?evento=123) — abre direto no
@@ -152,12 +153,39 @@ export default function CalendarioPage() {
 
   return (
     <div className="page-wide">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <h2>Calendário</h2>
-          <p className="page-sub">Prazos e compromissos do dia a dia — chegada de corte, metas e outros eventos com data.</p>
+      <div>
+        <h2>Calendário</h2>
+        <p className="page-sub">Prazos e compromissos do dia a dia — chegada de corte, metas e outros eventos com data.</p>
+      </div>
+
+      {erro && <div className="login-error" style={{ marginBottom: 12 }}>{erro}</div>}
+
+      {resumo && (
+        <div className="stat-strip">
+          <StatCard label="Atrasados" value={resumo.atrasados} variant="danger">
+            {resumo.atrasados > 0 && <span className="stat-card-delta down"><AlertTriangle size={12} /> requer atenção</span>}
+          </StatCard>
+          <StatCard label="Vencendo em 7 dias" value={resumo.vencendo7Dias} variant="warning" />
+          <StatCard label="Concluídos no mês" value={resumo.concluidosNoMes} variant="success" />
         </div>
-        <div className="no-print" style={{ display: 'flex', gap: 8 }}>
+      )}
+
+      <div className="calendario-header-barra no-print">
+        <div className="calendario-header-nav">
+          {view === 'mes' ? (
+            <>
+              <button className="icon-btn" onClick={() => setMesAtual((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))}><ChevronLeft size={18} /></button>
+              <span className="calendario-header-titulo">{NOMES_MES[mesAtual.getMonth()]} de {mesAtual.getFullYear()}</span>
+              <button className="icon-btn" onClick={() => setMesAtual((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))}><ChevronRight size={18} /></button>
+              <button type="button" className="btn btn-ghost" onClick={() => setMesAtual(new Date(hoje.getFullYear(), hoje.getMonth(), 1))}>
+                Hoje
+              </button>
+            </>
+          ) : (
+            <span className="calendario-header-titulo">Quadro por status</span>
+          )}
+        </div>
+        <div className="calendario-header-acoes">
           <div className="view-toggle">
             <button type="button" className={view === 'mes' ? 'active' : ''} onClick={() => setView('mes')}>
               <Calendar size={13} /> Mês
@@ -174,18 +202,6 @@ export default function CalendarioPage() {
           </button>
         </div>
       </div>
-
-      {erro && <div className="login-error" style={{ marginBottom: 12 }}>{erro}</div>}
-
-      {resumo && (
-        <div className="stat-strip">
-          <StatCard label="Atrasados" value={resumo.atrasados}>
-            {resumo.atrasados > 0 && <span className="stat-card-delta down"><AlertTriangle size={12} /> requer atenção</span>}
-          </StatCard>
-          <StatCard label="Vencendo em 7 dias" value={resumo.vencendo7Dias} />
-          <StatCard label="Concluídos no mês" value={resumo.concluidosNoMes} />
-        </div>
-      )}
 
       <div className="filtros-barra no-print">
         <Select value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="Todas as categorias" style={{ maxWidth: 180 }}>
@@ -210,15 +226,6 @@ export default function CalendarioPage() {
       <div className="no-print">
       {view === 'mes' ? (
         <div className="card">
-          <div className="card-head-linha">
-            <button className="icon-btn" onClick={() => setMesAtual((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))}><ChevronLeft size={18} /></button>
-            <div className="card-head">{NOMES_MES[mesAtual.getMonth()]} de {mesAtual.getFullYear()}</div>
-            <button className="icon-btn" onClick={() => setMesAtual((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))}><ChevronRight size={18} /></button>
-          </div>
-          <button type="button" className="btn btn-ghost" style={{ marginBottom: 10 }} onClick={() => setMesAtual(new Date(hoje.getFullYear(), hoje.getMonth(), 1))}>
-            Hoje
-          </button>
-
           <div className="calendario-grade">
             {DIAS_SEMANA.map((d) => <div key={d} className="calendario-cabecalho-dia">{d}</div>)}
             {semanas.flat().map(({ data, foraDoMes }) => {
@@ -234,7 +241,7 @@ export default function CalendarioPage() {
                   <span className="calendario-dia-numero">{data.getDate()}</span>
                   <div className="calendario-dia-eventos">
                     {eventosDoDia.slice(0, 3).map((e) => (
-                      <EventoChip key={e.id} evento={e} onClick={() => setModal({ eventoId: e.id })} />
+                      <EventoChip key={e.id} evento={e} diasAlerta={diasAlerta} onClick={() => setModal({ eventoId: e.id })} />
                     ))}
                     {eventosDoDia.length > 3 && (
                       <span className="calendario-dia-mais">+{eventosDoDia.length - 3} mais</span>
@@ -250,11 +257,21 @@ export default function CalendarioPage() {
           <div className="card-head" style={{ marginBottom: 10 }}>Quadro por status</div>
           <CalendarioKanban
             eventos={eventos}
+            diasAlerta={diasAlerta}
             onMudarStatus={mudarStatusKanban}
             onClickCartao={(id) => setModal({ eventoId: id })}
           />
         </div>
       )}
+
+      <div className="calendario-legenda">
+        {Object.entries(SITUACAO_ROTULO).map(([situacao, rotulo]) => (
+          <span key={situacao} className="calendario-legenda-item">
+            <span className={`calendario-legenda-quadrado ${situacaoClasse(situacao)}`} />
+            {rotulo}
+          </span>
+        ))}
+      </div>
       </div>
 
       <div className="print-only ficha-page ficha-doc-grid card">
