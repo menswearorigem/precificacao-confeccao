@@ -6,35 +6,25 @@
 //
 // Uso: DATABASE_URL=... node server/scripts/checar-colisao-referencia.js
 const pool = require('../src/db/pool');
-const { normalizarComparacao } = require('../src/lib/marketplaceSync');
+const { checarColisaoReferencia } = require('../src/lib/diagnosticoReferencia');
 
 async function main() {
-  const { rows } = await pool.query('SELECT id, referencia FROM produtos ORDER BY id');
+  const resultado = await checarColisaoReferencia(pool);
 
-  const porChave = new Map();
-  for (const p of rows) {
-    const chave = normalizarComparacao(p.referencia);
-    if (!porChave.has(chave)) porChave.set(chave, []);
-    porChave.get(chave).push(p);
-  }
-
-  const colisoes = [...porChave.entries()].filter(([, produtos]) => produtos.length > 1);
-  const comEspacoOuFormatoDiferente = rows.filter((p) => /\s/.test(p.referencia) || p.referencia !== p.referencia.trim());
-
-  console.log(`Total de produtos: ${rows.length}`);
-  console.log(`Referências com espaço (interno ou nas pontas): ${comEspacoOuFormatoDiferente.length}`);
-  if (comEspacoOuFormatoDiferente.length > 0) {
-    console.log(comEspacoOuFormatoDiferente.map((p) => `  #${p.id} "${p.referencia}"`).join('\n'));
+  console.log(`Total de produtos: ${resultado.totalProdutos}`);
+  console.log(`Referências com espaço (interno ou nas pontas): ${resultado.referenciasComEspaco.length}`);
+  if (resultado.referenciasComEspaco.length > 0) {
+    console.log(resultado.referenciasComEspaco.map((p) => `  #${p.id} "${p.referencia}"`).join('\n'));
   }
   console.log('');
 
-  if (colisoes.length === 0) {
+  if (resultado.ok) {
     console.log('OK — nenhuma colisão. Toda referência normalizada continua única.');
     return 0;
   }
 
-  console.log(`ATENÇÃO — ${colisoes.length} colisão(ões) encontrada(s):`);
-  for (const [chave, produtos] of colisoes) {
+  console.log(`ATENÇÃO — ${resultado.colisoes.length} colisão(ões) encontrada(s):`);
+  for (const { chave, produtos } of resultado.colisoes) {
     console.log(`  chave normalizada "${chave}":`);
     for (const p of produtos) console.log(`    #${p.id} "${p.referencia}"`);
   }
