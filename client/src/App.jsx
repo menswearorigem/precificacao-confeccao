@@ -21,6 +21,7 @@ import QualidadeDadosPage from './pages/QualidadeDadosPage';
 import GruposPage from './pages/GruposPage';
 import CalendarioPage from './pages/CalendarioPage';
 import TemplatesCalendarioPage from './pages/TemplatesCalendarioPage';
+import EventoImpressaoPage from './pages/EventoImpressaoPage';
 import ProdutosListPage from './pages/ProdutosListPage';
 import ProdutoFichaPage from './pages/ProdutoFichaPage';
 import ImportacaoPage from './pages/ImportacaoPage';
@@ -135,6 +136,7 @@ function AppRoutes() {
                   <Route path="/configuracoes/grupos" element={<GruposPage />} />
                   <Route path="/calendario" element={<CalendarioPage />} />
                   <Route path="/calendario/modelos" element={<TemplatesCalendarioPage />} />
+                  <Route path="/calendario/eventos/:id/imprimir" element={<EventoImpressaoPage />} />
                   <Route path="*" element={<Navigate to={getDefaultPath(user) || '/produtos'} replace />} />
                 </Routes>
               </Shell>

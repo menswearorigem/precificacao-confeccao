@@ -5,7 +5,6 @@ const { requireModulo } = require('../middleware/auth');
 const {
   condicaoVisibilidade, condicaoEdicao, podeEditarEvento, calcularAtrasado, diasParaPrazo, registrarHistorico, diffCampos,
 } = require('../lib/calendarioEventos');
-const { montarCalendarioIcs } = require('../lib/icsBuilder');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
@@ -128,19 +127,6 @@ router.get('/eventos', async (req, res, next) => {
       produtoSnapshot: produtosPorId.get(row.produto_id),
       podeEditar: row.pode_editar,
     })));
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Exportação .ics em massa — os mesmos filtros da listagem (inclusive
-// período, então a tela de mês exporta só o que está na grade visível).
-router.get('/eventos.ics', async (req, res, next) => {
-  try {
-    const rows = await buscarEventosFiltrados(req);
-    res.set('Content-Type', 'text/calendar; charset=utf-8');
-    res.set('Content-Disposition', 'attachment; filename="calendario-hbn-hub.ics"');
-    res.send(montarCalendarioIcs(rows));
   } catch (err) {
     next(err);
   }
@@ -422,26 +408,6 @@ router.get('/eventos/:id', async (req, res, next) => {
       comentarios,
       historico,
     });
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.get('/eventos/:id/ics', async (req, res, next) => {
-  try {
-    const isAdmin = req.user.role === 'admin';
-    const values = [req.params.id];
-    let condicao = '';
-    if (!isAdmin) {
-      const { sql, proximoIndex } = condicaoVisibilidade('e', 2);
-      condicao = `AND ${sql}`;
-      values.push(req.user.id);
-    }
-    const { rows } = await pool.query(`SELECT e.* FROM calendario_eventos e WHERE e.id = $1 ${condicao}`, values);
-    if (rows.length === 0) return res.status(404).json({ error: 'Evento não encontrado.' });
-    res.set('Content-Type', 'text/calendar; charset=utf-8');
-    res.set('Content-Disposition', `attachment; filename="evento-${rows[0].id}.ics"`);
-    res.send(montarCalendarioIcs(rows));
   } catch (err) {
     next(err);
   }

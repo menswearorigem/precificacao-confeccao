@@ -620,8 +620,8 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
         <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginTop: 16 }}>
           <div style={{ display: 'flex', gap: 8 }}>
             {eventoId && (
-              <a className="btn btn-ghost" href={`/api/calendario/eventos/${eventoId}/ics`} target="_blank" rel="noreferrer">
-                Exportar .ics
+              <a className="btn btn-ghost" href={`/calendario/eventos/${eventoId}/imprimir`} target="_blank" rel="noreferrer">
+                Imprimir / Exportar PDF
               </a>
             )}
             {eventoId && podeEditar && (

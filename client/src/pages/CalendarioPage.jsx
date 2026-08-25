@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Plus, AlertTriangle, Calendar, Columns3, Download } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, AlertTriangle, Calendar, Columns3, Printer } from 'lucide-react';
+import { dataBr } from '../lib/format';
 import { api } from '../api/client';
 import { StatCard, Select } from '../components/ui';
 import EventoCalendarioModal from '../components/EventoCalendarioModal';
@@ -12,6 +13,12 @@ const NOMES_MES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ];
+const STATUS_ROTULO = {
+  nao_iniciado: 'Não iniciado',
+  em_andamento: 'Em andamento',
+  concluido: 'Concluído',
+  cancelado: 'Cancelado',
+};
 
 function isoDoDia(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -150,7 +157,7 @@ export default function CalendarioPage() {
           <h2>Calendário</h2>
           <p className="page-sub">Prazos e compromissos do dia a dia — chegada de corte, metas e outros eventos com data.</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="no-print" style={{ display: 'flex', gap: 8 }}>
           <div className="view-toggle">
             <button type="button" className={view === 'mes' ? 'active' : ''} onClick={() => setView('mes')}>
               <Calendar size={13} /> Mês
@@ -159,9 +166,9 @@ export default function CalendarioPage() {
               <Columns3 size={13} /> Kanban
             </button>
           </div>
-          <a className="btn btn-ghost" href={`/api/calendario/eventos.ics?${montarParamsFiltro().toString()}`} target="_blank" rel="noreferrer">
-            <Download size={14} /> Exportar .ics
-          </a>
+          <button className="btn btn-ghost" onClick={() => window.print()}>
+            <Printer size={14} /> Imprimir / Exportar PDF
+          </button>
           <button className="btn btn-primary" onClick={() => setModal({ dataPadrao: isoDoDia(hoje) })}>
             <Plus size={14} /> Novo evento
           </button>
@@ -180,7 +187,7 @@ export default function CalendarioPage() {
         </div>
       )}
 
-      <div className="filtros-barra">
+      <div className="filtros-barra no-print">
         <Select value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="Todas as categorias" style={{ maxWidth: 180 }}>
           {categorias.map((c) => <option key={c.id} value={c.valor}>{c.valor}</option>)}
         </Select>
@@ -200,6 +207,7 @@ export default function CalendarioPage() {
         </div>
       </div>
 
+      <div className="no-print">
       {view === 'mes' ? (
         <div className="card">
           <div className="card-head-linha">
@@ -247,6 +255,45 @@ export default function CalendarioPage() {
           />
         </div>
       )}
+      </div>
+
+      <div className="print-only ficha-page ficha-doc-grid card">
+        <div className="ficha-doc-topo">
+          <div>
+            <div className="ficha-doc-empresa">HBN HUB — MISS MANU · ORIGEM · HOGGAR · HEBRON</div>
+            <div className="ficha-doc-titulo">
+              Calendário — {view === 'mes' ? `${NOMES_MES[mesAtual.getMonth()]} de ${mesAtual.getFullYear()}` : 'todos os eventos abertos'}
+            </div>
+          </div>
+          <div className="ficha-doc-meta">
+            <div><strong>Gerado em:</strong> {dataBr(isoDoDia(hoje))}</div>
+            <div><strong>Eventos:</strong> {eventos.length}</div>
+          </div>
+        </div>
+        <table className="ficha-doc-tabela">
+          <thead>
+            <tr>
+              <th className="col-esq">Título</th>
+              <th className="col-esq">Categoria</th>
+              <th className="col-esq">Responsáveis</th>
+              <th>Prazo</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {eventos.map((e) => (
+              <tr key={e.id}>
+                <td className="col-esq">{e.titulo}</td>
+                <td className="col-esq">{e.categoria || '—'}</td>
+                <td className="col-esq">{e.responsaveis?.map((r) => r.nome).join(', ') || '—'}</td>
+                <td>{dataBr(e.data_prevista_fim.slice(0, 10))}{e.atrasado ? ' (atrasado)' : ''}</td>
+                <td>{STATUS_ROTULO[e.status] || e.status}</td>
+              </tr>
+            ))}
+            {eventos.length === 0 && <tr><td colSpan="5">Nenhum evento no período/filtro selecionado.</td></tr>}
+          </tbody>
+        </table>
+      </div>
 
       {modal && (
         <EventoCalendarioModal
