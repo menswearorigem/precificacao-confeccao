@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { X, Plus, Trash2, Paperclip, Download } from 'lucide-react';
 import { api } from '../api/client';
-import { Select, DateInput } from './ui';
+import { Select, DateInput, Checkbox } from './ui';
 import FotoProduto from './FotoProduto';
 import FileDropzone from './FileDropzone';
 import { dataBr } from '../lib/format';
@@ -17,6 +17,55 @@ const PRIORIDADE_OPCOES = [
   { valor: 'media', rotulo: 'Média' },
   { valor: 'alta', rotulo: 'Alta' },
 ];
+
+// Corte e Meta têm formulário próprio (campos bem específicos, com busca de
+// fornecedor/produto etc.) — qualquer outro modelo cai no motor genérico
+// abaixo, guiado só pela definição de campos do modelo (nome/tipo/opções).
+const NOMES_TEMPLATE_FIXOS = ['Previsão de chegada de corte', 'Meta'];
+
+function CampoGenerico({ campo, valor, onChange, disabled }) {
+  const label = campo.nome + (campo.obrigatorio ? ' *' : '');
+  if (campo.tipo === 'numero') {
+    return (
+      <div className="field">
+        <span className="field-label">{label}</span>
+        <input type="number" value={valor ?? ''} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
+      </div>
+    );
+  }
+  if (campo.tipo === 'data') {
+    return (
+      <div className="field">
+        <span className="field-label">{label}</span>
+        <DateInput value={valor || ''} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
+      </div>
+    );
+  }
+  if (campo.tipo === 'booleano') {
+    return (
+      <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Checkbox checked={Boolean(valor)} onChange={(e) => onChange(e.target.checked)} disabled={disabled} />
+        {label}
+      </label>
+    );
+  }
+  if (campo.tipo === 'select') {
+    return (
+      <div className="field">
+        <span className="field-label">{label}</span>
+        <Select value={valor || ''} onChange={(e) => onChange(e.target.value)} disabled={disabled}>
+          {(campo.opcoes || []).map((o) => <option key={o} value={o}>{o}</option>)}
+        </Select>
+      </div>
+    );
+  }
+  return (
+    <div className="field">
+      <span className="field-label">{label}</span>
+      <input value={valor || ''} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
+    </div>
+  );
+}
 
 function useDebounce(valor, ms) {
   const [debounced, setDebounced] = useState(valor);
@@ -255,6 +304,13 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
     if (!titulo.trim() || !dataPrevistaFim) {
       setErro('Preencha ao menos o título e a data prevista de fim.');
       return;
+    }
+    if (template && !NOMES_TEMPLATE_FIXOS.includes(nomeTemplate)) {
+      const faltando = template.campos.find((c) => c.obrigatorio && !campoExtra[c.nome] && campoExtra[c.nome] !== 0);
+      if (faltando) {
+        setErro(`Preencha o campo "${faltando.nome}".`);
+        return;
+      }
     }
     setSalvando(true);
     setErro('');
@@ -495,6 +551,23 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
           </div>
         )}
 
+        {template && !NOMES_TEMPLATE_FIXOS.includes(nomeTemplate) && template.campos.length > 0 && (
+          <div className="card" style={{ background: 'var(--surface-alt)', marginBottom: 12 }}>
+            <div className="card-head" style={{ marginBottom: 8 }}>Campos de {nomeTemplate}</div>
+            <div className="form-grid">
+              {template.campos.map((campo) => (
+                <CampoGenerico
+                  key={campo.nome}
+                  campo={campo}
+                  valor={campoExtra[campo.nome]}
+                  onChange={(v) => atualizarCampoExtra(campo.nome, v)}
+                  disabled={!podeEditar}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="field" style={{ marginBottom: 12 }}>
           <span className="field-label">Responsáveis</span>
           <SeletorMultiplo
@@ -546,6 +619,11 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginTop: 16 }}>
           <div style={{ display: 'flex', gap: 8 }}>
+            {eventoId && (
+              <a className="btn btn-ghost" href={`/api/calendario/eventos/${eventoId}/ics`} target="_blank" rel="noreferrer">
+                Exportar .ics
+              </a>
+            )}
             {eventoId && podeEditar && (
               <>
                 <button type="button" className="btn btn-ghost" onClick={duplicar}>Duplicar</button>

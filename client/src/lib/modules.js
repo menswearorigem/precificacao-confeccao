@@ -4,6 +4,7 @@ import {
   Warehouse, Barcode, Tags, Printer, Users, ClipboardList, ShoppingCart,
   Truck, BarChart3, ShieldCheck, Plug, TrendingUp, ReceiptText, Store, Plane,
   LineChart, SearchCheck, Layers, AlertTriangle, CalendarDays, UsersRound,
+  LayoutTemplate,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -115,6 +116,7 @@ export const MODULES = [
     color: 'var(--leather)',
     pages: [
       { to: '/calendario', label: 'Calendário', icon: CalendarDays },
+      { to: '/calendario/modelos', label: 'Modelos', icon: LayoutTemplate, adminOnly: true },
     ],
   },
 ];

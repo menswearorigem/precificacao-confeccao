@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Plus, AlertTriangle, Calendar, Columns3 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, AlertTriangle, Calendar, Columns3, Download } from 'lucide-react';
 import { api } from '../api/client';
 import { StatCard, Select } from '../components/ui';
 import EventoCalendarioModal from '../components/EventoCalendarioModal';
@@ -95,7 +95,7 @@ export default function CalendarioPage() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function carregar() {
+  function montarParamsFiltro() {
     const params = new URLSearchParams();
     if (view === 'mes') {
       params.set('data_inicio', isoDoDia(inicioGrade));
@@ -105,6 +105,11 @@ export default function CalendarioPage() {
     if (responsavelId) params.set('responsavel_id', responsavelId);
     if (view === 'mes' && status) params.set('status', status);
     if (busca) params.set('busca', busca);
+    return params;
+  }
+
+  function carregar() {
+    const params = montarParamsFiltro();
     api.get(`/calendario/eventos?${params.toString()}`).then(setEventos).catch((err) => setErro(err.message));
     api.get('/calendario/resumo').then(setResumo).catch(() => {});
   }
@@ -154,6 +159,9 @@ export default function CalendarioPage() {
               <Columns3 size={13} /> Kanban
             </button>
           </div>
+          <a className="btn btn-ghost" href={`/api/calendario/eventos.ics?${montarParamsFiltro().toString()}`} target="_blank" rel="noreferrer">
+            <Download size={14} /> Exportar .ics
+          </a>
           <button className="btn btn-primary" onClick={() => setModal({ dataPadrao: isoDoDia(hoje) })}>
             <Plus size={14} /> Novo evento
           </button>

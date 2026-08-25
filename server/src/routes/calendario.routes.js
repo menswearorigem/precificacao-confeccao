@@ -1,9 +1,11 @@
 const express = require('express');
 const multer = require('multer');
 const pool = require('../db/pool');
+const { requireModulo } = require('../middleware/auth');
 const {
   condicaoVisibilidade, condicaoEdicao, podeEditarEvento, calcularAtrasado, diasParaPrazo, registrarHistorico, diffCampos,
 } = require('../lib/calendarioEventos');
+const { montarCalendarioIcs } = require('../lib/icsBuilder');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
@@ -53,6 +55,60 @@ function montarEventoResposta(row, { responsaveis, produtoSnapshot, podeEditar }
   };
 }
 
+// Monta o WHERE/values compartilhado pela listagem e pela exportação .ics em
+// massa — os mesmos filtros (período, categoria, responsável, status, busca)
+// e a mesma regra de visibilidade, pra exportar exatamente o que a tela
+// está mostrando.
+async function buscarEventosFiltrados(req) {
+  const { data_inicio, data_fim, categoria, responsavel_id, status, busca } = req.query;
+  const isAdmin = req.user.role === 'admin';
+  const values = [];
+  const conditions = [];
+  let i = 1;
+
+  if (!isAdmin) {
+    const { sql, proximoIndex } = condicaoVisibilidade('e', i);
+    conditions.push(sql);
+    values.push(req.user.id);
+    i = proximoIndex;
+  }
+  if (data_inicio && data_fim) {
+    conditions.push(`COALESCE(e.data_inicio, e.data_prevista_fim) <= $${i} AND e.data_prevista_fim >= $${i + 1}`);
+    values.push(data_fim, data_inicio);
+    i += 2;
+  }
+  if (categoria) { conditions.push(`e.categoria = $${i}`); values.push(categoria); i += 1; }
+  if (status) { conditions.push(`e.status = $${i}`); values.push(status); i += 1; }
+  if (responsavel_id) {
+    conditions.push(`EXISTS (SELECT 1 FROM calendario_eventos_responsaveis r WHERE r.evento_id = e.id AND r.usuario_id = $${i})`);
+    values.push(responsavel_id);
+    i += 1;
+  }
+  if (busca) {
+    conditions.push(`(e.titulo ILIKE $${i} OR EXISTS (SELECT 1 FROM produtos p WHERE p.id = e.produto_id AND (p.referencia ILIKE $${i} OR p.descricao ILIKE $${i})))`);
+    values.push(`%${busca}%`);
+    i += 1;
+  }
+
+  // pode_editar calculado em SQL (não só "criado_por === userId" em JS) —
+  // senão a lista mostraria "sem permissão de editar" pra quem só recebeu
+  // edição via permissão direta ou por grupo, mesmo que o PUT aceitasse.
+  let podeEditarSelect = 'TRUE';
+  if (!isAdmin) {
+    const { sql, proximoIndex } = condicaoEdicao('e', i);
+    podeEditarSelect = sql;
+    values.push(req.user.id);
+    i = proximoIndex;
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const { rows } = await pool.query(
+    `SELECT e.*, ${podeEditarSelect} AS pode_editar FROM calendario_eventos e ${where} ORDER BY e.data_prevista_fim ASC`,
+    values
+  );
+  return rows;
+}
+
 // Listagem — filtros: período (data_inicio/data_fim, casando com QUALQUER
 // evento cujo intervalo [data_inicio, data_prevista_fim] toque o período
 // pedido — necessário pra visão de mês/semana mostrar eventos que começaram
@@ -60,53 +116,7 @@ function montarEventoResposta(row, { responsaveis, produtoSnapshot, podeEditar }
 // (título ou referência do produto vinculado).
 router.get('/eventos', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, categoria, responsavel_id, status, busca } = req.query;
-    const isAdmin = req.user.role === 'admin';
-    const values = [];
-    const conditions = [];
-    let i = 1;
-
-    if (!isAdmin) {
-      const { sql, proximoIndex } = condicaoVisibilidade('e', i);
-      conditions.push(sql);
-      values.push(req.user.id);
-      i = proximoIndex;
-    }
-    if (data_inicio && data_fim) {
-      conditions.push(`COALESCE(e.data_inicio, e.data_prevista_fim) <= $${i} AND e.data_prevista_fim >= $${i + 1}`);
-      values.push(data_fim, data_inicio);
-      i += 2;
-    }
-    if (categoria) { conditions.push(`e.categoria = $${i}`); values.push(categoria); i += 1; }
-    if (status) { conditions.push(`e.status = $${i}`); values.push(status); i += 1; }
-    if (responsavel_id) {
-      conditions.push(`EXISTS (SELECT 1 FROM calendario_eventos_responsaveis r WHERE r.evento_id = e.id AND r.usuario_id = $${i})`);
-      values.push(responsavel_id);
-      i += 1;
-    }
-    if (busca) {
-      conditions.push(`(e.titulo ILIKE $${i} OR EXISTS (SELECT 1 FROM produtos p WHERE p.id = e.produto_id AND (p.referencia ILIKE $${i} OR p.descricao ILIKE $${i})))`);
-      values.push(`%${busca}%`);
-      i += 1;
-    }
-
-    // pode_editar calculado em SQL (não só "criado_por === userId" em JS) —
-    // senão a lista mostraria "sem permissão de editar" pra quem só recebeu
-    // edição via permissão direta ou por grupo, mesmo que o PUT aceitasse.
-    let podeEditarSelect = 'TRUE';
-    if (!isAdmin) {
-      const { sql, proximoIndex } = condicaoEdicao('e', i);
-      podeEditarSelect = sql;
-      values.push(req.user.id);
-      i = proximoIndex;
-    }
-
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const { rows } = await pool.query(
-      `SELECT e.*, ${podeEditarSelect} AS pode_editar FROM calendario_eventos e ${where} ORDER BY e.data_prevista_fim ASC`,
-      values
-    );
-
+    const rows = await buscarEventosFiltrados(req);
     const ids = rows.map((r) => r.id);
     const [responsaveisPorEvento, produtosPorId] = await Promise.all([
       carregarResponsaveis(ids),
@@ -118,6 +128,19 @@ router.get('/eventos', async (req, res, next) => {
       produtoSnapshot: produtosPorId.get(row.produto_id),
       podeEditar: row.pode_editar,
     })));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Exportação .ics em massa — os mesmos filtros da listagem (inclusive
+// período, então a tela de mês exporta só o que está na grade visível).
+router.get('/eventos.ics', async (req, res, next) => {
+  try {
+    const rows = await buscarEventosFiltrados(req);
+    res.set('Content-Type', 'text/calendar; charset=utf-8');
+    res.set('Content-Disposition', 'attachment; filename="calendario-hbn-hub.ics"');
+    res.send(montarCalendarioIcs(rows));
   } catch (err) {
     next(err);
   }
@@ -209,11 +232,87 @@ router.get('/usuarios', async (req, res, next) => {
   }
 });
 
+// `incluirInativos=1` é só pra tela de administração dos modelos (precisa
+// ver e poder reativar um modelo desativado) — o modal de evento sempre usa
+// a chamada simples, que só lista o que pode ser escolhido pra um evento novo.
 router.get('/templates', async (req, res, next) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM calendario_templates WHERE ativo = TRUE ORDER BY nome');
+    const incluirInativos = req.query.incluirInativos === '1' && req.user.role === 'admin';
+    const { rows } = await pool.query(
+      incluirInativos
+        ? 'SELECT * FROM calendario_templates ORDER BY nome'
+        : 'SELECT * FROM calendario_templates WHERE ativo = TRUE ORDER BY nome'
+    );
     res.json(rows);
   } catch (err) {
+    next(err);
+  }
+});
+
+const TIPOS_CAMPO_VALIDOS = new Set(['texto', 'numero', 'data', 'booleano', 'select']);
+
+// Modelo customizável genérico (fora dos dois fixos "Corte"/"Meta", que têm
+// formulário próprio no front) — cada campo vira um input no motor genérico
+// do modal, guardado em campos_extra pelo `nome` do campo.
+function validarCampos(campos) {
+  if (!Array.isArray(campos)) return null;
+  const validados = [];
+  for (const c of campos) {
+    if (!c || typeof c.nome !== 'string' || !c.nome.trim()) return null;
+    const tipo = TIPOS_CAMPO_VALIDOS.has(c.tipo) ? c.tipo : 'texto';
+    const campo = { nome: c.nome.trim(), tipo, obrigatorio: Boolean(c.obrigatorio) };
+    if (tipo === 'select') {
+      campo.opcoes = Array.isArray(c.opcoes)
+        ? c.opcoes.filter((o) => typeof o === 'string' && o.trim()).map((o) => o.trim())
+        : [];
+    }
+    validados.push(campo);
+  }
+  return validados;
+}
+
+router.post('/templates', requireModulo('configuracoes'), async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    if (!body.nome || !body.nome.trim()) return res.status(400).json({ error: 'Dê um nome ao modelo.' });
+    const campos = validarCampos(body.campos || []);
+    if (campos === null) return res.status(400).json({ error: 'Campos inválidos.' });
+    const { rows } = await pool.query(
+      'INSERT INTO calendario_templates (nome, campos) VALUES ($1, $2) RETURNING *',
+      [body.nome.trim(), JSON.stringify(campos)]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Já existe um modelo com esse nome.' });
+    next(err);
+  }
+});
+
+router.put('/templates/:id', requireModulo('configuracoes'), async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const { rows: atuais } = await pool.query('SELECT * FROM calendario_templates WHERE id = $1', [req.params.id]);
+    if (atuais.length === 0) return res.status(404).json({ error: 'Modelo não encontrado.' });
+    const atual = atuais[0];
+
+    const nome = body.nome !== undefined ? body.nome.trim() : atual.nome;
+    if (!nome) return res.status(400).json({ error: 'Dê um nome ao modelo.' });
+
+    let campos = atual.campos;
+    if (body.campos !== undefined) {
+      const validados = validarCampos(body.campos);
+      if (validados === null) return res.status(400).json({ error: 'Campos inválidos.' });
+      campos = JSON.stringify(validados);
+    }
+    const ativo = body.ativo !== undefined ? Boolean(body.ativo) : atual.ativo;
+
+    const { rows } = await pool.query(
+      'UPDATE calendario_templates SET nome=$1, campos=$2, ativo=$3 WHERE id=$4 RETURNING *',
+      [nome, campos, ativo, req.params.id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Já existe um modelo com esse nome.' });
     next(err);
   }
 });
@@ -323,6 +422,26 @@ router.get('/eventos/:id', async (req, res, next) => {
       comentarios,
       historico,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/eventos/:id/ics', async (req, res, next) => {
+  try {
+    const isAdmin = req.user.role === 'admin';
+    const values = [req.params.id];
+    let condicao = '';
+    if (!isAdmin) {
+      const { sql, proximoIndex } = condicaoVisibilidade('e', 2);
+      condicao = `AND ${sql}`;
+      values.push(req.user.id);
+    }
+    const { rows } = await pool.query(`SELECT e.* FROM calendario_eventos e WHERE e.id = $1 ${condicao}`, values);
+    if (rows.length === 0) return res.status(404).json({ error: 'Evento não encontrado.' });
+    res.set('Content-Type', 'text/calendar; charset=utf-8');
+    res.set('Content-Disposition', `attachment; filename="evento-${rows[0].id}.ics"`);
+    res.send(montarCalendarioIcs(rows));
   } catch (err) {
     next(err);
   }
