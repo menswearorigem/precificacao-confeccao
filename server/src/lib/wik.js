@@ -11,6 +11,16 @@ const JANELA_MS = 1000;
 const LIMITE_POR_JANELA = 3;
 const chamadas = [];
 
+// Contador simples de chamadas feitas de verdade (não conta as esperas da
+// janela) — só pra dar visibilidade real de quantas chamadas um ciclo de
+// sincronização faz e quanto tempo isso consome contra o limite de 3/s (ver
+// pergunta (iii) da Tarefa 3: "quanto tempo leva um ciclo completo hoje?").
+// Zerado no início de cada ciclo por quem chama (ver sincronizarEstoqueAgora
+// em wikSync.js) e lido no fim pra logar.
+let totalChamadas = 0;
+function zerarContadorChamadas() { totalChamadas = 0; }
+function contadorChamadas() { return totalChamadas; }
+
 async function aguardarJanela() {
   const agora = Date.now();
   while (chamadas.length > 0 && agora - chamadas[0] > JANELA_MS) chamadas.shift();
@@ -20,6 +30,7 @@ async function aguardarJanela() {
     return aguardarJanela();
   }
   chamadas.push(Date.now());
+  totalChamadas += 1;
 }
 
 async function login(email, senha) {
@@ -202,4 +213,5 @@ async function listarOperacoes(tokenBox, opcoes) {
 module.exports = {
   login, criarTokenBox, listarCategorias, listarProdutos, listarSaldoEstoque, buscarProdutoPorReferencia,
   buscarInsumosFichaTecnica, buscarOperacoesFichaTecnica, buscarMateriaPrima, listarOperacoes,
+  zerarContadorChamadas, contadorChamadas,
 };

@@ -229,6 +229,11 @@ async function sincronizarEstoqueAgora() {
     [integracao.id]
   );
 
+  // Instrumentação pra responder de verdade "quanto tempo leva um ciclo
+  // hoje e quantas chamadas ele faz contra o limite de 3/s" (pergunta (iii)
+  // da Tarefa 3) em vez de estimar — some com os logs do Render.
+  wik.zerarContadorChamadas();
+  const inicio = Date.now();
   try {
     const resultado = await montarPreviewEstoque(integracao, porEmpId);
     const aplicado = await aplicarSincronizacaoEstoque(resultado);
@@ -237,6 +242,7 @@ async function sincronizarEstoqueAgora() {
                                    ultimo_erro = NULL, atualizado_em = now() WHERE id = $1`,
       [integracao.id]
     );
+    console.log(`[wik-sync] ciclo concluído em ${((Date.now() - inicio) / 1000).toFixed(1)}s, ${wik.contadorChamadas()} chamada(s) à API do Wik.`);
     return { ...aplicado, erros: resultado.erros.length };
   } catch (err) {
     await pool.query(
