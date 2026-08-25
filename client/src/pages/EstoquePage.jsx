@@ -6,6 +6,7 @@ import { Field, Select, Checkbox, Toggle } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import DataTable from '../components/DataTable';
 import IndicadoresEstoque from '../components/IndicadoresEstoque';
+import WikStatusBanner from '../components/WikStatusBanner';
 import { formatQtd } from '../lib/format';
 
 function EanEditavel({ variante, onFeito }) {
@@ -366,6 +367,8 @@ export default function EstoquePage() {
       </div>
 
       {erro && <div className="login-error" style={{ marginBottom: 12 }}>{erro}</div>}
+
+      <WikStatusBanner />
 
       <IndicadoresEstoque />
 

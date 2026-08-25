@@ -5,6 +5,7 @@ const { parseEstoqueImportFile, parseEanExternoCsv } = require('../lib/estoqueIm
 const { getCalcContext } = require('../lib/calcContext');
 const { registrarMovimento } = require('../lib/estoqueMovimento');
 const { resolverEan } = require('../lib/eanResolver');
+const { buscarIntegracao: buscarIntegracaoWik, sincronizarEstoqueSeNecessario, sincronizarReferenciasAgora } = require('../lib/wikSync');
 const produtosRoutes = require('./produtos.routes');
 
 // Ordem canônica de tamanhos (igual ao relatório do Wiki Sistemas); tamanhos
@@ -764,6 +765,45 @@ router.get('/indicadores', async (req, res, next) => {
     });
   } catch (err) {
     next(err);
+  }
+});
+
+// Status da sincronização de estoque com o Wik Sistemas — pra mostrar um
+// aviso visível na tela quando a última sincronização estiver velha demais
+// ou tiver dado erro (antes disso, um problema podia passar 7 dias sem
+// ninguém notar, porque nada avisava). Também dispara a sincronização
+// oportunista (cooldown de 5min, mesmo padrão do sincronizarSeNecessario dos
+// marketplaces) — assim, se o processo tiver dormido (plano gratuito do
+// Render) e perdido ciclos do laço de 15min, só abrir a tela de Estoque já
+// tenta de novo, sem precisar esperar o próximo ciclo automático.
+router.get('/wik-status', async (req, res, next) => {
+  try {
+    sincronizarEstoqueSeNecessario();
+    const integracao = await buscarIntegracaoWik();
+    if (!integracao) return res.json({ configurado: false });
+    res.json({
+      configurado: true,
+      ativo: integracao.ativo,
+      ultimaSincronizacao: integracao.ultima_sincronizacao,
+      ultimoErro: integracao.ultimo_erro,
+      previewStatus: integracao.preview_status,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Força a sincronização de só as referências pedidas agora, sem esperar o
+// ciclo automático (que cobre o catálogo inteiro) — útil pra conferir uma
+// referência específica na hora, sem impacto nas outras.
+router.post('/wik-sincronizar-referencias', async (req, res, next) => {
+  try {
+    const referencias = Array.isArray(req.body?.referencias) ? req.body.referencias : [];
+    if (referencias.length === 0) return res.status(400).json({ error: 'Informe ao menos uma referência.' });
+    const resultado = await sincronizarReferenciasAgora(referencias);
+    res.json(resultado);
+  } catch (err) {
+    res.status(422).json({ error: err.message });
   }
 });
 

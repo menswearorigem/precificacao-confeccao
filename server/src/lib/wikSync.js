@@ -32,22 +32,43 @@ async function buscarIntegracao() {
 // passou mesmo com o relógio daqui ainda achando que tinha tempo (a
 // resposta de login às vezes não traz `expiracao`, caindo no padrão de 4h
 // que pode ser bem mais otimista que a validade real).
+//
+// Margem de 5min (igual ao garantirTokenValido dos marketplaces, ver
+// marketplaceSync.js) — o valor antigo (60s) era curto demais pra dar tempo
+// de uma sincronização inteira (dezenas de segundos, 4 empresas paginadas)
+// terminar antes do token vencer de verdade. Login com retry (a API do Wik
+// já teve instabilidade transitória — ver comentário em wik.js) antes de
+// desistir e propagar o erro, que fica gravado em ultimo_erro e visível na
+// tela de Estoque.
 async function obterTokenValido(integracao, { forcar = false } = {}) {
-  const expirado = forcar || !integracao.token_expira_em || new Date(integracao.token_expira_em).getTime() - Date.now() < 60 * 1000;
+  const MARGEM_MS = 5 * 60 * 1000;
+  const expirado = forcar || !integracao.token_expira_em || new Date(integracao.token_expira_em).getTime() - Date.now() < MARGEM_MS;
   if (integracao.access_token && !expirado) return integracao.access_token;
 
-  const resultado = await wik.login(integracao.email, integracao.senha);
-  await pool.query(
-    'UPDATE integracoes_wik SET access_token = $1, token_expira_em = $2, atualizado_em = now() WHERE id = $3',
-    [resultado.token, resultado.expiraEm, integracao.id]
-  );
-  // Mantém o objeto em memória em sincronia — evita logar de novo à toa se
-  // essa mesma chamada rodar mais de uma vez dentro do mesmo processo (ex.:
-  // renovação forçada no meio de uma sincronização longa, seguida de outra
-  // chamada que também checa validade).
-  integracao.access_token = resultado.token;
-  integracao.token_expira_em = resultado.expiraEm;
-  return resultado.token;
+  const TENTATIVAS = 3;
+  let ultimoErro;
+  for (let tentativa = 1; tentativa <= TENTATIVAS; tentativa += 1) {
+    try {
+      const resultado = await wik.login(integracao.email, integracao.senha);
+      await pool.query(
+        'UPDATE integracoes_wik SET access_token = $1, token_expira_em = $2, ultimo_erro = NULL, atualizado_em = now() WHERE id = $3',
+        [resultado.token, resultado.expiraEm, integracao.id]
+      );
+      // Mantém o objeto em memória em sincronia — evita logar de novo à toa
+      // se essa mesma chamada rodar mais de uma vez dentro do mesmo processo
+      // (ex.: renovação forçada no meio de uma sincronização longa, seguida
+      // de outra chamada que também checa validade).
+      integracao.access_token = resultado.token;
+      integracao.token_expira_em = resultado.expiraEm;
+      return resultado.token;
+    } catch (err) {
+      ultimoErro = err;
+      if (tentativa < TENTATIVAS) await new Promise((resolve) => setTimeout(resolve, tentativa * 2000));
+    }
+  }
+  const erroFinal = new Error(`Não foi possível renovar o token do Wik depois de ${TENTATIVAS} tentativa(s): ${ultimoErro.message}`);
+  await pool.query('UPDATE integracoes_wik SET ultimo_erro = $1, atualizado_em = now() WHERE id = $2', [erroFinal.message, integracao.id]);
+  throw erroFinal;
 }
 
 // Agrupa as marcas cadastradas (listas tipo='marca') por Id de Empresa do
@@ -131,9 +152,14 @@ async function montarPreviewEstoque(integracao, porEmpId) {
   };
 }
 
+const MOTIVO_SINCRONIZACAO_PADRAO = 'Sincronização automática — Wik Sistemas';
+
 // Grava de fato as mudanças de um resultado de preview (criar/atualizar) —
 // usado tanto pela confirmação manual quanto pela sincronização automática.
-async function aplicarSincronizacaoEstoque({ criar, atualizar }) {
+// `motivo` é sobrescrevível (ex.: reconciliação manual pontual de uma
+// referência específica) pra deixar rastro claro em estoque_movimentos de
+// qual fluxo gerou aquele lançamento, sem nunca fazer UPDATE direto no saldo.
+async function aplicarSincronizacaoEstoque({ criar, atualizar }, motivo = MOTIVO_SINCRONIZACAO_PADRAO) {
   const client = await pool.connect();
   try {
     const { rows: produtosRows } = await client.query('SELECT id, referencia FROM produtos');
@@ -155,8 +181,8 @@ async function aplicarSincronizacaoEstoque({ criar, atualizar }) {
       if (rows.length > 0 && Number(item.quantidadeNova) !== 0) {
         await client.query(
           `INSERT INTO estoque_movimentos (variante_id, tipo, quantidade, quantidade_resultante, motivo)
-           VALUES ($1, 'importacao', $2, $2, 'Sincronização automática — Wik Sistemas')`,
-          [rows[0].id, item.quantidadeNova]
+           VALUES ($1, 'importacao', $2, $2, $3)`,
+          [rows[0].id, item.quantidadeNova, motivo]
         );
       }
       if (rows.length > 0) criados += 1;
@@ -166,7 +192,7 @@ async function aplicarSincronizacaoEstoque({ criar, atualizar }) {
     for (const item of atualizar || []) {
       const delta = Number(item.quantidadeNova) - Number(item.quantidadeAtual);
       if (delta !== 0) {
-        await registrarMovimento(client, item.varianteId, 'importacao', delta, 'Sincronização automática — Wik Sistemas');
+        await registrarMovimento(client, item.varianteId, 'importacao', delta, motivo);
       }
       atualizados += 1;
     }
@@ -221,6 +247,62 @@ async function sincronizarEstoqueAgora() {
   }
 }
 
+// Mesmo paliativo que já existe pros marketplaces (sincronizarSeNecessario
+// em marketplaceSync.js) — o setInterval de 15min (index.js) só roda
+// enquanto o processo está de pé, e no plano gratuito do Render o serviço
+// dorme depois de um tempo sem tráfego. Sem isso, se o processo ficar
+// dormindo além de um ciclo, a sincronização do Wik fica parada até alguém
+// notar (foi exatamente o que aconteceu: 7 dias sem sincronizar, sem nada
+// acordar o processo pra tentar de novo). Chamada a cada carregamento da
+// tela de Estoque; o cooldown evita disparar a cada requisição enquanto a
+// usuária navega.
+const COOLDOWN_MS = 5 * 60 * 1000;
+let ultimaChamadaOportunista = 0;
+
+function sincronizarEstoqueSeNecessario() {
+  const agora = Date.now();
+  if (agora - ultimaChamadaOportunista < COOLDOWN_MS) return;
+  ultimaChamadaOportunista = agora;
+  sincronizarEstoqueAgora().catch((err) => {
+    console.error('[wik-sync] falha na sincronização oportunista:', err.message);
+  });
+}
+
+// Busca o saldo completo do Wik (mesma chamada cara de sempre — a API não
+// filtra saldo_estoque_get por referência) e filtra só o que bate com as
+// referências pedidas, SEM aplicar nada — usado tanto pra montar a lista de
+// conferência ANTES/DEPOIS quanto, depois de confirmado, como primeiro passo
+// de sincronizarReferenciasAgora.
+async function previewReferencias(referencias) {
+  const alvo = new Set((referencias || []).map((r) => String(r).trim()).filter(Boolean));
+  if (alvo.size === 0) return { criar: [], atualizar: [], erros: [] };
+
+  const integracao = await buscarIntegracao();
+  if (!integracao || !integracao.ativo) throw new Error('Nenhuma credencial do Wik ativa.');
+
+  const porEmpId = await empIdsConfigurados();
+  if (porEmpId.size === 0) throw new Error('Nenhuma marca com Id de Empresa do Wik configurado (em Listas > Marcas).');
+
+  const preview = await montarPreviewEstoque(integracao, porEmpId);
+  return {
+    criar: preview.criar.filter((item) => alvo.has(item.referencia)),
+    atualizar: preview.atualizar.filter((item) => alvo.has(item.referencia)),
+    erros: preview.erros.filter((e) => alvo.has(e.dados?.referencia)),
+  };
+}
+
+// Sincroniza o saldo de só as referências pedidas, sem esperar o ciclo
+// automático inteiro (que cobre TODO o catálogo) — dá pra forçar uma
+// atualização pontual sem esperar, ou aplicar uma reconciliação manual já
+// conferida (ver previewReferencias, chamado antes disso pra montar a lista
+// ANTES/DEPOIS que o usuário aprova).
+async function sincronizarReferenciasAgora(referencias, motivo) {
+  const { criar, atualizar, erros } = await previewReferencias(referencias);
+  const referenciasEncontradas = [...new Set([...criar, ...atualizar].map((i) => i.referencia))];
+  const aplicado = await aplicarSincronizacaoEstoque({ criar, atualizar }, motivo);
+  return { ...aplicado, erros: erros.length, referenciasEncontradas, criar, atualizar };
+}
+
 module.exports = {
   buscarIntegracao,
   obterTokenValido,
@@ -228,4 +310,7 @@ module.exports = {
   montarPreviewEstoque,
   aplicarSincronizacaoEstoque,
   sincronizarEstoqueAgora,
+  sincronizarEstoqueSeNecessario,
+  previewReferencias,
+  sincronizarReferenciasAgora,
 };
