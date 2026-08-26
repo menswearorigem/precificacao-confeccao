@@ -1,6 +1,6 @@
 const pool = require('../db/pool');
 const wik = require('./wik');
-const { buscarIntegracao, obterTokenValido } = require('./wikSync');
+const { buscarIntegracao, obterTokenValido, criarOpcoesTokenComLimite, registrarTentativaWik, registrarFalhaWik, registrarSucessoWik } = require('./wikSync');
 
 // IMPORTANTE: materiaprima_get devolve um "MatVlrUnit" que parece ser o
 // preço CORRENTE do material, não o custo que está de fato congelado na
@@ -15,7 +15,7 @@ const { buscarIntegracao, obterTokenValido } = require('./wikSync');
 async function montarPreviewFichaCusto(integracao) {
   const token = await obterTokenValido(integracao);
   const tokenBox = wik.criarTokenBox(token);
-  const opcoesToken = { renovarToken: () => obterTokenValido(integracao, { forcar: true }) };
+  const opcoesToken = criarOpcoesTokenComLimite(integracao);
 
   // Candidatos: produtos sem ficha nenhuma ainda (importação inicial) OU
   // produtos cuja ficha já veio do Wik antes (ficha_custo_origem_wik = TRUE)
@@ -195,6 +195,7 @@ async function sincronizarFichaCustoAgora() {
     && Date.now() - new Date(integracao.ficha_custo_import_iniciado_em).getTime() < 30 * 60 * 1000;
   if (jobTravado) return { pulado: 'já tem uma importação de ficha de custo em andamento' };
 
+  await registrarTentativaWik(integracao.id);
   await pool.query(
     `UPDATE integracoes_wik SET ficha_custo_import_status = 'rodando', ficha_custo_import_resultado = NULL,
                                  ficha_custo_import_erro = NULL, ficha_custo_import_iniciado_em = now(), atualizado_em = now()
@@ -206,16 +207,17 @@ async function sincronizarFichaCustoAgora() {
     const preview = await montarPreviewFichaCusto(integracao);
     const aplicado = await aplicarImportacaoFichaCusto(preview.produtos);
     await pool.query(
-      `UPDATE integracoes_wik SET ficha_custo_import_status = 'idle', ficha_custo_import_resultado = NULL,
-                                   ultimo_erro = NULL, atualizado_em = now() WHERE id = $1`,
+      `UPDATE integracoes_wik SET ficha_custo_import_status = 'idle', ficha_custo_import_resultado = NULL, atualizado_em = now() WHERE id = $1`,
       [integracao.id]
     );
+    await registrarSucessoWik(integracao.id);
     return { ...aplicado, ...preview.resumo };
   } catch (err) {
     await pool.query(
-      `UPDATE integracoes_wik SET ficha_custo_import_status = 'erro', ficha_custo_import_erro = $1, ultimo_erro = $1, atualizado_em = now() WHERE id = $2`,
+      `UPDATE integracoes_wik SET ficha_custo_import_status = 'erro', ficha_custo_import_erro = $1, atualizado_em = now() WHERE id = $2`,
       [err.message, integracao.id]
     );
+    await registrarFalhaWik(integracao.id, err.message);
     throw err;
   }
 }

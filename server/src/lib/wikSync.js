@@ -78,8 +78,80 @@ async function obterTokenValido(integracao, { forcar = false } = {}) {
     }
   }
   const erroFinal = new Error(`Não foi possível renovar o token do Wik depois de ${TENTATIVAS} tentativa(s): ${ultimoErro.message}`);
-  await pool.query('UPDATE integracoes_wik SET ultimo_erro = $1, atualizado_em = now() WHERE id = $2', [erroFinal.message, integracao.id]);
+  await registrarFalhaWik(integracao.id, erroFinal.message);
   throw erroFinal;
+}
+
+// ---------- registro de tentativa/erro/sucesso — usado por TODAS as
+// chamadas ao Wik (sincronização de estoque, produtos, ficha de custo,
+// teste de conexão), não só saldo_estoque_get. ----------
+
+// Diferente de ultima_sincronizacao (só sucesso do ciclo completo de
+// estoque) — sem isso não dava pra saber se um clique/ciclo automático
+// chegou a rodar: o texto de ultimo_erro ficava idêntico ao de 8 dias
+// atrás, então "não mudou" não distinguia "não tentei" de "tentei e
+// continuo falhando do mesmo jeito".
+async function registrarTentativaWik(integracaoId) {
+  await pool.query('UPDATE integracoes_wik SET ultima_tentativa = now() WHERE id = $1', [integracaoId]);
+}
+
+function pareceRejeicaoDeToken(mensagem) {
+  const texto = String(mensagem || '').toLowerCase();
+  return texto.includes('token') && (texto.includes('inválid') || texto.includes('invalid') || texto.includes('expir'));
+}
+
+// Registra o erro de qualquer operação do Wik, distinguindo rejeição de
+// token (loga em wik_token_rejeicoes pra contagem de 24h e marca
+// ultima_rejeicao_token) de qualquer outro tipo de erro — é essa distinção
+// que corrige o selo "TOKEN VÁLIDO" aparecendo do lado de "última tentativa
+// falhou": antes o selo só olhava se existia uma string de token gravada,
+// nunca se a ÚLTIMA tentativa de usá-lo tinha dado certo.
+async function registrarFalhaWik(integracaoId, mensagem) {
+  const ehToken = pareceRejeicaoDeToken(mensagem);
+  if (ehToken) {
+    await pool.query('INSERT INTO wik_token_rejeicoes (integracao_id) VALUES ($1)', [integracaoId]);
+  }
+  await pool.query(
+    `UPDATE integracoes_wik SET ultimo_erro = $1, ultima_rejeicao_token = $2, atualizado_em = now() WHERE id = $3`,
+    [mensagem, ehToken ? new Date() : null, integracaoId]
+  );
+}
+
+async function registrarSucessoWik(integracaoId, { sincronizouEstoque = false } = {}) {
+  const campoExtra = sincronizouEstoque ? ', ultima_sincronizacao = now()' : '';
+  await pool.query(
+    `UPDATE integracoes_wik SET ultimo_erro = NULL, ultima_rejeicao_token = NULL${campoExtra}, atualizado_em = now() WHERE id = $1`,
+    [integracaoId]
+  );
+}
+
+// Limite de reautenticação: no máximo 1 login forçado a cada
+// BACKOFF_REAUTENTICACAO_MS, não importa quantas chamadas dentro do MESMO
+// ciclo rejeitem o token — diagnóstico em produção (24/08) apontou que o
+// Wik parece usar sessão única por usuário: logar de novo pela API pode
+// derrubar quem estiver usando o Wik pela web naquele momento. Sem esse
+// limite, uma sincronização paginada (várias empresas/páginas) tentaria
+// relogar a cada chamada que rejeitasse — um "cabo de guerra" de sessão.
+// Usado por TODAS as sincronizações do Wik (estoque, produtos, ficha de
+// custo, diagnóstico de ficha técnica), não só saldo_estoque_get.
+const BACKOFF_REAUTENTICACAO_MS = 10 * 60 * 1000;
+
+function criarOpcoesTokenComLimite(integracao) {
+  return {
+    aoDetectarTokenMorto: () => registrarFalhaWik(integracao.id, 'Token rejeitado pelo Wik ("token inválido ou expirado").'),
+    renovarToken: async () => {
+      const { rows } = await pool.query('SELECT ultima_reautenticacao_forcada FROM integracoes_wik WHERE id = $1', [integracao.id]);
+      const ultima = rows[0]?.ultima_reautenticacao_forcada;
+      if (ultima && Date.now() - new Date(ultima).getTime() < BACKOFF_REAUTENTICACAO_MS) {
+        throw new Error(
+          `Token do Wik rejeitado, mas já tentei reautenticar há menos de ${Math.round(BACKOFF_REAUTENTICACAO_MS / 60000)} min — `
+          + 'não insisto de novo agora pra não brigar com quem estiver usando o Wik pela web (sessão única por usuário). Tento de novo mais tarde.'
+        );
+      }
+      await pool.query('UPDATE integracoes_wik SET ultima_reautenticacao_forcada = now() WHERE id = $1', [integracao.id]);
+      return obterTokenValido(integracao, { forcar: true });
+    },
+  };
 }
 
 // Agrupa as marcas cadastradas (listas tipo='marca') por Id de Empresa do
@@ -103,7 +175,7 @@ async function empIdsConfigurados() {
 async function montarPreviewEstoque(integracao, porEmpId) {
   const token = await obterTokenValido(integracao);
   const tokenBox = wik.criarTokenBox(token);
-  const opcoesToken = { renovarToken: () => obterTokenValido(integracao, { forcar: true }) };
+  const opcoesToken = criarOpcoesTokenComLimite(integracao);
 
   const linhasBrutas = [];
   for (const empId of porEmpId.keys()) {
@@ -234,6 +306,7 @@ async function sincronizarEstoqueAgora() {
   const porEmpId = await empIdsConfigurados();
   if (porEmpId.size === 0) return { pulado: 'nenhuma marca com Id de Empresa configurado' };
 
+  await registrarTentativaWik(integracao.id);
   await pool.query(
     `UPDATE integracoes_wik SET preview_status = 'rodando', preview_resultado = NULL, preview_erro = NULL,
                                  preview_iniciado_em = now(), atualizado_em = now() WHERE id = $1`,
@@ -249,17 +322,18 @@ async function sincronizarEstoqueAgora() {
     const resultado = await montarPreviewEstoque(integracao, porEmpId);
     const aplicado = await aplicarSincronizacaoEstoque(resultado);
     await pool.query(
-      `UPDATE integracoes_wik SET preview_status = 'idle', preview_resultado = NULL, ultima_sincronizacao = now(),
-                                   ultimo_erro = NULL, atualizado_em = now() WHERE id = $1`,
+      `UPDATE integracoes_wik SET preview_status = 'idle', preview_resultado = NULL, atualizado_em = now() WHERE id = $1`,
       [integracao.id]
     );
+    await registrarSucessoWik(integracao.id, { sincronizouEstoque: true });
     console.log(`[wik-sync] ciclo concluído em ${((Date.now() - inicio) / 1000).toFixed(1)}s, ${wik.contadorChamadas()} chamada(s) à API do Wik.`);
     return { ...aplicado, erros: resultado.erros.length };
   } catch (err) {
     await pool.query(
-      `UPDATE integracoes_wik SET preview_status = 'erro', preview_erro = $1, ultimo_erro = $1, atualizado_em = now() WHERE id = $2`,
+      `UPDATE integracoes_wik SET preview_status = 'erro', preview_erro = $1, atualizado_em = now() WHERE id = $2`,
       [err.message, integracao.id]
     );
+    await registrarFalhaWik(integracao.id, err.message);
     throw err;
   }
 }
@@ -330,4 +404,8 @@ module.exports = {
   sincronizarEstoqueSeNecessario,
   previewReferencias,
   sincronizarReferenciasAgora,
+  registrarTentativaWik,
+  registrarFalhaWik,
+  registrarSucessoWik,
+  criarOpcoesTokenComLimite,
 };

@@ -1,6 +1,6 @@
 const pool = require('../db/pool');
 const wik = require('./wik');
-const { buscarIntegracao, obterTokenValido } = require('./wikSync');
+const { buscarIntegracao, obterTokenValido, criarOpcoesTokenComLimite, registrarTentativaWik, registrarFalhaWik, registrarSucessoWik } = require('./wikSync');
 const { resolverEan } = require('./eanResolver');
 
 // Os 4 Ids de Empresa conhecidos (confirmados com a usuária): 192 (Hebron
@@ -40,7 +40,7 @@ function normalizar(valor) {
 async function montarPreviewProdutos(integracao, empIds = EMP_IDS_PADRAO) {
   const token = await obterTokenValido(integracao);
   const tokenBox = wik.criarTokenBox(token);
-  const opcoesToken = { renovarToken: () => obterTokenValido(integracao, { forcar: true }) };
+  const opcoesToken = criarOpcoesTokenComLimite(integracao);
 
   const estoqueBruto = [];
   for (const empId of empIds) {
@@ -201,6 +201,7 @@ async function sincronizarProdutosAgora() {
     && Date.now() - new Date(integracao.produtos_import_iniciado_em).getTime() < 30 * 60 * 1000;
   if (jobTravado) return { pulado: 'já tem uma importação de produtos em andamento' };
 
+  await registrarTentativaWik(integracao.id);
   await pool.query(
     `UPDATE integracoes_wik SET produtos_import_status = 'rodando', produtos_import_resultado = NULL,
                                  produtos_import_erro = NULL, produtos_import_iniciado_em = now(), atualizado_em = now()
@@ -212,16 +213,17 @@ async function sincronizarProdutosAgora() {
     const preview = await montarPreviewProdutos(integracao);
     const aplicado = await aplicarImportacaoProdutos(preview.criar);
     await pool.query(
-      `UPDATE integracoes_wik SET produtos_import_status = 'idle', produtos_import_resultado = NULL,
-                                   ultimo_erro = NULL, atualizado_em = now() WHERE id = $1`,
+      `UPDATE integracoes_wik SET produtos_import_status = 'idle', produtos_import_resultado = NULL, atualizado_em = now() WHERE id = $1`,
       [integracao.id]
     );
+    await registrarSucessoWik(integracao.id);
     return { ...aplicado, ...preview.resumo };
   } catch (err) {
     await pool.query(
-      `UPDATE integracoes_wik SET produtos_import_status = 'erro', produtos_import_erro = $1, ultimo_erro = $1, atualizado_em = now() WHERE id = $2`,
+      `UPDATE integracoes_wik SET produtos_import_status = 'erro', produtos_import_erro = $1, atualizado_em = now() WHERE id = $2`,
       [err.message, integracao.id]
     );
+    await registrarFalhaWik(integracao.id, err.message);
     throw err;
   }
 }

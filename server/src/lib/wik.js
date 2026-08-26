@@ -68,6 +68,19 @@ async function chamarApiComBase(base, path, token, params) {
   return { res, data };
 }
 
+// Detecta "token morto" de forma mais ampla que só `data.type === 'Token'`
+// (o exemplo documentado pelo Wik) — o texto real de rejeição visto em
+// produção foi "token inválido ou expirado" num 403 que nem sempre traz
+// esse `type` exato. Casa por palavra-chave na mensagem/erros pra não
+// depender de adivinhar o formato certo de um campo que a doc já mostrou
+// ser inconsistente (ver comentário de chamarApi mais abaixo).
+function pareceTokenMorto(res, data) {
+  if (res.status !== 401 && res.status !== 403) return false;
+  if (data?.type === 'Token') return true;
+  const texto = `${data?.message || ''} ${JSON.stringify(data?.errors || {})}`.toLowerCase();
+  return texto.includes('token') && (texto.includes('inválid') || texto.includes('invalid') || texto.includes('expir'));
+}
+
 // "tokenBox" é um objeto { atual: token } em vez de uma string crua — assim,
 // quando o token precisa ser renovado no meio de uma sincronização longa
 // (ver comentário abaixo), a renovação fica visível pra TODAS as chamadas
@@ -96,12 +109,18 @@ function criarTokenBox(token) {
 // quando a resposta de login não traz uma data de expiração explícita —
 // numa sincronização longa (catálogo inteiro, ficha de custo de centenas de
 // produtos, tudo limitado a 3 req/s) o token guardado no banco ainda parece
-// válido pelo relógio, mas o Wik já derrubou a sessão do lado deles. Se
-// `opcoes.renovarToken` for passado, uma resposta 403 do tipo "Token" força
-// um login novo e repete a MESMA chamada uma vez antes de desistir, em vez
-// de derrubar a sincronização inteira no meio do caminho.
+// válido pelo relógio, mas o Wik já derrubou a sessão do lado deles (por
+// exemplo, sessão única por usuário — alguém logou pela web com a mesma
+// credencial). Se `opcoes.renovarToken` for passado, uma resposta de token
+// morto (ver pareceTokenMorto acima) força um login novo e repete a MESMA
+// chamada uma vez antes de desistir, em vez de derrubar a sincronização
+// inteira no meio do caminho. `opcoes.aoDetectarTokenMorto` (opcional) é
+// chamado toda vez que a rejeição é detectada, MESMO que renovarToken não
+// esteja disponível ou opte por não reautenticar (ver limite/backoff em
+// wikSync.js) — é o gancho que grava o evento pra contagem de 24h e pra
+// distinguir "token rejeitado" de qualquer outro tipo de erro na tela.
 async function chamarApi(path, tokenBox, params = {}, opcoes = {}) {
-  const { renovarToken } = opcoes;
+  const { renovarToken, aoDetectarTokenMorto } = opcoes;
   const TENTATIVAS_5XX = 3;
   let jaTentouRenovarToken = false;
   let ultimoErro;
@@ -110,10 +129,13 @@ async function chamarApi(path, tokenBox, params = {}, opcoes = {}) {
     if (res.status === 404) {
       ({ res, data } = await chamarApiComBase('apiwiki', path, tokenBox.atual, params));
     }
-    if (res.status === 403 && data.type === 'Token' && renovarToken && !jaTentouRenovarToken) {
+    if (pareceTokenMorto(res, data) && !jaTentouRenovarToken) {
       jaTentouRenovarToken = true;
-      tokenBox.atual = await renovarToken();
-      continue;
+      if (aoDetectarTokenMorto) await aoDetectarTokenMorto();
+      if (renovarToken) {
+        tokenBox.atual = await renovarToken();
+        continue;
+      }
     }
     if (res.status >= 500 && tentativa < TENTATIVAS_5XX) {
       ultimoErro = data;

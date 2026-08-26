@@ -3,13 +3,28 @@ const pool = require('../db/pool');
 const wik = require('../lib/wik');
 const {
   buscarIntegracao, obterTokenValido, empIdsConfigurados, montarPreviewEstoque, aplicarSincronizacaoEstoque, sincronizarEstoqueAgora,
+  criarOpcoesTokenComLimite, registrarTentativaWik, registrarFalhaWik, registrarSucessoWik,
 } = require('../lib/wikSync');
 const { montarPreviewProdutos, aplicarImportacaoProdutos, sincronizarProdutosAgora } = require('../lib/wikProdutosImport');
 const { montarPreviewFichaCusto, aplicarImportacaoFichaCusto, sincronizarFichaCustoAgora } = require('../lib/wikFichaCustoImport');
 
 const router = express.Router();
 
-function paraFora(row) {
+// "conectado" (existe uma string de token gravada) NÃO significa que ele
+// ainda funciona — o Wik derruba a sessão da API quando alguém loga pela
+// web com a mesma credencial, e o relógio local (token_expira_em) não
+// enxerga isso. statusToken reflete o resultado da ÚLTIMA tentativa de
+// verdade: 'nao_testado' (nunca tentou), 'rejeitado' (ultimo_erro atual é
+// especificamente uma rejeição de token pelo Wik — ver
+// registrarFalhaWik/ultima_rejeicao_token em wikSync.js), 'erro_outro'
+// (falhou por outro motivo — rede, marca não configurada etc.) ou 'valido'.
+function calcularStatusToken(row) {
+  if (!row.ultima_tentativa) return 'nao_testado';
+  if (row.ultimo_erro) return row.ultima_rejeicao_token ? 'rejeitado' : 'erro_outro';
+  return 'valido';
+}
+
+function paraFora(row, rejeicoes24h = 0) {
   if (!row) return null;
   return {
     id: row.id,
@@ -17,16 +32,30 @@ function paraFora(row) {
     conectado: Boolean(row.access_token),
     ativo: row.ativo,
     ultimaSincronizacao: row.ultima_sincronizacao,
+    ultimaTentativa: row.ultima_tentativa,
     ultimoErro: row.ultimo_erro,
+    statusToken: calcularStatusToken(row),
+    rejeicoesToken24h: rejeicoes24h,
     previewStatus: row.preview_status,
     produtosImportStatus: row.produtos_import_status,
     fichaCustoImportStatus: row.ficha_custo_import_status,
   };
 }
 
+async function contarRejeicoesToken24h(integracaoId) {
+  if (!integracaoId) return 0;
+  const { rows } = await pool.query(
+    `SELECT COUNT(*)::int AS total FROM wik_token_rejeicoes WHERE integracao_id = $1 AND criado_em > now() - interval '24 hours'`,
+    [integracaoId]
+  );
+  return rows[0]?.total || 0;
+}
+
 router.get('/', async (req, res, next) => {
   try {
-    res.json(paraFora(await buscarIntegracao()));
+    const integracao = await buscarIntegracao();
+    const rejeicoes24h = await contarRejeicoesToken24h(integracao?.id);
+    res.json(paraFora(integracao, rejeicoes24h));
   } catch (err) {
     next(err);
   }
@@ -70,15 +99,17 @@ router.post('/testar', async (req, res, next) => {
   try {
     const integracao = await buscarIntegracao();
     if (!integracao) return res.status(400).json({ error: 'Cadastre a credencial primeiro.' });
+    await registrarTentativaWik(integracao.id);
     const resultado = await wik.login(integracao.email, integracao.senha);
     await pool.query(
-      'UPDATE integracoes_wik SET access_token = $1, token_expira_em = $2, ultimo_erro = NULL, atualizado_em = now() WHERE id = $3',
+      'UPDATE integracoes_wik SET access_token = $1, token_expira_em = $2, atualizado_em = now() WHERE id = $3',
       [resultado.token, resultado.expiraEm, integracao.id]
     );
+    await registrarSucessoWik(integracao.id);
     res.json({ ok: true, nome: resultado.nome, email: resultado.email, expiraEm: resultado.expiraEm });
   } catch (err) {
     const integracao = await buscarIntegracao();
-    if (integracao) await pool.query('UPDATE integracoes_wik SET ultimo_erro = $1, atualizado_em = now() WHERE id = $2', [err.message, integracao.id]);
+    if (integracao) await registrarFalhaWik(integracao.id, err.message);
     res.status(422).json({ error: err.message });
   }
 });
@@ -105,6 +136,7 @@ router.post('/estoque/preview', async (req, res, next) => {
       return res.status(400).json({ error: 'Nenhuma marca tem Id de Empresa do Wik configurado (em Listas > Marcas).' });
     }
 
+    await registrarTentativaWik(integracao.id);
     await pool.query(
       `UPDATE integracoes_wik SET preview_status = 'rodando', preview_resultado = NULL, preview_erro = NULL,
                                    preview_iniciado_em = now(), atualizado_em = now() WHERE id = $1`,
@@ -113,14 +145,20 @@ router.post('/estoque/preview', async (req, res, next) => {
     res.json({ status: 'rodando' });
 
     montarPreviewEstoque(integracao, porEmpId)
-      .then((resultado) => pool.query(
-        `UPDATE integracoes_wik SET preview_status = 'concluido', preview_resultado = $1, ultimo_erro = NULL, atualizado_em = now() WHERE id = $2`,
-        [JSON.stringify(resultado), integracao.id]
-      ))
-      .catch((err) => pool.query(
-        `UPDATE integracoes_wik SET preview_status = 'erro', preview_erro = $1, ultimo_erro = $1, atualizado_em = now() WHERE id = $2`,
-        [err.message, integracao.id]
-      ));
+      .then(async (resultado) => {
+        await pool.query(
+          `UPDATE integracoes_wik SET preview_status = 'concluido', preview_resultado = $1, atualizado_em = now() WHERE id = $2`,
+          [JSON.stringify(resultado), integracao.id]
+        );
+        await registrarSucessoWik(integracao.id);
+      })
+      .catch(async (err) => {
+        await pool.query(
+          `UPDATE integracoes_wik SET preview_status = 'erro', preview_erro = $1, atualizado_em = now() WHERE id = $2`,
+          [err.message, integracao.id]
+        );
+        await registrarFalhaWik(integracao.id, err.message);
+      });
   } catch (err) {
     next(err);
   }
@@ -150,10 +188,10 @@ router.post('/estoque/confirmar', async (req, res, next) => {
     const integracao = await buscarIntegracao();
     if (integracao) {
       await pool.query(
-        `UPDATE integracoes_wik SET ultima_sincronizacao = now(), ultimo_erro = NULL,
-                                     preview_status = 'idle', preview_resultado = NULL WHERE id = $1`,
+        `UPDATE integracoes_wik SET preview_status = 'idle', preview_resultado = NULL WHERE id = $1`,
         [integracao.id]
       );
+      await registrarSucessoWik(integracao.id, { sincronizouEstoque: true });
     }
 
     res.json(resultado);
@@ -189,6 +227,7 @@ router.post('/produtos/preview', async (req, res, next) => {
       && Date.now() - new Date(integracao.produtos_import_iniciado_em).getTime() < 30 * 60 * 1000;
     if (jobTravado) return res.json({ status: 'rodando' });
 
+    await registrarTentativaWik(integracao.id);
     await pool.query(
       `UPDATE integracoes_wik SET produtos_import_status = 'rodando', produtos_import_resultado = NULL,
                                    produtos_import_erro = NULL, produtos_import_iniciado_em = now(), atualizado_em = now()
@@ -198,15 +237,21 @@ router.post('/produtos/preview', async (req, res, next) => {
     res.json({ status: 'rodando' });
 
     montarPreviewProdutos(integracao)
-      .then((resultado) => pool.query(
-        `UPDATE integracoes_wik SET produtos_import_status = 'concluido', produtos_import_resultado = $1,
-                                     atualizado_em = now() WHERE id = $2`,
-        [JSON.stringify(resultado), integracao.id]
-      ))
-      .catch((err) => pool.query(
-        `UPDATE integracoes_wik SET produtos_import_status = 'erro', produtos_import_erro = $1, atualizado_em = now() WHERE id = $2`,
-        [err.message, integracao.id]
-      ));
+      .then(async (resultado) => {
+        await pool.query(
+          `UPDATE integracoes_wik SET produtos_import_status = 'concluido', produtos_import_resultado = $1,
+                                       atualizado_em = now() WHERE id = $2`,
+          [JSON.stringify(resultado), integracao.id]
+        );
+        await registrarSucessoWik(integracao.id);
+      })
+      .catch(async (err) => {
+        await pool.query(
+          `UPDATE integracoes_wik SET produtos_import_status = 'erro', produtos_import_erro = $1, atualizado_em = now() WHERE id = $2`,
+          [err.message, integracao.id]
+        );
+        await registrarFalhaWik(integracao.id, err.message);
+      });
   } catch (err) {
     next(err);
   }
@@ -277,7 +322,7 @@ router.post('/ficha-custo/diagnosticar', async (req, res, next) => {
 
     const token = await obterTokenValido(integracao);
     const tokenBox = wik.criarTokenBox(token);
-    const opcoesToken = { renovarToken: () => obterTokenValido(integracao, { forcar: true }) };
+    const opcoesToken = criarOpcoesTokenComLimite(integracao);
 
     let wikProdId = produto.wik_prod_id;
     let produtoWik = null;
@@ -338,6 +383,7 @@ router.post('/ficha-custo/preview', async (req, res, next) => {
       && Date.now() - new Date(integracao.ficha_custo_import_iniciado_em).getTime() < 30 * 60 * 1000;
     if (jobTravado) return res.json({ status: 'rodando' });
 
+    await registrarTentativaWik(integracao.id);
     await pool.query(
       `UPDATE integracoes_wik SET ficha_custo_import_status = 'rodando', ficha_custo_import_resultado = NULL,
                                    ficha_custo_import_erro = NULL, ficha_custo_import_iniciado_em = now(), atualizado_em = now()
@@ -347,15 +393,21 @@ router.post('/ficha-custo/preview', async (req, res, next) => {
     res.json({ status: 'rodando' });
 
     montarPreviewFichaCusto(integracao)
-      .then((resultado) => pool.query(
-        `UPDATE integracoes_wik SET ficha_custo_import_status = 'concluido', ficha_custo_import_resultado = $1,
-                                     atualizado_em = now() WHERE id = $2`,
-        [JSON.stringify(resultado), integracao.id]
-      ))
-      .catch((err) => pool.query(
-        `UPDATE integracoes_wik SET ficha_custo_import_status = 'erro', ficha_custo_import_erro = $1, atualizado_em = now() WHERE id = $2`,
-        [err.message, integracao.id]
-      ));
+      .then(async (resultado) => {
+        await pool.query(
+          `UPDATE integracoes_wik SET ficha_custo_import_status = 'concluido', ficha_custo_import_resultado = $1,
+                                       atualizado_em = now() WHERE id = $2`,
+          [JSON.stringify(resultado), integracao.id]
+        );
+        await registrarSucessoWik(integracao.id);
+      })
+      .catch(async (err) => {
+        await pool.query(
+          `UPDATE integracoes_wik SET ficha_custo_import_status = 'erro', ficha_custo_import_erro = $1, atualizado_em = now() WHERE id = $2`,
+          [err.message, integracao.id]
+        );
+        await registrarFalhaWik(integracao.id, err.message);
+      });
   } catch (err) {
     next(err);
   }

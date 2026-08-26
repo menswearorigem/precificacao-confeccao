@@ -186,13 +186,29 @@ export default function WikIntegracaoCard() {
       </div>
 
       {integracao && (
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
-          {integracao.conectado ? (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+          {integracao.statusToken === 'valido' && (
             <span className="stamp sm tone-saudavel"><CheckCircle2 size={12} style={{ verticalAlign: -2, marginRight: 4 }} />Token válido</span>
-          ) : (
+          )}
+          {integracao.statusToken === 'rejeitado' && (
+            <span className="stamp sm tone-prejuizo"><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} />Token rejeitado pelo Wik</span>
+          )}
+          {integracao.statusToken === 'erro_outro' && (
+            <span className="stamp sm tone-atencao"><AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} />Última tentativa falhou</span>
+          )}
+          {integracao.statusToken === 'nao_testado' && (
             <span className="stamp sm tone-neutro">Ainda não testado</span>
           )}
           <span className="page-sub" style={{ margin: 0 }}>Última sincronização: {hoje(integracao.ultimaSincronizacao)}</span>
+          <span className="page-sub" style={{ margin: 0 }}>Última tentativa: {hoje(integracao.ultimaTentativa)}</span>
+        </div>
+      )}
+
+      {integracao?.statusToken === 'rejeitado' && integracao.rejeicoesToken24h >= 3 && (
+        <div className="login-error" style={{ marginBottom: 12 }}>
+          O Wik rejeitou o token {integracao.rejeicoesToken24h}x nas últimas 24h — isso costuma acontecer quando
+          alguém loga na tela do Wik com a MESMA credencial usada aqui (o Wik parece derrubar a sessão da API
+          quando isso acontece). Considere um usuário exclusivo de API no Wik, usado só por esta integração.
         </div>
       )}
 
