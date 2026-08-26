@@ -48,7 +48,13 @@ async function login(email, senha) {
   if (!retorno.token) throw new Error('Login no Wik não retornou token.');
   return {
     token: retorno.token,
-    expiraEm: retorno.expiracao ? new Date(retorno.expiracao) : new Date(Date.now() + 4 * 60 * 60 * 1000),
+    // Confirmado em produção (26/08): um token emitido às 09:41 veio com
+    // "válido até 26/08/2026, 10:41:15" — 1h de duração, não as 4h que a
+    // gente assumia antes. Usa 1h de fallback só pra quando a resposta de
+    // login não traz `expiracao` (já aconteceu) — 4h de fallback deixava a
+    // margem de renovação (ver MARGEM_MS em wikSync.js) confiante demais
+    // num prazo que na prática pode já ter vencido há 3h.
+    expiraEm: retorno.expiracao ? new Date(retorno.expiracao) : new Date(Date.now() + 60 * 60 * 1000),
     nome: retorno.nome,
     email: retorno.email,
   };
@@ -105,36 +111,77 @@ function criarTokenBox(token) {
 // vezes com espera crescente antes de desistir, em vez de já marcar o
 // produto como erro definitivo.
 //
-// O Wik expira o token bem antes das 4h que a gente assume como padrão
-// quando a resposta de login não traz uma data de expiração explícita —
-// numa sincronização longa (catálogo inteiro, ficha de custo de centenas de
-// produtos, tudo limitado a 3 req/s) o token guardado no banco ainda parece
-// válido pelo relógio, mas o Wik já derrubou a sessão do lado deles (por
-// exemplo, sessão única por usuário — alguém logou pela web com a mesma
-// credencial). Se `opcoes.renovarToken` for passado, uma resposta de token
-// morto (ver pareceTokenMorto acima) força um login novo e repete a MESMA
-// chamada uma vez antes de desistir, em vez de derrubar a sincronização
-// inteira no meio do caminho. `opcoes.aoDetectarTokenMorto` (opcional) é
-// chamado toda vez que a rejeição é detectada, MESMO que renovarToken não
-// esteja disponível ou opte por não reautenticar (ver limite/backoff em
-// wikSync.js) — é o gancho que grava o evento pra contagem de 24h e pra
-// distinguir "token rejeitado" de qualquer outro tipo de erro na tela.
+// O Wik expira o token em 1h (confirmado — ver comentário em login() acima),
+// e numa sincronização longa (catálogo inteiro, ficha de custo de centenas
+// de produtos, tudo limitado a 3 req/s) o token guardado no banco pode ainda
+// parecer válido pelo relógio local mas já ter sido rejeitado do lado deles.
+// A causa exata dessa rejeição é HIPÓTESE, não fato confirmado: pode ser
+// sessão única por usuário (alguém logou pela web com a mesma credencial)
+// OU falta de permissão de API pra este endpoint específico — não temos
+// como distinguir as duas só pela resposta 403 (ver `causaWikToken` abaixo
+// e a nota de hipótese em wikSync.js/INTEGRACAO-WIK.md). Se
+// `opcoes.renovarToken` for passado, uma resposta de token morto (ver
+// pareceTokenMorto acima) força um login novo e repete a MESMA chamada uma
+// vez antes de desistir, em vez de derrubar a sincronização inteira no meio
+// do caminho. `opcoes.aoDetectarTokenMorto` (opcional) é chamado toda vez
+// que a rejeição é detectada, MESMO que renovarToken não esteja disponível
+// ou opte por não reautenticar (ver limite/backoff em wikSync.js) — é o
+// gancho que grava o evento pra contagem de 24h e pra distinguir "token
+// rejeitado" de qualquer outro tipo de erro na tela.
+//
+// Todo erro que se origina de uma rejeição de token detectada aqui (não
+// importa se depois a reautenticação falhou, foi bloqueada pelo limite de
+// 10min, ou até deu certo mas a MESMA chamada foi rejeitada de novo com o
+// token novo) sai marcado com `erro.causaWikToken = true` — é esse marcador,
+// e não o texto da última mensagem, que registrarFalhaWik (wikSync.js) usa
+// pra classificar a causa raiz corretamente mesmo quando a mensagem final
+// que sobe é a do limite de reautenticação, não a do 403 original.
 async function chamarApi(path, tokenBox, params = {}, opcoes = {}) {
   const { renovarToken, aoDetectarTokenMorto } = opcoes;
   const TENTATIVAS_5XX = 3;
   let jaTentouRenovarToken = false;
+  let tokenMortoDetectado = false;
+  let renovacaoTokenFuncionou = false;
   let ultimoErro;
   for (let tentativa = 1; tentativa <= TENTATIVAS_5XX; tentativa += 1) {
     let { res, data } = await chamarApiComBase('wiki_v2', path, tokenBox.atual, params);
     if (res.status === 404) {
       ({ res, data } = await chamarApiComBase('apiwiki', path, tokenBox.atual, params));
     }
-    if (pareceTokenMorto(res, data) && !jaTentouRenovarToken) {
-      jaTentouRenovarToken = true;
-      if (aoDetectarTokenMorto) await aoDetectarTokenMorto();
-      if (renovarToken) {
-        tokenBox.atual = await renovarToken();
-        continue;
+    if (pareceTokenMorto(res, data)) {
+      tokenMortoDetectado = true;
+      if (!jaTentouRenovarToken) {
+        jaTentouRenovarToken = true;
+        if (aoDetectarTokenMorto) await aoDetectarTokenMorto();
+        if (renovarToken) {
+          try {
+            tokenBox.atual = await renovarToken();
+            renovacaoTokenFuncionou = true;
+          } catch (erroRenovacao) {
+            // Cobre tanto "bloqueado pelo limite de 1 relogin/10min" quanto
+            // "tentou logar de novo e o login em si falhou" — os dois casos
+            // em que a reautenticação NÃO resolveu, então a causa raiz
+            // continua sendo a rejeição de token detectada acima.
+            if (erroRenovacao instanceof Error) erroRenovacao.causaWikToken = true;
+            throw erroRenovacao;
+          }
+          continue;
+        }
+      } else if (renovacaoTokenFuncionou) {
+        // Reautenticou com token NOVO e a MESMA chamada foi rejeitada de
+        // novo mesmo assim — isso não é o cabo de guerra de sessão (a
+        // reautenticação funcionou agora mesmo, não tem ninguém pra
+        // "derrubar" de novo), é outro problema. Mensagem própria em vez de
+        // repetir o "token rejeitado" genérico, pra não confundir as duas
+        // situações na tela.
+        const detalhes = data?.message || JSON.stringify(data).slice(0, 300);
+        const erro = new Error(
+          `Reautenticação no Wik funcionou (token novo emitido), mas ${path} rejeitou os dados mesmo assim `
+          + `(HTTP ${res.status}: ${detalhes}) — não parece sessão duplicada (acabamos de logar agora), `
+          + 'pode ser outro motivo (ex.: permissão da API pra este endpoint específico).'
+        );
+        erro.causaWikToken = true;
+        throw erro;
       }
     }
     if (res.status >= 500 && tentativa < TENTATIVAS_5XX) {
@@ -147,11 +194,15 @@ async function chamarApi(path, tokenBox, params = {}, opcoes = {}) {
       if (data.message) detalhes.push(data.message);
       if (data.errors && Object.keys(data.errors).length > 0) detalhes.push(JSON.stringify(data.errors));
       if (detalhes.length === 0) detalhes.push(`corpo bruto: ${JSON.stringify(data).slice(0, 500)}`);
-      throw new Error(`Erro na API do Wik (HTTP ${res.status}, body.status ${data.status}) em ${path}: ${detalhes.join(' | ')}`);
+      const erro = new Error(`Erro na API do Wik (HTTP ${res.status}, body.status ${data.status}) em ${path}: ${detalhes.join(' | ')}`);
+      if (tokenMortoDetectado) erro.causaWikToken = true;
+      throw erro;
     }
     return data;
   }
-  throw new Error(`Erro na API do Wik em ${path} (falhou ${TENTATIVAS_5XX}x seguidas com erro interno do servidor): ${JSON.stringify(ultimoErro).slice(0, 300)}`);
+  const erroFinal = new Error(`Erro na API do Wik em ${path} (falhou ${TENTATIVAS_5XX}x seguidas com erro interno do servidor): ${JSON.stringify(ultimoErro).slice(0, 300)}`);
+  if (tokenMortoDetectado) erroFinal.causaWikToken = true;
+  throw erroFinal;
 }
 
 // categoria_get devolve os nomes das categorias por id — o produto_get só

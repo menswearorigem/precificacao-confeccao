@@ -35,24 +35,23 @@ async function buscarIntegracao() {
 }
 
 // Garante um token válido pra integração, logando de novo se estiver
-// ausente/expirado (o Wik expira o token em 4h e não deixa duas sessões
-// simultâneas com o mesmo login, então evitamos logar à toa). Com
-// `forcar: true` ignora o que o banco acha que ainda é válido e login de
-// novo mesmo assim — usado quando o próprio Wik já rejeitou o token com
-// "token inválido ou expirado", ou seja, a validade real do lado deles já
-// passou mesmo com o relógio daqui ainda achando que tinha tempo (a
-// resposta de login às vezes não traz `expiracao`, caindo no padrão de 4h
-// que pode ser bem mais otimista que a validade real).
+// ausente/expirado. Com `forcar: true` ignora o que o banco acha que ainda
+// é válido e login de novo mesmo assim — usado quando o próprio Wik já
+// rejeitou o token com "token inválido ou expirado", ou seja, a validade
+// real do lado deles já passou mesmo com o relógio daqui ainda achando que
+// tinha tempo (a resposta de login às vezes não traz `expiracao`, caindo no
+// padrão de 1h — ver wik.js).
 //
-// Margem de 5min (igual ao garantirTokenValido dos marketplaces, ver
-// marketplaceSync.js) — o valor antigo (60s) era curto demais pra dar tempo
-// de uma sincronização inteira (dezenas de segundos, 4 empresas paginadas)
-// terminar antes do token vencer de verdade. Login com retry (a API do Wik
-// já teve instabilidade transitória — ver comentário em wik.js) antes de
-// desistir e propagar o erro, que fica gravado em ultimo_erro e visível na
-// tela de Estoque.
+// Margem de 10min (confirmado em produção — 26/08: token emitido às 09:41
+// veio com expiração às 10:41:15, ou seja, o Wik dá só 1h de vida real, não
+// as ~4h que a gente assumia antes; com um token de 1h, os 5min antigos de
+// margem deixavam pouca folga pra uma sincronização mais longa terminar
+// antes do vencimento de verdade). Login com retry (a API do Wik já teve
+// instabilidade transitória — ver comentário em wik.js) antes de desistir e
+// propagar o erro, que fica gravado em ultimo_erro e visível na tela de
+// Estoque.
 async function obterTokenValido(integracao, { forcar = false } = {}) {
-  const MARGEM_MS = 5 * 60 * 1000;
+  const MARGEM_MS = 10 * 60 * 1000;
   const expirado = forcar || !integracao.token_expira_em || new Date(integracao.token_expira_em).getTime() - Date.now() < MARGEM_MS;
   if (integracao.access_token && !expirado) return integracao.access_token;
 
@@ -78,7 +77,7 @@ async function obterTokenValido(integracao, { forcar = false } = {}) {
     }
   }
   const erroFinal = new Error(`Não foi possível renovar o token do Wik depois de ${TENTATIVAS} tentativa(s): ${ultimoErro.message}`);
-  await registrarFalhaWik(integracao.id, erroFinal.message);
+  await registrarFalhaWik(integracao.id, erroFinal);
   throw erroFinal;
 }
 
@@ -95,9 +94,20 @@ async function registrarTentativaWik(integracaoId) {
   await pool.query('UPDATE integracoes_wik SET ultima_tentativa = now() WHERE id = $1', [integracaoId]);
 }
 
-function pareceRejeicaoDeToken(mensagem) {
-  const texto = String(mensagem || '').toLowerCase();
-  return texto.includes('token') && (texto.includes('inválid') || texto.includes('invalid') || texto.includes('expir'));
+// Classifica pela CAUSA RAIZ (erro.causaWikToken, marcado em wik.js na hora
+// em que a rejeição de token é detectada de verdade), não pelo texto da
+// última mensagem. CORRIGIDO: quando o relogin forçado é bloqueado pelo
+// limite de 10min (ver criarOpcoesTokenComLimite abaixo), a mensagem que
+// sobe pro chamador é a do BLOQUEIO ("já tentei reautenticar há menos de
+// X min..."), não o 403 original — checar só o texto dessa mensagem final
+// perdia a classificação (virava "erro_outro" mesmo a causa sendo token).
+// O parâmetro pode ser um Error (com ou sem `causaWikToken`) ou uma string
+// solta (chamadas antigas/diretas) — nesse caso cai no casamento de texto
+// como fallback.
+function pareceRejeicaoDeToken(mensagemOuErro) {
+  if (mensagemOuErro && typeof mensagemOuErro === 'object' && mensagemOuErro.causaWikToken) return true;
+  const texto = String(mensagemOuErro?.message ?? mensagemOuErro ?? '').toLowerCase();
+  return texto.includes('token') && (texto.includes('inválid') || texto.includes('invalid') || texto.includes('expir') || texto.includes('rejeit'));
 }
 
 // Registra o erro de qualquer operação do Wik, distinguindo rejeição de
@@ -105,9 +115,11 @@ function pareceRejeicaoDeToken(mensagem) {
 // ultima_rejeicao_token) de qualquer outro tipo de erro — é essa distinção
 // que corrige o selo "TOKEN VÁLIDO" aparecendo do lado de "última tentativa
 // falhou": antes o selo só olhava se existia uma string de token gravada,
-// nunca se a ÚLTIMA tentativa de usá-lo tinha dado certo.
-async function registrarFalhaWik(integracaoId, mensagem) {
-  const ehToken = pareceRejeicaoDeToken(mensagem);
+// nunca se a ÚLTIMA tentativa de usá-la tinha dado certo. Aceita o Error
+// inteiro (preferível, permite classificar pela causa raiz) ou uma string.
+async function registrarFalhaWik(integracaoId, mensagemOuErro) {
+  const ehToken = pareceRejeicaoDeToken(mensagemOuErro);
+  const mensagem = mensagemOuErro instanceof Error ? mensagemOuErro.message : String(mensagemOuErro);
   if (ehToken) {
     await pool.query('INSERT INTO wik_token_rejeicoes (integracao_id) VALUES ($1)', [integracaoId]);
   }
@@ -127,13 +139,21 @@ async function registrarSucessoWik(integracaoId, { sincronizouEstoque = false } 
 
 // Limite de reautenticação: no máximo 1 login forçado a cada
 // BACKOFF_REAUTENTICACAO_MS, não importa quantas chamadas dentro do MESMO
-// ciclo rejeitem o token — diagnóstico em produção (24/08) apontou que o
-// Wik parece usar sessão única por usuário: logar de novo pela API pode
-// derrubar quem estiver usando o Wik pela web naquele momento. Sem esse
+// ciclo rejeitem o token — diagnóstico em produção (24/08) apontou que
+// relogar de novo pela API pode derrubar quem estiver usando o Wik pela web
+// naquele momento (HIPÓTESE, não confirmada — ver nota abaixo). Sem esse
 // limite, uma sincronização paginada (várias empresas/páginas) tentaria
 // relogar a cada chamada que rejeitasse — um "cabo de guerra" de sessão.
 // Usado por TODAS as sincronizações do Wik (estoque, produtos, ficha de
 // custo, diagnóstico de ficha técnica), não só saldo_estoque_get.
+//
+// Login bem-sucedido por "Testar conexão" ou "Salvar credencial" LIMPA essa
+// marca (ver rotas em wik.routes.js) — um login manual que deu certo prova
+// que a credencial está boa AGORA, então não faz sentido deixar uma marca
+// antiga de relogin forçado bloqueando uma tentativa de recuperação
+// legítima logo em seguida (foi exatamente o bug visto em produção: login
+// manual às 09:41 deu certo, a chamada de dado foi rejeitada às 09:42, e a
+// trava — de um relogin forçado ANTERIOR — recusou nova tentativa).
 const BACKOFF_REAUTENTICACAO_MS = 10 * 60 * 1000;
 
 function criarOpcoesTokenComLimite(integracao) {
@@ -143,9 +163,17 @@ function criarOpcoesTokenComLimite(integracao) {
       const { rows } = await pool.query('SELECT ultima_reautenticacao_forcada FROM integracoes_wik WHERE id = $1', [integracao.id]);
       const ultima = rows[0]?.ultima_reautenticacao_forcada;
       if (ultima && Date.now() - new Date(ultima).getTime() < BACKOFF_REAUTENTICACAO_MS) {
+        // NOTA: a causa de por que relogar de novo pode derrubar a sessão é
+        // HIPÓTESE — pode ser sessão única por usuário (alguém logou pela
+        // web com a mesma credencial) OU falta de permissão de API pra este
+        // endpoint específico. Não temos como confirmar qual das duas é a
+        // real, então o texto abaixo cita as duas em vez de afirmar uma
+        // como fato (ver INTEGRACAO-WIK.md).
         throw new Error(
           `Token do Wik rejeitado, mas já tentei reautenticar há menos de ${Math.round(BACKOFF_REAUTENTICACAO_MS / 60000)} min — `
-          + 'não insisto de novo agora pra não brigar com quem estiver usando o Wik pela web (sessão única por usuário). Tento de novo mais tarde.'
+          + 'não insisto de novo agora pra não arriscar brigar de sessão com quem estiver usando o Wik pela web '
+          + '(hipótese: sessão única por usuário; outra possibilidade é falta de permissão de API pra este endpoint). '
+          + 'Tento de novo mais tarde.'
         );
       }
       await pool.query('UPDATE integracoes_wik SET ultima_reautenticacao_forcada = now() WHERE id = $1', [integracao.id]);
@@ -333,7 +361,7 @@ async function sincronizarEstoqueAgora() {
       `UPDATE integracoes_wik SET preview_status = 'erro', preview_erro = $1, atualizado_em = now() WHERE id = $2`,
       [err.message, integracao.id]
     );
-    await registrarFalhaWik(integracao.id, err.message);
+    await registrarFalhaWik(integracao.id, err);
     throw err;
   }
 }

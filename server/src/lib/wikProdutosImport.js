@@ -223,7 +223,7 @@ async function sincronizarProdutosAgora() {
       `UPDATE integracoes_wik SET produtos_import_status = 'erro', produtos_import_erro = $1, atualizado_em = now() WHERE id = $2`,
       [err.message, integracao.id]
     );
-    await registrarFalhaWik(integracao.id, err.message);
+    await registrarFalhaWik(integracao.id, err);
     throw err;
   }
 }

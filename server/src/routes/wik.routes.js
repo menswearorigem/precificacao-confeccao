@@ -11,13 +11,20 @@ const { montarPreviewFichaCusto, aplicarImportacaoFichaCusto, sincronizarFichaCu
 const router = express.Router();
 
 // "conectado" (existe uma string de token gravada) NÃO significa que ele
-// ainda funciona — o Wik derruba a sessão da API quando alguém loga pela
-// web com a mesma credencial, e o relógio local (token_expira_em) não
-// enxerga isso. statusToken reflete o resultado da ÚLTIMA tentativa de
-// verdade: 'nao_testado' (nunca tentou), 'rejeitado' (ultimo_erro atual é
-// especificamente uma rejeição de token pelo Wik — ver
-// registrarFalhaWik/ultima_rejeicao_token em wikSync.js), 'erro_outro'
-// (falhou por outro motivo — rede, marca não configurada etc.) ou 'valido'.
+// ainda funciona — a validade real de um token do lado do Wik pode acabar
+// antes do que o relógio local (token_expira_em) enxerga. statusToken
+// reflete o resultado da ÚLTIMA CHAMADA DE DADO de verdade (estoque,
+// produtos, ficha de custo — não "Testar conexão", que é só um login e por
+// isso NUNCA escreve em ultima_tentativa/ultimo_erro/ultima_rejeicao_token,
+// ver rota /testar abaixo): 'nao_testado' (nenhuma chamada de dado ainda),
+// 'rejeitado' (ultimo_erro atual é especificamente uma rejeição de token
+// pelo Wik — ver registrarFalhaWik/ultima_rejeicao_token em wikSync.js),
+// 'erro_outro' (falhou por outro motivo — rede, marca não configurada etc.)
+// ou 'valido'. CORRIGIDO: antes "Testar conexão" também gravava sucesso
+// nessas colunas, então um login isolado (que não prova que saldo_estoque_get
+// funciona) já bastava pra virar o selo verde — foi assim que a contradição
+// "TOKEN VÁLIDO" ao lado de "token rejeitado" voltou depois da primeira
+// correção, por um caminho diferente do original.
 function calcularStatusToken(row) {
   if (!row.ultima_tentativa) return 'nao_testado';
   if (row.ultimo_erro) return row.ultima_rejeicao_token ? 'rejeitado' : 'erro_outro';
@@ -68,9 +75,13 @@ router.post('/', async (req, res, next) => {
     const existente = await buscarIntegracao();
     let row;
     if (existente) {
+      // Credencial nova (ou trocada) zera também a trava de reautenticação
+      // (ultima_reautenticacao_forcada) — qualquer motivo pro backoff da
+      // credencial ANTERIOR deixa de fazer sentido pra uma credencial nova.
       ({ rows: [row] } = await pool.query(
         `UPDATE integracoes_wik SET email = $1, senha = $2, access_token = NULL, token_expira_em = NULL,
-                                     ultimo_erro = NULL, atualizado_em = now()
+                                     ultimo_erro = NULL, ultima_rejeicao_token = NULL, ultima_reautenticacao_forcada = NULL,
+                                     atualizado_em = now()
          WHERE id = $3 RETURNING *`,
         [email, senha, existente.id]
       ));
@@ -95,21 +106,29 @@ router.delete('/', async (req, res, next) => {
   }
 });
 
+// "Testar conexão" só faz LOGIN — não prova que uma chamada de dado de
+// verdade (saldo_estoque_get etc.) funciona, então NÃO grava em
+// ultima_tentativa/ultimo_erro/ultima_rejeicao_token (essas são só pra
+// chamadas de dado — ver calcularStatusToken acima). O que um login
+// bem-sucedido aqui PROVA é que a credencial está boa agora mesmo, e por
+// isso ele limpa a trava de reautenticação (ultima_reautenticacao_forcada):
+// sem isso, uma trava deixada por um relogin forçado anterior podia
+// bloquear a recuperação automática mesmo depois de a usuária confirmar
+// manualmente que o login funciona (foi exatamente o bug visto em produção
+// em 26/08 — login manual às 09:41 funcionou, saldo_estoque_get rejeitou
+// esse mesmo token às 09:42, e a trava recusou a nova tentativa).
 router.post('/testar', async (req, res, next) => {
   try {
     const integracao = await buscarIntegracao();
     if (!integracao) return res.status(400).json({ error: 'Cadastre a credencial primeiro.' });
-    await registrarTentativaWik(integracao.id);
     const resultado = await wik.login(integracao.email, integracao.senha);
     await pool.query(
-      'UPDATE integracoes_wik SET access_token = $1, token_expira_em = $2, atualizado_em = now() WHERE id = $3',
+      `UPDATE integracoes_wik SET access_token = $1, token_expira_em = $2,
+                                   ultima_reautenticacao_forcada = NULL, atualizado_em = now() WHERE id = $3`,
       [resultado.token, resultado.expiraEm, integracao.id]
     );
-    await registrarSucessoWik(integracao.id);
     res.json({ ok: true, nome: resultado.nome, email: resultado.email, expiraEm: resultado.expiraEm });
   } catch (err) {
-    const integracao = await buscarIntegracao();
-    if (integracao) await registrarFalhaWik(integracao.id, err.message);
     res.status(422).json({ error: err.message });
   }
 });
@@ -157,7 +176,7 @@ router.post('/estoque/preview', async (req, res, next) => {
           `UPDATE integracoes_wik SET preview_status = 'erro', preview_erro = $1, atualizado_em = now() WHERE id = $2`,
           [err.message, integracao.id]
         );
-        await registrarFalhaWik(integracao.id, err.message);
+        await registrarFalhaWik(integracao.id, err);
       });
   } catch (err) {
     next(err);
@@ -250,7 +269,7 @@ router.post('/produtos/preview', async (req, res, next) => {
           `UPDATE integracoes_wik SET produtos_import_status = 'erro', produtos_import_erro = $1, atualizado_em = now() WHERE id = $2`,
           [err.message, integracao.id]
         );
-        await registrarFalhaWik(integracao.id, err.message);
+        await registrarFalhaWik(integracao.id, err);
       });
   } catch (err) {
     next(err);
@@ -406,7 +425,7 @@ router.post('/ficha-custo/preview', async (req, res, next) => {
           `UPDATE integracoes_wik SET ficha_custo_import_status = 'erro', ficha_custo_import_erro = $1, atualizado_em = now() WHERE id = $2`,
           [err.message, integracao.id]
         );
-        await registrarFalhaWik(integracao.id, err.message);
+        await registrarFalhaWik(integracao.id, err);
       });
   } catch (err) {
     next(err);

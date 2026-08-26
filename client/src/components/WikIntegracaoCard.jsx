@@ -64,7 +64,11 @@ export default function WikIntegracaoCard() {
     setTestando(true);
     try {
       const resultado = await api.post('/wik/testar', {});
-      setAviso(`Conectado como ${resultado.nome} (${resultado.email}). Token válido até ${hoje(resultado.expiraEm)}.`);
+      // Propositalmente NÃO diz "token válido" aqui — testar conexão só faz
+      // login, não prova que uma chamada de dado de verdade (estoque etc.)
+      // funciona, e o selo abaixo já reserva essa frase pro resultado da
+      // última chamada de dado (ver comentário em wik.routes.js).
+      setAviso(`Login no Wik funcionou agora como ${resultado.nome} (${resultado.email}), expira ${hoje(resultado.expiraEm)}. Isso não garante que a próxima sincronização de dados vá funcionar.`);
       load();
     } catch (err) {
       setErro(err.message);
@@ -206,9 +210,10 @@ export default function WikIntegracaoCard() {
 
       {integracao?.statusToken === 'rejeitado' && integracao.rejeicoesToken24h >= 3 && (
         <div className="login-error" style={{ marginBottom: 12 }}>
-          O Wik rejeitou o token {integracao.rejeicoesToken24h}x nas últimas 24h — isso costuma acontecer quando
-          alguém loga na tela do Wik com a MESMA credencial usada aqui (o Wik parece derrubar a sessão da API
-          quando isso acontece). Considere um usuário exclusivo de API no Wik, usado só por esta integração.
+          O Wik rejeitou o token {integracao.rejeicoesToken24h}x nas últimas 24h. Não temos como confirmar a causa
+          exata — pode ser sessão única por usuário (alguém logando na tela do Wik com a MESMA credencial usada
+          aqui) ou falta de permissão de API pra este endpoint específico. Nos dois casos, considere um usuário
+          exclusivo de API no Wik, usado só por esta integração.
         </div>
       )}
 

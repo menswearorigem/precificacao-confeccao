@@ -217,7 +217,7 @@ async function sincronizarFichaCustoAgora() {
       `UPDATE integracoes_wik SET ficha_custo_import_status = 'erro', ficha_custo_import_erro = $1, atualizado_em = now() WHERE id = $2`,
       [err.message, integracao.id]
     );
-    await registrarFalhaWik(integracao.id, err.message);
+    await registrarFalhaWik(integracao.id, err);
     throw err;
   }
 }
