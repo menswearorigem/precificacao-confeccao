@@ -6,7 +6,7 @@ const { getCalcContext } = require('../lib/calcContext');
 const { pctImpostosEmpresa } = require('../lib/calc');
 const { calcularTaxaEsperadaPedido } = require('../lib/marketplaceTaxaCalc');
 const { parseArquivoPedidos } = require('../lib/pedidoImportParsers');
-const { importarPedido, sincronizarSeNecessario, encontrarVariante, corrigirPagamentosHistorico, corrigirAnunciosIdTodasIntegracoes, corrigirPackIdTodasIntegracoes, limparItensFantasmaHistorico } = require('../lib/marketplaceSync');
+const { importarPedido, sincronizarSeNecessario, encontrarVariante, corrigirPagamentosHistorico, corrigirAnunciosIdTodasIntegracoes, corrigirPackIdTodasIntegracoes, limparItensFantasmaHistorico, corrigirTaxaMarketplaceTodasIntegracoes } = require('../lib/marketplaceSync');
 const mercadoLivre = require('../lib/marketplaces/mercadoLivre');
 const { recalcularTotais } = require('../lib/pedidoRecalculo');
 const produtosRoutes = require('./produtos.routes');
@@ -286,6 +286,12 @@ router.post('/marketplace/revincular-custos', async (req, res, next) => {
     // já importado em pedidos antigos, antes desse filtro existir.
     const limpezaFantasma = await limparItensFantasmaHistorico({ limite: 200 });
 
+    // Backfill de tarifa (sale_fee) que ficou 0 por bug histórico, ou que
+    // segue NULL ("tarifa não informada") — ver PROBLEMA 5 do pedido de
+    // auditoria. Reconferido aqui (lote maior, sob pedido) e também no
+    // ciclo automático (lote menor — ver sincronizarSeNecessario).
+    const correcaoTaxa = await corrigirTaxaMarketplaceTodasIntegracoes({ limite: 60 });
+
     res.json({
       verificados: semVinculo.length,
       vinculados,
@@ -299,6 +305,8 @@ router.post('/marketplace/revincular-custos', async (req, res, next) => {
       pedidosComPacoteCorrigidos: correcaoPacotes.pedidosComPacote,
       itensFantasmaRemovidos: limpezaFantasma.itensRemovidos,
       pedidosComItemFantasma: limpezaFantasma.pedidosAfetados,
+      pedidosVerificadosTaxa: correcaoTaxa.pedidosVerificados,
+      taxasCorrigidas: correcaoTaxa.corrigidos,
     });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -357,7 +365,57 @@ router.get('/marketplace/duplicatas-suspeitas', async (req, res, next) => {
       pedidos: r.pedidos,
     }));
     const totalPossivelExcesso = grupos.reduce((s, g) => s + g.possivelExcesso, 0);
-    res.json({ grupos, totalPossivelExcesso });
+
+    // Segundo padrão, diferente do de cima: NÃO precisa de pack_id em comum
+    // — é o mesmo comprador (cliente_id já resolvido pelo nickname exato do
+    // Mercado Livre na importação, não por nome aproximado) pagando o MESMO
+    // valor em pedidos distintos, em dias diferentes. É a assinatura de uma
+    // troca do ML virando pedido novo em vez de vínculo com o original (ver
+    // PROBLEMA 3 do pedido de auditoria — ex.: comprador ANTARESJR2008,
+    // R$ 92,05, pedidos de 19/08 e 22/08). Só detecta e mostra pra revisão
+    // humana — nunca deduz o vínculo por cliente+valor+data (seria
+    // cruzamento por campo aproximado) nem tira nada do total agregado.
+    const condicoesTroca = [
+      `pv.origem_marketplace = 'mercado_livre'`,
+      `pv.situacao != 'cancelado'`,
+      `pv.cliente_id IS NOT NULL`,
+    ];
+    const valuesTroca = [];
+    let j = 1;
+    if (data_inicio) { condicoesTroca.push(`pv.data_pedido >= $${j}`); valuesTroca.push(data_inicio); j += 1; }
+    if (data_fim) { condicoesTroca.push(`pv.data_pedido <= $${j}`); valuesTroca.push(data_fim); j += 1; }
+    const { rows: rowsTroca } = await pool.query(
+      `SELECT pv.cliente_id, c.nome AS cliente_nome, item_totais.receita,
+              COUNT(DISTINCT pv.id) AS pedidos_distintos,
+              COUNT(DISTINCT pv.data_pedido::date) AS dias_distintos,
+              array_agg(DISTINCT pv.origem_pedido_id ORDER BY pv.origem_pedido_id) AS pedidos,
+              array_agg(DISTINCT pv.data_pedido::date ORDER BY pv.data_pedido::date) AS datas
+         FROM pedidos_venda pv
+         JOIN clientes c ON c.id = pv.cliente_id
+         JOIN LATERAL (
+           SELECT ROUND(SUM(pi.total)::numeric, 2) AS receita
+             FROM pedido_itens pi WHERE pi.pedido_id = pv.id
+         ) item_totais ON true
+        WHERE ${condicoesTroca.join(' AND ')} AND item_totais.receita > 0
+        GROUP BY pv.cliente_id, c.nome, item_totais.receita
+       HAVING COUNT(DISTINCT pv.id) > 1 AND COUNT(DISTINCT pv.data_pedido::date) > 1
+       ORDER BY item_totais.receita DESC`,
+      valuesTroca
+    );
+    const possivelTroca = rowsTroca.map((r) => ({
+      clienteNome: r.cliente_nome,
+      receita: Number(r.receita),
+      pedidosDistintos: Number(r.pedidos_distintos),
+      diasDistintos: Number(r.dias_distintos),
+      pedidos: r.pedidos,
+      datas: r.datas,
+      // Só 1 das ocorrências é presumivelmente a venda de verdade — o resto
+      // é o quanto de receita pode estar duplicada por troca não vinculada.
+      possivelReceitaDuplicada: Number(r.receita) * (Number(r.pedidos_distintos) - 1),
+    }));
+    const totalPossivelReceitaDuplicadaTroca = possivelTroca.reduce((s, g) => s + g.possivelReceitaDuplicada, 0);
+
+    res.json({ grupos, totalPossivelExcesso, possivelTroca, totalPossivelReceitaDuplicadaTroca });
   } catch (err) {
     next(err);
   }
@@ -710,8 +768,9 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
   const totalGeralVazio = {
     receita: 0, custoPeca: 0, imposto: 0, custoEmbalagem: 0, custoAds: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, margemPct: 0,
     valorRecebidoLiberado: 0, valorRecebidoConfirmado: 0, valorRecebidoSemConfirmacao: 0, custoAdsNaoAtribuido: 0,
+    custoAdsAtribuido: 0, custoAdsTotal: 0,
     lucroBruto: 0, margemBrutaPct: 0, tacos: 0, mpaPct: 0, numeroVendas: 0, numeroUnidadesVendidas: 0, ticketMedio: 0, roiPct: 0,
-    liquidoMarketplace: 0,
+    liquidoMarketplace: 0, pedidosConsiderados: 0, totalPedidosPeriodo: 0, pedidosExcluidosPorCustoIncompleto: 0, pedidosNaoAvaliaveis: [],
   };
   if (pedidosBrutos.length === 0) {
     return { resultado: [], totalGeral: totalGeralVazio };
@@ -974,12 +1033,21 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
       };
     });
 
+    // Pedido sem custo de peça conhecido (custoIncompleto) fica de fora do
+    // agregado — receita de verdade com custo zero infla a margem (custo
+    // zero != custo pequeno), igual à regra que o Dashboard Executivo já
+    // aplica em totaisConsolidados() logo abaixo nesse arquivo. Continua
+    // aparecendo na tabela por pedido (com selo próprio), só não entra na
+    // soma do topo.
+    const pedidosValidos = resultado.filter((p) => !p.custoIncompleto);
+    const pedidosNaoAvaliaveis = resultado.filter((p) => p.custoIncompleto);
+
     // valor recebido só existe pra Mercado Livre (Shopee não tem esse dado);
     // "liberado" é dinheiro já disponível no saldo, "confirmado" é o valor
     // real já conhecido mas ainda retido (chega no saldo em
     // valor_recebido_liberacao_em) — os dois são valores de VERDADE vindos
     // do pagamento, só a disponibilidade que muda.
-    const totalGeral = resultado.reduce(
+    const totalGeral = pedidosValidos.reduce(
       (acc, p) => {
         const ehML = p.canal_venda === 'Mercado Livre';
         return {
@@ -1000,11 +1068,35 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
       { receita: 0, custoPeca: 0, imposto: 0, custoEmbalagem: 0, custoAds: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, valorRecebidoLiberado: 0, valorRecebidoConfirmado: 0, valorRecebidoSemConfirmacao: 0 }
     );
     totalGeral.margemPct = totalGeral.receita > 0 ? totalGeral.lucro / totalGeral.receita : 0;
+    // Base pro <SeloDeConfianca> da tela — "considerado" é sempre sobre
+    // pedidos, não sobre itens (um pedido com 1 item sem vínculo já fica de
+    // fora inteiro, mesmo que tenha outros itens com custo válido).
+    totalGeral.pedidosConsiderados = pedidosValidos.length;
+    totalGeral.totalPedidosPeriodo = resultado.length;
+    totalGeral.pedidosExcluidosPorCustoIncompleto = pedidosNaoAvaliaveis.length;
+    totalGeral.pedidosNaoAvaliaveis = pedidosNaoAvaliaveis.map((p) => ({
+      id: p.id,
+      numeroExibicao: p.numeroExibicao,
+      data_pedido: p.data_pedido,
+      cliente_nome: p.cliente_nome,
+      receita: p.receita,
+      itensSemVinculo: p.itens
+        .filter((it) => !it.produtoId && !it.kitId)
+        .map((it) => ({ skuExterno: it.skuExterno, titulo: it.tituloExterno })),
+    }));
     // Gasto de Ads que não deu pra atribuir a nenhum pedido específico (teve
     // clique/custo naquele anúncio naquele dia, mas nenhuma venda NOSSA
-    // registrada pra dividir) — não está em nenhum card, só no total geral,
-    // pra não sumir da conta e a soma de Ads bater com o extrato real dela.
+    // registrada pra dividir) — é gasto real (saiu do saldo de Ads de
+    // verdade), só que sem pedido a que pertença, então NÃO é rateado por
+    // pedido nenhum (isso seria inventar dado). Ele entra apenas nos
+    // indicadores agregados do topo (lucro do período, TACOS, MPA) — nunca
+    // em nenhuma linha da tabela, cujo custoAds continua sendo só a soma do
+    // que já estava atribuído.
     totalGeral.custoAdsNaoAtribuido = custoAdsNaoAtribuido;
+    totalGeral.custoAdsAtribuido = totalGeral.custoAds;
+    totalGeral.custoAdsTotal = totalGeral.custoAds + custoAdsNaoAtribuido;
+    totalGeral.lucro -= custoAdsNaoAtribuido;
+    totalGeral.margemPct = totalGeral.receita > 0 ? totalGeral.lucro / totalGeral.receita : 0;
 
     // Indicadores no mesmo padrão do painel de referência (Gestor Seller):
     // "Lucro"/"Margem" acima já são o resultado DEPOIS de Ads (o número real
@@ -1012,14 +1104,17 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
     // TACOS (gasto de Ads sobre o faturamento TOTAL, diferente de ACOS que
     // olha só a venda atribuída ao anúncio) e MPA (a mesma margem de cima,
     // com nome explícito de "margem pós Ads" pra ficar lado a lado com a
-    // margem bruta na tela).
-    totalGeral.lucroBruto = totalGeral.lucro + totalGeral.custoAds;
+    // margem bruta na tela). TACOS e MPA usam custoAdsTotal (atribuído +
+    // não atribuído) — é o gasto de Ads de verdade, batendo com o extrato
+    // de Publicidade do Mercado Livre; usar só o atribuído subestimaria o
+    // TACOS (ver PROBLEMA 1 do pedido de auditoria).
+    totalGeral.lucroBruto = totalGeral.lucro + totalGeral.custoAdsTotal;
     totalGeral.margemBrutaPct = totalGeral.receita > 0 ? totalGeral.lucroBruto / totalGeral.receita : 0;
-    totalGeral.tacos = totalGeral.receita > 0 ? totalGeral.custoAds / totalGeral.receita : 0;
+    totalGeral.tacos = totalGeral.receita > 0 ? totalGeral.custoAdsTotal / totalGeral.receita : 0;
     totalGeral.mpaPct = totalGeral.margemPct;
-    totalGeral.liquidoMarketplace = resultado.reduce((s, p) => s + (p.calculoReal ? p.valorRecebido : p.receita - p.taxaMarketplace), 0);
-    totalGeral.numeroVendas = resultado.length;
-    totalGeral.numeroUnidadesVendidas = resultado.reduce((s, p) => s + p.itens.reduce((si, it) => si + it.quantidade, 0), 0);
+    totalGeral.liquidoMarketplace = pedidosValidos.reduce((s, p) => s + (p.calculoReal ? p.valorRecebido : p.receita - p.taxaMarketplace), 0);
+    totalGeral.numeroVendas = pedidosValidos.length;
+    totalGeral.numeroUnidadesVendidas = pedidosValidos.reduce((s, p) => s + p.itens.reduce((si, it) => si + it.quantidade, 0), 0);
     totalGeral.ticketMedio = totalGeral.numeroVendas > 0 ? totalGeral.receita / totalGeral.numeroVendas : 0;
     // ROI = lucro (já pós Ads) sobre tudo que a venda "consumiu" antes de
     // virar lucro (receita - lucro) — cobre custo do produto, imposto,
@@ -1030,11 +1125,73 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
   return { resultado, totalGeral };
 }
 
+// PROBLEMA 4 da auditoria (desconto no fechamento não sai da receita): a
+// prova objetiva pedida é comparar taxaCobrada/receita com a faixa de
+// comissão esperada (mesma tabela e mesma função que a aba "Taxas Cobradas"
+// já usa) — quando a taxa realmente cobrada é MAIOR, em % da receita
+// gravada, do que a comissão esperada pra aquele valor, é sinal de que a
+// receita gravada está inflada (denominador grande demais), exatamente como
+// no caso confirmado (23,70 é 19% de 124,76, mas só 18,05% dos 131,33
+// gravados). Não corrige nada sozinho — nesta sessão não há acesso à API do
+// Mercado Livre (rede bloqueada por política, sem token de integração real
+// no banco local) pra confirmar contra o payload bruto do pedido se o campo
+// certo é outro (ex.: cupom no nível do pedido) ou o mesmo unit_price já
+// deveria vir líquido — corrigir a fórmula de receita sem essa confirmação
+// seria adivinhar um campo (REGRA 2). Só sinaliza os candidatos.
+const TOLERANCIA_DIVERGENCIA_TAXA = 0.01;
+async function sinalizarCandidatosDescontoNaoCapturado(resultado) {
+  const pedidosComTaxa = resultado.filter((p) => p.canal_venda === 'Mercado Livre' && p.taxaMarketplace > 0);
+  if (pedidosComTaxa.length === 0) return;
+  const ids = pedidosComTaxa.map((p) => p.id);
+  const { rows: pedidosRows } = await pool.query(
+    `SELECT pv.id, pv.origem_marketplace, pv.forma_pagamento_marketplace, COALESCE(im.usa_frete_subsidiado, TRUE) AS usa_frete_subsidiado
+       FROM pedidos_venda pv LEFT JOIN integracoes_marketplace im ON im.id = pv.origem_integracao_id
+      WHERE pv.id = ANY($1)`,
+    [ids]
+  );
+  const { rows: itensRows } = await pool.query(
+    `SELECT pi.*, p.peso_kg FROM pedido_itens pi LEFT JOIN produtos p ON p.id = pi.produto_id WHERE pi.pedido_id = ANY($1)`,
+    [ids]
+  );
+  const mapaPedidoRow = new Map(pedidosRows.map((p) => [p.id, p]));
+  for (const p of pedidosComTaxa) {
+    const pedidoRow = mapaPedidoRow.get(p.id);
+    if (!pedidoRow) continue;
+    const itensDoPedido = itensRows.filter((it) => it.pedido_id === p.id);
+    const pesoConhecido = itensDoPedido.length > 0 && itensDoPedido.every((it) => it.peso_kg !== null);
+    const pesoTotalKg = pesoConhecido ? itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * Number(it.peso_kg), 0) : null;
+    const esperado = await calcularTaxaEsperadaPedido({
+      marketplace: pedidoRow.origem_marketplace,
+      itens: itensDoPedido,
+      valorTotalPedido: p.receita,
+      formaPagamento: pedidoRow.forma_pagamento_marketplace,
+      usaFreteSubsidiado: pedidoRow.usa_frete_subsidiado,
+      pesoTotalKg,
+    });
+    if (esperado.comissaoIncompleta || p.receita <= 0) continue;
+    const pctCobrado = p.taxaMarketplace / p.receita;
+    const pctEsperado = esperado.taxaEsperadaTotal / p.receita;
+    // Só sinaliza quando cobrado > esperado (a assinatura específica de
+    // receita inflada) — cobrado < esperado tem outras causas (frete
+    // subsidiado, promoção do ML) já tratadas em Taxas Cobradas.
+    p.candidatoDescontoNaoCapturado = (pctCobrado - pctEsperado) > TOLERANCIA_DIVERGENCIA_TAXA;
+  }
+}
+
 router.get('/relatorio-lucratividade', async (req, res, next) => {
   try {
     const { data_inicio, data_fim, canal_venda, origem, origem_integracao_id } = req.query;
     const { resultado, totalGeral } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem, origem_integracao_id });
-    res.json({ pedidos: resultado, totalGeral });
+    await sinalizarCandidatosDescontoNaoCapturado(resultado);
+    const candidatosDescontoNaoCapturado = resultado.filter((p) => p.candidatoDescontoNaoCapturado).length;
+    // PROBLEMA 6 do pedido de auditoria: o rateio de Ads de um pedido usa
+    // as unidades vendidas do anúncio NAQUELE DIA — se uma venda daquele
+    // mesmo dia for cancelada depois, o divisor cai e o valor de Ads dos
+    // pedidos restantes SOBE (o gasto do anúncio continua o mesmo, mas
+    // dividido por menos unidades). Isso é correto, mas silencioso — quem
+    // salvar um número fora do sistema precisa saber que ele tem validade,
+    // não que virou "errado" se recalcular depois e vier diferente.
+    res.json({ pedidos: resultado, totalGeral: { ...totalGeral, candidatosDescontoNaoCapturado }, calculadoEm: new Date().toISOString() });
   } catch (err) {
     next(err);
   }
@@ -1205,7 +1362,9 @@ router.get('/relatorio-lucratividade/serie-diaria', async (req, res, next) => {
         liquidoMarketplace: totalGeral.liquidoMarketplace,
         lucroBruto: totalGeral.lucroBruto,
         margemPct: totalGeral.margemBrutaPct,
-        custoAds: totalGeral.custoAds,
+        custoAds: totalGeral.custoAdsAtribuido,
+        custoAdsNaoAtribuido: totalGeral.custoAdsNaoAtribuido,
+        custoAdsTotal: totalGeral.custoAdsTotal,
         lucroPosAds: totalGeral.lucro,
         mpaPct: totalGeral.mpaPct,
         tacos: totalGeral.tacos,

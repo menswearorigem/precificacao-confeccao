@@ -351,6 +351,31 @@ async function buscarValorRecebido({ pagamentoId, accessToken }) {
   return { valorRecebido: somaValorRecebido, dataLiberacao: maiorDataLiberacao, liberado: todosLiberados, diagnostico: null };
 }
 
+// sale_fee é a comissão que o Mercado Livre cobra por item vendido — vem
+// como número simples na maioria dos casos, mas em alguns retornos vem como
+// objeto com o detalhamento do custo (venda + Mercado Pago + parcelamento).
+// Item sem sale_fee nenhum (undefined/null) é "o ML ainda não informou", não
+// "taxa zero" — sem essa distinção, taxaMarketplace virava 0 igual a um
+// caso de tarifa genuinamente zerada, e a aba Taxas Cobradas passava a
+// comparar 0 contra a comissão esperada como se fosse divergência de
+// verdade (PROBLEMA 5 do pedido de auditoria). null aqui vira NULL no banco
+// (pedidoGenerico.taxaMarketplace ?? null em marketplaceSync.js), igual já
+// é feito pra pct_nota_fiscal/empresa_id. Extraída como função própria pra
+// o backfill (corrigirTaxaMarketplaceHistorico) reusar a mesma regra do
+// mapeamento normal, em vez de duplicar a lógica.
+function calcularTaxaMarketplaceDaOrder(order) {
+  const orderItems = order.order_items || [];
+  const algumFeeInformado = orderItems.some((oi) => oi.sale_fee !== undefined && oi.sale_fee !== null);
+  if (!algumFeeInformado) return null;
+  return orderItems.reduce((soma, oi) => {
+    const feeRaw = oi.sale_fee;
+    const fee = typeof feeRaw === 'object' && feeRaw !== null
+      ? Number(feeRaw.total ?? feeRaw.amount ?? 0)
+      : Number(feeRaw) || 0;
+    return soma + fee;
+  }, 0);
+}
+
 // Converte um pedido do Mercado Livre pro formato genérico usado pelo
 // sincronizador (server/src/lib/marketplaceSync.js).
 function mapearPedido(order) {
@@ -371,16 +396,7 @@ function mapearPedido(order) {
   const idsAprovados = idsPagamentosAprovados(order);
   const pagamentoIdExterno = idsAprovados.length > 0 ? idsAprovados.join(',') : null;
 
-  // sale_fee é a comissão que o Mercado Livre cobra por item vendido — vem
-  // como número simples na maioria dos casos, mas em alguns retornos vem
-  // como objeto com o detalhamento do custo (venda + Mercado Pago + parcelamento).
-  const taxaMarketplace = (order.order_items || []).reduce((soma, oi) => {
-    const feeRaw = oi.sale_fee;
-    const fee = typeof feeRaw === 'object' && feeRaw !== null
-      ? Number(feeRaw.total ?? feeRaw.amount ?? 0)
-      : Number(feeRaw) || 0;
-    return soma + fee;
-  }, 0);
+  const taxaMarketplace = calcularTaxaMarketplaceDaOrder(order);
 
   const frete = Number(order.shipping?.cost) || 0;
 
@@ -611,6 +627,7 @@ module.exports = {
   buscarUmPagamento,
   idsPagamentosAprovados,
   mapearPedido,
+  calcularTaxaMarketplaceDaOrder,
   buscarTendencias,
   buscarCategorias,
   buscarDetalheCategoria,

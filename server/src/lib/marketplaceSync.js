@@ -624,6 +624,59 @@ async function corrigirAnunciosIdTodasIntegracoes({ limite = 40 } = {}) {
   return { pedidosVerificados, itensCorrigidos };
 }
 
+// PROBLEMA 5 do pedido de auditoria: pedido antigo pode ter taxa_marketplace
+// gravada como 0 (bug histórico — o ML não tinha informado sale_fee nenhum
+// naquele order_item, e o código antigo tratava isso como tarifa zero em vez
+// de "não informado"). Rebusca o pedido de verdade e regrava com a MESMA
+// regra do mapeamento normal (calcularTaxaMarketplaceDaOrder) — null quando
+// o ML continua sem informar (fica "tarifa não informada" na tela, nunca
+// mais 0), valor real quando já tiver. Também pega os que já estão NULL
+// (backfill periódico: o ML pode preencher depois de um tempo).
+async function corrigirTaxaMarketplaceHistorico(integracao, { limite = 30 } = {}) {
+  if (integracao.marketplace !== 'mercado_livre') return { pedidosVerificados: 0, corrigidos: 0 };
+  const { rows: pedidos } = await pool.query(
+    `SELECT id, origem_pedido_id FROM pedidos_venda
+      WHERE origem_integracao_id = $1 AND origem_marketplace = 'mercado_livre'
+        AND (taxa_marketplace = 0 OR taxa_marketplace IS NULL) AND NOT origem_indisponivel
+      ORDER BY id DESC
+      LIMIT $2`,
+    [integracao.id, limite]
+  );
+  let corrigidos = 0;
+  for (const pedido of pedidos) {
+    try {
+      const order = await buscarPedidoOuMarcarIndisponivel(pedido, integracao);
+      const taxaMarketplace = mercadoLivre.calcularTaxaMarketplaceDaOrder(order);
+      await pool.query('UPDATE pedidos_venda SET taxa_marketplace = $1 WHERE id = $2', [taxaMarketplace, pedido.id]);
+      corrigidos += 1;
+    } catch {
+      // pedido pontual falhando (ex.: "Order do not exists") não deve
+      // travar o lote inteiro — só fica pra tentar de novo no próximo ciclo
+    }
+  }
+  return { pedidosVerificados: pedidos.length, corrigidos };
+}
+
+async function corrigirTaxaMarketplaceTodasIntegracoes({ limite = 40 } = {}) {
+  const { rows: integracoes } = await pool.query(
+    `SELECT * FROM integracoes_marketplace WHERE ativo = TRUE AND access_token IS NOT NULL AND marketplace = 'mercado_livre'`
+  );
+  let pedidosVerificados = 0;
+  let corrigidos = 0;
+  for (const integracao of integracoes) {
+    try {
+      await garantirTokenValido(integracao);
+      const resultado = await corrigirTaxaMarketplaceHistorico(integracao, { limite });
+      pedidosVerificados += resultado.pedidosVerificados;
+      corrigidos += resultado.corrigidos;
+    } catch {
+      // integração pontual falhando (token revogado etc.) não deve travar
+      // as outras
+    }
+  }
+  return { pedidosVerificados, corrigidos };
+}
+
 // Mesma ideia, pro backfill de pack_id (botão manual, lote maior).
 async function corrigirPackIdTodasIntegracoes({ limite = 40 } = {}) {
   const { rows: integracoes } = await pool.query(
@@ -991,6 +1044,7 @@ async function sincronizarIntegracao(integracaoId) {
     // (botão manual).
     await corrigirAnunciosIdHistorico(integracao, { limite: 15 });
     await corrigirPackIdHistorico(integracao, { limite: 15 });
+    await corrigirTaxaMarketplaceHistorico(integracao, { limite: 15 });
     await sincronizarAdsSeNecessario(integracao);
 
     await pool.query(
@@ -1065,6 +1119,8 @@ module.exports = {
   corrigirAnunciosIdTodasIntegracoes,
   corrigirPackIdHistorico,
   corrigirPackIdTodasIntegracoes,
+  corrigirTaxaMarketplaceHistorico,
+  corrigirTaxaMarketplaceTodasIntegracoes,
   sincronizarAdsDias,
   sincronizarAdsTodasIntegracoes,
   limparItensFantasmaHistorico,

@@ -27,8 +27,6 @@ const viagensRoutes = require('./routes/viagens.routes');
 const wikRoutes = require('./routes/wik.routes');
 const conferenciaDadosRoutes = require('./routes/conferenciaDados.routes');
 const qualidadeDadosRoutes = require('./routes/qualidadeDados.routes');
-const diagnosticoReferenciaRoutes = require('./routes/diagnosticoReferencia.routes');
-const diagnosticoEstoqueWikRoutes = require('./routes/diagnosticoEstoqueWik.routes');
 const calendarioRoutes = require('./routes/calendario.routes');
 const gruposRoutes = require('./routes/grupos.routes');
 
@@ -98,10 +96,6 @@ function createApp() {
   app.use('/api/wik', requireAuth, requireAdmin, wikRoutes);
   app.use('/api/conferencia-dados', requireAuth, requireAdmin, conferenciaDadosRoutes);
   app.use('/api/qualidade-dados', requireAuth, requireAdmin, qualidadeDadosRoutes);
-  // Temporário — conferência da Tarefa 1 (normalização de referência no
-  // casamento SKU -> produto). Ver comentário no topo do arquivo da rota.
-  app.use('/api/diagnostico-referencia', requireAuth, requireAdmin, diagnosticoReferenciaRoutes);
-  app.use('/api/diagnostico-estoque-wik', requireAuth, requireAdmin, diagnosticoEstoqueWikRoutes);
 
   // Build do React em produção (um único serviço no Render).
   app.use(express.static(CLIENT_DIST));

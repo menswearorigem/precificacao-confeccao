@@ -14,6 +14,7 @@ import FotoProduto from '../components/FotoProduto';
 import DataTable from '../components/DataTable';
 import CopiarBotao from '../components/CopiarBotao';
 import { useTabela } from '../lib/useTabela';
+import SeloDeConfianca from '../components/SeloDeConfianca';
 
 const COLUNAS_PEDIDOS_ORDENAVEIS = {
   numero: (p) => Number(p.numero) || 0,
@@ -279,9 +280,15 @@ function ResumoProdutoTab({ resumoProduto, serieDiaria, config, busca }) {
             <StatCard label="Ticket Médio" value={brl(r.ticketMedio)} />
             <StatCard label="Retorno Sobre Investimento" value={pct(r.roiPct)} />
           </div>
-          {r.custoAds > 0 && (
+          {r.custoAdsTotal > 0 && (
             <div className="stat-strip" style={{ marginTop: 12, marginBottom: 0 }}>
-              <StatCard label="Valor em Ads" value={brl(r.custoAds)} />
+              <StatCard label="Valor em Ads" value={brl(r.custoAdsTotal)}>
+                {r.custoAdsNaoAtribuido > 0 && (
+                  <span className="stat-card-delta" style={{ color: 'var(--ink-faint)', fontWeight: 500 }}>
+                    {brl(r.custoAds)} atribuído + {brl(r.custoAdsNaoAtribuido)} sem venda no dia
+                  </span>
+                )}
+              </StatCard>
               <StatCard label="TACOS" value={pct(r.tacos)} />
               <StatCard label="Lucro Pós Ads" value={brl(r.lucroPosAds)} />
               <StatCard label="MPA"><MargemPill valor={r.mpaPct} config={config} grande semVendas={r.numeroVendas === 0} /></StatCard>
@@ -298,7 +305,7 @@ function ResumoProdutoTab({ resumoProduto, serieDiaria, config, busca }) {
               <tr>
                 <th>Produto</th><th>Preço Médio</th><th>Custo Unit. Médio</th><th>Unid. Vendidas</th>
                 <th>Total Faturado</th><th>Represent.</th><th>Lucro Bruto</th><th>Margem Bruta</th>
-                <th>Custo Ads</th><th>Lucro Pós Ads</th><th>MPA</th>
+                <th title="Rateio: gasto do dia daquele anúncio dividido por TODAS as unidades vendidas do anúncio naquele dia (inclusive as que o Mercado Livre não atribuiu à publicidade) — não é o valor que o ML atribui a este produto/anúncio, é rateio de custo cheio por unidade do dia. O método fecha o total de Ads certinho, que é o que importa.">Custo Ads</th><th>Lucro Pós Ads</th><th>MPA</th>
               </tr>
             </thead>
             <tbody>
@@ -485,7 +492,7 @@ function VendaDetalheCard({ p, config }) {
             {p.custoAds > 0 && (
               <div className="venda-breakdown-row">
                 <span className="venda-breakdown-icon"><Megaphone size={15} /></span>
-                <span className="venda-breakdown-label">Custo de Ads (rateado do dia)</span>
+                <span className="venda-breakdown-label" title="Gasto do dia daquele anúncio dividido por TODAS as unidades vendidas do anúncio naquele dia (inclusive as que o Mercado Livre não atribuiu à publicidade) — não é a atribuição do ML, é rateio de custo cheio por unidade do dia.">Custo de Ads (rateado do dia)</span>
                 <span className="venda-breakdown-valor">-{brl(p.custoAds)}</span>
               </div>
             )}
@@ -523,6 +530,49 @@ function VendasTab({ pedidos, config, busca }) {
   return (
     <div>
       {pedidos.map((p) => <VendaDetalheCard key={p.id} p={p} config={config} />)}
+    </div>
+  );
+}
+
+// Lista dos pedidos "sem custo cadastrado" (excluídos do total agregado) —
+// pra quem olha resolver no cadastro: qual referência falta, e por qual
+// pedido/SKU externo entrou (útil pra achar o anúncio que precisa de
+// cadastro novo ou de correção de SKU).
+function NaoAvaliaveisTab({ pedidos }) {
+  if (!pedidos || pedidos.length === 0) {
+    return <div className="card"><p className="page-sub">Nenhum pedido sem custo cadastrado no período.</p></div>;
+  }
+  return (
+    <div className="card">
+      <div className="card-head">Não Avaliáveis — falta custo de material ({formatQtd(pedidos.length)})</div>
+      <p className="page-sub" style={{ margin: '0 0 8px' }}>
+        Esses pedidos têm ao menos um item sem produto vinculado (referência não cadastrada, ou SKU do anúncio em
+        formato que o sistema não reconhece) — sem custo de verdade pra calcular, então ficam fora do total agregado
+        do topo (custo zero não é a mesma coisa que custo baixo). Vincule o produto certo na aba "Pedidos", ou
+        cadastre a referência que falta, pra esses pedidos voltarem a entrar na conta.
+      </p>
+      <DataTable>
+        <table className="data-table">
+          <thead>
+            <tr><th>Pedido</th><th>Data</th><th>Cliente</th><th>Receita</th><th>Item(ns) sem vínculo</th></tr>
+          </thead>
+          <tbody>
+            {pedidos.map((p) => (
+              <tr key={p.id}>
+                <td className="mono">{p.numeroExibicao}</td>
+                <td className="mono">{dataBr(p.data_pedido.slice(0, 10))}</td>
+                <td>{p.cliente_nome || '—'}</td>
+                <td className="mono">{brl(p.receita)}</td>
+                <td className="mono">
+                  {p.itensSemVinculo.map((it, i) => (
+                    <span key={i} style={{ display: 'block' }}>{it.skuExterno || it.titulo || '(sem SKU no anúncio)'}</span>
+                  ))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </DataTable>
     </div>
   );
 }
@@ -565,6 +615,54 @@ function DuplicatasSuspeitas({ duplicatas }) {
                   <td className="mono">{formatQtd(g.quantidade)}</td>
                   <td className="mono">{g.pedidos.join(', ')}</td>
                   <td className="mono" style={{ fontWeight: 700 }}>{brl(g.possivelExcesso)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </DataTable>
+      )}
+    </div>
+  );
+}
+
+// Segundo padrão de possível receita duplicada (ver PROBLEMA 3 da auditoria):
+// mesmo comprador, mesmo valor, pedidos e dias diferentes — assinatura de
+// uma troca do Mercado Livre virando pedido novo em vez de vínculo com o
+// original. Não temos (nesta sessão, sem acesso à API do ML) confirmação de
+// um vínculo autoritativo entre os dois pedidos, então isso NUNCA deduz
+// automaticamente nem mexe no total — só sinaliza pra revisão humana.
+function PossivelTrocaSuspeita({ grupos, total }) {
+  const [aberto, setAberto] = useState(false);
+  return (
+    <div className="card no-print" style={{ marginBottom: 16, borderColor: 'var(--warning-ring)' }}>
+      <div className="card-head-linha">
+        <div className="card-head">Possível receita duplicada por troca (mesmo comprador, mesmo valor, dias diferentes)</div>
+        <button type="button" className="btn btn-ghost" onClick={() => setAberto((v) => !v)}>
+          {aberto ? 'Esconder' : 'Ver detalhes'}
+        </button>
+      </div>
+      <p className="page-sub" style={{ marginTop: 0 }}>
+        Achei {grupos.length} par(es)/grupo(s) de pedidos do mesmo comprador pagando o mesmo valor em dias
+        diferentes — pode ser uma troca do Mercado Livre que virou um pedido novo em vez de ficar vinculada ao
+        original (até <strong className="mono">{brl(total)}</strong> de receita possivelmente duplicada no
+        período). Não temos como confirmar o vínculo entre os pedidos direto pela API nesta checagem — confira cada
+        par no painel do Mercado Livre (aba de devoluções/mediações) antes de decidir o que fazer. Não mexi no
+        total agregado.
+      </p>
+      {aberto && (
+        <DataTable>
+          <table className="data-table">
+            <thead>
+              <tr><th>Comprador</th><th>Valor</th><th>Pedidos</th><th>Dias distintos</th><th>Possível Duplicado</th></tr>
+            </thead>
+            <tbody>
+              {grupos.map((g, i) => (
+                <tr key={i}>
+                  <td>{g.clienteNome}</td>
+                  <td className="mono">{brl(g.receita)}</td>
+                  <td className="mono">{g.pedidos.join(', ')}</td>
+                  <td className="mono">{formatQtd(g.diasDistintos)}</td>
+                  <td className="mono" style={{ fontWeight: 700 }}>{brl(g.possivelReceitaDuplicada)}</td>
                 </tr>
               ))}
             </tbody>
@@ -867,7 +965,12 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
           <div className="filtros-barra-acoes">
             {loading && <span className="page-sub" style={{ margin: 0 }}>Atualizando…</span>}
             {relatorio && (
-              <BotaoExportar nomeBase="lucratividade" colunas={COLUNAS_PEDIDOS_EXPORTACAO} itens={tabelaPedidos.itensOrdenados} disabled={tabelaPedidos.totalItens === 0} />
+              <BotaoExportar
+                nomeBase={`lucratividade_calc-${String(new Date().getHours()).padStart(2, '0')}h${String(new Date().getMinutes()).padStart(2, '0')}`}
+                colunas={COLUNAS_PEDIDOS_EXPORTACAO}
+                itens={tabelaPedidos.itensOrdenados}
+                disabled={tabelaPedidos.totalItens === 0}
+              />
             )}
             {relatorio && (
               <button className="btn btn-ghost" onClick={() => window.print()}>
@@ -884,7 +987,8 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
 
         {temItemSemCusto && (
           <div className="aviso-compacto tone-atencao">
-            Alguns pedidos têm itens sem produto vinculado (marcados "parcial" — o custo deles não entra na conta).
+            Alguns pedidos têm itens sem produto vinculado (marcados "sem custo cadastrado" — ficam fora do total
+            do topo, receita de verdade com custo zero inflaria a margem).
             {isMarketplace ? ' Use "Vincular produto" na linha do pedido, ou "Revincular custos e impostos" pra tentar de novo.' : ''}
           </div>
         )}
@@ -893,6 +997,14 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
             Pedidos com o selo "estimativa" ainda não têm empresa/% de nota fiscal gravados — use "Revincular custos e
             impostos" depois de configurar a integração em Integrações para preenchê-los.
           </p>
+        )}
+        {isMarketplace && relatorio?.totalGeral.candidatosDescontoNaoCapturado > 0 && (
+          <div className="aviso-compacto tone-atencao">
+            {formatQtd(relatorio.totalGeral.candidatosDescontoNaoCapturado)} pedido(s) marcado(s) "receita candidata"
+            (linha na aba Pedidos) — a taxa cobrada, em % da receita gravada, está acima da comissão esperada do
+            Mercado Livre, sinal de que pode ter um desconto no fechamento que não saiu da receita. Não corrigi
+            sozinho (precisa confirmar contra a API/painel do Mercado Livre qual é o valor certo).
+          </div>
         )}
         {resultadoRevinculo && (
           <div className="aviso-compacto tone-saudavel">
@@ -922,11 +1034,20 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
         <DuplicatasSuspeitas duplicatas={duplicatas} />
       )}
 
+      {isMarketplace && duplicatas?.possivelTroca?.length > 0 && (
+        <PossivelTrocaSuspeita grupos={duplicatas.possivelTroca} total={duplicatas.totalPossivelReceitaDuplicadaTroca} />
+      )}
+
       {isMarketplace && relatorio && (
         <div className="subtab-row no-print">
           <button type="button" className={'subtab-btn' + (subTab === 'pedidos' ? ' active' : '')} onClick={() => setSubTab('pedidos')}>Pedidos</button>
           <button type="button" className={'subtab-btn' + (subTab === 'resumoProduto' ? ' active' : '')} onClick={() => setSubTab('resumoProduto')}>Resumo por Produto</button>
           <button type="button" className={'subtab-btn' + (subTab === 'vendas' ? ' active' : '')} onClick={() => setSubTab('vendas')}>Vendas</button>
+          {relatorio.totalGeral.pedidosNaoAvaliaveis?.length > 0 && (
+            <button type="button" className={'subtab-btn' + (subTab === 'naoAvaliaveis' ? ' active' : '')} onClick={() => setSubTab('naoAvaliaveis')}>
+              Não Avaliáveis ({formatQtd(relatorio.totalGeral.pedidosNaoAvaliaveis.length)})
+            </button>
+          )}
         </div>
       )}
 
@@ -938,7 +1059,18 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
               Período: {dataBr(dataInicio)} a {dataBr(dataFim)}
               {canalVenda ? ` · Canal: ${canalVenda}` : ''}
             </p>
+            {relatorio.calculadoEm && (
+              <p style={{ margin: '2px 0 0', color: '#777', fontSize: 12 }}>
+                Calculado em {new Date(relatorio.calculadoEm).toLocaleString('pt-BR')} — o rateio de Ads por pedido
+                pode mudar se recalculado depois (venda cancelada altera o divisor do dia).
+              </p>
+            )}
           </div>
+          {relatorio.calculadoEm && (
+            <p className="page-sub no-print" style={{ marginTop: -8, marginBottom: 12 }}>
+              Calculado em {new Date(relatorio.calculadoEm).toLocaleString('pt-BR')}
+            </p>
+          )}
 
           {(!isMarketplace || subTab === 'pedidos') && (
             <>
@@ -958,9 +1090,15 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                       <StatCard label="Ticket Médio" value={brl(relatorio.totalGeral.ticketMedio)} />
                       <StatCard label="Retorno Sobre Investimento" value={pct(relatorio.totalGeral.roiPct)} />
                     </div>
-                    {relatorio.totalGeral.custoAds > 0 && (
+                    {relatorio.totalGeral.custoAdsTotal > 0 && (
                       <div className="stat-strip" style={{ marginTop: 12 }}>
-                        <StatCard label="Valor em Ads" value={brl(relatorio.totalGeral.custoAds)} />
+                        <StatCard label="Valor em Ads" value={brl(relatorio.totalGeral.custoAdsTotal)}>
+                          {relatorio.totalGeral.custoAdsNaoAtribuido > 0 && (
+                            <span className="stat-card-delta" style={{ color: 'var(--ink-faint)', fontWeight: 500 }}>
+                              {brl(relatorio.totalGeral.custoAdsAtribuido)} atribuído + {brl(relatorio.totalGeral.custoAdsNaoAtribuido)} sem venda no dia
+                            </span>
+                          )}
+                        </StatCard>
                         <StatCard label="TACOS" value={pct(relatorio.totalGeral.tacos)} />
                         <StatCard label="Lucro Pós Ads" value={brl(relatorio.totalGeral.lucro)} />
                         <StatCard label="MPA"><MargemPill valor={relatorio.totalGeral.mpaPct} config={config} grande semVendas={relatorio.totalGeral.numeroVendas === 0} /></StatCard>
@@ -990,13 +1128,13 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                         <span className="mono">{relatorio.totalGeral.valorRecebidoSemConfirmacao} pedido(s)</span>
                       </div>
                     )}
-                    {relatorio.totalGeral.custoAdsNaoAtribuido > 0 && (
-                      <div className="row-line">
-                        <span>Gasto de Ads sem venda correspondente no dia</span>
-                        <span className="mono">{brl(relatorio.totalGeral.custoAdsNaoAtribuido)}</span>
-                      </div>
-                    )}
                     <div className="row-line no-print"><span>Pedidos no Período</span><span className="mono">{relatorio.pedidos.length}</span></div>
+                    <SeloDeConfianca
+                      considerado={relatorio.totalGeral.pedidosConsiderados}
+                      total={relatorio.totalGeral.totalPedidosPeriodo}
+                      unidade="pedidos"
+                      excluidos={[{ label: 'sem custo de material cadastrado (fora do total acima)', total: relatorio.totalGeral.pedidosExcluidosPorCustoIncompleto }]}
+                    />
                   </>
                 ) : (
                   <>
@@ -1068,10 +1206,17 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                             <td>{p.cliente_nome || '—'}</td>
                           )}
                           <td>{p.canal_venda || '—'}</td>
-                          <td className="mono">{brl(p.receita)}</td>
+                          <td className="mono">
+                            {brl(p.receita)}
+                            {p.candidatoDescontoNaoCapturado && (
+                              <span className="stamp sm tone-atencao" style={{ marginLeft: 6 }} title="A taxa cobrada, em % da receita gravada, está acima da comissão esperada do Mercado Livre — sinal de que pode ter um desconto no fechamento que não saiu da receita (receita gravada maior que o valor realmente transacionado). Confira contra o painel do Mercado Livre.">
+                                receita candidata
+                              </span>
+                            )}
+                          </td>
                           <td className="mono">
                             {brl(p.custo)}
-                            {p.custoIncompleto && <span className="stamp sm tone-atencao" style={{ marginLeft: 6 }}>parcial</span>}
+                            {p.custoIncompleto && <span className="stamp sm tone-atencao" style={{ marginLeft: 6 }} title="Item sem produto vinculado — este pedido fica de fora do total agregado do topo.">sem custo cadastrado</span>}
                           </td>
                           <td className="mono">{p.taxaMarketplace ? brl(p.taxaMarketplace) : '—'}</td>
                           <td className="mono" style={{ fontWeight: 700 }}>
@@ -1135,6 +1280,10 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
 
           {isMarketplace && subTab === 'vendas' && (
             <VendasTab pedidos={pedidosExibidos} config={config} busca={busca} />
+          )}
+
+          {isMarketplace && subTab === 'naoAvaliaveis' && (
+            <NaoAvaliaveisTab pedidos={relatorio.totalGeral.pedidosNaoAvaliaveis} />
           )}
         </>
       )}
