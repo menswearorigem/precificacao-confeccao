@@ -99,20 +99,29 @@ export default function WikStatusBanner() {
   const parado = horas > HORAS_LIMITE;
   if (!status.ultimoErro && !parado) return null;
 
+  const rejeitado = status.statusToken === 'rejeitado';
+  const dataUltimoSaldo = status.ultimaSincronizacao ? new Date(status.ultimaSincronizacao).toLocaleString('pt-BR') : 'nunca sincronizado';
+
   return (
     <>
       <div className="aviso-compacto tone-atencao no-print" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
           <span>
-            {status.ultimoErro ? (
+            {rejeitado ? (
+              // Mensagem honesta, sem texto técnico cru (nada de "erro
+              // interno" nem a string bruta da API) — o Wik rejeita a
+              // chamada de DADO mesmo com o login funcionando (confirmado
+              // por teste direto na API, fora do sistema, 27/08/2026: não é
+              // sessão duplicada, é o acesso de dados da conta).
+              <>O Wik está recusando o token nas chamadas de dado. O login funciona, mas nenhuma consulta é aceita — isso é do
+              lado do Wik.{status.rejeicoesConsecutivasToken >= 5 && ' Já tentamos várias vezes seguidas; reduzimos o ritmo até normalizar.'}</>
+            ) : status.ultimoErro ? (
               <>Sincronização com o Wik Sistemas com erro: <strong>{status.ultimoErro}</strong></>
             ) : (
               <>Sincronização com o Wik Sistemas parada há {formatarTempo(horas)}</>
             )}
-            {status.ultimaSincronizacao && (
-              <> — última sincronização bem-sucedida em {new Date(status.ultimaSincronizacao).toLocaleString('pt-BR')}.</>
-            )}
+            {' '}Último saldo sincronizado: <strong>{dataUltimoSaldo}</strong>.
           </span>
         </div>
         <button type="button" className="btn btn-ghost" style={{ flexShrink: 0 }} onClick={() => setModalAberto(true)}>

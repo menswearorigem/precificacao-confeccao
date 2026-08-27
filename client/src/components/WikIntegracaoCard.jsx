@@ -26,6 +26,9 @@ export default function WikIntegracaoCard() {
   const [resultadoSync, setResultadoSync] = useState(null);
   const [sincronizandoAgora, setSincronizandoAgora] = useState(false);
 
+  const [testandoCompleto, setTestandoCompleto] = useState(false);
+  const [resultadoTesteCompleto, setResultadoTesteCompleto] = useState(null);
+
   function load() {
     setLoading(true);
     Promise.all([api.get('/wik'), api.get('/listas/marca')]).then(([wikData, marcasData]) => {
@@ -74,6 +77,26 @@ export default function WikIntegracaoCard() {
       setErro(err.message);
     } finally {
       setTestando(false);
+    }
+  }
+
+  // "Testar conexão completa" (item 7) — o equivalente na tela do teste
+  // feito direto na API por PowerShell fora do sistema: login isolado +
+  // 1 chamada de saldo_estoque_get + 1 de tamanhos_get, mostrando status
+  // HTTP, body.status e corpo bruto de cada uma. Não mexe no status normal
+  // da integração (não roda job nenhum junto).
+  async function testarConexaoCompleta() {
+    setErro('');
+    setAviso('');
+    setResultadoTesteCompleto(null);
+    setTestandoCompleto(true);
+    try {
+      const resultado = await api.post('/wik/testar-completo', {});
+      setResultadoTesteCompleto(resultado);
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setTestandoCompleto(false);
     }
   }
 
@@ -187,7 +210,47 @@ export default function WikIntegracaoCard() {
             <RefreshCw size={13} /> {testando ? 'Testando…' : 'Testar conexão'}
           </button>
         )}
+        {integracao && (
+          <button className="btn btn-ghost" onClick={testarConexaoCompleta} disabled={testandoCompleto}>
+            <RefreshCw size={13} /> {testandoCompleto ? 'Testando…' : 'Testar conexão completa'}
+          </button>
+        )}
       </div>
+
+      {resultadoTesteCompleto && (
+        <div className="card" style={{ marginBottom: 14 }}>
+          <div className="card-head">Resultado do teste completo (login → estoque → tamanhos)</div>
+          <p className="page-sub" style={{ marginTop: -6 }}>
+            Login: criação {hoje(resultadoTesteCompleto.login.criacao)}, expira {hoje(resultadoTesteCompleto.login.expiracao)}
+            {resultadoTesteCompleto.login.expiracaoSuspeita && ' (o Wik não trouxe uma expiração clara desta vez)'}.
+            Usuário master: {String(resultadoTesteCompleto.login.usuarioMaster ?? 'não informado')}.
+            Empresas com acesso: {String(resultadoTesteCompleto.login.empresaAcesso ?? 'não informado')}.
+          </p>
+          <table className="data-table">
+            <thead><tr><th>Chamada</th><th>Base</th><th>HTTP</th><th>body.status</th><th>Corpo bruto</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>saldo_estoque_get</td>
+                <td className="mono">{resultadoTesteCompleto.saldoEstoque.base}</td>
+                <td>{resultadoTesteCompleto.saldoEstoque.pulado ? '—' : resultadoTesteCompleto.saldoEstoque.httpStatus}</td>
+                <td>{resultadoTesteCompleto.saldoEstoque.pulado ? '—' : String(resultadoTesteCompleto.saldoEstoque.bodyStatus)}</td>
+                <td className="mono" style={{ whiteSpace: 'normal', wordBreak: 'break-all' }}>
+                  {resultadoTesteCompleto.saldoEstoque.pulado || JSON.stringify(resultadoTesteCompleto.saldoEstoque.corpo)}
+                </td>
+              </tr>
+              <tr>
+                <td>tamanhos_get</td>
+                <td className="mono">{resultadoTesteCompleto.tamanhos.base}</td>
+                <td>{resultadoTesteCompleto.tamanhos.httpStatus}</td>
+                <td>{String(resultadoTesteCompleto.tamanhos.bodyStatus)}</td>
+                <td className="mono" style={{ whiteSpace: 'normal', wordBreak: 'break-all' }}>
+                  {JSON.stringify(resultadoTesteCompleto.tamanhos.corpo)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {integracao && (
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
@@ -203,17 +266,38 @@ export default function WikIntegracaoCard() {
           {integracao.statusToken === 'nao_testado' && (
             <span className="stamp sm tone-neutro">Ainda não testado</span>
           )}
-          <span className="page-sub" style={{ margin: 0 }}>Última sincronização: {hoje(integracao.ultimaSincronizacao)}</span>
+          <span className="page-sub" style={{ margin: 0, fontWeight: integracao.statusToken === 'rejeitado' ? 700 : undefined }}>
+            Último saldo sincronizado: {hoje(integracao.ultimaSincronizacao)}
+          </span>
           <span className="page-sub" style={{ margin: 0 }}>Última tentativa: {hoje(integracao.ultimaTentativa)}</span>
         </div>
       )}
 
-      {integracao?.statusToken === 'rejeitado' && integracao.rejeicoesToken24h >= 3 && (
+      {integracao?.statusToken === 'rejeitado' && (
         <div className="login-error" style={{ marginBottom: 12 }}>
-          O Wik rejeitou o token {integracao.rejeicoesToken24h}x nas últimas 24h. Não temos como confirmar a causa
-          exata — pode ser sessão única por usuário (alguém logando na tela do Wik com a MESMA credencial usada
-          aqui) ou falta de permissão de API pra este endpoint específico. Nos dois casos, considere um usuário
-          exclusivo de API no Wik, usado só por esta integração.
+          O Wik está recusando o token da API desde a última sincronização bem-sucedida (acima). O login continua
+          funcionando normalmente — só as chamadas de dado (estoque, produtos, ficha de custo) são rejeitadas.
+          Teste direto na API (fora do sistema, 27/08/2026) confirmou que isso NÃO é sessão duplicada: o mesmo erro
+          acontece com um login isolado, sem ninguém mais usando a credencial. É o acesso de dados da conta que
+          está revogado ou suspenso do lado do Wik — não tem conserto daqui; verifique com o suporte deles.
+          {integracao.rejeicoesConsecutivasToken >= 5 && (
+            <> Já são {integracao.rejeicoesConsecutivasToken} rejeições seguidas — reduzimos o ritmo das tentativas
+            automáticas (1x por hora) até normalizar.</>
+          )}
+        </div>
+      )}
+      {integracao?.rejeicoesToken24h >= 3 && integracao.statusToken !== 'rejeitado' && (
+        <div className="login-error" style={{ marginBottom: 12 }}>
+          O Wik rejeitou o token {integracao.rejeicoesToken24h}x nas últimas 24h. Considere um usuário exclusivo de
+          API no Wik, usado só por esta integração — facilita auditar/ajustar as permissões dela sem afetar o
+          acesso de uma pessoa de verdade.
+        </div>
+      )}
+      {integracao?.ultimaExpiracaoSuspeita && (
+        <div className="login-error" style={{ marginBottom: 12 }}>
+          O último login não trouxe uma data de expiração que desse pra entender ({hoje(integracao.ultimaExpiracaoSuspeita)}) —
+          tratamos o token como já expirado nesse caso (sem chutar nenhum prazo), então ele deve renovar sozinho na
+          próxima chamada.
         </div>
       )}
 

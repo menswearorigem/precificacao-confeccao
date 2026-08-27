@@ -5,7 +5,9 @@ const { parseEstoqueImportFile, parseEanExternoCsv } = require('../lib/estoqueIm
 const { getCalcContext } = require('../lib/calcContext');
 const { registrarMovimento } = require('../lib/estoqueMovimento');
 const { resolverEan } = require('../lib/eanResolver');
-const { buscarIntegracao: buscarIntegracaoWik, sincronizarEstoqueSeNecessario, sincronizarReferenciasAgora } = require('../lib/wikSync');
+const {
+  buscarIntegracao: buscarIntegracaoWik, sincronizarEstoqueSeNecessario, sincronizarReferenciasAgora, calcularStatusToken, corrigirJobsPresos,
+} = require('../lib/wikSync');
 const produtosRoutes = require('./produtos.routes');
 
 // Ordem canônica de tamanhos (igual ao relatório do Wiki Sistemas); tamanhos
@@ -781,11 +783,20 @@ router.get('/wik-status', async (req, res, next) => {
     sincronizarEstoqueSeNecessario();
     const integracao = await buscarIntegracaoWik();
     if (!integracao) return res.json({ configurado: false });
+    await corrigirJobsPresos(integracao);
     res.json({
       configurado: true,
       ativo: integracao.ativo,
       ultimaSincronizacao: integracao.ultima_sincronizacao,
       ultimoErro: integracao.ultimo_erro,
+      // statusToken/rejeicoesConsecutivasToken: mesmo cálculo do card de
+      // Integrações (ver wik.routes.js) — o banner de Estoque precisa
+      // concordar com a mesma classificação, não reinventar a partir só de
+      // ultimoErro (é essa distinção que permite mostrar uma mensagem
+      // honesta e não-técnica quando a causa é rejeição de token, em vez do
+      // texto cru do erro — ver WikStatusBanner.jsx).
+      statusToken: calcularStatusToken(integracao),
+      rejeicoesConsecutivasToken: integracao.rejeicoes_consecutivas_token || 0,
       previewStatus: integracao.preview_status,
     });
   } catch (err) {

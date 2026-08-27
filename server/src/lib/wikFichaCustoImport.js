@@ -1,6 +1,8 @@
 const pool = require('../db/pool');
 const wik = require('./wik');
-const { buscarIntegracao, obterTokenValido, criarOpcoesTokenComLimite, registrarTentativaWik, registrarFalhaWik, registrarSucessoWik } = require('./wikSync');
+const {
+  buscarIntegracao, obterTokenValido, criarOpcoesTokenComLimite, registrarTentativaWik, registrarFalhaWik, registrarSucessoWik, cicloDevePular,
+} = require('./wikSync');
 
 // IMPORTANTE: materiaprima_get devolve um "MatVlrUnit" que parece ser o
 // preço CORRENTE do material, não o custo que está de fato congelado na
@@ -194,6 +196,9 @@ async function sincronizarFichaCustoAgora() {
     && integracao.ficha_custo_import_iniciado_em
     && Date.now() - new Date(integracao.ficha_custo_import_iniciado_em).getTime() < 30 * 60 * 1000;
   if (jobTravado) return { pulado: 'já tem uma importação de ficha de custo em andamento' };
+
+  const pulado = cicloDevePular(integracao);
+  if (pulado) return { pulado };
 
   await registrarTentativaWik(integracao.id);
   await pool.query(

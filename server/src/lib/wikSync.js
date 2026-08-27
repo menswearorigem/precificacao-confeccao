@@ -39,17 +39,12 @@ async function buscarIntegracao() {
 // é válido e login de novo mesmo assim — usado quando o próprio Wik já
 // rejeitou o token com "token inválido ou expirado", ou seja, a validade
 // real do lado deles já passou mesmo com o relógio daqui ainda achando que
-// tinha tempo (a resposta de login às vezes não traz `expiracao`, caindo no
-// padrão de 1h — ver wik.js).
+// tinha tempo (a validade em si vem SÓ de retorno.expiracao — nunca
+// calculada aqui, ver wik.js).
 //
-// Margem de 10min (confirmado em produção — 26/08: token emitido às 09:41
-// veio com expiração às 10:41:15, ou seja, o Wik dá só 1h de vida real, não
-// as ~4h que a gente assumia antes; com um token de 1h, os 5min antigos de
-// margem deixavam pouca folga pra uma sincronização mais longa terminar
-// antes do vencimento de verdade). Login com retry (a API do Wik já teve
-// instabilidade transitória — ver comentário em wik.js) antes de desistir e
-// propagar o erro, que fica gravado em ultimo_erro e visível na tela de
-// Estoque.
+// Margem de 10min: folga suficiente pra uma sincronização mais longa
+// terminar antes do vencimento de verdade (teste direto na API, fora do
+// sistema, 27/08/2026: token de 4h de vida real).
 async function obterTokenValido(integracao, { forcar = false } = {}) {
   const MARGEM_MS = 10 * 60 * 1000;
   const expirado = forcar || !integracao.token_expira_em || new Date(integracao.token_expira_em).getTime() - Date.now() < MARGEM_MS;
@@ -60,9 +55,16 @@ async function obterTokenValido(integracao, { forcar = false } = {}) {
   for (let tentativa = 1; tentativa <= TENTATIVAS; tentativa += 1) {
     try {
       const resultado = await wik.login(integracao.email, integracao.senha);
+      // NÃO limpa ultimo_erro/ultima_rejeicao_token aqui — um LOGIN
+      // bem-sucedido não prova que uma chamada de DADO vai funcionar (é
+      // exatamente essa distinção que corrige o selo "TOKEN VÁLIDO"
+      // aparecendo ao lado de uma rejeição real, ver calcularStatusToken
+      // abaixo). Só registrarSucessoWik (chamado depois de uma operação de
+      // dado de verdade dar certo) limpa esse estado.
       await pool.query(
-        'UPDATE integracoes_wik SET access_token = $1, token_expira_em = $2, ultimo_erro = NULL, atualizado_em = now() WHERE id = $3',
-        [resultado.token, resultado.expiraEm, integracao.id]
+        `UPDATE integracoes_wik SET access_token = $1, token_expira_em = $2,
+                                     ultima_expiracao_suspeita = $3, atualizado_em = now() WHERE id = $4`,
+        [resultado.token, resultado.expiraEm, resultado.expiracaoSuspeita ? new Date() : null, integracao.id]
       );
       // Mantém o objeto em memória em sincronia — evita logar de novo à toa
       // se essa mesma chamada rodar mais de uma vez dentro do mesmo processo
@@ -111,8 +113,9 @@ function pareceRejeicaoDeToken(mensagemOuErro) {
 }
 
 // Registra o erro de qualquer operação do Wik, distinguindo rejeição de
-// token (loga em wik_token_rejeicoes pra contagem de 24h e marca
-// ultima_rejeicao_token) de qualquer outro tipo de erro — é essa distinção
+// token (loga em wik_token_rejeicoes pra contagem de 24h, marca
+// ultima_rejeicao_token e incrementa rejeicoes_consecutivas_token — ver
+// modo degradado abaixo) de qualquer outro tipo de erro — é essa distinção
 // que corrige o selo "TOKEN VÁLIDO" aparecendo do lado de "última tentativa
 // falhou": antes o selo só olhava se existia uma string de token gravada,
 // nunca se a ÚLTIMA tentativa de usá-la tinha dado certo. Aceita o Error
@@ -124,26 +127,25 @@ async function registrarFalhaWik(integracaoId, mensagemOuErro) {
     await pool.query('INSERT INTO wik_token_rejeicoes (integracao_id) VALUES ($1)', [integracaoId]);
   }
   await pool.query(
-    `UPDATE integracoes_wik SET ultimo_erro = $1, ultima_rejeicao_token = $2, atualizado_em = now() WHERE id = $3`,
-    [mensagem, ehToken ? new Date() : null, integracaoId]
+    `UPDATE integracoes_wik SET ultimo_erro = $1, ultima_rejeicao_token = $2,
+                                 rejeicoes_consecutivas_token = CASE WHEN $4 THEN rejeicoes_consecutivas_token + 1 ELSE rejeicoes_consecutivas_token END,
+                                 atualizado_em = now() WHERE id = $3`,
+    [mensagem, ehToken ? new Date() : null, integracaoId, ehToken]
   );
 }
 
 async function registrarSucessoWik(integracaoId, { sincronizouEstoque = false } = {}) {
   const campoExtra = sincronizouEstoque ? ', ultima_sincronizacao = now()' : '';
   await pool.query(
-    `UPDATE integracoes_wik SET ultimo_erro = NULL, ultima_rejeicao_token = NULL${campoExtra}, atualizado_em = now() WHERE id = $1`,
+    `UPDATE integracoes_wik SET ultimo_erro = NULL, ultima_rejeicao_token = NULL, rejeicoes_consecutivas_token = 0${campoExtra}, atualizado_em = now() WHERE id = $1`,
     [integracaoId]
   );
 }
 
 // Limite de reautenticação: no máximo 1 login forçado a cada
 // BACKOFF_REAUTENTICACAO_MS, não importa quantas chamadas dentro do MESMO
-// ciclo rejeitem o token — diagnóstico em produção (24/08) apontou que
-// relogar de novo pela API pode derrubar quem estiver usando o Wik pela web
-// naquele momento (HIPÓTESE, não confirmada — ver nota abaixo). Sem esse
-// limite, uma sincronização paginada (várias empresas/páginas) tentaria
-// relogar a cada chamada que rejeitasse — um "cabo de guerra" de sessão.
+// ciclo rejeitem o token. Sem esse limite, uma sincronização paginada
+// (várias empresas/páginas) tentaria relogar a cada chamada que rejeitasse.
 // Usado por TODAS as sincronizações do Wik (estoque, produtos, ficha de
 // custo, diagnóstico de ficha técnica), não só saldo_estoque_get.
 //
@@ -156,24 +158,55 @@ async function registrarSucessoWik(integracaoId, { sincronizouEstoque = false } 
 // trava — de um relogin forçado ANTERIOR — recusou nova tentativa).
 const BACKOFF_REAUTENTICACAO_MS = 10 * 60 * 1000;
 
+// Modo degradado: quando o Wik rejeita o token 5x SEGUIDAS (teste direto na
+// API, fora do sistema, 27/08/2026, mostrou que a causa é o acesso de DADOS
+// da conta revogado/suspenso do lado deles, não sessão — login sozinho
+// continua funcionando igual). Insistir a cada 15min nessas condições só
+// gera tráfego inútil (chegou a 224 rejeições em 24h, uma a cada ~6min) e
+// pode ser lido como abuso pelo fornecedor. A partir do limiar: os ciclos
+// automáticos passam a tentar 1x/hora em vez do ritmo normal (ver
+// cicloDevePular abaixo) E o relogin forçado dentro de um ciclo é
+// desativado (ver criarOpcoesTokenComLimite abaixo) — sem sentido insistir
+// em relogar quando já sabemos que o login não é o problema. Volta ao normal
+// sozinho na primeira chamada de dado bem-sucedida (registrarSucessoWik
+// zera o contador) ou quando a credencial é salva de novo na tela.
+const LIMIAR_MODO_DEGRADADO = 5;
+const INTERVALO_MODO_DEGRADADO_MS = 60 * 60 * 1000;
+
+function emModoDegradado(integracao) {
+  return (integracao.rejeicoes_consecutivas_token || 0) >= LIMIAR_MODO_DEGRADADO;
+}
+
+// Chamado no início de cada ciclo automático (estoque/produtos/ficha de
+// custo) — devolve uma string de motivo (pra virar `{ pulado }`) quando o
+// ciclo deve ser pulado por estar em modo degradado e ainda não ter passado
+// 1h desde a última tentativa, ou `null` quando deve rodar normalmente.
+function cicloDevePular(integracao) {
+  if (!emModoDegradado(integracao)) return null;
+  const ultima = integracao.ultima_tentativa ? new Date(integracao.ultima_tentativa).getTime() : 0;
+  if (Date.now() - ultima < INTERVALO_MODO_DEGRADADO_MS) {
+    return `modo degradado (${integracao.rejeicoes_consecutivas_token} rejeições de token seguidas) — tentando 1x/hora `
+      + 'em vez do ritmo normal até o Wik aceitar de novo ou a credencial ser salva';
+  }
+  return null;
+}
+
 function criarOpcoesTokenComLimite(integracao) {
   return {
     aoDetectarTokenMorto: () => registrarFalhaWik(integracao.id, 'Token rejeitado pelo Wik ("token inválido ou expirado").'),
     renovarToken: async () => {
+      if (emModoDegradado(integracao)) {
+        throw new Error(
+          `Já são ${integracao.rejeicoes_consecutivas_token} rejeições de token seguidas — parei de forçar relogin `
+          + '(modo degradado) até a primeira chamada de dado bem-sucedida ou a credencial ser salva de novo na tela.'
+        );
+      }
       const { rows } = await pool.query('SELECT ultima_reautenticacao_forcada FROM integracoes_wik WHERE id = $1', [integracao.id]);
       const ultima = rows[0]?.ultima_reautenticacao_forcada;
       if (ultima && Date.now() - new Date(ultima).getTime() < BACKOFF_REAUTENTICACAO_MS) {
-        // NOTA: a causa de por que relogar de novo pode derrubar a sessão é
-        // HIPÓTESE — pode ser sessão única por usuário (alguém logou pela
-        // web com a mesma credencial) OU falta de permissão de API pra este
-        // endpoint específico. Não temos como confirmar qual das duas é a
-        // real, então o texto abaixo cita as duas em vez de afirmar uma
-        // como fato (ver INTEGRACAO-WIK.md).
         throw new Error(
           `Token do Wik rejeitado, mas já tentei reautenticar há menos de ${Math.round(BACKOFF_REAUTENTICACAO_MS / 60000)} min — `
-          + 'não insisto de novo agora pra não arriscar brigar de sessão com quem estiver usando o Wik pela web '
-          + '(hipótese: sessão única por usuário; outra possibilidade é falta de permissão de API pra este endpoint). '
-          + 'Tento de novo mais tarde.'
+          + 'não insisto de novo agora. Tento de novo mais tarde.'
         );
       }
       await pool.query('UPDATE integracoes_wik SET ultima_reautenticacao_forcada = now() WHERE id = $1', [integracao.id]);
@@ -331,6 +364,9 @@ async function sincronizarEstoqueAgora() {
     && Date.now() - new Date(integracao.preview_iniciado_em).getTime() < 10 * 60 * 1000;
   if (jobTravado) return { pulado: 'já tem uma sincronização em andamento' };
 
+  const pulado = cicloDevePular(integracao);
+  if (pulado) return { pulado };
+
   const porEmpId = await empIdsConfigurados();
   if (porEmpId.size === 0) return { pulado: 'nenhuma marca com Id de Empresa configurado' };
 
@@ -422,6 +458,60 @@ async function sincronizarReferenciasAgora(referencias, motivo) {
   return { ...aplicado, erros: erros.length, referenciasEncontradas, criar, atualizar };
 }
 
+// "conectado" (existe uma string de token gravada) NÃO significa que ele
+// ainda funciona — a validade real de um token do lado do Wik pode acabar
+// (ou o acesso de DADOS da conta pode ser revogado, mesmo com login
+// funcionando — ver incidente de 17/08/2026 em INTEGRACAO-WIK.md) antes do
+// que o relógio local (token_expira_em) enxerga. statusToken reflete o
+// resultado da ÚLTIMA CHAMADA DE DADO de verdade (estoque, produtos, ficha
+// de custo — não "Testar conexão", que é só um login e por isso NUNCA
+// escreve em ultima_tentativa/ultimo_erro/ultima_rejeicao_token, ver rota
+// /testar em wik.routes.js): 'nao_testado' (nenhuma chamada de dado ainda),
+// 'rejeitado' (ultimo_erro atual é especificamente uma rejeição de token
+// pelo Wik), 'erro_outro' (falhou por outro motivo — rede, marca não
+// configurada etc.) ou 'valido'. Compartilhada entre wik.routes.js
+// (Integrações) e estoque.routes.js (banner de Estoque) — as duas telas
+// precisam concordar sobre o mesmo estado.
+function calcularStatusToken(row) {
+  if (!row.ultima_tentativa) return 'nao_testado';
+  if (row.ultimo_erro) return row.ultima_rejeicao_token ? 'rejeitado' : 'erro_outro';
+  return 'valido';
+}
+
+// Se um job de importação (estoque/produtos/ficha de custo) ficou "rodando"
+// travado além do próprio limiar que usamos pra permitir uma NOVA tentativa
+// começar (ver jobTravado em cada sincronizarXAgora e nas rotas de preview),
+// o status nunca se corrigia sozinho na TELA — ficava em "rodando" por horas
+// até alguém clicar de novo (visto em produção: ficha de custo presa por
+// mais de 40min). Corrige na hora de LER o status: se já passou do limiar e
+// ninguém atualizou, marca como erro com uma mensagem clara em vez de
+// deixar a mentira "ainda rodando" na tela.
+const TIMEOUT_JOB_ESTOQUE_MS = 10 * 60 * 1000;
+const TIMEOUT_JOB_CATALOGO_MS = 30 * 60 * 1000;
+
+async function corrigirJobsPresos(integracao) {
+  const checks = [
+    { statusCol: 'preview_status', iniciadoCol: 'preview_iniciado_em', erroCol: 'preview_erro', limiteMs: TIMEOUT_JOB_ESTOQUE_MS, nome: 'sincronização de estoque' },
+    { statusCol: 'produtos_import_status', iniciadoCol: 'produtos_import_iniciado_em', erroCol: 'produtos_import_erro', limiteMs: TIMEOUT_JOB_CATALOGO_MS, nome: 'importação de produtos' },
+    { statusCol: 'ficha_custo_import_status', iniciadoCol: 'ficha_custo_import_iniciado_em', erroCol: 'ficha_custo_import_erro', limiteMs: TIMEOUT_JOB_CATALOGO_MS, nome: 'importação de ficha de custo' },
+  ];
+  for (const c of checks) {
+    if (integracao[c.statusCol] !== 'rodando' || !integracao[c.iniciadoCol]) continue;
+    const decorrido = Date.now() - new Date(integracao[c.iniciadoCol]).getTime();
+    if (decorrido <= c.limiteMs) continue;
+    const mensagem = `A ${c.nome} ficou travada em "rodando" por mais de ${Math.round(c.limiteMs / 60000)} min sem `
+      + 'terminar (o processo provavelmente reiniciou no meio) — marcada como erro automaticamente.';
+    // Nomes de coluna vêm de `checks` acima (constante fixa no código, nunca
+    // de entrada do usuário) — seguro interpolar no SQL.
+    await pool.query(
+      `UPDATE integracoes_wik SET ${c.statusCol} = 'erro', ${c.erroCol} = $1, atualizado_em = now() WHERE id = $2`,
+      [mensagem, integracao.id]
+    );
+    integracao[c.statusCol] = 'erro';
+    integracao[c.erroCol] = mensagem;
+  }
+}
+
 module.exports = {
   buscarIntegracao,
   obterTokenValido,
@@ -436,4 +526,8 @@ module.exports = {
   registrarFalhaWik,
   registrarSucessoWik,
   criarOpcoesTokenComLimite,
+  cicloDevePular,
+  emModoDegradado,
+  calcularStatusToken,
+  corrigirJobsPresos,
 };

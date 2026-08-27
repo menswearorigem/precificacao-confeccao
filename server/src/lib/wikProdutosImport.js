@@ -1,6 +1,8 @@
 const pool = require('../db/pool');
 const wik = require('./wik');
-const { buscarIntegracao, obterTokenValido, criarOpcoesTokenComLimite, registrarTentativaWik, registrarFalhaWik, registrarSucessoWik } = require('./wikSync');
+const {
+  buscarIntegracao, obterTokenValido, criarOpcoesTokenComLimite, registrarTentativaWik, registrarFalhaWik, registrarSucessoWik, cicloDevePular,
+} = require('./wikSync');
 const { resolverEan } = require('./eanResolver');
 
 // Os 4 Ids de Empresa conhecidos (confirmados com a usuária): 192 (Hebron
@@ -200,6 +202,9 @@ async function sincronizarProdutosAgora() {
     && integracao.produtos_import_iniciado_em
     && Date.now() - new Date(integracao.produtos_import_iniciado_em).getTime() < 30 * 60 * 1000;
   if (jobTravado) return { pulado: 'já tem uma importação de produtos em andamento' };
+
+  const pulado = cicloDevePular(integracao);
+  if (pulado) return { pulado };
 
   await registrarTentativaWik(integracao.id);
   await pool.query(

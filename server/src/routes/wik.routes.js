@@ -3,33 +3,12 @@ const pool = require('../db/pool');
 const wik = require('../lib/wik');
 const {
   buscarIntegracao, obterTokenValido, empIdsConfigurados, montarPreviewEstoque, aplicarSincronizacaoEstoque, sincronizarEstoqueAgora,
-  criarOpcoesTokenComLimite, registrarTentativaWik, registrarFalhaWik, registrarSucessoWik,
+  criarOpcoesTokenComLimite, registrarTentativaWik, registrarFalhaWik, registrarSucessoWik, calcularStatusToken, corrigirJobsPresos,
 } = require('../lib/wikSync');
 const { montarPreviewProdutos, aplicarImportacaoProdutos, sincronizarProdutosAgora } = require('../lib/wikProdutosImport');
 const { montarPreviewFichaCusto, aplicarImportacaoFichaCusto, sincronizarFichaCustoAgora } = require('../lib/wikFichaCustoImport');
 
 const router = express.Router();
-
-// "conectado" (existe uma string de token gravada) NÃO significa que ele
-// ainda funciona — a validade real de um token do lado do Wik pode acabar
-// antes do que o relógio local (token_expira_em) enxerga. statusToken
-// reflete o resultado da ÚLTIMA CHAMADA DE DADO de verdade (estoque,
-// produtos, ficha de custo — não "Testar conexão", que é só um login e por
-// isso NUNCA escreve em ultima_tentativa/ultimo_erro/ultima_rejeicao_token,
-// ver rota /testar abaixo): 'nao_testado' (nenhuma chamada de dado ainda),
-// 'rejeitado' (ultimo_erro atual é especificamente uma rejeição de token
-// pelo Wik — ver registrarFalhaWik/ultima_rejeicao_token em wikSync.js),
-// 'erro_outro' (falhou por outro motivo — rede, marca não configurada etc.)
-// ou 'valido'. CORRIGIDO: antes "Testar conexão" também gravava sucesso
-// nessas colunas, então um login isolado (que não prova que saldo_estoque_get
-// funciona) já bastava pra virar o selo verde — foi assim que a contradição
-// "TOKEN VÁLIDO" ao lado de "token rejeitado" voltou depois da primeira
-// correção, por um caminho diferente do original.
-function calcularStatusToken(row) {
-  if (!row.ultima_tentativa) return 'nao_testado';
-  if (row.ultimo_erro) return row.ultima_rejeicao_token ? 'rejeitado' : 'erro_outro';
-  return 'valido';
-}
 
 function paraFora(row, rejeicoes24h = 0) {
   if (!row) return null;
@@ -43,6 +22,8 @@ function paraFora(row, rejeicoes24h = 0) {
     ultimoErro: row.ultimo_erro,
     statusToken: calcularStatusToken(row),
     rejeicoesToken24h: rejeicoes24h,
+    rejeicoesConsecutivasToken: row.rejeicoes_consecutivas_token || 0,
+    ultimaExpiracaoSuspeita: row.ultima_expiracao_suspeita,
     previewStatus: row.preview_status,
     produtosImportStatus: row.produtos_import_status,
     fichaCustoImportStatus: row.ficha_custo_import_status,
@@ -61,6 +42,7 @@ async function contarRejeicoesToken24h(integracaoId) {
 router.get('/', async (req, res, next) => {
   try {
     const integracao = await buscarIntegracao();
+    if (integracao) await corrigirJobsPresos(integracao);
     const rejeicoes24h = await contarRejeicoesToken24h(integracao?.id);
     res.json(paraFora(integracao, rejeicoes24h));
   } catch (err) {
@@ -76,12 +58,14 @@ router.post('/', async (req, res, next) => {
     let row;
     if (existente) {
       // Credencial nova (ou trocada) zera também a trava de reautenticação
-      // (ultima_reautenticacao_forcada) — qualquer motivo pro backoff da
-      // credencial ANTERIOR deixa de fazer sentido pra uma credencial nova.
+      // (ultima_reautenticacao_forcada) e o contador de rejeições seguidas
+      // (rejeicoes_consecutivas_token) — qualquer motivo pro backoff/modo
+      // degradado da credencial ANTERIOR deixa de fazer sentido pra uma
+      // credencial nova (item 4/6c do pedido de 27/08/2026).
       ({ rows: [row] } = await pool.query(
         `UPDATE integracoes_wik SET email = $1, senha = $2, access_token = NULL, token_expira_em = NULL,
                                      ultimo_erro = NULL, ultima_rejeicao_token = NULL, ultima_reautenticacao_forcada = NULL,
-                                     atualizado_em = now()
+                                     rejeicoes_consecutivas_token = 0, atualizado_em = now()
          WHERE id = $3 RETURNING *`,
         [email, senha, existente.id]
       ));
@@ -128,6 +112,47 @@ router.post('/testar', async (req, res, next) => {
       [resultado.token, resultado.expiraEm, integracao.id]
     );
     res.json({ ok: true, nome: resultado.nome, email: resultado.email, expiraEm: resultado.expiraEm });
+  } catch (err) {
+    res.status(422).json({ error: err.message });
+  }
+});
+
+// "Testar conexão completa" (item 7 do pedido de 27/08/2026) — o equivalente
+// na tela do teste feito direto na API por PowerShell, fora do sistema, que
+// isolou a causa raiz do 403: 1 login → 1 chamada de saldo_estoque_get
+// (base "apiwiki") → 1 chamada de tamanhos_get (base "wiki_v2"), mostrando o
+// HTTP status, o body.status e o corpo bruto de cada uma. NÃO participa do
+// job/status normal (sem registrarTentativaWik/registrarFalhaWik/
+// registrarSucessoWik, sem passar por criarOpcoesTokenComLimite) — é
+// diagnóstico manual isolado, não deve interferir no modo degradado nem ser
+// bloqueado por ele. Nunca devolve o token pro front.
+router.post('/testar-completo', async (req, res, next) => {
+  try {
+    const integracao = await buscarIntegracao();
+    if (!integracao) return res.status(400).json({ error: 'Cadastre a credencial primeiro.' });
+
+    const login = await wik.login(integracao.email, integracao.senha);
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    const porEmpId = await empIdsConfigurados();
+    const primeiroEmpId = porEmpId.size > 0 ? [...porEmpId.keys()][0] : null;
+
+    const chamadaEstoque = primeiroEmpId
+      ? await wik.chamarBrutoDiagnostico(login.token, 'apiwiki', 'saldo_estoque_get', { empId: primeiroEmpId, pagina: 1 })
+      : { pulado: 'nenhuma marca com Id de Empresa configurado (em Listas > Marcas) — não dá pra montar o parâmetro empId' };
+    const chamadaTamanhos = await wik.chamarBrutoDiagnostico(login.token, 'wiki_v2', 'tamanhos_get', {});
+
+    res.json({
+      login: {
+        criacao: login.criacao,
+        expiracao: login.expiraEm,
+        expiracaoSuspeita: login.expiracaoSuspeita,
+        usuarioMaster: login.usuarioMaster,
+        empresaAcesso: login.empresaAcesso,
+      },
+      saldoEstoque: { base: 'apiwiki', path: 'saldo_estoque_get', empIdUsado: primeiroEmpId, ...chamadaEstoque },
+      tamanhos: { base: 'wiki_v2', path: 'tamanhos_get', ...chamadaTamanhos },
+    });
   } catch (err) {
     res.status(422).json({ error: err.message });
   }
@@ -187,6 +212,7 @@ router.get('/estoque/preview', async (req, res, next) => {
   try {
     const integracao = await buscarIntegracao();
     if (!integracao) return res.status(400).json({ error: 'Cadastre a credencial do Wik primeiro.' });
+    await corrigirJobsPresos(integracao);
     res.json({
       status: integracao.preview_status,
       resultado: integracao.preview_resultado,
@@ -280,6 +306,7 @@ router.get('/produtos/preview', async (req, res, next) => {
   try {
     const integracao = await buscarIntegracao();
     if (!integracao) return res.status(400).json({ error: 'Cadastre a credencial do Wik primeiro.' });
+    await corrigirJobsPresos(integracao);
     res.json({
       status: integracao.produtos_import_status,
       resultado: integracao.produtos_import_resultado,
@@ -436,6 +463,7 @@ router.get('/ficha-custo/preview', async (req, res, next) => {
   try {
     const integracao = await buscarIntegracao();
     if (!integracao) return res.status(400).json({ error: 'Cadastre a credencial do Wik primeiro.' });
+    await corrigirJobsPresos(integracao);
     res.json({
       status: integracao.ficha_custo_import_status,
       resultado: integracao.ficha_custo_import_resultado,
