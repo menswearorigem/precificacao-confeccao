@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Plus, AlertTriangle, Calendar, Columns3, Printer } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, AlertTriangle, Calendar, Columns3, Printer, Clock, CheckCircle2 } from 'lucide-react';
 import { dataBr } from '../lib/format';
 import { api } from '../api/client';
 import { StatCard, Select } from '../components/ui';
@@ -162,11 +162,11 @@ export default function CalendarioPage() {
 
       {resumo && (
         <div className="stat-strip">
-          <StatCard label="Atrasados" value={resumo.atrasados} variant="danger">
+          <StatCard label="Atrasados" value={resumo.atrasados} variant="danger" Icone={AlertTriangle}>
             {resumo.atrasados > 0 && <span className="stat-card-delta down"><AlertTriangle size={12} /> requer atenção</span>}
           </StatCard>
-          <StatCard label="Vencendo em 7 dias" value={resumo.vencendo7Dias} variant="warning" />
-          <StatCard label="Concluídos no mês" value={resumo.concluidosNoMes} variant="success" />
+          <StatCard label="Vencendo em 7 dias" value={resumo.vencendo7Dias} variant="warning" Icone={Clock} />
+          <StatCard label="Concluídos no mês" value={resumo.concluidosNoMes} variant="success" Icone={CheckCircle2} />
         </div>
       )}
 

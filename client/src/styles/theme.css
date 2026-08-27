@@ -1343,7 +1343,14 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
   margin-bottom: 16px;
   box-shadow: var(--shadow-xs);
 }
-.stat-card { background: var(--surface); padding: 13px 16px; display: flex; flex-direction: column; gap: 4px; }
+/* `.stat-card-corpo` embrulha label/valor/children numa coluna — existe
+   mesmo quando não há ícone (só um filho dentro do row abaixo, comporta-se
+   igual ao flex-column de antes) pra que o `.stat-card` vire uma linha
+   (rótulo+valor à esquerda, ícone da variante à direita) só quando a prop
+   `Icone` é passada, sem exigir mudança nos módulos que já usam StatCard
+   sem ícone (Dashboard, Lucratividade, Marketplace, Estoque). */
+.stat-card { background: var(--surface); padding: 13px 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.stat-card-corpo { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .stat-card-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-faint); font-weight: 600; }
 .stat-card-value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 700; color: var(--ink); }
 .stat-card-delta { font-family: var(--font-mono); font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600; width: fit-content; }
@@ -1357,11 +1364,26 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
   background: none;
   border-color: transparent;
 }
-/* Variante de cor do StatCard (prop `variant`) — tinge o cartão inteiro,
-   reaproveitável por qualquer módulo, não só o Calendário. */
-.stat-card.stat-card-danger { background: var(--danger-bg); }
-.stat-card.stat-card-warning { background: var(--warning-bg); }
-.stat-card.stat-card-success { background: var(--success-bg); }
+/* Variante de cor do StatCard (prop `variant`) — barra lateral de 4px na
+   cor cheia do indicador (não o cartão inteiro pintado de pastel) +
+   ícone (prop `Icone`) na mesma cor cheia, reaproveitável por qualquer
+   módulo, não só o Calendário. Número em --font-display/700 só quando a
+   variante está presente (calendário, hoje) — não mexe no --font-mono
+   dos outros módulos, que não passam variant. */
+.stat-card.stat-card-danger { border-left: 4px solid var(--danger-ring); }
+.stat-card.stat-card-warning { border-left: 4px solid var(--warning-ring); }
+.stat-card.stat-card-success { border-left: 4px solid var(--success-ring); }
+.stat-card.stat-card-danger .stat-card-value,
+.stat-card.stat-card-warning .stat-card-value,
+.stat-card.stat-card-success .stat-card-value {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 700;
+}
+.stat-card-icone { flex-shrink: 0; }
+.stat-card.stat-card-danger .stat-card-icone { color: var(--danger-ring); }
+.stat-card.stat-card-warning .stat-card-icone { color: var(--warning-ring); }
+.stat-card.stat-card-success .stat-card-icone { color: var(--success-ring); }
 @media (max-width: 640px) { .stat-strip { grid-template-columns: repeat(2, 1fr); } }
 
 /* ---------- sub-abas dentro de uma página ---------- */
@@ -2457,7 +2479,12 @@ table.ficha-doc-tabela {
   transition: background 0.12s var(--ease);
 }
 .calendario-dia:hover { background: var(--surface-alt); }
-.calendario-dia.fora-do-mes { background: var(--surface-alt); opacity: 0.55; }
+/* Dias fora do mês corrente: fundo mais escuro que o resto (não só uma
+   opacidade uniforme, que também lavava a cor de um chip de evento que
+   caísse ali) + número em --ink-faint — sinaliza "dia de contexto", sem
+   apagar um evento de verdade que apareça nessa célula. */
+.calendario-dia.fora-do-mes { background: var(--bg-deep); }
+.calendario-dia.fora-do-mes .calendario-dia-numero { color: var(--ink-faint); }
 /* Dia de hoje: contorno na célula inteira + número num círculo preenchido —
    não só o número com cor diferente. */
 .calendario-dia.hoje { outline: 2px solid var(--terracotta); outline-offset: -2px; }
@@ -2474,31 +2501,23 @@ table.ficha-doc-tabela {
 .calendario-dia-numero { font-size: 12.5px; font-weight: 600; color: var(--ink); }
 .calendario-dia-eventos { display: flex; flex-direction: column; gap: 3px; }
 
-/* Tom por situação (atrasado/vencendo/no prazo/concluído) — mesma técnica
-   dos selos .tone-* (fundo tintado + cor de texto), só que com borda
-   esquerda de 3px em vez de borda inteira, no formato de chip/card. Usado
-   igual nas 3 visões (mês, Kanban e a tabela impressa reaproveita os
-   mesmos rótulos em SITUACAO_ROTULO). */
-.calendario-chip, .kanban-cartao {
-  border-left: 3px solid transparent;
-}
-.calendario-tom-atrasado { background: var(--danger-bg); color: var(--danger); }
-.calendario-tom-vencendo { background: var(--warning-bg); color: var(--warning); }
-.calendario-tom-no-prazo { background: var(--surface-alt); color: var(--brass); }
-.calendario-tom-concluido { background: var(--success-bg); color: var(--success); }
-/* Seletor composto (2 classes) de propósito — precisa ganhar de qualquer
-   `border` em bloco de .calendario-chip/.kanban-cartao independente da
-   ordem no arquivo (shorthand "border" reseta os 4 lados, então uma regra
-   de specificity igual e só de border-left-color perderia dependendo de
-   quem vem depois no CSS). */
-.calendario-chip.calendario-tom-atrasado, .kanban-cartao.calendario-tom-atrasado { background: var(--danger-bg); border-left-color: var(--danger-ring); }
-.calendario-chip.calendario-tom-vencendo, .kanban-cartao.calendario-tom-vencendo { background: var(--warning-bg); border-left-color: var(--warning-ring); }
-.calendario-chip.calendario-tom-no-prazo, .kanban-cartao.calendario-tom-no-prazo { background: var(--surface-alt); border-left-color: var(--brass); }
-.calendario-chip.calendario-tom-concluido, .kanban-cartao.calendario-tom-concluido { background: var(--success-bg); border-left-color: var(--success-ring); }
+/* Tom por situação (atrasado/vencendo/no prazo/concluído) — fundo SÓLIDO na
+   cor cheia (não o fundo tintado + borda fina de .tone-*, que some demais
+   num elemento pequeno dentro de uma célula de calendário) + texto branco.
+   Usado igual no chip do mês e no card do Kanban, pra nunca virar cor
+   diferente dependendo da visão (a tabela impressa reaproveita os mesmos
+   rótulos em SITUACAO_ROTULO, sem cor — papel é preto e branco).
+   "Vencendo" usa --warning (não --warning-ring): --warning-ring dá contraste
+   ~3:1 com texto branco nesse tamanho pequeno/negrito, abaixo do mínimo
+   legível — --warning garante ~6:1. */
+.calendario-tom-atrasado { background: var(--danger-ring); color: #fff; }
+.calendario-tom-vencendo { background: var(--warning); color: #fff; }
+.calendario-tom-no-prazo { background: var(--brass); color: #fff; }
+.calendario-tom-concluido { background: var(--success-ring); color: #fff; }
 
-/* Categoria continua visível (cor determinística por texto), só que como um
-   pontinho ao lado do título em vez de dono da borda esquerda — a borda
-   esquerda agora é o sinal mais importante (atrasado/vencendo/etc). */
+/* Categoria continua visível (cor determinística por texto) como um
+   pontinho ao lado do título, com um anel claro pra não se perder em cima
+   do fundo sólido colorido do chip/card. */
 .categoria-dot {
   display: inline-block;
   width: 7px;
@@ -2506,13 +2525,14 @@ table.ficha-doc-tabela {
   border-radius: 50%;
   margin-right: 5px;
   flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6);
 }
 
 .calendario-chip {
-  background: var(--surface-alt);
-  border-radius: 4px;
-  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  padding: 3px 7px;
   font-size: 11px;
+  font-weight: 700;
   text-align: left;
   display: flex;
   align-items: center;
@@ -2521,7 +2541,7 @@ table.ficha-doc-tabela {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.calendario-chip:hover { filter: brightness(0.96); }
+.calendario-chip:hover { filter: brightness(0.94); }
 .calendario-dia-mais { font-size: 10.5px; color: var(--ink-soft); padding: 2px 4px; }
 
 /* ---------- Calendário — header (mês, navegação, alternância de visão) ---------- */
@@ -2559,6 +2579,11 @@ table.ficha-doc-tabela {
 .calendario-header-barra .view-toggle button { background: rgba(244, 239, 228, 0.08); color: #f4efe4; }
 .calendario-header-barra .view-toggle button + button { border-left-color: rgba(244, 239, 228, 0.25); }
 .calendario-header-barra .view-toggle button.active { background: var(--terracotta); color: #fff; }
+/* "Novo evento" é o comando principal da faixa — cor sólida de destaque em
+   vez do gradiente padrão do .btn-primary (que é da mesma família marrom do
+   fundo leather-dark e se mistura demais nele). */
+.calendario-header-barra .btn-primary { background: var(--terracotta); box-shadow: none; }
+.calendario-header-barra .btn-primary:hover { background: var(--terracotta-bright); filter: none; box-shadow: none; }
 
 /* ---------- Calendário — legenda de cores ---------- */
 .calendario-legenda {
@@ -2572,11 +2597,11 @@ table.ficha-doc-tabela {
 }
 .calendario-legenda-item { display: inline-flex; align-items: center; gap: 6px; }
 .calendario-legenda-quadrado { display: inline-block; width: 11px; height: 11px; border-radius: 3px; }
-/* No quadrinho da legenda usa a cor "ring" (mais saturada), não o fundo
-   tintado pálido — senão vencendo/no-prazo ficam parecidos demais entre si
-   pra servir de legenda. */
+/* Mesma cor exata usada no fundo sólido do chip/card (ver .calendario-tom-*
+   acima) — a legenda precisa bater com o que a usuária vê nas células, não
+   uma variante "mais saturada ainda" só pra ela mesma. */
 .calendario-legenda-quadrado.calendario-tom-atrasado { background: var(--danger-ring); }
-.calendario-legenda-quadrado.calendario-tom-vencendo { background: var(--warning-ring); }
+.calendario-legenda-quadrado.calendario-tom-vencendo { background: var(--warning); }
 .calendario-legenda-quadrado.calendario-tom-no-prazo { background: var(--brass); }
 .calendario-legenda-quadrado.calendario-tom-concluido { background: var(--success-ring); }
 
@@ -2681,9 +2706,9 @@ table.ficha-doc-tabela {
   display: flex;
   justify-content: space-between;
 }
+/* Fundo sólido na cor da situação (.calendario-tom-*, ver acima) — igual ao
+   chip do mês, mesma cor pras mesmas 3 visões. */
 .kanban-cartao {
-  background: var(--surface);
-  border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   padding: 8px 10px;
   margin-bottom: 8px;
@@ -2692,5 +2717,8 @@ table.ficha-doc-tabela {
 }
 .kanban-cartao:active { cursor: grabbing; }
 .kanban-cartao.arrastando { opacity: 0.4; }
-.kanban-cartao-titulo { font-weight: 600; margin-bottom: 4px; }
-.kanban-cartao-meta { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--ink-soft); }
+.kanban-cartao-titulo { font-weight: 700; margin-bottom: 4px; }
+/* Texto secundário em branco semi-transparente (não --ink-soft, que é um
+   marrom pensado pra fundo claro — ilegível em cima do fundo sólido e
+   saturado do card). */
+.kanban-cartao-meta { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: rgba(255, 255, 255, 0.85); }

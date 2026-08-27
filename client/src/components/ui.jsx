@@ -93,16 +93,22 @@ export function Toggle({ checked, onChange, disabled, className = '', ...props }
 // componente próprio (ex.: MargemPill com cor semântica, que já sai com a
 // classe stat-card-value embutida) quanto pra um selo de variação abaixo do
 // valor (ex.: VariacaoBadge), podendo os dois coexistir.
-// `variant` (opcional: "danger"/"warning"/"success") tinge o fundo do
-// cartão inteiro — pra KPIs onde a cor por si só já diz se é bom ou ruim
-// (ex.: "Atrasados"), em vez dos três cartões de uma faixa saírem todos
-// iguais em bege neutro.
-export function StatCard({ label, value, children, variant }) {
+// `variant` (opcional: "danger"/"warning"/"success") dá uma barra lateral +
+// ícone (se `Icone` for passado) na cor cheia do indicador — pra KPIs onde a
+// cor por si só já diz se é bom ou ruim (ex.: "Atrasados"), em vez dos três
+// cartões de uma faixa saírem todos iguais em bege neutro.
+// `Icone` é opcional e reaproveitável por qualquer módulo (não só o
+// Calendário, que foi o primeiro a usar): um componente de ícone (ex. de
+// lucide-react) renderizado à direita, na mesma cor do `variant`.
+export function StatCard({ label, value, children, variant, Icone }) {
   return (
     <div className={`stat-card${variant ? ` stat-card-${variant}` : ''}`}>
-      <span className="stat-card-label">{label}</span>
-      {value !== undefined && <span className="stat-card-value">{value}</span>}
-      {children}
+      <div className="stat-card-corpo">
+        <span className="stat-card-label">{label}</span>
+        {value !== undefined && <span className="stat-card-value">{value}</span>}
+        {children}
+      </div>
+      {Icone && <Icone size={22} className="stat-card-icone" />}
     </div>
   );
 }
