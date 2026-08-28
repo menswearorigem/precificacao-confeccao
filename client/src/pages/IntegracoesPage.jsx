@@ -9,10 +9,14 @@ import WikIntegracaoCard from '../components/WikIntegracaoCard';
 import WikImportarProdutosCard from '../components/WikImportarProdutosCard';
 import WikImportarFichaCustoCard from '../components/WikImportarFichaCustoCard';
 import WikFichaCustoDiagnosticoCard from '../components/WikFichaCustoDiagnosticoCard';
+import logoMercadoLivre from '../assets/logos/mercado-livre.svg';
+import logoShopee from '../assets/logos/shopee.svg';
+import logoTiktokShop from '../assets/logos/tiktok-shop.svg';
+import logoWikSistemas from '../assets/logos/wik-sistemas.svg';
 
-// Sem arquivo de logo oficial de cada marketplace (o app não tem pipeline de
-// imagem estática) — em vez disso, um selo com a cor de marca de cada um,
-// que já dá pra reconhecer rápido igual um logo faria.
+// Logos reais como arquivo SVG no repositório (client/src/assets/logos) —
+// nada de URL externa nem selo com só a cor de marca (que era o que existia
+// antes disso).
 const MARKETPLACES = {
   mercado_livre: {
     label: 'Mercado Livre',
@@ -20,9 +24,7 @@ const MARKETPLACES = {
     campoId: 'Client ID',
     campoSecret: 'Client Secret',
     ajuda: 'Crie um app em developers.mercadolivre.com.br e registre o Client ID/Secret aqui.',
-    corFundo: '#FFE600',
-    corTexto: '#2D3277',
-    sigla: 'ML',
+    logo: logoMercadoLivre,
   },
   shopee: {
     label: 'Shopee',
@@ -30,9 +32,7 @@ const MARKETPLACES = {
     campoId: 'Partner ID',
     campoSecret: 'Partner Key',
     ajuda: 'Gere o Partner ID/Key no Shopee Open Platform (Seller Center) e registre aqui.',
-    corFundo: '#EE4D2D',
-    corTexto: '#ffffff',
-    sigla: 'S',
+    logo: logoShopee,
   },
   tiktok_shop: {
     label: 'TikTok Shop',
@@ -41,9 +41,7 @@ const MARKETPLACES = {
     campoSecret: 'App Secret',
     campoServiceId: 'Service ID',
     ajuda: 'Crie o app em Partner Center → App & Service e registre o App Key/Secret e o Service ID aqui.',
-    corFundo: '#000000',
-    corTexto: '#25F4EE',
-    sigla: 'TT',
+    logo: logoTiktokShop,
   },
 };
 
@@ -51,11 +49,7 @@ function MarketplaceLogo({ marketplace, size = 30 }) {
   const info = MARKETPLACES[marketplace];
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-      <span style={{
-        width: size, height: size, borderRadius: '50%', background: info.corFundo, color: info.corTexto,
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: size * 0.4, flexShrink: 0,
-      }}>{info.sigla}</span>
+      <img src={info.logo} alt="" width={size} height={size} style={{ borderRadius: size * 0.22, flexShrink: 0 }} />
       <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: size * 0.6, color: 'var(--leather-deep)' }}>
         {info.label}
       </span>
@@ -247,7 +241,9 @@ export default function IntegracoesPage() {
               key={chave} type="button"
               className={'subtab-btn' + (subTab === chave ? ' active' : '')}
               onClick={() => { setSubTab(chave); setMostrarNova(false); setExpandidoId(null); }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}
             >
+              <img src={info.logo} alt="" width={16} height={16} style={{ borderRadius: 3, flexShrink: 0 }} />
               {info.label} {total > 0 && <span style={{ opacity: 0.75 }}>· {total}</span>}
             </button>
           );
@@ -256,7 +252,9 @@ export default function IntegracoesPage() {
           type="button"
           className={'subtab-btn' + (subTab === 'wik' ? ' active' : '')}
           onClick={() => { setSubTab('wik'); setMostrarNova(false); setExpandidoId(null); }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}
         >
+          <img src={logoWikSistemas} alt="" width={16} height={16} style={{ borderRadius: 3, flexShrink: 0 }} />
           Wik Sistemas (ERP)
         </button>
       </div>

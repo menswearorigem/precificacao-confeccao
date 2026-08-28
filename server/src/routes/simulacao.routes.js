@@ -34,6 +34,7 @@ router.post('/', async (req, res, next) => {
       custoIndiretoPorPeca: ctx.custoIndiretoPorPeca,
       pctImpostos: pctImpostosEmpresa(produtoRow),
       pctTaxas: ctx.pctTaxas,
+      valorFixoTaxas: ctx.valorFixoTaxas,
       config: ctx.config,
       precoInformado: produtoRow.preco_informado,
     });
@@ -58,6 +59,7 @@ router.post('/', async (req, res, next) => {
       subtotalProducao: subtotalSimulado,
       pctImpostos: pctImpostosSimulado,
       pctTaxas: pctTaxasSimulado,
+      valorFixoTaxas: base.custoTotal.valorFixoTaxas,
       config: ctx.config,
       precoInformado: null,
       margemDesejada: margemSimulada,

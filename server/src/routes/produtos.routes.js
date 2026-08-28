@@ -22,6 +22,7 @@ router.post('/calcular', async (req, res, next) => {
       custoIndiretoPorPeca: ctx.custoIndiretoPorPeca,
       pctImpostos,
       pctTaxas: ctx.pctTaxas,
+      valorFixoTaxas: ctx.valorFixoTaxas,
       config: ctx.config,
       precoInformado: body.preco_informado,
     });
@@ -66,6 +67,7 @@ function buildCalculo(produtoRow, materiais, custosIndustriais, ctx) {
     custoIndiretoPorPeca: ctx.custoIndiretoPorPeca,
     pctImpostos,
     pctTaxas: ctx.pctTaxas,
+    valorFixoTaxas: ctx.valorFixoTaxas,
     config: ctx.config,
     precoInformado: produtoRow.preco_informado,
   });

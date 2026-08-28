@@ -34,14 +34,24 @@ const FRETE_TIPOS = ['Frete da Facção', 'Frete de Retorno', 'Frete Interno'];
 // já agregado. Reutilizado pelo cálculo completo do produto e pelo
 // simulador de cenários (que trabalha com subtotais ajustados, não com
 // listas de materiais/custos de verdade).
-function calcularPrecificacao({ subtotalProducao, pctImpostos, pctTaxas, config, precoInformado, margemDesejada }) {
+// `valorFixoTaxas` (Etapa 1.2 do redesenho de Configurações, 28/08/2026):
+// soma de taxas de venda com componente fixo em R$ por venda (ex.: Mercado
+// Livre 14% + R$6,00) — hoje o motor só somava percentual. Entra no
+// NUMERADOR (junto do subtotal de produção), nunca no divisor: um valor
+// fixo não escala com o preço, então tratá-lo como custo agregado (igual
+// material/industrial/indireto) é o jeito matematicamente correto de
+// estender o método do markup divisor sem alterar a fórmula existente.
+// Default 0 em todo lugar que não passa esse parâmetro — comportamento
+// idêntico ao de antes (nenhuma taxa hoje cadastrada tem valor fixo).
+function calcularPrecificacao({ subtotalProducao, pctImpostos, pctTaxas, valorFixoTaxas, config, precoInformado, margemDesejada }) {
   const pImp = Number(pctImpostos) || 0;
   const pTax = Number(pctTaxas) || 0;
+  const vFix = Number(valorFixoTaxas) || 0;
   const margem = margemDesejada === undefined ? Number(config.margem_ideal) : Number(margemDesejada);
 
   const divisorRaw = 1 - pImp - pTax - margem;
   const markupDivisor = divisorRaw <= 0.01 ? 0.01 : divisorRaw;
-  const precoSugerido = subtotalProducao === 0 ? 0 : subtotalProducao / markupDivisor;
+  const precoSugerido = subtotalProducao === 0 ? 0 : (subtotalProducao + vFix) / markupDivisor;
 
   const informado = precoInformado === '' || precoInformado === null || precoInformado === undefined
     ? null
@@ -49,17 +59,17 @@ function calcularPrecificacao({ subtotalProducao, pctImpostos, pctTaxas, config,
   const precoAtivo = informado && informado > 0 ? informado : precoSugerido;
 
   const impostosRS = pImp * precoAtivo;
-  const taxasRS = pTax * precoAtivo;
+  const taxasRS = pTax * precoAtivo + vFix;
   const custoTotalPeca = subtotalProducao + impostosRS + taxasRS;
 
-  const lucroRS = precoAtivo * (1 - pImp - pTax) - subtotalProducao;
+  const lucroRS = precoAtivo * (1 - pImp - pTax) - vFix - subtotalProducao;
   const lucroPct = precoAtivo === 0 ? 0 : lucroRS / precoAtivo;
   const markupMult = subtotalProducao === 0 ? 0 : precoAtivo / subtotalProducao;
 
   function precoParaMargem(m) {
     const denom = 1 - pImp - pTax - Number(m);
     if (subtotalProducao === 0 || denom <= 0) return 0;
-    return subtotalProducao / denom;
+    return (subtotalProducao + vFix) / denom;
   }
   const precoMinimo = precoParaMargem(config.margem_minima);
   const precoIdeal = precoParaMargem(config.margem_ideal);
@@ -78,6 +88,7 @@ function calcularPrecificacao({ subtotalProducao, pctImpostos, pctTaxas, config,
   return {
     pctImpostos: pImp,
     pctTaxas: pTax,
+    valorFixoTaxas: vFix,
     margemDesejada: margem,
     markupDivisor,
     precoSugerido,
@@ -97,13 +108,13 @@ function calcularPrecificacao({ subtotalProducao, pctImpostos, pctTaxas, config,
   };
 }
 
-function calcularProduto({ materiais, custosIndustriais, custoIndiretoPorPeca, pctImpostos, pctTaxas, config, precoInformado }) {
+function calcularProduto({ materiais, custosIndustriais, custoIndiretoPorPeca, pctImpostos, pctTaxas, valorFixoTaxas, config, precoInformado }) {
   const totalMateriais = materiais.reduce((s, m) => s + (Number(m.quantidade) || 0) * (Number(m.valor_unitario) || 0), 0);
   const totalIndustrial = custosIndustriais.reduce((s, c) => s + (Number(c.valor) || 0), 0);
   const custoIndireto = Number(custoIndiretoPorPeca) || 0;
   const subtotalProducao = totalMateriais + totalIndustrial + custoIndireto;
 
-  const preco = calcularPrecificacao({ subtotalProducao, pctImpostos, pctTaxas, config, precoInformado });
+  const preco = calcularPrecificacao({ subtotalProducao, pctImpostos, pctTaxas, valorFixoTaxas, config, precoInformado });
 
   const pctMat = preco.custoTotalPeca === 0 ? 0 : totalMateriais / preco.custoTotalPeca;
   const pctInd = preco.custoTotalPeca === 0 ? 0 : totalIndustrial / preco.custoTotalPeca;
@@ -151,6 +162,7 @@ function calcularProduto({ materiais, custosIndustriais, custoIndiretoPorPeca, p
       pctImpostos: preco.pctImpostos,
       impostosRS: preco.impostosRS,
       pctTaxas: preco.pctTaxas,
+      valorFixoTaxas: preco.valorFixoTaxas,
       taxasRS: preco.taxasRS,
       custoTotalPeca: preco.custoTotalPeca,
       pctMateriais: pctMat,

@@ -47,14 +47,101 @@ export function Field({ label, children, hint }) {
   );
 }
 
-export function NumInput({ value, onChange, step = '0.01', suffix, ...props }) {
+// Quantas casas decimais o campo aceita, a partir do `step` (já existia
+// como prop — não é API nova): '0.01' (padrão) -> 2, '1' -> 0, etc.
+function casasDecimaisDoStep(step) {
+  const s = String(step);
+  const ponto = s.indexOf('.');
+  return ponto === -1 ? 0 : s.length - ponto - 1;
+}
+
+// "1.500,00" ou "1500,00" ou "1500" -> 1500 (number). Um ponto SEM vírgula
+// junto é tratado como separador decimal (não de milhar) — cobre digitação
+// livre tipo "12.5" — enquanto ponto(s) na presença de vírgula são sempre
+// separador de milhar (formato BR de colar valor, ex. "1.500,00").
+function textoParaNumero(texto) {
+  const s = String(texto ?? '').trim();
+  if (s === '' || s === '-') return '';
+  const comVirgula = s.includes(',');
+  const normalizado = comVirgula ? s.replace(/\./g, '').replace(',', '.') : s;
+  const n = Number(normalizado);
+  return Number.isNaN(n) ? '' : n;
+}
+
+// Texto pra EDITAR (campo em foco) — vírgula decimal, sem separador de
+// milhar no meio (mexer num número com pontos de milhar enquanto digita é
+// confuso). Formatação "de verdade" (milhar + casas fixas) só acontece no
+// blur, ver formatarNumeroExibicao abaixo.
+function numeroParaTextoEdicao(value) {
+  if (value === '' || value === null || value === undefined) return '';
+  return String(value).replace('.', ',');
+}
+
+// `forcarCasas` (suffix "R$": sempre 2 casas, ex. "1.500,00") vs os demais
+// sufixos/campos sem sufixo — não força zeros à direita, pra não regredir
+// telas que hoje mostram um inteiro cru (ex. "3 dias") com 2 casas coladas
+// por causa só do `step` padrão do componente.
+function formatarNumeroExibicao(value, casas, forcarCasas) {
+  if (value === '' || value === null || value === undefined) return '';
+  const n = Number(value);
+  if (Number.isNaN(n)) return '';
+  return n.toLocaleString('pt-BR', {
+    maximumFractionDigits: casas,
+    minimumFractionDigits: forcarCasas ? casas : 0,
+  });
+}
+
+// CORRIGIDO: o campo é controlado direto por `value` (um number, formatado
+// com 2 casas fixas por quem chama, ex. "0.00") — a cada tecla, o pai
+// recalculava e devolvia um valor já arredondado/formatado, o <input
+// type="number"> nativo reescrevia o próprio value no meio da digitação e o
+// cursor pulava pro fim (só sobravam as setinhas, de centavo em centavo).
+// A correção: enquanto o campo está em foco, o texto exibido é um ESTADO
+// LOCAL (não o `value` externo) — só sincroniza de volta com `value` quando
+// o campo NÃO está em foco (valor inicial, ou troca vinda de fora enquanto
+// o campo está solto). onChange continua disparando a cada tecla, com
+// number (ou '') — nenhum contrato muda pra quem já usa NumInput.
+export function NumInput({ value, onChange, step = '0.01', suffix, onFocus, onBlur, ...props }) {
+  const casas = casasDecimaisDoStep(step);
+  const forcarCasas = suffix === 'R$';
+  const [focado, setFocado] = useState(false);
+  const [texto, setTexto] = useState(() => formatarNumeroExibicao(value, casas, forcarCasas));
+
+  useEffect(() => {
+    if (!focado) setTexto(formatarNumeroExibicao(value, casas, forcarCasas));
+  }, [value, casas, forcarCasas, focado]);
+
+  function aoDigitar(e) {
+    // Filtra qualquer coisa que não seja dígito/separador/sinal — cobre
+    // colar texto com prefixo ("R$ 1.500,00") sem deixar lixo no campo.
+    const limpo = e.target.value.replace(/[^0-9,.\-]/g, '');
+    setTexto(limpo);
+    onChange(textoParaNumero(limpo));
+  }
+
+  function aoFocar(e) {
+    setFocado(true);
+    setTexto(numeroParaTextoEdicao(value));
+    onFocus?.(e);
+  }
+
+  function aoDesfocar(e) {
+    setFocado(false);
+    const numero = textoParaNumero(texto);
+    setTexto(formatarNumeroExibicao(numero, casas, forcarCasas));
+    if (numero !== value) onChange(numero);
+    onBlur?.(e);
+  }
+
   return (
     <div className="numwrap">
       <input
-        type="number"
-        step={step}
-        value={value}
-        onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))}
+        type="text"
+        inputMode="decimal"
+        value={texto}
+        onChange={aoDigitar}
+        onFocus={aoFocar}
+        onBlur={aoDesfocar}
         {...props}
       />
       {suffix && <span className="suffix">{suffix}</span>}

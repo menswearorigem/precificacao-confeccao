@@ -2822,3 +2822,122 @@ table.ficha-doc-tabela {
   background: linear-gradient(150deg, var(--file-icon-color), color-mix(in srgb, var(--file-icon-color) 65%, black));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 1px 3px rgba(0, 0, 0, 0.18);
 }
+
+/* ================================================================
+   Redesenho de Configurações (28/08/2026) — regras novas, prefixo
+   .cfg-, só ADICIONADAS ao fim do arquivo (nada existente foi tocado).
+   ================================================================ */
+
+/* Seletor de tipo de taxa (% · R$ · % + R$), em segmentos — reaproveitável
+   em qualquer lugar que precise de 2-3 opções mutuamente exclusivas lado a
+   lado (mais compacto que um Select pra um conjunto tão pequeno e fixo). */
+.cfg-segmentado { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; flex-shrink: 0; }
+.cfg-segmentado button {
+  padding: 6px 10px;
+  border: none;
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cfg-segmentado button + button { border-left: 1px solid var(--border); }
+.cfg-segmentado button.is-ativo { background: var(--terracotta); color: #fff; }
+.cfg-segmentado button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+/* Campo do componente (%/R$) que o tipo escolhido NÃO usa — tracejado em vez
+   de mostrar "0,00" sólido, pra ficar claro que aquele valor não entra em
+   nenhuma conta (Taxas de Venda, Taxas de Marketplace). */
+.cfg-campo-tracejado .numwrap input, .cfg-campo-tracejado input {
+  border-style: dashed;
+  color: var(--ink-faint);
+  background: transparent;
+}
+
+/* Coluna "efeito em R$X" (quanto aquela taxa/comissão desconta numa venda de
+   referência) — sempre em vermelho-desconto, alinhado à direita, números
+   tabulares pra colunas de valor não "dançarem" entre linhas. */
+.cfg-efeito-valor { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--danger); text-align: right; white-space: nowrap; }
+
+/* Lixeira só aparece no hover da linha (regra geral do redesenho de
+   Configurações) — aplicar .cfg-linha-hover na <tr> e .cfg-lixeira no botão. */
+.cfg-linha-hover .cfg-lixeira { opacity: 0; transition: opacity 0.12s var(--ease); }
+.cfg-linha-hover:hover .cfg-lixeira { opacity: 1; }
+
+/* Cartão de simulador/resumo no topo de uma tela (Taxas de Venda/Marketplace,
+   Custos Indiretos, Parâmetros) — valores de entrada + resultado destacado. */
+.cfg-simulador {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.cfg-simulador-campo { display: flex; flex-direction: column; gap: 4px; }
+.cfg-simulador-campo-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-soft); }
+.cfg-simulador-resultado {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.cfg-simulador-resultado-item { text-align: right; }
+.cfg-simulador-resultado-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-soft); }
+.cfg-simulador-resultado-valor { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 14px; color: var(--danger); }
+.cfg-simulador-recebe {
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--success-bg);
+  text-align: right;
+}
+.cfg-simulador-recebe-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--success); }
+.cfg-simulador-recebe-valor { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 700; color: var(--success); }
+
+/* Cabeçalho padrão das 8 abas de Configurações: título+subtítulo à
+   esquerda, busca + ação principal à direita — largura única (.page-wide). */
+.cfg-page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 4px; }
+.cfg-page-head-acoes { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.cfg-busca { position: relative; }
+.cfg-busca svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--ink-faint); pointer-events: none; }
+.cfg-busca input { padding-left: 30px; min-width: 220px; }
+
+/* Seção recolhível genérica (grupos de Custos Indiretos, "N taxas
+   desativadas", "N registros desativados" em Listas etc.). */
+.cfg-colapsavel-cabecalho {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: var(--surface-alt);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--ink);
+  text-align: left;
+}
+.cfg-colapsavel-cabecalho:hover { background: var(--border-soft); }
+.cfg-colapsavel-corpo { padding-top: 8px; }
+
+/* Barra fina de participação/uso (Custos Indiretos: % do total; Listas:
+   quantos registros usam aquele valor) — preenchimento proporcional em cor
+   neutra, nunca semântica (não é bom/ruim, só magnitude relativa). */
+.cfg-barra { flex: 1; height: 5px; border-radius: 3px; background: var(--border-soft); overflow: hidden; min-width: 60px; }
+.cfg-barra-preenchimento { height: 100%; background: var(--brass); border-radius: 3px; }
+
+/* Selo "usado em: X · Y" — mostra onde um bloco de parâmetro/lista entra no
+   resto do sistema, sem precisar abrir outra tela pra descobrir. */
+.cfg-usado-em {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--info-bg);
+  color: var(--info);
+  font-size: 10.5px;
+  font-weight: 600;
+}
