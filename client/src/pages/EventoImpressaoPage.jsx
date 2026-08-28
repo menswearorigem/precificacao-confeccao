@@ -69,6 +69,23 @@ export default function EventoImpressaoPage() {
           </div>
         )}
 
+        {evento.usa_grade && evento.grade?.length > 0 && (
+          <div className="ficha-doc-secao">
+            <strong>Grade de variações</strong>
+            <table className="grade-variacoes-mini">
+              <thead>
+                <tr><th>Cor</th><th>Tamanho</th><th>Quantidade</th></tr>
+              </thead>
+              <tbody>
+                {evento.grade.map((g) => (
+                  <tr key={g.id}><td>{g.cor || '—'}</td><td>{g.tamanho || '—'}</td><td>{g.quantidade}</td></tr>
+                ))}
+                <tr><td colSpan="2"><strong>Total</strong></td><td><strong>{evento.grade.reduce((s, g) => s + (Number(g.quantidade) || 0), 0)}</strong></td></tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {evento.produto && (
           <div className="ficha-doc-secao">
             <strong>Produto vinculado</strong>

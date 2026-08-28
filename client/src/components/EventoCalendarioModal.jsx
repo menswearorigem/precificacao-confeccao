@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { X, Plus, Trash2, Paperclip, Download } from 'lucide-react';
+import { X, Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import { api } from '../api/client';
-import { Select, DateInput, Checkbox } from './ui';
+import { Select, DateInput, Checkbox, Toggle, FileTypeIcon } from './ui';
 import FotoProduto from './FotoProduto';
 import FileDropzone from './FileDropzone';
+import GradeVariacoes from './GradeVariacoes';
 import { dataBr } from '../lib/format';
 
 const STATUS_OPCOES = [
@@ -54,7 +55,7 @@ function CampoGenerico({ campo, valor, onChange, disabled }) {
       <div className="field">
         <span className="field-label">{label}</span>
         <Select value={valor || ''} onChange={(e) => onChange(e.target.value)} disabled={disabled}>
-          {(campo.opcoes || []).map((o) => <option key={o} value={o}>{o}</option>)}
+          {(campo.opcoesResolvidas || []).map((o) => <option key={o} value={o}>{o}</option>)}
         </Select>
       </div>
     );
@@ -63,6 +64,21 @@ function CampoGenerico({ campo, valor, onChange, disabled }) {
     <div className="field">
       <span className="field-label">{label}</span>
       <input value={valor || ''} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
+    </div>
+  );
+}
+
+// Recolhível genérico ("Detalhes avançados") — fechado por padrão, pra
+// campos secundários (hoje só Categoria) não competirem com
+// título/data/status na primeira tela do formulário.
+function SecaoRecolhivel({ titulo, aberto, onToggle, children }) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <button type="button" className="secao-recolhivel-cabecalho" onClick={onToggle}>
+        {aberto ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        {titulo}
+      </button>
+      {aberto && <div className="secao-recolhivel-corpo">{children}</div>}
     </div>
   );
 }
@@ -221,12 +237,27 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
   const [comentarios, setComentarios] = useState([]);
   const [novoComentario, setNovoComentario] = useState('');
   const [podeEditar, setPodeEditar] = useState(true);
+  const [avancadoAberto, setAvancadoAberto] = useState(false);
+
+  // Grade de variações (Seção 1) — opções vindas das mesmas fontes
+  // pré-prontas do sistema usadas pelo campo 'select' de modelo (Seção 2).
+  const [usaGrade, setUsaGrade] = useState(false);
+  const [grade, setGrade] = useState([]);
+  const [coresOpcoes, setCoresOpcoes] = useState([]);
+  const [tamanhosOpcoes, setTamanhosOpcoes] = useState([]);
+  const [fornecedoresTodos, setFornecedoresTodos] = useState([]);
 
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
 
   const template = useMemo(() => templates.find((t) => t.id === templateId) || null, [templates, templateId]);
   const nomeTemplate = template?.nome || '';
+  // Toggle da grade só aparece pro modelo fixo "Corte" (formulário próprio,
+  // sem motor genérico) ou pra qualquer modelo que declare um campo tipo
+  // 'grade' no construtor (Seção 2) — nunca pra "evento simples" ou modelo
+  // sem essa declaração explícita.
+  const templateTemGrade = nomeTemplate === 'Previsão de chegada de corte'
+    || (template?.campos || []).some((c) => c.tipo === 'grade');
 
   useEffect(() => {
     Promise.all([
@@ -235,14 +266,40 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
       api.get('/grupos'),
       api.get('/listas/calendario_categoria'),
       api.get('/listas/calendario_tipo_adicao'),
-    ]).then(([t, u, g, cat, tipos]) => {
+      api.get('/calendario/cores-distintas'),
+      api.get('/calendario/tamanhos-distintos'),
+      api.get('/calendario/fornecedores'),
+    ]).then(([t, u, g, cat, tipos, cores, tamanhos, fornecedores]) => {
       setTemplates(t);
       setUsuarios(u);
       setGrupos(g.filter((gr) => gr.ativo));
       setCategorias(cat);
       setTiposAdicao(tipos);
+      setCoresOpcoes(cores);
+      setTamanhosOpcoes(tamanhos);
+      setFornecedoresTodos(fornecedores);
     });
   }, []);
+
+  // Resolve a fonte pré-pronta de um campo 'select' de modelo genérico EM
+  // TEMPO REAL (nunca a lista estática gravada no modelo) — se a lista de
+  // cores/tamanhos/fornecedores mudar depois, o campo acompanha sozinho.
+  function opcoesResolvidasCampo(campo) {
+    if (!campo.fonte || campo.fonte === 'custom') return campo.opcoes || [];
+    if (campo.fonte === 'cores') return coresOpcoes;
+    if (campo.fonte === 'tamanhos') return tamanhosOpcoes;
+    if (campo.fonte === 'fornecedores') return fornecedoresTodos.map((f) => f.nome_fantasia || f.nome);
+    if (campo.fonte === 'categorias') return categorias.map((c) => c.valor);
+    if (campo.fonte === 'responsaveis') return usuarios.map((u) => u.nome);
+    return [];
+  }
+
+  function alternarUsaGrade(ligado) {
+    setUsaGrade(ligado);
+    if (ligado && grade.length === 0 && variantesSugeridas.length > 0) {
+      setGrade(variantesSugeridas.map((v) => ({ cor: v.cor, tamanho: v.tamanho, quantidade: '' })));
+    }
+  }
 
   useEffect(() => {
     if (!eventoId) return;
@@ -265,6 +322,9 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
       setAnexos(e.anexos || []);
       setComentarios(e.comentarios || []);
       setPodeEditar(e.podeEditar);
+      setUsaGrade(Boolean(e.usa_grade));
+      setGrade((e.grade || []).map((g) => ({ cor: g.cor, tamanho: g.tamanho, quantidade: g.quantidade })));
+      if (e.categoria) setAvancadoAberto(true); // já tinha categoria escolhida — abre a seção pra não esconder um valor já preenchido
       if (e.campos_extra?.fornecedor_id) {
         setFornecedor({ id: e.campos_extra.fornecedor_id, nome: e.campos_extra.fornecedor_nome || `Fornecedor #${e.campos_extra.fornecedor_id}` });
       }
@@ -306,7 +366,7 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
       return;
     }
     if (template && !NOMES_TEMPLATE_FIXOS.includes(nomeTemplate)) {
-      const faltando = template.campos.find((c) => c.obrigatorio && !campoExtra[c.nome] && campoExtra[c.nome] !== 0);
+      const faltando = template.campos.find((c) => c.tipo !== 'grade' && c.obrigatorio && !campoExtra[c.nome] && campoExtra[c.nome] !== 0);
       if (faltando) {
         setErro(`Preencha o campo "${faltando.nome}".`);
         return;
@@ -332,6 +392,8 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
       permissoes: permissoes.map((p) => (
         p.grupoId ? { grupo_id: p.grupoId, nivel: p.nivel } : { usuario_id: p.usuarioId, nivel: p.nivel }
       )),
+      usa_grade: templateTemGrade && usaGrade,
+      grade: templateTemGrade && usaGrade ? grade.filter((l) => l.cor || l.tamanho) : [],
     };
     try {
       if (eventoId) {
@@ -435,18 +497,6 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
 
         <div className="form-grid">
           <div className="field">
-            <span className="field-label">Categoria</span>
-            <Select value={categoria} onChange={(e) => setCategoria(e.target.value)} disabled={!podeEditar} placeholder="Sem categoria">
-              {categorias.map((c) => <option key={c.id} value={c.valor}>{c.valor}</option>)}
-            </Select>
-            {podeEditar && (
-              <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                <input placeholder="Nova categoria…" value={novaCategoria} onChange={(e) => setNovaCategoria(e.target.value)} style={{ fontSize: 12 }} />
-                <button type="button" className="btn btn-ghost" onClick={adicionarCategoria}><Plus size={12} /></button>
-              </div>
-            )}
-          </div>
-          <div className="field">
             <span className="field-label">Prioridade</span>
             <Select value={prioridade} onChange={(e) => setPrioridade(e.target.value)} disabled={!podeEditar}>
               {PRIORIDADE_OPCOES.map((o) => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
@@ -506,6 +556,26 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
           />
         </div>
 
+        {templateTemGrade && (
+          <div className="card" style={{ background: 'var(--surface-alt)', marginBottom: 12 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: podeEditar ? 'pointer' : 'default' }}>
+              <Toggle checked={usaGrade} onChange={(e) => alternarUsaGrade(e.target.checked)} disabled={!podeEditar} />
+              Detalhar por variação (cor/tamanho)
+            </label>
+            {usaGrade && (
+              <div style={{ marginTop: 10 }}>
+                <GradeVariacoes
+                  linhas={grade}
+                  onChange={setGrade}
+                  coresOpcoes={coresOpcoes}
+                  tamanhosOpcoes={tamanhosOpcoes}
+                  disabled={!podeEditar}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
         {nomeTemplate === 'Previsão de chegada de corte' && (
           <div className="card" style={{ background: 'var(--surface-alt)', marginBottom: 12 }}>
             <div className="card-head" style={{ marginBottom: 8 }}>Campos de Corte</div>
@@ -551,14 +621,14 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
           </div>
         )}
 
-        {template && !NOMES_TEMPLATE_FIXOS.includes(nomeTemplate) && template.campos.length > 0 && (
+        {template && !NOMES_TEMPLATE_FIXOS.includes(nomeTemplate) && template.campos.some((c) => c.tipo !== 'grade') && (
           <div className="card" style={{ background: 'var(--surface-alt)', marginBottom: 12 }}>
             <div className="card-head" style={{ marginBottom: 8 }}>Campos de {nomeTemplate}</div>
             <div className="form-grid">
-              {template.campos.map((campo) => (
+              {template.campos.filter((c) => c.tipo !== 'grade').map((campo) => (
                 <CampoGenerico
                   key={campo.nome}
-                  campo={campo}
+                  campo={{ ...campo, opcoesResolvidas: opcoesResolvidasCampo(campo) }}
                   valor={campoExtra[campo.nome]}
                   onChange={(v) => atualizarCampoExtra(campo.nome, v)}
                   disabled={!podeEditar}
@@ -567,6 +637,21 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
             </div>
           </div>
         )}
+
+        <SecaoRecolhivel titulo="Detalhes avançados" aberto={avancadoAberto} onToggle={() => setAvancadoAberto((v) => !v)}>
+          <div className="field" style={{ marginBottom: 12 }}>
+            <span className="field-label">Categoria</span>
+            <Select value={categoria} onChange={(e) => setCategoria(e.target.value)} disabled={!podeEditar} placeholder="Sem categoria">
+              {categorias.map((c) => <option key={c.id} value={c.valor}>{c.valor}</option>)}
+            </Select>
+            {podeEditar && (
+              <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                <input placeholder="Nova categoria…" value={novaCategoria} onChange={(e) => setNovaCategoria(e.target.value)} style={{ fontSize: 12 }} />
+                <button type="button" className="btn btn-ghost" onClick={adicionarCategoria}><Plus size={12} /></button>
+              </div>
+            )}
+          </div>
+        </SecaoRecolhivel>
 
         <div className="field" style={{ marginBottom: 12 }}>
           <span className="field-label">Responsáveis</span>
@@ -589,9 +674,8 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
             <span className="field-label">Anexos ({anexos.length}/5, até 8MB cada)</span>
             {anexos.map((a) => (
               <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
-                <Paperclip size={13} />
+                <FileTypeIcon nomeArquivo={a.nome_arquivo} size={26} />
                 <a href={`/api/calendario/anexos/${a.id}`} target="_blank" rel="noreferrer" style={{ flex: 1 }}>{a.nome_arquivo}</a>
-                <Download size={13} />
                 {podeEditar && <button type="button" className="icon-btn" onClick={() => removerAnexo(a.id)}><Trash2 size={13} /></button>}
               </div>
             ))}

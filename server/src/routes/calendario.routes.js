@@ -11,7 +11,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 *
 
 const CAMPOS_EDITAVEIS = [
   'template_id', 'titulo', 'descricao', 'categoria', 'data_inicio', 'data_prevista_fim',
-  'data_conclusao_real', 'status', 'prioridade', 'produto_id', 'campos_extra',
+  'data_conclusao_real', 'status', 'prioridade', 'produto_id', 'campos_extra', 'usa_grade',
 ];
 
 async function carregarResponsaveis(eventoIds) {
@@ -30,6 +30,24 @@ async function carregarResponsaveis(eventoIds) {
   return mapa;
 }
 
+// Grade de variações (cor/tamanho/quantidade) do evento — carregada junto
+// (não em campos_extra) porque é uma lista de linhas com identidade própria,
+// não um valor único de campo (ver 0038_calendario_grade.sql).
+async function carregarGrades(eventoIds) {
+  if (eventoIds.length === 0) return new Map();
+  const { rows } = await pool.query(
+    `SELECT id, evento_id, cor, tamanho, quantidade, origem FROM calendario_eventos_grade
+      WHERE evento_id = ANY($1) ORDER BY id`,
+    [eventoIds]
+  );
+  const mapa = new Map();
+  for (const row of rows) {
+    if (!mapa.has(row.evento_id)) mapa.set(row.evento_id, []);
+    mapa.get(row.evento_id).push({ id: row.id, cor: row.cor, tamanho: row.tamanho, quantidade: Number(row.quantidade), origem: row.origem });
+  }
+  return mapa;
+}
+
 async function carregarProdutosSnapshot(produtoIds) {
   const ids = [...new Set(produtoIds.filter(Boolean))];
   if (ids.length === 0) return new Map();
@@ -42,7 +60,7 @@ async function carregarProdutosSnapshot(produtoIds) {
   return new Map(rows.map((r) => [r.id, r]));
 }
 
-function montarEventoResposta(row, { responsaveis, produtoSnapshot, podeEditar }) {
+function montarEventoResposta(row, { responsaveis, produtoSnapshot, podeEditar, grade }) {
   const { pode_editar: _poderEditarBruto, ...campos } = row;
   return {
     ...campos,
@@ -51,6 +69,7 @@ function montarEventoResposta(row, { responsaveis, produtoSnapshot, podeEditar }
     responsaveis: responsaveis || [],
     produto: produtoSnapshot || null,
     podeEditar: Boolean(podeEditar ?? row.pode_editar),
+    grade: grade || [],
   };
 }
 
@@ -117,15 +136,17 @@ router.get('/eventos', async (req, res, next) => {
   try {
     const rows = await buscarEventosFiltrados(req);
     const ids = rows.map((r) => r.id);
-    const [responsaveisPorEvento, produtosPorId] = await Promise.all([
+    const [responsaveisPorEvento, produtosPorId, gradesPorEvento] = await Promise.all([
       carregarResponsaveis(ids),
       carregarProdutosSnapshot(rows.map((r) => r.produto_id)),
+      carregarGrades(ids),
     ]);
 
     res.json(rows.map((row) => montarEventoResposta(row, {
       responsaveis: responsaveisPorEvento.get(row.id),
       produtoSnapshot: produtosPorId.get(row.produto_id),
       podeEditar: row.pode_editar,
+      grade: gradesPorEvento.get(row.id),
     })));
   } catch (err) {
     next(err);
@@ -235,7 +256,18 @@ router.get('/templates', async (req, res, next) => {
   }
 });
 
-const TIPOS_CAMPO_VALIDOS = new Set(['texto', 'numero', 'data', 'booleano', 'select']);
+// 'grade' é só um MARCADOR (a estrutura de verdade é calendario_eventos_grade
+// + usa_grade no evento, ver Seção 1) — a presença de um campo desse tipo no
+// modelo é o que faz o formulário genérico oferecer o toggle "Detalhar por
+// variação" (EventoCalendarioModal.jsx), sem gerar input nenhum sozinho.
+const TIPOS_CAMPO_VALIDOS = new Set(['texto', 'numero', 'data', 'booleano', 'select', 'grade']);
+
+// Fontes pré-prontas de um campo 'select' — em vez de digitar as opções na
+// mão, o campo aponta pra uma lista que já existe no sistema e é resolvida
+// EM TEMPO REAL quando o formulário do evento carrega (rotas abaixo), não no
+// momento de criar o modelo — assim, se a lista de cores do estoque mudar
+// depois, o campo reflete sozinho, sem precisar editar o modelo.
+const FONTES_SELECT_VALIDAS = new Set(['custom', 'cores', 'tamanhos', 'fornecedores', 'categorias', 'responsaveis']);
 
 // Modelo customizável genérico (fora dos dois fixos "Corte"/"Meta", que têm
 // formulário próprio no front) — cada campo vira um input no motor genérico
@@ -248,9 +280,13 @@ function validarCampos(campos) {
     const tipo = TIPOS_CAMPO_VALIDOS.has(c.tipo) ? c.tipo : 'texto';
     const campo = { nome: c.nome.trim(), tipo, obrigatorio: Boolean(c.obrigatorio) };
     if (tipo === 'select') {
-      campo.opcoes = Array.isArray(c.opcoes)
-        ? c.opcoes.filter((o) => typeof o === 'string' && o.trim()).map((o) => o.trim())
-        : [];
+      const fonte = FONTES_SELECT_VALIDAS.has(c.fonte) ? c.fonte : 'custom';
+      campo.fonte = fonte;
+      if (fonte === 'custom') {
+        campo.opcoes = Array.isArray(c.opcoes)
+          ? c.opcoes.filter((o) => typeof o === 'string' && o.trim()).map((o) => o.trim())
+          : [];
+      }
     }
     validados.push(campo);
   }
@@ -338,6 +374,46 @@ router.get('/fornecedores-busca', async (req, res, next) => {
   }
 });
 
+// Fontes pré-prontas pro campo 'select' de modelo (Seção 2) — sempre a lista
+// ATIVA/ATUAL do sistema, nunca uma cópia estática gravada no modelo (ver
+// FONTES_SELECT_VALIDAS acima). Cores/tamanhos usam a mesma fonte que
+// alimenta os dropdowns da grade de variações (GradeVariacoes.jsx).
+router.get('/cores-distintas', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      "SELECT DISTINCT cor FROM estoque_variantes WHERE cor <> '' AND ativo = TRUE ORDER BY cor"
+    );
+    res.json(rows.map((r) => r.cor));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/tamanhos-distintos', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      "SELECT DISTINCT tamanho FROM estoque_variantes WHERE tamanho <> '' AND ativo = TRUE ORDER BY tamanho"
+    );
+    res.json(rows.map((r) => r.tamanho));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Lista completa de fornecedores ativos (diferente de /fornecedores-busca,
+// que exige termo de busca e limita a 30 — aqui é a fonte pré-pronta inteira
+// pro campo 'select' de modelo).
+router.get('/fornecedores', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, nome, nome_fantasia FROM fornecedores WHERE ativo = TRUE ORDER BY nome'
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Variantes (cor/tamanho) de um produto — sugestão pro campo "cor/tecido" do
 // template Corte quando o produto está vinculado, sem obrigar a bater com o
 // cadastro (o campo continua sendo texto livre).
@@ -367,9 +443,10 @@ router.get('/eventos/:id', async (req, res, next) => {
     if (rows.length === 0) return res.status(404).json({ error: 'Evento não encontrado.' });
     const evento = rows[0];
 
-    const [responsaveisPorEvento, produtosPorId, permissoes, anexos, comentarios, historico, podeEditar] = await Promise.all([
+    const [responsaveisPorEvento, produtosPorId, gradesPorEvento, permissoes, anexos, comentarios, historico, podeEditar] = await Promise.all([
       carregarResponsaveis([evento.id]),
       carregarProdutosSnapshot([evento.produto_id]),
+      carregarGrades([evento.id]),
       pool.query(
         `SELECT pe.id, pe.usuario_id, pe.grupo_id, pe.nivel, u.nome AS usuario_nome, g.nome AS grupo_nome
            FROM calendario_eventos_permissoes pe
@@ -402,6 +479,7 @@ router.get('/eventos/:id', async (req, res, next) => {
         responsaveis: responsaveisPorEvento.get(evento.id),
         produtoSnapshot: produtosPorId.get(evento.produto_id),
         podeEditar,
+        grade: gradesPorEvento.get(evento.id),
       }),
       permissoes,
       anexos,
@@ -419,6 +497,24 @@ async function salvarResponsaveis(client, eventoId, usuarioIds) {
     await client.query(
       'INSERT INTO calendario_eventos_responsaveis (evento_id, usuario_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
       [eventoId, usuarioId]
+    );
+  }
+}
+
+// Mesmo padrão de "apaga tudo e reinsere" de salvarResponsaveis — as linhas
+// da grade não têm identidade própria que precise sobreviver entre saves
+// (não são referenciadas de fora), então é mais simples que fazer um diff.
+async function salvarGrade(client, eventoId, linhas) {
+  await client.query('DELETE FROM calendario_eventos_grade WHERE evento_id = $1', [eventoId]);
+  for (const l of linhas || []) {
+    const cor = String(l?.cor || '').trim();
+    const tamanho = String(l?.tamanho || '').trim();
+    if (!cor && !tamanho) continue; // linha em branco deixada no formulário, não é pra gravar
+    const quantidade = Number(l?.quantidade) || 0;
+    const origem = l?.origem === 'wiki_op' ? 'wiki_op' : 'manual';
+    await client.query(
+      `INSERT INTO calendario_eventos_grade (evento_id, cor, tamanho, quantidade, origem) VALUES ($1, $2, $3, $4, $5)`,
+      [eventoId, cor, tamanho, quantidade, origem]
     );
   }
 }
@@ -446,21 +542,22 @@ router.post('/eventos', async (req, res, next) => {
     const { rows } = await client.query(
       `INSERT INTO calendario_eventos
         (template_id, titulo, descricao, categoria, data_inicio, data_prevista_fim, data_conclusao_real,
-         status, prioridade, produto_id, campos_extra, criado_por)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+         status, prioridade, produto_id, campos_extra, criado_por, usa_grade)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
       [
         body.template_id || null, body.titulo, body.descricao || null, body.categoria || null,
         body.data_inicio || null, body.data_prevista_fim, body.data_conclusao_real || null,
         body.status || 'nao_iniciado', body.prioridade || 'media', body.produto_id || null,
-        JSON.stringify(body.campos_extra || {}), req.user.id,
+        JSON.stringify(body.campos_extra || {}), req.user.id, Boolean(body.usa_grade),
       ]
     );
     const evento = rows[0];
     await salvarResponsaveis(client, evento.id, body.responsaveis_ids);
     await salvarPermissoes(client, evento.id, body.permissoes);
+    await salvarGrade(client, evento.id, body.grade);
     await registrarHistorico(client, evento.id, req.user.id, 'criado', null);
     await client.query('COMMIT');
-    res.status(201).json(montarEventoResposta(evento, { podeEditar: true }));
+    res.status(201).json(montarEventoResposta(evento, { podeEditar: true, grade: (body.grade || []).filter((l) => l?.cor || l?.tamanho) }));
   } catch (err) {
     await client.query('ROLLBACK');
     next(err);
@@ -489,22 +586,28 @@ router.put('/eventos/:id', async (req, res, next) => {
     const { rows } = await client.query(
       `UPDATE calendario_eventos SET
          template_id=$1, titulo=$2, descricao=$3, categoria=$4, data_inicio=$5, data_prevista_fim=$6,
-         data_conclusao_real=$7, status=$8, prioridade=$9, produto_id=$10, campos_extra=$11, atualizado_em=now()
-       WHERE id=$12 RETURNING *`,
+         data_conclusao_real=$7, status=$8, prioridade=$9, produto_id=$10, campos_extra=$11, usa_grade=$12,
+         atualizado_em=now()
+       WHERE id=$13 RETURNING *`,
       [
         novo.template_id, novo.titulo, novo.descricao, novo.categoria, novo.data_inicio, novo.data_prevista_fim,
-        novo.data_conclusao_real, novo.status, novo.prioridade, novo.produto_id, novo.campos_extra, req.params.id,
+        novo.data_conclusao_real, novo.status, novo.prioridade, novo.produto_id, novo.campos_extra,
+        Boolean(novo.usa_grade), req.params.id,
       ]
     );
     if (body.responsaveis_ids !== undefined) await salvarResponsaveis(client, req.params.id, body.responsaveis_ids);
     if (body.permissoes !== undefined) await salvarPermissoes(client, req.params.id, body.permissoes);
+    if (body.grade !== undefined) await salvarGrade(client, req.params.id, body.grade);
 
     const alteracoes = diffCampos(atual, rows[0], CAMPOS_EDITAVEIS.filter((c) => c !== 'campos_extra'));
     if (Object.keys(alteracoes).length > 0) {
       await registrarHistorico(client, req.params.id, req.user.id, 'editado', alteracoes);
     }
     await client.query('COMMIT');
-    res.json(montarEventoResposta(rows[0], { podeEditar: true }));
+    const gradeAtual = body.grade !== undefined
+      ? (body.grade || []).filter((l) => l?.cor || l?.tamanho)
+      : (await carregarGrades([Number(req.params.id)])).get(Number(req.params.id));
+    res.json(montarEventoResposta(rows[0], { podeEditar: true, grade: gradeAtual }));
   } catch (err) {
     await client.query('ROLLBACK');
     next(err);
@@ -545,12 +648,12 @@ router.post('/eventos/:id/duplicar', async (req, res, next) => {
     const { rows } = await client.query(
       `INSERT INTO calendario_eventos
         (template_id, titulo, descricao, categoria, data_inicio, data_prevista_fim, data_conclusao_real,
-         status, prioridade, produto_id, campos_extra, criado_por)
-       VALUES ($1,$2,$3,$4,$5,$6,NULL,'nao_iniciado',$7,$8,$9,$10) RETURNING *`,
+         status, prioridade, produto_id, campos_extra, criado_por, usa_grade)
+       VALUES ($1,$2,$3,$4,$5,$6,NULL,'nao_iniciado',$7,$8,$9,$10,$11) RETURNING *`,
       [
         origem.template_id, `Cópia de ${origem.titulo}`, origem.descricao, origem.categoria,
         origem.data_inicio, origem.data_prevista_fim, origem.prioridade, origem.produto_id,
-        origem.campos_extra, req.user.id,
+        origem.campos_extra, req.user.id, origem.usa_grade,
       ]
     );
     const novo = rows[0];
@@ -558,9 +661,11 @@ router.post('/eventos/:id/duplicar', async (req, res, next) => {
     await salvarResponsaveis(client, novo.id, responsaveisOrigem.map((r) => r.usuario_id));
     const { rows: permissoesOrigem } = await client.query('SELECT usuario_id, grupo_id, nivel FROM calendario_eventos_permissoes WHERE evento_id = $1', [origem.id]);
     await salvarPermissoes(client, novo.id, permissoesOrigem);
+    const { rows: gradeOrigem } = await client.query('SELECT cor, tamanho, quantidade, origem FROM calendario_eventos_grade WHERE evento_id = $1', [origem.id]);
+    await salvarGrade(client, novo.id, gradeOrigem);
     await registrarHistorico(client, novo.id, req.user.id, 'duplicado_de', { eventoOrigemId: origem.id });
     await client.query('COMMIT');
-    res.status(201).json(montarEventoResposta(novo, { podeEditar: true }));
+    res.status(201).json(montarEventoResposta(novo, { podeEditar: true, grade: gradeOrigem }));
   } catch (err) {
     await client.query('ROLLBACK');
     next(err);

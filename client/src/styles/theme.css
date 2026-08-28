@@ -1295,6 +1295,9 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
   gap: 2px;
 }
 .exportar-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   text-align: left;
   padding: 8px 12px;
   border-radius: 7px;
@@ -2722,3 +2725,100 @@ table.ficha-doc-tabela {
    marrom pensado pra fundo claro — ilegível em cima do fundo sólido e
    saturado do card). */
 .kanban-cartao-meta { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: rgba(255, 255, 255, 0.85); }
+
+/* ---------- Calendário — grade de variações (cor x tamanho) ---------- */
+.grade-variacoes { display: flex; flex-direction: column; gap: 6px; }
+.grade-variacoes-cabecalho,
+.grade-variacoes-linha {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 0.8fr 28px;
+  gap: 8px;
+  align-items: center;
+}
+.grade-variacoes-cabecalho { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-soft); }
+.grade-variacoes-total { margin-top: 6px; font-size: 12.5px; color: var(--ink-soft); text-align: right; }
+.grade-variacoes-mini {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  margin-top: 4px;
+}
+.grade-variacoes-mini th, .grade-variacoes-mini td { border: 1px solid var(--border-soft); padding: 3px 6px; text-align: left; }
+.grade-variacoes-mini th { background: var(--surface-alt); font-weight: 700; }
+
+/* ---------- Calendário — menu de dia com evento(s) já existente(s) ---------- */
+.calendario-dia-menu-backdrop { position: fixed; inset: 0; z-index: 999; }
+.calendario-dia-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 220px;
+  max-width: 280px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.calendario-dia-menu-head {
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--border-soft);
+}
+.calendario-dia-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 1px solid var(--border-soft);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.calendario-dia-menu-item:hover { background: var(--surface-alt); }
+.calendario-dia-menu-novo { font-weight: 600; color: var(--terracotta); display: flex; align-items: center; gap: 6px; }
+
+/* ---------- Calendário — seção recolhida "Detalhes avançados" ---------- */
+.secao-recolhivel-cabecalho {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-align: left;
+}
+.secao-recolhivel-cabecalho:hover { color: var(--ink); }
+.secao-recolhivel-corpo { padding-top: 4px; }
+
+/* ---------- Calendário — visão Lista ---------- */
+.calendario-lista-tabela { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.calendario-lista-tabela th, .calendario-lista-tabela td { padding: 8px 10px; border-bottom: 1px solid var(--border-soft); text-align: left; vertical-align: top; }
+.calendario-lista-tabela th { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-soft); }
+.calendario-lista-linha { cursor: pointer; }
+.calendario-lista-linha:hover { background: var(--surface-alt); }
+
+/* ---------- Ícone de tipo de arquivo (Seção 6) — mesmo padrão de gradiente
+   do .module-badge (150deg, cor -> mix mais escuro, ícone branco) aplicado
+   a um quadrado arredondado em vez de círculo, no estilo cartão de arquivo
+   do Google Drive: cor consistente por extensão, reconhecível de longe. */
+.file-type-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 8px;
+  color: #fff;
+  background: linear-gradient(150deg, var(--file-icon-color), color-mix(in srgb, var(--file-icon-color) 65%, black));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 1px 3px rgba(0, 0, 0, 0.18);
+}

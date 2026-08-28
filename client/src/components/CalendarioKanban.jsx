@@ -2,7 +2,7 @@ import { DndContext, useDraggable, useDroppable, PointerSensor, useSensor, useSe
 import { corDaCategoria } from '../lib/corCategoria';
 import { situacaoEvento, situacaoClasse } from '../lib/situacaoEvento';
 
-const COLUNAS = [
+export const COLUNAS = [
   { valor: 'nao_iniciado', rotulo: 'Não iniciado' },
   { valor: 'em_andamento', rotulo: 'Em andamento' },
   { valor: 'concluido', rotulo: 'Concluído' },

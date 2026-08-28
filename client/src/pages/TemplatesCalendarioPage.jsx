@@ -9,12 +9,26 @@ const TIPOS_CAMPO = [
   { valor: 'data', rotulo: 'Data' },
   { valor: 'booleano', rotulo: 'Sim/Não' },
   { valor: 'select', rotulo: 'Lista de opções' },
+  { valor: 'grade', rotulo: 'Grade de variação (cor/tamanho)' },
+];
+
+// Fontes pré-prontas de um campo 'select' — em vez de digitar as opções na
+// mão, o campo aponta pra uma lista que já existe no sistema e é resolvida
+// em tempo real quando o formulário do evento carrega (ver
+// EventoCalendarioModal.jsx), nunca uma cópia estática gravada aqui.
+const FONTES_SELECT = [
+  { valor: 'custom', rotulo: 'Lista personalizada' },
+  { valor: 'cores', rotulo: 'Cores (do estoque)' },
+  { valor: 'tamanhos', rotulo: 'Tamanhos (do estoque)' },
+  { valor: 'fornecedores', rotulo: 'Fornecedores' },
+  { valor: 'categorias', rotulo: 'Categorias de calendário' },
+  { valor: 'responsaveis', rotulo: 'Responsáveis (usuários ativos)' },
 ];
 
 const NOMES_FIXOS = ['Previsão de chegada de corte', 'Meta'];
 
 function campoVazio() {
-  return { nome: '', tipo: 'texto', obrigatorio: false, opcoes: [] };
+  return { nome: '', tipo: 'texto', obrigatorio: false, fonte: 'custom', opcoes: [] };
 }
 
 // Modelos fixos ("Corte"/"Meta") têm formulário próprio no modal de evento —
@@ -23,7 +37,9 @@ function campoVazio() {
 function FormularioTemplate({ template, onSalvar, onCancelar }) {
   const [nome, setNome] = useState(template?.nome || '');
   const [campos, setCampos] = useState(
-    template?.campos?.length > 0 ? template.campos.map((c) => ({ ...c, opcoes: c.opcoes || [] })) : [campoVazio()]
+    template?.campos?.length > 0
+      ? template.campos.map((c) => ({ ...c, fonte: c.fonte || 'custom', opcoes: c.opcoes || [] }))
+      : [campoVazio()]
   );
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
@@ -40,8 +56,8 @@ function FormularioTemplate({ template, onSalvar, onCancelar }) {
     setErro('');
     if (!nome.trim()) { setErro('Dê um nome ao modelo.'); return; }
     const camposValidos = campos.filter((c) => c.nome.trim());
-    if (camposValidos.some((c) => c.tipo === 'select' && c.opcoes.length === 0)) {
-      setErro('Todo campo do tipo "Lista de opções" precisa de pelo menos uma opção.');
+    if (camposValidos.some((c) => c.tipo === 'select' && (c.fonte || 'custom') === 'custom' && c.opcoes.length === 0)) {
+      setErro('Todo campo do tipo "Lista de opções" com fonte "Lista personalizada" precisa de pelo menos uma opção.');
       return;
     }
     setSalvando(true);
@@ -89,15 +105,36 @@ function FormularioTemplate({ template, onSalvar, onCancelar }) {
               <button type="button" className="icon-btn" onClick={() => removerCampo(idx)}><Trash2 size={14} /></button>
             </div>
             {campo.tipo === 'select' && (
-              <div className="field" style={{ marginTop: 8, marginBottom: 0 }}>
-                <span className="field-label">Opções (uma por linha)</span>
-                <textarea
-                  rows={3}
-                  value={campo.opcoes.join('\n')}
-                  onChange={(e) => atualizarCampo(idx, { opcoes: e.target.value.split('\n') })}
-                  onBlur={(e) => atualizarCampo(idx, { opcoes: e.target.value.split('\n').map((o) => o.trim()).filter(Boolean) })}
-                />
+              <div style={{ marginTop: 8 }}>
+                <div className="field" style={{ marginBottom: campo.fonte === 'custom' ? 8 : 0 }}>
+                  <span className="field-label">Fonte das opções</span>
+                  <Select value={campo.fonte || 'custom'} onChange={(e) => atualizarCampo(idx, { fonte: e.target.value })}>
+                    {FONTES_SELECT.map((f) => <option key={f.valor} value={f.valor}>{f.rotulo}</option>)}
+                  </Select>
+                </div>
+                {(campo.fonte || 'custom') === 'custom' ? (
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <span className="field-label">Opções (uma por linha)</span>
+                    <textarea
+                      rows={3}
+                      value={campo.opcoes.join('\n')}
+                      onChange={(e) => atualizarCampo(idx, { opcoes: e.target.value.split('\n') })}
+                      onBlur={(e) => atualizarCampo(idx, { opcoes: e.target.value.split('\n').map((o) => o.trim()).filter(Boolean) })}
+                    />
+                  </div>
+                ) : (
+                  <p className="page-sub" style={{ margin: 0 }}>
+                    As opções vêm direto da lista de {FONTES_SELECT.find((f) => f.valor === campo.fonte)?.rotulo.toLowerCase()} do sistema —
+                    se essa lista mudar depois, o campo acompanha sozinho, sem precisar editar o modelo.
+                  </p>
+                )}
               </div>
+            )}
+            {campo.tipo === 'grade' && (
+              <p className="page-sub" style={{ marginTop: 8, marginBottom: 0 }}>
+                Ativa o toggle "Detalhar por variação (cor/tamanho)" no formulário de evento deste modelo —
+                não precisa de configuração extra aqui.
+              </p>
             )}
           </div>
         ))}

@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Plus, AlertTriangle, Calendar, Columns3, Printer, Clock, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, AlertTriangle, Calendar, Columns3, List, Printer, Clock, CheckCircle2 } from 'lucide-react';
 import { dataBr } from '../lib/format';
 import { api } from '../api/client';
 import { StatCard, Select } from '../components/ui';
 import EventoCalendarioModal from '../components/EventoCalendarioModal';
-import CalendarioKanban from '../components/CalendarioKanban';
+import CalendarioKanban, { COLUNAS as COLUNAS_KANBAN } from '../components/CalendarioKanban';
 import { corDaCategoria } from '../lib/corCategoria';
 import { situacaoEvento, situacaoClasse, SITUACAO_ROTULO } from '../lib/situacaoEvento';
 
@@ -67,7 +67,7 @@ function EventoChip({ evento, diasAlerta, onClick }) {
 export default function CalendarioPage() {
   const hoje = new Date();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [view, setView] = useState('mes'); // 'mes' | 'kanban'
+  const [view, setView] = useState('mes'); // 'mes' | 'kanban' | 'lista'
   const [mesAtual, setMesAtual] = useState(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
   const [eventos, setEventos] = useState([]);
   const [resumo, setResumo] = useState(null);
@@ -78,6 +78,7 @@ export default function CalendarioPage() {
   const [status, setStatus] = useState('');
   const [busca, setBusca] = useState('');
   const [modal, setModal] = useState(null); // null | { eventoId } | { dataPadrao }
+  const [menuDia, setMenuDia] = useState(null); // null | { iso, eventos, pos: { top, left } }
   const [erro, setErro] = useState('');
   const [diasAlerta, setDiasAlerta] = useState(DIAS_ALERTA_PADRAO);
 
@@ -111,7 +112,7 @@ export default function CalendarioPage() {
     }
     if (categoria) params.set('categoria', categoria);
     if (responsavelId) params.set('responsavel_id', responsavelId);
-    if (view === 'mes' && status) params.set('status', status);
+    if ((view === 'mes' || view === 'lista') && status) params.set('status', status);
     if (busca) params.set('busca', busca);
     return params;
   }
@@ -151,6 +152,19 @@ export default function CalendarioPage() {
     if (recarregar) carregar();
   }
 
+  // Clicar num dia vazio vai direto pro formulário de novo evento — mas um
+  // dia que já tem evento(s) abre um menu curto primeiro (lista dos eventos
+  // + botão "criar novo"), pra não competir com o clique de abrir um evento
+  // já existente (ver EventoChip acima, que também chama e.stopPropagation).
+  function aoClicarDia(e, iso, eventosDoDia) {
+    if (eventosDoDia.length === 0) {
+      setModal({ dataPadrao: iso });
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    setMenuDia({ iso, eventos: eventosDoDia, pos: { top: rect.bottom + 4, left: rect.left } });
+  }
+
   return (
     <div className="page-wide">
       <div>
@@ -181,6 +195,8 @@ export default function CalendarioPage() {
                 Hoje
               </button>
             </>
+          ) : view === 'lista' ? (
+            <span className="calendario-header-titulo">Lista de eventos</span>
           ) : (
             <span className="calendario-header-titulo">Quadro por status</span>
           )}
@@ -192,6 +208,9 @@ export default function CalendarioPage() {
             </button>
             <button type="button" className={view === 'kanban' ? 'active' : ''} onClick={() => setView('kanban')}>
               <Columns3 size={13} /> Kanban
+            </button>
+            <button type="button" className={view === 'lista' ? 'active' : ''} onClick={() => setView('lista')}>
+              <List size={13} /> Lista
             </button>
           </div>
           <button className="btn btn-ghost" onClick={() => window.print()}>
@@ -210,7 +229,7 @@ export default function CalendarioPage() {
         <Select value={responsavelId} onChange={(e) => setResponsavelId(e.target.value)} placeholder="Todos os responsáveis" style={{ maxWidth: 200 }}>
           {usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
         </Select>
-        {view === 'mes' && (
+        {(view === 'mes' || view === 'lista') && (
           <Select value={status} onChange={(e) => setStatus(e.target.value)} placeholder="Todos os status" style={{ maxWidth: 170 }}>
             <option value="nao_iniciado">Não iniciado</option>
             <option value="em_andamento">Em andamento</option>
@@ -236,7 +255,7 @@ export default function CalendarioPage() {
                 <div
                   key={iso}
                   className={`calendario-dia${foraDoMes ? ' fora-do-mes' : ''}${ehHoje ? ' hoje' : ''}`}
-                  onClick={() => setModal({ dataPadrao: iso })}
+                  onClick={(e) => aoClicarDia(e, iso, eventosDoDia)}
                 >
                   <span className="calendario-dia-numero">{data.getDate()}</span>
                   <div className="calendario-dia-eventos">
@@ -250,6 +269,35 @@ export default function CalendarioPage() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      ) : view === 'lista' ? (
+        <div className="card">
+          <div className="card-head" style={{ marginBottom: 10 }}>Lista de eventos</div>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="calendario-lista-tabela">
+              <thead>
+                <tr>
+                  <th>Título</th>
+                  <th>Categoria</th>
+                  <th>Responsáveis</th>
+                  <th>Prazo</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {eventos.map((e) => (
+                  <tr key={e.id} className="calendario-lista-linha" onClick={() => setModal({ eventoId: e.id })}>
+                    <td>{e.titulo}</td>
+                    <td>{e.categoria || '—'}</td>
+                    <td>{e.responsaveis?.map((r) => r.nome).join(', ') || '—'}</td>
+                    <td>{dataBr(e.data_prevista_fim.slice(0, 10))}{e.atrasado ? ' (atrasado)' : ''}</td>
+                    <td>{STATUS_ROTULO[e.status] || e.status}</td>
+                  </tr>
+                ))}
+                {eventos.length === 0 && <tr><td colSpan="5">Nenhum evento no filtro selecionado.</td></tr>}
+              </tbody>
+            </table>
           </div>
         </div>
       ) : (
@@ -274,12 +322,42 @@ export default function CalendarioPage() {
       </div>
       </div>
 
+      {menuDia && (
+        <>
+          <div className="calendario-dia-menu-backdrop" onClick={() => setMenuDia(null)} />
+          <div className="calendario-dia-menu" style={{ top: menuDia.pos.top, left: menuDia.pos.left }}>
+            <div className="calendario-dia-menu-head">{dataBr(menuDia.iso)}</div>
+            {menuDia.eventos.map((e) => (
+              <button
+                key={e.id}
+                type="button"
+                className="calendario-dia-menu-item"
+                onClick={() => { setModal({ eventoId: e.id }); setMenuDia(null); }}
+              >
+                {e.titulo}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="calendario-dia-menu-item calendario-dia-menu-novo"
+              onClick={() => { setModal({ dataPadrao: menuDia.iso }); setMenuDia(null); }}
+            >
+              <Plus size={13} /> Criar novo evento nesse dia
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* A exportação/impressão segue a visão ativa no momento do clique —
+          cada visão (Mês/Kanban/Lista) tem seu PRÓPRIO template de impressão,
+          nunca cai todo mundo no mesmo layout de tabela (bug corrigido:
+          antes só existia este bloco de tabela, usado pra qualquer visão). */}
       <div className="print-only ficha-page ficha-doc-grid card">
         <div className="ficha-doc-topo">
           <div>
             <div className="ficha-doc-empresa">HBN HUB — MISS MANU · ORIGEM · HOGGAR · HEBRON</div>
             <div className="ficha-doc-titulo">
-              Calendário — {view === 'mes' ? `${NOMES_MES[mesAtual.getMonth()]} de ${mesAtual.getFullYear()}` : 'todos os eventos abertos'}
+              Calendário — {view === 'mes' ? `${NOMES_MES[mesAtual.getMonth()]} de ${mesAtual.getFullYear()}` : view === 'kanban' ? 'quadro por status' : 'lista de eventos'}
             </div>
           </div>
           <div className="ficha-doc-meta">
@@ -287,29 +365,90 @@ export default function CalendarioPage() {
             <div><strong>Eventos:</strong> {eventos.length}</div>
           </div>
         </div>
-        <table className="ficha-doc-tabela">
-          <thead>
-            <tr>
-              <th className="col-esq">Título</th>
-              <th className="col-esq">Categoria</th>
-              <th className="col-esq">Responsáveis</th>
-              <th>Prazo</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {eventos.map((e) => (
-              <tr key={e.id}>
-                <td className="col-esq">{e.titulo}</td>
-                <td className="col-esq">{e.categoria || '—'}</td>
-                <td className="col-esq">{e.responsaveis?.map((r) => r.nome).join(', ') || '—'}</td>
-                <td>{dataBr(e.data_prevista_fim.slice(0, 10))}{e.atrasado ? ' (atrasado)' : ''}</td>
-                <td>{STATUS_ROTULO[e.status] || e.status}</td>
-              </tr>
+
+        {view === 'mes' && (
+          <div className="calendario-grade">
+            {DIAS_SEMANA.map((d) => <div key={d} className="calendario-cabecalho-dia">{d}</div>)}
+            {semanas.flat().map(({ data, foraDoMes }) => {
+              const iso = isoDoDia(data);
+              const eventosDoDia = eventosPorDia.get(iso) || [];
+              return (
+                <div key={iso} className={`calendario-dia${foraDoMes ? ' fora-do-mes' : ''}`}>
+                  <span className="calendario-dia-numero">{data.getDate()}</span>
+                  <div className="calendario-dia-eventos">
+                    {eventosDoDia.map((e) => (
+                      <span key={e.id} className={`calendario-chip ${situacaoClasse(situacaoEvento(e, diasAlerta))}`}>{e.titulo}</span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {view === 'kanban' && (
+          <div className="calendario-kanban">
+            {COLUNAS_KANBAN.map((coluna) => (
+              <div key={coluna.valor} className="kanban-coluna">
+                <div className="kanban-coluna-head">
+                  <span>{coluna.rotulo}</span>
+                  <span>{eventos.filter((e) => e.status === coluna.valor).length}</span>
+                </div>
+                {eventos.filter((e) => e.status === coluna.valor).map((e) => (
+                  <div key={e.id} className={`kanban-cartao ${situacaoClasse(situacaoEvento(e, diasAlerta))}`}>
+                    <div className="kanban-cartao-titulo">{e.titulo}</div>
+                    <div className="kanban-cartao-meta">
+                      <span>{e.produto ? e.produto.referencia : (e.categoria || '—')}</span>
+                      <span>{dataBr(e.data_prevista_fim.slice(0, 10))}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             ))}
-            {eventos.length === 0 && <tr><td colSpan="5">Nenhum evento no período/filtro selecionado.</td></tr>}
-          </tbody>
-        </table>
+          </div>
+        )}
+
+        {view === 'lista' && (
+          <table className="ficha-doc-tabela">
+            <thead>
+              <tr>
+                <th className="col-esq">Título</th>
+                <th className="col-esq">Categoria</th>
+                <th className="col-esq">Responsáveis</th>
+                <th>Prazo</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {eventos.map((e) => (
+                <Fragment key={e.id}>
+                  <tr>
+                    <td className="col-esq">{e.titulo}</td>
+                    <td className="col-esq">{e.categoria || '—'}</td>
+                    <td className="col-esq">{e.responsaveis?.map((r) => r.nome).join(', ') || '—'}</td>
+                    <td>{dataBr(e.data_prevista_fim.slice(0, 10))}{e.atrasado ? ' (atrasado)' : ''}</td>
+                    <td>{STATUS_ROTULO[e.status] || e.status}</td>
+                  </tr>
+                  {e.usa_grade && e.grade?.length > 0 && (
+                    <tr>
+                      <td colSpan="5" style={{ paddingLeft: 20 }}>
+                        <table className="grade-variacoes-mini">
+                          <thead><tr><th>Cor</th><th>Tamanho</th><th>Quantidade</th></tr></thead>
+                          <tbody>
+                            {e.grade.map((g) => (
+                              <tr key={g.id}><td>{g.cor || '—'}</td><td>{g.tamanho || '—'}</td><td>{g.quantidade}</td></tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+              {eventos.length === 0 && <tr><td colSpan="5">Nenhum evento no período/filtro selecionado.</td></tr>}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {modal && (

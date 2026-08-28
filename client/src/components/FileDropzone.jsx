@@ -1,5 +1,6 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
-import { UploadCloud, FileText } from 'lucide-react';
+import { UploadCloud } from 'lucide-react';
+import { FileTypeIcon } from './ui';
 
 // Substituto do "Escolher arquivo / Nenhum arquivo escolhido" cru do
 // navegador — mesma API de fora (a ref exposta É o <input type="file">
@@ -76,7 +77,7 @@ const FileDropzone = forwardRef(function FileDropzone(
       {nomes.length > 0 ? (
         <div className="file-dropzone-arquivos">
           {nomes.map((n) => (
-            <span key={n} className="file-dropzone-nome"><FileText size={12} />{n}</span>
+            <span key={n} className="file-dropzone-nome"><FileTypeIcon nomeArquivo={n} size={16} />{n}</span>
           ))}
           <span className="file-dropzone-trocar">Clique ou arraste pra trocar</span>
         </div>

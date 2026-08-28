@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import {
   ChevronDown, Check, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CalendarDays,
-  ArrowUp, ArrowDown, ChevronsUpDown,
+  ArrowUp, ArrowDown, ChevronsUpDown, FileSpreadsheet, FileText, FileImage, FileCode, FileArchive, File as FileGenerico,
 } from 'lucide-react';
 import { TAMANHOS_PAGINA } from '../lib/useTabela';
 import { exportarCsv, exportarXlsx } from '../lib/exportar';
@@ -220,6 +220,52 @@ export function Paginacao({ pagina, totalPaginas, tamanho, tamanhos = TAMANHOS_P
   );
 }
 
+// Mapa extensão -> { Icone, cor } — cor é a base do degradê aplicado em
+// .file-type-icon (ver theme.css: linear-gradient 150deg até um tom mais
+// escuro da mesma cor, ícone branco), mesma técnica já usada em
+// .module-badge pro círculo colorido da barra lateral. Estilo "cartão de
+// arquivo" tipo Google Drive: ícone identificável de longe, cor consistente
+// por tipo em qualquer lugar do sistema que baixe/exporte arquivo.
+const CORES_TIPO_ARQUIVO = {
+  xlsx: { Icone: FileSpreadsheet, cor: '#1f9d55' },
+  xls: { Icone: FileSpreadsheet, cor: '#1f9d55' },
+  csv: { Icone: FileSpreadsheet, cor: '#1f9d55' },
+  pdf: { Icone: FileText, cor: '#d64545' },
+  docx: { Icone: FileText, cor: '#2563eb' },
+  doc: { Icone: FileText, cor: '#2563eb' },
+  png: { Icone: FileImage, cor: '#a855c7' },
+  jpg: { Icone: FileImage, cor: '#a855c7' },
+  jpeg: { Icone: FileImage, cor: '#a855c7' },
+  html: { Icone: FileCode, cor: '#db2777' },
+  zip: { Icone: FileArchive, cor: '#6b7280' },
+  rar: { Icone: FileArchive, cor: '#6b7280' },
+  txt: { Icone: FileText, cor: '#9ca3af' },
+};
+const TIPO_ARQUIVO_PADRAO = { Icone: FileGenerico, cor: '#9ca3af' };
+
+function extensaoDe(nomeArquivo) {
+  const partes = String(nomeArquivo || '').split('.');
+  return partes.length > 1 ? partes.pop().toLowerCase() : '';
+}
+
+// Componente reaproveitável em qualquer lista de arquivo/anexo/exportação do
+// sistema (anexos do Calendário, BotaoExportar, dropzone de upload etc.) —
+// recebe o nome do arquivo (ou a extensão direto) e resolve ícone + cor
+// sozinho. `size` controla o tamanho do quadrado (o ícone interno escala
+// junto, a ~55% do tamanho do quadrado).
+export function FileTypeIcon({ nomeArquivo, extensao, size = 32 }) {
+  const ext = (extensao || extensaoDe(nomeArquivo)).toLowerCase();
+  const { Icone, cor } = CORES_TIPO_ARQUIVO[ext] || TIPO_ARQUIVO_PADRAO;
+  return (
+    <span
+      className="file-type-icon"
+      style={{ '--file-icon-color': cor, width: size, height: size }}
+    >
+      <Icone size={Math.round(size * 0.55)} />
+    </span>
+  );
+}
+
 // Botão de exportar (CSV ou XLSX) — recebe as colunas (`{ chave, rotulo,
 // valor(item) }`) e a lista JÁ com o filtro/ordenação aplicados pela
 // própria tela (não só a página visível), e exporta os dois formatos com
@@ -236,10 +282,10 @@ export function BotaoExportar({ nomeBase, colunas, itens, disabled }) {
           <div className="exportar-backdrop" onClick={() => setAberto(false)} />
           <div className="exportar-menu">
             <button type="button" className="exportar-item" onClick={() => { exportarCsv(nomeBase, colunas, itens); setAberto(false); }}>
-              Exportar como CSV
+              <FileTypeIcon extensao="csv" size={22} /> Exportar como CSV
             </button>
             <button type="button" className="exportar-item" onClick={() => { exportarXlsx(nomeBase, colunas, itens); setAberto(false); }}>
-              Exportar como XLSX
+              <FileTypeIcon extensao="xlsx" size={22} /> Exportar como XLSX
             </button>
           </div>
         </>
