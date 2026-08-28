@@ -1,84 +1,152 @@
 # Integração com o Wik Sistemas (ERP)
 
-Documenta o comportamento da API do Wik confirmado por teste direto e as
-decisões de projeto da sincronização automática de estoque/produtos/ficha
+Documenta o comportamento da API do Wik confirmado pelo suporte técnico deles
+e as decisões de projeto da sincronização automática de estoque/produtos/ficha
 de custo (código em `server/src/lib/wik.js`, `wikSync.js`,
 `wikProdutosImport.js`, `wikFichaCustoImport.js`, `routes/wik.routes.js`).
 
-## Causa raiz confirmada (27/08/2026): acesso de DADOS revogado, não sessão
+## Causa raiz confirmada pelo suporte da Wik (27/08/2026): TOKEN DUPLICADO
 
-Diagnóstico de produção em duas rodadas (24/08 e 26/08) tinha levantado a
-hipótese de "sessão única por usuário" (logar na web derrubaria o token da
-API). Essa hipótese foi **descartada** por um teste direto na API, feito
-fora do sistema, por PowerShell, com um login ISOLADO (nada mais rodando,
-ninguém na web) e uma chamada por vez:
+Rodadas anteriores de diagnóstico (24/08 e 26/08) tinham descartado a hipótese
+de "sessão única" e chutado "acesso de dados revogado/suspenso" como causa dos
+403 em toda chamada de dado. Essa hipótese também estava errada. O dono do
+projeto ligou para o suporte técnico do Wik em 27/08/2026 e eles destravaram a
+conta manualmente, explicando o mecanismo real: **a conta estava bloqueada por
+TOKEN DUPLICADO no mesmo login** — e o próprio padrão de relogin-ao-detectar-403
+que a rodada anterior tinha implementado aqui era exatamente o que causava o
+bloqueio. Citação literal do suporte:
 
-```
-Login OK
-  criacao       : 2026-08-27 11:44:38
-  expiracao     : 2026-08-27 15:44:38     ← 4 HORAS de validade real
-  usuarioMaster : 1
-  empresaAcesso : 192,193,198,202
+> "Se você ficar abrindo muito o login e ficar tentando usar simultaneamente,
+> a gente vai travar o usuário."
 
-Com esse token, segundos depois:
-  GET /api/apiwiki/saldo_estoque_get?empId=202&pagina=1
-      → HTTP 403  {"errors":{"code":0,"type":"Token","message":"token inválido ou expirado!"},"status":403}
-  GET /api/wiki_v2/operacoes_get
-      → HTTP 200 com body.status 403, mesmo erro de token
-  GET /api/wiki_v2/tamanhos_get
-      → HTTP 200 com body.status 403, mesmo erro de token
-```
+> "A aplicação bloqueia. Ela está tentando algum tipo de ataque, por tentativa
+> de login usar token que não está ativo."
 
-Ou seja: **o login sempre funciona**, mas **toda chamada de DADO é
-rejeitada**, mesmo com uma credencial isolada que ninguém mais está usando.
-A conclusão do dono do projeto (chamado já aberto com o Wik): o acesso de
-dados da conta foi revogado ou suspenso do lado deles em algum momento
-próximo a 17/08/2026 — não é comportamento do nosso código, e reautenticar
-não resolve nada nesse estado (a hipótese de "sessão única" NÃO explica um
-login isolado sendo rejeitado da mesma forma).
+E, sobre o que acontece quando dois tokens do mesmo login coexistem:
 
-### Recomendação: credencial de API dedicada
+> "Se ela tentar usar o token antigo vai travar. E se muitas consultas
+> tentarem usar o token antigo, vai travar esse usuário."
 
-Mesmo com a causa raiz sendo revogação de acesso (não sessão), continua
-valendo cadastrar aqui um usuário do Wik dedicado só à integração — facilita
-auditar/ajustar as permissões dela junto ao suporte do Wik sem depender da
-conta de uma pessoa.
+Ou seja: reagir a um 403 relogando (mesmo com limite de 1 a cada 10 minutos)
+é o anti-padrão. Cada login novo gera um token novo; se qualquer parte do
+sistema ainda estiver com o token anterior em memória e tentar usá-lo depois
+que um outro login já rodou, isso é lido pelo Wik como "token duplicado" /
+possível ataque, e a conta inteira é bloqueada.
 
-## Mapa de caminhos (item verificado por teste direto, 27/08/2026)
+### Disciplina de token daqui pra frente (regras ditadas pelo suporte)
 
-A documentação oficial da Wik troca de lugar os dois prefixos de URL da API
-e não avisa. Testado na prática, endpoint por endpoint:
+1. **Logar UMA única vez e guardar o token** — nunca logar por operação, nunca
+   logar em reação a uma falha.
+2. **Renovar por AGENDA, nunca por reação a erro**: de 2 em 2 horas (nunca mais
+   que isso), ou antecipadamente quando faltar 30 minutos para o campo
+   `expiracao` que vem na resposta do login — o que vier primeiro.
+3. **Troca atômica**: ao renovar, TODOS os consumidores passam a usar o token
+   novo na mesma hora. Nenhum job pode segurar uma cópia própria do token em
+   memória — existe um único provedor de token (`tokenBoxGlobal` em
+   `wikSync.js`), consultado a cada chamada, nunca cacheado por job.
+4. **Máximo 3 requisições por segundo**, com limitador de verdade (fila serial
+   — ver seção abaixo).
+5. **Ao receber 401/403 de token: PARAR, registrar e mostrar alerta na tela.
+   NÃO relogar, NÃO retentar.** Entrar em modo degradado e esperar intervenção
+   humana (abrir chamado com o suporte do Wik).
 
-| Endpoint | Base correta | Confirmado |
-|---|---|---|
-| `saldo_estoque_get` | `apiwiki` | ✅ teste direto 27/08 |
-| `produto_get` | `wiki_v2` | ✅ |
-| `tamanhos_get` | `wiki_v2` | ✅ teste direto 27/08 |
-| `operacoes_get` | `wiki_v2` | ✅ teste direto 27/08 |
-| `insumosfichatecnica_get` | `wiki_v2` | herdado (não testado isoladamente) |
-| `operacoesfichatecnica_get` | `wiki_v2` | herdado (não testado isoladamente) |
-| `materiaprima_get` | `wiki_v2` | herdado (não testado isoladamente) |
-| `categoria_get` | `wiki_v2` | herdado (não testado isoladamente) |
-| `cor_get` | `wiki_v2` | herdado (não testado isoladamente) |
+Essas 5 regras substituem por completo o mecanismo de relogin-on-403 (com ou
+sem limite de 1/10min) das rodadas de 24–26/08 — esse mecanismo foi removido
+do código.
+
+### Implementação da disciplina (`server/src/lib/wikSync.js`)
+
+- `tokenBoxGlobal`: objeto único `{ atual: token }` compartilhado por TODO o
+  processo — não existe token por job.
+- `renovarTokenAgora(integracao)`: faz o login de verdade e troca
+  `tokenBoxGlobal.atual` de forma atômica (memória) + grava no banco
+  (`access_token`, `token_renovado_em`). É o único lugar do código que faz um
+  login real fora do botão de diagnóstico manual.
+- `renovarTokenWikSeNecessario()`: função "gate" chamada por agenda (ver
+  `WIK_TOKEN_CHECK_INTERVAL_MS` em `index.js`, a cada 10min) — só chama
+  `renovarTokenAgora` se: não existe token ainda, ou já se passaram 2 horas
+  desde a última renovação, ou faltam menos de 30 minutos para `expiracao`.
+  Fora dessas condições não faz nenhuma chamada de rede.
+- `obterTokenBoxAtual(integracao)`: accessor usado por todo consumidor de
+  dado (estoque/produtos/ficha de custo) — nunca dispara login sozinho fora
+  do bootstrap inicial se o box ainda estiver vazio.
+- `esquecerTokenEmMemoria()`: chamado quando uma credencial nova é salva
+  (`POST /wik`), pra garantir que o box em memória não sirva um token da
+  credencial antiga depois da troca.
+- **`chamarApi` (`wik.js`) nunca reloga nem retenta.** Ao classificar um erro
+  como `token`, registra o evento (`aoDetectarTokenMorto`) e lança o erro na
+  hora com `erro.causaWikToken = true` — quem chamou decide o que fazer
+  (normalmente: aparece no selo/banner como `rejeitado`, sem nova tentativa).
+- **Exceção deliberada**: os botões "Testar conexão" e "Testar conexão
+  completa" (`POST /wik/testar`, `POST /wik/testar-completo`) SÃO permitidos
+  a fazer um login de verdade via `renovarTokenAgora`, porque são acionados
+  por uma pessoa clicando — não é reação automática a erro, é a "intervenção
+  humana" que a regra 5 do suporte pede.
+
+## Fila serial global (nunca duas chamadas Wik em voo ao mesmo tempo)
+
+Um limitador de taxa (esperar entre chamadas) não impede, sozinho, que duas
+chamadas fiquem *em voo* ao mesmo tempo se o código disparar duas em paralelo
+(ex.: `Promise.all`). Como o próprio suporte confirmou que múltiplos acessos
+simultâneos com o mesmo login/token derrubam a conta, a proteção agora tem
+duas camadas complementares:
+
+- **`enfileirarAcessoWik` (`wik.js`)**: fila-mutex por promise-chain — literal
+  UMA requisição HTTP ao Wik (login ou qualquer endpoint) em voo por vez, no
+  processo inteiro. Toda chamada passa por aqui, incluindo o login. Cada
+  chamada tem timeout (`AbortSignal.timeout(25000)`, `sinalComTimeout()`) pra
+  a fila nunca travar de vez se uma chamada específica ficar pendurada.
+- **Login com single-flight** (`loginEmVoo`): se já existe um login em voo,
+  quem chamar de novo recebe a MESMA promise, em vez de disparar um segundo
+  login real — evita literalmente o cenário que gera "token duplicado".
+- **Trava global de job por integração** (`reservarJobWik` /
+  `liberarJobWik` / `jobAtivoNoMomento`, `wikSync.js`): claim atômico
+  (`UPDATE ... WHERE`) nas colunas `wik_job_ativo` / `wik_job_ativo_desde` de
+  `integracoes_wik` — nunca dois jobs do Wik (estoque, produtos, ficha de
+  custo, testes, diagnósticos) rodando ao mesmo tempo, mesmo sob concorrência
+  real entre processos/requisições (o Postgres serializa o UPDATE na mesma
+  linha). Tem um timeout de 30min pra destravar sozinho se um processo morrer
+  com o job "preso". Todas as rotas que disparam job em background
+  (`/estoque/preview`, `/produtos/preview`, `/ficha-custo/preview`,
+  `/testar`, `/testar-completo`, `/ficha-custo/diagnosticar`) reservam antes
+  de começar e liberam no `finally`, devolvendo HTTP 409 se já tiver um job
+  ativo.
+- Chamadas antes paralelas (`Promise.all` de insumos+operações na ficha de
+  custo) foram trocadas para sequenciais (`await` um de cada vez) como defesa
+  redundante, mesmo com a fila de baixo nível já garantindo isso.
+
+Essas duas camadas continuam valendo independente de qualquer decisão futura
+sobre o mecanismo de token — são a parte mais importante da proteção contra
+bloqueio, junto com a disciplina de renovação por agenda acima.
+
+## Mapa de caminhos (reconfirmado pelo suporte, 27/08/2026)
+
+A documentação oficial da Wik troca de lugar os dois prefixos de URL da API.
+O suporte confirmou por telefone que a documentação deles está errada nesse
+ponto e que vai ser corrigida do lado deles — até lá, valem os caminhos
+testados na prática:
+
+| Endpoint | Base correta |
+|---|---|
+| `saldo_estoque_get` | `apiwiki` |
+| todos os demais endpoints | `wiki_v2` |
 
 Chamar no caminho errado devolve **HTTP 404 "Recurso não Encontrado"**
 (`body.errors.code = 40`) — não é erro de token, é erro de CAMINHO (ver
 próxima seção). O mapa fica em `CAMINHO_POR_ENDPOINT`, no topo de
-`server/src/lib/wik.js` — qualquer endpoint novo deveria ser testado
-isoladamente e adicionado lá antes de usado de verdade, em vez de assumir.
+`server/src/lib/wik.js`.
 
 ## Classificação de erro por causa, nunca só pelo HTTP status
 
-Confirmado por teste direto: a API devolve tanto **HTTP 403** quanto **HTTP
-200 com `body.status` 403** para o MESMO erro de token — e a doc oficial da
-Wik só documenta 401 pra token, o 403 nem consta lá. Por isso o código lê
-SEMPRE `body.status`/`body.success`, nunca só `res.status`, e trata 403
-igual a 401 (`classificarErroWik` em `wik.js`). Três causas distintas:
+A API devolve tanto **HTTP 403** quanto **HTTP 200 com `body.status` 403**
+para o MESMO erro de token — e a doc oficial da Wik só documenta 401 pra
+token, o 403 nem consta lá. Por isso o código lê SEMPRE `body.status`, nunca
+só `res.status` (`classificarErroWik` em `wik.js`). Três causas distintas:
 
-- **TOKEN** (401/403, HTTP ou body): token morto — dispara relogin (sujeito
-  ao limite/modo degradado abaixo).
+- **TOKEN** (401/403, HTTP ou body): token rejeitado — NÃO reloga, NÃO
+  retenta (ver disciplina de token acima). Registra e para.
 - **CAMINHO** (404, HTTP ou body, ou `errors.code` 40): endpoint no prefixo
-  errado — não tenta relogar, é um bug de mapeamento, não de credencial.
+  errado — é bug de mapeamento, não de credencial.
 - **PARÂMETRO** (400): faltou ou veio errado um parâmetro obrigatório.
 
 Cada uma sai com uma mensagem prefixada ("Erro de CAMINHO...", "Erro de
@@ -87,27 +155,24 @@ PARÂMETRO...") pra nunca ficar ambíguo no log/tela qual dessas foi.
 ## Validade do token: SEMPRE `retorno.expiracao`, nunca calculada aqui
 
 Rodadas anteriores chutaram durações fixas (4h, depois 1h) como padrão pra
-quando a resposta de login não trouxesse a expiração explícita — os dois
-eram achismo (REGRA 2 proíbe inventar dado que não veio da fonte). O teste
-direto de 27/08 confirmou o valor real: **4 horas exatas** entre `criacao` e
-`expiracao`. O código (`wik.js`, `login()`) agora só lê `retorno.expiracao`
-— se o campo faltar ou vier num formato que não parseia, `expiraEm` sai
-`null` (tratado como já expirado, sem chutar nenhum prazo) e fica registrado
-em `ultima_expiracao_suspeita`. Margem de renovação: 10 minutos
-(`wikSync.js`, `obterTokenValido`).
+quando a resposta de login não trouxesse a expiração explícita — achismo
+proibido pela REGRA 2. O código (`wik.js`, `loginDeVerdade()`) só lê
+`retorno.expiracao` — se o campo faltar ou vier num formato que não parseia,
+`expiraEm` sai `null` e fica marcado `expiracaoSuspeita: true`, sem chutar
+nenhum prazo. A margem de renovação antecipada é de 30 minutos antes da
+expiração real (`MARGEM_ANTECIPADA_RENOVACAO_MS`, `wikSync.js`), e o teto
+entre renovações é de 2 horas (`INTERVALO_MAXIMO_RENOVACAO_MS`) mesmo que o
+token ainda não esteja perto de expirar.
 
 ## Modo degradado (a partir de 5 rejeições de token seguidas)
 
-Em 24h chegou a 224 rejeições de token — cerca de uma a cada 6 minutos,
-tráfego inútil contra uma conta com acesso revogado, e um risco de ser lido
-como abuso pelo fornecedor. A partir de **5 rejeições consecutivas**
+A partir de **5 rejeições consecutivas** de chamada de dado
 (`rejeicoes_consecutivas_token`, `LIMIAR_MODO_DEGRADADO` em `wikSync.js`):
 
 - Os ciclos automáticos (estoque/produtos/ficha de custo) passam a tentar
-  **1x por hora** em vez do ritmo normal (`cicloDevePular`).
-- O relogin forçado dentro de um ciclo é **desativado** (`renovarToken`
-  recusa na hora, sem nem checar a trava de 10min) — sem sentido insistir
-  em relogar quando já sabemos que o login não é o problema.
+  **1x por hora** em vez do ritmo normal (`cicloDevePular`) — só pra reduzir
+  tráfego inútil contra uma conta bloqueada, não afeta a renovação de token
+  (que já é só por agenda, independente disso).
 - Volta ao normal sozinho na primeira chamada de DADO bem-sucedida
   (`registrarSucessoWik` zera o contador) ou quando a credencial é salva de
   novo na tela (`POST /wik` também zera).
@@ -115,75 +180,91 @@ como abuso pelo fornecedor. A partir de **5 rejeições consecutivas**
 ## Selo da tela e mensagens
 
 - `ultima_tentativa`/`ultimo_erro`/`ultima_rejeicao_token` só são gravados
-  por CHAMADAS DE DADO de verdade — "Testar conexão" é só um login e nunca
-  grava aqui, porque login bem-sucedido não prova que uma chamada de dado
-  real vai funcionar. `obterTokenValido` (usado por TODOS os ciclos) também
-  não limpa esse estado num login de rotina — só `registrarSucessoWik`
-  (chamado depois de uma operação de dado bem-sucedida) limpa.
+  por CHAMADAS DE DADO de verdade — login de rotina (renovação por agenda)
+  não limpa nem grava esse estado, só `registrarSucessoWik` (chamado depois
+  de uma operação de dado bem-sucedida) limpa.
 - O selo (`calcularStatusToken`, compartilhado entre `wik.routes.js` e
   `estoque.routes.js`) reflete o resultado da ÚLTIMA CHAMADA DE DADO
   (`nao_testado` / `valido` / `rejeitado` / `erro_outro`), nunca a
   existência de um token no banco nem um teste de login isolado.
-- Enquanto `rejeitado`, o banner de Estoque e o card de Integrações mostram
-  uma mensagem honesta (sem texto técnico cru) explicando que o login
-  funciona mas os dados são recusados, e destacam a data do último saldo
-  sincronizado — quem olha estoque precisa saber que o número pode estar
-  desatualizado.
+- Enquanto `rejeitado`, o banner de Estoque e o card de Integrações mostram:
+  "O Wik bloqueou o acesso desta conta (geralmente por token duplicado) — é
+  preciso abrir chamado no suporte da Wik pra destravar. Não adianta tentar
+  de novo por aqui." — nada de relogin automático nem texto técnico cru, e
+  destacam a data do último saldo sincronizado, porque quem olha estoque
+  precisa saber que o número pode estar desatualizado.
 - Jobs de importação (estoque/produtos/ficha de custo) que ficam presos em
-  "rodando" além do próprio limiar de trava (10min estoque, 30min
-  produtos/ficha) são corrigidos pra "erro" na hora de LER o status
-  (`corrigirJobsPresos`), em vez de ficar mostrando "rodando" por horas.
-
-## Trava de reautenticação (1 relogin forçado / 10min)
-
-Independente do modo degradado acima: dentro de QUALQUER ciclo, no máximo 1
-login forçado a cada 10 minutos, pra não bater relogin a cada chamada
-paginada. Login manual bem-sucedido ("Testar conexão" ou salvar credencial
-nova) LIMPA essa trava — sem isso, uma trava deixada por um relogin forçado
-anterior podia bloquear a recuperação automática mesmo logo depois de
-confirmar manualmente que o login funciona.
+  "rodando" além do próprio limiar de trava são corrigidos pra "erro" na
+  hora de LER o status (`corrigirJobsPresos`), em vez de ficar mostrando
+  "rodando" por horas.
 
 ## Botão de diagnóstico manual ("Testar conexão completa")
 
-Reproduz na tela o mesmo teste feito por PowerShell fora do sistema: 1
-login (mostra criação/expiração/usuarioMaster/empresaAcesso, nunca o token)
-→ espera 2s → 1 chamada de `apiwiki/saldo_estoque_get` → 1 chamada de
-`wiki_v2/tamanhos_get`, mostrando HTTP status, `body.status` e o corpo bruto
-de cada uma. Não participa do job/status normal da integração (não conta
-pro modo degradado, não é bloqueado por ele) — é diagnóstico isolado pra não
-depender de terminal na próxima vez. Rota: `POST /api/wik/testar-completo`.
+Reproduz na tela um teste isolado: 1 login (mostra
+criação/expiração/usuarioMaster/empresaAcesso, nunca o token) → espera 2s →
+1 chamada de `apiwiki/saldo_estoque_get` → 1 chamada de `wiki_v2/tamanhos_get`,
+mostrando HTTP status, `body.status` e o corpo bruto de cada uma. Usa
+`renovarTokenAgora` (o mesmo caminho atômico de troca que o agendador usa),
+protegido pela trava global de job — não dispara em paralelo com nenhum
+outro job do Wik. Não participa do modo degradado. Rota:
+`POST /api/wik/testar-completo`.
 
-## Regras oficiais da API (documentação da Wik)
+## Regras oficiais da API (documentação + suporte da Wik)
 
 - Limite de 3 requisições por segundo, valendo pra TODAS as chamadas
-  autenticadas (login incluso).
-- Não é permitido múltiplos acessos simultâneos com o mesmo token/login.
-- Token de validade de 4 horas (ver seção de validade acima — sempre lido
-  de `retorno.expiracao`, nunca calculado por conta própria).
-- É necessária permissão de administrador em todos os endpoints usados
-  aqui.
+  autenticadas (login incluso) — reforçado pela fila serial, não só por um
+  limitador de taxa.
+- Não é permitido múltiplos acessos simultâneos com o mesmo token/login —
+  confirmado por telefone como a causa raiz real do bloqueio (token
+  duplicado), não só uma regra na letra da documentação.
+- Token de validade de 4 horas — sempre lido de `retorno.expiracao`, nunca
+  calculado por conta própria; renovação por agenda (2h/2h ou 30min antes de
+  expirar), nunca em reação a erro.
+- É necessária permissão de administrador em todos os endpoints usados aqui.
 - É necessário ativar o produto para integração no painel do Wik (ajuste do
   lado deles, fora do nosso controle).
 - A doc oficial só documenta 401 pra erro de token — o 403 (usado na
   prática, inclusive com HTTP 200 e `body.status` 403) não consta na
   documentação.
+- A doc oficial troca os prefixos `apiwiki`/`wiki_v2` de lugar — confirmado
+  como erro da própria documentação pelo suporte, correção prometida do lado
+  deles.
+
+## Tipos de pessoa (tabela de referência do Wik)
+
+Usada nos endpoints de pessoa/cliente/fornecedor do Wik:
+
+| Código | Tipo |
+|---|---|
+| 1 | Cliente |
+| 2 | Fornecedor |
+| 3 | Assessor |
+| 4 | Funcionário |
+| 5 | Vendedor |
 
 ## Onde mexer
 
-- `server/src/lib/wik.js`: cliente HTTP baixo nível, limitador de taxa
-  (3 req/s), `CAMINHO_POR_ENDPOINT` (mapa explícito de base por endpoint),
-  `classificarErroWik` (token/caminho/parâmetro), a marcação
-  `causaWikToken` na causa raiz, e `chamarBrutoDiagnostico` (usado só pelo
+- `server/src/lib/wik.js`: cliente HTTP baixo nível, `enfileirarAcessoWik`
+  (fila serial global), `loginEmVoo`/`loginDeVerdade` (single-flight de
+  login), `CAMINHO_POR_ENDPOINT` (mapa explícito de base por endpoint),
+  `classificarErroWik` (token/caminho/parâmetro), `chamarApi` (nunca reloga
+  nem retenta em erro de token) e `chamarBrutoDiagnostico` (usado só pelo
   botão de diagnóstico manual).
-- `server/src/lib/wikSync.js`: `registrarTentativaWik` /
-  `registrarFalhaWik` / `registrarSucessoWik` (registro de
-  tentativa/erro/sucesso), `criarOpcoesTokenComLimite` (limite de
-  1 relogin/10min + modo degradado), `cicloDevePular`/`emModoDegradado`
+- `server/src/lib/wikSync.js`: `tokenBoxGlobal`/`renovarTokenAgora`/
+  `renovarTokenWikSeNecessario`/`obterTokenBoxAtual`/`esquecerTokenEmMemoria`
+  (disciplina de token só por agenda), `reservarJobWik`/`liberarJobWik`/
+  `jobAtivoNoMomento` (trava global de job por integração),
+  `registrarTentativaWik`/`registrarFalhaWik`/`registrarSucessoWik`
+  (registro de tentativa/erro/sucesso), `cicloDevePular`/`emModoDegradado`
   (modo degradado), `calcularStatusToken` (selo compartilhado) e
   `corrigirJobsPresos` (jobs presos em "rodando").
-- `server/src/routes/wik.routes.js`: `/testar` e `POST /` (salvar
-  credencial) limpam a trava de reautenticação e o contador de rejeições
-  seguidas em login bem-sucedido, mas NÃO tocam nas colunas de status de
-  chamada de dado. `/testar-completo` é o botão de diagnóstico manual.
+- `server/src/index.js`: `renovarTokenWikSeNecessario` chamado por
+  `setInterval` a cada 10min (`WIK_TOKEN_CHECK_INTERVAL_MS`) — único
+  disparador de renovação de token fora dos botões de teste manual.
+- `server/src/routes/wik.routes.js`: `/testar` e `/testar-completo` usam
+  `renovarTokenAgora` (login real permitido, é ação humana). `POST /`
+  (salvar credencial) chama `esquecerTokenEmMemoria()` pra não deixar o box
+  em memória servindo o token da credencial antiga. Rotas de preview/job
+  reservam e liberam a trava global de job.
 - `client/src/components/WikIntegracaoCard.jsx` e `WikStatusBanner.jsx`:
-  selo de status e mensagens honestas na tela.
+  selo de status e mensagem "token duplicado" na tela quando `rejeitado`.

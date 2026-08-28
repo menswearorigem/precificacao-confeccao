@@ -110,12 +110,14 @@ export default function WikStatusBanner() {
           <span>
             {rejeitado ? (
               // Mensagem honesta, sem texto técnico cru (nada de "erro
-              // interno" nem a string bruta da API) — o Wik rejeita a
-              // chamada de DADO mesmo com o login funcionando (confirmado
-              // por teste direto na API, fora do sistema, 27/08/2026: não é
-              // sessão duplicada, é o acesso de dados da conta).
-              <>O Wik está recusando o token nas chamadas de dado. O login funciona, mas nenhuma consulta é aceita — isso é do
-              lado do Wik.{status.rejeicoesConsecutivasToken >= 5 && ' Já tentamos várias vezes seguidas; reduzimos o ritmo até normalizar.'}</>
+              // interno" nem a string bruta da API) — confirmado com o
+              // suporte técnico do Wik (27/08/2026): o bloqueio costuma ser
+              // por token duplicado, precisa de chamado aberto com eles pra
+              // destravar. O sistema já parou de relogar/retentar sozinho
+              // (era esse padrão que causava o bloqueio) — só tenta de novo
+              // por agenda.
+              <>O Wik bloqueou o acesso desta conta (geralmente por token duplicado) — é preciso abrir chamado no suporte
+              da Wik pra destravar. Não adianta tentar de novo por aqui.{status.rejeicoesConsecutivasToken >= 5 && ' Já tentamos várias vezes seguidas; reduzimos o ritmo até normalizar.'}</>
             ) : status.ultimoErro ? (
               <>Sincronização com o Wik Sistemas com erro: <strong>{status.ultimoErro}</strong></>
             ) : (

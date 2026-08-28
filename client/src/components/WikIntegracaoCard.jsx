@@ -275,11 +275,9 @@ export default function WikIntegracaoCard() {
 
       {integracao?.statusToken === 'rejeitado' && (
         <div className="login-error" style={{ marginBottom: 12 }}>
-          O Wik está recusando o token da API desde a última sincronização bem-sucedida (acima). O login continua
-          funcionando normalmente — só as chamadas de dado (estoque, produtos, ficha de custo) são rejeitadas.
-          Teste direto na API (fora do sistema, 27/08/2026) confirmou que isso NÃO é sessão duplicada: o mesmo erro
-          acontece com um login isolado, sem ninguém mais usando a credencial. É o acesso de dados da conta que
-          está revogado ou suspenso do lado do Wik — não tem conserto daqui; verifique com o suporte deles.
+          O Wik bloqueou o acesso desta conta. Isso costuma acontecer por token duplicado — é preciso abrir chamado
+          no suporte da Wik para destravar. Não adianta tentar de novo por aqui: o sistema já parou de relogar e
+          retentar sozinho (era exatamente esse padrão que causava o bloqueio), e só volta a tentar por agenda.
           {integracao.rejeicoesConsecutivasToken >= 5 && (
             <> Já são {integracao.rejeicoesConsecutivasToken} rejeições seguidas — reduzimos o ritmo das tentativas
             automáticas (1x por hora) até normalizar.</>

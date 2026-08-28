@@ -1,7 +1,7 @@
 require('dotenv').config();
 const createApp = require('./app');
 const { sincronizarTodasAtivas } = require('./lib/marketplaceSync');
-const { sincronizarEstoqueAgora } = require('./lib/wikSync');
+const { sincronizarEstoqueAgora, renovarTokenWikSeNecessario } = require('./lib/wikSync');
 const { sincronizarProdutosAgora } = require('./lib/wikProdutosImport');
 const { sincronizarFichaCustoAgora } = require('./lib/wikFichaCustoImport');
 
@@ -21,6 +21,13 @@ const WIK_SYNC_INTERVAL_MS = 15 * 60 * 1000;
 // contra o limite de 3 req/s do Wik. Ajustável se a usuária preferir outro
 // ritmo.
 const WIK_CATALOGO_INTERVAL_MS = 6 * 60 * 60 * 1000;
+// Checagem da renovação do token do Wik SÓ POR AGENDA (27/08/2026, ligação
+// com o suporte técnico deles): 10min é granularidade de sobra pra nunca
+// deixar passar a janela de "renova 30min antes de expiracao" nem o teto de
+// 2h entre renovações (ver renovarTokenWikSeNecessario em wikSync.js) — a
+// checagem em si é barata (não faz nenhuma chamada à API se ainda não for
+// hora), só o LOGIN de verdade acontece por agenda.
+const WIK_TOKEN_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 
 // Roda as duas em sequência (nunca em paralelo) porque o Wik não permite
 // duas sessões simultâneas com o mesmo login.
@@ -52,6 +59,18 @@ app.listen(PORT, () => {
   setInterval(() => {
     sincronizarTodasAtivas().catch((err) => console.error('[marketplace-sync]', err.message));
   }, SYNC_INTERVAL_MS);
+
+  // Renovação do token do Wik SÓ POR AGENDA — nunca em reação a erro (ver
+  // comentário completo em wikSync.js). Roda ANTES do primeiro ciclo de
+  // estoque (5s vs 15s) pra já deixar um token pronto na memória
+  // compartilhada, em vez de o primeiro ciclo ter que fazer seu próprio
+  // login de bootstrap.
+  setTimeout(() => {
+    renovarTokenWikSeNecessario().catch((err) => console.error('[wik-token]', err.message));
+  }, 5 * 1000);
+  setInterval(() => {
+    renovarTokenWikSeNecessario().catch((err) => console.error('[wik-token]', err.message));
+  }, WIK_TOKEN_CHECK_INTERVAL_MS);
 
   // Puxa e aplica o saldo de estoque do Wik Sistemas automaticamente, sem
   // depender de a usuária clicar em nada. Roda logo na subida (não espera o

@@ -1,7 +1,8 @@
 const pool = require('../db/pool');
 const wik = require('./wik');
 const {
-  buscarIntegracao, obterTokenValido, criarOpcoesTokenComLimite, registrarTentativaWik, registrarFalhaWik, registrarSucessoWik, cicloDevePular,
+  buscarIntegracao, obterTokenBoxAtual, criarOpcoesToken, registrarTentativaWik, registrarFalhaWik, registrarSucessoWik, cicloDevePular,
+  reservarJobWik, liberarJobWik, mensagemJobOcupado,
 } = require('./wikSync');
 const { resolverEan } = require('./eanResolver');
 
@@ -40,9 +41,8 @@ function normalizar(valor) {
 // Pro estoque, cada empresa/loja pode ter um valor diferente pro mesmo
 // produto+cor+tamanho — como pedido, usamos o MAIOR valor entre elas.
 async function montarPreviewProdutos(integracao, empIds = EMP_IDS_PADRAO) {
-  const token = await obterTokenValido(integracao);
-  const tokenBox = wik.criarTokenBox(token);
-  const opcoesToken = criarOpcoesTokenComLimite(integracao);
+  const tokenBox = await obterTokenBoxAtual(integracao);
+  const opcoesToken = criarOpcoesToken(integracao);
 
   const estoqueBruto = [];
   for (const empId of empIds) {
@@ -206,6 +206,10 @@ async function sincronizarProdutosAgora() {
   const pulado = cicloDevePular(integracao);
   if (pulado) return { pulado };
 
+  if (!(await reservarJobWik(integracao.id, 'produtos'))) {
+    return { pulado: await mensagemJobOcupado(integracao.id) };
+  }
+
   await registrarTentativaWik(integracao.id);
   await pool.query(
     `UPDATE integracoes_wik SET produtos_import_status = 'rodando', produtos_import_resultado = NULL,
@@ -230,6 +234,8 @@ async function sincronizarProdutosAgora() {
     );
     await registrarFalhaWik(integracao.id, err);
     throw err;
+  } finally {
+    await liberarJobWik(integracao.id);
   }
 }
 

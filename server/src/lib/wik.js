@@ -11,6 +11,40 @@ const JANELA_MS = 1000;
 const LIMITE_POR_JANELA = 3;
 const chamadas = [];
 
+// ---------- fila serial global de acesso ao Wik ----------
+// CRÍTICO (27/08/2026): a conta foi bloqueada pelo suporte do Wik por
+// "múltiplos acessos com o mesmo token" — e minutos depois de desbloqueada,
+// os 3 jobs (estoque/produtos/ficha de custo) rodaram ao mesmo tempo de
+// novo, o que teria causado o MESMO bloqueio. O limitador de 3/s acima só
+// espaça o DISPARO das chamadas — ele não impede que 2+ requisições fiquem
+// EM VOO ao mesmo tempo (ex.: um Promise.all de duas chamadas do Wik disparava
+// as duas dentro da mesma janela de 3/s, mas as duas ficavam com conexão
+// aberta simultaneamente aguardando resposta — exatamente "múltiplos
+// acessos"). Por isso TODA chamada de rede ao Wik (login e qualquer
+// endpoint) passa por uma fila serial aqui, no nível mais baixo possível:
+// nunca há duas requisições HTTP em voo ao mesmo tempo neste processo,
+// não importa se quem chamou usou Promise.all, dois jobs "ao mesmo tempo"
+// ou qualquer outro padrão — a serialização é garantida aqui, não depende
+// de nenhum chamador se comportar direito.
+let filaAcessoWik = Promise.resolve();
+function enfileirarAcessoWik(tarefa) {
+  const resultado = filaAcessoWik.then(tarefa, tarefa);
+  // A fila em si nunca deve travar por causa de uma falha de uma tarefa —
+  // só o RESULTADO devolvido pra quem chamou carrega o erro de verdade.
+  filaAcessoWik = resultado.then(() => {}, () => {});
+  return resultado;
+}
+
+// Sem timeout, um fetch() que trave (rede instável, Wik sem responder) trava
+// a fila inteira PRA SEMPRE — todo acesso futuro ficaria esperando atrás
+// dele. 25s é folga generosa pra qualquer endpoint destes (nenhum deles
+// devolve payload grande) sem deixar a fila vulnerável a um travamento
+// permanente.
+const TIMEOUT_REQUISICAO_MS = 25 * 1000;
+function sinalComTimeout() {
+  return AbortSignal.timeout(TIMEOUT_REQUISICAO_MS);
+}
+
 // Contador simples de chamadas feitas de verdade (não conta as esperas da
 // janela) — só pra dar visibilidade real de quantas chamadas um ciclo de
 // sincronização faz e quanto tempo isso consome contra o limite de 3/s (ver
@@ -33,12 +67,32 @@ async function aguardarJanela() {
   totalChamadas += 1;
 }
 
+// Single-flight: se um login já está em voo quando outro é pedido, o
+// segundo chamador recebe a MESMA promise em vez de disparar um segundo
+// login — só existe uma credencial Wik no sistema inteiro, então dois
+// logins "ao mesmo tempo" seriam sempre redundantes e, pior, mais uma
+// forma de "múltiplos acessos com o mesmo token" (login é uma chamada à
+// API igual as outras). Complementa a fila serial acima (que já garantiria
+// que os dois logins nunca ficariam em voo simultaneamente, mas isso ainda
+// seria 2 chamadas de rede reais em sequência — o single-flight evita até
+// a segunda chamada).
+let loginEmVoo = null;
+
 async function login(email, senha) {
+  if (loginEmVoo) return loginEmVoo;
+  loginEmVoo = enfileirarAcessoWik(() => loginDeVerdade(email, senha)).finally(() => {
+    loginEmVoo = null;
+  });
+  return loginEmVoo;
+}
+
+async function loginDeVerdade(email, senha) {
   await aguardarJanela();
   const res = await fetch(`${API_BASE}/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ Email: email, Senha: senha }),
+    signal: sinalComTimeout(),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.success) {
@@ -54,8 +108,9 @@ async function login(email, senha) {
   // (fora do sistema, 27/08/2026, login isolado) mostrou o valor real: 4h
   // exatas entre `criacao` e `expiracao` (11:44:38 → 15:44:38). Se o campo
   // faltar ou vier num formato que não parseia (já aconteceu antes),
-  // `expiraEm` sai `null` — isso já basta pra obterTokenValido (wikSync.js)
-  // tratar o token como expirado no próximo uso, sem chutar nenhum prazo.
+  // `expiraEm` sai `null` — isso já basta pra renovarTokenWikSeNecessario
+  // (wikSync.js) tratar como pendente de renovação na próxima checagem por
+  // agenda, sem chutar nenhum prazo.
   let expiraEm = null;
   let expiracaoSuspeita = false;
   if (retorno.expiracao) {
@@ -81,18 +136,23 @@ async function login(email, senha) {
   };
 }
 
-async function chamarApiComBase(base, path, token, params) {
-  await aguardarJanela();
-  const query = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null && v !== '') query.set(k, v);
-  }
-  const url = `${API_BASE}/${base}/${path}${query.toString() ? `?${query.toString()}` : ''}`;
-  const res = await fetch(url, {
-    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+function chamarApiComBase(base, path, token, params) {
+  // Passa pela mesma fila serial do login — nunca duas chamadas (login ou
+  // endpoint, de qualquer job) em voo ao mesmo tempo neste processo.
+  return enfileirarAcessoWik(async () => {
+    await aguardarJanela();
+    const query = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null && v !== '') query.set(k, v);
+    }
+    const url = `${API_BASE}/${base}/${path}${query.toString() ? `?${query.toString()}` : ''}`;
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      signal: sinalComTimeout(),
+    });
+    const data = await res.json().catch(() => ({}));
+    return { res, data };
   });
-  const data = await res.json().catch(() => ({}));
-  return { res, data };
 }
 
 // Chamada crua, SEM retry/renovação de token/gravação de status — só pro
@@ -177,79 +237,41 @@ function criarTokenBox(token) {
 // vezes com espera crescente antes de desistir, em vez de já marcar o
 // produto como erro definitivo.
 //
-// O Wik expira o token em algumas horas (a validade real vem de
-// retorno.expiracao no login — ver login() acima, nunca calculada aqui), e
-// numa sincronização longa (catálogo inteiro, ficha de custo de centenas de
-// produtos, tudo limitado a 3 req/s) o token guardado no banco pode ainda
-// parecer válido pelo relógio local mas já ter sido rejeitado do lado deles.
-// Teste direto na API (fora do sistema, 27/08/2026, login isolado) mostrou
-// que essa rejeição acontece mesmo com ninguém mais usando a credencial —
-// ou seja, NÃO é sessão única por usuário (hipótese de rodadas anteriores,
-// descartada); é o acesso de DADOS da conta que foi revogado/suspenso do
-// lado do Wik, enquanto o login continua funcionando normalmente. Se
-// `opcoes.renovarToken` for passado, uma resposta de token morto (ver
-// classificarErroWik acima) força um login novo e repete a MESMA chamada uma
-// vez antes de desistir, em vez de derrubar a sincronização inteira no meio
-// do caminho. `opcoes.aoDetectarTokenMorto` (opcional) é chamado toda vez
-// que a rejeição é detectada, MESMO que renovarToken não esteja disponível
-// ou opte por não reautenticar (ver limite/backoff/modo degradado em
-// wikSync.js) — é o gancho que grava o evento pra contagem de 24h e pra
-// distinguir "token rejeitado" de qualquer outro tipo de erro na tela.
-//
-// Todo erro que se origina de uma rejeição de token detectada aqui (não
-// importa se depois a reautenticação falhou, foi bloqueada pelo limite/modo
-// degradado, ou até deu certo mas a MESMA chamada foi rejeitada de novo com
-// o token novo) sai marcado com `erro.causaWikToken = true` — é esse
-// marcador, e não o texto da última mensagem, que registrarFalhaWik
-// (wikSync.js) usa pra classificar a causa raiz corretamente mesmo quando a
-// mensagem final que sobe é a do limite de reautenticação, não a do 403
-// original.
+// CORRIGIDO (27/08/2026, ligação com o suporte técnico do Wik): a versão
+// anterior desta função, ao detectar token morto, forçava um relogin e
+// RETENTAVA a mesma chamada — o suporte confirmou que é EXATAMENTE esse
+// padrão (relogar/retentar em reação a um 401/403) que derruba a conta:
+// "Se você ficar abrindo muito o login e ficar tentando usar
+// simultaneamente, a gente vai travar o usuário" / "A aplicação bloqueia.
+// Ela está tentando algum tipo de ataque, por tentativa de login usar token
+// que não está ativo." Por isso NÃO relogamos mais aqui: ao detectar token
+// morto (ver classificarErroWik acima), só registramos o evento
+// (`opcoes.aoDetectarTokenMorto`, usado pra contagem de 24h e pro modo
+// degradado em wikSync.js) e lançamos o erro na hora — zero retry, zero
+// login novo. A renovação de token agora é SÓ por agenda (a cada 2h, ou
+// quando faltar 30min pra `expiracao`), nunca em reação a um erro — ver
+// renovarTokenWikSeNecessario em wikSync.js. `erro.causaWikToken = true`
+// marca a causa raiz pra registrarFalhaWik (wikSync.js) classificar
+// corretamente, sem depender do texto da mensagem.
 async function chamarApi(path, tokenBox, params = {}, opcoes = {}) {
-  const { renovarToken, aoDetectarTokenMorto } = opcoes;
+  const { aoDetectarTokenMorto } = opcoes;
   const base = baseDoEndpoint(path);
   const TENTATIVAS_5XX = 3;
-  let jaTentouRenovarToken = false;
-  let tokenMortoDetectado = false;
-  let renovacaoTokenFuncionou = false;
   let ultimoErro;
   for (let tentativa = 1; tentativa <= TENTATIVAS_5XX; tentativa += 1) {
     const { res, data } = await chamarApiComBase(base, path, tokenBox.atual, params);
     const causa = classificarErroWik(res, data);
 
     if (causa === 'token') {
-      tokenMortoDetectado = true;
-      if (!jaTentouRenovarToken) {
-        jaTentouRenovarToken = true;
-        if (aoDetectarTokenMorto) await aoDetectarTokenMorto();
-        if (renovarToken) {
-          try {
-            tokenBox.atual = await renovarToken();
-            renovacaoTokenFuncionou = true;
-          } catch (erroRenovacao) {
-            // Cobre tanto "bloqueado pelo limite/modo degradado" quanto
-            // "tentou logar de novo e o login em si falhou" — os dois casos
-            // em que a reautenticação NÃO resolveu, então a causa raiz
-            // continua sendo a rejeição de token detectada acima.
-            if (erroRenovacao instanceof Error) erroRenovacao.causaWikToken = true;
-            throw erroRenovacao;
-          }
-          continue;
-        }
-      } else if (renovacaoTokenFuncionou) {
-        // Reautenticou com token NOVO e a MESMA chamada foi rejeitada de
-        // novo mesmo assim — confirma que não é sessão (acabamos de logar
-        // agora, não tem ninguém pra "derrubar" de novo) — é o acesso de
-        // dados da conta que está revogado. Mensagem própria em vez de
-        // repetir o "token rejeitado" genérico.
-        const detalhes = data?.message || JSON.stringify(data).slice(0, 300);
-        const erro = new Error(
-          `Reautenticação no Wik funcionou (token novo emitido), mas ${path} rejeitou os dados mesmo assim `
-          + `(HTTP ${res.status}, body.status ${data?.status}: ${detalhes}) — não é sessão duplicada `
-          + '(acabamos de logar agora); o acesso de dados desta conta parece revogado/suspenso do lado do Wik.'
-        );
-        erro.causaWikToken = true;
-        throw erro;
-      }
+      if (aoDetectarTokenMorto) await aoDetectarTokenMorto();
+      const detalhes = data?.message || JSON.stringify(data?.errors || {}) || 'token inválido ou expirado';
+      const erro = new Error(
+        `Token do Wik rejeitado em ${path} (HTTP ${res.status}, body.status ${data?.status}): ${detalhes} — `
+        + 'não vou relogar nem retentar (isso é o que derruba a conta, confirmado pelo suporte do Wik). '
+        + 'Aguardando a próxima renovação por agenda ou intervenção humana.'
+      );
+      erro.causaWikToken = true;
+      throw erro;
     }
 
     if (res.status >= 500 && tentativa < TENTATIVAS_5XX) {
@@ -276,15 +298,11 @@ async function chamarApi(path, tokenBox, params = {}, opcoes = {}) {
       if (data.message) detalhes.push(data.message);
       if (data.errors && Object.keys(data.errors).length > 0) detalhes.push(JSON.stringify(data.errors));
       if (detalhes.length === 0) detalhes.push(`corpo bruto: ${JSON.stringify(data).slice(0, 500)}`);
-      const erro = new Error(`Erro na API do Wik (HTTP ${res.status}, body.status ${data.status}) em ${path}: ${detalhes.join(' | ')}`);
-      if (tokenMortoDetectado) erro.causaWikToken = true;
-      throw erro;
+      throw new Error(`Erro na API do Wik (HTTP ${res.status}, body.status ${data.status}) em ${path}: ${detalhes.join(' | ')}`);
     }
     return data;
   }
-  const erroFinal = new Error(`Erro na API do Wik em ${path} (falhou ${TENTATIVAS_5XX}x seguidas com erro interno do servidor): ${JSON.stringify(ultimoErro).slice(0, 300)}`);
-  if (tokenMortoDetectado) erroFinal.causaWikToken = true;
-  throw erroFinal;
+  throw new Error(`Erro na API do Wik em ${path} (falhou ${TENTATIVAS_5XX}x seguidas com erro interno do servidor): ${JSON.stringify(ultimoErro).slice(0, 300)}`);
 }
 
 // categoria_get devolve os nomes das categorias por id — o produto_get só

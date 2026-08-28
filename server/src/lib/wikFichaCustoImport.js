@@ -1,7 +1,8 @@
 const pool = require('../db/pool');
 const wik = require('./wik');
 const {
-  buscarIntegracao, obterTokenValido, criarOpcoesTokenComLimite, registrarTentativaWik, registrarFalhaWik, registrarSucessoWik, cicloDevePular,
+  buscarIntegracao, obterTokenBoxAtual, criarOpcoesToken, registrarTentativaWik, registrarFalhaWik, registrarSucessoWik, cicloDevePular,
+  reservarJobWik, liberarJobWik, mensagemJobOcupado,
 } = require('./wikSync');
 
 // IMPORTANTE: materiaprima_get devolve um "MatVlrUnit" que parece ser o
@@ -15,9 +16,8 @@ const {
 // referência (nome + quantidade, sem custo un.); o custo de verdade da
 // peça entra como um único item de custo industrial com esse valor total.
 async function montarPreviewFichaCusto(integracao) {
-  const token = await obterTokenValido(integracao);
-  const tokenBox = wik.criarTokenBox(token);
-  const opcoesToken = criarOpcoesTokenComLimite(integracao);
+  const tokenBox = await obterTokenBoxAtual(integracao);
+  const opcoesToken = criarOpcoesToken(integracao);
 
   // Candidatos: produtos sem ficha nenhuma ainda (importação inicial) OU
   // produtos cuja ficha já veio do Wik antes (ficha_custo_origem_wik = TRUE)
@@ -56,10 +56,12 @@ async function montarPreviewFichaCusto(integracao) {
         : null;
       const itensGrade = Array.isArray(produtoWik?.ListaGrade) ? produtoWik.ListaGrade.length : 0;
 
-      const [insumos, operacoes] = await Promise.all([
-        wik.buscarInsumosFichaTecnica(tokenBox, wikProdId, opcoesToken),
-        wik.buscarOperacoesFichaTecnica(tokenBox, wikProdId, opcoesToken),
-      ]);
+      // Sequencial, não Promise.all — 2 chamadas do Wik em paralelo é
+      // exatamente o "múltiplos acessos com o mesmo token" que bloqueou a
+      // conta em 17/08/2026 (a fila serial em wik.js já garante isso no
+      // nível mais baixo, mas aqui fica explícito também).
+      const insumos = await wik.buscarInsumosFichaTecnica(tokenBox, wikProdId, opcoesToken);
+      const operacoes = await wik.buscarOperacoesFichaTecnica(tokenBox, wikProdId, opcoesToken);
 
       if (insumos.length === 0 && operacoes.length === 0 && custoTotalWik == null) {
         semFichaNoWik.push(produto.referencia);
@@ -200,6 +202,10 @@ async function sincronizarFichaCustoAgora() {
   const pulado = cicloDevePular(integracao);
   if (pulado) return { pulado };
 
+  if (!(await reservarJobWik(integracao.id, 'ficha-custo'))) {
+    return { pulado: await mensagemJobOcupado(integracao.id) };
+  }
+
   await registrarTentativaWik(integracao.id);
   await pool.query(
     `UPDATE integracoes_wik SET ficha_custo_import_status = 'rodando', ficha_custo_import_resultado = NULL,
@@ -224,6 +230,8 @@ async function sincronizarFichaCustoAgora() {
     );
     await registrarFalhaWik(integracao.id, err);
     throw err;
+  } finally {
+    await liberarJobWik(integracao.id);
   }
 }
 

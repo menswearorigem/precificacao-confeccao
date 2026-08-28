@@ -34,53 +34,156 @@ async function buscarIntegracao() {
   return rows[0] || null;
 }
 
-// Garante um token válido pra integração, logando de novo se estiver
-// ausente/expirado. Com `forcar: true` ignora o que o banco acha que ainda
-// é válido e login de novo mesmo assim — usado quando o próprio Wik já
-// rejeitou o token com "token inválido ou expirado", ou seja, a validade
-// real do lado deles já passou mesmo com o relógio daqui ainda achando que
-// tinha tempo (a validade em si vem SÓ de retorno.expiracao — nunca
-// calculada aqui, ver wik.js).
+// ---------- trava global anti-múltiplos-acessos (27/08/2026) ----------
+// CRÍTICO: a conta foi bloqueada pelo suporte do Wik por "múltiplos acessos
+// com o mesmo token", e minutos depois de desbloqueada os 3 jobs (estoque,
+// produtos, ficha de custo) voltaram a rodar ao mesmo tempo — o que teria
+// causado o MESMO bloqueio de novo. Complementa a fila serial de rede em
+// wik.js (que garante nenhuma requisição sobreposta) com uma trava no nível
+// do JOB: NENHUMA rotina que toca a API do Wik (os 3 ciclos automáticos, os
+// botões manuais equivalentes, "sincronizar referências", os dois botões de
+// teste e o diagnóstico de ficha técnica) começa a trabalhar de verdade sem
+// reservar essa trava primeiro — se outra já estiver rodando, desiste na
+// hora com uma mensagem clara em vez de competir por acesso.
 //
-// Margem de 10min: folga suficiente pra uma sincronização mais longa
-// terminar antes do vencimento de verdade (teste direto na API, fora do
-// sistema, 27/08/2026: token de 4h de vida real).
-async function obterTokenValido(integracao, { forcar = false } = {}) {
-  const MARGEM_MS = 10 * 60 * 1000;
-  const expirado = forcar || !integracao.token_expira_em || new Date(integracao.token_expira_em).getTime() - Date.now() < MARGEM_MS;
-  if (integracao.access_token && !expirado) return integracao.access_token;
+// Implementado como um UPDATE...WHERE atômico direto no Postgres (não só em
+// memória) — o WHERE só casa se a trava estiver livre (`wik_job_ativo IS
+// NULL`) OU presa há mais de TIMEOUT_TRAVA_GLOBAL_MS (processo reiniciado
+// no meio de um job, sem ninguém pra liberar). Isso funciona corretamente
+// mesmo sob concorrência de verdade: o Postgres serializa UPDATEs na MESMA
+// linha, então de duas reservas simultâneas só uma pode ver a trava livre e
+// gravar seu nome — a outra reavalia o WHERE depois que a primeira já
+// commitou e não bate mais.
+const TIMEOUT_TRAVA_GLOBAL_MS = 30 * 60 * 1000;
 
-  const TENTATIVAS = 3;
-  let ultimoErro;
-  for (let tentativa = 1; tentativa <= TENTATIVAS; tentativa += 1) {
-    try {
-      const resultado = await wik.login(integracao.email, integracao.senha);
-      // NÃO limpa ultimo_erro/ultima_rejeicao_token aqui — um LOGIN
-      // bem-sucedido não prova que uma chamada de DADO vai funcionar (é
-      // exatamente essa distinção que corrige o selo "TOKEN VÁLIDO"
-      // aparecendo ao lado de uma rejeição real, ver calcularStatusToken
-      // abaixo). Só registrarSucessoWik (chamado depois de uma operação de
-      // dado de verdade dar certo) limpa esse estado.
-      await pool.query(
-        `UPDATE integracoes_wik SET access_token = $1, token_expira_em = $2,
-                                     ultima_expiracao_suspeita = $3, atualizado_em = now() WHERE id = $4`,
-        [resultado.token, resultado.expiraEm, resultado.expiracaoSuspeita ? new Date() : null, integracao.id]
-      );
-      // Mantém o objeto em memória em sincronia — evita logar de novo à toa
-      // se essa mesma chamada rodar mais de uma vez dentro do mesmo processo
-      // (ex.: renovação forçada no meio de uma sincronização longa, seguida
-      // de outra chamada que também checa validade).
-      integracao.access_token = resultado.token;
-      integracao.token_expira_em = resultado.expiraEm;
-      return resultado.token;
-    } catch (err) {
-      ultimoErro = err;
-      if (tentativa < TENTATIVAS) await new Promise((resolve) => setTimeout(resolve, tentativa * 2000));
-    }
+async function reservarJobWik(integracaoId, nomeJob) {
+  const { rows } = await pool.query(
+    `UPDATE integracoes_wik SET wik_job_ativo = $1, wik_job_ativo_desde = now()
+     WHERE id = $2 AND (wik_job_ativo IS NULL OR wik_job_ativo_desde < now() - ($3 * interval '1 millisecond'))
+     RETURNING wik_job_ativo`,
+    [nomeJob, integracaoId, TIMEOUT_TRAVA_GLOBAL_MS]
+  );
+  return rows.length > 0;
+}
+
+async function liberarJobWik(integracaoId) {
+  await pool.query('UPDATE integracoes_wik SET wik_job_ativo = NULL, wik_job_ativo_desde = NULL WHERE id = $1', [integracaoId]);
+}
+
+async function jobAtivoNoMomento(integracaoId) {
+  const { rows } = await pool.query('SELECT wik_job_ativo FROM integracoes_wik WHERE id = $1', [integracaoId]);
+  return rows[0]?.wik_job_ativo || null;
+}
+
+// Mensagem padrão de recusa quando a trava global já está com outro job —
+// usada por todo entry point que toca a API do Wik (ver comentário acima).
+async function mensagemJobOcupado(integracaoId) {
+  const ativo = await jobAtivoNoMomento(integracaoId);
+  return `Outro job do Wik (${ativo || 'desconhecido'}) está rodando agora — aguarde terminar antes de tentar de novo `
+    + '(trava global anti-múltiplos-acessos: rodar 2+ ao mesmo tempo foi o que derrubou o acesso da conta em 17/08/2026).';
+}
+
+// ---------- token único, renovado só por AGENDA (27/08/2026) ----------
+// Ligação com o suporte técnico do Wik confirmou a causa do bloqueio de
+// conta de 17/08: "Se você ficar abrindo muito o login e ficar tentando
+// usar simultaneamente, a gente vai travar o usuário" / "A aplicação
+// bloqueia. Ela está tentando algum tipo de ataque, por tentativa de login
+// usar token que não está ativo." Ou seja: relogar/retentar em REAÇÃO a um
+// 401/403 (o que uma rodada anterior desta integração fazia) é exatamente
+// o padrão que derruba a conta — não existe mais isso no código. A
+// disciplina correta, ditada pelo suporte:
+//   1. Logar UMA vez, guardar o token — nunca por operação, nunca por falha.
+//   2. Renovar por AGENDA: a cada 2h (token dura até 4h), ou quando faltar
+//      30min pra `expiracao` — nunca em reação a erro (ver
+//      renovarTokenWikSeNecessario abaixo, chamado por um timer em
+//      index.js, não por nenhum caminho de erro).
+//   3. Troca ATÔMICA: "se muitas consultas tentarem usar o token antigo, vai
+//      travar esse usuário" — por isso existe UM SÓ tokenBox no processo
+//      inteiro (tokenBoxGlobal abaixo); nenhuma função guarda cópia própria.
+//      Quando a agenda troca o token, a troca fica visível pra TODO MUNDO
+//      na mesma hora, porque todo mundo segura a MESMA referência de objeto.
+//   4. Ao ver 401/403 de token: registra e para (ver chamarApi em wik.js) —
+//      não relogar, não retentar, esperar a próxima agenda ou intervenção
+//      humana (o clique em "Testar conexão" depois de resolver com o
+//      suporte do Wik).
+const tokenBoxGlobal = wik.criarTokenBox(null);
+
+const INTERVALO_MAXIMO_RENOVACAO_MS = 2 * 60 * 60 * 1000; // agenda normal: 2h (token dura até 4h)
+const MARGEM_ANTECIPADA_RENOVACAO_MS = 30 * 60 * 1000; // renova mais cedo se faltar isso pra expiracao
+
+// Login de verdade + troca atômica em memória e banco. Chamado só pela
+// agenda (renovarTokenWikSeNecessario) ou por uma ação HUMANA explícita
+// ("Testar conexão"/"Testar conexão completa" em wik.routes.js) — um clique
+// deliberado da usuária não é reação a erro, é intervenção humana, sempre
+// permitida pela regra do suporte.
+async function renovarTokenAgora(integracao) {
+  const resultado = await wik.login(integracao.email, integracao.senha);
+  tokenBoxGlobal.atual = resultado.token; // visível pra TODOS os consumidores na mesma hora
+  await pool.query(
+    `UPDATE integracoes_wik SET access_token = $1, token_expira_em = $2, token_renovado_em = now(),
+                                 ultima_expiracao_suspeita = $3, atualizado_em = now() WHERE id = $4`,
+    [resultado.token, resultado.expiraEm, resultado.expiracaoSuspeita ? new Date() : null, integracao.id]
+  );
+  integracao.access_token = resultado.token;
+  integracao.token_expira_em = resultado.expiraEm;
+  integracao.token_renovado_em = new Date();
+  return resultado;
+}
+
+// Chamado por um timer periódico (ver index.js) — decide, só por AGENDA
+// (nunca por erro), se é hora de renovar: sem token nenhum ainda, mais de
+// 2h desde a última renovação, ou menos de 30min pra expiracao.
+async function renovarTokenWikSeNecessario() {
+  const integracao = await buscarIntegracao();
+  if (!integracao || !integracao.ativo) return;
+
+  const agora = Date.now();
+  const renovadoEm = integracao.token_renovado_em ? new Date(integracao.token_renovado_em).getTime() : 0;
+  const expiraEm = integracao.token_expira_em ? new Date(integracao.token_expira_em).getTime() : 0;
+
+  const semToken = !integracao.access_token;
+  const passouDaAgenda = !renovadoEm || (agora - renovadoEm) >= INTERVALO_MAXIMO_RENOVACAO_MS;
+  const expirandoLogo = expiraEm > 0 && (expiraEm - agora) <= MARGEM_ANTECIPADA_RENOVACAO_MS;
+  if (!(semToken || passouDaAgenda || expirandoLogo)) {
+    if (integracao.access_token) tokenBoxGlobal.atual = integracao.access_token; // sincroniza a memória após um restart do processo
+    return;
   }
-  const erroFinal = new Error(`Não foi possível renovar o token do Wik depois de ${TENTATIVAS} tentativa(s): ${ultimoErro.message}`);
-  await registrarFalhaWik(integracao.id, erroFinal);
-  throw erroFinal;
+
+  try {
+    await renovarTokenAgora(integracao);
+    console.log('[wik-token] renovado por agenda.');
+  } catch (err) {
+    // Login em si falhando (credencial errada, Wik fora do ar) é diferente
+    // de uma rejeição de DADO — registra, mas a PRÓXIMA tentativa só
+    // acontece na próxima agenda, nunca antes por reação a essa falha.
+    await registrarFalhaWik(integracao.id, err);
+    console.error('[wik-token] falha ao renovar por agenda:', err.message);
+  }
+}
+
+// Devolve o tokenBox ÚNICO e compartilhado, garantindo que ele tenha algum
+// valor: carrega do banco se já existir um token gravado (ex.: logo após um
+// restart do processo), ou faz UM login se realmente não houver nada em
+// lugar nenhum ainda (bootstrap inevitável do sistema — não é "reação a
+// erro", é a inicialização). Usado por toda função que precisa fazer uma
+// chamada de dado ao Wik (nenhuma cria mais o próprio tokenBox).
+async function obterTokenBoxAtual(integracao) {
+  if (!tokenBoxGlobal.atual && integracao.access_token) {
+    tokenBoxGlobal.atual = integracao.access_token;
+  }
+  if (!tokenBoxGlobal.atual) {
+    await renovarTokenAgora(integracao);
+  }
+  return tokenBoxGlobal;
+}
+
+// Chamado quando a credencial é trocada na tela (POST /wik) — o token em
+// memória é da credencial ANTIGA, então precisa ser esquecido junto com o
+// que foi limpo no banco. Sem isso, obterTokenBoxAtual acharia que já tem
+// um token válido (o antigo, ainda em memória) e seguiria usando a
+// credencial errada até a próxima renovação por agenda.
+function esquecerTokenEmMemoria() {
+  tokenBoxGlobal.atual = null;
 }
 
 // ---------- registro de tentativa/erro/sucesso — usado por TODAS as
@@ -98,14 +201,10 @@ async function registrarTentativaWik(integracaoId) {
 
 // Classifica pela CAUSA RAIZ (erro.causaWikToken, marcado em wik.js na hora
 // em que a rejeição de token é detectada de verdade), não pelo texto da
-// última mensagem. CORRIGIDO: quando o relogin forçado é bloqueado pelo
-// limite de 10min (ver criarOpcoesTokenComLimite abaixo), a mensagem que
-// sobe pro chamador é a do BLOQUEIO ("já tentei reautenticar há menos de
-// X min..."), não o 403 original — checar só o texto dessa mensagem final
-// perdia a classificação (virava "erro_outro" mesmo a causa sendo token).
-// O parâmetro pode ser um Error (com ou sem `causaWikToken`) ou uma string
-// solta (chamadas antigas/diretas) — nesse caso cai no casamento de texto
-// como fallback.
+// última mensagem — mais robusto do que confiar só no texto (que pode variar
+// entre "inválido", "expirado" etc.). O parâmetro pode ser um Error (com ou
+// sem `causaWikToken`) ou uma string solta (chamadas antigas/diretas) — nesse
+// caso cai no casamento de texto como fallback.
 function pareceRejeicaoDeToken(mensagemOuErro) {
   if (mensagemOuErro && typeof mensagemOuErro === 'object' && mensagemOuErro.causaWikToken) return true;
   const texto = String(mensagemOuErro?.message ?? mensagemOuErro ?? '').toLowerCase();
@@ -142,34 +241,15 @@ async function registrarSucessoWik(integracaoId, { sincronizouEstoque = false } 
   );
 }
 
-// Limite de reautenticação: no máximo 1 login forçado a cada
-// BACKOFF_REAUTENTICACAO_MS, não importa quantas chamadas dentro do MESMO
-// ciclo rejeitem o token. Sem esse limite, uma sincronização paginada
-// (várias empresas/páginas) tentaria relogar a cada chamada que rejeitasse.
-// Usado por TODAS as sincronizações do Wik (estoque, produtos, ficha de
-// custo, diagnóstico de ficha técnica), não só saldo_estoque_get.
-//
-// Login bem-sucedido por "Testar conexão" ou "Salvar credencial" LIMPA essa
-// marca (ver rotas em wik.routes.js) — um login manual que deu certo prova
-// que a credencial está boa AGORA, então não faz sentido deixar uma marca
-// antiga de relogin forçado bloqueando uma tentativa de recuperação
-// legítima logo em seguida (foi exatamente o bug visto em produção: login
-// manual às 09:41 deu certo, a chamada de dado foi rejeitada às 09:42, e a
-// trava — de um relogin forçado ANTERIOR — recusou nova tentativa).
-const BACKOFF_REAUTENTICACAO_MS = 10 * 60 * 1000;
-
-// Modo degradado: quando o Wik rejeita o token 5x SEGUIDAS (teste direto na
-// API, fora do sistema, 27/08/2026, mostrou que a causa é o acesso de DADOS
-// da conta revogado/suspenso do lado deles, não sessão — login sozinho
-// continua funcionando igual). Insistir a cada 15min nessas condições só
-// gera tráfego inútil (chegou a 224 rejeições em 24h, uma a cada ~6min) e
-// pode ser lido como abuso pelo fornecedor. A partir do limiar: os ciclos
-// automáticos passam a tentar 1x/hora em vez do ritmo normal (ver
-// cicloDevePular abaixo) E o relogin forçado dentro de um ciclo é
-// desativado (ver criarOpcoesTokenComLimite abaixo) — sem sentido insistir
-// em relogar quando já sabemos que o login não é o problema. Volta ao normal
-// sozinho na primeira chamada de dado bem-sucedida (registrarSucessoWik
-// zera o contador) ou quando a credencial é salva de novo na tela.
+// Modo degradado: quando o Wik rejeita o token 5x SEGUIDAS. Insistir com o
+// ciclo automático completo a cada 15min nessas condições só gera tráfego
+// inútil (chegou a 224 rejeições em 24h, uma a cada ~6min) — a partir do
+// limiar, os ciclos automáticos passam a tentar 1x/hora em vez do ritmo
+// normal (ver cicloDevePular abaixo). Não tem mais nenhuma ligação com
+// relogin — não existe relogin reativo neste código (ver bloco de token
+// acima). Volta ao normal sozinho na primeira chamada de dado bem-sucedida
+// (registrarSucessoWik zera o contador) ou quando a credencial é salva de
+// novo na tela.
 const LIMIAR_MODO_DEGRADADO = 5;
 const INTERVALO_MODO_DEGRADADO_MS = 60 * 60 * 1000;
 
@@ -191,27 +271,16 @@ function cicloDevePular(integracao) {
   return null;
 }
 
-function criarOpcoesTokenComLimite(integracao) {
+// Opções passadas pra toda chamada da API do Wik (ver chamarApi em wik.js)
+// — hoje só `aoDetectarTokenMorto`, que REGISTRA a rejeição (contagem de
+// 24h, modo degradado) e nada mais. Não existe mais `renovarToken` aqui:
+// rodada anterior desta integração relogava/retentava em reação a um
+// 401/403, e o suporte técnico do Wik confirmou que é EXATAMENTE esse
+// padrão que derruba a conta — foi removido por completo (ver bloco de
+// token único/agenda, no topo do arquivo).
+function criarOpcoesToken(integracao) {
   return {
     aoDetectarTokenMorto: () => registrarFalhaWik(integracao.id, 'Token rejeitado pelo Wik ("token inválido ou expirado").'),
-    renovarToken: async () => {
-      if (emModoDegradado(integracao)) {
-        throw new Error(
-          `Já são ${integracao.rejeicoes_consecutivas_token} rejeições de token seguidas — parei de forçar relogin `
-          + '(modo degradado) até a primeira chamada de dado bem-sucedida ou a credencial ser salva de novo na tela.'
-        );
-      }
-      const { rows } = await pool.query('SELECT ultima_reautenticacao_forcada FROM integracoes_wik WHERE id = $1', [integracao.id]);
-      const ultima = rows[0]?.ultima_reautenticacao_forcada;
-      if (ultima && Date.now() - new Date(ultima).getTime() < BACKOFF_REAUTENTICACAO_MS) {
-        throw new Error(
-          `Token do Wik rejeitado, mas já tentei reautenticar há menos de ${Math.round(BACKOFF_REAUTENTICACAO_MS / 60000)} min — `
-          + 'não insisto de novo agora. Tento de novo mais tarde.'
-        );
-      }
-      await pool.query('UPDATE integracoes_wik SET ultima_reautenticacao_forcada = now() WHERE id = $1', [integracao.id]);
-      return obterTokenValido(integracao, { forcar: true });
-    },
   };
 }
 
@@ -234,9 +303,8 @@ async function empIdsConfigurados() {
 // já existe localmente — mesma lógica/formato da importação manual de
 // CSV/PDF (estoque.routes.js), só que a fonte é a API em vez de um arquivo.
 async function montarPreviewEstoque(integracao, porEmpId) {
-  const token = await obterTokenValido(integracao);
-  const tokenBox = wik.criarTokenBox(token);
-  const opcoesToken = criarOpcoesTokenComLimite(integracao);
+  const tokenBox = await obterTokenBoxAtual(integracao);
+  const opcoesToken = criarOpcoesToken(integracao);
 
   const linhasBrutas = [];
   for (const empId of porEmpId.keys()) {
@@ -370,6 +438,14 @@ async function sincronizarEstoqueAgora() {
   const porEmpId = await empIdsConfigurados();
   if (porEmpId.size === 0) return { pulado: 'nenhuma marca com Id de Empresa configurado' };
 
+  // Trava global ANTES de qualquer mutação de estado — se outro job do Wik
+  // já está rodando (produtos, ficha de custo, um teste manual etc.), desiste
+  // aqui sem marcar preview_status como 'rodando' (ver comentário na trava,
+  // no topo do arquivo).
+  if (!(await reservarJobWik(integracao.id, 'estoque'))) {
+    return { pulado: await mensagemJobOcupado(integracao.id) };
+  }
+
   await registrarTentativaWik(integracao.id);
   await pool.query(
     `UPDATE integracoes_wik SET preview_status = 'rodando', preview_resultado = NULL, preview_erro = NULL,
@@ -399,6 +475,8 @@ async function sincronizarEstoqueAgora() {
     );
     await registrarFalhaWik(integracao.id, err);
     throw err;
+  } finally {
+    await liberarJobWik(integracao.id);
   }
 }
 
@@ -438,12 +516,19 @@ async function previewReferencias(referencias) {
   const porEmpId = await empIdsConfigurados();
   if (porEmpId.size === 0) throw new Error('Nenhuma marca com Id de Empresa do Wik configurado (em Listas > Marcas).');
 
-  const preview = await montarPreviewEstoque(integracao, porEmpId);
-  return {
-    criar: preview.criar.filter((item) => alvo.has(item.referencia)),
-    atualizar: preview.atualizar.filter((item) => alvo.has(item.referencia)),
-    erros: preview.erros.filter((e) => alvo.has(e.dados?.referencia)),
-  };
+  if (!(await reservarJobWik(integracao.id, 'referencias-especificas'))) {
+    throw new Error(await mensagemJobOcupado(integracao.id));
+  }
+  try {
+    const preview = await montarPreviewEstoque(integracao, porEmpId);
+    return {
+      criar: preview.criar.filter((item) => alvo.has(item.referencia)),
+      atualizar: preview.atualizar.filter((item) => alvo.has(item.referencia)),
+      erros: preview.erros.filter((e) => alvo.has(e.dados?.referencia)),
+    };
+  } finally {
+    await liberarJobWik(integracao.id);
+  }
 }
 
 // Sincroniza o saldo de só as referências pedidas, sem esperar o ciclo
@@ -514,7 +599,10 @@ async function corrigirJobsPresos(integracao) {
 
 module.exports = {
   buscarIntegracao,
-  obterTokenValido,
+  obterTokenBoxAtual,
+  renovarTokenAgora,
+  renovarTokenWikSeNecessario,
+  esquecerTokenEmMemoria,
   empIdsConfigurados,
   montarPreviewEstoque,
   aplicarSincronizacaoEstoque,
@@ -525,9 +613,12 @@ module.exports = {
   registrarTentativaWik,
   registrarFalhaWik,
   registrarSucessoWik,
-  criarOpcoesTokenComLimite,
+  criarOpcoesToken,
   cicloDevePular,
   emModoDegradado,
   calcularStatusToken,
   corrigirJobsPresos,
+  reservarJobWik,
+  liberarJobWik,
+  mensagemJobOcupado,
 };

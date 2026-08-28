@@ -2,8 +2,9 @@ const express = require('express');
 const pool = require('../db/pool');
 const wik = require('../lib/wik');
 const {
-  buscarIntegracao, obterTokenValido, empIdsConfigurados, montarPreviewEstoque, aplicarSincronizacaoEstoque, sincronizarEstoqueAgora,
-  criarOpcoesTokenComLimite, registrarTentativaWik, registrarFalhaWik, registrarSucessoWik, calcularStatusToken, corrigirJobsPresos,
+  buscarIntegracao, obterTokenBoxAtual, renovarTokenAgora, empIdsConfigurados, montarPreviewEstoque, aplicarSincronizacaoEstoque, sincronizarEstoqueAgora,
+  criarOpcoesToken, registrarTentativaWik, registrarFalhaWik, registrarSucessoWik, calcularStatusToken, corrigirJobsPresos,
+  reservarJobWik, liberarJobWik, mensagemJobOcupado, esquecerTokenEmMemoria,
 } = require('../lib/wikSync');
 const { montarPreviewProdutos, aplicarImportacaoProdutos, sincronizarProdutosAgora } = require('../lib/wikProdutosImport');
 const { montarPreviewFichaCusto, aplicarImportacaoFichaCusto, sincronizarFichaCustoAgora } = require('../lib/wikFichaCustoImport');
@@ -57,18 +58,20 @@ router.post('/', async (req, res, next) => {
     const existente = await buscarIntegracao();
     let row;
     if (existente) {
-      // Credencial nova (ou trocada) zera também a trava de reautenticação
-      // (ultima_reautenticacao_forcada) e o contador de rejeições seguidas
-      // (rejeicoes_consecutivas_token) — qualquer motivo pro backoff/modo
-      // degradado da credencial ANTERIOR deixa de fazer sentido pra uma
-      // credencial nova (item 4/6c do pedido de 27/08/2026).
+      // Credencial nova (ou trocada) zera o contador de rejeições seguidas
+      // (rejeicoes_consecutivas_token) — o modo degradado de uma credencial
+      // ANTIGA não faz mais sentido pra uma credencial nova — e o token/
+      // renovação ficam limpos (token_renovado_em incluído) pra forçar um
+      // login de verdade com a credencial nova na próxima chamada, em vez de
+      // seguir usando o token antigo até a próxima agenda de 2h.
       ({ rows: [row] } = await pool.query(
         `UPDATE integracoes_wik SET email = $1, senha = $2, access_token = NULL, token_expira_em = NULL,
-                                     ultimo_erro = NULL, ultima_rejeicao_token = NULL, ultima_reautenticacao_forcada = NULL,
+                                     token_renovado_em = NULL, ultimo_erro = NULL, ultima_rejeicao_token = NULL,
                                      rejeicoes_consecutivas_token = 0, atualizado_em = now()
          WHERE id = $3 RETURNING *`,
         [email, senha, existente.id]
       ));
+      esquecerTokenEmMemoria();
     } else {
       ({ rows: [row] } = await pool.query(
         'INSERT INTO integracoes_wik (email, senha) VALUES ($1, $2) RETURNING *',
@@ -90,28 +93,29 @@ router.delete('/', async (req, res, next) => {
   }
 });
 
-// "Testar conexão" só faz LOGIN — não prova que uma chamada de dado de
-// verdade (saldo_estoque_get etc.) funciona, então NÃO grava em
-// ultima_tentativa/ultimo_erro/ultima_rejeicao_token (essas são só pra
-// chamadas de dado — ver calcularStatusToken acima). O que um login
-// bem-sucedido aqui PROVA é que a credencial está boa agora mesmo, e por
-// isso ele limpa a trava de reautenticação (ultima_reautenticacao_forcada):
-// sem isso, uma trava deixada por um relogin forçado anterior podia
-// bloquear a recuperação automática mesmo depois de a usuária confirmar
-// manualmente que o login funciona (foi exatamente o bug visto em produção
-// em 26/08 — login manual às 09:41 funcionou, saldo_estoque_get rejeitou
-// esse mesmo token às 09:42, e a trava recusou a nova tentativa).
+// "Testar conexão" faz um LOGIN de verdade — mas ATENÇÃO: isso é uma ação
+// HUMANA deliberada (um clique), não uma reação automática a erro, então é
+// sempre permitida pela regra do suporte do Wik. Usa renovarTokenAgora (o
+// MESMO caminho que a agenda usa) pra trocar o token de forma atômica —
+// nunca faz um login "solto" que ficaria descolado do tokenBox
+// compartilhado. Não grava em ultima_tentativa/ultimo_erro/
+// ultima_rejeicao_token (essas são só pra chamadas de DADO — ver
+// calcularStatusToken acima; login sozinho não prova que saldo_estoque_get
+// vai funcionar). Passa pela trava global — mesmo sendo rápido, ainda é uma
+// chamada real à API do Wik e não deve rodar ao mesmo tempo que outro job.
 router.post('/testar', async (req, res, next) => {
   try {
     const integracao = await buscarIntegracao();
     if (!integracao) return res.status(400).json({ error: 'Cadastre a credencial primeiro.' });
-    const resultado = await wik.login(integracao.email, integracao.senha);
-    await pool.query(
-      `UPDATE integracoes_wik SET access_token = $1, token_expira_em = $2,
-                                   ultima_reautenticacao_forcada = NULL, atualizado_em = now() WHERE id = $3`,
-      [resultado.token, resultado.expiraEm, integracao.id]
-    );
-    res.json({ ok: true, nome: resultado.nome, email: resultado.email, expiraEm: resultado.expiraEm });
+    if (!(await reservarJobWik(integracao.id, 'teste-conexao'))) {
+      return res.status(409).json({ error: await mensagemJobOcupado(integracao.id) });
+    }
+    try {
+      const resultado = await renovarTokenAgora(integracao);
+      res.json({ ok: true, nome: resultado.nome, email: resultado.email, expiraEm: resultado.expiraEm });
+    } finally {
+      await liberarJobWik(integracao.id);
+    }
   } catch (err) {
     res.status(422).json({ error: err.message });
   }
@@ -121,38 +125,45 @@ router.post('/testar', async (req, res, next) => {
 // na tela do teste feito direto na API por PowerShell, fora do sistema, que
 // isolou a causa raiz do 403: 1 login → 1 chamada de saldo_estoque_get
 // (base "apiwiki") → 1 chamada de tamanhos_get (base "wiki_v2"), mostrando o
-// HTTP status, o body.status e o corpo bruto de cada uma. NÃO participa do
-// job/status normal (sem registrarTentativaWik/registrarFalhaWik/
-// registrarSucessoWik, sem passar por criarOpcoesTokenComLimite) — é
-// diagnóstico manual isolado, não deve interferir no modo degradado nem ser
-// bloqueado por ele. Nunca devolve o token pro front.
+// HTTP status, o body.status e o corpo bruto de cada uma. Também é ação
+// HUMANA deliberada (renovarTokenAgora, mesmo caminho de "Testar conexão"
+// acima) — não participa do job/status normal de dado (sem
+// registrarTentativaWik/registrarFalhaWik/registrarSucessoWik), mas passa
+// pela trava global igual a tudo que toca a API do Wik. Nunca devolve o
+// token pro front.
 router.post('/testar-completo', async (req, res, next) => {
   try {
     const integracao = await buscarIntegracao();
     if (!integracao) return res.status(400).json({ error: 'Cadastre a credencial primeiro.' });
+    if (!(await reservarJobWik(integracao.id, 'teste-completo'))) {
+      return res.status(409).json({ error: await mensagemJobOcupado(integracao.id) });
+    }
+    try {
+      const login = await renovarTokenAgora(integracao);
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    const login = await wik.login(integracao.email, integracao.senha);
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+      const porEmpId = await empIdsConfigurados();
+      const primeiroEmpId = porEmpId.size > 0 ? [...porEmpId.keys()][0] : null;
 
-    const porEmpId = await empIdsConfigurados();
-    const primeiroEmpId = porEmpId.size > 0 ? [...porEmpId.keys()][0] : null;
+      const chamadaEstoque = primeiroEmpId
+        ? await wik.chamarBrutoDiagnostico(login.token, 'apiwiki', 'saldo_estoque_get', { empId: primeiroEmpId, pagina: 1 })
+        : { pulado: 'nenhuma marca com Id de Empresa configurado (em Listas > Marcas) — não dá pra montar o parâmetro empId' };
+      const chamadaTamanhos = await wik.chamarBrutoDiagnostico(login.token, 'wiki_v2', 'tamanhos_get', {});
 
-    const chamadaEstoque = primeiroEmpId
-      ? await wik.chamarBrutoDiagnostico(login.token, 'apiwiki', 'saldo_estoque_get', { empId: primeiroEmpId, pagina: 1 })
-      : { pulado: 'nenhuma marca com Id de Empresa configurado (em Listas > Marcas) — não dá pra montar o parâmetro empId' };
-    const chamadaTamanhos = await wik.chamarBrutoDiagnostico(login.token, 'wiki_v2', 'tamanhos_get', {});
-
-    res.json({
-      login: {
-        criacao: login.criacao,
-        expiracao: login.expiraEm,
-        expiracaoSuspeita: login.expiracaoSuspeita,
-        usuarioMaster: login.usuarioMaster,
-        empresaAcesso: login.empresaAcesso,
-      },
-      saldoEstoque: { base: 'apiwiki', path: 'saldo_estoque_get', empIdUsado: primeiroEmpId, ...chamadaEstoque },
-      tamanhos: { base: 'wiki_v2', path: 'tamanhos_get', ...chamadaTamanhos },
-    });
+      res.json({
+        login: {
+          criacao: login.criacao,
+          expiracao: login.expiraEm,
+          expiracaoSuspeita: login.expiracaoSuspeita,
+          usuarioMaster: login.usuarioMaster,
+          empresaAcesso: login.empresaAcesso,
+        },
+        saldoEstoque: { base: 'apiwiki', path: 'saldo_estoque_get', empIdUsado: primeiroEmpId, ...chamadaEstoque },
+        tamanhos: { base: 'wiki_v2', path: 'tamanhos_get', ...chamadaTamanhos },
+      });
+    } finally {
+      await liberarJobWik(integracao.id);
+    }
   } catch (err) {
     res.status(422).json({ error: err.message });
   }
@@ -180,6 +191,10 @@ router.post('/estoque/preview', async (req, res, next) => {
       return res.status(400).json({ error: 'Nenhuma marca tem Id de Empresa do Wik configurado (em Listas > Marcas).' });
     }
 
+    if (!(await reservarJobWik(integracao.id, 'estoque-preview'))) {
+      return res.status(409).json({ error: await mensagemJobOcupado(integracao.id) });
+    }
+
     await registrarTentativaWik(integracao.id);
     await pool.query(
       `UPDATE integracoes_wik SET preview_status = 'rodando', preview_resultado = NULL, preview_erro = NULL,
@@ -202,6 +217,9 @@ router.post('/estoque/preview', async (req, res, next) => {
           [err.message, integracao.id]
         );
         await registrarFalhaWik(integracao.id, err);
+      })
+      .finally(async () => {
+        await liberarJobWik(integracao.id);
       });
   } catch (err) {
     next(err);
@@ -272,6 +290,10 @@ router.post('/produtos/preview', async (req, res, next) => {
       && Date.now() - new Date(integracao.produtos_import_iniciado_em).getTime() < 30 * 60 * 1000;
     if (jobTravado) return res.json({ status: 'rodando' });
 
+    if (!(await reservarJobWik(integracao.id, 'produtos-preview'))) {
+      return res.status(409).json({ error: await mensagemJobOcupado(integracao.id) });
+    }
+
     await registrarTentativaWik(integracao.id);
     await pool.query(
       `UPDATE integracoes_wik SET produtos_import_status = 'rodando', produtos_import_resultado = NULL,
@@ -296,6 +318,9 @@ router.post('/produtos/preview', async (req, res, next) => {
           [err.message, integracao.id]
         );
         await registrarFalhaWik(integracao.id, err);
+      })
+      .finally(async () => {
+        await liberarJobWik(integracao.id);
       });
   } catch (err) {
     next(err);
@@ -366,45 +391,53 @@ router.post('/ficha-custo/diagnosticar', async (req, res, next) => {
     if (rows.length === 0) return res.status(404).json({ error: 'Não achei esse produto cadastrado localmente.' });
     const produto = rows[0];
 
-    const token = await obterTokenValido(integracao);
-    const tokenBox = wik.criarTokenBox(token);
-    const opcoesToken = criarOpcoesTokenComLimite(integracao);
+    if (!(await reservarJobWik(integracao.id, 'diagnostico-ficha'))) {
+      return res.status(409).json({ error: await mensagemJobOcupado(integracao.id) });
+    }
+    try {
+      const tokenBox = await obterTokenBoxAtual(integracao);
+      const opcoesToken = criarOpcoesToken(integracao);
 
-    let wikProdId = produto.wik_prod_id;
-    let produtoWik = null;
-    if (!wikProdId) {
-      produtoWik = await wik.buscarProdutoPorReferencia(tokenBox, referencia, opcoesToken);
-      wikProdId = produtoWik?.ProdId || null;
-      if (wikProdId) {
-        await pool.query('UPDATE produtos SET wik_prod_id = $1 WHERE id = $2', [wikProdId, produto.id]);
+      let wikProdId = produto.wik_prod_id;
+      let produtoWik = null;
+      if (!wikProdId) {
+        produtoWik = await wik.buscarProdutoPorReferencia(tokenBox, referencia, opcoesToken);
+        wikProdId = produtoWik?.ProdId || null;
+        if (wikProdId) {
+          await pool.query('UPDATE produtos SET wik_prod_id = $1 WHERE id = $2', [wikProdId, produto.id]);
+        }
       }
-    }
 
-    if (!wikProdId) {
-      return res.status(422).json({
-        error: 'Não consegui resolver o ProdId desse produto no Wik (busca por referência não retornou nada).',
-        produtoWik,
+      if (!wikProdId) {
+        return res.status(422).json({
+          error: 'Não consegui resolver o ProdId desse produto no Wik (busca por referência não retornou nada).',
+          produtoWik,
+        });
+      }
+
+      // Sequencial, não Promise.all — chamadas do Wik em paralelo foram
+      // exatamente a causa do bloqueio de conta em 17/08/2026 ("múltiplos
+      // acessos com o mesmo token"). A fila serial em wik.js já garante isso
+      // no nível mais baixo, mas aqui fica explícito também.
+      const insumos = await wik.buscarInsumosFichaTecnica(tokenBox, wikProdId, opcoesToken).catch((err) => ({ erro: err.message }));
+      const operacoesFicha = await wik.buscarOperacoesFichaTecnica(tokenBox, wikProdId, opcoesToken).catch((err) => ({ erro: err.message }));
+      const operacoesGlobais = await wik.listarOperacoes(tokenBox, opcoesToken).catch((err) => ({ erro: err.message }));
+
+      // A doc de materiaprima_get não mostra campo de custo — testa aqui se
+      // ele vem "escondido" mesmo assim (já rolou duas vezes de a doc omitir
+      // campo que a resposta real trazia).
+      let materiaPrimaExemplo = null;
+      if (Array.isArray(insumos) && insumos.length > 0) {
+        materiaPrimaExemplo = await wik.buscarMateriaPrima(tokenBox, insumos[0].MatId, opcoesToken).catch((err) => ({ erro: err.message }));
+      }
+
+      res.json({
+        produto: { ...produto, wik_prod_id: wikProdId }, produtoWik, insumos, operacoesFicha, operacoesGlobais,
+        materiaPrimaExemplo: materiaPrimaExemplo ? { matIdTestado: insumos[0]?.MatId, resposta: materiaPrimaExemplo } : null,
       });
+    } finally {
+      await liberarJobWik(integracao.id);
     }
-
-    const [insumos, operacoesFicha, operacoesGlobais] = await Promise.all([
-      wik.buscarInsumosFichaTecnica(tokenBox, wikProdId, opcoesToken).catch((err) => ({ erro: err.message })),
-      wik.buscarOperacoesFichaTecnica(tokenBox, wikProdId, opcoesToken).catch((err) => ({ erro: err.message })),
-      wik.listarOperacoes(tokenBox, opcoesToken).catch((err) => ({ erro: err.message })),
-    ]);
-
-    // A doc de materiaprima_get não mostra campo de custo — testa aqui se
-    // ele vem "escondido" mesmo assim (já rolou duas vezes de a doc omitir
-    // campo que a resposta real trazia).
-    let materiaPrimaExemplo = null;
-    if (Array.isArray(insumos) && insumos.length > 0) {
-      materiaPrimaExemplo = await wik.buscarMateriaPrima(tokenBox, insumos[0].MatId, opcoesToken).catch((err) => ({ erro: err.message }));
-    }
-
-    res.json({
-      produto: { ...produto, wik_prod_id: wikProdId }, produtoWik, insumos, operacoesFicha, operacoesGlobais,
-      materiaPrimaExemplo: materiaPrimaExemplo ? { matIdTestado: insumos[0]?.MatId, resposta: materiaPrimaExemplo } : null,
-    });
   } catch (err) {
     res.status(422).json({ error: err.message });
   }
@@ -428,6 +461,10 @@ router.post('/ficha-custo/preview', async (req, res, next) => {
       && integracao.ficha_custo_import_iniciado_em
       && Date.now() - new Date(integracao.ficha_custo_import_iniciado_em).getTime() < 30 * 60 * 1000;
     if (jobTravado) return res.json({ status: 'rodando' });
+
+    if (!(await reservarJobWik(integracao.id, 'ficha-custo-preview'))) {
+      return res.status(409).json({ error: await mensagemJobOcupado(integracao.id) });
+    }
 
     await registrarTentativaWik(integracao.id);
     await pool.query(
@@ -453,6 +490,9 @@ router.post('/ficha-custo/preview', async (req, res, next) => {
           [err.message, integracao.id]
         );
         await registrarFalhaWik(integracao.id, err);
+      })
+      .finally(async () => {
+        await liberarJobWik(integracao.id);
       });
   } catch (err) {
     next(err);
