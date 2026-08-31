@@ -74,9 +74,8 @@ export default function TaxasVendaPage() {
   const recebeSimulado = (Number(valorSimulado) || 0) - totalSimulado;
 
   return (
-    <div className="page-wide">
-      <h2>Taxas de Venda</h2>
-      <p className="page-sub">
+    <div>
+      <p className="page-sub" style={{ marginTop: 0 }}>
         Tudo que é descontado do preço antes do dinheiro chegar. Cada taxa pode ser percentual, valor fixo, ou os dois.
       </p>
 

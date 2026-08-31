@@ -50,8 +50,8 @@ export default function QualidadeDadosPage() {
   }, []);
 
   return (
-    <div className="page-wide">
-      <h2><Layers size={20} style={{ verticalAlign: -3, marginRight: 6 }} />Qualidade do Dado</h2>
+    <div>
+      <div className="card-head" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Layers size={16} />Qualidade do Dado</div>
       <p className="page-sub">
         Antes de confiar em qualquer painel agregado (Dashboard Executivo, Indicadores de Estoque,
         Central de Alertas), vale saber o quanto do dado por trás dele está completo. Isto é um

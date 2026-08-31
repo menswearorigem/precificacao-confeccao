@@ -95,18 +95,31 @@ export const MODULES = [
     label: 'Configurações',
     icon: Settings,
     color: 'var(--warning)',
+    // Redesenho de Configurações (Etapa 2, 28/08/2026): 11 abas -> 8, em 4
+    // grupos lógicos (a ordem abaixo já segue os grupos, já que o Shell.jsx
+    // renderiza esta lista linear sem cabeçalho de grupo — ver limitação
+    // documentada no relatório da tarefa). getVisibleModules/canAccessPath
+    // e as flags adminOnly não mudaram, só a apresentação.
+    //   Cálculo: Parâmetros · Empresas · Custos Indiretos
+    //   Taxas: 1 aba com sub-abas Venda/Marketplace (funde /taxas-venda +
+    //          /marketplace-taxas, que agora só redirecionam — ver App.jsx)
+    //   Cadastros: Listas
+    //   Acesso e dados: Acessos (sub-abas Usuários/Grupos) · Integrações ·
+    //          Saúde dos Dados (funde /conferencia-dados + /qualidade-dados)
     pages: [
       { to: '/configuracoes', label: 'Parâmetros', icon: Settings },
       { to: '/empresas', label: 'Empresas', icon: Landmark },
-      { to: '/listas', label: 'Listas', icon: ListIcon },
-      { to: '/configuracoes/grupos', label: 'Grupos', icon: UsersRound },
-      { to: '/taxas-venda', label: 'Taxas de Venda', icon: Percent },
-      { to: '/marketplace-taxas', label: 'Taxas de Marketplace', icon: ReceiptText },
       { to: '/custos-indiretos', label: 'Custos Indiretos', icon: Factory },
-      { to: '/usuarios', label: 'Usuários', icon: ShieldCheck, adminOnly: true },
+      { to: '/taxas', label: 'Taxas', icon: Percent },
+      { to: '/listas', label: 'Listas', icon: ListIcon },
+      // NÃO é adminOnly (diferente da extinta aba "Usuários", que era):
+      // Grupos nunca precisou de admin (backend exige só o módulo
+      // "configuracoes"), e a fusão não pode tirar esse acesso de quem não
+      // é admin — a sub-aba Usuários fica escondida pra quem não é admin
+      // dentro do próprio AcessosPage.jsx, não aqui.
+      { to: '/acessos', label: 'Acessos', icon: ShieldCheck },
       { to: '/integracoes', label: 'Integrações', icon: Plug, adminOnly: true },
-      { to: '/conferencia-dados', label: 'Conferência de Dados', icon: SearchCheck, adminOnly: true },
-      { to: '/qualidade-dados', label: 'Qualidade do Dado', icon: Layers, adminOnly: true },
+      { to: '/saude-dados', label: 'Saúde dos Dados', icon: Layers, adminOnly: true },
     ],
   },
   {

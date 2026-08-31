@@ -80,9 +80,8 @@ export default function MarketplaceTaxasPage() {
   const freteDoMarketplace = freteFaixas.filter((f) => f.marketplace === marketplace);
 
   return (
-    <div className="page-wide">
-      <h2>Taxas de Marketplace</h2>
-      <p className="page-sub">
+    <div>
+      <p className="page-sub" style={{ marginTop: 0 }}>
         Tabelas de comissão e frete que o Mercado Livre e a Shopee cobram dos vendedores — usadas na
         aba Vendas → Taxas de Marketplace pra conferir se a cobrança real bate com o esperado. Ajuste
         aqui sempre que o marketplace anunciar reajuste.

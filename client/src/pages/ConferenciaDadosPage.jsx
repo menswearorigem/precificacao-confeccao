@@ -47,8 +47,8 @@ export default function ConferenciaDadosPage() {
   }, []);
 
   return (
-    <div className="page-wide">
-      <h2><SearchCheck size={20} style={{ verticalAlign: -3, marginRight: 6 }} />Conferência de Dados</h2>
+    <div>
+      <div className="card-head" style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 24 }}><SearchCheck size={16} />Conferência de dados de teste</div>
       <p className="page-sub">
         Lista registros com cara de dado de teste (nome sem vogais ou curto de mais, quantidade ou
         valor muito fora do normal) — cada um com o motivo da suspeita. Isto é só um raio-x, não faz

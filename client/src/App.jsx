@@ -11,14 +11,11 @@ import RedefinirSenhaPage from './pages/RedefinirSenhaPage';
 import ConfiguracoesPage from './pages/ConfiguracoesPage';
 import EmpresasPage from './pages/EmpresasPage';
 import ListasPage from './pages/ListasPage';
-import TaxasVendaPage from './pages/TaxasVendaPage';
 import CustosIndiretosPage from './pages/CustosIndiretosPage';
-import MarketplaceTaxasPage from './pages/MarketplaceTaxasPage';
-import UsuariosPage from './pages/UsuariosPage';
 import IntegracoesPage from './pages/IntegracoesPage';
-import ConferenciaDadosPage from './pages/ConferenciaDadosPage';
-import QualidadeDadosPage from './pages/QualidadeDadosPage';
-import GruposPage from './pages/GruposPage';
+import TaxasPage from './pages/TaxasPage';
+import AcessosPage from './pages/AcessosPage';
+import SaudeDadosPage from './pages/SaudeDadosPage';
 import CalendarioPage from './pages/CalendarioPage';
 import TemplatesCalendarioPage from './pages/TemplatesCalendarioPage';
 import EventoImpressaoPage from './pages/EventoImpressaoPage';
@@ -126,14 +123,21 @@ function AppRoutes() {
                   <Route path="/configuracoes" element={<ConfiguracoesPage />} />
                   <Route path="/empresas" element={<EmpresasPage />} />
                   <Route path="/listas" element={<ListasPage />} />
-                  <Route path="/taxas-venda" element={<TaxasVendaPage />} />
                   <Route path="/custos-indiretos" element={<CustosIndiretosPage />} />
-                  <Route path="/marketplace-taxas" element={<MarketplaceTaxasPage />} />
-                  <Route path="/usuarios" element={<UsuariosPage />} />
                   <Route path="/integracoes" element={<IntegracoesPage />} />
-                  <Route path="/conferencia-dados" element={<ConferenciaDadosPage />} />
-                  <Route path="/qualidade-dados" element={<QualidadeDadosPage />} />
-                  <Route path="/configuracoes/grupos" element={<GruposPage />} />
+                  {/* Redesenho de Configurações (Etapa 2): 11 abas viraram 8 — as rotas
+                      antigas continuam existindo e só redirecionam, pra não quebrar link
+                      salvo/favoritado. Agrupamento é só apresentação (Shell.jsx e
+                      lib/modules.js não mudam a lógica de permissão). */}
+                  <Route path="/taxas" element={<TaxasPage />} />
+                  <Route path="/taxas-venda" element={<Navigate to="/taxas" replace />} />
+                  <Route path="/marketplace-taxas" element={<Navigate to="/taxas?aba=marketplace" replace />} />
+                  <Route path="/acessos" element={<AcessosPage />} />
+                  <Route path="/usuarios" element={<Navigate to="/acessos" replace />} />
+                  <Route path="/configuracoes/grupos" element={<Navigate to="/acessos?aba=grupos" replace />} />
+                  <Route path="/saude-dados" element={<SaudeDadosPage />} />
+                  <Route path="/qualidade-dados" element={<Navigate to="/saude-dados" replace />} />
+                  <Route path="/conferencia-dados" element={<Navigate to="/saude-dados" replace />} />
                   <Route path="/calendario" element={<CalendarioPage />} />
                   <Route path="/calendario/modelos" element={<TemplatesCalendarioPage />} />
                   <Route path="/calendario/eventos/:id/imprimir" element={<EventoImpressaoPage />} />

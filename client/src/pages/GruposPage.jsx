@@ -110,11 +110,10 @@ export default function GruposPage() {
   }
 
   return (
-    <div className="page-wide">
+    <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
-          <h2>Grupos</h2>
-          <p className="page-sub">Grupos de usuários — usados pra liberar visibilidade/edição de eventos do Calendário pra vários usuários de uma vez.</p>
+          <p className="page-sub" style={{ marginTop: 0 }}>Grupos de usuários — usados pra liberar visibilidade/edição de eventos do Calendário pra vários usuários de uma vez.</p>
         </div>
         {editando === null && (
           <button className="btn btn-primary" onClick={() => setEditando('novo')}>

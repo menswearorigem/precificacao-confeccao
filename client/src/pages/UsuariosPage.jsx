@@ -191,11 +191,10 @@ export default function UsuariosPage() {
   }
 
   return (
-    <div className="page-wide">
+    <div>
       <div className="cfg-page-head">
         <div>
-          <h2>Usuários</h2>
-          <p className="page-sub">
+          <p className="page-sub" style={{ marginTop: 0 }}>
             Quem tem acesso ao sistema e o que cada um pode ver. Administradores têm acesso
             irrestrito a todos os módulos.
           </p>
