@@ -2941,3 +2941,117 @@ table.ficha-doc-tabela {
   font-size: 10.5px;
   font-weight: 600;
 }
+
+/* Etapa 4 — barra de alterações não salvas (components/BarraAlteracoes.jsx).
+   position: sticky (não fixed) de propósito: Shell.jsx não pôde ser
+   alterado nesta tarefa, então "fixo no rodapé da área de conteúdo" é
+   feito grudando no fim do PRÓPRIO .page-wide da tela (sticky respeita o
+   scroll container sem precisar calcular a largura da sidebar). */
+.cfg-barra-alteracoes {
+  position: sticky;
+  bottom: 16px;
+  z-index: 40;
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 18px;
+  border-radius: var(--radius-sm);
+  background: var(--leather-deep);
+  color: #f4efe4;
+  box-shadow: var(--shadow-lg);
+}
+.cfg-barra-alteracoes-texto { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.cfg-barra-alteracoes-ponto { width: 7px; height: 7px; border-radius: 50%; background: var(--terracotta-bright, var(--terracotta)); flex-shrink: 0; animation: cfg-pulsar 1.6s ease-in-out infinite; }
+@keyframes cfg-pulsar { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.cfg-barra-alteracoes-detalhe { display: block; font-size: 11px; color: rgba(244, 239, 228, 0.65); font-weight: 400; margin-top: 2px; }
+.cfg-barra-alteracoes-salvo { display: inline-flex; align-items: center; gap: 6px; color: #9ed69a; font-size: 13px; }
+.cfg-barra-alteracoes-acoes { display: flex; align-items: center; gap: 10px; }
+.cfg-barra-alteracoes-atalho {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: rgba(244, 239, 228, 0.55);
+  border: 1px solid rgba(244, 239, 228, 0.25);
+  border-radius: 5px;
+  padding: 2px 6px;
+}
+.cfg-barra-alteracoes-acoes .btn-ghost { color: #f4efe4; }
+.cfg-barra-alteracoes-acoes .btn-ghost:hover { background: rgba(244, 239, 228, 0.12); }
+
+/* ---------- Parâmetros — régua de faixas de margem ---------- */
+.cfg-regua-wrap { position: relative; height: 96px; margin: 46px 12px 0; }
+.cfg-regua-trilho {
+  position: absolute;
+  left: 0; right: 0; top: 50%;
+  transform: translateY(-50%);
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--border-soft);
+}
+.cfg-regua-tique {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 1px;
+}
+.cfg-regua-marcador {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 76px;
+}
+.cfg-regua-marcador.abaixo { top: auto; bottom: 0; }
+.cfg-regua-marcador-label { font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink-soft); white-space: nowrap; }
+.cfg-regua-wrap input.cfg-regua-input {
+  width: 62px;
+  text-align: center;
+  padding: 4px 6px;
+  font-size: 12.5px;
+}
+.cfg-regua-wrap input.cfg-regua-input.destaque { border-color: var(--terracotta); font-weight: 700; }
+.cfg-regua-eixo { display: flex; justify-content: space-between; margin: 4px 12px 0; font-size: 10.5px; color: var(--ink-faint); }
+
+.cfg-exemplo-vivo { margin-top: 18px; padding: 14px 16px; border-radius: var(--radius-sm); background: var(--surface-alt); }
+.cfg-exemplo-vivo-cabecalho { font-size: 12.5px; color: var(--ink-soft); margin-bottom: 10px; }
+.cfg-exemplo-vivo-grade { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.cfg-exemplo-vivo-grade > div { display: flex; flex-direction: column; gap: 4px; background: var(--surface); border-radius: 7px; padding: 10px 12px; }
+.cfg-exemplo-vivo-grade span { font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-soft); }
+.cfg-exemplo-vivo-grade strong { font-size: 16px; }
+@media (max-width: 860px) {
+  .cfg-exemplo-vivo-grade { grid-template-columns: repeat(2, 1fr); }
+}
+
+.cfg-faixa-legivel { font-size: 12.5px; color: var(--ink-soft); white-space: nowrap; }
+.cfg-linha-aplicavel { background: var(--surface-alt); }
+.cfg-linha-aplicavel td:first-child { box-shadow: inset 3px 0 0 var(--terracotta); }
+.cfg-grade-frete th, .cfg-grade-frete td { text-align: center; white-space: nowrap; }
+.cfg-grade-frete th:first-child, .cfg-grade-frete td:first-child { text-align: left; }
+.cfg-coluna-aplicavel { color: var(--terracotta); }
+.cfg-celula-aplicavel { background: var(--terracotta); color: #fff; border-radius: 4px; font-weight: 700; }
+
+.cfg-listas-grid { display: grid; grid-template-columns: 240px 1fr; gap: 18px; align-items: start; }
+.cfg-listas-indice { display: flex; flex-direction: column; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px; position: sticky; top: 12px; }
+.cfg-listas-indice-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 10px; border-radius: 6px; border: none; background: transparent; cursor: pointer;
+  font-size: 12.5px; color: var(--ink-soft); text-align: left;
+}
+.cfg-listas-indice-item:hover { background: var(--surface-alt); }
+.cfg-listas-indice-item.is-ativo { background: var(--terracotta); color: #fff; font-weight: 600; }
+.cfg-listas-indice-contagem { font-family: var(--font-mono); font-size: 11px; opacity: 0.75; }
+.cfg-listas-alca { display: flex; flex-direction: column; gap: 0; }
+.cfg-listas-alca .icon-btn { padding: 1px; }
+@media (max-width: 860px) {
+  .cfg-listas-grid { grid-template-columns: 1fr; }
+  .cfg-listas-indice { position: static; flex-direction: row; flex-wrap: wrap; }
+}
+

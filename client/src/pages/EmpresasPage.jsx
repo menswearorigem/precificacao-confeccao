@@ -1,42 +1,88 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
 import { Field, NumInput, Select, Toggle } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
+import BarraAlteracoes from '../components/BarraAlteracoes';
 
 const REGIMES = ['Simples Nacional', 'Lucro Presumido', 'Lucro Real'];
 
+const CAMPOS_SALVOS = [
+  'nome', 'regime_tributario', 'usa_aliquota_media', 'aliquota_media_pct',
+  'simples_aliquota', 'icms', 'pis', 'cofins', 'ipi', 'iss', 'outros_impostos',
+];
+
 export default function EmpresasPage() {
-  const [empresas, setEmpresas] = useState([]);
+  const [servidor, setServidor] = useState([]);
+  const [rascunho, setRascunho] = useState([]);
+  const [salvando, setSalvando] = useState(false);
+  const [mensagemSalvo, setMensagemSalvo] = useState('');
 
   function load() {
-    api.get('/empresas').then(setEmpresas);
+    api.get('/empresas').then((data) => { setServidor(data); setRascunho(data); });
   }
 
   useEffect(load, []);
 
-  async function updateEmpresa(id, patch) {
-    setEmpresas((list) => list.map((e) => (e.id === id ? { ...e, ...patch } : e)));
-    await api.put(`/empresas/${id}`, patch);
+  function atualizar(id, patch) {
+    setRascunho((list) => list.map((e) => (e.id === id ? { ...e, ...patch } : e)));
   }
 
   async function addEmpresa() {
     const created = await api.post('/empresas', {
       nome: 'Nova Empresa',
       regime_tributario: 'Simples Nacional',
-      ordem: empresas.length + 1,
+      ordem: rascunho.length + 1,
     });
-    setEmpresas((list) => [...list, created]);
+    setServidor((list) => [...list, created]);
+    setRascunho((list) => [...list, created]);
   }
 
   async function removeEmpresa(id) {
     if (!(await confirmar('Remover esta empresa? Só é possível se não houver produtos vinculados a ela.'))) return;
     try {
       await api.del(`/empresas/${id}`);
-      setEmpresas((list) => list.filter((e) => e.id !== id));
+      setServidor((list) => list.filter((e) => e.id !== id));
+      setRascunho((list) => list.filter((e) => e.id !== id));
     } catch (e) {
       alert(e.message);
     }
+  }
+
+  const camposAlterados = useMemo(() => {
+    const nomes = [];
+    for (const e of rascunho) {
+      const original = servidor.find((s) => s.id === e.id);
+      if (!original) continue;
+      if (JSON.stringify(original) !== JSON.stringify(e)) nomes.push(e.nome || 'empresa');
+    }
+    return nomes;
+  }, [rascunho, servidor]);
+
+  async function salvar() {
+    setSalvando(true);
+    try {
+      const alteradas = rascunho.filter((e) => {
+        const original = servidor.find((s) => s.id === e.id);
+        return original && JSON.stringify(original) !== JSON.stringify(e);
+      });
+      const resultados = await Promise.all(alteradas.map((e) => {
+        const patch = {};
+        for (const campo of CAMPOS_SALVOS) patch[campo] = e[campo];
+        return api.put(`/empresas/${e.id}`, patch);
+      }));
+      const porId = new Map(resultados.map((r) => [r.id, r]));
+      setServidor((list) => list.map((e) => porId.get(e.id) || e));
+      setRascunho((list) => list.map((e) => porId.get(e.id) || e));
+      setMensagemSalvo('Salvo · há instantes');
+      setTimeout(() => setMensagemSalvo(''), 3000);
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  function descartar() {
+    setRascunho(servidor);
   }
 
   return (
@@ -47,7 +93,7 @@ export default function EmpresasPage() {
         a uma delas para saber qual conjunto de impostos usar na formação de preço.
       </p>
 
-      {empresas.map((emp) => (
+      {rascunho.map((emp) => (
         <div className="card" style={{ marginBottom: 16 }} key={emp.id}>
           <div className="card-head-linha">
             <div className="card-head">{emp.nome || 'Empresa'}</div>
@@ -59,13 +105,13 @@ export default function EmpresasPage() {
             <Field label="Nome / Razão Social">
               <input
                 value={emp.nome}
-                onChange={(e) => updateEmpresa(emp.id, { nome: e.target.value })}
+                onChange={(e) => atualizar(emp.id, { nome: e.target.value })}
               />
             </Field>
             <Field label="Regime Tributário">
               <Select
                 value={emp.regime_tributario}
-                onChange={(e) => updateEmpresa(emp.id, { regime_tributario: e.target.value })}
+                onChange={(e) => atualizar(emp.id, { regime_tributario: e.target.value })}
               >
                 {REGIMES.map((r) => (
                   <option key={r} value={r}>{r}</option>
@@ -79,7 +125,7 @@ export default function EmpresasPage() {
               <label className="toggle">
                 <Toggle
                   checked={emp.usa_aliquota_media}
-                  onChange={(e) => updateEmpresa(emp.id, { usa_aliquota_media: e.target.checked })}
+                  onChange={(e) => atualizar(emp.id, { usa_aliquota_media: e.target.checked })}
                 />
                 {emp.usa_aliquota_media ? 'Sim' : 'Não'}
               </label>
@@ -88,7 +134,7 @@ export default function EmpresasPage() {
               <Field label="% média de imposto (provisório)">
                 <NumInput
                   value={emp.aliquota_media_pct * 100}
-                  onChange={(v) => updateEmpresa(emp.id, { aliquota_media_pct: (Number(v) || 0) / 100 })}
+                  onChange={(v) => atualizar(emp.id, { aliquota_media_pct: (Number(v) || 0) / 100 })}
                   suffix="%"
                 />
               </Field>
@@ -103,7 +149,7 @@ export default function EmpresasPage() {
               >
                 <NumInput
                   value={emp.simples_aliquota * 100}
-                  onChange={(v) => updateEmpresa(emp.id, { simples_aliquota: (Number(v) || 0) / 100 })}
+                  onChange={(v) => atualizar(emp.id, { simples_aliquota: (Number(v) || 0) / 100 })}
                   suffix="%"
                 />
               </Field>
@@ -111,19 +157,19 @@ export default function EmpresasPage() {
           ) : (
             <div className="form-grid" style={{ marginTop: 14 }}>
               <Field label="ICMS">
-                <NumInput value={emp.icms * 100} onChange={(v) => updateEmpresa(emp.id, { icms: (Number(v) || 0) / 100 })} suffix="%" />
+                <NumInput value={emp.icms * 100} onChange={(v) => atualizar(emp.id, { icms: (Number(v) || 0) / 100 })} suffix="%" />
               </Field>
               <Field label="PIS">
-                <NumInput value={emp.pis * 100} onChange={(v) => updateEmpresa(emp.id, { pis: (Number(v) || 0) / 100 })} suffix="%" />
+                <NumInput value={emp.pis * 100} onChange={(v) => atualizar(emp.id, { pis: (Number(v) || 0) / 100 })} suffix="%" />
               </Field>
               <Field label="COFINS">
-                <NumInput value={emp.cofins * 100} onChange={(v) => updateEmpresa(emp.id, { cofins: (Number(v) || 0) / 100 })} suffix="%" />
+                <NumInput value={emp.cofins * 100} onChange={(v) => atualizar(emp.id, { cofins: (Number(v) || 0) / 100 })} suffix="%" />
               </Field>
               <Field label="IPI">
-                <NumInput value={emp.ipi * 100} onChange={(v) => updateEmpresa(emp.id, { ipi: (Number(v) || 0) / 100 })} suffix="%" />
+                <NumInput value={emp.ipi * 100} onChange={(v) => atualizar(emp.id, { ipi: (Number(v) || 0) / 100 })} suffix="%" />
               </Field>
               <Field label="ISS (se serviço)">
-                <NumInput value={emp.iss * 100} onChange={(v) => updateEmpresa(emp.id, { iss: (Number(v) || 0) / 100 })} suffix="%" />
+                <NumInput value={emp.iss * 100} onChange={(v) => atualizar(emp.id, { iss: (Number(v) || 0) / 100 })} suffix="%" />
               </Field>
             </div>
           )}
@@ -133,7 +179,7 @@ export default function EmpresasPage() {
               <Field label="Outros impostos / taxas fiscais">
                 <NumInput
                   value={emp.outros_impostos * 100}
-                  onChange={(v) => updateEmpresa(emp.id, { outros_impostos: (Number(v) || 0) / 100 })}
+                  onChange={(v) => atualizar(emp.id, { outros_impostos: (Number(v) || 0) / 100 })}
                   suffix="%"
                 />
               </Field>
@@ -159,6 +205,15 @@ export default function EmpresasPage() {
       <button className="btn btn-dashed" onClick={addEmpresa}>
         <Plus size={13} /> Adicionar empresa
       </button>
+
+      <BarraAlteracoes
+        quantidade={camposAlterados.length}
+        salvando={salvando}
+        mensagemSalvo={mensagemSalvo}
+        detalhe={camposAlterados.slice(0, 3).join(' · ')}
+        onSalvar={salvar}
+        onDescartar={descartar}
+      />
     </div>
   );
 }
