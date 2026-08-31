@@ -280,15 +280,60 @@ async function integracaoComAdvertiserAds(id) {
   return integracao;
 }
 
+// Integração autorizada de um marketplace específico (ou de qualquer um da
+// lista) com o token já renovado — base das rotas abaixo que valem pra mais
+// de um marketplace.
+async function integracaoAutorizada(id, marketplacesAceitos) {
+  const { rows } = await pool.query('SELECT * FROM integracoes_marketplace WHERE id = $1', [id]);
+  const integracao = rows[0];
+  if (!integracao) { const e = new Error('Integração não encontrada.'); e.status = 404; throw e; }
+  if (marketplacesAceitos && !marketplacesAceitos.includes(integracao.marketplace)) {
+    const e = new Error('Essa consulta não existe pra esse marketplace.');
+    e.status = 400;
+    throw e;
+  }
+  if (!integracao.access_token) { const e = new Error('Essa integração ainda não foi autorizada.'); e.status = 400; throw e; }
+  return garantirTokenValido(integracao);
+}
+
+function credenciaisShopee(integracao) {
+  return {
+    partnerId: integracao.client_id,
+    partnerKey: integracao.client_secret,
+    accessToken: integracao.access_token,
+    shopId: integracao.conta_externa_id,
+  };
+}
+
+const MARKETPLACES_COM_ADS = ['mercado_livre', 'shopee'];
+
 router.get('/:id/ads/campanhas', async (req, res, next) => {
   try {
-    const integracao = await integracaoComAdvertiserAds(req.params.id);
     const dataInicio = req.query.data_inicio || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const dataFim = req.query.data_fim || new Date().toISOString().slice(0, 10);
+    const base = await integracaoAutorizada(req.params.id, MARKETPLACES_COM_ADS);
+    if (base.marketplace === 'shopee') {
+      // Na Shopee a própria loja autorizada é o anunciante — não existe o
+      // passo de descobrir um advertiser_id como no Mercado Livre.
+      const campanhas = await shopee.buscarCampanhasAds({ ...credenciaisShopee(base), dataInicio, dataFim });
+      return res.json({ campanhas });
+    }
+    const integracao = await integracaoComAdvertiserAds(req.params.id);
     const campanhas = await mercadoLivre.buscarCampanhasAds({
       accessToken: integracao.access_token, advertiserId: integracao.advertiser_id_ads, dataInicio, dataFim,
     });
     res.json({ campanhas });
+  } catch (err) {
+    res.status(err.status || 422).json({ error: err.message });
+  }
+});
+
+// Saldo de créditos de Publicidade (só Shopee — no Mercado Livre a
+// cobrança de Ads sai direto do saldo da conta, não tem carteira separada).
+router.get('/:id/ads/saldo', async (req, res, next) => {
+  try {
+    const integracao = await integracaoAutorizada(req.params.id, ['shopee']);
+    res.json(await shopee.buscarSaldoAds(credenciaisShopee(integracao)));
   } catch (err) {
     res.status(err.status || 422).json({ error: err.message });
   }
@@ -301,7 +346,7 @@ router.get('/:id/ads/campanhas', async (req, res, next) => {
 // mas nunca vendido não tem correspondência aí, fica só com o ID).
 router.get('/:id/ads/anuncios', async (req, res, next) => {
   try {
-    const integracao = await integracaoMercadoLivreAutorizada(req.params.id);
+    const integracao = await integracaoAutorizada(req.params.id, MARKETPLACES_COM_ADS);
     const dataInicio = req.query.data_inicio || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const dataFim = req.query.data_fim || new Date().toISOString().slice(0, 10);
     const { rows } = await pool.query(
@@ -340,9 +385,71 @@ router.get('/:id/ads/anuncios', async (req, res, next) => {
 // janela pequena, pra não martelar a API à toa).
 router.post('/:id/ads/sincronizar', async (req, res, next) => {
   try {
-    const integracao = await integracaoMercadoLivreAutorizada(req.params.id);
+    const integracao = await integracaoAutorizada(req.params.id, MARKETPLACES_COM_ADS);
     const resultado = await sincronizarAdsDias(integracao, 90);
     res.json(resultado);
+  } catch (err) {
+    res.status(err.status || 422).json({ error: err.message });
+  }
+});
+
+// ---------- Shopee: devoluções, desempenho da loja e avaliações ----------
+
+// Devoluções abertas na janela. Só LISTA — não muda a situação de nenhum
+// pedido: uma devolução aceita já chega ao cálculo pelo caminho certo, que é
+// o valor da conciliação (escrow) ficar menor. Mexer na situação por fora
+// arriscaria descontar a mesma devolução duas vezes.
+router.get('/:id/shopee/devolucoes', async (req, res, next) => {
+  try {
+    const integracao = await integracaoAutorizada(req.params.id, ['shopee']);
+    const dias = Math.min(Number(req.query.dias) || 30, 90);
+    const devolucoes = await shopee.buscarDevolucoes({
+      ...credenciaisShopee(integracao),
+      desdeUnix: Math.floor((Date.now() - dias * 24 * 60 * 60 * 1000) / 1000),
+    });
+    // Cruza com o que existe aqui, pra dar pra abrir o pedido direto.
+    const orderSns = devolucoes.map((d) => d.orderSn).filter(Boolean);
+    const { rows } = orderSns.length > 0
+      ? await pool.query(
+        `SELECT id, numero, origem_pedido_id, situacao, valor_recebido_marketplace, valor_recebido_status
+           FROM pedidos_venda WHERE origem_marketplace = 'shopee' AND origem_pedido_id = ANY($1)`,
+        [orderSns]
+      )
+      : { rows: [] };
+    const porOrderSn = new Map(rows.map((r) => [r.origem_pedido_id, r]));
+    res.json({
+      devolucoes: devolucoes.map((d) => ({
+        ...d,
+        pedido: porOrderSn.get(d.orderSn)
+          ? {
+            id: porOrderSn.get(d.orderSn).id,
+            numero: porOrderSn.get(d.orderSn).numero,
+            situacao: porOrderSn.get(d.orderSn).situacao,
+            valorRecebido: porOrderSn.get(d.orderSn).valor_recebido_marketplace,
+            valorRecebidoStatus: porOrderSn.get(d.orderSn).valor_recebido_status,
+          }
+          : null,
+      })),
+      periodoDias: dias,
+    });
+  } catch (err) {
+    res.status(err.status || 422).json({ error: err.message });
+  }
+});
+
+router.get('/:id/shopee/desempenho', async (req, res, next) => {
+  try {
+    const integracao = await integracaoAutorizada(req.params.id, ['shopee']);
+    res.json(await shopee.buscarDesempenhoLoja(credenciaisShopee(integracao)));
+  } catch (err) {
+    res.status(err.status || 422).json({ error: err.message });
+  }
+});
+
+router.get('/:id/shopee/avaliacoes', async (req, res, next) => {
+  try {
+    const integracao = await integracaoAutorizada(req.params.id, ['shopee']);
+    res.json(await shopee.buscarAvaliacoesLoja(credenciaisShopee(integracao)));
   } catch (err) {
     res.status(err.status || 422).json({ error: err.message });
   }

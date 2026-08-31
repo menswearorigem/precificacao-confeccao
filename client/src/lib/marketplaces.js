@@ -7,3 +7,13 @@ export const PLATAFORMA_LABEL = {
   shopee: 'Shopee',
   tiktok_shop: 'TikTok Shop',
 };
+
+// Canais que informam quanto o marketplace repassou de verdade pela venda —
+// e que por isso aparecem com "valor recebido" e com o cálculo real de
+// lucratividade em vez da estimativa. Espelha CANAIS_COM_VALOR_RECEBIDO em
+// server/src/routes/pedidos.routes.js: Mercado Livre pelo valor líquido do
+// pagamento, Shopee pelo valor da conciliação (escrow).
+export const CANAIS_COM_REPASSE = [PLATAFORMA_LABEL.mercado_livre, PLATAFORMA_LABEL.shopee];
+
+// Marketplaces com API de publicidade integrada aqui.
+export const PLATAFORMAS_COM_ADS = ['mercado_livre', 'shopee'];

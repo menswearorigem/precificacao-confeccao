@@ -10,7 +10,7 @@ import { brl, pct, numeroBr, formatQtd } from '../lib/format';
 import { DateInput, Select, StatCard } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { PRESETS_PERIODO } from '../lib/periodos';
-import { PLATAFORMA_LABEL } from '../lib/marketplaces';
+import { PLATAFORMA_LABEL, PLATAFORMAS_COM_ADS } from '../lib/marketplaces';
 import FotoProduto from '../components/FotoProduto';
 import DataTable from '../components/DataTable';
 
@@ -867,7 +867,13 @@ function ConcorrentesTab({ integracoes }) {
 // desenvolvedores do Mercado Livre — sem isso, a busca volta com um aviso
 // explicando o que falta.
 function PublicidadeTab({ integracoes }) {
-  const lojasML = useMemo(() => integracoes.filter((i) => i.marketplace === 'mercado_livre' && i.conectado), [integracoes]);
+  // Mercado Livre e Shopee compartilham essa aba: o formato de campanha que
+  // o backend devolve é o mesmo pros dois, e o gasto por anúncio sai da
+  // mesma tabela (ads_metricas_diarias) que a Lucratividade usa pra ratear.
+  const lojasML = useMemo(
+    () => integracoes.filter((i) => PLATAFORMAS_COM_ADS.includes(i.marketplace) && i.conectado),
+    [integracoes]
+  );
   const [lojaId, setLojaId] = useState('');
   const [dataInicio, setDataInicio] = useState(trintaDiasAtras());
   const [dataFim, setDataFim] = useState(hoje());
@@ -908,7 +914,7 @@ function PublicidadeTab({ integracoes }) {
   }
 
   if (lojasML.length === 0) {
-    return <div className="card"><p className="page-sub">Conecte e autorize uma integração do Mercado Livre em "Integrações" pra usar essa aba.</p></div>;
+    return <div className="card"><p className="page-sub">Conecte e autorize uma integração do Mercado Livre ou da Shopee em "Integrações" pra usar essa aba.</p></div>;
   }
 
   const totais = campanhas && campanhas.reduce((acc, c) => ({
@@ -931,7 +937,7 @@ function PublicidadeTab({ integracoes }) {
             <div className="field">
               <span className="field-label">Loja</span>
               <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)}>
-                {lojasML.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
+                {lojasML.map((l) => <option key={l.id} value={l.id}>{`${l.nome} — ${PLATAFORMA_LABEL[l.marketplace]}`}</option>)}
               </Select>
             </div>
           )}
@@ -954,7 +960,9 @@ function PublicidadeTab({ integracoes }) {
         </div>
         <p className="aviso-fyi">
           O gasto por anúncio mostrado aqui é o mesmo usado pra ratear o custo de Ads na Lucratividade. "Sincronizar
-          histórico" busca até 90 dias pra trás direto na API do Mercado Livre.
+          histórico" busca até 90 dias pra trás direto na API de publicidade da loja escolhida. Campanha da Shopee sem
+          anúncio identificável entra como gasto de Ads não atribuído — aparece no total do período, nunca chutado em
+          cima de um pedido.
         </p>
         {resultadoSync && (
           <div className="aviso-compacto tone-saudavel">
@@ -1225,7 +1233,7 @@ function CategoriasTab({ integracoes }) {
   );
 }
 
-function ShopeeTab({ filtros }) {
+function ShopeeTab({ filtros, integracoes }) {
   const filtrosShopee = useMemo(() => ({ ...filtros, canal_venda: 'Shopee' }), [filtros]);
   const [resumo, setResumo] = useState(null);
   const [serie, setSerie] = useState(null);
@@ -1245,9 +1253,8 @@ function ShopeeTab({ filtros }) {
   return (
     <>
       <p className="page-sub">
-        Desempenho da loja Shopee, a partir dos pedidos já sincronizados. Métricas mais específicas da Shopee
-        (avaliação da loja, visitas, taxa de conversão) dependem de endpoints que essa integração ainda não usa —
-        entram numa próxima etapa, quando a integração for aprofundada.
+        Desempenho da loja Shopee, a partir dos pedidos já sincronizados. Abaixo, os dados que vêm direto da API da
+        Shopee: saúde da conta, avaliações dos compradores e devoluções abertas no período.
       </p>
       {erro && <div className="login-error">{erro}</div>}
       {resumo && (
@@ -1259,6 +1266,173 @@ function ShopeeTab({ filtros }) {
           </div>
         </>
       )}
+      <ShopeeLojaBlocos integracoes={integracoes} />
+    </>
+  );
+}
+
+// Dados que só existem na API da Shopee (não saem dos nossos pedidos):
+// saúde da conta, avaliações e devoluções. Carrega sob demanda — cada um é
+// uma chamada externa, e a aba abre bem mais rápido sem esperar as três.
+function ShopeeLojaBlocos({ integracoes }) {
+  const lojas = useMemo(() => integracoes.filter((i) => i.marketplace === 'shopee' && i.conectado), [integracoes]);
+  const [lojaId, setLojaId] = useState('');
+  const [desempenho, setDesempenho] = useState(null);
+  const [avaliacoes, setAvaliacoes] = useState(null);
+  const [devolucoes, setDevolucoes] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+  const [erros, setErros] = useState({});
+
+  useEffect(() => {
+    if (!lojaId && lojas.length > 0) setLojaId(String(lojas[0].id));
+  }, [lojas, lojaId]);
+
+  function buscar() {
+    if (!lojaId) return;
+    setCarregando(true);
+    setErros({});
+    const guardarErro = (chave) => (err) => {
+      setErros((e) => ({ ...e, [chave]: err.message }));
+      return null;
+    };
+    Promise.all([
+      api.get(`/integracoes/${lojaId}/shopee/desempenho`).catch(guardarErro('desempenho')),
+      api.get(`/integracoes/${lojaId}/shopee/avaliacoes`).catch(guardarErro('avaliacoes')),
+      api.get(`/integracoes/${lojaId}/shopee/devolucoes?dias=30`).catch(guardarErro('devolucoes')),
+    ])
+      .then(([d, a, dev]) => { setDesempenho(d); setAvaliacoes(a); setDevolucoes(dev); })
+      .finally(() => setCarregando(false));
+  }
+
+  if (lojas.length === 0) {
+    return (
+      <div className="card">
+        <p className="page-sub">Conecte e autorize uma integração da Shopee em "Integrações" pra ver saúde da conta, avaliações e devoluções.</p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          {lojas.length > 1 && (
+            <div className="field" style={{ maxWidth: 220 }}>
+              <span className="field-label">Loja</span>
+              <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)}>
+                {lojas.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
+              </Select>
+            </div>
+          )}
+          <button className="btn btn-primary" onClick={buscar} disabled={carregando}>
+            {carregando ? 'Buscando na Shopee…' : 'Buscar dados da Shopee'}
+          </button>
+        </div>
+      </div>
+
+      {desempenho && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-head">Saúde da Conta</div>
+          <div className="stat-strip" style={{ marginBottom: 12 }}>
+            <StatCard label={<><ShieldCheck size={13} style={{ marginRight: 4, verticalAlign: -2 }} />Nota geral</>} value={numeroBr(desempenho.notaGeral, 1)} />
+            <StatCard label="Falhas de cumprimento" value={formatQtd(desempenho.reprovadosCumprimento)} />
+            <StatCard label="Falhas de anúncio" value={formatQtd(desempenho.reprovadosAnuncio)} />
+            <StatCard label="Falhas de atendimento" value={formatQtd(desempenho.reprovadosAtendimento)} />
+          </div>
+          {desempenho.metricas.length > 0 && (
+            <div style={{ overflowX: 'auto' }}>
+              <DataTable>
+                <table className="data-table">
+                  <thead><tr><th>Métrica</th><th>Período atual</th><th>Período anterior</th><th>Meta</th></tr></thead>
+                  <tbody>
+                    {desempenho.metricas.map((m) => (
+                      <tr key={`${m.id}-${m.nome}`}>
+                        <td>{m.nome || `Métrica ${m.id}`}</td>
+                        <td className="mono">{m.valorAtual != null ? numeroBr(m.valorAtual, 2) : '—'}</td>
+                        <td className="mono">{m.valorAnterior != null ? numeroBr(m.valorAnterior, 2) : '—'}</td>
+                        <td className="mono">{m.meta != null ? `${m.comparadorMeta || ''} ${numeroBr(m.meta, 2)}`.trim() : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </DataTable>
+            </div>
+          )}
+        </div>
+      )}
+      {erros.desempenho && <div className="login-error" style={{ marginBottom: 16 }}>Saúde da conta: {erros.desempenho}</div>}
+
+      {avaliacoes && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-head">Avaliações dos Compradores</div>
+          <div className="stat-strip" style={{ marginBottom: 12 }}>
+            <StatCard label={<><Star size={13} style={{ marginRight: 4, verticalAlign: -2 }} />Nota média</>} value={numeroBr(avaliacoes.notaMedia, 2)} />
+            <StatCard label="Avaliações lidas" value={formatQtd(avaliacoes.totalAvaliacoes)} />
+            <StatCard label="5 estrelas" value={formatQtd(avaliacoes.estrelas[5] || 0)} />
+            <StatCard label="1 ou 2 estrelas" value={formatQtd((avaliacoes.estrelas[1] || 0) + (avaliacoes.estrelas[2] || 0))} />
+          </div>
+          <p className="aviso-fyi">
+            A nota média acima é calculada sobre as {formatQtd(avaliacoes.totalAvaliacoes)} avaliações mais recentes que a
+            API devolveu — não é a nota histórica completa da loja.
+          </p>
+          {avaliacoes.recentes.length > 0 && (
+            <div style={{ overflowX: 'auto' }}>
+              <DataTable>
+                <table className="data-table">
+                  <thead><tr><th>Data</th><th>Nota</th><th>Anúncio</th><th>Comentário</th></tr></thead>
+                  <tbody>
+                    {avaliacoes.recentes.map((c, i) => (
+                      <tr key={`${c.anuncioId}-${i}`}>
+                        <td className="mono">{c.data ? new Date(c.data).toLocaleDateString('pt-BR') : '—'}</td>
+                        <td className="mono">{c.nota}★</td>
+                        <td className="mono">{c.anuncioId || '—'}</td>
+                        <td>{c.comentario || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </DataTable>
+            </div>
+          )}
+        </div>
+      )}
+      {erros.avaliacoes && <div className="login-error" style={{ marginBottom: 16 }}>Avaliações: {erros.avaliacoes}</div>}
+
+      {devolucoes && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-head">Devoluções (últimos {devolucoes.periodoDias} dias) — {devolucoes.devolucoes.length}</div>
+          <p className="aviso-fyi">
+            Esta lista é só informativa: nenhuma situação de pedido é alterada por causa dela. Uma devolução aceita já
+            chega ao lucro pelo caminho certo — o valor da conciliação (escrow) da Shopee fica menor, e é ele que a
+            Lucratividade usa. Descontar de novo aqui contaria a mesma devolução duas vezes.
+          </p>
+          <div style={{ overflowX: 'auto' }}>
+            <DataTable>
+              <table className="data-table">
+                <thead><tr><th>Aberta em</th><th>Pedido</th><th>Situação na Shopee</th><th>Motivo</th><th>Reembolso</th><th>Valor recebido aqui</th></tr></thead>
+                <tbody>
+                  {devolucoes.devolucoes.map((d) => (
+                    <tr key={d.returnSn || d.orderSn}>
+                      <td className="mono">{d.criadoEm ? new Date(d.criadoEm).toLocaleDateString('pt-BR') : '—'}</td>
+                      <td className="mono">{d.orderSn || '—'}</td>
+                      <td><span className="stamp sm tone-neutro">{d.status || '—'}</span></td>
+                      <td>{d.motivo || '—'}</td>
+                      <td className="mono">{brl(d.valorReembolso)}</td>
+                      <td className="mono">
+                        {d.pedido?.valorRecebido != null
+                          ? <>{brl(Number(d.pedido.valorRecebido))} <span className="stamp sm tone-neutro">{d.pedido.valorRecebidoStatus}</span></>
+                          : (d.pedido ? 'ainda sem conciliação' : 'pedido não importado')}
+                      </td>
+                    </tr>
+                  ))}
+                  {devolucoes.devolucoes.length === 0 && <tr><td colSpan="6">Nenhuma devolução no período.</td></tr>}
+                </tbody>
+              </table>
+            </DataTable>
+          </div>
+        </div>
+      )}
+      {erros.devolucoes && <div className="login-error" style={{ marginBottom: 16 }}>Devoluções: {erros.devolucoes}</div>}
     </>
   );
 }
@@ -1403,7 +1577,7 @@ export default function MetricasMarketplacePage() {
           {subTab === 'concorrentes' && <ConcorrentesTab integracoes={integracoes} />}
           {subTab === 'publicidade' && <PublicidadeTab integracoes={integracoes} />}
           {subTab === 'categorias' && <CategoriasTab integracoes={integracoes} />}
-          {subTab === 'shopee' && <ShopeeTab filtros={filtrosAplicados} />}
+          {subTab === 'shopee' && <ShopeeTab filtros={filtrosAplicados} integracoes={integracoes} />}
         </>
       )}
     </div>

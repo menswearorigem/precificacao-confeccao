@@ -9,7 +9,7 @@ import { brl, pct, formatQtd } from '../lib/format';
 import { Select, StatCard, ThOrdenavel, Paginacao, BotaoExportar } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
-import { PLATAFORMA_LABEL } from '../lib/marketplaces';
+import { PLATAFORMA_LABEL, CANAIS_COM_REPASSE } from '../lib/marketplaces';
 import FotoProduto from '../components/FotoProduto';
 import DataTable from '../components/DataTable';
 import CopiarBotao from '../components/CopiarBotao';
@@ -343,11 +343,12 @@ function ResumoProdutoTab({ resumoProduto, serieDiaria, config, busca }) {
   );
 }
 
-function DiagnosticoPagamento({ pedidoId }) {
+function DiagnosticoPagamento({ pedidoId, canal }) {
   const [diagnostico, setDiagnostico] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [mostrarJson, setMostrarJson] = useState(false);
   const [erro, setErro] = useState('');
+  const nomeCanal = canal || 'marketplace';
 
   async function buscar() {
     setCarregando(true);
@@ -365,14 +366,43 @@ function DiagnosticoPagamento({ pedidoId }) {
   if (!diagnostico && !carregando && !erro) {
     return (
       <button type="button" className="btn btn-ghost" style={{ marginTop: 10 }} onClick={buscar}>
-        Ver diagnóstico do pagamento (dados crus do Mercado Livre)
+        Ver diagnóstico do repasse (dados crus do {nomeCanal})
       </button>
+    );
+  }
+
+  // A Shopee não tem "pagamento" separado: o repasse vem da conciliação
+  // financeira (escrow), identificada pelo próprio número do pedido. É esse
+  // escrow_amount que o cálculo real usa como valor recebido.
+  if (diagnostico && diagnostico.marketplace === 'shopee') {
+    return (
+      <div style={{ marginTop: 10, border: '1px dashed var(--border)', borderRadius: 8, padding: 12 }}>
+        <div className="row-line"><span>valor recebido gravado hoje</span><span className="mono">{diagnostico.valorRecebidoGravadoAtualmente != null ? brl(Number(diagnostico.valorRecebidoGravadoAtualmente)) : '—'}</span></div>
+        <div className="row-line"><span>situação desse valor aqui</span><span className="mono">{diagnostico.statusValorRecebidoGravado || '—'}</span></div>
+        <div className="row-line" style={{ background: 'var(--tone-atencao-bg, #fff3cd)' }}>
+          <span>escrow_amount agora na Shopee (o que ela paga de verdade)</span>
+          <span className="mono">{diagnostico.escrowAmountAgora != null ? brl(Number(diagnostico.escrowAmountAgora)) : '—'}</span>
+        </div>
+        <div className="row-line"><span>status do pedido na Shopee</span><span className="mono">{diagnostico.statusPedidoNaShopee || '—'}</span></div>
+        <div className="row-line"><span>taxa gravada hoje</span><span className="mono">{diagnostico.taxaGravadaAtualmente != null ? brl(Number(diagnostico.taxaGravadaAtualmente)) : '—'}</span></div>
+        <div className="row-line"><span>taxa que o critério atual calcularia</span><span className="mono">{diagnostico.taxaQueOCriterioAtualCalcularia != null ? brl(Number(diagnostico.taxaQueOCriterioAtualCalcularia)) : 'não informada'}</span></div>
+        <div className="row-line"><span>liberação do repasse</span><span className="mono">{diagnostico.liberacaoEscrow ? dataBr(String(diagnostico.liberacaoEscrow).slice(0, 10)) : '—'}</span></div>
+        {diagnostico.erroEscrow && <div className="login-error" style={{ marginTop: 6 }}>{diagnostico.erroEscrow}</div>}
+        <button type="button" className="btn btn-ghost" style={{ marginTop: 8 }} onClick={() => setMostrarJson((v) => !v)}>
+          {mostrarJson ? 'Esconder' : 'Ver'} JSON completo (pedido + conciliação)
+        </button>
+        {mostrarJson && (
+          <pre style={{ marginTop: 8, maxHeight: 400, overflow: 'auto', fontSize: 11, background: 'var(--surface-alt)', padding: 8, borderRadius: 6 }}>
+            {JSON.stringify(diagnostico, null, 2)}
+          </pre>
+        )}
+      </div>
     );
   }
 
   return (
     <div style={{ marginTop: 10, border: '1px dashed var(--border)', borderRadius: 8, padding: 12 }}>
-      {carregando && <p className="page-sub">Buscando na API do Mercado Livre…</p>}
+      {carregando && <p className="page-sub">Buscando na API do {nomeCanal}…</p>}
       {erro && <div className="login-error">{erro}</div>}
       {diagnostico && (
         <>
@@ -467,7 +497,7 @@ function VendaDetalheCard({ p, config }) {
               <div className="venda-breakdown-row">
                 <span className="venda-breakdown-icon"><Percent size={15} /></span>
                 <span className="venda-breakdown-label">
-                  {p.calculoReal ? 'Taxas e Descontos do Mercado Livre' : 'Taxa de Marketplace'}
+                  {p.calculoReal ? `Taxas e Descontos do ${p.canal_venda || 'Marketplace'}` : 'Taxa de Marketplace'}
                 </span>
                 <span className="venda-breakdown-valor">-{brl(p.taxaMarketplace)}</span>
               </div>
@@ -512,7 +542,7 @@ function VendaDetalheCard({ p, config }) {
             </div>
           </div>
 
-          {p.canal_venda === 'Mercado Livre' && <DiagnosticoPagamento pedidoId={p.id} />}
+          {CANAIS_COM_REPASSE.includes(p.canal_venda) && <DiagnosticoPagamento pedidoId={p.id} canal={p.canal_venda} />}
         </div>
       )}
     </div>
@@ -925,7 +955,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
         <h2>{titulo}</h2>
         <p className="page-sub">
           {isMarketplace
-            ? 'Lucro real de cada pedido vindo de marketplace: valor de verdade recebido do Mercado Livre menos o custo de produção, embalagem e imposto (quando o valor recebido já está confirmado). Pedidos ainda sem confirmação usam uma estimativa (marcada como "estimativa") baseada no preço de venda.'
+            ? 'Lucro real de cada pedido vindo de marketplace: valor de verdade recebido do marketplace — o pagamento no Mercado Livre, a conciliação (escrow) na Shopee — menos o custo de produção, embalagem e imposto (quando esse valor já está confirmado). Pedidos ainda sem confirmação usam uma estimativa (marcada como "estimativa") baseada no preço de venda.'
             : 'Lucro real de cada pedido lançado manualmente: preço de venda menos o custo de produção (o mesmo custo usado na Ficha de Custo).'}
         </p>
 
@@ -1115,11 +1145,11 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                       </div>
                     )}
                     <div className="row-line" style={{ marginTop: relatorio.totalGeral.frete > 0 ? 0 : 12 }}>
-                      <span>Valor Liberado no Saldo (Mercado Livre)</span>
+                      <span>Valor Liberado no Saldo (marketplace)</span>
                       <span className="mono">{brl(relatorio.totalGeral.valorRecebidoLiberado)}</span>
                     </div>
                     <div className="row-line">
-                      <span>Valor Confirmado, Ainda Retido (Mercado Livre)</span>
+                      <span>Valor Confirmado, Ainda Retido (marketplace)</span>
                       <span className="mono">{brl(relatorio.totalGeral.valorRecebidoConfirmado)}</span>
                     </div>
                     {relatorio.totalGeral.valorRecebidoSemConfirmacao > 0 && (
@@ -1169,7 +1199,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                       <ThOrdenavel coluna="taxaMarketplace" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor} title="Taxa Marketplace">Taxa Mkt.</ThOrdenavel>
                       <ThOrdenavel coluna="lucro" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Lucro</ThOrdenavel>
                       <ThOrdenavel coluna="margem" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Margem</ThOrdenavel>
-                      {isMarketplace && <th title="Valor Recebido (Mercado Livre)">Recebido (ML)</th>}
+                      {isMarketplace && <th title="Valor que o marketplace pagou de verdade — Mercado Livre pelo pagamento, Shopee pela conciliação (escrow).">Recebido</th>}
                       {isMarketplace && <th title="Produto Vinculado">Vínculo</th>}
                       {isMarketplace && <th />}
                     </tr>
@@ -1226,7 +1256,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                           <td><MargemPill valor={p.margemPct} config={config} /></td>
                           {isMarketplace && (
                             <td className="mono">
-                              {p.canal_venda !== 'Mercado Livre' ? '—' : p.valorRecebido != null ? (
+                              {!CANAIS_COM_REPASSE.includes(p.canal_venda) ? '—' : p.valorRecebido != null ? (
                                 <>
                                   {brl(p.valorRecebido)}{' '}
                                   <span className={'stamp sm ' + (p.valorRecebidoStatus === 'liberado' ? 'tone-elevada' : 'tone-atencao')}>

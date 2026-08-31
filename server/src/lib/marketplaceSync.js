@@ -43,7 +43,11 @@ async function garantirTokenValido(integracao) {
         refreshToken: integracao.refresh_token,
         shopId: integracao.conta_externa_id,
       });
-      novoExpiraEm = new Date(Date.now() + (Number(tokenData.expires_in) || 3600) * 1000);
+      // A Shopee chama o campo de `expire_in` (sem o "s") — é assim que o
+      // callback de autorização já lê. Lendo como `expires_in`, o valor vinha
+      // sempre undefined e caía no padrão de 1h, renovando o token (e girando
+      // o refresh token) muito mais vezes do que o necessário.
+      novoExpiraEm = new Date(Date.now() + (Number(tokenData.expire_in ?? tokenData.expires_in) || 3600) * 1000);
     } else {
       tokenData = await tiktokShop.renovarToken({
         appKey: integracao.client_id,
@@ -318,9 +322,16 @@ async function importarPedido(client, pedidoGenerico, integracao) {
 
   const clienteId = await encontrarOuCriarCliente(client, pedidoGenerico);
 
+  // Valor líquido já conhecido no momento da importação. No Mercado Livre
+  // ele nunca vem aqui (o pagamento é consultado depois, num passo próprio),
+  // então esses três campos entram como NULL e nada muda pra ele. Na Shopee,
+  // ao contrário, a conciliação (escrow) já é buscada junto com o pedido —
+  // guardar na hora evita uma segunda rodada de chamadas só pra descobrir o
+  // que a resposta anterior já trazia.
+  const valorRecebido = pedidoGenerico.valorRecebido ?? null;
   const { rows } = await client.query(
-    `INSERT INTO pedidos_venda (data_pedido, cliente_id, empresa_id, operacao, canal_venda, valor_frete, taxa_marketplace, forma_pagamento_marketplace, observacao, origem_marketplace, origem_pedido_id, origem_integracao_id, pagamento_id_marketplace, pct_nota_fiscal, pack_id_marketplace)
-     VALUES ($1, $2, $3, 'Venda', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
+    `INSERT INTO pedidos_venda (data_pedido, cliente_id, empresa_id, operacao, canal_venda, valor_frete, taxa_marketplace, forma_pagamento_marketplace, observacao, origem_marketplace, origem_pedido_id, origem_integracao_id, pagamento_id_marketplace, pct_nota_fiscal, pack_id_marketplace, valor_recebido_marketplace, valor_recebido_status, valor_recebido_liberacao_em, valor_recebido_atualizado_em)
+     VALUES ($1, $2, $3, 'Venda', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING id`,
     [
       pedidoGenerico.dataPedido || new Date().toISOString().slice(0, 10),
       clienteId,
@@ -336,6 +347,10 @@ async function importarPedido(client, pedidoGenerico, integracao) {
       pedidoGenerico.pagamentoIdExterno || null,
       integracao?.pct_nota_fiscal ?? null,
       pedidoGenerico.packId || null,
+      valorRecebido,
+      valorRecebido === null ? null : (pedidoGenerico.valorRecebidoStatus || 'confirmado'),
+      pedidoGenerico.valorRecebidoLiberacaoEm ?? null,
+      valorRecebido === null ? null : new Date(),
     ]
   );
   const pedidoId = rows[0].id;
@@ -763,7 +778,67 @@ async function garantirAdvertiserIdAds(integracao) {
   return advertiserId;
 }
 
+// Grava as métricas de um dia em ads_metricas_diarias. A tabela é a mesma
+// pros dois marketplaces: a chave é (integração, anúncio, dia), e o
+// "anúncio" é o identificador que o item do pedido carrega em
+// anuncio_id_marketplace (MLB… no Mercado Livre, item_id na Shopee) — é o
+// que permite o rateio do custo por venda funcionar igual nos dois.
+async function gravarMetricasAdsDoDia(integracaoId, dia, metricas) {
+  let registros = 0;
+  for (const m of metricas) {
+    await pool.query(
+      `INSERT INTO ads_metricas_diarias
+        (origem_integracao_id, anuncio_id_marketplace, campanha_id, campanha_nome, data, impressoes, cliques, custo, vendas_diretas_qtd, vendas_diretas_valor, vendas_indiretas_qtd, vendas_indiretas_valor, atualizado_em)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
+       ON CONFLICT (origem_integracao_id, anuncio_id_marketplace, data) DO UPDATE SET
+         campanha_id = EXCLUDED.campanha_id, campanha_nome = EXCLUDED.campanha_nome,
+         impressoes = EXCLUDED.impressoes, cliques = EXCLUDED.cliques, custo = EXCLUDED.custo,
+         vendas_diretas_qtd = EXCLUDED.vendas_diretas_qtd, vendas_diretas_valor = EXCLUDED.vendas_diretas_valor,
+         vendas_indiretas_qtd = EXCLUDED.vendas_indiretas_qtd, vendas_indiretas_valor = EXCLUDED.vendas_indiretas_valor,
+         atualizado_em = now()`,
+      [
+        integracaoId, String(m.itemId), m.campanhaId || null, m.campanhaNome || null, dia,
+        m.impressoes, m.cliques, m.custo, m.vendasDiretasQtd, m.vendasDiretasValor, m.vendasIndiretasQtd, m.vendasIndiretasValor,
+      ]
+    );
+    registros += 1;
+  }
+  return registros;
+}
+
+// Publicidade da Shopee. Não existe "advertiser id" a descobrir (a própria
+// loja autorizada já é o anunciante), então o caminho é mais curto: uma
+// chamada por dia, campanha a campanha, e o custo já sai por anúncio.
+// Campanha sem anúncio identificável cai numa chave própria que nunca casa
+// com item de pedido — vira "gasto de Ads não atribuído" no relatório, em
+// vez de ser espalhada por chute em cima de alguma venda.
+async function sincronizarAdsDiasShopee(integracao, dias) {
+  const credenciais = {
+    partnerId: integracao.client_id,
+    partnerKey: integracao.client_secret,
+    accessToken: integracao.access_token,
+    shopId: integracao.conta_externa_id,
+  };
+  let registros = 0;
+  let ultimoErro = null;
+  for (let i = 0; i < dias; i += 1) {
+    const dia = formatarDataISO(new Date(Date.now() - i * 24 * 60 * 60 * 1000));
+    try {
+      const metricas = await shopee.buscarMetricasAnunciosPorDia({ ...credenciais, data: dia });
+      registros += await gravarMetricasAdsDoDia(integracao.id, dia, metricas);
+    } catch (err) {
+      ultimoErro = `Dia ${dia}: ${err.message}`;
+    }
+  }
+  if (ultimoErro && registros === 0) {
+    ultimoErro = `${ultimoErro} — confira se o módulo de Publicidade (Ads) está habilitado pro app da Shopee no Open Platform e se a loja autorizou esse escopo.`;
+  }
+  await pool.query('UPDATE integracoes_marketplace SET ultimo_erro_ads = $1 WHERE id = $2', [ultimoErro, integracao.id]).catch(() => {});
+  return { diasSincronizados: dias, registros, campanhas: 0 };
+}
+
 async function sincronizarAdsDias(integracao, dias) {
+  if (integracao.marketplace === 'shopee') return sincronizarAdsDiasShopee(integracao, dias);
   if (integracao.marketplace !== 'mercado_livre') return { diasSincronizados: 0, registros: 0, campanhas: 0 };
 
   let advertiserId;
@@ -804,23 +879,7 @@ async function sincronizarAdsDias(integracao, dias) {
     const dia = formatarDataISO(new Date(Date.now() - i * 24 * 60 * 60 * 1000));
     try {
       const metricas = await mercadoLivre.buscarMetricasAnunciosPorDia({ accessToken: integracao.access_token, advertiserId, data: dia });
-      for (const m of metricas) {
-        await pool.query(
-          `INSERT INTO ads_metricas_diarias
-            (origem_integracao_id, anuncio_id_marketplace, data, impressoes, cliques, custo, vendas_diretas_qtd, vendas_diretas_valor, vendas_indiretas_qtd, vendas_indiretas_valor, atualizado_em)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now())
-           ON CONFLICT (origem_integracao_id, anuncio_id_marketplace, data) DO UPDATE SET
-             impressoes = EXCLUDED.impressoes, cliques = EXCLUDED.cliques, custo = EXCLUDED.custo,
-             vendas_diretas_qtd = EXCLUDED.vendas_diretas_qtd, vendas_diretas_valor = EXCLUDED.vendas_diretas_valor,
-             vendas_indiretas_qtd = EXCLUDED.vendas_indiretas_qtd, vendas_indiretas_valor = EXCLUDED.vendas_indiretas_valor,
-             atualizado_em = now()`,
-          [
-            integracao.id, String(m.itemId), dia,
-            m.impressoes, m.cliques, m.custo, m.vendasDiretasQtd, m.vendasDiretasValor, m.vendasIndiretasQtd, m.vendasIndiretasValor,
-          ]
-        );
-        registros += 1;
-      }
+      registros += await gravarMetricasAdsDoDia(integracao.id, dia, metricas);
     } catch (err) {
       ultimoErro = `Dia ${dia}: ${err.message}`;
     }
@@ -830,9 +889,12 @@ async function sincronizarAdsDias(integracao, dias) {
 }
 
 // Catch-up manual (botão) — janela bem maior, o máximo que a API aceita.
+const MARKETPLACES_COM_ADS = ['mercado_livre', 'shopee'];
+
 async function sincronizarAdsTodasIntegracoes({ dias = 90 } = {}) {
   const { rows: integracoes } = await pool.query(
-    `SELECT * FROM integracoes_marketplace WHERE ativo = TRUE AND access_token IS NOT NULL AND marketplace = 'mercado_livre'`
+    `SELECT * FROM integracoes_marketplace WHERE ativo = TRUE AND access_token IS NOT NULL AND marketplace = ANY($1)`,
+    [MARKETPLACES_COM_ADS]
   );
   let registros = 0;
   let diasSincronizados = 0;
@@ -857,14 +919,103 @@ const ADS_SYNC_COOLDOWN_MS = 30 * 60 * 1000;
 const ultimaSincronizacaoAdsPorIntegracao = new Map();
 
 async function sincronizarAdsSeNecessario(integracao) {
-  if (integracao.marketplace !== 'mercado_livre') return;
+  if (!MARKETPLACES_COM_ADS.includes(integracao.marketplace)) return;
   const ultima = ultimaSincronizacaoAdsPorIntegracao.get(integracao.id) || 0;
   if (Date.now() - ultima < ADS_SYNC_COOLDOWN_MS) return;
   ultimaSincronizacaoAdsPorIntegracao.set(integracao.id, Date.now());
   await sincronizarAdsDias(integracao, JANELA_ADS_AUTOMATICA_DIAS);
 }
 
+// ---------- Valor recebido da Shopee (conciliação/escrow) ----------
+// Mesmo papel de atualizarValoresRecebidos no Mercado Livre, com duas
+// diferenças que vêm da própria API:
+//
+// 1. Não existe "id de pagamento" a descobrir — a Shopee identifica a
+//    conciliação pelo próprio número do pedido, então não há o passo de
+//    preencher/corrigir pagamento_id que o ML precisa.
+// 2. Dá pra consultar 50 pedidos por chamada (escrow em lote + status em
+//    lote), em vez de um por vez.
+//
+// Reconfere sempre quem ainda não está "liberado": enquanto a Shopee não
+// solta o repasse, o valor pode mudar (ajuste de frete, devolução parcial),
+// e é justamente essa reconferência que faz o número da tela convergir pro
+// que caiu na conta.
+async function atualizarValoresRecebidosShopee(integracao) {
+  const credenciais = {
+    partnerId: integracao.client_id,
+    partnerKey: integracao.client_secret,
+    accessToken: integracao.access_token,
+    shopId: integracao.conta_externa_id,
+  };
+  let ultimoErro = null;
+  try {
+    const { rows: pendentes } = await pool.query(
+      `SELECT id, origem_pedido_id FROM pedidos_venda
+       WHERE origem_marketplace = 'shopee' AND origem_pedido_id IS NOT NULL AND NOT origem_indisponivel
+         AND situacao != 'cancelado'
+         AND (origem_integracao_id = $1 OR origem_integracao_id IS NULL)
+         AND (valor_recebido_status IS NULL OR valor_recebido_status != 'liberado')
+       ORDER BY valor_recebido_atualizado_em ASC NULLS FIRST LIMIT 50`,
+      [integracao.id]
+    );
+    if (pendentes.length === 0) {
+      await pool.query('UPDATE integracoes_marketplace SET ultimo_erro_faturamento = NULL WHERE id = $1', [integracao.id]);
+      return;
+    }
+
+    const orderSns = pendentes.map((p) => p.origem_pedido_id);
+    const escrowPorOrderSn = await shopee.buscarEscrowEmLote(credenciais, orderSns);
+    let statusPorOrderSn = new Map();
+    try {
+      statusPorOrderSn = await shopee.buscarStatusPedidos(credenciais, orderSns);
+    } catch (err) {
+      // Sem o status a conciliação ainda é aproveitada; só não dá pra dizer
+      // que o repasse já foi liberado, então fica "confirmado" mais um ciclo.
+      ultimoErro = `Não consegui conferir o status dos pedidos na Shopee: ${err.message}`;
+    }
+
+    for (const pedido of pendentes) {
+      const entrada = escrowPorOrderSn.get(pedido.origem_pedido_id);
+      if (!entrada) {
+        // Pedido ainda sem conciliação (não liquidado). Marca a tentativa
+        // pra ele não monopolizar a fila e ser reconferido depois dos que
+        // nunca foram olhados.
+        await pool.query('UPDATE pedidos_venda SET valor_recebido_atualizado_em = now() WHERE id = $1 AND valor_recebido_marketplace IS NULL', [pedido.id]);
+        continue;
+      }
+      const renda = shopee.extrairOrderIncome(entrada);
+      const valor = renda && renda.escrow_amount !== undefined && renda.escrow_amount !== null
+        ? Number(renda.escrow_amount)
+        : null;
+      if (valor === null) {
+        ultimoErro = `Pedido ${pedido.origem_pedido_id}: conciliação sem o valor de repasse (escrow_amount) na resposta da Shopee.`;
+        continue;
+      }
+      const liberacao = shopee.extrairLiberacaoEscrow(entrada);
+      const status = statusPorOrderSn.get(pedido.origem_pedido_id);
+      const liberado = (liberacao !== null && liberacao.getTime() <= Date.now()) || status === 'COMPLETED';
+      const taxa = shopee.calcularTaxaMarketplaceDoEscrow(renda);
+      await pool.query(
+        `UPDATE pedidos_venda
+         SET valor_recebido_marketplace = $1, valor_recebido_status = $2, valor_recebido_liberacao_em = $3,
+             valor_recebido_atualizado_em = now(),
+             taxa_marketplace = COALESCE($4, taxa_marketplace)
+         WHERE id = $5`,
+        [valor, liberado ? 'liberado' : 'confirmado', liberacao, taxa, pedido.id]
+      );
+    }
+    await pool.query('UPDATE integracoes_marketplace SET ultimo_erro_faturamento = $1 WHERE id = $2', [ultimoErro, integracao.id]);
+  } catch (err) {
+    console.error(`[marketplace-sync] falha ao buscar conciliação da Shopee (integração ${integracao.id}):`, err.message);
+    await pool.query(
+      'UPDATE integracoes_marketplace SET ultimo_erro_faturamento = $1 WHERE id = $2',
+      [err.message, integracao.id]
+    ).catch(() => {});
+  }
+}
+
 async function atualizarValoresRecebidos(integracao) {
+  if (integracao.marketplace === 'shopee') return atualizarValoresRecebidosShopee(integracao);
   if (integracao.marketplace !== 'mercado_livre') return;
   try {
     let ultimoErro = await preencherPagamentoId(integracao);
@@ -948,13 +1099,28 @@ const JANELA_CANCELAMENTO_MS = 30 * 24 * 60 * 60 * 1000;
 // nossos números acima do real. Só mexe em pedidos que ainda não estão
 // cancelados aqui (não reabre nada, não duplica trabalho).
 async function sincronizarCancelamentos(integracao) {
-  if (integracao.marketplace !== 'mercado_livre') return 0;
   const desde = new Date(Date.now() - JANELA_CANCELAMENTO_MS);
-  const idsCancelados = await mercadoLivre.buscarIdsPedidosCancelados({
-    accessToken: integracao.access_token,
-    sellerId: integracao.conta_externa_id,
-    desde: desde.toISOString(),
-  });
+  let idsCancelados;
+  if (integracao.marketplace === 'mercado_livre') {
+    idsCancelados = await mercadoLivre.buscarIdsPedidosCancelados({
+      accessToken: integracao.access_token,
+      sellerId: integracao.conta_externa_id,
+      desde: desde.toISOString(),
+    });
+  } else if (integracao.marketplace === 'shopee') {
+    // A Shopee só devolve o status atual do pedido, então "cancelado" é
+    // simplesmente quem está em CANCELLED na janela — o mesmo efeito da
+    // busca por order.status=cancelled do Mercado Livre.
+    idsCancelados = await shopee.buscarIdsPedidosCancelados({
+      partnerId: integracao.client_id,
+      partnerKey: integracao.client_secret,
+      accessToken: integracao.access_token,
+      shopId: integracao.conta_externa_id,
+      desdeUnix: Math.floor(desde.getTime() / 1000),
+    });
+  } else {
+    return 0;
+  }
   if (idsCancelados.length === 0) return 0;
 
   const client = await pool.connect();
@@ -963,19 +1129,19 @@ async function sincronizarCancelamentos(integracao) {
     await client.query('BEGIN');
     const { rows: pedidos } = await client.query(
       `SELECT id, numero, situacao FROM pedidos_venda
-       WHERE origem_marketplace = 'mercado_livre' AND origem_pedido_id = ANY($1) AND situacao != 'cancelado'`,
-      [idsCancelados]
+       WHERE origem_marketplace = $1 AND origem_pedido_id = ANY($2) AND situacao != 'cancelado'`,
+      [integracao.marketplace, idsCancelados]
     );
     for (const pedido of pedidos) {
       // Pedido de marketplace normalmente fica "aberto" (nunca chega a ser
       // faturado à mão) — mas se alguém faturou manualmente antes de o
-      // Mercado Livre cancelar, precisa estornar o estoque igual a rota
+      // marketplace cancelar, precisa estornar o estoque igual a rota
       // /pedidos/:id/cancelar faz, senão a baixa de estoque fica errada.
       if (pedido.situacao === 'faturado') {
         const { rows: itens } = await client.query('SELECT * FROM pedido_itens WHERE pedido_id = $1', [pedido.id]);
         for (const item of itens) {
           if (!item.variante_id) continue;
-          await registrarMovimento(client, item.variante_id, 'entrada', Number(item.quantidade), `Estorno do pedido de venda #${pedido.numero} (cancelado pelo Mercado Livre)`);
+          await registrarMovimento(client, item.variante_id, 'entrada', Number(item.quantidade), `Estorno do pedido de venda #${pedido.numero} (cancelado pelo ${LABEL[integracao.marketplace]})`);
         }
       }
       await client.query(`UPDATE pedidos_venda SET situacao = 'cancelado', cancelado_em = now(), updated_at = now() WHERE id = $1`, [pedido.id]);
@@ -1112,6 +1278,7 @@ module.exports = {
   importarPedido,
   encontrarVariante,
   atualizarValoresRecebidos,
+  atualizarValoresRecebidosShopee,
   corrigirPagamentosHistorico,
   sincronizarCancelamentos,
   garantirTokenValido,

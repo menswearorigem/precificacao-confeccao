@@ -8,11 +8,21 @@ const { calcularTaxaEsperadaPedido } = require('../lib/marketplaceTaxaCalc');
 const { parseArquivoPedidos } = require('../lib/pedidoImportParsers');
 const { importarPedido, sincronizarSeNecessario, encontrarVariante, corrigirPagamentosHistorico, corrigirAnunciosIdTodasIntegracoes, corrigirPackIdTodasIntegracoes, limparItensFantasmaHistorico, corrigirTaxaMarketplaceTodasIntegracoes } = require('../lib/marketplaceSync');
 const mercadoLivre = require('../lib/marketplaces/mercadoLivre');
+const shopee = require('../lib/marketplaces/shopee');
 const { recalcularTotais } = require('../lib/pedidoRecalculo');
 const produtosRoutes = require('./produtos.routes');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+// Canais que informam quanto o marketplace de fato repassou pela venda —
+// e que, por isso, permitem o cálculo real de lucratividade em vez da
+// estimativa. Mercado Livre pelo valor líquido do pagamento
+// (net_received_amount); Shopee pelo valor da conciliação (escrow_amount).
+// TikTok Shop e planilha continuam de fora: lá esse número não existe.
+// O valor chega gravado em pedidos_venda.valor_recebido_marketplace — a
+// fórmula de lucro é exatamente a mesma pros dois.
+const CANAIS_COM_VALOR_RECEBIDO = ['Mercado Livre', 'Shopee'];
 
 const HEADER_FIELDS = [
   'data_pedido',
@@ -436,8 +446,8 @@ router.get('/:id/diagnostico-marketplace', async (req, res, next) => {
     if (!pedido.origem_marketplace || !pedido.origem_pedido_id) {
       return res.status(400).json({ error: 'Esse pedido não veio de marketplace — não tem o que diagnosticar.' });
     }
-    if (pedido.origem_marketplace !== 'mercado_livre') {
-      return res.status(400).json({ error: 'Diagnóstico disponível só pra Mercado Livre por enquanto.' });
+    if (pedido.origem_marketplace !== 'mercado_livre' && pedido.origem_marketplace !== 'shopee') {
+      return res.status(400).json({ error: 'Diagnóstico disponível só pra Mercado Livre e Shopee por enquanto.' });
     }
 
     let integracao = null;
@@ -453,6 +463,52 @@ router.get('/:id/diagnostico-marketplace', async (req, res, next) => {
       integracao = r.rows[0] || null;
     }
     if (!integracao) return res.status(400).json({ error: 'Nenhuma integração autorizada encontrada pra buscar esse pedido.' });
+
+    // Shopee: o diagnóstico útil é a conciliação crua (é dela que sai o
+    // valor de repasse usado no cálculo real), lado a lado com o pedido e
+    // com o que está gravado aqui. Não existe "id de pagamento" separado —
+    // a chave da conciliação é o próprio número do pedido.
+    if (pedido.origem_marketplace === 'shopee') {
+      const credenciais = {
+        partnerId: integracao.client_id,
+        partnerKey: integracao.client_secret,
+        accessToken: integracao.access_token,
+        shopId: integracao.conta_externa_id,
+      };
+      let order;
+      try {
+        order = await shopee.buscarPedidoPorId(credenciais, pedido.origem_pedido_id);
+      } catch (err) {
+        return res.status(502).json({ error: `Não foi possível buscar o pedido ${pedido.origem_pedido_id} na Shopee agora: ${err.message}` });
+      }
+      let escrow = null;
+      let erroEscrow = null;
+      try {
+        escrow = await shopee.buscarEscrowPorPedido(credenciais, pedido.origem_pedido_id);
+      } catch (err) {
+        erroEscrow = err.message;
+      }
+      const renda = shopee.extrairOrderIncome(escrow);
+      return res.json({
+        marketplace: 'shopee',
+        pedidoIdInterno: pedido.id,
+        numero: pedido.numero,
+        origemPedidoId: pedido.origem_pedido_id,
+        valorRecebidoGravadoAtualmente: pedido.valor_recebido_marketplace,
+        statusValorRecebidoGravado: pedido.valor_recebido_status,
+        taxaGravadaAtualmente: pedido.taxa_marketplace,
+        statusPedidoNaShopee: order.order_status || null,
+        // O número que sustenta o cálculo real: o que a Shopee diz que
+        // repassa nesse pedido, já líquido de comissão, taxa de serviço,
+        // taxa de transação, frete e cupons.
+        escrowAmountAgora: renda?.escrow_amount ?? null,
+        taxaQueOCriterioAtualCalcularia: shopee.calcularTaxaMarketplaceDoEscrow(renda),
+        liberacaoEscrow: shopee.extrairLiberacaoEscrow(escrow),
+        erroEscrow,
+        escrow,
+        order,
+      });
+    }
 
     let order;
     try {
@@ -936,14 +992,20 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
       const pctNotaFiscal = p.pct_nota_fiscal !== null ? Number(p.pct_nota_fiscal) : null;
       const empresaVinculada = p.empresa_id ? mapaEmpresas.get(p.empresa_id) : null;
 
-      // Cálculo REAL (a partir do valor de verdade recebido do Mercado
-      // Livre) só é possível quando já temos os três ingredientes: o valor
+      // Cálculo REAL (a partir do valor de verdade que o marketplace pagou)
+      // só é possível quando já temos os três ingredientes: o valor
       // recebido confirmado, a empresa (CNPJ, base do % de imposto) e o %
       // de nota fiscal — os dois últimos vêm "congelados" no pedido desde a
       // importação (ver marketplaceSync.importarPedido). Sem algum deles,
       // cai pro cálculo antigo por estimativa (preço de venda - custo -
       // taxa cobrada), igual pedidos manuais e os ainda não confirmados.
-      const calculoReal = p.canal_venda === 'Mercado Livre' && valorRecebido !== null && empresaVinculada && pctNotaFiscal !== null;
+      //
+      // Vale pros dois canais que informam o repasse de verdade: Mercado
+      // Livre (net_received_amount do pagamento) e Shopee (escrow_amount da
+      // conciliação). A conta em si é a MESMA nos dois — o que muda é só de
+      // onde veio o valor recebido, que já chega gravado no pedido.
+      const calculoReal = CANAIS_COM_VALOR_RECEBIDO.includes(p.canal_venda)
+        && valorRecebido !== null && empresaVinculada && pctNotaFiscal !== null;
 
       let imposto;
       let custoEmbalagem;
@@ -1042,14 +1104,15 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
     const pedidosValidos = resultado.filter((p) => !p.custoIncompleto);
     const pedidosNaoAvaliaveis = resultado.filter((p) => p.custoIncompleto);
 
-    // valor recebido só existe pra Mercado Livre (Shopee não tem esse dado);
+    // Valor recebido existe nos canais que informam o repasse de verdade
+    // (Mercado Livre pelo pagamento, Shopee pela conciliação/escrow).
     // "liberado" é dinheiro já disponível no saldo, "confirmado" é o valor
     // real já conhecido mas ainda retido (chega no saldo em
     // valor_recebido_liberacao_em) — os dois são valores de VERDADE vindos
-    // do pagamento, só a disponibilidade que muda.
+    // do marketplace, só a disponibilidade que muda.
     const totalGeral = pedidosValidos.reduce(
       (acc, p) => {
-        const ehML = p.canal_venda === 'Mercado Livre';
+        const informaRepasse = CANAIS_COM_VALOR_RECEBIDO.includes(p.canal_venda);
         return {
           receita: acc.receita + p.receita,
           custoPeca: acc.custoPeca + p.custoPeca,
@@ -1060,9 +1123,9 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
           taxaMarketplace: acc.taxaMarketplace + p.taxaMarketplace,
           custo: acc.custo + p.custo,
           lucro: acc.lucro + p.lucro,
-          valorRecebidoLiberado: acc.valorRecebidoLiberado + (ehML && p.valorRecebidoStatus === 'liberado' ? p.valorRecebido || 0 : 0),
-          valorRecebidoConfirmado: acc.valorRecebidoConfirmado + (ehML && p.valorRecebidoStatus === 'confirmado' ? p.valorRecebido || 0 : 0),
-          valorRecebidoSemConfirmacao: acc.valorRecebidoSemConfirmacao + (ehML && p.valorRecebido === null ? 1 : 0),
+          valorRecebidoLiberado: acc.valorRecebidoLiberado + (informaRepasse && p.valorRecebidoStatus === 'liberado' ? p.valorRecebido || 0 : 0),
+          valorRecebidoConfirmado: acc.valorRecebidoConfirmado + (informaRepasse && p.valorRecebidoStatus === 'confirmado' ? p.valorRecebido || 0 : 0),
+          valorRecebidoSemConfirmacao: acc.valorRecebidoSemConfirmacao + (informaRepasse && p.valorRecebido === null ? 1 : 0),
         };
       },
       { receita: 0, custoPeca: 0, imposto: 0, custoEmbalagem: 0, custoAds: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, valorRecebidoLiberado: 0, valorRecebidoConfirmado: 0, valorRecebidoSemConfirmacao: 0 }

@@ -7,6 +7,7 @@ import { api } from '../api/client';
 import { Field, NumInput, Select, DateInput } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import { brl, pct, formatQtd } from '../lib/format';
+import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 
 const SITUACAO_TONE = { aberto: 'tone-atencao', faturado: 'tone-saudavel', cancelado: 'tone-prejuizo' };
 const SITUACAO_LABEL = { aberto: 'Aberto', faturado: 'Faturado', cancelado: 'Cancelado' };
@@ -471,9 +472,9 @@ export default function PedidoFormPage() {
         {pedido.origem_marketplace && (
           <div className="row-line"><span>Taxa de Marketplace</span><span className="mono">{pedido.taxa_marketplace != null ? brl(pedido.taxa_marketplace) : '—'}</span></div>
         )}
-        {pedido.origem_marketplace === 'mercado_livre' && (
+        {(pedido.origem_marketplace === 'mercado_livre' || pedido.origem_marketplace === 'shopee') && (
           <div className="row-line">
-            <span>Valor Recebido (Mercado Livre)</span>
+            <span>Valor Recebido ({PLATAFORMA_LABEL[pedido.origem_marketplace]})</span>
             <span className="mono">
               {pedido.valor_recebido_marketplace != null ? (
                 <>
