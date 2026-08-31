@@ -1,0 +1,30 @@
+# Carga inicial da seleção "produtos de marketplace" — 31/08/2026.
+# Lista informada pela dona do projeto (aba "Planilha 1" da PLATAFORMAS.xlsx).
+# Uma referência por linha. Linhas começando com # são ignoradas.
+3681
+36144
+36156
+36168
+36199
+36200
+7062
+80105
+VM002
+VM005
+VM034
+OG1190
+OG1192
+OG1340
+OG1341
+OG1360
+OG1361
+OG1605
+OG1610
+OG1620
+OG1621
+OG1625
+OG1627
+OG8201
+MM6232
+MB6387
+MM62115

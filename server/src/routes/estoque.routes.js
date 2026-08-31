@@ -27,7 +27,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 function variantesQuery(where = '', values = []) {
   return pool.query(
-    `SELECT v.*, p.referencia, p.codigo, p.descricao, p.categoria, p.marca
+    `SELECT v.*, p.referencia, p.codigo, p.descricao, p.categoria, p.marca, p.marketplace
      FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id
      ${where}
      ORDER BY p.referencia, v.cor, v.tamanho`,
@@ -40,16 +40,19 @@ function variantesQuery(where = '', values = []) {
 // de acesso ao módulo Produto (que expõe preço/margem, mais sensível).
 router.get('/produtos-referencia', async (req, res, next) => {
   try {
-    const { busca } = req.query;
+    const { busca, marketplace } = req.query;
     const conditions = [];
     const values = [];
     if (busca) {
       conditions.push('(referencia ILIKE $1 OR descricao ILIKE $1 OR codigo ILIKE $1)');
       values.push(`%${busca}%`);
     }
+    // marketplace=1 → só as referências da seleção de marketplace.
+    if (marketplace === '1') conditions.push('marketplace = TRUE');
+    if (marketplace === '0') conditions.push('marketplace = FALSE');
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const { rows } = await pool.query(
-      `SELECT id, referencia, descricao FROM produtos ${where} ORDER BY referencia`,
+      `SELECT id, referencia, descricao, marketplace FROM produtos ${where} ORDER BY referencia`,
       values
     );
     res.json(rows);
@@ -62,11 +65,13 @@ router.get('/produtos-referencia', async (req, res, next) => {
 
 router.get('/variantes', async (req, res, next) => {
   try {
-    const { produto_id, busca, cor, tamanho } = req.query;
+    const { produto_id, busca, cor, tamanho, marketplace } = req.query;
     const conditions = [];
     const values = [];
     let i = 1;
     if (produto_id) { conditions.push(`v.produto_id = $${i}`); values.push(produto_id); i += 1; }
+    if (marketplace === '1') conditions.push('p.marketplace = TRUE');
+    if (marketplace === '0') conditions.push('p.marketplace = FALSE');
     if (busca) {
       conditions.push(`(p.referencia ILIKE $${i} OR p.descricao ILIKE $${i} OR v.ean = $${i + 1})`);
       values.push(`%${busca}%`, busca);
@@ -552,26 +557,71 @@ router.delete('/ean-mapeamento/:id', async (req, res, next) => {
 // relatório "Saldo de estoque" do Wiki Sistemas que o usuário já conhece).
 router.get('/ficha', async (req, res, next) => {
   try {
+    // Duas formas de pedir as fichas:
+    //   ?referencias=A,B,C  → exatamente essas, na ordem informada
+    //   ?marketplace=1      → todas as referências da seleção de marketplace
+    // Sem teto de quantidade (decisão de 31/08/2026): a conferência de
+    // marketplace é feita com o lote inteiro de uma vez.
+    const somenteMarketplace = req.query.marketplace === '1';
     const referencias = String(req.query.referencias || '')
       .split(',')
       .map((r) => r.trim())
-      .filter(Boolean)
-      .slice(0, 20);
-    if (referencias.length === 0) return res.json([]);
+      .filter(Boolean);
+    if (referencias.length === 0 && !somenteMarketplace) return res.json([]);
+
+    const filtro = somenteMarketplace
+      ? { where: 'WHERE marketplace = TRUE', values: [] }
+      : { where: 'WHERE referencia = ANY($1)', values: [referencias] };
 
     const { rows: produtos } = await pool.query(
-      `SELECT id, referencia, codigo, descricao, categoria, marca, colecao FROM produtos WHERE referencia = ANY($1)`,
-      [referencias]
+      `SELECT id, referencia, codigo, descricao, categoria, marca, colecao, marketplace
+         FROM produtos ${filtro.where} ORDER BY referencia`,
+      filtro.values
     );
+
+    if (produtos.length === 0) return res.json([]);
 
     const ctx = await getCalcContext();
 
+    // Sem o teto de 20, um lote de marketplace pode passar de 200 referências
+    // — buscar variante/material/custo uma referência por vez viraria mais de
+    // mil idas ao banco. Aqui vem tudo de uma vez e é agrupado em memória; o
+    // cálculo em si continua o mesmo, chamado por produto com exatamente os
+    // mesmos três insumos de antes (REGRA 1: nada de recalcular por fora).
+    const idsProdutos = produtos.map((p) => p.id);
+    const [variantesRows, produtoRows, materiaisRows, custosRows] = await Promise.all([
+      pool.query(
+        `SELECT produto_id, cor, tamanho, ean, quantidade FROM estoque_variantes
+          WHERE produto_id = ANY($1) AND ativo = true ORDER BY cor, tamanho`,
+        [idsProdutos]
+      ).then((r) => r.rows),
+      pool.query(
+        `SELECT p.*, e.nome AS empresa_nome, e.regime_tributario, e.icms, e.pis, e.cofins, e.ipi,
+                e.iss, e.simples_aliquota, e.outros_impostos
+           FROM produtos p LEFT JOIN empresas e ON e.id = p.empresa_id
+          WHERE p.id = ANY($1)`,
+        [idsProdutos]
+      ).then((r) => r.rows),
+      pool.query('SELECT * FROM materiais WHERE produto_id = ANY($1) ORDER BY ordem, id', [idsProdutos]).then((r) => r.rows),
+      pool.query('SELECT * FROM custos_industriais WHERE produto_id = ANY($1) ORDER BY ordem, id', [idsProdutos]).then((r) => r.rows),
+    ]);
+
+    function agrupar(rows) {
+      const mapa = new Map();
+      for (const row of rows) {
+        if (!mapa.has(row.produto_id)) mapa.set(row.produto_id, []);
+        mapa.get(row.produto_id).push(row);
+      }
+      return mapa;
+    }
+    const variantesPorProduto = agrupar(variantesRows);
+    const materiaisPorProduto = agrupar(materiaisRows);
+    const custosPorProduto = agrupar(custosRows);
+    const produtoRowPorId = new Map(produtoRows.map((p) => [p.id, p]));
+
     const fichas = [];
     for (const produto of produtos) {
-      const { rows: variantes } = await pool.query(
-        `SELECT cor, tamanho, ean, quantidade FROM estoque_variantes WHERE produto_id = $1 AND ativo = true ORDER BY cor, tamanho`,
-        [produto.id]
-      );
+      const variantes = variantesPorProduto.get(produto.id) || [];
 
       const tamanhos = Array.from(new Set(variantes.map((v) => v.tamanho))).sort(compararTamanhos);
 
@@ -593,9 +643,9 @@ router.get('/ficha', async (req, res, next) => {
       let custoTotal = 0;
       let valorTotal = 0;
       try {
-        const produtoRow = await produtosRoutes.fetchProdutoRow(pool, produto.id);
-        const materiais = await produtosRoutes.fetchMateriais(pool, produto.id);
-        const custosIndustriais = await produtosRoutes.fetchCustosIndustriais(pool, produto.id);
+        const produtoRow = produtoRowPorId.get(produto.id);
+        const materiais = materiaisPorProduto.get(produto.id) || [];
+        const custosIndustriais = custosPorProduto.get(produto.id) || [];
         const calculo = produtosRoutes.buildCalculo(produtoRow, materiais, custosIndustriais, ctx);
         custoTotal = quantidadeTotal * Number(calculo.custoTotal.custoTotalPeca || 0);
         valorTotal = quantidadeTotal * Number(calculo.formacaoPreco.precoSugerido || 0);
@@ -605,7 +655,12 @@ router.get('/ficha', async (req, res, next) => {
 
       fichas.push({ produto, tamanhos, linhas, totalizador, quantidadeTotal, custoTotal, valorTotal });
     }
-    fichas.sort((a, b) => referencias.indexOf(a.produto.referencia) - referencias.indexOf(b.produto.referencia));
+    // Com ?referencias= a ordem é a que a usuária montou na tela; com
+    // ?marketplace=1 não há ordem informada, então fica a alfabética que veio
+    // do banco (indexOf devolve -1 pra todos e a ordenação não mexe em nada).
+    if (referencias.length > 0) {
+      fichas.sort((a, b) => referencias.indexOf(a.produto.referencia) - referencias.indexOf(b.produto.referencia));
+    }
 
     res.json(fichas);
   } catch (err) {

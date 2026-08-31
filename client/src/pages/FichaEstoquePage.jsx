@@ -1,16 +1,32 @@
-import { useState } from 'react';
-import { Search, X, Printer } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Search, X, Printer, Store, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl } from '../lib/format';
 
-const MAX_REFERENCIAS = 20;
+// Quantas referências vão em cada chamada de /estoque/ficha quando a seleção
+// é montada à mão. Sem isso, uma seleção grande viraria uma URL de milhares
+// de caracteres — que servidor e proxy cortam sem avisar. O lote inteiro do
+// marketplace não passa por aqui: usa ?marketplace=1, uma chamada só.
+const LOTE_REFERENCIAS = 40;
+
+// A partir daqui a impressão começa a ficar pesada no navegador — não é
+// impedimento, é só um aviso honesto antes de mandar imprimir.
+const AVISO_MUITAS_FICHAS = 80;
 
 export default function FichaEstoquePage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [busca, setBusca] = useState('');
   const [resultados, setResultados] = useState([]);
   const [selecionadas, setSelecionadas] = useState([]);
   const [fichas, setFichas] = useState([]);
   const [erro, setErro] = useState('');
+  const [carregando, setCarregando] = useState(false);
+  const [gerando, setGerando] = useState(false);
+  // Fica ligado enquanto a seleção na tela é exatamente a seleção de
+  // marketplace inteira — nesse caso as fichas são pedidas de uma vez só,
+  // por ?marketplace=1, em vez de listar centenas de referências na URL.
+  const [loteMarketplace, setLoteMarketplace] = useState(false);
 
   async function handleBuscar(e) {
     e.preventDefault();
@@ -19,26 +35,81 @@ export default function FichaEstoquePage() {
     setResultados(data);
   }
 
+  async function carregarMarketplace() {
+    setErro('');
+    setCarregando(true);
+    try {
+      const data = await api.get('/estoque/produtos-referencia?marketplace=1');
+      if (data.length === 0) {
+        setErro('Nenhum produto está marcado como marketplace ainda. Marque as referências em Produtos ou em Configurações › Produtos de Marketplace.');
+        return;
+      }
+      setSelecionadas(data);
+      setLoteMarketplace(true);
+      setFichas([]);
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  // Permite chegar aqui já com a seleção carregada, vindo do botão "Fichas do
+  // marketplace" da lista de Produtos (/estoque/ficha?marketplace=1).
+  useEffect(() => {
+    if (searchParams.get('marketplace') === '1') {
+      setSearchParams({}, { replace: true });
+      carregarMarketplace();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function adicionar(p) {
     if (selecionadas.some((s) => s.id === p.id)) return;
-    if (selecionadas.length >= MAX_REFERENCIAS) {
-      setErro(`Você pode gerar até ${MAX_REFERENCIAS} fichas de uma vez.`);
-      return;
-    }
     setErro('');
+    setLoteMarketplace(false);
     setSelecionadas((list) => [...list, p]);
   }
 
   function remover(id) {
+    setLoteMarketplace(false);
     setSelecionadas((list) => list.filter((s) => s.id !== id));
+  }
+
+  function limpar() {
+    setLoteMarketplace(false);
+    setSelecionadas([]);
+    setFichas([]);
+    setErro('');
   }
 
   async function gerarFichas() {
     if (selecionadas.length === 0) return;
-    const refs = selecionadas.map((s) => s.referencia).join(',');
-    const data = await api.get(`/estoque/ficha?referencias=${encodeURIComponent(refs)}`);
-    setFichas(data);
+    setErro('');
+    setGerando(true);
+    try {
+      if (loteMarketplace) {
+        setFichas(await api.get('/estoque/ficha?marketplace=1'));
+        return;
+      }
+      // Seleção montada à mão: quebra em lotes e recompõe na ordem escolhida.
+      const partes = [];
+      for (let i = 0; i < selecionadas.length; i += LOTE_REFERENCIAS) {
+        const refs = selecionadas.slice(i, i + LOTE_REFERENCIAS).map((s) => s.referencia).join(',');
+        // eslint-disable-next-line no-await-in-loop
+        partes.push(...(await api.get(`/estoque/ficha?referencias=${encodeURIComponent(refs)}`)));
+      }
+      setFichas(partes);
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setGerando(false);
+    }
   }
+
+  const totalPecas = fichas.reduce((s, f) => s + Number(f.quantidadeTotal || 0), 0);
+  const totalCusto = fichas.reduce((s, f) => s + Number(f.custoTotal || 0), 0);
+  const totalValor = fichas.reduce((s, f) => s + Number(f.valorTotal || 0), 0);
 
   return (
     <div className="page-wide">
@@ -50,6 +121,17 @@ export default function FichaEstoquePage() {
         </p>
 
         <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+            <button className="btn btn-dashed" onClick={carregarMarketplace} disabled={carregando}>
+              <Store size={14} /> {carregando ? 'Carregando…' : 'Carregar todos do Marketplace'}
+            </button>
+            {selecionadas.length > 0 && (
+              <button className="btn btn-ghost" onClick={limpar}>
+                <Trash2 size={14} /> Limpar seleção
+              </button>
+            )}
+          </div>
+
           <form onSubmit={handleBuscar} style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <input
               placeholder="Buscar por referência, código ou descrição"
@@ -66,6 +148,7 @@ export default function FichaEstoquePage() {
                   <tr key={p.id}>
                     <td className="mono">{p.referencia}</td>
                     <td>{p.descricao}</td>
+                    <td>{p.marketplace && <span className="stamp sm tone-neutro">marketplace</span>}</td>
                     <td style={{ textAlign: 'right' }}>
                       <button className="btn btn-dashed" onClick={() => adicionar(p)}>Adicionar</button>
                     </td>
@@ -73,6 +156,12 @@ export default function FichaEstoquePage() {
                 ))}
               </tbody>
             </table>
+          )}
+
+          {loteMarketplace && (
+            <p className="page-sub" style={{ margin: '0 0 8px' }}>
+              Seleção completa do marketplace carregada — {selecionadas.length} referência(s).
+            </p>
           )}
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -86,13 +175,27 @@ export default function FichaEstoquePage() {
 
           {erro && <div className="login-error" style={{ marginBottom: 10 }}>{erro}</div>}
 
-          <button className="btn btn-primary" onClick={gerarFichas} disabled={selecionadas.length === 0}>
-            Gerar fichas ({selecionadas.length})
+          {selecionadas.length >= AVISO_MUITAS_FICHAS && (
+            <p className="page-sub" style={{ margin: '0 0 10px' }}>
+              São {selecionadas.length} folhas. Gerar e imprimir pode demorar alguns segundos.
+            </p>
+          )}
+
+          <button className="btn btn-primary" onClick={gerarFichas} disabled={selecionadas.length === 0 || gerando}>
+            {gerando ? 'Gerando…' : `Gerar fichas (${selecionadas.length})`}
           </button>
           {fichas.length > 0 && (
             <button className="btn btn-ghost" style={{ marginLeft: 8 }} onClick={() => window.print()}>
               <Printer size={14} /> Imprimir / Exportar PDF
             </button>
+          )}
+
+          {fichas.length > 0 && (
+            <p className="page-sub" style={{ margin: '10px 0 0' }}>
+              {fichas.length} ficha(s) · {totalPecas.toLocaleString('pt-BR')} peça(s) ·
+              {' '}custo {brl(totalCusto)} · valor {brl(totalValor)}
+              {' '}<span style={{ opacity: 0.8 }}>(soma das fichas geradas; referências sem custo cadastrado entram como zero)</span>
+            </p>
           )}
         </div>
       </div>

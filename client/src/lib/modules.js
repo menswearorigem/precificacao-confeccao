@@ -112,6 +112,7 @@ export const MODULES = [
       { to: '/custos-indiretos', label: 'Custos Indiretos', icon: Factory },
       { to: '/taxas', label: 'Taxas', icon: Percent },
       { to: '/listas', label: 'Listas', icon: ListIcon },
+      { to: '/configuracoes/marketplace', label: 'Produtos de Marketplace', icon: Store },
       // NÃO é adminOnly (diferente da extinta aba "Usuários", que era):
       // Grupos nunca precisou de admin (backend exige só o módulo
       // "configuracoes"), e a fusão não pode tirar esse acesso de quem não

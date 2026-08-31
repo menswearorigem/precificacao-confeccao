@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Search, Barcode, Upload, Pencil, Check, X, Tags, Printer, Wand2 } from 'lucide-react';
+import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Search, Barcode, Upload, Pencil, Check, X, Tags, Printer, Wand2, Store } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { Field, Select, Checkbox, Toggle } from '../components/ui';
@@ -261,10 +261,19 @@ export default function EstoquePage() {
   const [erro, setErro] = useState('');
   const [selecionadas, setSelecionadas] = useState(new Set());
   const [aplicandoEmMassa, setAplicandoEmMassa] = useState(false);
+  // Quando ligado, o seletor de referência e a busca no estoque só enxergam
+  // as referências da seleção de marketplace.
+  const [somenteMarketplace, setSomenteMarketplace] = useState(false);
 
   useEffect(() => {
-    api.get('/estoque/produtos-referencia').then(setProdutos);
-  }, []);
+    const qs = somenteMarketplace ? '?marketplace=1' : '';
+    api.get(`/estoque/produtos-referencia${qs}`).then((data) => {
+      setProdutos(data);
+      // Se a referência aberta saiu do filtro, fecha a tabela dela em vez de
+      // deixar na tela um dado que não bate mais com o filtro escolhido.
+      setProdutoId((atual) => (atual && !data.some((p) => String(p.id) === String(atual)) ? '' : atual));
+    });
+  }, [somenteMarketplace]);
 
   function loadVariantes(id) {
     setSelecionadas(new Set());
@@ -277,7 +286,8 @@ export default function EstoquePage() {
   async function handleBuscar(e) {
     e.preventDefault();
     if (!busca.trim()) { setResultadoBusca(null); return; }
-    const data = await api.get(`/estoque/variantes?busca=${encodeURIComponent(busca)}`);
+    const filtro = somenteMarketplace ? '&marketplace=1' : '';
+    const data = await api.get(`/estoque/variantes?busca=${encodeURIComponent(busca)}${filtro}`);
     setResultadoBusca(data);
   }
 
@@ -375,6 +385,11 @@ export default function EstoquePage() {
       <CorrigirEmMassa />
 
       <div className="card" style={{ marginBottom: 16 }}>
+        <label className="toggle" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <Toggle checked={somenteMarketplace} onChange={() => setSomenteMarketplace((v) => !v)} />
+          <Store size={14} /> Somente produtos do marketplace
+          {somenteMarketplace && <span className="page-sub" style={{ margin: 0 }}>({produtos.length} referência(s))</span>}
+        </label>
         <form onSubmit={handleBuscar} style={{ display: 'flex', gap: 8 }}>
           <input
             placeholder="Buscar por referência, descrição ou EAN em todo o estoque"

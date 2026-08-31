@@ -5,7 +5,7 @@ import {
   Save, XCircle, CheckCircle2, Package, ArrowLeft, ImagePlus,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, NumInput, Row, Select } from '../components/ui';
+import { Field, NumInput, Row, Select, Toggle } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import { statusToneClass } from '../lib/statusTone';
 import { brl, pct, uid, numeroBr } from '../lib/format';
@@ -27,6 +27,7 @@ function emptyProduto() {
     responsavel: '',
     preco_informado: '',
     peso_kg: '',
+    marketplace: false,
   };
 }
 
@@ -305,6 +306,15 @@ export default function ProdutoFichaPage() {
             </Field>
             <Field label="Peso da peça (opcional)">
               <NumInput value={produto.peso_kg ?? ''} onChange={(v) => updateProduto({ peso_kg: v === '' ? null : v })} suffix="kg" placeholder="usado na conferência de frete de marketplace" />
+            </Field>
+            <Field label="Produto de marketplace" hint="Entra no filtro e nas fichas de estoque em lote do marketplace.">
+              <label className="toggle" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <Toggle
+                  checked={Boolean(produto.marketplace)}
+                  onChange={() => updateProduto({ marketplace: !produto.marketplace })}
+                />
+                {produto.marketplace ? 'Sim' : 'Não'}
+              </label>
             </Field>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

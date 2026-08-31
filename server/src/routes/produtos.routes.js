@@ -84,12 +84,16 @@ async function salvarHistorico(client, produtoId, referencia, calculo) {
 
 router.get('/', async (req, res, next) => {
   try {
-    const { marca, categoria, busca } = req.query;
+    const { marca, categoria, busca, marketplace } = req.query;
     const conditions = [];
     const values = [];
     let i = 1;
     if (marca) { conditions.push(`p.marca = $${i}`); values.push(marca); i += 1; }
     if (categoria) { conditions.push(`p.categoria = $${i}`); values.push(categoria); i += 1; }
+    // marketplace=1 → só os que estão na seleção; marketplace=0 → só os de fora.
+    // Ausente = todos, como sempre foi.
+    if (marketplace === '1') { conditions.push('p.marketplace = TRUE'); }
+    if (marketplace === '0') { conditions.push('p.marketplace = FALSE'); }
     if (busca) {
       conditions.push(`(p.referencia ILIKE $${i} OR p.descricao ILIKE $${i} OR p.codigo ILIKE $${i})`);
       values.push(`%${busca}%`);
@@ -137,6 +141,7 @@ router.get('/', async (req, res, next) => {
         linha: p.linha,
         empresa_id: p.empresa_id,
         empresa_nome: p.empresa_nome,
+        marketplace: p.marketplace,
         precoAtivo: calculo.formacaoPreco.precoAtivo,
         lucroPct: calculo.formacaoPreco.lucroPct,
         status: calculo.formacaoPreco.status,
@@ -226,8 +231,9 @@ router.post('/', async (req, res, next) => {
 
     const { rows } = await client.query(
       `INSERT INTO produtos (codigo, referencia, descricao, categoria, marca, colecao, linha,
-                              empresa_id, data_criacao, responsavel, preco_informado, peso_kg)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, CURRENT_DATE), $10, $11, $12)
+                              empresa_id, data_criacao, responsavel, preco_informado, peso_kg,
+                              marketplace)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, CURRENT_DATE), $10, $11, $12, $13)
        RETURNING *`,
       [
         body.codigo || null,
@@ -242,6 +248,7 @@ router.post('/', async (req, res, next) => {
         body.responsavel || null,
         body.preco_informado ?? null,
         body.peso_kg ?? null,
+        body.marketplace === true,
       ]
     );
     const produto = rows[0];
@@ -299,14 +306,16 @@ router.put('/:id', async (req, res, next) => {
 
     await client.query('BEGIN');
 
-    const fields = ['codigo', 'referencia', 'descricao', 'categoria', 'marca', 'colecao', 'linha', 'empresa_id', 'data_criacao', 'responsavel', 'preco_informado', 'peso_kg'];
+    const fields = ['codigo', 'referencia', 'descricao', 'categoria', 'marca', 'colecao', 'linha', 'empresa_id', 'data_criacao', 'responsavel', 'preco_informado', 'peso_kg', 'marketplace'];
     const updates = [];
     const values = [];
     let i = 1;
     for (const f of fields) {
       if (body[f] !== undefined) {
         updates.push(`${f} = $${i}`);
-        values.push(body[f] === '' ? null : body[f]);
+        // marketplace é NOT NULL no banco — "" ou null vindos da tela viram
+        // false, nunca NULL (que rejeitaria o UPDATE inteiro).
+        values.push(f === 'marketplace' ? body[f] === true : (body[f] === '' ? null : body[f]));
         i += 1;
       }
     }

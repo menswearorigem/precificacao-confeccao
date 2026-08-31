@@ -29,6 +29,7 @@ const conferenciaDadosRoutes = require('./routes/conferenciaDados.routes');
 const qualidadeDadosRoutes = require('./routes/qualidadeDados.routes');
 const calendarioRoutes = require('./routes/calendario.routes');
 const gruposRoutes = require('./routes/grupos.routes');
+const produtoMarketplaceRoutes = require('./routes/produtoMarketplace.routes');
 
 const CLIENT_DIST = path.join(__dirname, '..', '..', 'client', 'dist');
 
@@ -78,6 +79,17 @@ function createApp() {
   app.use('/api/simulacao', requireAuth, requireModulo('analises'), simulacaoRoutes);
 
   app.use('/api/estoque', requireAuth, requireModulo('estoque'), estoqueRoutes);
+
+  // Seleção "produtos de marketplace". Não devolve preço nem margem — só
+  // identificação da referência — então é liberada pros três módulos que
+  // precisam dela: Produto (marcar na lista), Estoque (puxar as fichas em
+  // lote) e Configurações (administrar a seleção).
+  app.use(
+    '/api/produtos-marketplace',
+    requireAuth,
+    requireModulo(['produto', 'estoque', 'configuracoes']),
+    produtoMarketplaceRoutes
+  );
   app.use('/api/clientes', requireAuth, requireModulo('vendas'), clientesRoutes);
   app.use('/api/pedidos', requireAuth, requireModulo(['vendas', 'marketplace']), pedidosRoutes);
   app.use('/api/fornecedores', requireAuth, requireModulo('compras'), fornecedoresRoutes);

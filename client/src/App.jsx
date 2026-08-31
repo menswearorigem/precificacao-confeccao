@@ -16,6 +16,7 @@ import IntegracoesPage from './pages/IntegracoesPage';
 import TaxasPage from './pages/TaxasPage';
 import AcessosPage from './pages/AcessosPage';
 import SaudeDadosPage from './pages/SaudeDadosPage';
+import ProdutosMarketplacePage from './pages/ProdutosMarketplacePage';
 import CalendarioPage from './pages/CalendarioPage';
 import TemplatesCalendarioPage from './pages/TemplatesCalendarioPage';
 import EventoImpressaoPage from './pages/EventoImpressaoPage';
@@ -135,6 +136,7 @@ function AppRoutes() {
                   <Route path="/acessos" element={<AcessosPage />} />
                   <Route path="/usuarios" element={<Navigate to="/acessos" replace />} />
                   <Route path="/configuracoes/grupos" element={<Navigate to="/acessos?aba=grupos" replace />} />
+                  <Route path="/configuracoes/marketplace" element={<ProdutosMarketplacePage />} />
                   <Route path="/saude-dados" element={<SaudeDadosPage />} />
                   <Route path="/qualidade-dados" element={<Navigate to="/saude-dados" replace />} />
                   <Route path="/conferencia-dados" element={<Navigate to="/saude-dados" replace />} />
