@@ -520,11 +520,18 @@ button, input, select, textarea { font-family: inherit; }
 
 /* ---------- generic page/card layout ---------- */
 
-.page { padding: 26px 30px; max-width: var(--content-form); }
-.page-wide { padding: 26px 30px; max-width: var(--content-wide); }
+/* margin-inline: auto — sem isso a coluna de conteúdo é um bloco alinhado à
+   esquerda dentro de .shell-main, e a diferença entre a largura da tela e o
+   `100% - 64px` do --content-* sobra TODA do lado direito. No desktop
+   passava despercebido; no celular virava uma faixa morta de 32px na borda
+   direita de todas as telas (o problema nº 1 relatado no uso pelo celular). */
+.page { padding: 26px 30px; max-width: var(--content-form); margin-inline: auto; }
+.page-wide { padding: 26px 30px; max-width: var(--content-wide); margin-inline: auto; }
 
 @media (max-width: 900px) {
-  :root { --content-wide: min(100% - 32px, 1680px); --content-form: min(100% - 32px, 1100px); }
+  /* No celular quem dá o respiro lateral é o padding da própria página —
+     descontar mais 32px da largura só devolvia a faixa morta. */
+  :root { --content-wide: 100%; --content-form: 100%; }
 }
 .page-sub { font-size: 12.5px; color: var(--ink-soft); margin: 6px 0 20px; line-height: 1.5; }
 
@@ -574,7 +581,23 @@ h2 + .page-sub { margin-top: 7px; }
 .card-head-linha .card-head { margin-bottom: 0; flex: 1; min-width: 0; }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+/* .grid-3 e .grid-4 existem para as telas pararem de declarar
+   `gridTemplateColumns` por style inline — estilo inline vence media query,
+   então toda grade escrita assim ficava com 3 ou 4 colunas no celular. */
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 18px; }
+/* Grade da linha de custo indireto (CustosIndiretosPage) — saiu do style
+   inline para poder responder ao tamanho da tela. */
+.cfg-item-linha {
+  display: grid;
+  grid-template-columns: 1.6fr 2fr 140px 60px 28px;
+  gap: 14px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
 
 /* ---------- form fields ---------- */
 
@@ -895,6 +918,13 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.6; cursor: not-a
   margin: 0;
   padding: 6px;
   list-style: none;
+  /* min-height:0 + flex:1 — o painel agora recebe um max-height calculado
+     (usePosicaoFlutuante grampeia pelo espaço que sobra na tela). Sem isto,
+     num item de flex-column a lista recusa encolher e o painel corta as
+     últimas opções em vez de deixá-las roláveis. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overscroll-behavior: contain;
 }
 .select-custom-secao {
   font-size: 10.5px;
@@ -3055,3 +3085,362 @@ table.ficha-doc-tabela {
   .cfg-listas-indice { position: static; flex-direction: row; flex-wrap: wrap; }
 }
 
+
+/* ============================================================================
+   MOBILE — bloco consolidado (checape de 01/09/2026)
+   ============================================================================
+   Antes deste bloco o sistema tinha 7 regras de celular espalhadas em 3.000
+   linhas de CSS, quase todas sobre um módulo específico (Viagens, Listas,
+   Configurações). O que faltava era a base: largura de conteúdo, tamanho de
+   toque, tabela, teclado do iOS e as áreas seguras do aparelho.
+
+   A ordem aqui é de fora pra dentro: casca → página → tabela → formulário →
+   componentes flutuantes. Fica no fim do arquivo de propósito, para vencer
+   por especificidade/ordem as regras de módulo que vieram antes.
+   ========================================================================= */
+
+/* ---------- 1. casca: altura real da tela e áreas seguras ---------- */
+
+/* 100dvh acompanha a barra de endereço aparecendo/sumindo no celular;
+   o `height: 100%` de html/body/#root continua como reserva pra quem não
+   suporta a unidade. */
+@supports (height: 100dvh) {
+  .shell { height: 100dvh; }
+}
+
+/* O viewport-fit=cover do index.html leva a página até a borda física do
+   aparelho — estas regras devolvem o respiro sob o notch, a barra de gestos
+   e as laterais arredondadas (relevante em paisagem). */
+.shell-header {
+  padding-left: max(24px, env(safe-area-inset-left));
+  padding-right: max(24px, env(safe-area-inset-right));
+  padding-top: max(14px, env(safe-area-inset-top));
+}
+.shell-sidebar { padding-bottom: max(26px, env(safe-area-inset-bottom)); }
+
+@media (max-width: 860px) {
+  /* Gaveta do menu: rolar dentro dela não pode "vazar" e rolar a página
+     atrás (overscroll chaining), e o conteúdo precisa começar abaixo do
+     notch. */
+  .shell-sidebar {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding-top: max(76px, calc(env(safe-area-inset-top) + 62px));
+    padding-left: max(12px, env(safe-area-inset-left));
+  }
+  .mobile-sidebar-backdrop { -webkit-tap-highlight-color: transparent; }
+}
+
+/* ---------- 2. cabeçalho: parar de brigar por espaço ---------- */
+
+@media (max-width: 720px) {
+  /* Em 360px o "Miss Manu · Origem · Hoggar · Hebron" quebrava em duas
+     linhas e empurrava a altura do header pra ~78px, comendo tela útil de
+     todas as páginas. A marca fica; o subtítulo sai. */
+  .brand-sub { display: none; }
+  .user-badge { display: none; }
+  .shell-header { padding-top: max(10px, env(safe-area-inset-top)); padding-bottom: 10px; }
+  .brand { gap: 9px; }
+  .header-actions { gap: 8px; }
+}
+
+.logout-btn { display: inline-flex; align-items: center; gap: 6px; }
+
+@media (max-width: 560px) {
+  .brand-name { font-size: 16px; }
+  /* "Sair" com texto ocupa ~62px ao lado dos toggles e do sino do calendário;
+     vira um botão redondo só com o ícone, no mesmo padrão dos outros. O nome
+     acessível continua no aria-label. */
+  .logout-btn-texto { display: none; }
+  .logout-btn {
+    width: 38px; height: 38px;
+    padding: 0;
+    justify-content: center;
+    gap: 0;
+  }
+}
+
+/* ---------- 3. submenu de páginas: mostrar que rola ---------- */
+
+@media (max-width: 860px) {
+  .shell-submenu, .shell-nav {
+    /* Estes menus têm até 10 itens; no celular viram uma faixa rolável.
+       Sem barra visível (atrapalha) mas COM encaixe por item e um degradê
+       na borda direita, para não parecer que o menu acabou ali. */
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+    -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 22px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 22px), transparent 100%);
+  }
+  .shell-submenu::-webkit-scrollbar, .shell-nav::-webkit-scrollbar { display: none; }
+  .nav-link { scroll-snap-align: start; min-height: 42px; padding: 10px 13px; }
+}
+
+/* ---------- 4. coluna de conteúdo ---------- */
+
+@media (max-width: 860px) {
+  /* .page (formulários/configuração) nunca tinha recebido padding de
+     celular — ficava com os 30px de desktop dos dois lados, sobrando 300px
+     úteis num aparelho de 360px. Agora as duas variantes andam juntas. */
+  .page, .page-wide {
+    padding: 16px max(14px, env(safe-area-inset-right)) 40px max(14px, env(safe-area-inset-left));
+  }
+  .page-sub { margin-bottom: 14px; }
+  h2 { font-size: 21px; }
+
+  .card { padding: 14px 14px; border-radius: 10px; }
+  .card-head-linha { flex-wrap: wrap; gap: 8px; }
+}
+
+/* ---------- 5. grades: o "encavalado" ---------- */
+
+/* Por que !important: várias telas passam gridTemplateColumns por style
+   inline (DashboardPage 5 col, IndicadoresEstoque 6 col, MetricasMarketplace
+   3–4 col, QualidadeDados 3–4 col, ProdutoFicha 3 col). Estilo inline vence
+   media query, então as regras de celular que já existiam eram simplesmente
+   ignoradas nessas telas — era daí que vinham as colunas espremidas. O
+   ideal é tirar o inline (feito nas telas principais); estas regras são a
+   rede de segurança para as que ainda passarem, hoje ou no futuro. */
+@media (max-width: 860px) {
+  .grid-2, .form-grid { grid-template-columns: 1fr !important; }
+  .cfg-exemplo-vivo-grade { grid-template-columns: repeat(2, 1fr) !important; }
+  .viagem-checkout-item-campos { grid-template-columns: repeat(2, 1fr); }
+  /* No tablet 3 KPIs por linha ainda leem bem; o corte pra 2 vem em 640px. */
+  .stat-strip { grid-template-columns: repeat(3, 1fr) !important; }
+  .grid-4 { grid-template-columns: repeat(2, 1fr); }
+  /* Linha de custo indireto: nome, barra, valor, % e lixeira numa grade de
+     5 colunas com 140px/60px fixos — no celular vira um bloco de duas
+     linhas, com a lixeira ancorada no canto. */
+  .cfg-item-linha {
+    grid-template-columns: 1fr auto 34px;
+    grid-template-areas: 'nome nome lixeira' 'valor pct pct' 'barra barra barra';
+    gap: 8px 10px;
+  }
+  .cfg-item-linha > :nth-child(1) { grid-area: nome; }
+  .cfg-item-linha > :nth-child(2) { grid-area: barra; }
+  .cfg-item-linha > :nth-child(3) { grid-area: valor; }
+  .cfg-item-linha > :nth-child(4) { grid-area: pct; text-align: left !important; }
+  .cfg-item-linha > :nth-child(5) { grid-area: lixeira; }
+}
+
+@media (max-width: 640px) {
+  .grid-3, .grid-4 { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 640px) {
+  .stat-strip { grid-template-columns: repeat(2, 1fr) !important; }
+  /* O .stat-card é rótulo-à-esquerda / número-à-direita, o que funciona numa
+     coluna larga de desktop. Em meia tela de celular os dois brigam pelo
+     mesmo espaço e "R$ 1.284.331,90" quebra no meio. Aqui vira uma pilha:
+     rótulo em cima, número embaixo, cada um com a largura toda do cartão. */
+  .stat-card {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 3px;
+    padding: 11px 12px;
+    min-width: 0;
+  }
+  .stat-card-corpo { width: 100%; }
+  .stat-card-value { font-size: 17px; overflow-wrap: anywhere; }
+  .stat-card-label { overflow-wrap: anywhere; }
+  /* O ícone da variante colorida ia parar embaixo do número na pilha. */
+  .stat-card-icone { order: -1; }
+}
+
+@media (max-width: 420px) {
+  .cfg-exemplo-vivo-grade { grid-template-columns: 1fr !important; }
+}
+
+/* ---------- 6. tabelas ---------- */
+
+@media (max-width: 860px) {
+  /* Havia DOIS contêineres roláveis um dentro do outro: .card (overflow-x:
+     auto) e .data-table-wrap. Na prática dava duas barras de rolagem
+     horizontais concorrentes e a tabela só enxergava a largura interna do
+     card (menos 28px de padding). Aqui o card deixa de rolar e a tabela
+     sangra até a borda da tela, ganhando os 28px de volta. */
+  .card { overflow-x: visible; }
+  .card > .data-table-outer,
+  .card > .data-table-wrap {
+    margin-left: -14px;
+    margin-right: -14px;
+    width: calc(100% + 28px);
+  }
+  .data-table-wrap {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+  }
+  .data-table-wrap table.data-table { min-width: 0; }
+  .data-table-wrap table.data-table th,
+  .data-table-wrap table.data-table td { padding: 9px 10px; }
+  /* A primeira coluna é congelada (sticky). Numa descrição longa ela comia
+     metade da tela e o resto virava um túnel — teto de 40% e reticências. */
+  .data-table-wrap table.data-table tr > *:first-child {
+    max-width: 40vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    scroll-snap-align: start;
+  }
+  .data-table-wrap table.data-table .col-truncar { max-width: 46vw; }
+  /* A faixa de sombra que indica conteúdo escondido: mais larga e mais
+     opaca no celular, onde é o único aviso de que a tabela continua. */
+  .data-table-outer::before, .data-table-outer::after { width: 34px; }
+
+  /* Paginação: já quebrava linha, mas o Select de tamanho (min-width 130px)
+     mais a contagem e as setas não cabiam em 360px sem espremer. A contagem
+     ocupa a linha inteira e os controles se dividem embaixo. */
+  .paginacao-barra { padding: 12px 0 4px; }
+  .paginacao-contagem { flex: 1 1 100%; }
+  .paginacao-controles { flex: 1 1 100%; justify-content: space-between; }
+  .paginacao-tamanho { min-width: 0; flex: 0 1 150px; }
+}
+
+/* ---------- 7. formulários e o zoom automático do iOS ---------- */
+
+@media (max-width: 860px) {
+  /* REGRA MAIS IMPORTANTE DESTE BLOCO. O Safari do iPhone dá zoom sozinho
+     ao focar qualquer campo com fonte < 16px — e o sistema inteiro usa 13px.
+     O zoom desalinha todo o layout (é a sensação de "tudo encavalado" depois
+     de tocar num campo) e não volta ao sair do campo. 16px resolve na
+     origem; não existe outra saída sem bloquear o zoom manual, que quebraria
+     acessibilidade. */
+  input, select, textarea,
+  .select-custom-trigger, .date-custom-trigger,
+  .filtros-barra .select-custom-trigger, .filtros-barra .date-custom-trigger,
+  .filtros-barra-busca input,
+  .select-custom-busca input,
+  table.data-table input, table.data-table select {
+    font-size: 16px;
+  }
+  input, select, textarea { padding: 10px 12px; }
+
+  .field-label { font-size: 11px; }
+  .field { gap: 6px; }
+}
+
+/* ---------- 8. alvos de toque ---------- */
+
+@media (max-width: 860px) {
+  /* Alvo mínimo confortável: 44px (Apple) / 48px (Google). O sistema estava
+     com botões de 32px e ícones de 26px — daí o toque errado. */
+  .btn, .btn-dashed { min-height: 42px; padding: 10px 16px; font-size: 13px; }
+  .btn.sm, .btn-dashed.sm { min-height: 34px; padding: 6px 12px; font-size: 12px; }
+  .icon-btn, .copiar-btn { min-width: 40px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; }
+  .mobile-menu-btn { min-width: 44px; min-height: 44px; }
+  .icon-toggle-btn { width: 38px; height: 38px; }
+  .subtab-btn { min-height: 40px; }
+  /* Os substitutos dos controles nativos (Select, DateInput, PeriodoFiltro)
+     têm padding próprio menor que o do .btn — ficavam em 34px. */
+  .select-custom-trigger, .date-custom-trigger, .periodo-filtro-trigger,
+  .filtros-barra .select-custom-trigger, .filtros-barra .date-custom-trigger {
+    min-height: 42px;
+  }
+  .filtros-barra-busca { min-height: 42px; }
+  .checkbox-custom-caixa, .toggle-custom { transform: scale(1.1); transform-origin: left center; }
+  /* Dentro da tabela o alvo não pode inflar a linha inteira; ganha área
+     clicável por padding, mantendo a altura. */
+  table.data-table .icon-btn { min-height: 34px; min-width: 34px; }
+}
+
+/* ---------- 9. barra de filtros ---------- */
+
+@media (max-width: 860px) {
+  .filtros-barra { gap: 8px; }
+  /* margin-left:auto empurrava as ações pro canto direito e elas caíam
+     sozinhas numa linha desalinhada. No celular a barra vira uma pilha. */
+  .filtros-barra-busca { max-width: none; flex: 1 1 100%; min-width: 0; }
+  .filtros-barra-acoes { margin-left: 0; width: 100%; }
+  .filtros-barra-acoes .btn { flex: 1; justify-content: center; }
+  .filtros-barra .select-custom,
+  .filtros-barra .date-custom { flex: 1 1 calc(50% - 4px); min-width: 0; }
+  .periodo-filtro, .periodo-filtro-trigger { width: 100%; justify-content: center; }
+}
+
+/* ---------- 10. painéis flutuantes (Select, calendário, exportar) ---------- */
+
+@media (max-width: 860px) {
+  /* O hook usePosicaoFlutuante já grampeia posição e altura; o CSS garante
+     que a lista role por dentro do painel em vez de esticá-lo. */
+  .select-custom-painel { max-height: min(60vh, 340px); }
+  .select-custom-lista { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  .select-custom-opcao { min-height: 42px; font-size: 14px; }
+  .date-custom-painel { max-width: calc(100vw - 16px); }
+  .date-custom-dia { min-height: 38px; }
+}
+
+/* ---------- 11. modais e barras fixas ---------- */
+
+@media (max-width: 640px) {
+  /* Modal vira folha ancorada embaixo: chega mais perto do polegar e não
+     fica flutuando no meio com o teclado aberto. */
+  .viagem-modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .viagem-modal {
+    max-width: none;
+    max-height: 92svh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding-bottom: max(18px, env(safe-area-inset-bottom));
+  }
+  .confirm-modal { max-width: none; border-radius: var(--radius-lg) var(--radius-lg) 0 0; padding-bottom: max(18px, env(safe-area-inset-bottom)); }
+  .confirm-modal-acoes { flex-direction: column-reverse; }
+
+  /* Barra de "alterações não salvas" e carrinho de viagem: acima da barra
+     de gestos, e com os dois blocos empilhados em vez de espremidos. */
+  .cfg-barra-alteracoes {
+    bottom: max(12px, env(safe-area-inset-bottom));
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 14px;
+  }
+  .cfg-barra-alteracoes-acoes .btn { flex: 1; justify-content: center; }
+  .cfg-barra-alteracoes-atalho { display: none; }
+
+  .viagem-carrinho-flutuante {
+    bottom: max(14px, env(safe-area-inset-bottom));
+    left: 12px;
+    right: 12px;
+    transform: none;
+    max-width: none;
+    justify-content: space-between;
+  }
+}
+
+/* ---------- 12. busca global (⌘K) ---------- */
+
+@media (max-width: 640px) {
+  .busca-global-painel {
+    width: calc(100% - 16px);
+    max-height: 80svh;
+    top: 6vh;
+  }
+  .busca-global-campo input { font-size: 16px; }
+  .busca-global-item { min-height: 46px; }
+  .busca-global-campo kbd { display: none; }
+}
+
+/* ---------- 13. Kanban do Calendário ---------- */
+
+@media (max-width: 860px) {
+  /* 4 colunas de 220px = 880px numa tela de 360px. Vira uma faixa rolável
+     com encaixe por coluna, cada uma ocupando quase a tela toda. */
+  .calendario-kanban {
+    grid-template-columns: repeat(4, 84vw);
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+  .kanban-coluna { scroll-snap-align: center; }
+}
+
+/* ---------- 14. impressão continua intocada ---------- */
+/* (o bloco @media print já reescreve .page-wide e a paleta; nada aqui
+   interfere, porque tudo acima está sob max-width de tela) */

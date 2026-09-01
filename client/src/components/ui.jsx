@@ -15,7 +15,18 @@ import { Download } from 'lucide-react';
 // em vez de position:absolute dentro do próprio campo, calcula a posição em
 // coordenadas de tela e usa um portal direto pro <body>, recalculando se a
 // página rolar ou a janela mudar de tamanho enquanto o painel está aberto.
-function usePosicaoFlutuante(aberto, gatilhoRef) {
+// No celular três coisas a mais precisam ser tratadas, e nenhuma delas
+// aparece no desktop:
+//   1. o painel tem que CABER na largura da tela — um gatilho encostado na
+//      borda direita jogava o painel (272px fixos, no caso do calendário)
+//      para fora, criando rolagem horizontal na página inteira;
+//   2. tem que VIRAR PRA CIMA quando não há altura embaixo — um select no
+//      pé de um formulário abria fora da tela;
+//   3. o teclado virtual encolhe a área visível sem disparar `resize` na
+//      window: quem avisa é o visualViewport.
+const MARGEM_TELA = 8;
+
+function usePosicaoFlutuante(aberto, gatilhoRef, alturaEstimada = 280) {
   const [pos, setPos] = useState(null);
   useEffect(() => {
     if (!aberto) { setPos(null); return undefined; }
@@ -23,14 +34,45 @@ function usePosicaoFlutuante(aberto, gatilhoRef) {
       const el = gatilhoRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      setPos({ top: r.bottom + 6, left: r.left, width: r.width });
+      const vv = window.visualViewport;
+      const larguraTela = vv?.width ?? window.innerWidth;
+      const alturaTela = vv?.height ?? window.innerHeight;
+
+      // Largura: acompanha o gatilho, mas nunca passa da tela.
+      const largura = Math.min(r.width, larguraTela - MARGEM_TELA * 2);
+
+      // Esquerda: grampeada nas duas bordas.
+      const left = Math.min(
+        Math.max(MARGEM_TELA, r.left),
+        Math.max(MARGEM_TELA, larguraTela - largura - MARGEM_TELA),
+      );
+
+      // Vertical: abre pra baixo se couber; senão pra cima; se não couber
+      // dos dois lados, fica no lado mais folgado e o painel rola por dentro
+      // (max-height vem junto, para o CSS não estourar a tela).
+      const espacoAbaixo = alturaTela - r.bottom - 6;
+      const espacoAcima = r.top - 6;
+      const paraCima = espacoAbaixo < Math.min(alturaEstimada, 200) && espacoAcima > espacoAbaixo;
+      const maxAltura = Math.max(140, (paraCima ? espacoAcima : espacoAbaixo) - MARGEM_TELA);
+
+      setPos({
+        top: paraCima ? undefined : r.bottom + 6,
+        bottom: paraCima ? alturaTela - r.top + 6 : undefined,
+        left,
+        width: largura,
+        maxHeight: maxAltura,
+      });
     }
     atualizar();
     window.addEventListener('scroll', atualizar, true);
     window.addEventListener('resize', atualizar);
+    window.visualViewport?.addEventListener('resize', atualizar);
+    window.visualViewport?.addEventListener('scroll', atualizar);
     return () => {
       window.removeEventListener('scroll', atualizar, true);
       window.removeEventListener('resize', atualizar);
+      window.visualViewport?.removeEventListener('resize', atualizar);
+      window.visualViewport?.removeEventListener('scroll', atualizar);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aberto]);
@@ -592,7 +634,7 @@ export function Select({ value, onChange, children, disabled, className = '', st
         <div
           className="select-custom-painel"
           ref={listaRef}
-          style={{ top: pos.top, left: pos.left, width: pos.width }}
+          style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.width, maxHeight: pos.maxHeight }}
         >
           {comBusca && (
             <div className="select-custom-busca">
@@ -818,13 +860,21 @@ export function DateInput({ value, onChange, onBlur, disabled, placeholder = 'dd
           ×
         </button>
       )}
+      {/* O calendário tem largura própria (LARGURA_PAINEL), então a esquerda é
+          grampeada contra ela — e não contra a largura do gatilho, que o hook
+          já grampeou. O `bottom` vira o ponto de ancoragem quando não há
+          altura embaixo (celular com o teclado aberto). */}
       {aberto && pos && createPortal(
         <div
           ref={painelRef}
           className="date-custom-painel"
           role="dialog"
           aria-label="Escolher data"
-          style={{ top: pos.top, left: Math.max(8, Math.min(pos.left, window.innerWidth - LARGURA_PAINEL - 8)) }}
+          style={{
+            top: pos.top,
+            bottom: pos.bottom,
+            left: Math.max(8, Math.min(pos.left, (window.visualViewport?.width ?? window.innerWidth) - LARGURA_PAINEL - 8)),
+          }}
         >
           <div className="date-custom-cabecalho">
             <button type="button" className="date-custom-nav" onMouseDown={semFoco} onClick={() => setCursor((c) => new Date(c.getFullYear() - 1, c.getMonth(), 1))} aria-label="Ano anterior"><ChevronsLeft size={14} /></button>

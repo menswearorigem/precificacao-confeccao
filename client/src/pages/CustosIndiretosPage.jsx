@@ -201,7 +201,7 @@ export default function CustosIndiretosPage() {
                 {g.itens.map((item) => {
                   const percentualItem = totalMensalRascunho === 0 ? 0 : (Number(item.valor_mensal) || 0) / totalMensalRascunho;
                   return (
-                    <div key={item.id} className="cfg-linha-hover" style={{ display: 'grid', gridTemplateColumns: '1.6fr 2fr 140px 60px 28px', gap: 14, alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--border-soft)' }}>
+                    <div key={item.id} className="cfg-linha-hover cfg-item-linha">
                       <input value={item.nome} onChange={(e) => atualizarItem(item.id, { nome: e.target.value })} style={{ fontWeight: 400, color: 'var(--ink-soft)' }} />
                       <div className="cfg-barra"><div className="cfg-barra-preenchimento" style={{ width: `${Math.min(100, percentualItem * 100)}%` }} /></div>
                       <NumInput value={item.valor_mensal} onChange={(v) => atualizarItem(item.id, { valor_mensal: v })} suffix="R$" />

@@ -228,7 +228,7 @@ export default function ConfiguracoesPage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+      <div className="grid-3" style={{ gap: 16 }}>
         <div className="card">
           <div className="card-head">Kits</div>
           <Field label="Desconto vs. avulso" hint="Quanto o preço do kit sai mais barato que comprar as peças avulsas.">

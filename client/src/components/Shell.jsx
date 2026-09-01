@@ -37,6 +37,15 @@ export default function Shell({ children }) {
   // por cima do conteúdo novo.
   useEffect(() => { setMenuAberto(false); }, [location.pathname]);
 
+  // Esc fecha a gaveta — no celular quem usa teclado externo (e o leitor de
+  // tela) não tinha saída sem acertar o backdrop.
+  useEffect(() => {
+    if (!menuAberto) return undefined;
+    function aoTeclar(e) { if (e.key === 'Escape') setMenuAberto(false); }
+    document.addEventListener('keydown', aoTeclar);
+    return () => document.removeEventListener('keydown', aoTeclar);
+  }, [menuAberto]);
+
   function alternarSidebar() {
     setSidebarColapsado((v) => {
       const novo = !v;
@@ -55,7 +64,12 @@ export default function Shell({ children }) {
       <BuscaGlobal />
       <header className="shell-header">
         <div className="brand">
-          <button className="mobile-menu-btn" onClick={() => setMenuAberto((v) => !v)} aria-label="Abrir menu">
+          <button
+            className="mobile-menu-btn"
+            onClick={() => setMenuAberto((v) => !v)}
+            aria-label={menuAberto ? 'Fechar menu' : 'Abrir menu'}
+            aria-expanded={menuAberto}
+          >
             {menuAberto ? <X size={20} /> : <Menu size={20} />}
           </button>
           <div className="brand-mark"><img src={logoHbnHub} alt="" /></div>
@@ -85,9 +99,12 @@ export default function Shell({ children }) {
             {tema === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
           </button>
           {user && <span className="user-badge">{user.nome}</span>}
-          <button className="logout-btn" onClick={handleLogout}>
-            <LogOut size={13} style={{ marginRight: 6, verticalAlign: -2 }} />
-            Sair
+          {/* O rótulo vai num <span> próprio para o CSS poder escondê-lo no
+              celular (o botão vira só o ícone) sem perder o nome acessível,
+              que o aria-label garante. */}
+          <button className="logout-btn" onClick={handleLogout} aria-label="Sair">
+            <LogOut size={13} className="logout-btn-icone" />
+            <span className="logout-btn-texto">Sair</span>
           </button>
         </div>
       </header>

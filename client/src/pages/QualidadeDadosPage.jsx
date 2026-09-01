@@ -71,7 +71,7 @@ export default function QualidadeDadosPage() {
       {!loading && dados && (
         <div style={{ marginTop: 16 }}>
           <div className="card-head" style={{ marginBottom: 8 }}>A — Referências / produtos</div>
-          <div className="grid-4" style={{ marginBottom: 16, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+          <div className="grid-4" style={{ marginBottom: 16 }}>
             <Resumo label="Total de referências" valor={formatQtd(dados.produtos.totalReferencias)} />
             <Resumo label="Com custo de material > 0" valor={formatQtd(dados.produtos.comCustoMaterialPositivo)} />
             <Resumo label="Material cadastrado sem valor" valor={formatQtd(dados.produtos.materiaisZerados.total)} tom={dados.produtos.materiaisZerados.total > 0 ? 'tone-atencao' : ''} />
@@ -126,7 +126,7 @@ export default function QualidadeDadosPage() {
           )}
 
           <div className="card-head" style={{ marginBottom: 8, marginTop: 8 }}>B — Pedidos de marketplace</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
+          <div className="grid-3" style={{ marginBottom: 16 }}>
             <Resumo label="Confirmados" valor={formatQtd(dados.marketplace.confirmados)} />
             <Resumo label="Estimados (não liberados)" valor={formatQtd(dados.marketplace.estimados)} tom={dados.marketplace.estimados > 0 ? 'tone-atencao' : ''} />
             <Resumo label="Itens sem produto vinculado" valor={formatQtd(dados.marketplace.itensSemProdutoVinculado)} tom={dados.marketplace.itensSemProdutoVinculado > 0 ? 'tone-atencao' : ''} />
@@ -138,7 +138,7 @@ export default function QualidadeDadosPage() {
           )}
 
           <div className="card-head" style={{ marginBottom: 8, marginTop: 8 }}>C — Estoque</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 8 }}>
+          <div className="grid-4" style={{ marginBottom: 8 }}>
             <Resumo label="Variantes ativas" valor={formatQtd(dados.estoque.totalVariantes)} />
             <Resumo label="Com EAN" valor={formatQtd(dados.estoque.comEan)} />
             <Resumo label="Com saldo" valor={formatQtd(dados.estoque.comSaldo)} />
