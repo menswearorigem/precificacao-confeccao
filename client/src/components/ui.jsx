@@ -26,7 +26,23 @@ import { Download } from 'lucide-react';
 //      window: quem avisa é o visualViewport.
 const MARGEM_TELA = 8;
 
-function usePosicaoFlutuante(aberto, gatilhoRef, alturaEstimada = 280) {
+// Marca todo painel que vive num portal no <body> (lista do Select,
+// calendário do DateInput). Quem fecha ao "clicar fora" precisa saber que
+// um clique lá dentro ainda é um clique DENTRO do próprio campo — sem isso,
+// escolher um dia no calendário que mora dentro de outro painel (o filtro
+// de período) fechava o painel de fora antes do clique virar seleção.
+export const ATRIBUTO_FLUTUANTE = 'data-painel-flutuante';
+
+export function dentroDePainelFlutuante(alvo) {
+  return Boolean(alvo?.closest?.(`[${ATRIBUTO_FLUTUANTE}]`));
+}
+
+// `opcoes`: { alturaEstimada, larguraFixa } — larguraFixa para painéis que
+// têm largura própria no CSS (o calendário), em vez de acompanhar o gatilho.
+function usePosicaoFlutuante(aberto, gatilhoRef, opcoes = {}) {
+  const { alturaEstimada = 280, larguraFixa = null } = typeof opcoes === 'number'
+    ? { alturaEstimada: opcoes }
+    : opcoes;
   const [pos, setPos] = useState(null);
   useEffect(() => {
     if (!aberto) { setPos(null); return undefined; }
@@ -37,31 +53,44 @@ function usePosicaoFlutuante(aberto, gatilhoRef, alturaEstimada = 280) {
       const vv = window.visualViewport;
       const larguraTela = vv?.width ?? window.innerWidth;
       const alturaTela = vv?.height ?? window.innerHeight;
+      // Com teclado virtual aberto, a faixa visível não começa no 0 do
+      // layout — offsetTop/offsetLeft dizem onde ela começa, e é contra
+      // essa faixa (não contra a página) que o painel precisa ser grampeado.
+      const telaTopo = vv?.offsetTop ?? 0;
+      const telaEsq = vv?.offsetLeft ?? 0;
 
-      // Largura: acompanha o gatilho, mas nunca passa da tela.
-      const largura = Math.min(r.width, larguraTela - MARGEM_TELA * 2);
+      // Largura: acompanha o gatilho (ou usa a própria), mas nunca passa da tela.
+      const largura = Math.min(larguraFixa ?? r.width, larguraTela - MARGEM_TELA * 2);
 
       // Esquerda: grampeada nas duas bordas.
       const left = Math.min(
-        Math.max(MARGEM_TELA, r.left),
-        Math.max(MARGEM_TELA, larguraTela - largura - MARGEM_TELA),
+        Math.max(telaEsq + MARGEM_TELA, r.left),
+        Math.max(telaEsq + MARGEM_TELA, telaEsq + larguraTela - largura - MARGEM_TELA),
       );
 
       // Vertical: abre pra baixo se couber; senão pra cima; se não couber
-      // dos dois lados, fica no lado mais folgado e o painel rola por dentro
-      // (max-height vem junto, para o CSS não estourar a tela).
-      const espacoAbaixo = alturaTela - r.bottom - 6;
-      const espacoAcima = r.top - 6;
-      const paraCima = espacoAbaixo < Math.min(alturaEstimada, 200) && espacoAcima > espacoAbaixo;
-      const maxAltura = Math.max(140, (paraCima ? espacoAcima : espacoAbaixo) - MARGEM_TELA);
+      // dos dois lados, fica no lado mais folgado e o painel rola por dentro.
+      // O max-height NUNCA pode ser maior que o espaço realmente disponível —
+      // um piso fixo (o antigo Math.max(140, ...)) jogava o resto das opções
+      // pra fora da tela quando o campo estava colado no rodapé, que era
+      // exatamente o que acontecia com o seletor de "itens por página".
+      const espacoAbaixo = (telaTopo + alturaTela) - r.bottom - 6 - MARGEM_TELA;
+      const espacoAcima = r.top - telaTopo - 6 - MARGEM_TELA;
+      const cabeAbaixo = espacoAbaixo >= Math.min(alturaEstimada, 180);
+      const paraCima = !cabeAbaixo && espacoAcima > espacoAbaixo;
+      const espaco = Math.max(0, paraCima ? espacoAcima : espacoAbaixo);
+      const maxAltura = Math.max(120, Math.min(alturaEstimada, espaco));
 
-      setPos({
-        top: paraCima ? undefined : r.bottom + 6,
-        bottom: paraCima ? alturaTela - r.top + 6 : undefined,
-        left,
-        width: largura,
-        maxHeight: maxAltura,
-      });
+      // Ancora e, por último, grampeia dentro da faixa visível — assim, mesmo
+      // quando nem em cima nem embaixo cabe, o painel inteiro fica na tela e
+      // rola por dentro em vez de vazar pra fora.
+      const topoBruto = paraCima ? r.top - 6 - maxAltura : r.bottom + 6;
+      const top = Math.min(
+        Math.max(telaTopo + MARGEM_TELA, topoBruto),
+        Math.max(telaTopo + MARGEM_TELA, telaTopo + alturaTela - maxAltura - MARGEM_TELA),
+      );
+
+      setPos({ top, left, width: largura, maxHeight: maxAltura });
     }
     atualizar();
     window.addEventListener('scroll', atualizar, true);
@@ -323,13 +352,47 @@ export function ThOrdenavel({ coluna, atual, direcao, onClick, children, classNa
   );
 }
 
-// Rodapé de paginação — contagem "mostrando 1–50 de 1.926", seletor de
-// tamanho de página e navegação anterior/próxima. `totalItens` já é o
-// total depois de qualquer filtro/busca aplicado pela própria página.
-export function Paginacao({ pagina, totalPaginas, tamanho, tamanhos = TAMANHOS_PAGINA, totalItens, inicio, fim, setPagina, setTamanho }) {
-  if (totalItens === 0) return null;
+// Cabeçalho de uma coluna que carrega mais de um dado empilhado na mesma
+// célula (ex.: "Nº · Data · Canal") — cada rótulo continua sendo um botão de
+// ordenação independente, então agrupar colunas pra caber na tela não custa
+// nenhuma ordenação. `opcoes`: [{ coluna, rotulo, title }].
+export function ThGrupoOrdenavel({ opcoes, atual, direcao, onClick, className = '', style }) {
   return (
-    <div className="paginacao-barra">
+    <th className={`th-grupo${className ? ` ${className}` : ''}`} style={style}>
+      {opcoes.map((o, i) => (
+        <Fragment key={o.coluna}>
+          {i > 0 && <span className="th-grupo-sep" aria-hidden="true">·</span>}
+          <button
+            type="button"
+            className={'th-ordenavel' + (o.coluna === atual ? ' is-ativa' : '')}
+            title={o.title}
+            onClick={() => onClick(o.coluna)}
+          >
+            {o.rotulo}
+            {o.coluna === atual
+              ? (direcao === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />)
+              : <ChevronsUpDown size={11} />}
+          </button>
+        </Fragment>
+      ))}
+    </th>
+  );
+}
+
+// Barra de paginação — contagem "mostrando 1–50 de 1.926", seletor de
+// tamanho de página, escolha direta da página e navegação. `totalItens` já é
+// o total depois de qualquer filtro/busca aplicado pela própria página.
+// `posicao`: 'rodape' (padrão) ou 'topo' — a mesma barra é renderizada nas
+// duas pontas de toda lista paginada, pra não precisar rolar até o fim só
+// pra trocar de página. Só muda o espaçamento/divisória.
+export function Paginacao({
+  pagina, totalPaginas, tamanho, tamanhos = TAMANHOS_PAGINA, totalItens, inicio, fim,
+  setPagina, setTamanho, posicao = 'rodape',
+}) {
+  if (totalItens === 0) return null;
+  const paginas = Array.from({ length: totalPaginas }, (_, i) => i + 1);
+  return (
+    <div className={`paginacao-barra paginacao-${posicao}`}>
       <span className="paginacao-contagem">
         Mostrando {(inicio + 1).toLocaleString('pt-BR')}–{fim.toLocaleString('pt-BR')} de {totalItens.toLocaleString('pt-BR')}
       </span>
@@ -337,12 +400,27 @@ export function Paginacao({ pagina, totalPaginas, tamanho, tamanhos = TAMANHOS_P
         <Select value={String(tamanho)} onChange={(e) => setTamanho(Number(e.target.value))} className="paginacao-tamanho">
           {tamanhos.map((t) => <option key={t} value={String(t)}>{t} por página</option>)}
         </Select>
+        <button type="button" className="icon-btn" disabled={pagina <= 1} onClick={() => setPagina(1)} aria-label="Primeira página">
+          <ChevronsLeft size={16} />
+        </button>
         <button type="button" className="icon-btn" disabled={pagina <= 1} onClick={() => setPagina(pagina - 1)} aria-label="Página anterior">
           <ChevronLeft size={16} />
         </button>
-        <span className="paginacao-pagina">Página {pagina} de {totalPaginas}</span>
+        {totalPaginas > 1 ? (
+          <span className="paginacao-pagina">
+            <Select value={String(pagina)} onChange={(e) => setPagina(Number(e.target.value))} className="paginacao-salto">
+              {paginas.map((p) => <option key={p} value={String(p)}>{`Página ${p}`}</option>)}
+            </Select>
+            <span className="paginacao-de">de {totalPaginas}</span>
+          </span>
+        ) : (
+          <span className="paginacao-pagina">Página 1 de 1</span>
+        )}
         <button type="button" className="icon-btn" disabled={pagina >= totalPaginas} onClick={() => setPagina(pagina + 1)} aria-label="Próxima página">
           <ChevronRight size={16} />
+        </button>
+        <button type="button" className="icon-btn" disabled={pagina >= totalPaginas} onClick={() => setPagina(totalPaginas)} aria-label="Última página">
+          <ChevronsRight size={16} />
         </button>
       </div>
     </div>
@@ -634,7 +712,8 @@ export function Select({ value, onChange, children, disabled, className = '', st
         <div
           className="select-custom-painel"
           ref={listaRef}
-          style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.width, maxHeight: pos.maxHeight }}
+          {...{ [ATRIBUTO_FLUTUANTE]: '' }}
+          style={{ top: pos.top, left: pos.left, minWidth: pos.width, maxHeight: pos.maxHeight }}
         >
           {comBusca && (
             <div className="select-custom-busca">
@@ -757,7 +836,7 @@ export function DateInput({ value, onChange, onBlur, disabled, placeholder = 'dd
   const selecionada = useMemo(() => paraData(value), [value]);
   const [cursor, setCursor] = useState(() => selecionada || new Date());
   const hoje = hojeSemHora();
-  const pos = usePosicaoFlutuante(aberto, gatilhoRef);
+  const pos = usePosicaoFlutuante(aberto, gatilhoRef, { alturaEstimada: 330, larguraFixa: LARGURA_PAINEL });
 
   // Guarda sempre a versão mais recente do onBlur: em telas que fazem
   // onChange (só troca o estado local) + onBlur (salva de fato, lendo o
@@ -860,21 +939,18 @@ export function DateInput({ value, onChange, onBlur, disabled, placeholder = 'dd
           ×
         </button>
       )}
-      {/* O calendário tem largura própria (LARGURA_PAINEL), então a esquerda é
-          grampeada contra ela — e não contra a largura do gatilho, que o hook
-          já grampeou. O `bottom` vira o ponto de ancoragem quando não há
-          altura embaixo (celular com o teclado aberto). */}
+      {/* O calendário tem largura própria (LARGURA_PAINEL) — o hook já recebe
+          essa largura em `larguraFixa` e devolve topo/esquerda já grampeados
+          dentro da faixa visível da tela (inclusive com teclado virtual
+          aberto no celular). */}
       {aberto && pos && createPortal(
         <div
           ref={painelRef}
           className="date-custom-painel"
           role="dialog"
           aria-label="Escolher data"
-          style={{
-            top: pos.top,
-            bottom: pos.bottom,
-            left: Math.max(8, Math.min(pos.left, (window.visualViewport?.width ?? window.innerWidth) - LARGURA_PAINEL - 8)),
-          }}
+          {...{ [ATRIBUTO_FLUTUANTE]: '' }}
+          style={{ top: pos.top, left: pos.left }}
         >
           <div className="date-custom-cabecalho">
             <button type="button" className="date-custom-nav" onMouseDown={semFoco} onClick={() => setCursor((c) => new Date(c.getFullYear() - 1, c.getMonth(), 1))} aria-label="Ano anterior"><ChevronsLeft size={14} /></button>

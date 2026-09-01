@@ -195,6 +195,7 @@ export default function RelatorioTaxasPage() {
               </label>
             </div>
             <p className="page-sub" style={{ marginTop: 0 }}>{tabela.totalItens.toLocaleString('pt-BR')} resultado(s)</p>
+            <Paginacao {...tabela} posicao="topo" />
             <DataTable>
             <table className="data-table">
               <thead>

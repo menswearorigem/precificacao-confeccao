@@ -15,13 +15,31 @@ export default function DataTable({ children, densidade, className = '' }) {
   const wrapRef = useRef(null);
   const [sombraEsq, setSombraEsq] = useState(false);
   const [sombraDir, setSombraDir] = useState(false);
+  const [precisaRolar, setPrecisaRolar] = useState(false);
 
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return undefined;
     function atualizar() {
+      // `overflow-x: auto` faz o navegador tratar TAMBÉM o eixo Y como área
+      // de rolagem — e um thead com position:sticky gruda na área de rolagem
+      // mais próxima, que nesse caso nunca rola. Resultado: o cabeçalho não
+      // acompanhava a rolagem da página. Aqui a moldura só liga a rolagem
+      // lateral quando a tabela de fato não cabe; quando cabe (o normal
+      // depois do agrupamento de colunas), o overflow sai do caminho e o
+      // cabeçalho gruda no topo da tela de verdade.
+      // A medida usa a largura da TABELA (não o scrollWidth da moldura), pra
+      // não ficar oscilando entre ligado/desligado a cada re-medição.
+      const tabela = el.querySelector('table');
+      const larguraConteudo = tabela ? tabela.scrollWidth : el.scrollWidth;
+      // Histerese: liga com folga e só desliga quando sobra espaço de novo —
+      // sem isso, uma tabela que fica a poucos pixels do limite podia ficar
+      // alternando entre "rola" e "não rola" a cada re-medição.
+      setPrecisaRolar((antes) => (antes
+        ? larguraConteudo > el.clientWidth
+        : larguraConteudo > el.clientWidth + 4));
       setSombraEsq(el.scrollLeft > 2);
-      setSombraDir(el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
+      setSombraDir(el.scrollLeft + el.clientWidth < larguraConteudo - 2);
     }
     atualizar();
     el.addEventListener('scroll', atualizar, { passive: true });
@@ -38,6 +56,7 @@ export default function DataTable({ children, densidade, className = '' }) {
   const classes = [
     'data-table-outer',
     `densidade-${densidadeFinal}`,
+    precisaRolar ? 'rola-lateral' : 'sem-rolagem-lateral',
     sombraEsq && 'sombra-esq',
     sombraDir && 'sombra-dir',
     className,

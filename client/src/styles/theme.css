@@ -807,7 +807,20 @@ h2 + .page-sub { margin-top: 7px; }
 .periodo-filtro-preset.active { background: var(--accent-soft); color: var(--ink); font-weight: 600; }
 .periodo-filtro-custom { border-top: 1px solid var(--border); padding-top: 10px; }
 .periodo-filtro-custom .date-custom { width: 100%; }
-.periodo-filtro-custom .date-custom-painel { left: 0 !important; }
+/* (o `left: 0 !important` que existia aqui era herança de quando o calendário
+   era position:absolute — com o painel em position:fixed num portal, ele
+   jogava o calendário pra borda esquerda da tela. Removido de propósito.) */
+.periodo-filtro-custom > .field-label { display: block; margin-bottom: 9px; }
+.periodo-filtro-datas { display: flex; gap: 8px; }
+.periodo-filtro-data { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.periodo-filtro-data > span {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-faint);
+}
+.periodo-filtro-fechar { width: 100%; margin-top: 10px; justify-content: center; }
 
 input, select, textarea {
   font-family: var(--font-body);
@@ -1001,6 +1014,11 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.6; cursor: not-a
   z-index: 1000;
   display: flex;
   flex-direction: column;
+  /* A largura mínima acompanha o gatilho (style inline), mas o painel pode
+     crescer até caber o rótulo inteiro — "100 por página" não precisa mais
+     ser cortado só porque o botão do rodapé é estreito. */
+  width: max-content;
+  max-width: calc(100vw - 16px);
   background: var(--surface-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -1340,11 +1358,27 @@ table.data-table tr.clickable-row:hover { background: var(--row-hover-strong); }
 .data-table-outer.sombra-dir::after { opacity: 1; }
 .data-table-wrap { overflow-x: auto; }
 
+/* Cabeçalho de tabela grudado no topo da TELA ao rolar a página.
+   Detalhe que fazia isso não funcionar antes: `overflow-x: auto` obriga o
+   navegador a tratar o eixo Y como área de rolagem também, e um thead
+   sticky gruda na área de rolagem mais próxima — que ali nunca rolava. Por
+   isso o <DataTable> agora só liga a rolagem lateral quando a tabela
+   realmente não cabe (classe .rola-lateral); quando cabe, o overflow sai do
+   caminho e o sticky passa a valer contra a rolagem da página (.shell-main).
+   O mesmo vale pro .card, que também tinha overflow-x:auto e cortava tudo. */
+.card:has(.data-table-outer) { overflow: visible; }
+.data-table-outer.sem-rolagem-lateral .data-table-wrap { overflow: visible; }
+
 .data-table-wrap table.data-table thead th {
   position: sticky;
   top: 0;
   z-index: 4;
   background: var(--surface-alt);
+}
+.data-table-outer.sem-rolagem-lateral table.data-table thead th {
+  /* borda de baixo por sombra: a `border-bottom` da célula não acompanha o
+     elemento grudado em alguns navegadores e some no meio da rolagem. */
+  box-shadow: inset 0 -1.5px 0 var(--border), 0 8px 14px -12px rgba(0, 0, 0, 0.5);
 }
 .data-table-wrap table.data-table tr > *:first-child {
   position: sticky;
@@ -1408,6 +1442,25 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
 .th-ordenavel.is-ativa svg { opacity: 1; color: var(--terracotta); }
 .th-ordenavel:hover svg { opacity: 0.8; }
 
+/* Cabeçalho de coluna agrupada (dois ou três dados empilhados na mesma
+   célula) — cada rótulo continua sendo um botão de ordenação próprio. */
+.th-grupo .th-ordenavel { font-size: inherit; }
+.th-grupo-sep { margin: 0 5px; color: var(--ink-faint); opacity: 0.6; }
+
+/* Célula que empilha o dado principal e o secundário, em vez de gastar duas
+   colunas com eles — é o que tira a rolagem lateral das tabelas largas. */
+.cel-empilhada { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cel-empilhada > .cel-principal { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.cel-empilhada > .cel-secundaria {
+  font-size: 11px;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.cel-empilhada > .cel-secundaria .stamp { font-size: 9.5px; }
+
 .paginacao-barra {
   display: flex;
   align-items: center;
@@ -1419,9 +1472,25 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
   color: var(--ink-soft);
 }
 .paginacao-contagem { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-.paginacao-controles { display: flex; align-items: center; gap: 10px; }
+.paginacao-controles { display: flex; align-items: center; gap: 6px; }
 .paginacao-tamanho { min-width: 130px; }
-.paginacao-pagina { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.paginacao-pagina {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.paginacao-salto { min-width: 112px; }
+.paginacao-de { color: var(--ink-soft); }
+/* A mesma barra aparece nas duas pontas da lista — em cima ela fecha contra
+   o cabeçalho do card (divisória embaixo), embaixo contra o fim da tabela. */
+.paginacao-barra.paginacao-topo {
+  padding: 0 4px 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
 
 .exportar { position: relative; display: inline-block; }
 .exportar-backdrop { position: fixed; inset: 0; z-index: 29; }
@@ -1607,6 +1676,9 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
   transition: box-shadow 0.2s var(--ease);
 }
 .venda-card:hover { box-shadow: var(--shadow-sm); }
+/* A aba Vendas é uma lista de cards (não uma tabela), mas pagina igual —
+   as barras ficam nas duas pontas, sem moldura de card em volta. */
+.vendas-lista .paginacao-barra.paginacao-topo { border-bottom: none; padding-bottom: 4px; margin-bottom: 4px; }
 .venda-card-header {
   display: flex;
   justify-content: space-between;

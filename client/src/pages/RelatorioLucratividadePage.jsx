@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct, formatQtd } from '../lib/format';
-import { Select, StatCard, ThOrdenavel, Paginacao, BotaoExportar } from '../components/ui';
+import { Select, StatCard, ThOrdenavel, ThGrupoOrdenavel, Paginacao, BotaoExportar } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL, CANAIS_COM_REPASSE } from '../lib/marketplaces';
@@ -549,7 +549,19 @@ function VendaDetalheCard({ p, config }) {
   );
 }
 
+// Os cards de venda são pesados (foto, itens, composição do lucro), então a
+// aba abria o período inteiro de uma vez. Agora usa a mesma paginação do
+// resto do sistema — com a barra em cima e embaixo — e guarda o estado em
+// parâmetros próprios na URL (prefixo "vendas"), pra não brigar com a
+// paginação da aba Pedidos.
 function VendasTab({ pedidos, config, busca }) {
+  const tabela = useTabela(pedidos, {
+    colunas: COLUNAS_PEDIDOS_ORDENAVEIS,
+    colunaPadrao: 'data',
+    direcaoPadrao: 'desc',
+    prefixo: 'vendas',
+  });
+
   if (pedidos.length === 0) {
     return (
       <div className="card">
@@ -558,8 +570,10 @@ function VendasTab({ pedidos, config, busca }) {
     );
   }
   return (
-    <div>
-      {pedidos.map((p) => <VendaDetalheCard key={p.id} p={p} config={config} />)}
+    <div className="vendas-lista">
+      <Paginacao {...tabela} posicao="topo" />
+      {tabela.itensPagina.map((p) => <VendaDetalheCard key={p.id} p={p} config={config} />)}
+      <Paginacao {...tabela} />
     </div>
   );
 }
@@ -1184,23 +1198,52 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                 <div className="card-head">
                   Pedidos no Período ({tabelaPedidos.totalItens}{tabelaPedidos.totalItens !== relatorio.pedidos.length ? ` de ${relatorio.pedidos.length}` : ''})
                 </div>
+                <Paginacao {...tabelaPedidos} posicao="topo" />
                 <DataTable>
+                {/* Colunas agrupadas de propósito: as 12 colunas antigas não
+                    cabiam na tela e obrigavam a rolar pro lado pra ver o
+                    vínculo e o valor recebido. Cada célula agora empilha o
+                    dado principal e o secundário (nº + data/canal, custo +
+                    taxa, lucro + margem, item + vínculo) — nada saiu da
+                    tela, e cada rótulo do cabeçalho continua ordenando. */}
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <ThOrdenavel coluna="numero" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor} style={{ width: 86 }}>Nº</ThOrdenavel>
-                      <ThOrdenavel coluna="data" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor} style={{ width: 84 }}>Data</ThOrdenavel>
-                      {isMarketplace ? <th style={{ maxWidth: 200 }}>Item Pedido</th> : (
+                      <ThGrupoOrdenavel
+                        atual={tabelaPedidos.coluna}
+                        direcao={tabelaPedidos.direcao}
+                        onClick={tabelaPedidos.ordenarPor}
+                        opcoes={[
+                          { coluna: 'numero', rotulo: 'Nº' },
+                          { coluna: 'data', rotulo: 'Data' },
+                          { coluna: 'canal', rotulo: 'Canal' },
+                        ]}
+                      />
+                      {isMarketplace ? (
+                        <th style={{ minWidth: 240 }} title="Item do pedido e produto vinculado">Item / Vínculo</th>
+                      ) : (
                         <ThOrdenavel coluna="cliente" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Cliente</ThOrdenavel>
                       )}
-                      <ThOrdenavel coluna="canal" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Canal</ThOrdenavel>
                       <ThOrdenavel coluna="receita" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Receita</ThOrdenavel>
-                      <ThOrdenavel coluna="custo" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Custo</ThOrdenavel>
-                      <ThOrdenavel coluna="taxaMarketplace" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor} title="Taxa Marketplace">Taxa Mkt.</ThOrdenavel>
-                      <ThOrdenavel coluna="lucro" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Lucro</ThOrdenavel>
-                      <ThOrdenavel coluna="margem" atual={tabelaPedidos.coluna} direcao={tabelaPedidos.direcao} onClick={tabelaPedidos.ordenarPor}>Margem</ThOrdenavel>
+                      <ThGrupoOrdenavel
+                        atual={tabelaPedidos.coluna}
+                        direcao={tabelaPedidos.direcao}
+                        onClick={tabelaPedidos.ordenarPor}
+                        opcoes={[
+                          { coluna: 'custo', rotulo: 'Custo' },
+                          { coluna: 'taxaMarketplace', rotulo: 'Taxa mkt.', title: 'Taxa de Marketplace' },
+                        ]}
+                      />
+                      <ThGrupoOrdenavel
+                        atual={tabelaPedidos.coluna}
+                        direcao={tabelaPedidos.direcao}
+                        onClick={tabelaPedidos.ordenarPor}
+                        opcoes={[
+                          { coluna: 'lucro', rotulo: 'Lucro' },
+                          { coluna: 'margem', rotulo: 'Margem' },
+                        ]}
+                      />
                       {isMarketplace && <th title="Valor que o marketplace pagou de verdade — Mercado Livre pelo pagamento, Shopee pela conciliação (escrow).">Recebido</th>}
-                      {isMarketplace && <th title="Produto Vinculado">Vínculo</th>}
                       {isMarketplace && <th />}
                     </tr>
                   </thead>
@@ -1210,83 +1253,103 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                       const qtdVinculados = isMarketplace ? (p.itens || []).filter((it) => it.produtoId).length : 0;
                       return (
                         <tr key={p.id}>
-                          <td className="mono" style={{ whiteSpace: 'nowrap' }}>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                              {p.numeroExibicao}
-                              <CopiarBotao valor={p.numeroExibicao || p.numero} label="Copiar nº do pedido" />
-                            </span>
-                            {p.pacote && <span className="stamp sm tone-neutro" style={{ marginLeft: 6 }} title="Compra com mais de um anúncio no mesmo carrinho, agrupada num card só.">pacote</span>}
+                          <td>
+                            <div className="cel-empilhada">
+                              <span className="cel-principal mono">
+                                {p.numeroExibicao}
+                                <CopiarBotao valor={p.numeroExibicao || p.numero} label="Copiar nº do pedido" />
+                                {p.pacote && <span className="stamp sm tone-neutro" title="Compra com mais de um anúncio no mesmo carrinho, agrupada num card só.">pacote</span>}
+                              </span>
+                              <span className="cel-secundaria">
+                                <span className="mono">{new Date(p.data_pedido).toLocaleDateString('pt-BR')}</span>
+                                <span>· {p.canal_venda || '—'}</span>
+                              </span>
+                            </div>
                           </td>
-                          <td className="mono">{new Date(p.data_pedido).toLocaleDateString('pt-BR')}</td>
                           {isMarketplace ? (
-                            <td className="col-truncar" style={{ maxWidth: 200 }}>
-                              {itemUnico ? (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                            <td style={{ maxWidth: 320 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                                {itemUnico && (
                                   <FotoProduto produtoId={itemUnico.produtoId} temFoto={itemUnico.temFoto} size={32} alt={itemUnico.referencia || itemUnico.tituloExterno} />
-                                  <div style={{ minWidth: 0, flex: 1 }}>
-                                    <div className="col-truncar" title={itemUnico.tituloExterno || 'Item sem título'}>{itemUnico.tituloExterno || 'Item sem título'}</div>
-                                    <div className="col-truncar" style={{ fontSize: 11, color: 'var(--ink-soft)' }} title={`SKU: ${itemUnico.skuExterno || '—'}`}>SKU: {itemUnico.skuExterno || '—'}</div>
-                                  </div>
+                                )}
+                                <div className="cel-empilhada" style={{ flex: 1, minWidth: 0 }}>
+                                  <span className="col-truncar" title={itemUnico ? (itemUnico.tituloExterno || 'Item sem título') : `${p.itens?.length || 0} itens`}>
+                                    {itemUnico ? (itemUnico.tituloExterno || 'Item sem título') : `${p.itens?.length || 0} itens`}
+                                  </span>
+                                  <span className="cel-secundaria col-truncar" title={itemUnico ? `SKU: ${itemUnico.skuExterno || '—'}` : undefined}>
+                                    {itemUnico ? (
+                                      <>
+                                        <span className="mono">SKU: {itemUnico.skuExterno || '—'}</span>
+                                        {itemUnico.produtoId ? (
+                                          <>
+                                            <span className="mono" title="Produto vinculado">· {itemUnico.referencia}</span>
+                                            {itemUnico.kitId && <span className="stamp sm tone-neutro">kit</span>}
+                                          </>
+                                        ) : <span className="stamp sm tone-atencao">sem vínculo</span>}
+                                      </>
+                                    ) : (
+                                      <span>{qtdVinculados}/{p.itens?.length || 0} vinculados</span>
+                                    )}
+                                  </span>
                                 </div>
-                              ) : (
-                                <span>{p.itens?.length || 0} itens</span>
-                              )}
+                              </div>
                             </td>
                           ) : (
                             <td>{p.cliente_nome || '—'}</td>
                           )}
-                          <td>{p.canal_venda || '—'}</td>
-                          <td className="mono">
-                            {brl(p.receita)}
-                            {p.candidatoDescontoNaoCapturado && (
-                              <span className="stamp sm tone-atencao" style={{ marginLeft: 6 }} title="A taxa cobrada, em % da receita gravada, está acima da comissão esperada do Mercado Livre — sinal de que pode ter um desconto no fechamento que não saiu da receita (receita gravada maior que o valor realmente transacionado). Confira contra o painel do Mercado Livre.">
-                                receita candidata
-                              </span>
-                            )}
-                          </td>
-                          <td className="mono">
-                            {brl(p.custo)}
-                            {p.custoIncompleto && <span className="stamp sm tone-atencao" style={{ marginLeft: 6 }} title="Item sem produto vinculado — este pedido fica de fora do total agregado do topo.">sem custo cadastrado</span>}
-                          </td>
-                          <td className="mono">{p.taxaMarketplace ? brl(p.taxaMarketplace) : '—'}</td>
-                          <td className="mono" style={{ fontWeight: 700 }}>
-                            {brl(p.lucro)}
-                            {isMarketplace && !p.calculoReal && <span className="stamp sm tone-neutro" style={{ marginLeft: 6 }}>estimativa</span>}
-                          </td>
-                          <td><MargemPill valor={p.margemPct} config={config} /></td>
-                          {isMarketplace && (
-                            <td className="mono">
-                              {!CANAIS_COM_REPASSE.includes(p.canal_venda) ? '—' : p.valorRecebido != null ? (
-                                <>
-                                  {brl(p.valorRecebido)}{' '}
-                                  <span className={'stamp sm ' + (p.valorRecebidoStatus === 'liberado' ? 'tone-elevada' : 'tone-atencao')}>
-                                    {p.valorRecebidoStatus === 'liberado' ? 'liberado' : 'confirmado'}
+                          <td>
+                            <div className="cel-empilhada">
+                              <span className="cel-principal mono">{brl(p.receita)}</span>
+                              {p.candidatoDescontoNaoCapturado && (
+                                <span className="cel-secundaria">
+                                  <span className="stamp sm tone-atencao" title="A taxa cobrada, em % da receita gravada, está acima da comissão esperada do Mercado Livre — sinal de que pode ter um desconto no fechamento que não saiu da receita (receita gravada maior que o valor realmente transacionado). Confira contra o painel do Mercado Livre.">
+                                    receita candidata
                                   </span>
-                                  {p.valorRecebidoStatus !== 'liberado' && p.valorRecebidoLiberacaoEm && (
-                                    <div className="page-sub" style={{ marginTop: 2 }}>libera em {dataBr(p.valorRecebidoLiberacaoEm.slice(0, 10))}</div>
-                                  )}
-                                </>
-                              ) : 'sem confirmação ainda'}
-                            </td>
-                          )}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td>
+                            <div className="cel-empilhada">
+                              <span className="cel-principal mono">
+                                {brl(p.custo)}
+                                {p.custoIncompleto && <span className="stamp sm tone-atencao" title="Item sem produto vinculado — este pedido fica de fora do total agregado do topo.">sem custo</span>}
+                              </span>
+                              <span className="cel-secundaria mono" title="Taxa de Marketplace">
+                                taxa {p.taxaMarketplace ? brl(p.taxaMarketplace) : '—'}
+                              </span>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="cel-empilhada">
+                              <span className="cel-principal mono" style={{ fontWeight: 700 }}>
+                                {brl(p.lucro)}
+                                {isMarketplace && !p.calculoReal && <span className="stamp sm tone-neutro">estimativa</span>}
+                              </span>
+                              <span className="cel-secundaria"><MargemPill valor={p.margemPct} config={config} /></span>
+                            </div>
+                          </td>
                           {isMarketplace && (
                             <td>
-                              {itemUnico ? (
-                                itemUnico.produtoId ? (
-                                  <>
-                                    <span className="mono">{itemUnico.referencia}</span>{' '}
-                                    {itemUnico.kitId && <span className="stamp sm tone-neutro">kit</span>}
-                                  </>
-                                ) : <span className="stamp sm tone-atencao">sem vínculo</span>
-                              ) : (
-                                <span>{qtdVinculados}/{p.itens?.length || 0} vinculados</span>
-                              )}
+                              {!CANAIS_COM_REPASSE.includes(p.canal_venda) ? <span className="mono">—</span> : p.valorRecebido != null ? (
+                                <div className="cel-empilhada">
+                                  <span className="cel-principal mono">
+                                    {brl(p.valorRecebido)}
+                                    <span className={'stamp sm ' + (p.valorRecebidoStatus === 'liberado' ? 'tone-elevada' : 'tone-atencao')}>
+                                      {p.valorRecebidoStatus === 'liberado' ? 'liberado' : 'confirmado'}
+                                    </span>
+                                  </span>
+                                  {p.valorRecebidoStatus !== 'liberado' && p.valorRecebidoLiberacaoEm && (
+                                    <span className="cel-secundaria">libera em {dataBr(p.valorRecebidoLiberacaoEm.slice(0, 10))}</span>
+                                  )}
+                                </div>
+                              ) : <span className="cel-secundaria">sem confirmação ainda</span>}
                             </td>
                           )}
                           {isMarketplace && (
                             <td>
                               <button className="btn btn-ghost" onClick={() => setModalPedidoId(p.id)}>
-                                {p.custoIncompleto ? 'Vincular produto' : 'Alterar produto'}
+                                {p.custoIncompleto ? 'Vincular' : 'Alterar'}
                               </button>
                             </td>
                           )}
@@ -1294,7 +1357,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                       );
                     })}
                     {tabelaPedidos.totalItens === 0 && (
-                      <tr><td colSpan="11">{busca ? 'Nenhum pedido encontrado para essa busca.' : 'Nenhum pedido no período.'}</td></tr>
+                      <tr><td colSpan={isMarketplace ? 7 : 5}>{busca ? 'Nenhum pedido encontrado para essa busca.' : 'Nenhum pedido no período.'}</td></tr>
                     )}
                   </tbody>
                 </table>

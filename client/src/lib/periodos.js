@@ -1,7 +1,14 @@
 // Presets de período usados no filtro de data das telas de Marketplace
 // (PeriodoFiltro.jsx) — datas sempre em ISO (yyyy-mm-dd), fuso local.
+// toISOString() converte pra UTC — no fuso de Brasília (UTC-3) isso vira o
+// DIA SEGUINTE a partir das 21h, e o preset "Hoje" passava a pedir um dia
+// que ainda não existe (relatório vazio à noite). Monta a data a partir dos
+// componentes locais, que é o que o resto do sistema entende por "hoje".
 function iso(data) {
-  return data.toISOString().slice(0, 10);
+  const ano = data.getFullYear();
+  const mes = String(data.getMonth() + 1).padStart(2, '0');
+  const dia = String(data.getDate()).padStart(2, '0');
+  return `${ano}-${mes}-${dia}`;
 }
 
 function hojeISO() {

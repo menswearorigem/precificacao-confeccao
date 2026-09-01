@@ -183,6 +183,7 @@ export default function ProdutosListPage() {
       {aviso && <div className="card" style={{ marginBottom: 16 }}>{aviso}</div>}
 
       <div className="card">
+        <Paginacao {...tabela} posicao="topo" />
         <DataTable>
         <table className="data-table">
           <thead>

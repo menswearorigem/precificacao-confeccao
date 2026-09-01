@@ -10,14 +10,18 @@ export const TAMANHOS_PAGINA = [25, 50, 100];
 // valor comparável do item (ex.: { referencia: (p) => p.referencia }).
 // Trabalha sobre a lista que a página já filtrou (busca/período/etc.) —
 // não busca nada de novo, só ordena e fatia o que já teria sido mostrado.
-export function useTabela(lista, { colunas, colunaPadrao, direcaoPadrao = 'asc', tamanhoPadrao = 25 }) {
+// `prefixo`: quando duas listas paginadas convivem na mesma rota (abas de uma
+// mesma tela), cada uma precisa dos seus próprios parâmetros na URL — senão
+// trocar de página numa mexe na outra.
+export function useTabela(lista, { colunas, colunaPadrao, direcaoPadrao = 'asc', tamanhoPadrao = 25, prefixo = '' }) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const chave = (nome) => (prefixo ? `${prefixo}_${nome}` : nome);
 
-  const ordemUrl = searchParams.get('ordem');
+  const ordemUrl = searchParams.get(chave('ordem'));
   const coluna = ordemUrl && colunas[ordemUrl] ? ordemUrl : colunaPadrao;
-  const dirUrl = searchParams.get('dir');
+  const dirUrl = searchParams.get(chave('dir'));
   const direcao = dirUrl === 'desc' || dirUrl === 'asc' ? dirUrl : direcaoPadrao;
-  const tamanhoUrl = Number(searchParams.get('tamanho'));
+  const tamanhoUrl = Number(searchParams.get(chave('tamanho')));
   const tamanho = TAMANHOS_PAGINA.includes(tamanhoUrl) ? tamanhoUrl : tamanhoPadrao;
 
   const ordenada = useMemo(() => {
@@ -41,7 +45,7 @@ export function useTabela(lista, { colunas, colunaPadrao, direcaoPadrao = 'asc',
 
   const totalItens = ordenada.length;
   const totalPaginas = Math.max(1, Math.ceil(totalItens / tamanho));
-  const paginaUrl = Number(searchParams.get('pagina')) || 1;
+  const paginaUrl = Number(searchParams.get(chave('pagina'))) || 1;
   const pagina = Math.min(Math.max(1, paginaUrl), totalPaginas);
 
   const inicio = totalItens === 0 ? 0 : (pagina - 1) * tamanho;
@@ -51,7 +55,7 @@ export function useTabela(lista, { colunas, colunaPadrao, direcaoPadrao = 'asc',
   function atualizarParams(patch) {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
-      for (const [k, v] of Object.entries(patch)) next.set(k, String(v));
+      for (const [k, v] of Object.entries(patch)) next.set(chave(k), String(v));
       return next;
     }, { replace: true });
   }

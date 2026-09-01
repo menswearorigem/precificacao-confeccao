@@ -165,6 +165,7 @@ export default function PedidosListPage({ origemFiltro }) {
       {!loading && <p className="page-sub" style={{ marginTop: -8, marginBottom: 12 }}>{tabela.totalItens.toLocaleString('pt-BR')} resultado(s)</p>}
 
       <div className="card">
+        <Paginacao {...tabela} posicao="topo" />
         <DataTable>
         <table className="data-table">
           <thead>

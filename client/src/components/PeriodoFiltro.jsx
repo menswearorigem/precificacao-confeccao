@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { CalendarDays, ChevronDown } from 'lucide-react';
-import { DateInput } from './ui';
+import { DateInput, dentroDePainelFlutuante } from './ui';
 import { PRESETS_PERIODO, detectarPreset } from '../lib/periodos';
 import { dataBr } from '../lib/format';
 
@@ -15,6 +15,12 @@ export function PeriodoFiltro({ inicio, fim, onChange }) {
   useEffect(() => {
     if (!aberto) return undefined;
     function aoClicarFora(e) {
+      // O calendário do DateInput vive num portal no <body> (pra não ser
+      // cortado por nenhum card com overflow), então ele NÃO está dentro de
+      // raizRef. Sem esta checagem, o mousedown no dia fechava este painel
+      // antes do clique virar seleção — era por isso que "data personalizada"
+      // simplesmente não selecionava nada.
+      if (dentroDePainelFlutuante(e.target)) return;
       if (!raizRef.current?.contains(e.target)) setAberto(false);
     }
     function aoTeclarEsc(e) {
@@ -36,6 +42,17 @@ export function PeriodoFiltro({ inicio, fim, onChange }) {
   function escolherPreset(preset) {
     onChange(preset.calcular());
     setAberto(false);
+  }
+
+  // Escolher um começo depois do fim (ou um fim antes do começo) devolvia um
+  // período vazio sem explicar nada — aqui a outra ponta acompanha, que é o
+  // que a pessoa quis dizer nas duas situações.
+  function mudarInicio(valor) {
+    onChange({ inicio: valor, fim: !fim || fim < valor ? valor : fim });
+  }
+
+  function mudarFim(valor) {
+    onChange({ inicio: !inicio || inicio > valor ? valor : inicio, fim: valor });
   }
 
   return (
@@ -60,11 +77,20 @@ export function PeriodoFiltro({ inicio, fim, onChange }) {
             ))}
           </div>
           <div className="periodo-filtro-custom">
-            <span className="field-label">Personalizado</span>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <DateInput value={inicio} onChange={(e) => onChange({ inicio: e.target.value, fim })} />
-              <DateInput value={fim} onChange={(e) => onChange({ inicio, fim: e.target.value })} />
+            <span className="field-label">Período personalizado</span>
+            <div className="periodo-filtro-datas">
+              <label className="periodo-filtro-data">
+                <span>De</span>
+                <DateInput value={inicio} onChange={(e) => mudarInicio(e.target.value)} />
+              </label>
+              <label className="periodo-filtro-data">
+                <span>Até</span>
+                <DateInput value={fim} onChange={(e) => mudarFim(e.target.value)} />
+              </label>
             </div>
+            <button type="button" className="btn btn-ghost periodo-filtro-fechar" onClick={() => setAberto(false)}>
+              Aplicar e fechar
+            </button>
           </div>
         </div>
       )}

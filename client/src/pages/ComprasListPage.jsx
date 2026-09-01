@@ -122,6 +122,7 @@ export default function ComprasListPage() {
       </div>
 
       <div className="card">
+        <Paginacao {...tabela} posicao="topo" />
         <DataTable>
         <table className="data-table">
           <thead>
