@@ -83,6 +83,15 @@
   --card-shadow: 0 1px 2px rgba(47, 28, 13, 0.06);
   --body-glow-1: rgba(181, 101, 29, 0.07);
   --body-glow-2: rgba(107, 68, 35, 0.06);
+  --dot-ok: #16a34a;
+  --dot-warn: #eab308;
+  --dot-bad: #dc2626;
+  /* Quanto do anel semântico entra na BORDA do selo (.tone-*). No claro é
+     o anel cheio, como sempre foi. No escuro os anéis precisam ser vivos
+     porque também são fundo sólido de chip/Kanban — mas essa mesma força
+     na borda de um selo pequeno, em cima do marrom, vira adesivo colado na
+     tela. Metade do anel misturado ao próprio fundo do selo resolve. */
+  --tone-edge: 100%;
 }
 
 /* ---------- tema escuro (Onda 4.10) ----------
@@ -93,149 +102,157 @@
    pesa mais que a preferência do SO nos dois blocos abaixo. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #14120f;
-    --bg-deep: #0c0b09;
-    --surface: #1c1a16;
-    --surface-alt: #24211b;
-    --surface-raised: #2a2620;
-    --ink: #f2ede3;
-    --ink-soft: #bbb2a4;
-    --ink-faint: #948a7c;
-    --leather: #6b4a2e;
-    --leather-ink: #dcb68b;
-    --leather-dark: #241d16;
-    --leather-deep: #14100c;
-    --terracotta: #e08a3c;
-    --terracotta-bright: #f0a45c;
-    --brass: #c9a45c;
-    --brass-bright: #e2c489;
-    --border: #37312a;
-    --border-soft: #262320;
-    --success: #86c98f;
-    --success-bg: #18291c;
-    --success-ring: #6fae7c;
-    --warning: #e6b84f;
-    --warning-bg: #2e2513;
-    --warning-ring: #d0a03e;
-    --danger: #ef9184;
-    --danger-bg: #33201d;
-    --danger-ring: #d9705a;
-    --info: #8bbde8;
-    --info-bg: #172630;
-    --info-ring: #6d9ec4;
-    --plum: #cea6d5;
-    --plum-bright: #e2bde7;
-    --teal: #5ecabd;
-    --teal-bright: #83dbcf;
-    --teal-bg: #123330;
-    --on-accent: #1b1409;
-    --on-accent-soft: rgba(27, 20, 9, 0.68);
-    --on-chrome: #f2ede3;
-    --accent-soft: rgba(224, 138, 60, 0.16);
-    --accent-softer: rgba(224, 138, 60, 0.10);
-    --row-hover: rgba(224, 138, 60, 0.07);
-    --row-hover-strong: rgba(224, 138, 60, 0.11);
-    --focus-ring: rgba(224, 138, 60, 0.30);
-    --selection-bg: rgba(224, 138, 60, 0.32);
-    --scroll-thumb: rgba(232, 219, 198, 0.16);
-    --scroll-thumb-hover: rgba(232, 219, 198, 0.30);
-    --overlay: rgba(4, 3, 2, 0.68);
-    --overlay-strong: rgba(2, 1, 1, 0.90);
-    --knob: #efe8dc;
-    --field-bg: #17150f;
-    --cal-head-from: #3a2c1f;
-    --cal-head-to: #7a4a1e;
-    --btn-primary-from: #e79445;
-    --btn-primary-to: #c8721f;
-    --btn-primary-ink: #1b1409;
-    --sidebar-active-bg: #322a20;
-    --sidebar-edge: rgba(255, 255, 255, 0.06);
-    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.35);
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.40), 0 4px 12px rgba(0, 0, 0, 0.30);
-    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.30);
-    --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.60), 0 8px 20px rgba(0, 0, 0, 0.40);
-    --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    --shadow-inset-strong: inset 0 1px 0 rgba(255, 255, 255, 0.07);
-    --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 2px 10px rgba(0, 0, 0, 0.35);
-    --body-glow-1: rgba(224, 138, 60, 0.055);
-    --body-glow-2: rgba(201, 164, 92, 0.038);
-    --zebra-overlay: rgba(255, 246, 232, 0.022);
-    --zebra-frozen: #211e19;
-    --zebra-frozen-hover: #2d2922;
-    --table-edge-shadow: rgba(0, 0, 0, 0.60);
+    --bg: #1c1409;
+    --bg-deep: #120b05;
+    --surface: #2a1f13;
+    --surface-alt: #362818;
+    --surface-raised: #3f2f1d;
+    --field-bg: #170f07;
+    --ink: #f5ebda;
+    --ink-soft: #cbb99e;
+    --ink-faint: #9c8a73;
+    --leather: #7a5232;
+    --leather-ink: #e0b98d;
+    --leather-dark: #6b4423;
+    --leather-deep: #2f1c0d;
+    --terracotta: #d9832f;
+    --terracotta-bright: #e89a4f;
+    --brass: #c49a4f;
+    --brass-bright: #ddbb75;
+    --border: #54422d;
+    --border-soft: #3b2d1e;
+    --success: #a3c096;
+    --success-bg: #232c1d;
+    --success-ring: #7ba97f;
+    --warning: #dcb466;
+    --warning-bg: #352a16;
+    --warning-ring: #c9a251;
+    --danger: #e39c8d;
+    --danger-bg: #382520;
+    --danger-ring: #cc7663;
+    --info: #a2bcd2;
+    --info-bg: #242e35;
+    --info-ring: #7c9db5;
+    --plum: #c5a8c9;
+    --plum-bright: #d8c0da;
+    --teal: #6fc2b7;
+    --teal-bright: #8ed2c9;
+    --teal-bg: #1d3531;
+    --on-accent: #241706;
+    --on-accent-soft: rgba(36, 23, 6, 0.68);
+    --on-chrome: #f7eede;
+    --accent-soft: rgba(217, 131, 47, 0.18);
+    --accent-softer: rgba(217, 131, 47, 0.11);
+    --row-hover: rgba(217, 131, 47, 0.08);
+    --row-hover-strong: rgba(217, 131, 47, 0.13);
+    --focus-ring: rgba(217, 131, 47, 0.32);
+    --selection-bg: rgba(217, 131, 47, 0.34);
+    --scroll-thumb: rgba(232, 205, 165, 0.20);
+    --scroll-thumb-hover: rgba(232, 205, 165, 0.36);
+    --overlay: rgba(12, 7, 2, 0.70);
+    --overlay-strong: rgba(6, 3, 1, 0.90);
+    --knob: #f3e8d6;
+    --dot-ok: #7ba97f;
+    --dot-warn: #c9a251;
+    --dot-bad: #cc7663;
+    --tone-edge: 50%;
+    --cal-head-from: #5a3a1e;
+    --cal-head-to: #a85f1f;
+    --btn-primary-from: #8f5e37;
+    --btn-primary-to: #5d3a1d;
+    --btn-primary-ink: #fdf6ea;
+    --sidebar-active-bg: #1c1409;
+    --sidebar-edge: rgba(0, 0, 0, 0.35);
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.32);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.38), 0 4px 12px rgba(0, 0, 0, 0.28);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.44), 0 2px 8px rgba(0, 0, 0, 0.28);
+    --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.58), 0 8px 20px rgba(0, 0, 0, 0.38);
+    --shadow-inset: inset 0 1px 0 rgba(255, 226, 190, 0.06);
+    --shadow-inset-strong: inset 0 1px 0 rgba(255, 226, 190, 0.09);
+    --card-shadow: inset 0 1px 0 rgba(255, 226, 190, 0.05), 0 2px 10px rgba(0, 0, 0, 0.36);
+    --body-glow-1: rgba(217, 131, 47, 0.075);
+    --body-glow-2: rgba(196, 154, 79, 0.05);
+    --zebra-overlay: rgba(255, 240, 214, 0.028);
+    --zebra-frozen: #322416;
+    --zebra-frozen-hover: #40301d;
+    --table-edge-shadow: rgba(0, 0, 0, 0.55);
   }
 }
 :root[data-theme="dark"] {
-  --bg: #14120f;
-  --bg-deep: #0c0b09;
-  --surface: #1c1a16;
-  --surface-alt: #24211b;
-  --surface-raised: #2a2620;
-  --ink: #f2ede3;
-  --ink-soft: #bbb2a4;
-  --ink-faint: #948a7c;
-  --leather: #6b4a2e;
-  --leather-ink: #dcb68b;
-  --leather-dark: #241d16;
-  --leather-deep: #14100c;
-  --terracotta: #e08a3c;
-  --terracotta-bright: #f0a45c;
-  --brass: #c9a45c;
-  --brass-bright: #e2c489;
-  --border: #37312a;
-  --border-soft: #262320;
-  --success: #86c98f;
-  --success-bg: #18291c;
-  --success-ring: #6fae7c;
-  --warning: #e6b84f;
-  --warning-bg: #2e2513;
-  --warning-ring: #d0a03e;
-  --danger: #ef9184;
-  --danger-bg: #33201d;
-  --danger-ring: #d9705a;
-  --info: #8bbde8;
-  --info-bg: #172630;
-  --info-ring: #6d9ec4;
-  --plum: #cea6d5;
-  --plum-bright: #e2bde7;
-  --teal: #5ecabd;
-  --teal-bright: #83dbcf;
-  --teal-bg: #123330;
-  --on-accent: #1b1409;
-  --on-accent-soft: rgba(27, 20, 9, 0.68);
-  --on-chrome: #f2ede3;
-  --accent-soft: rgba(224, 138, 60, 0.16);
-  --accent-softer: rgba(224, 138, 60, 0.10);
-  --row-hover: rgba(224, 138, 60, 0.07);
-  --row-hover-strong: rgba(224, 138, 60, 0.11);
-  --focus-ring: rgba(224, 138, 60, 0.30);
-  --selection-bg: rgba(224, 138, 60, 0.32);
-  --scroll-thumb: rgba(232, 219, 198, 0.16);
-  --scroll-thumb-hover: rgba(232, 219, 198, 0.30);
-  --overlay: rgba(4, 3, 2, 0.68);
-  --overlay-strong: rgba(2, 1, 1, 0.90);
-  --knob: #efe8dc;
-  --field-bg: #17150f;
-  --cal-head-from: #3a2c1f;
-  --cal-head-to: #7a4a1e;
-  --btn-primary-from: #e79445;
-  --btn-primary-to: #c8721f;
-  --btn-primary-ink: #1b1409;
-  --sidebar-active-bg: #322a20;
-  --sidebar-edge: rgba(255, 255, 255, 0.06);
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.40), 0 4px 12px rgba(0, 0, 0, 0.30);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.30);
-  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.60), 0 8px 20px rgba(0, 0, 0, 0.40);
-  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  --shadow-inset-strong: inset 0 1px 0 rgba(255, 255, 255, 0.07);
-  --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 2px 10px rgba(0, 0, 0, 0.35);
-  --body-glow-1: rgba(224, 138, 60, 0.055);
-  --body-glow-2: rgba(201, 164, 92, 0.038);
-  --zebra-overlay: rgba(255, 246, 232, 0.022);
-  --zebra-frozen: #211e19;
-  --zebra-frozen-hover: #2d2922;
-  --table-edge-shadow: rgba(0, 0, 0, 0.60);
+  --bg: #1c1409;
+  --bg-deep: #120b05;
+  --surface: #2a1f13;
+  --surface-alt: #362818;
+  --surface-raised: #3f2f1d;
+  --field-bg: #170f07;
+  --ink: #f5ebda;
+  --ink-soft: #cbb99e;
+  --ink-faint: #9c8a73;
+  --leather: #7a5232;
+  --leather-ink: #e0b98d;
+  --leather-dark: #6b4423;
+  --leather-deep: #2f1c0d;
+  --terracotta: #d9832f;
+  --terracotta-bright: #e89a4f;
+  --brass: #c49a4f;
+  --brass-bright: #ddbb75;
+  --border: #54422d;
+  --border-soft: #3b2d1e;
+  --success: #a3c096;
+  --success-bg: #232c1d;
+  --success-ring: #7ba97f;
+  --warning: #dcb466;
+  --warning-bg: #352a16;
+  --warning-ring: #c9a251;
+  --danger: #e39c8d;
+  --danger-bg: #382520;
+  --danger-ring: #cc7663;
+  --info: #a2bcd2;
+  --info-bg: #242e35;
+  --info-ring: #7c9db5;
+  --plum: #c5a8c9;
+  --plum-bright: #d8c0da;
+  --teal: #6fc2b7;
+  --teal-bright: #8ed2c9;
+  --teal-bg: #1d3531;
+  --on-accent: #241706;
+  --on-accent-soft: rgba(36, 23, 6, 0.68);
+  --on-chrome: #f7eede;
+  --accent-soft: rgba(217, 131, 47, 0.18);
+  --accent-softer: rgba(217, 131, 47, 0.11);
+  --row-hover: rgba(217, 131, 47, 0.08);
+  --row-hover-strong: rgba(217, 131, 47, 0.13);
+  --focus-ring: rgba(217, 131, 47, 0.32);
+  --selection-bg: rgba(217, 131, 47, 0.34);
+  --scroll-thumb: rgba(232, 205, 165, 0.20);
+  --scroll-thumb-hover: rgba(232, 205, 165, 0.36);
+  --overlay: rgba(12, 7, 2, 0.70);
+  --overlay-strong: rgba(6, 3, 1, 0.90);
+  --knob: #f3e8d6;
+  --dot-ok: #7ba97f;
+  --dot-warn: #c9a251;
+  --dot-bad: #cc7663;
+  --tone-edge: 50%;
+  --cal-head-from: #5a3a1e;
+  --cal-head-to: #a85f1f;
+  --btn-primary-from: #8f5e37;
+  --btn-primary-to: #5d3a1d;
+  --btn-primary-ink: #fdf6ea;
+  --sidebar-active-bg: #1c1409;
+  --sidebar-edge: rgba(0, 0, 0, 0.35);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.32);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.38), 0 4px 12px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.44), 0 2px 8px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.58), 0 8px 20px rgba(0, 0, 0, 0.38);
+  --shadow-inset: inset 0 1px 0 rgba(255, 226, 190, 0.06);
+  --shadow-inset-strong: inset 0 1px 0 rgba(255, 226, 190, 0.09);
+  --card-shadow: inset 0 1px 0 rgba(255, 226, 190, 0.05), 0 2px 10px rgba(0, 0, 0, 0.36);
+  --body-glow-1: rgba(217, 131, 47, 0.075);
+  --body-glow-2: rgba(196, 154, 79, 0.05);
+  --zebra-overlay: rgba(255, 240, 214, 0.028);
+  --zebra-frozen: #322416;
+  --zebra-frozen-hover: #40301d;
+  --table-edge-shadow: rgba(0, 0, 0, 0.55);
 }
 /* A impressão continua sempre clara, mesmo com tema escuro ativo — a
    ficha impressa é pra ler no papel, não na tela. */
@@ -259,7 +276,8 @@
     --plum: #5c3157; --plum-bright: #7c4577;
     --teal: #1f6f66; --teal-bright: #2b8f83; --teal-bg: #dcece9;
     --on-accent: #ffffff; --on-accent-soft: rgba(255, 255, 255, 0.85);
-    --on-chrome: #fffdf9; --knob: #ffffff; --field-bg: #fffdf9;
+    --on-chrome: #fffdf9; --knob: #ffffff; --field-bg: #fffdf9; --tone-edge: 100%;
+    --dot-ok: #16a34a; --dot-warn: #eab308; --dot-bad: #dc2626;
     --cal-head-from: #422a15; --cal-head-to: #b5651d;
     --btn-primary-from: #6b4423; --btn-primary-to: #422a15; --btn-primary-ink: #fbf5e9;
     --zebra-overlay: rgba(42, 29, 16, 0.018);
@@ -1764,7 +1782,10 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
   padding: 8px 17px;
   border-radius: 6px;
   border: 2px solid;
-  outline: 1px dashed currentColor;
+  /* O tracejado interno é o que dá cara de carimbo. Em currentColor cheio
+     ele desenha uma segunda moldura tão forte quanto o texto; a 55% ele
+     continua legível como carimbo sem competir com o rótulo. */
+  outline: 1px dashed color-mix(in srgb, currentColor 55%, transparent);
   outline-offset: -5px;
   transform: rotate(-1.5deg);
   text-transform: uppercase;
@@ -1776,10 +1797,10 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
    em destaque, tipo a margem grande) continua com a cara de carimbo. */
 .stamp.sm { font-size: 11px; padding: 5px 11px; transform: none; outline: none; border-width: 1px; }
 
-.tone-prejuizo, .tone-abaixo { color: var(--danger); background: var(--danger-bg); border-color: var(--danger-ring); }
-.tone-atencao { color: var(--warning); background: var(--warning-bg); border-color: var(--warning-ring); }
-.tone-saudavel { color: var(--success); background: var(--success-bg); border-color: var(--success-ring); }
-.tone-elevada { color: var(--info); background: var(--info-bg); border-color: var(--info-ring); }
+.tone-prejuizo, .tone-abaixo { color: var(--danger); background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger-ring) var(--tone-edge), var(--danger-bg)); }
+.tone-atencao { color: var(--warning); background: var(--warning-bg); border-color: color-mix(in srgb, var(--warning-ring) var(--tone-edge), var(--warning-bg)); }
+.tone-saudavel { color: var(--success); background: var(--success-bg); border-color: color-mix(in srgb, var(--success-ring) var(--tone-edge), var(--success-bg)); }
+.tone-elevada { color: var(--info); background: var(--info-bg); border-color: color-mix(in srgb, var(--info-ring) var(--tone-edge), var(--info-bg)); }
 .tone-neutro { color: var(--ink-soft); background: var(--border-soft); border-color: var(--border); }
 
 .alerts-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -2461,9 +2482,9 @@ table.ficha-doc-tabela {
 /* Cores bem vivas e saturadas de propósito — o semáforo precisa ser lido
    num piscar de olhos, diferente do tom mais suave dos "stamps" de margem. */
 .viagem-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; box-shadow: 0 0 0 2px rgba(255,255,255,0.5) inset; }
-.viagem-dot.disponivel { background: #16a34a; }
-.viagem-dot.atencao { background: #eab308; }
-.viagem-dot.sem_estoque { background: #dc2626; }
+.viagem-dot.disponivel { background: var(--dot-ok); }
+.viagem-dot.atencao { background: var(--dot-warn); }
+.viagem-dot.sem_estoque { background: var(--dot-bad); }
 
 .viagem-qtd-negativa { color: var(--danger); font-weight: 700; }
 
