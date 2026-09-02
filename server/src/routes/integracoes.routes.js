@@ -4,7 +4,11 @@ const pool = require('../db/pool');
 const mercadoLivre = require('../lib/marketplaces/mercadoLivre');
 const shopee = require('../lib/marketplaces/shopee');
 const tiktokShop = require('../lib/marketplaces/tiktokShop');
-const { sincronizarIntegracao, sincronizarSeNecessario, garantirTokenValido, sincronizarAdsDias } = require('../lib/marketplaceSync');
+const tiktokAds = require('../lib/marketplaces/tiktokAds');
+const {
+  sincronizarIntegracao, sincronizarSeNecessario, garantirTokenValido, sincronizarAdsDias,
+  garantirAnuncianteTikTok,
+} = require('../lib/marketplaceSync');
 
 const router = express.Router();
 
@@ -33,6 +37,12 @@ function paraFora(row) {
     advertiserIdAds: row.advertiser_id_ads,
     ultimoErroAds: row.ultimo_erro_ads,
     tiktokServiceId: row.tiktok_service_id,
+    // Publicidade da TikTok: app separado do app de pedidos (ver a migração
+    // 0041). O secret nunca volta pro navegador — só o booleano.
+    adsAppId: row.ads_app_id,
+    temAdsAppSecret: Boolean(row.ads_app_secret),
+    adsConectado: Boolean(row.ads_access_token),
+    adsStoreId: row.ads_store_id,
   };
 }
 
@@ -96,7 +106,10 @@ router.post('/', async (req, res, next) => {
 
 router.put('/:id', async (req, res, next) => {
   try {
-    const { nome, client_id, client_secret, ativo, usa_frete_subsidiado, empresa_id, pct_nota_fiscal, tiktok_service_id } = req.body || {};
+    const {
+      nome, client_id, client_secret, ativo, usa_frete_subsidiado, empresa_id, pct_nota_fiscal,
+      tiktok_service_id, ads_app_id, ads_app_secret,
+    } = req.body || {};
     const updates = [];
     const values = [];
     let i = 1;
@@ -104,6 +117,23 @@ router.put('/:id', async (req, res, next) => {
     if (client_id !== undefined) { updates.push(`client_id = $${i}`); values.push(client_id); i += 1; }
     if (client_secret !== undefined && client_secret !== '') { updates.push(`client_secret = $${i}`); values.push(client_secret); i += 1; }
     if (tiktok_service_id !== undefined) { updates.push(`tiktok_service_id = $${i}`); values.push(tiktok_service_id || null); i += 1; }
+    // Credenciais do app de Publicidade da TikTok. Trocar o App ID/Secret
+    // invalida a autorização anterior, então o token de Ads é zerado junto —
+    // senão a conexão continuaria "conectada" na tela usando um token que já
+    // não pertence a esse app. O zeramento é acrescentado UMA vez só: o
+    // Postgres recusa dois SET pra mesma coluna na mesma instrução.
+    let trocouAppDeAds = false;
+    if (ads_app_id !== undefined) {
+      updates.push(`ads_app_id = $${i}`); values.push(ads_app_id || null); i += 1;
+      trocouAppDeAds = true;
+    }
+    if (ads_app_secret !== undefined && ads_app_secret !== '') {
+      updates.push(`ads_app_secret = $${i}`); values.push(ads_app_secret); i += 1;
+      trocouAppDeAds = true;
+    }
+    if (trocouAppDeAds) {
+      updates.push('ads_access_token = NULL', 'advertiser_id_ads = NULL', 'ads_store_id = NULL', 'ultimo_erro_ads = NULL');
+    }
     if (ativo !== undefined) { updates.push(`ativo = $${i}`); values.push(ativo); i += 1; }
     if (usa_frete_subsidiado !== undefined) { updates.push(`usa_frete_subsidiado = $${i}`); values.push(usa_frete_subsidiado); i += 1; }
     if (empresa_id !== undefined) { updates.push(`empresa_id = $${i}`); values.push(empresa_id || null); i += 1; }
@@ -164,6 +194,36 @@ router.get('/:id/conectar', async (req, res, next) => {
       // Center, e é usado sempre a partir de lá.
       url = tiktokShop.buildAuthorizeUrl({ serviceId: integracao.tiktok_service_id, state });
     }
+    res.json({ url });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Autorização da PUBLICIDADE da TikTok — separada da autorização da loja.
+// São dois apps diferentes, em duas plataformas diferentes (TikTok Shop
+// Open API x TikTok API for Business), então são dois botões "Conectar" na
+// tela e dois callbacks aqui. Ver o cabeçalho de
+// lib/marketplaces/tiktokAds.js.
+router.get('/:id/conectar-ads', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM integracoes_marketplace WHERE id = $1', [req.params.id]);
+    const integracao = rows[0];
+    if (!integracao) return res.status(404).json({ error: 'Integração não encontrada.' });
+    if (integracao.marketplace !== 'tiktok_shop') {
+      return res.status(400).json({ error: 'A Publicidade só tem app separado na TikTok — no Mercado Livre e na Shopee ela usa a mesma conexão dos pedidos.' });
+    }
+    if (!integracao.ads_app_id || !integracao.ads_app_secret) {
+      return res.status(400).json({ error: 'Cadastre antes o App ID e o Secret do app da TikTok API for Business (business-api.tiktok.com).' });
+    }
+
+    const state = crypto.randomBytes(24).toString('hex');
+    await pool.query('INSERT INTO integracoes_oauth_state (state, integracao_id) VALUES ($1, $2)', [state, integracao.id]);
+    const url = tiktokAds.buildAuthorizeUrl({
+      appId: integracao.ads_app_id,
+      state,
+      redirectUri: `${urlBase(req)}/api/integracoes/tiktok_ads/callback`,
+    });
     res.json({ url });
   } catch (err) {
     next(err);
@@ -305,13 +365,29 @@ function credenciaisShopee(integracao) {
   };
 }
 
-const MARKETPLACES_COM_ADS = ['mercado_livre', 'shopee'];
+const MARKETPLACES_COM_ADS = ['mercado_livre', 'shopee', 'tiktok_shop'];
 
 router.get('/:id/ads/campanhas', async (req, res, next) => {
   try {
     const dataInicio = req.query.data_inicio || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const dataFim = req.query.data_fim || new Date().toISOString().slice(0, 10);
     const base = await integracaoAutorizada(req.params.id, MARKETPLACES_COM_ADS);
+    if (base.marketplace === 'tiktok_shop') {
+      // Na TikTok, Publicidade é outra plataforma: o anunciante e a loja de
+      // anúncios são descobertos e guardados uma vez (ver
+      // garantirAnuncianteTikTok), e o token usado aqui é o de Ads, não o da
+      // loja.
+      const contexto = await garantirAnuncianteTikTok(base);
+      if (contexto.erro) { const e = new Error(contexto.erro); e.status = 400; throw e; }
+      const campanhas = await tiktokAds.buscarCampanhasAds({
+        accessToken: base.ads_access_token,
+        advertiserId: contexto.advertiserId,
+        storeIds: [contexto.storeId],
+        dataInicio,
+        dataFim,
+      });
+      return res.json({ campanhas });
+    }
     if (base.marketplace === 'shopee') {
       // Na Shopee a própria loja autorizada é o anunciante — não existe o
       // passo de descobrir um advertiser_id como no Mercado Livre.
@@ -666,9 +742,52 @@ callbackTikTokShop.get('/', async (req, res) => {
   }
 });
 
+// Callback da PUBLICIDADE da TikTok (TikTok API for Business). Diferenças em
+// relação ao callback da loja, todas vindas da própria plataforma:
+// - o token não expira em horas e NÃO tem refresh token, então não há
+//   token_expira_em a guardar nem renovação periódica a fazer;
+// - a resposta já traz os anunciantes autorizados, então quando vem um só dá
+//   pra vincular na hora, sem uma segunda chamada;
+// - nada aqui toca access_token/refresh_token da loja — são credenciais de
+//   outra plataforma, e sobrescrevê-las derrubaria a importação de pedidos.
+const callbackTikTokAds = express.Router();
+callbackTikTokAds.get('/', async (req, res) => {
+  const { auth_code: authCode, code, state } = req.query;
+  try {
+    const codigo = authCode || code;
+    if (!codigo) throw new Error('Autorização recusada ou cancelada na TikTok Ads.');
+    const integracaoId = await consumirState(state);
+    if (!integracaoId) throw new Error('Link de autorização expirado ou inválido. Tente conectar novamente.');
+
+    const { rows } = await pool.query('SELECT * FROM integracoes_marketplace WHERE id = $1', [integracaoId]);
+    const integracao = rows[0];
+    if (!integracao) throw new Error('Integração não encontrada.');
+
+    const tokenData = await tiktokAds.trocarCodigoPorToken({
+      appId: integracao.ads_app_id,
+      appSecret: integracao.ads_app_secret,
+      code: codigo,
+    });
+    if (!tokenData.accessToken) throw new Error('A TikTok não devolveu o token de Publicidade.');
+
+    const advertiserId = tokenData.advertiserIds.length === 1 ? tokenData.advertiserIds[0] : null;
+    await pool.query(
+      `UPDATE integracoes_marketplace
+       SET ads_access_token = $1, advertiser_id_ads = COALESCE($2, advertiser_id_ads),
+           ultimo_erro_ads = NULL, atualizado_em = now()
+       WHERE id = $3`,
+      [tokenData.accessToken, advertiserId, integracaoId]
+    );
+    res.redirect('/integracoes?conectado=tiktok_ads');
+  } catch (err) {
+    res.redirect(`/integracoes?erro=${encodeURIComponent(err.message)}`);
+  }
+});
+
 module.exports.callbackMercadoLivre = callbackMercadoLivre;
 module.exports.callbackShopee = callbackShopee;
 module.exports.callbackTikTokShop = callbackTikTokShop;
+module.exports.callbackTikTokAds = callbackTikTokAds;
 
 // Recebe as notificações (webhooks) do Mercado Livre — exigidas pelo app
 // mesmo não sendo usadas ainda, já que o sistema busca pedidos por

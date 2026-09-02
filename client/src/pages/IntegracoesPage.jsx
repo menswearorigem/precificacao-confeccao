@@ -127,7 +127,10 @@ export default function IntegracoesPage() {
     const escopos = searchParams.get('escopos');
     if (conectado) {
       const sufixoEscopos = escopos ? ` Escopos concedidos: ${escopos}` : '';
-      setAviso(`${MARKETPLACES[conectado]?.label || conectado} conectado com sucesso.${sufixoEscopos}`);
+      const rotulo = conectado === 'tiktok_ads'
+        ? 'Publicidade da TikTok'
+        : (MARKETPLACES[conectado]?.label || conectado);
+      setAviso(`${rotulo} conectado com sucesso.${sufixoEscopos}`);
     }
     if (erroParam) setErro(erroParam);
     if (conectado || erroParam) setSearchParams({}, { replace: true });
@@ -156,6 +159,34 @@ export default function IntegracoesPage() {
     try {
       const { url } = await api.get(`/integracoes/${id}/conectar`);
       window.location.href = url;
+    } catch (err) {
+      setErro(err.message);
+    }
+  }
+
+  // Publicidade da TikTok tem app e autorização PRÓPRIOS (é outra
+  // plataforma, não a TikTok Shop) — por isso um botão separado do
+  // "Conectar", que autoriza a loja.
+  async function conectarAds(id) {
+    setErro('');
+    try {
+      const { url } = await api.get(`/integracoes/${id}/conectar-ads`);
+      window.location.href = url;
+    } catch (err) {
+      setErro(err.message);
+    }
+  }
+
+  async function salvarCredenciaisAds(item) {
+    setErro('');
+    try {
+      await api.put(`/integracoes/${item.id}`, {
+        ads_app_id: item.adsAppId || null,
+        // Secret vazio significa "não mexer" no servidor — só é enviado
+        // quando a usuária de fato digitou um novo.
+        ...(item.adsAppSecretNovo ? { ads_app_secret: item.adsAppSecretNovo } : {}),
+      });
+      load();
     } catch (err) {
       setErro(err.message);
     }
@@ -363,7 +394,7 @@ export default function IntegracoesPage() {
               <tbody>
                 {doTabAtual.map((item) => {
                   const expandido = expandidoId === item.id;
-                  const temErro = item.ultimoErro || item.ultimoErroFaturamento || (item.marketplace === 'mercado_livre' && item.ultimoErroAds);
+                  const temErro = item.ultimoErro || item.ultimoErroFaturamento || item.ultimoErroAds;
                   return (
                     <Fragment key={item.id}>
                       <tr>
@@ -451,9 +482,57 @@ export default function IntegracoesPage() {
                                 }}>{item.ultimoErroFaturamento}</pre>
                               </div>
                             )}
-                            {item.marketplace === 'mercado_livre' && item.ultimoErroAds && (
-                              <div className="login-error" style={{ marginTop: (item.ultimoErro || item.ultimoErroFaturamento) ? 8 : 0 }}>
-                                <div style={{ marginBottom: 6 }}>Publicidade (Product Ads):</div>
+                            {item.marketplace === 'tiktok_shop' && (
+                              <div style={{ marginTop: 4, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, marginBottom: 4 }}>
+                                  Publicidade (TikTok Ads)
+                                </div>
+                                <p className="page-sub" style={{ marginTop: 0 }}>
+                                  Na TikTok, a Publicidade fica em outra plataforma (business-api.tiktok.com), com app e
+                                  autorização próprios. Sem conectar aqui, o gasto com anúncios entra como zero — e a
+                                  margem da TikTok aparece maior do que é de verdade.
+                                </p>
+                                <div className="form-grid">
+                                  <Field label="App ID (TikTok API for Business)">
+                                    <input
+                                      value={item.adsAppId || ''}
+                                      onChange={(e) => editarCampoLocal(item.id, 'adsAppId', e.target.value)}
+                                      onBlur={() => salvarCredenciaisAds(item)}
+                                    />
+                                  </Field>
+                                  <Field label={item.temAdsAppSecret ? 'App Secret (já cadastrado — preencha só pra trocar)' : 'App Secret'}>
+                                    <input
+                                      type="password"
+                                      value={item.adsAppSecretNovo || ''}
+                                      placeholder={item.temAdsAppSecret ? '••••••••' : ''}
+                                      onChange={(e) => editarCampoLocal(item.id, 'adsAppSecretNovo', e.target.value)}
+                                      onBlur={() => salvarCredenciaisAds(item)}
+                                    />
+                                  </Field>
+                                  <Field label="Conta de anúncios">
+                                    <input value={item.advertiserIdAds || '—'} disabled style={{ opacity: 0.7 }} />
+                                  </Field>
+                                  <Field label="Loja de anúncios (GMV Max)">
+                                    <input value={item.adsStoreId || '—'} disabled style={{ opacity: 0.7 }} />
+                                  </Field>
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+                                  <button
+                                    className="btn btn-ghost"
+                                    onClick={() => conectarAds(item.id)}
+                                    disabled={!item.adsAppId || !item.temAdsAppSecret}
+                                  >
+                                    <Plug size={13} /> {item.adsConectado ? 'Reconectar Publicidade' : 'Conectar Publicidade'}
+                                  </button>
+                                  {item.adsConectado
+                                    ? <span className="stamp sm tone-saudavel">Publicidade conectada</span>
+                                    : <span className="stamp sm tone-neutro">Publicidade não autorizada</span>}
+                                </div>
+                              </div>
+                            )}
+                            {item.ultimoErroAds && (
+                              <div className="login-error" style={{ marginTop: 8 }}>
+                                <div style={{ marginBottom: 6 }}>Publicidade:</div>
                                 {item.ultimoErroAds}
                               </div>
                             )}

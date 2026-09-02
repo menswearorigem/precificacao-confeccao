@@ -18,11 +18,15 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 // Canais que informam quanto o marketplace de fato repassou pela venda —
 // e que, por isso, permitem o cálculo real de lucratividade em vez da
 // estimativa. Mercado Livre pelo valor líquido do pagamento
-// (net_received_amount); Shopee pelo valor da conciliação (escrow_amount).
-// TikTok Shop e planilha continuam de fora: lá esse número não existe.
+// (net_received_amount); Shopee pelo valor da conciliação (escrow_amount);
+// TikTok Shop pelo settlement_amount da API de Finance. Pedido lançado à
+// mão e importação por planilha continuam de fora: lá esse número não
+// existe.
 // O valor chega gravado em pedidos_venda.valor_recebido_marketplace — a
-// fórmula de lucro é exatamente a mesma pros dois.
-const CANAIS_COM_VALOR_RECEBIDO = ['Mercado Livre', 'Shopee'];
+// FÓRMULA DE LUCRO É EXATAMENTE A MESMA NOS TRÊS. O que muda é só de onde
+// veio o valor recebido; nada no motor de cálculo foi tocado pra incluir a
+// TikTok (REGRA 1).
+const CANAIS_COM_VALOR_RECEBIDO = ['Mercado Livre', 'Shopee', 'TikTok Shop'];
 
 const HEADER_FIELDS = [
   'data_pedido',
@@ -837,8 +841,11 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
     [pedidosBrutos.map((p) => p.id)]
   );
 
-  // Rateio do custo de Ads (Publicidade do Mercado Livre — ver
-  // ads_metricas_diarias, alimentada por marketplaceSync.sincronizarAdsDias):
+  // Rateio do custo de Ads (Publicidade do Mercado Livre, da Shopee e da
+  // TikTok — ver ads_metricas_diarias, alimentada por
+  // marketplaceSync.sincronizarAdsDias; a tabela é a mesma pros três, com o
+  // identificador do anúncio como chave: MLB… no Mercado Livre, item_id na
+  // Shopee, product_id na TikTok):
   // o custo diário de cada anúncio é dividido entre as unidades de VERDADE
   // vendidas daquele anúncio naquele dia (não pelas métricas de venda que a
   // própria API de Ads reporta, pra ficar consistente com o que a
@@ -1000,10 +1007,11 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
       // cai pro cálculo antigo por estimativa (preço de venda - custo -
       // taxa cobrada), igual pedidos manuais e os ainda não confirmados.
       //
-      // Vale pros dois canais que informam o repasse de verdade: Mercado
-      // Livre (net_received_amount do pagamento) e Shopee (escrow_amount da
-      // conciliação). A conta em si é a MESMA nos dois — o que muda é só de
-      // onde veio o valor recebido, que já chega gravado no pedido.
+      // Vale pros três canais que informam o repasse de verdade: Mercado
+      // Livre (net_received_amount do pagamento), Shopee (escrow_amount da
+      // conciliação) e TikTok Shop (settlement_amount da API de Finance). A
+      // conta em si é a MESMA nos três — o que muda é só de onde veio o
+      // valor recebido, que já chega gravado no pedido.
       const calculoReal = CANAIS_COM_VALOR_RECEBIDO.includes(p.canal_venda)
         && valorRecebido !== null && empresaVinculada && pctNotaFiscal !== null;
 
@@ -1105,7 +1113,8 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
     const pedidosNaoAvaliaveis = resultado.filter((p) => p.custoIncompleto);
 
     // Valor recebido existe nos canais que informam o repasse de verdade
-    // (Mercado Livre pelo pagamento, Shopee pela conciliação/escrow).
+    // (Mercado Livre pelo pagamento, Shopee pela conciliação/escrow, TikTok
+    // Shop pelo settlement do repasse).
     // "liberado" é dinheiro já disponível no saldo, "confirmado" é o valor
     // real já conhecido mas ainda retido (chega no saldo em
     // valor_recebido_liberacao_em) — os dois são valores de VERDADE vindos

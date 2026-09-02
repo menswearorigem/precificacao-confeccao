@@ -273,7 +273,12 @@ async function main() {
     'Mercado Livre fecha a mesma conta de sempre',
     pedidoML && perto(pedidoML.lucro, pedidoML.valorRecebido - pedidoML.custoPeca - pedidoML.custoEmbalagem - pedidoML.imposto - pedidoML.custoAds)
   );
-  conferir('TikTok Shop segue em estimativa (não informa repasse)', pedidoTikTok && pedidoTikTok.calculoReal === false);
+  // A TikTok Shop passou a informar o repasse (settlement da API de Finance
+  // — ver teste-tiktok-lucratividade.js), mas o valor só existe depois que
+  // o repasse fecha. Enquanto ele não chega, o pedido continua caindo na
+  // ESTIMATIVA, exatamente como antes — é esse caminho de fallback que o
+  // teste abaixo protege.
+  conferir('pedido sem repasse conhecido segue em estimativa', pedidoTikTok && pedidoTikTok.calculoReal === false);
   conferir('estimativa não cobra embalagem (comportamento antigo intacto)', pedidoTikTok && pedidoTikTok.custoEmbalagem === 0);
 
   const totais = relatorio.totalGeral;
@@ -282,11 +287,12 @@ async function main() {
     perto(totais.valorRecebidoConfirmado, 118.4 * 2),
     String(totais.valorRecebidoConfirmado)
   );
-  // "Sem confirmação" conta só pedido de canal que DEVERIA informar o
-  // repasse e ainda não informou — pedido de TikTok Shop não entra nessa
-  // conta (lá esse número não existe), senão o selo da tela viraria um
-  // alarme permanente por um dado que nunca vai chegar.
-  conferir('canal sem repasse não infla o contador de "sem confirmação"', totais.valorRecebidoSemConfirmacao === 0, String(totais.valorRecebidoSemConfirmacao));
+  // "Sem confirmação" conta pedido de canal que DEVERIA informar o repasse
+  // e ainda não informou. O pedido da TikTok deste teste é justamente esse
+  // caso (importado, repasse ainda não fechado), então ele conta 1 — é um
+  // aviso legítimo de "ainda vai chegar", não um alarme permanente: assim
+  // que o statement fecha, ele sai dessa conta e entra em "confirmado".
+  conferir('pedido aguardando repasse aparece como "sem confirmação"', totais.valorRecebidoSemConfirmacao === 1, String(totais.valorRecebidoSemConfirmacao));
 
   servidor.close();
   await pool.end();

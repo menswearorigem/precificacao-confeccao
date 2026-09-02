@@ -7,6 +7,10 @@ const pool = require('../db/pool');
 const mercadoLivre = require('./marketplaces/mercadoLivre');
 const shopee = require('./marketplaces/shopee');
 const tiktokShop = require('./marketplaces/tiktokShop');
+// Publicidade da TikTok mora numa API SEPARADA da que traz os pedidos (Ads
+// Manager x TikTok Shop Open API), com credenciais próprias — por isso um
+// cliente próprio. Ver o cabeçalho de marketplaces/tiktokAds.js.
+const tiktokAds = require('./marketplaces/tiktokAds');
 const { recalcularTotais } = require('./pedidoRecalculo');
 const { registrarMovimento } = require('./estoqueMovimento');
 
@@ -102,12 +106,23 @@ async function buscarPedidosDoMarketplace(integracao, desde) {
     });
     return orders.map(shopee.mapearPedido);
   }
+  // Mesmo filtro de "já importado" da Shopee. Na TikTok a busca de pedidos
+  // devolve tudo numa chamada só (não tem passo de detalhe por pedido), então
+  // aqui ele não economiza chamada — economiza remapear e reprocessar a
+  // janela inteira de 7 dias a cada ciclo de 5 min.
+  const { rows: existentesTikTok } = await pool.query(
+    `SELECT origem_pedido_id FROM pedidos_venda
+      WHERE origem_marketplace = 'tiktok_shop' AND origem_pedido_id IS NOT NULL
+        AND data_pedido >= $1`,
+    [new Date(desde.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)]
+  );
   const orders = await tiktokShop.buscarPedidos({
     appKey: integracao.client_id,
     appSecret: integracao.client_secret,
     accessToken: integracao.access_token,
     shopCipher: integracao.shop_cipher,
     desdeUnix: Math.floor(desde.getTime() / 1000),
+    jaImportados: new Set(existentesTikTok.map((r) => r.origem_pedido_id)),
   });
   return orders.map(tiktokShop.mapearPedido);
 }
@@ -862,8 +877,103 @@ async function sincronizarAdsDiasShopee(integracao, dias) {
   return { diasSincronizados: dias, registros, campanhas: 0 };
 }
 
+// ---------- Publicidade da TikTok (TikTok API for Business) ----------
+// A diferença estrutural em relação aos outros dois: aqui o token NÃO é o
+// mesmo da integração de pedidos. A TikTok Shop Open API (pedidos,
+// financeiro) e o Ads Manager são plataformas separadas, com app e
+// autorização próprios — por isso as credenciais vêm de ads_app_id /
+// ads_app_secret / ads_access_token (migração 0041) e não de client_id /
+// access_token.
+//
+// Antes de qualquer relatório é preciso saber DUAS coisas que a autorização
+// não entrega prontas: qual anunciante (advertiser_id) e qual loja de
+// anúncios (store_id) correspondem a esta conexão. As duas são descobertas
+// uma vez e guardadas, igual ao advertiser_id do Mercado Livre.
+async function garantirAnuncianteTikTok(integracao) {
+  if (!integracao.ads_access_token) {
+    return { erro: 'A Publicidade da TikTok ainda não foi conectada — cadastre o App ID/Secret do app da TikTok API for Business e clique em "Conectar Publicidade".' };
+  }
+
+  let advertiserId = integracao.advertiser_id_ads || null;
+  if (!advertiserId) {
+    const anunciantes = await tiktokAds.listarAnunciantes({
+      appId: integracao.ads_app_id,
+      appSecret: integracao.ads_app_secret,
+      accessToken: integracao.ads_access_token,
+    });
+    if (anunciantes.length === 0) {
+      return { erro: 'Nenhuma conta de anúncios autorizada nesse app — confira se a conta do Ads Manager foi marcada na tela de autorização da TikTok.' };
+    }
+    // Mais de um anunciante é raro numa conta de vendedor; quando acontece,
+    // fica com o primeiro e o nome aparece no erro de Ads pra dar pra
+    // conferir qual foi escolhido, em vez de escolher em silêncio.
+    advertiserId = anunciantes[0].advertiserId;
+    await pool.query('UPDATE integracoes_marketplace SET advertiser_id_ads = $1 WHERE id = $2', [advertiserId, integracao.id]);
+    integracao.advertiser_id_ads = advertiserId;
+  }
+
+  let storeId = integracao.ads_store_id || null;
+  if (!storeId) {
+    const lojas = await tiktokAds.listarLojas({ accessToken: integracao.ads_access_token, advertiserId });
+    if (lojas.length === 0) {
+      return { erro: 'Esse anunciante não tem nenhuma loja de GMV Max vinculada — confira no Ads Manager se a loja da TikTok Shop está conectada à conta de anúncios.' };
+    }
+    // Quando a TikTok informa o shop_id da loja, casa com a conexão CERTA em
+    // vez de pegar a primeira da lista — é o que evita o custo de Ads de uma
+    // loja cair em cima dos pedidos da outra quando há duas conexões.
+    const casada = lojas.find((l) => l.shopId && String(l.shopId) === String(integracao.conta_externa_id));
+    storeId = (casada || lojas[0]).storeId;
+    await pool.query('UPDATE integracoes_marketplace SET ads_store_id = $1 WHERE id = $2', [storeId, integracao.id]);
+    integracao.ads_store_id = storeId;
+  }
+
+  return { advertiserId, storeId };
+}
+
+async function sincronizarAdsDiasTikTok(integracao, dias) {
+  const contexto = await garantirAnuncianteTikTok(integracao).catch((err) => ({ erro: err.message }));
+  if (contexto.erro) {
+    await pool.query('UPDATE integracoes_marketplace SET ultimo_erro_ads = $1 WHERE id = $2', [contexto.erro, integracao.id]).catch(() => {});
+    return { diasSincronizados: 0, registros: 0, campanhas: 0 };
+  }
+
+  let registros = 0;
+  let ultimoErro = null;
+  for (let i = 0; i < dias; i += 1) {
+    const dia = formatarDataISO(new Date(Date.now() - i * 24 * 60 * 60 * 1000));
+    try {
+      const metricas = await tiktokAds.buscarMetricasAnunciosPorDia({
+        accessToken: integracao.ads_access_token,
+        advertiserId: contexto.advertiserId,
+        storeIds: [contexto.storeId],
+        data: dia,
+      });
+      // Apaga o que já estava gravado naquele dia antes de regravar — mesma
+      // razão da Shopee: a chave do gasto é o ANÚNCIO, e ela MUDA quando o
+      // vínculo campanha → produto passa a ser resolvido (`campanha:<id>`
+      // vira o product_id de verdade). Sem apagar, as duas linhas
+      // conviveriam e o MESMO gasto seria contado duas vezes — uma rateada
+      // no pedido e outra como "não atribuído". O upsert sozinho não cobre
+      // isso, porque são chaves diferentes.
+      await pool.query(
+        'DELETE FROM ads_metricas_diarias WHERE origem_integracao_id = $1 AND data = $2',
+        [integracao.id, dia]
+      );
+      registros += await gravarMetricasAdsDoDia(integracao.id, dia, metricas);
+    } catch (err) {
+      ultimoErro = `Dia ${dia}: ${err.message}`;
+    }
+  }
+  if (ultimoErro && registros === 0) {
+    ultimoErro = `${ultimoErro} — confira se o app da TikTok API for Business tem permissão de leitura de relatório (Ads Management / Reporting) e se a autorização foi concedida pra conta de anúncios certa.`;
+  }
+  await pool.query('UPDATE integracoes_marketplace SET ultimo_erro_ads = $1 WHERE id = $2', [ultimoErro, integracao.id]).catch(() => {});
+  return { diasSincronizados: dias, registros, campanhas: 0 };
+}
+
 async function sincronizarAdsDias(integracao, dias) {
   if (integracao.marketplace === 'shopee') return sincronizarAdsDiasShopee(integracao, dias);
+  if (integracao.marketplace === 'tiktok_shop') return sincronizarAdsDiasTikTok(integracao, dias);
   if (integracao.marketplace !== 'mercado_livre') return { diasSincronizados: 0, registros: 0, campanhas: 0 };
 
   let advertiserId;
@@ -914,18 +1024,28 @@ async function sincronizarAdsDias(integracao, dias) {
 }
 
 // Catch-up manual (botão) — janela bem maior, o máximo que a API aceita.
-const MARKETPLACES_COM_ADS = ['mercado_livre', 'shopee'];
+const MARKETPLACES_COM_ADS = ['mercado_livre', 'shopee', 'tiktok_shop'];
 
 async function sincronizarAdsTodasIntegracoes({ dias = 90 } = {}) {
+  // Na TikTok, Publicidade tem token PRÓPRIO (ads_access_token) — exigir
+  // só o access_token de pedidos deixaria de fora exatamente a conexão que
+  // já autorizou o Ads Manager, e exigir os dois deixaria de fora quem
+  // conectou a Publicidade antes dos pedidos.
   const { rows: integracoes } = await pool.query(
-    `SELECT * FROM integracoes_marketplace WHERE ativo = TRUE AND access_token IS NOT NULL AND marketplace = ANY($1)`,
+    `SELECT * FROM integracoes_marketplace
+      WHERE ativo = TRUE AND marketplace = ANY($1)
+        AND (access_token IS NOT NULL OR ads_access_token IS NOT NULL)`,
     [MARKETPLACES_COM_ADS]
   );
   let registros = 0;
   let diasSincronizados = 0;
   for (const integracao of integracoes) {
     try {
-      await garantirTokenValido(integracao);
+      // Só renova o token de PEDIDOS quando ele existe. Uma conexão da
+      // TikTok que autorizou a Publicidade mas ainda não autorizou a loja
+      // não tem refresh_token — tentar renovar aí estouraria e faria a
+      // sincronização de Ads ser pulada por um motivo que não é dela.
+      if (integracao.refresh_token) await garantirTokenValido(integracao);
       const resultado = await sincronizarAdsDias(integracao, dias);
       registros += resultado.registros;
       diasSincronizados = Math.max(diasSincronizados, resultado.diasSincronizados);
@@ -1052,8 +1172,183 @@ async function atualizarValoresRecebidosShopee(integracao, { forcar = false } = 
   }
 }
 
+// ---------- Valor recebido da TikTok Shop (conciliação/settlement) ----------
+// Mesmo papel de atualizarValoresRecebidos no Mercado Livre e de
+// atualizarValoresRecebidosShopee — o número que sustenta o cálculo REAL de
+// lucratividade — com uma diferença de desenho que vem da própria API:
+//
+// Na TikTok, o repasse (statement) é a unidade natural, não o pedido. Um
+// statement fecha VÁRIOS pedidos de uma vez e a API devolve todos numa
+// listagem paginada. Percorrer statement por statement é dezenas de vezes
+// mais barato do que perguntar pedido a pedido — e é exatamente a lição que
+// a Shopee ensinou do jeito caro (182 mil chamadas em 24 h por detalhar o
+// que já estava no banco).
+//
+// A conta que sai daqui NÃO é a diferença entre o preço de venda e a tabela
+// de comissão: é o `settlement_amount`, o valor que a TikTok de fato
+// depositou, já líquido de comissão, taxa de transação, imposto retido,
+// frete subsidiado e cupom.
+const JANELA_STATEMENTS_MS = 60 * 24 * 60 * 60 * 1000;
+const MAX_SETTLEMENT_INDIVIDUAL_POR_CICLO = 30;
+
+function credenciaisTikTok(integracao) {
+  return {
+    appKey: integracao.client_id,
+    appSecret: integracao.client_secret,
+    accessToken: integracao.access_token,
+    shopCipher: integracao.shop_cipher,
+  };
+}
+
+// Grava um settlement num pedido nosso. `taxa` entra por COALESCE: quando a
+// TikTok ainda não informou as taxas daquele pedido, o valor que já estava
+// gravado é preservado em vez de virar NULL — e nunca vira 0, porque "não
+// informado" e "tarifa zero" são coisas diferentes (é o que faz a aba
+// "Taxas Cobradas" acusar divergência que não existe).
+async function gravarSettlementTikTok(pedidoId, settlement, { liberado, liberacaoEm }) {
+  await pool.query(
+    `UPDATE pedidos_venda
+     SET valor_recebido_marketplace = $1,
+         valor_recebido_status = $2,
+         valor_recebido_liberacao_em = COALESCE($3, valor_recebido_liberacao_em),
+         valor_recebido_atualizado_em = now(),
+         statement_id_marketplace = COALESCE($4, statement_id_marketplace),
+         taxa_marketplace = COALESCE($5, taxa_marketplace)
+     WHERE id = $6`,
+    [
+      settlement.settlement,
+      liberado ? 'liberado' : 'confirmado',
+      liberacaoEm,
+      settlement.statementId || null,
+      tiktokShop.calcularTaxaMarketplaceDoSettlement(settlement),
+      pedidoId,
+    ]
+  );
+}
+
+async function atualizarValoresRecebidosTikTok(integracao, { forcar = false } = {}) {
+  // Conciliação não muda de minuto em minuto (um repasse fecha uma vez por
+  // dia, no máximo) — espaça em 30 min por integração, igual à Shopee e às
+  // métricas de Publicidade. O botão "Sincronizar agora" passa por cima.
+  if (!forcar) {
+    const ultima = ultimaConciliacaoPorIntegracao.get(integracao.id) || 0;
+    if (Date.now() - ultima < ESCROW_SYNC_COOLDOWN_MS) return;
+  }
+  ultimaConciliacaoPorIntegracao.set(integracao.id, Date.now());
+
+  const credenciais = credenciaisTikTok(integracao);
+  let ultimoErro = null;
+
+  try {
+    const desdeUnix = Math.floor((Date.now() - JANELA_STATEMENTS_MS) / 1000);
+    const statements = await tiktokShop.buscarStatements({ ...credenciais, desdeUnix });
+
+    // Statement já PAGO e já absorvido por aqui nunca muda de novo — pular
+    // esses é o que faz o custo dessa rotina cair a quase nada depois da
+    // primeira rodada, em vez de reprocessar 60 dias de repasses a cada meia
+    // hora. Statement ainda não pago continua sendo reconferido: enquanto o
+    // dinheiro não sai, o valor pode mudar (devolução, ajuste de frete).
+    const idsPagos = statements.filter((s) => s.pago && s.id).map((s) => s.id);
+    const { rows: absorvidos } = idsPagos.length > 0
+      ? await pool.query(
+        `SELECT DISTINCT statement_id_marketplace FROM pedidos_venda
+          WHERE statement_id_marketplace = ANY($1) AND valor_recebido_status = 'liberado'`,
+        [idsPagos]
+      )
+      : { rows: [] };
+    const jaAbsorvidos = new Set(absorvidos.map((r) => r.statement_id_marketplace));
+
+    let pedidosAtualizados = 0;
+    for (const statement of statements) {
+      if (!statement.id) continue;
+      if (statement.pago && jaAbsorvidos.has(statement.id)) continue;
+
+      let transacoes;
+      try {
+        transacoes = await tiktokShop.buscarTransacoesDoStatement({ ...credenciais, statementId: statement.id });
+      } catch (err) {
+        // Um repasse pontual falhando não pode derrubar os outros — fica
+        // registrado e é tentado de novo no próximo ciclo.
+        ultimoErro = `Repasse ${statement.id}: ${err.message}`;
+        continue;
+      }
+      if (transacoes.length === 0) continue;
+
+      const { rows: nossosPedidos } = await pool.query(
+        `SELECT id, origem_pedido_id FROM pedidos_venda
+          WHERE origem_marketplace = 'tiktok_shop' AND origem_pedido_id = ANY($1)
+            AND situacao != 'cancelado'`,
+        [transacoes.map((t) => t.orderId)]
+      );
+      const pedidoPorOrderId = new Map(nossosPedidos.map((p) => [p.origem_pedido_id, p.id]));
+
+      const liberacaoEm = statement.pago && statement.fechadoEm ? new Date(statement.fechadoEm * 1000) : null;
+      for (const settlement of transacoes) {
+        const pedidoId = pedidoPorOrderId.get(settlement.orderId);
+        // Pedido do repasse que não existe no nosso banco (importado antes
+        // da integração, ou fora da janela) simplesmente não é criado aqui —
+        // esta rotina concilia, não importa venda.
+        if (!pedidoId) continue;
+        await gravarSettlementTikTok(pedidoId, settlement, { liberado: statement.pago, liberacaoEm });
+        pedidosAtualizados += 1;
+      }
+    }
+
+    // Pedido recente cujo repasse ainda não fechou: a TikTok já sabe estimar
+    // o settlement dele, mas ele não aparece em statement nenhum ainda.
+    // Aqui sim é uma chamada por pedido — por isso o lote é pequeno e
+    // ordenado por "nunca conferido primeiro", pra ninguém ficar pra trás
+    // pra sempre perdendo a vaga pros pedidos que acabaram de chegar (foi
+    // exatamente esse bug no Mercado Livre).
+    const { rows: pendentes } = await pool.query(
+      `SELECT id, origem_pedido_id FROM pedidos_venda
+        WHERE origem_marketplace = 'tiktok_shop' AND origem_pedido_id IS NOT NULL
+          AND NOT origem_indisponivel AND situacao != 'cancelado'
+          AND (origem_integracao_id = $1 OR origem_integracao_id IS NULL)
+          AND (valor_recebido_status IS NULL OR valor_recebido_status != 'liberado')
+        ORDER BY valor_recebido_atualizado_em ASC NULLS FIRST
+        LIMIT $2`,
+      [integracao.id, MAX_SETTLEMENT_INDIVIDUAL_POR_CICLO]
+    );
+
+    for (const pedido of pendentes) {
+      try {
+        const settlement = await tiktokShop.buscarSettlementDoPedido({
+          ...credenciais, orderId: pedido.origem_pedido_id,
+        });
+        if (!settlement) {
+          // Ainda sem conciliação (venda recente). Marca a tentativa pra ele
+          // não monopolizar a fila e ser reconferido depois de quem nunca
+          // foi olhado.
+          await pool.query(
+            'UPDATE pedidos_venda SET valor_recebido_atualizado_em = now() WHERE id = $1 AND valor_recebido_marketplace IS NULL',
+            [pedido.id]
+          );
+          continue;
+        }
+        // Sem statement fechado, o valor é real mas o dinheiro ainda não
+        // saiu: entra como "confirmado", nunca "liberado".
+        await gravarSettlementTikTok(pedido.id, settlement, { liberado: false, liberacaoEm: null });
+        pedidosAtualizados += 1;
+      } catch (err) {
+        ultimoErro = `Pedido ${pedido.origem_pedido_id}: ${err.message}`;
+      }
+    }
+
+    void pedidosAtualizados;
+    await pool.query('UPDATE integracoes_marketplace SET ultimo_erro_faturamento = $1 WHERE id = $2', [ultimoErro, integracao.id]);
+  } catch (err) {
+    console.error(`[marketplace-sync] falha ao buscar conciliação da TikTok Shop (integração ${integracao.id}):`, err.message);
+    await pool.query(
+      'UPDATE integracoes_marketplace SET ultimo_erro_faturamento = $1 WHERE id = $2',
+      [err.message, integracao.id]
+    ).catch(() => {});
+  }
+}
+
 async function atualizarValoresRecebidos(integracao) {
   if (integracao.marketplace === 'shopee') return atualizarValoresRecebidosShopee(integracao);
+  if (integracao.marketplace === 'tiktok_shop') return atualizarValoresRecebidosTikTok(integracao);
   if (integracao.marketplace !== 'mercado_livre') return;
   try {
     let ultimoErro = await preencherPagamentoId(integracao);
@@ -1154,6 +1449,19 @@ async function sincronizarCancelamentos(integracao) {
       partnerKey: integracao.client_secret,
       accessToken: integracao.access_token,
       shopId: integracao.conta_externa_id,
+      desdeUnix: Math.floor(desde.getTime() / 1000),
+    });
+  } else if (integracao.marketplace === 'tiktok_shop') {
+    // Igual à Shopee: a TikTok só devolve o status ATUAL do pedido, então
+    // "cancelado" é simplesmente quem está em CANCELLED na janela. Sem isso,
+    // um pedido cancelado depois da importação seguia contando faturamento
+    // que a própria TikTok já não conta mais — e, pior, entrava no cálculo
+    // de margem com receita que nunca existiu.
+    idsCancelados = await tiktokShop.buscarIdsPedidosCancelados({
+      appKey: integracao.client_id,
+      appSecret: integracao.client_secret,
+      accessToken: integracao.access_token,
+      shopCipher: integracao.shop_cipher,
       desdeUnix: Math.floor(desde.getTime() / 1000),
     });
   } else {
@@ -1317,6 +1625,8 @@ module.exports = {
   encontrarVariante,
   atualizarValoresRecebidos,
   atualizarValoresRecebidosShopee,
+  atualizarValoresRecebidosTikTok,
+  garantirAnuncianteTikTok,
   corrigirPagamentosHistorico,
   sincronizarCancelamentos,
   garantirTokenValido,
