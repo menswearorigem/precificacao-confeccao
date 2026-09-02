@@ -3657,3 +3657,266 @@ table.ficha-doc-tabela {
 /* ---------- 14. impressão continua intocada ---------- */
 /* (o bloco @media print já reescreve .page-wide e a paleta; nada aqui
    interfere, porque tudo acima está sob max-width de tela) */
+
+/* ---------- 15. Ajuda da Manu (botão flutuante, painel, página /ajuda) ---------- */
+/* Central de ajuda por busca aproximada local (lib/ajuda) — três portas, um
+   visual só. Nenhuma cor nova: tudo em cima dos tokens que já existem. */
+
+/* grupo "Ajuda da Manu" dentro da BuscaGlobal — o item é um <button> igual
+   aos outros grupos (mesmo visual, só não navega); a resposta
+   (.manu-resposta, mesma peça do ManuPainel) entra logo abaixo quando
+   aberto, com o fundo do item destacado enquanto isso. */
+.busca-global-item-ajuda-wrap.aberto { background: var(--surface-alt); border-radius: var(--radius-sm); }
+.busca-global-item-ajuda-wrap .manu-resposta { padding-left: 14px; padding-right: 14px; }
+
+.manu-botao-wrap {
+  position: fixed;
+  right: 22px;
+  bottom: calc(22px + var(--manu-desvio, 0px));
+  z-index: 90;
+  transition: bottom 0.2s var(--ease);
+}
+.manu-botao {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 2px solid var(--brass-bright);
+  background: linear-gradient(155deg, var(--leather) 0%, var(--leather-dark) 100%);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--on-chrome);
+  cursor: pointer;
+  padding: 0;
+  overflow: visible;
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease);
+}
+.manu-botao:hover, .manu-botao:focus-visible { transform: scale(1.06); box-shadow: var(--shadow-lg), 0 0 0 4px rgba(181, 101, 29, 0.18); }
+.manu-botao-img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; object-position: center top; }
+.manu-botao-rotulo {
+  position: absolute;
+  right: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%) translateX(6px);
+  background: var(--leather-deep);
+  color: var(--on-chrome);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 7px 12px;
+  border-radius: 999px;
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s var(--ease), transform 0.18s var(--ease);
+}
+.manu-botao:hover .manu-botao-rotulo, .manu-botao:focus-visible .manu-botao-rotulo {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .manu-botao, .manu-botao-rotulo, .manu-botao-wrap { transition: none; }
+}
+
+.manu-balao {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 12px);
+  width: 220px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 12px 14px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.manu-balao::after {
+  content: '';
+  position: absolute;
+  right: 22px;
+  top: 100%;
+  width: 12px;
+  height: 12px;
+  background: var(--surface-raised);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  transform: translateY(-6px) rotate(45deg);
+}
+
+/* ---------- painel (diálogo flutuante e variante de página) ---------- */
+.manu-painel-backdrop {
+  position: fixed; inset: 0; z-index: 200;
+  background: var(--overlay);
+  display: flex; align-items: flex-start; justify-content: flex-end;
+  padding: 90px 22px 22px;
+}
+.manu-painel {
+  width: min(100%, 420px);
+  max-height: min(72vh, 640px);
+  background: var(--surface-raised);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.manu-painel-pagina {
+  width: 100%;
+  max-width: 640px;
+  max-height: none;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
+}
+.manu-painel-cabecalho {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-soft);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--leather);
+  flex-shrink: 0;
+}
+.manu-painel-mascote { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; object-position: center top; }
+.manu-painel-campo {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--ink-faint);
+  flex-shrink: 0;
+}
+.manu-painel-campo input {
+  flex: 1; border: none; outline: none; background: none;
+  font-size: 14px; color: var(--ink); font-family: var(--font-body);
+}
+.manu-painel-campo kbd {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--ink-faint);
+}
+.manu-painel-corpo { overflow-y: auto; padding: 6px; flex: 1; }
+.manu-painel-pagina .manu-painel-corpo { max-height: 50vh; }
+.manu-painel-dica { padding: 14px 12px; font-size: 12.5px; color: var(--ink-faint); margin: 0; }
+
+.manu-grupo-titulo {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-faint);
+}
+.manu-item-wrap { border-radius: var(--radius-sm); }
+.manu-item-wrap.aberto { background: var(--surface-alt); }
+.manu-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 9px 12px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+}
+.manu-item.ativo, .manu-item:hover { background: var(--surface-alt); }
+.manu-item-titulo { font-size: 13px; font-weight: 500; color: var(--ink); }
+.manu-item-sub { font-size: 11px; color: var(--ink-faint); }
+
+.manu-resposta { padding: 4px 12px 14px; font-size: 12.5px; color: var(--ink-soft); line-height: 1.55; }
+.manu-resposta-texto p { margin: 0 0 10px; }
+.manu-resposta-texto p:last-child { margin-bottom: 0; }
+.manu-resposta-subtitulo { font-weight: 700; color: var(--ink); text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.04em; margin: 12px 0 6px !important; }
+.manu-resposta-lista { margin: 0 0 10px; padding-left: 18px; }
+.manu-resposta-lista li { margin-bottom: 4px; }
+.manu-resposta-rodape { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.manu-relacionados { display: flex; flex-wrap: wrap; gap: 6px; }
+.manu-relacionado-link {
+  border: 1px dashed var(--border);
+  background: none;
+  color: var(--terracotta);
+  font-size: 11.5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.manu-relacionado-link:hover { background: var(--surface-alt); }
+
+/* ---------- página /ajuda ---------- */
+.ajuda-cabecalho { display: flex; align-items: center; gap: 14px; margin-bottom: 4px; }
+.ajuda-mascote { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; object-position: center top; border: 2px solid var(--brass-bright); flex-shrink: 0; }
+.ajuda-busca-topo { margin: 18px 0; }
+.ajuda-busca-topo .manu-painel-pagina { max-width: none; }
+.ajuda-grid { margin-top: 4px; }
+.ajuda-conteudo { display: flex; flex-direction: column; gap: 28px; }
+.ajuda-modulo-titulo { font-size: 15px; margin-bottom: 6px; }
+.ajuda-verbete {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+  padding: 2px 4px;
+}
+.ajuda-verbete summary {
+  cursor: pointer;
+  padding: 10px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  border-radius: var(--radius-sm);
+}
+.ajuda-verbete summary:hover { background: var(--surface-alt); }
+.ajuda-verbete-titulo { font-size: 13px; font-weight: 600; color: var(--ink); }
+.ajuda-verbete-tela { font-size: 11px; color: var(--ink-faint); }
+.ajuda-sem-resposta-lista { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ajuda-sem-resposta-lista li { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 6px 9px; border-radius: var(--radius-sm); background: var(--surface-alt); }
+.ajuda-sem-resposta-data { color: var(--ink-faint); font-family: var(--font-mono); font-size: 10.5px; }
+
+@media print {
+  .ajuda-grid { grid-template-columns: 1fr; }
+  .manu-botao-wrap { display: none; }
+  /* Força todo <details> a mostrar o conteúdo no papel, aberto ou não —
+     é o "manual pra imprimir" da seção 3.4. Suportado pelos motores atuais
+     de Chrome/Edge/Firefox/Safari; navegador antigo só imprime fechado. */
+  .ajuda-verbete:not([open]) summary ~ * { display: block !important; }
+  .ajuda-verbete { break-inside: avoid; }
+}
+
+@media (max-width: 640px) {
+  .manu-botao-wrap { right: 14px; bottom: calc(max(14px, env(safe-area-inset-bottom)) + var(--manu-desvio, 0px)); }
+  .manu-botao { width: 52px; height: 52px; }
+  .manu-botao-rotulo { display: none; }
+  .manu-balao { width: 190px; right: -6px; }
+
+  /* Painel flutuante vira folha ancorada embaixo — mesmo padrão de
+     .viagem-modal e .confirm-modal. */
+  .manu-painel-backdrop {
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0;
+  }
+  .manu-painel-backdrop .manu-painel {
+    width: 100%;
+    max-width: none;
+    max-height: 86svh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+  }
+  .manu-painel-campo input { font-size: 16px; } /* evita zoom automático do Safari no iPhone */
+  .manu-item { min-height: 44px; justify-content: center; }
+
+  .ajuda-mascote { width: 40px; height: 40px; }
+}

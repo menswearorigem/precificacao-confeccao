@@ -1,0 +1,118 @@
+// Verbetes do módulo Análises — Dashboard Executivo (/dashboard,
+// DashboardPage.jsx), Ficha de Precificação (/ficha-precificacao,
+// FichaPrecificacaoPage.jsx — a ficha original de composição de preço,
+// preservada como estava), Central de Alertas (/alertas, AlertasPage.jsx) e
+// Simulador de Cenários (/simulador, SimuladorPage.jsx). Nenhum verbete deste
+// módulo sugere um valor "certo" pra digitar num campo de cálculo — Ficha de
+// Precificação e Simulador só mostram o que a tela exibe e como ela funciona.
+
+export const verbetesAnalises = [
+  {
+    id: 'analises-dashboard-indicadores',
+    modulo: 'analises',
+    tela: 'Dashboard Executivo',
+    titulo: 'Indicadores consolidados e evolução diária (Dashboard)',
+    rota: '/dashboard',
+    perguntas: [
+      'dashboard executivo',
+      'faturamento consolidado de todos os canais',
+      'lucro liquido do periodo',
+      'margem consolidada',
+      'ticket medio geral',
+      'quantos pedidos no periodo',
+      'vendas por canal',
+      'grafico de faturamento e lucro',
+      'comparar com periodo anterior',
+      'filtrar dashboard por empresa',
+      'filtrar dashboard por canal de venda',
+    ],
+    resposta:
+      'O **Dashboard Executivo** consolida faturamento, lucro e margem de toda a operação — todos os canais de venda juntos (manual e marketplace) — num período escolhido, com filtro opcional por empresa. Os indicadores do topo (Faturamento, Lucro líquido, Pedidos, Peças vendidas, Ticket médio e Margem consolidada) mostram a variação em relação ao período anterior equivalente.\n\nO card **Vendas por Canal** lista a participação de cada canal no faturamento — clicar num canal filtra o dashboard inteiro só por ele (clicar de novo tira o filtro). Ao lado, o gráfico **Evolução Diária** compara faturamento e lucro dia a dia no período. No rodapé, o selo de confiança mostra sobre quantos pedidos o cálculo foi feito, de quantos existem no período.',
+    relacionados: ['analises-dashboard-top-produtos'],
+  },
+  {
+    id: 'analises-dashboard-top-produtos',
+    modulo: 'analises',
+    tela: 'Dashboard Executivo',
+    titulo: 'Top produtos por lucro e referências abaixo da margem mínima',
+    rota: '/dashboard',
+    perguntas: [
+      'top produtos por lucro',
+      'produtos que mais consomem margem',
+      'produto com pior margem',
+      'referencias abaixo da margem minima',
+      'quais produtos estao vendendo com margem baixa',
+    ],
+    resposta:
+      'No Dashboard Executivo, o card **Top 10 Produtos por Lucro** mostra as referências que mais lucro deram no período; ao lado, **Top 10 Produtos que Mais Consomem Margem** lista as referências com a menor margem no período, considerando só quem vendeu 2 ou mais unidades (pra não destacar um caso isolado). Clicar numa referência em qualquer uma das tabelas abre a ficha do produto.\n\nQuando existe alguma, aparece também o card **Referências Abaixo da Margem Mínima**, com todas as referências cuja margem apurada no período ficou abaixo do limite configurado em Configurações → Parâmetros.',
+    relacionados: ['analises-dashboard-indicadores', 'analises-alertas'],
+  },
+  {
+    id: 'analises-ficha-precificacao',
+    modulo: 'analises',
+    tela: 'Ficha de Precificação',
+    titulo: 'Ficha de Precificação — composição do preço de uma referência',
+    rota: '/ficha-precificacao',
+    perguntas: [
+      'ficha de precificacao',
+      'composicao do preco de venda',
+      'grafico de rosca do preco',
+      'onde o preco esta entre minimo e premium',
+      'percentual de materiais sobre o custo',
+      'percentual de mao de obra industrial',
+      'percentual de despesas indiretas',
+      'percentual de impostos do custo',
+      'ultimas referencias consultadas na ficha',
+      'preco praticado vs preco sugerido',
+    ],
+    resposta:
+      'A **Ficha de Precificação** mostra, pra uma referência escolhida, a composição completa do preço de venda: um gráfico de rosca com a fatia de Materiais, Industrial, Indireto, Impostos, Taxas e Lucro dentro do preço, mais um indicador de "Onde o preço está" — uma faixa visual entre o preço mínimo, ideal e premium, com uma marca mostrando onde o preço ativo (praticado ou sugerido) cai nessa faixa.\n\nOs quatro indicadores no topo mostram % de Custo com Materiais, % de Mão de Obra Industrial, % de Despesas Indiretas e % de Impostos, todos sobre o custo total da peça. É a mesma ficha de composição de preço de sempre, preservada como estava, só que agora acessível como tela própria do módulo Análises. Sem nenhuma referência selecionada, a tela mostra atalhos pras últimas referências consultadas.',
+    relacionados: ['analises-simulador'],
+  },
+  {
+    id: 'analises-alertas',
+    modulo: 'analises',
+    tela: 'Central de Alertas',
+    titulo: 'Central de Alertas — referências fora dos limites configurados',
+    rota: '/alertas',
+    perguntas: [
+      'central de alertas',
+      'referencias fora do limite',
+      'alerta de margem baixa',
+      'alerta de custo alto',
+      'filtrar alertas por empresa',
+      'filtrar alertas por marca',
+      'filtrar alertas por categoria',
+      'referencia nao avaliavel nos alertas',
+      'quantas referencias tem alerta',
+      'onde configuro os limites dos alertas',
+      'margem la debaixo do esperado quais referencias',
+    ],
+    resposta:
+      'A **Central de Alertas** mostra, agora, quais referências estão fora de cada limite configurado em Configurações → Parâmetros (por exemplo, % de materiais acima do esperado, margem abaixo do mínimo). Dá pra filtrar por empresa, marca e categoria. Cada grupo de alerta mostra o limite configurado e a lista de referências fora dele, com o valor apurado e o desvio — clicar na seta de uma linha abre a ficha do produto.\n\nReferência com material cadastrado mas valor unitário zerado entra num grupo separado, **"Não avaliável — falta custo de material"**: mostrar "0%, dentro do limite" nesse caso seria uma aprovação falsa, então ela fica de fora do grupo de alerta normal até o custo ser preenchido de verdade. O selo de confiança no rodapé mostra quantas referências foram avaliadas, de quantas existem no total.',
+    relacionados: ['analises-dashboard-top-produtos'],
+  },
+  {
+    id: 'analises-simulador',
+    modulo: 'analises',
+    tela: 'Simulador de Cenários',
+    titulo: 'Simulador de Cenários — testar ajustes hipotéticos sem alterar o produto',
+    rota: '/simulador',
+    perguntas: [
+      'simulador de cenarios',
+      'testar aumento de custo sem salvar',
+      'simular reajuste de preco',
+      'ajuste hipotetico de material',
+      'ajuste hipotetico de frete',
+      'ajuste hipotetico de impostos',
+      'simular nova margem',
+      'comparar cenario atual com cenario simulado',
+      'diferenca entre preco base e preco simulado',
+      'simulacao nao altera o produto de verdade',
+      'simular aumento no preco do tecido',
+    ],
+    resposta:
+      'O **Simulador de Cenários** testa ajustes hipotéticos de custo, frete, impostos, taxas/comissão e margem desejada de uma referência, sem alterar nenhum dado real do produto. Depois de escolher a referência, o card **Valores base** mostra os números atuais dela (custo de materiais, industrial, indireto, % de impostos, % de taxas, margem desejada e preço sugerido), pra referência.\n\nO card **Ajustes do cenário** tem campos pra ajustar, hipoteticamente: preço do tecido/materiais, custo da facção/industrial e energia/rateio indireto (em %), frete extra não previsto (em R$), impostos e comissão/taxas (em pontos percentuais somados à base), e uma nova margem desejada (deixando em branco mantém a margem base). Qualquer alteração já recalcula o cenário simulado, mostrado lado a lado com o cenário atual — subtotal de produção, custo total, preço sugerido e lucro dos dois — e a diferença entre o preço simulado e o preço sugerido base, em R$ e em %.',
+    relacionados: ['analises-ficha-precificacao'],
+  },
+];

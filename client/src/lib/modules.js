@@ -153,7 +153,15 @@ export function getDefaultPath(user) {
 // direta por URL a uma página fora dos módulos liberados pra ele (o backend
 // já barra a chamada de API, mas sem isso a tela tentaria montar mesmo assim
 // e quebraria com o erro 403 sem tratamento).
+//
+// /ajuda é a única exceção: a central de ajuda da Manu não pertence a
+// nenhum módulo de propósito (ela mesma lê user.modulos por dentro, pra
+// mostrar só o que cada um pode ver) e precisa ficar aberta pra qualquer
+// usuário autenticado, não só quem tem módulo liberado. Isso não mexe em
+// regra de permissão de módulo nenhuma — só libera essa única rota sem
+// módulo, do mesmo jeito que /login já fica fora de toda essa guarda.
 export function canAccessPath(user, pathname) {
+  if (pathname === '/ajuda') return true;
   if (user?.role === 'admin') return true;
   const visible = getVisibleModules(user);
   return visible.some((mod) => mod.pages.some((p) => pathname === p.to || pathname.startsWith(`${p.to}/`)));

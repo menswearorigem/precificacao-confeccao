@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { LogOut, Menu, X, ChevronsLeft, ChevronsRight, Sun, Moon, Rows3, AlignJustify } from 'lucide-react';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { LogOut, Menu, X, ChevronsLeft, ChevronsRight, Sun, Moon, Rows3, AlignJustify, HelpCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getVisibleModules } from '../lib/modules';
 import { useTema } from '../lib/useTema';
 import { useDensidade } from '../contexts/DensidadeContext';
 import BuscaGlobal from './BuscaGlobal';
 import SinoCalendario from './SinoCalendario';
+import ManuBotao from './ManuBotao';
 import logoHbnHub from '../assets/logo-hbn-hub.png';
 
 const CHAVE_SIDEBAR_COLAPSADO = 'hbn_sidebar_colapsado';
@@ -62,6 +63,7 @@ export default function Shell({ children }) {
   return (
     <div className={'shell' + (sidebarColapsado ? ' sidebar-colapsado' : '')}>
       <BuscaGlobal />
+      <ManuBotao />
       <header className="shell-header">
         <div className="brand">
           <button
@@ -98,6 +100,12 @@ export default function Shell({ children }) {
           >
             {tema === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
           </button>
+          {/* /ajuda não é de nenhum módulo (ver lib/modules.js#canAccessPath),
+              então o link mora aqui em vez de entrar como página de um
+              módulo — não distorce o modelo de permissão por módulo. */}
+          <Link to="/ajuda" className="icon-toggle-btn" title="Ajuda" aria-label="Ajuda">
+            <HelpCircle size={15} />
+          </Link>
           {user && <span className="user-badge">{user.nome}</span>}
           {/* O rótulo vai num <span> próprio para o CSS poder escondê-lo no
               celular (o botão vira só o ícone) sem perder o nome acessível,

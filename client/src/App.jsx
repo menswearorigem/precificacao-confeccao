@@ -50,6 +50,7 @@ import RelatorioTaxasPage from './pages/RelatorioTaxasPage';
 import ImportarPedidosPage from './pages/ImportarPedidosPage';
 import ViagensListPage from './pages/ViagensListPage';
 import ViagemDetailPage from './pages/ViagemDetailPage';
+import AjudaPage from './pages/AjudaPage';
 
 function RequireAuth({ loading, user, children }) {
   const location = useLocation();
@@ -143,6 +144,10 @@ function AppRoutes() {
                   <Route path="/calendario" element={<CalendarioPage />} />
                   <Route path="/calendario/modelos" element={<TemplatesCalendarioPage />} />
                   <Route path="/calendario/eventos/:id/imprimir" element={<EventoImpressaoPage />} />
+                  {/* Central de ajuda da Manu: não pertence a nenhum módulo de
+                      propósito — liberada pra qualquer usuário autenticado (ver
+                      a exceção em lib/modules.js#canAccessPath). */}
+                  <Route path="/ajuda" element={<AjudaPage />} />
                   <Route path="*" element={<Navigate to={getDefaultPath(user) || '/produtos'} replace />} />
                 </Routes>
               </Shell>

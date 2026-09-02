@@ -2,14 +2,18 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search, Package, Users, Truck, ShoppingCart, Store, Barcode, LayoutGrid, History,
+  MessageCircleQuestion,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getVisibleModules } from '../lib/modules';
 import { api } from '../api/client';
 import { brl } from '../lib/format';
+import { buscarAjuda, pareceDuvida, buscarVerbetePorId } from '../lib/ajuda';
+import { RespostaVerbete } from './ManuPainel';
 
 const CHAVE_RECENTES = 'hbn_busca_global_recentes';
 const MAX_RECENTES = 8;
+const MAX_AJUDA = 4;
 
 function lerRecentesGlobal() {
   try {
@@ -46,6 +50,7 @@ export default function BuscaGlobal() {
   const [termo, setTermo] = useState('');
   const [resultados, setResultados] = useState(null);
   const [indiceAtivo, setIndiceAtivo] = useState(0);
+  const [ajudaAbertaId, setAjudaAbertaId] = useState(null);
   const inputRef = useRef(null);
   const debounceRef = useRef(null);
 
@@ -73,6 +78,7 @@ export default function BuscaGlobal() {
       setTermo('');
       setResultados(null);
       setIndiceAtivo(0);
+      setAjudaAbertaId(null);
       setTimeout(() => inputRef.current?.focus(), 30);
     }
   }, [aberto]);
@@ -93,15 +99,28 @@ export default function BuscaGlobal() {
     return paginas.filter((p) => p.label.toLowerCase().includes(alvo)).slice(0, 5);
   }, [paginas, termo]);
 
+  // A busca de ajuda é local e síncrona (lib/ajuda) — não passa pelo
+  // debounce de 200ms nem espera o servidor: responde a partir de 2
+  // caracteres, na hora, enquanto os grupos de entidade ainda carregam.
+  const ajudaResultados = useMemo(() => {
+    if (!user || termo.trim().length < 2) return [];
+    return buscarAjuda(termo, { user, limite: MAX_AJUDA });
+  }, [termo, user]);
+
+  // Decide a ORDEM dos grupos, não o conteúdo: consulta com cara de dúvida
+  // ("como...", "não sei...") põe a Ajuda antes até das Páginas.
+  const ajudaPrimeiro = useMemo(() => pareceDuvida(termo), [termo]);
+
   // Achata tudo numa lista única (na mesma ordem visual) pra navegação por setas.
   const listaAchatada = useMemo(() => {
     if (!termo.trim()) {
       return lerRecentesGlobal().map((r) => ({ ...r, tipo: 'recente' }));
     }
-    const itens = [];
-    if (paginasFiltradas.length > 0) {
-      itens.push(...paginasFiltradas.map((p) => ({ label: p.label, sub: p.moduloLabel, href: p.to, tipo: 'pagina' })));
-    }
+    const itensAjuda = ajudaResultados.map((v) => ({
+      label: v.titulo, sub: v.tela, href: v.rota, tipo: 'ajuda', verbete: v,
+    }));
+    const itensPaginas = paginasFiltradas.map((p) => ({ label: p.label, sub: p.moduloLabel, href: p.to, tipo: 'pagina' }));
+    const itens = ajudaPrimeiro ? [...itensAjuda, ...itensPaginas] : [...itensPaginas, ...itensAjuda];
     if (resultados) {
       for (const g of GRUPOS_CONFIG) {
         for (const row of resultados[g.chave] || []) {
@@ -110,14 +129,25 @@ export default function BuscaGlobal() {
       }
     }
     return itens;
-  }, [termo, paginasFiltradas, resultados]);
+  }, [termo, paginasFiltradas, ajudaResultados, ajudaPrimeiro, resultados]);
 
   useEffect(() => { setIndiceAtivo(0); }, [listaAchatada.length]);
 
   function abrir(item) {
+    // Itens de ajuda não navegam nem entram em "Últimas consultadas" — Enter
+    // ou clique nele expande a resposta ali mesmo, dentro da paleta.
+    if (item.tipo === 'ajuda') {
+      setAjudaAbertaId((atual) => (atual === item.verbete.id ? null : item.verbete.id));
+      return;
+    }
     if (item.tipo !== 'pagina') gravarRecenteGlobal(item);
     setAberto(false);
     navigate(item.href);
+  }
+
+  function navegarParaVerbete(verbete) {
+    setAberto(false);
+    navigate(verbete.rota);
   }
 
   function aoTeclarNaBusca(e) {
@@ -136,6 +166,59 @@ export default function BuscaGlobal() {
   if (!aberto) return null;
 
   const semTermo = !termo.trim();
+
+  // Offset de cada item dentro da lista achatada, na mesma ordem em que é
+  // renderizado — usado só pra saber qual linha destacar como "ativa".
+  let cursor = 0;
+  const offsetAjuda = cursor; if (ajudaPrimeiro) cursor += ajudaResultados.length;
+  const offsetPaginasPreAjuda = ajudaPrimeiro ? cursor : 0;
+  if (!ajudaPrimeiro) cursor += paginasFiltradas.length;
+  const offsetPaginas = ajudaPrimeiro ? offsetPaginasPreAjuda : 0;
+  const offsetAjudaDepois = ajudaPrimeiro ? -1 : cursor;
+  if (!ajudaPrimeiro) cursor += ajudaResultados.length;
+  const offsetEntidades = cursor;
+
+  // Um "relacionado" clicado dentro da resposta pode apontar pra um
+  // verbete fora dos 4 exibidos aqui (o grupo é bem mais estreito que o do
+  // ManuPainel) — nesse caso ele entra como uma linha extra no fim do
+  // grupo, só pra abrir a resposta; não ganha destaque de teclado (caso
+  // raro, não vale a complexidade de recalcular todos os offsets por causa
+  // dele).
+  const extraFalta = ajudaAbertaId && !ajudaResultados.some((v) => v.id === ajudaAbertaId)
+    ? buscarVerbetePorId(ajudaAbertaId)
+    : null;
+
+  const blocoAjuda = (ajudaResultados.length > 0 || extraFalta) && (
+    <div className="busca-global-grupo" key="ajuda">
+      <div className="busca-global-grupo-titulo"><MessageCircleQuestion size={12} /> Ajuda da Manu</div>
+      {ajudaResultados.map((v, idx) => {
+        const posicao = (ajudaPrimeiro ? offsetAjuda : offsetAjudaDepois) + idx;
+        const item = { label: v.titulo, sub: v.tela, href: v.rota, tipo: 'ajuda', verbete: v };
+        return (
+          <ItemAjuda
+            key={v.id}
+            verbete={v}
+            ativo={posicao === indiceAtivo}
+            aberto={ajudaAbertaId === v.id}
+            onClick={() => abrir(item)}
+            onNavegar={navegarParaVerbete}
+            onSelecionarRelacionado={setAjudaAbertaId}
+          />
+        );
+      })}
+      {extraFalta && (
+        <ItemAjuda
+          key={extraFalta.id}
+          verbete={extraFalta}
+          ativo={false}
+          aberto
+          onClick={() => setAjudaAbertaId(null)}
+          onNavegar={navegarParaVerbete}
+          onSelecionarRelacionado={setAjudaAbertaId}
+        />
+      )}
+    </div>
+  );
 
   return (
     <div className="busca-global-backdrop" onClick={() => setAberto(false)}>
@@ -167,6 +250,7 @@ export default function BuscaGlobal() {
 
           {!semTermo && (
             <>
+              {ajudaPrimeiro && blocoAjuda}
               {paginasFiltradas.length > 0 && (
                 <div className="busca-global-grupo">
                   <div className="busca-global-grupo-titulo"><LayoutGrid size={12} /> Páginas</div>
@@ -174,16 +258,17 @@ export default function BuscaGlobal() {
                     <ItemResultado
                       key={p.to}
                       item={{ label: p.label, sub: p.moduloLabel, href: p.to }}
-                      ativo={idx === indiceAtivo}
+                      ativo={offsetPaginas + idx === indiceAtivo}
                       onClick={() => abrir({ label: p.label, href: p.to, tipo: 'pagina' })}
                     />
                   ))}
                 </div>
               )}
+              {!ajudaPrimeiro && blocoAjuda}
               {resultados && GRUPOS_CONFIG.map((g) => {
                 const linhas = resultados[g.chave] || [];
                 if (linhas.length === 0) return null;
-                let offset = paginasFiltradas.length;
+                let offset = offsetEntidades;
                 for (const anterior of GRUPOS_CONFIG) {
                   if (anterior.chave === g.chave) break;
                   offset += (resultados[anterior.chave] || []).length;
@@ -198,7 +283,9 @@ export default function BuscaGlobal() {
                   </div>
                 );
               })}
-              {!resultados && termo.trim().length >= 2 && <p className="busca-global-vazio">Buscando…</p>}
+              {!resultados && termo.trim().length >= 2 && ajudaResultados.length === 0 && (
+                <p className="busca-global-vazio">Buscando…</p>
+              )}
               {resultados && listaAchatada.length === 0 && <p className="busca-global-vazio">Nada encontrado pra "{termo}".</p>}
             </>
           )}
@@ -214,5 +301,22 @@ function ItemResultado({ item, ativo, onClick }) {
       <span className="busca-global-item-label">{item.label}</span>
       {item.sub && <span className="busca-global-item-sub">{item.sub}</span>}
     </button>
+  );
+}
+
+// Item do grupo "Ajuda da Manu": clicar não navega, expande a resposta ali
+// mesmo (mesma peça RespostaVerbete usada no ManuPainel — ver seção "um só
+// componente" do relatório da tarefa).
+function ItemAjuda({ verbete, ativo, aberto, onClick, onNavegar, onSelecionarRelacionado }) {
+  return (
+    <div className={'busca-global-item-ajuda-wrap' + (aberto ? ' aberto' : '')}>
+      <button type="button" className={'busca-global-item' + (ativo ? ' ativo' : '')} onClick={onClick} aria-expanded={aberto}>
+        <span className="busca-global-item-label">{verbete.titulo}</span>
+        <span className="busca-global-item-sub">{verbete.tela}</span>
+      </button>
+      {aberto && (
+        <RespostaVerbete verbete={buscarVerbetePorId(verbete.id) || verbete} onNavegar={onNavegar} onSelecionarRelacionado={onSelecionarRelacionado} />
+      )}
+    </div>
   );
 }
