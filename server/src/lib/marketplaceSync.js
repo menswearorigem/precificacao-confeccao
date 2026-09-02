@@ -80,12 +80,25 @@ async function buscarPedidosDoMarketplace(integracao, desde) {
     return orders.map(mercadoLivre.mapearPedido);
   }
   if (integracao.marketplace === 'shopee') {
+    // Quais pedidos dessa janela já estão no banco. Vai junto pra Shopee
+    // descartá-los logo depois da listagem, sem pedir detalhe nem
+    // conciliação — que custam UMA chamada por pedido. Como a janela é de 7
+    // dias e o ciclo roda a cada 5 min, sem isso a mesma centena de pedidos
+    // já importados era rebuscada inteira, o dia todo, e o resultado
+    // descartado logo em seguida (importarPedido ignora pedido existente).
+    const { rows: existentes } = await pool.query(
+      `SELECT origem_pedido_id FROM pedidos_venda
+        WHERE origem_marketplace = 'shopee' AND origem_pedido_id IS NOT NULL
+          AND data_pedido >= $1`,
+      [new Date(desde.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)]
+    );
     const orders = await shopee.buscarPedidos({
       partnerId: integracao.client_id,
       partnerKey: integracao.client_secret,
       accessToken: integracao.access_token,
       shopId: integracao.conta_externa_id,
       desdeUnix: Math.floor(desde.getTime() / 1000),
+      jaImportados: new Set(existentes.map((r) => r.origem_pedido_id)),
     });
     return orders.map(shopee.mapearPedido);
   }
@@ -940,7 +953,20 @@ async function sincronizarAdsSeNecessario(integracao) {
 // solta o repasse, o valor pode mudar (ajuste de frete, devolução parcial),
 // e é justamente essa reconferência que faz o número da tela convergir pro
 // que caiu na conta.
-async function atualizarValoresRecebidosShopee(integracao) {
+// Reconferir a conciliação é uma chamada por pedido, e o valor de um
+// repasse não muda de minuto em minuto — a cada 5 min (o ritmo do ciclo de
+// pedidos) era gasto puro. Espaça em 30 min por integração, igual já é
+// feito com as métricas de Publicidade. O botão "Sincronizar agora" passa
+// por cima (`forcar`), pra quem quiser o dado na hora não ficar esperando.
+const ESCROW_SYNC_COOLDOWN_MS = 30 * 60 * 1000;
+const ultimaConciliacaoPorIntegracao = new Map();
+
+async function atualizarValoresRecebidosShopee(integracao, { forcar = false } = {}) {
+  if (!forcar) {
+    const ultima = ultimaConciliacaoPorIntegracao.get(integracao.id) || 0;
+    if (Date.now() - ultima < ESCROW_SYNC_COOLDOWN_MS) return;
+  }
+  ultimaConciliacaoPorIntegracao.set(integracao.id, Date.now());
   const credenciais = {
     partnerId: integracao.client_id,
     partnerKey: integracao.client_secret,

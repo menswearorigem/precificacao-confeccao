@@ -438,12 +438,25 @@ function mapearPedido(order) {
 // Busca os pedidos criados a partir de `desdeUnix` (epoch em segundos), em
 // TODOS os status que representam venda (tudo menos UNPAID e CANCELLED), já
 // com o detalhe dos itens e a conciliação financeira anexada.
-async function buscarPedidos({ partnerId, partnerKey, accessToken, shopId, desdeUnix }) {
+//
+// `jaImportados` é o conjunto de order_sn que já existem no nosso banco.
+// Eles são descartados logo depois da LISTAGEM (que é uma chamada só por
+// página, barata) e nunca chegam a pedir detalhe nem conciliação — que são
+// caros: uma chamada por pedido. Sem esse filtro, a cada ciclo de 5 min a
+// janela inteira de 7 dias era rebuscada do zero, pedido por pedido, mesmo
+// já estando toda importada: virava dezenas de milhares de chamadas por dia
+// à toa, e o dado novo era jogado fora logo em seguida (importarPedido
+// ignora pedido que já existe). A atualização da conciliação de pedido já
+// importado é feita à parte, em lote pequeno e só enquanto o repasse não
+// foi liberado — ver atualizarValoresRecebidosShopee em marketplaceSync.js.
+async function buscarPedidos({ partnerId, partnerKey, accessToken, shopId, desdeUnix, jaImportados }) {
   const credenciais = { partnerId, partnerKey, accessToken, shopId };
+  const conhecidos = jaImportados instanceof Set ? jaImportados : new Set(jaImportados || []);
   const statusPorOrderSn = await listarOrderSns({ ...credenciais, desdeUnix });
   const orderSns = [...statusPorOrderSn.entries()]
     .filter(([, status]) => !status || !STATUS_NAO_IMPORTAVEIS.has(status))
-    .map(([orderSn]) => orderSn);
+    .map(([orderSn]) => orderSn)
+    .filter((orderSn) => !conhecidos.has(orderSn));
   if (orderSns.length === 0) return [];
 
   const detalhes = await buscarDetalhesPedidos(credenciais, orderSns);
