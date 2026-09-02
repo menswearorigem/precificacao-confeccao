@@ -458,6 +458,125 @@ function mapearPedido(order) {
   };
 }
 
+// ---------- Extrato financeiro ----------
+//
+// `buscarTransacoesDoStatement` (acima) existe pra CONCILIAR PEDIDO: ela
+// descarta de propósito toda linha sem `order_id`. O extrato do financeiro
+// precisa do contrário — justamente as linhas que não têm pedido atrás
+// (ajuste, multa, débito de publicidade, correção de frete) são as que
+// explicam por que o repasse não bate com a soma das vendas. Por isso uma
+// função própria, em vez de afrouxar a outra e arriscar mudar o que a
+// Lucratividade lê.
+//
+// Na TikTok o `statement` é o próprio repasse — uma transferência fechada
+// pra conta bancária. Cada linha do statement é um lançamento do extrato.
+function tipoNormalizadoTikTok(entrada) {
+  const texto = `${entrada.type || ''} ${entrada.transaction_type || ''} ${entrada.adjustment_reason || ''} ${entrada.description || ''}`.toLowerCase();
+  if (texto.includes('ad ') || texto.includes('advertis') || texto.includes('ads')) return 'ads';
+  if (texto.includes('refund') || texto.includes('return') || texto.includes('cancel')) return 'devolucao';
+  if (texto.includes('adjust') || texto.includes('correct') || texto.includes('compensat')) return 'ajuste';
+  if (texto.includes('fee') || texto.includes('commission') || texto.includes('penalt') || texto.includes('tax')) return 'taxa';
+  if (texto.includes('withdraw') || texto.includes('payout') || texto.includes('transfer')) return 'saque';
+  if (entrada.order_id) return 'repasse_venda';
+  return 'outros';
+}
+
+// Todas as linhas de um repasse, sem descartar as que não têm pedido.
+// `liberado` vem do statement (a TikTok só marca PAID quando o dinheiro
+// saiu de verdade) e é repassado pra cada linha — dinheiro de statement
+// ainda em processamento não pode ser somado junto com o já pago.
+async function buscarLancamentosDoStatement({ appKey, appSecret, accessToken, shopCipher, statementId, maxPaginas = 40 }) {
+  const lancamentos = [];
+  const descartadas = [];
+  let pageToken = '';
+
+  for (let pagina = 0; pagina < maxPaginas; pagina += 1) {
+    const query = { shop_cipher: shopCipher, page_size: 50, sort_field: 'order_create_time' };
+    if (pageToken) query.page_token = pageToken;
+
+    const data = await chamarApi(
+      `/finance/${VERSAO}/statements/${encodeURIComponent(statementId)}/statement_transactions`,
+      { appKey, appSecret, accessToken, query }
+    );
+    const lista = data.statement_transactions || data.transactions || [];
+    for (const t of lista) {
+      // Aqui o valor da linha é o que ela movimentou — settlement_amount
+      // quando é linha de pedido, adjustment_amount quando é ajuste. Sem
+      // nenhum dos dois não há valor a lançar: a linha é registrada como
+      // descartada em vez de virar R$ 0,00 no extrato (REGRA 2).
+      const valor = numeroOuNulo(t.settlement_amount) ?? numeroOuNulo(t.adjustment_amount) ?? numeroOuNulo(t.amount);
+      if (valor === null) {
+        descartadas.push({ id: t.id || t.order_id || null, motivo: 'linha sem valor reconhecível' });
+        continue;
+      }
+      const criadoEm = t.order_create_time ? Number(t.order_create_time) : null;
+      const idExterno = t.id
+        ? String(t.id)
+        : `${statementId}:${t.order_id || 'ajuste'}:${criadoEm || lancamentos.length}`;
+
+      lancamentos.push({
+        idExterno,
+        tipo: tipoNormalizadoTikTok(t),
+        descricaoExterna: t.adjustment_reason || t.type || t.transaction_type || null,
+        valor,
+        moeda: t.currency || 'BRL',
+        pedidoIdExterno: t.order_id ? String(t.order_id) : null,
+        repasseIdExterno: String(statementId),
+        criadoEm,
+        detalhe: {
+          receitaBruta: numeroOuNulo(t.revenue_amount),
+          taxasEImpostos: numeroOuNulo(t.fee_and_tax_amount ?? t.fee_amount),
+          freteBancado: numeroOuNulo(t.shipping_cost_amount),
+          tipoOriginal: t.type || t.transaction_type || null,
+        },
+      });
+    }
+    if (!data.next_page_token) break;
+    pageToken = data.next_page_token;
+  }
+  return { lancamentos, descartadas };
+}
+
+// Saques/transferências pro banco. É a ponte direta com o extrato bancário:
+// uma linha aqui deveria ter uma linha correspondente na conta da empresa.
+// Endpoint opcional na prática — nem toda conta tem o escopo de Finance
+// completo liberado, e nesse caso devolve lista vazia em vez de derrubar a
+// sincronização inteira do extrato.
+async function buscarSaques({ appKey, appSecret, accessToken, shopCipher, desdeUnix, ateUnix, maxPaginas = 20 }) {
+  const saques = [];
+  let pageToken = '';
+  for (let pagina = 0; pagina < maxPaginas; pagina += 1) {
+    const query = { shop_cipher: shopCipher, page_size: 50, create_time_ge: desdeUnix };
+    if (ateUnix) query.create_time_lt = ateUnix;
+    if (pageToken) query.page_token = pageToken;
+    let data;
+    try {
+      data = await chamarApi(`/finance/${VERSAO}/withdrawals`, { appKey, appSecret, accessToken, query });
+    } catch (err) {
+      // Erro de negócio (escopo não liberado, endpoint indisponível pra
+      // essa conta) não é falha do extrato — o resto continua valendo.
+      if (err.status && err.status < 500) return saques;
+      throw err;
+    }
+    for (const w of data.withdrawals || []) {
+      const valor = numeroOuNulo(w.amount);
+      if (valor === null) continue;
+      saques.push({
+        idExterno: w.id ? String(w.id) : `saque:${w.create_time}`,
+        // Saque é saída do saldo da plataforma: sempre negativo no extrato.
+        valor: -Math.abs(valor),
+        moeda: w.currency || 'BRL',
+        criadoEm: w.create_time ? Number(w.create_time) : null,
+        status: String(w.status || '').toUpperCase(),
+        tipoOriginal: w.type || null,
+      });
+    }
+    if (!data.next_page_token) break;
+    pageToken = data.next_page_token;
+  }
+  return saques;
+}
+
 module.exports = {
   buildAuthorizeUrl,
   trocarCodigoPorToken,
@@ -473,4 +592,6 @@ module.exports = {
   calcularTaxaMarketplaceDoSettlement,
   mapearPedido,
   dataPedidoBrasil,
+  buscarLancamentosDoStatement,
+  buscarSaques,
 };

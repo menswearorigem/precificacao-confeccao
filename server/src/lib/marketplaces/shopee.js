@@ -857,6 +857,140 @@ async function buscarAvaliacoesLoja({ partnerId, partnerKey, accessToken, shopId
   };
 }
 
+// ---------- Extrato financeiro (carteira da loja) ----------
+//
+// O escrow diz quanto a Shopee repassa POR PEDIDO. O extrato é outra coisa:
+// é o histórico da carteira da loja, onde entram também o débito de Ads, o
+// estorno de uma devolução, o ajuste manual da Shopee e o saque pro banco.
+// `get_wallet_transaction_list` é o equivalente exato do extrato que aparece
+// em "Minha Carteira" no Seller Centre.
+//
+// A API devolve `amount` sempre POSITIVO e informa a direção em `money_flow`
+// (MONEY_IN / MONEY_OUT) — a conversão pro valor assinado que o nosso
+// extrato usa é feita aqui, num lugar só.
+const TIPO_POR_TRANSACAO_SHOPEE = {
+  ORDER: 'repasse_venda',
+  ESCROW_VERIFIED_ADD: 'repasse_venda',
+  ESCROW_VERIFIED_MINUS: 'ajuste',
+  REFUND: 'devolucao',
+  REVERSE: 'devolucao',
+  ADJUSTMENT: 'ajuste',
+  WITHDRAWAL_CREATED: 'saque',
+  WITHDRAWAL_COMPLETED: 'saque',
+  WITHDRAWAL_FAILED: 'saque',
+  WITHDRAWAL_ROLLBACK: 'saque',
+  FAST_ESCROW: 'antecipacao',
+  LOAN: 'antecipacao',
+  LOAN_REPAYMENT: 'antecipacao',
+};
+
+// Rótulos de Ads/marketing não são um `transaction_type` próprio na Shopee —
+// chegam como ADJUSTMENT com a razão no texto. Sem esta checagem, todo o
+// gasto de publicidade cairia no balde genérico de "ajuste" e o financeiro
+// não teria como separar.
+const PISTAS_ADS_SHOPEE = ['ads', 'advertis', 'anunci', 'publicid', 'marketing', 'paid ad'];
+const PISTAS_TAXA_SHOPEE = ['fee', 'taxa', 'comiss', 'penalt', 'multa', 'service charge'];
+
+function tipoNormalizadoShopee(transacao) {
+  const tipoBruto = String(transacao.transaction_type || '').toUpperCase();
+  // As pistas são procuradas só no texto livre (motivo/descrição), nunca no
+  // `transaction_type` — senão um tipo que por acaso contenha "fee" no nome
+  // reclassificaria transação legítima de pedido.
+  const texto = `${transacao.reason || ''} ${transacao.description || ''}`.toLowerCase();
+  const temPista = (lista) => lista.some((p) => texto.includes(p));
+
+  if (temPista(PISTAS_ADS_SHOPEE) || tipoBruto.includes('ADS')) return 'ads';
+
+  const direto = TIPO_POR_TRANSACAO_SHOPEE[tipoBruto];
+  // ADJUSTMENT é o balde genérico da Shopee: multa por atraso, taxa de
+  // programa e correção de frete chegam todas assim, com a natureza real só
+  // no motivo. Sem essa checagem, o financeiro veria "ajuste" onde na
+  // verdade é cobrança da plataforma.
+  if (direto === 'ajuste' && temPista(PISTAS_TAXA_SHOPEE)) return 'taxa';
+  if (direto) return direto;
+  if (temPista(PISTAS_TAXA_SHOPEE)) return 'taxa';
+  // Tipo desconhecido não é chutado dentro do mais parecido — vira "outros"
+  // com o rótulo original preservado (REGRA 2).
+  return 'outros';
+}
+
+// Percorre o extrato da carteira na janela pedida, quebrando em pedaços de
+// 15 dias (mesmo teto duro da listagem de pedidos) e paginando cada pedaço.
+// `maxPaginasPorJanela` é uma trava de segurança: loja com muito movimento
+// não pode fazer um ciclo de sincronização rodar pra sempre.
+async function buscarExtratoCarteira({ partnerId, partnerKey, accessToken, shopId, desdeUnix, ateUnix, maxPaginasPorJanela = 40 }) {
+  const credenciais = { partnerId, partnerKey, accessToken, shopId };
+  const fim = ateUnix || Math.floor(Date.now() / 1000);
+  const transacoes = [];
+
+  for (let inicio = desdeUnix; inicio < fim; inicio += JANELA_MAXIMA_SEGUNDOS) {
+    const fimJanela = Math.min(inicio + JANELA_MAXIMA_SEGUNDOS - 1, fim);
+    for (let pagina = 0; pagina < maxPaginasPorJanela; pagina += 1) {
+      const data = await chamarDaLoja('/api/v2/payment/get_wallet_transaction_list', {
+        ...credenciais,
+        query: {
+          page_no: String(pagina),
+          page_size: '100',
+          create_time_from: String(inicio),
+          create_time_to: String(fimJanela),
+        },
+      });
+      const lista = data.response?.transaction_list || [];
+      for (const t of lista) transacoes.push(t);
+      if (!data.response?.more || lista.length === 0) break;
+    }
+  }
+  return transacoes;
+}
+
+// Converte uma transação crua da carteira no lançamento normalizado do
+// nosso extrato. Devolve null quando falta data ou valor — linha sem data
+// ou sem valor não entra no extrato como zero (REGRA 2); quem chama conta
+// as descartadas e registra a ressalva.
+function mapearTransacaoCarteira(t) {
+  const criadoEm = Number(t.create_time);
+  const valorBruto = Number(t.amount);
+  if (!Number.isFinite(criadoEm) || criadoEm <= 0) return null;
+  if (!Number.isFinite(valorBruto)) return null;
+
+  // money_flow é o campo oficial; algumas contas devolvem só o sinal no
+  // próprio amount. Quando os dois existem, money_flow manda.
+  const fluxo = String(t.money_flow || '').toUpperCase();
+  let valor = Math.abs(valorBruto);
+  if (fluxo === 'MONEY_OUT') valor = -valor;
+  else if (fluxo === 'MONEY_IN') valor = Math.abs(valorBruto);
+  else valor = valorBruto;
+
+  const idExterno = t.transaction_id != null
+    ? String(t.transaction_id)
+    : `carteira:${criadoEm}:${t.order_sn || t.refund_sn || 'sem-pedido'}`;
+
+  return {
+    idExterno,
+    tipo: tipoNormalizadoShopee(t),
+    descricaoExterna: t.reason || t.description || t.transaction_type || null,
+    dataLiberacao: dataPedidoBrasil(criadoEm),
+    dataEvento: new Date(criadoEm * 1000).toISOString(),
+    valor,
+    moeda: t.currency || 'BRL',
+    pedidoIdExterno: t.order_sn || null,
+    repasseIdExterno: t.root_withdrawal_id != null ? String(t.root_withdrawal_id) : null,
+    // A Shopee marca a transação como COMPLETED quando o dinheiro já é da
+    // loja. Qualquer outro status é dinheiro ainda em trânsito e não pode
+    // ser somado junto com o liberado.
+    status: String(t.status || '').toUpperCase() === 'COMPLETED' ? 'liberado' : 'pendente',
+    detalhe: {
+      transactionType: t.transaction_type || null,
+      status: t.status || null,
+      moneyFlow: t.money_flow || null,
+      saldoApos: Number.isFinite(Number(t.current_balance)) ? Number(t.current_balance) : null,
+      taxaTransacao: Number.isFinite(Number(t.transaction_fee)) ? Number(t.transaction_fee) : null,
+      refundSn: t.refund_sn || null,
+      withdrawalType: t.withdrawal_type || null,
+    },
+  };
+}
+
 module.exports = {
   buildAuthorizeUrl,
   trocarCodigoPorToken,
@@ -880,4 +1014,6 @@ module.exports = {
   buscarDesempenhoLoja,
   buscarAvaliacoesLoja,
   dataPedidoBrasil,
+  buscarExtratoCarteira,
+  mapearTransacaoCarteira,
 };

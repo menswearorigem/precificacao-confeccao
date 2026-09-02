@@ -30,6 +30,7 @@ const qualidadeDadosRoutes = require('./routes/qualidadeDados.routes');
 const calendarioRoutes = require('./routes/calendario.routes');
 const gruposRoutes = require('./routes/grupos.routes');
 const produtoMarketplaceRoutes = require('./routes/produtoMarketplace.routes');
+const financeiroRoutes = require('./routes/financeiro.routes');
 
 const CLIENT_DIST = path.join(__dirname, '..', '..', 'client', 'dist');
 
@@ -96,6 +97,14 @@ function createApp() {
   app.use('/api/compras', requireAuth, requireModulo('compras'), comprasRoutes);
   app.use('/api/viagens', requireAuth, requireModulo('viagens'), viagensRoutes);
   app.use('/api/calendario', requireAuth, requireModulo('calendario'), calendarioRoutes);
+
+  // Financeiro é o nono módulo, e é PROPOSITALMENTE separado de Marketplace:
+  // quem cuida do caixa precisa ver a movimentação da conta, e não precisa
+  // ver custo de produto, margem nem ficha de precificação. Por isso um
+  // módulo próprio em vez de mais uma aba dentro de Marketplace — dar acesso
+  // ao módulo Marketplace pra alguém do financeiro abriria junto a
+  // Lucratividade e o custo de cada peça.
+  app.use('/api/financeiro', requireAuth, requireModulo('financeiro'), financeiroRoutes);
 
   // Callbacks OAuth são chamados pelo redirect do próprio marketplace — sem
   // sessão nossa nesse momento, então ficam fora do requireAuth. A validação

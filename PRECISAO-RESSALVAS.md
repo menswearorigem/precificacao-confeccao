@@ -191,3 +191,100 @@ inteiramente como "gasto de Ads não atribuído" no total do período. O
 dinheiro nunca some da conta e nunca cai em cima de um pedido por
 aproximação — no pior caso ele fica visível, agrupado e claramente
 identificado como não atribuído.
+
+---
+
+# Ressalvas — Módulo Financeiro (conciliação de marketplace, 02/09/2026)
+
+## 1. Os nomes de coluna do Relatório de Liberações do Mercado Pago não puderam ser conferidos contra a conta real
+
+**O QUE FOI PEDIDO:** ler o extrato financeiro do Mercado Livre — a
+movimentação da conta, não só a venda — para saber quanto foi liberado por
+data.
+
+**POR QUE É UMA RESSALVA:** o único lugar em que o Mercado Pago expõe a
+movimentação inteira (venda, publicidade, estorno, multa, antecipação,
+saque) é o **Relatório de Liberações**, que sai em CSV gerado sob
+encomenda. O conjunto exato de colunas desse CSV varia entre versões do
+relatório e entre contas — algumas trazem `NET_CREDIT_AMOUNT` /
+`NET_DEBIT_AMOUNT`, outras uma coluna única já assinada; a data ora vem em
+`DATE`, ora em `SETTLEMENT_DATE`. Sem a conta em produção não dá pra
+confirmar qual formato esta conta devolve.
+
+**O QUE SERIA PRECISO:** rodar "Puxar extrato agora" duas vezes com a
+conexão do Mercado Livre autorizada (a primeira pede o relatório, a segunda
+baixa) e conferir se o aviso amarelo de "linhas não interpretadas" aparece
+vazio. Se aparecer, a mensagem já traz o conteúdo da primeira linha
+problemática — é o suficiente pra ajustar a lista de nomes aceitos em
+`mapearRelatorioLiberacoes`.
+
+**O QUE FIZ NO LUGAR:** o parser não fixa um nome de coluna: procura o
+primeiro alias conhecido e, quando não acha data ou valor, **não grava a
+linha como R$ 0,00**. A linha entra num contador de "não interpretadas" que
+vira um aviso no topo da tela do Financeiro, com o número de linhas e o
+conteúdo da primeira. Dinheiro que ficou de fora fica visível; nunca vira um
+zero silencioso no meio do relatório.
+
+## 2. A publicidade da TikTok Shop não aparece no extrato
+
+**O QUE FOI PEDIDO:** que o relatório financeiro traga, entre outros
+lançamentos, o gasto com publicidade descontado pela plataforma.
+
+**POR QUE É UMA RESSALVA:** no Mercado Livre e na Shopee o Ads é debitado
+do próprio saldo da loja, então ele aparece naturalmente no extrato. Na
+TikTok não: o Ads Manager é uma plataforma separada (TikTok API for
+Business), com cobrança própria — normalmente cartão de crédito — e esse
+gasto **não passa pelo statement** da TikTok Shop. Trazer o número da API de
+Ads e lançar no extrato como se fosse movimentação da conta criaria uma
+saída que nunca existiu naquele saldo.
+
+**O QUE SERIA PRECISO:** ou o extrato do cartão/conta usado no Ads Manager
+da TikTok, que não é acessível por essa integração, ou uma confirmação de
+que a conta usa saldo pré-pago descontado do repasse (aí o lançamento
+apareceria no statement e o código já o classificaria como `ads`).
+
+**O QUE FIZ NO LUGAR:** o extrato da TikTok traz o que o statement traz, e
+só. O gasto de Ads da TikTok continua onde já estava — em
+`ads_metricas_diarias`, visível em Marketplace → Métricas e rateado na
+Lucratividade. Ele simplesmente não é somado como movimentação bancária,
+porque não é.
+
+## 3. "Antecipação" depende do rótulo que a plataforma manda
+
+**O QUE FOI PEDIDO:** separar a antecipação de recebíveis dos demais
+lançamentos.
+
+**POR QUE É UMA RESSALVA:** as três plataformas não têm um campo booleano
+"isso é antecipação" — a natureza vem no texto do lançamento
+(`advance_money` e `discount_advance` no Mercado Pago, `FAST_ESCROW` e
+`LOAN` na Shopee). Se a plataforma mudar o rótulo, o lançamento deixa de ser
+reconhecido como antecipação.
+
+**O QUE SERIA PRECISO:** um mês de extrato real de cada loja pra fechar a
+lista de rótulos que aparecem de verdade nessa operação.
+
+**O QUE FIZ NO LUGAR:** rótulo desconhecido **não** é encaixado no tipo mais
+parecido — cai em `outros`, com a descrição original da plataforma
+preservada e visível na coluna Descrição da tela. Quando um rótulo novo
+aparecer, ele fica evidente na aba "Para onde o dinheiro foi" como uma
+linha de "Outros" com valor relevante, em vez de se esconder dentro de
+"Ajustes".
+
+## 4. O extrato não é casado com o pedido por valor e data
+
+**O QUE FOI PEDIDO:** saber quanto o marketplace pagou por cada venda.
+
+**POR QUE É UMA RESSALVA:** parte dos lançamentos do extrato chega sem
+identificador de pedido (é o caso de ajustes e de algumas linhas do Mercado
+Pago). Seria possível "adivinhar" o pedido por valor + data.
+
+**O QUE SERIA PRECISO:** que a plataforma informasse o identificador — o que
+ela faz na maioria dos casos, e é por isso que o vínculo automático já
+funciona para a maior parte das linhas.
+
+**O QUE FIZ NO LUGAR:** o vínculo só é feito por identificador exato (id do
+pedido na plataforma, ou id do pagamento no caso do Mercado Livre). Dois
+pedidos do mesmo valor no mesmo dia são o caso comum, não a exceção, e
+casar por aproximação atribuiria dinheiro ao pedido errado. Lançamento sem
+vínculo aparece na tela com o filtro "só sem pedido vinculado", em vez de
+receber um pedido chutado.

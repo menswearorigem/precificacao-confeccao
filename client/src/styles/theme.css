@@ -1362,6 +1362,17 @@ table.data-table tr:last-child td { border-bottom: none; }
 table.data-table tbody tr:nth-child(even) { background: var(--zebra-overlay); }
 table.data-table tbody tr:hover { background: var(--row-hover); }
 table.data-table tr.clickable-row { cursor: pointer; transition: background 0.12s var(--ease); }
+/* Linha de fechamento de uma tabela de somatório (Financeiro → Movimentação).
+   Vem depois da regra de zebra de propósito: sem o background próprio, a
+   linha de total herdava a listra par e se confundia com mais uma linha de
+   dado. Só tokens — nenhuma cor solta. */
+table.data-table tbody tr.linha-total td {
+  background: var(--surface-alt);
+  border-top: 2px solid var(--border);
+  border-bottom: none;
+  font-weight: 700;
+  color: var(--ink);
+}
 table.data-table tr.clickable-row:hover { background: var(--row-hover-strong); }
 
 /* ---------- <DataTable> — moldura única de tabela (Onda 1) ---------- */

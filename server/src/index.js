@@ -1,6 +1,7 @@
 require('dotenv').config();
 const createApp = require('./app');
 const { sincronizarTodasAtivas } = require('./lib/marketplaceSync');
+const { sincronizarExtratoTodasAtivas } = require('./lib/financeiroExtrato');
 const { sincronizarEstoqueAgora, renovarTokenWikSeNecessario } = require('./lib/wikSync');
 const { sincronizarProdutosAgora } = require('./lib/wikProdutosImport');
 const { sincronizarFichaCustoAgora } = require('./lib/wikFichaCustoImport');
@@ -28,6 +29,13 @@ const WIK_CATALOGO_INTERVAL_MS = 6 * 60 * 60 * 1000;
 // checagem em si é barata (não faz nenhuma chamada à API se ainda não for
 // hora), só o LOGIN de verdade acontece por agenda.
 const WIK_TOKEN_CHECK_INTERVAL_MS = 10 * 60 * 1000;
+// Extrato financeiro dos marketplaces. Ritmo bem mais lento que o de
+// pedidos de propósito: extrato não muda minuto a minuto (a plataforma
+// fecha repasse uma ou duas vezes por semana), e no Mercado Livre cada
+// ciclo custa a GERAÇÃO de um relatório do lado deles — pedir de 5 em 5
+// minutos seria desperdício puro. 30min também é o cooldown interno da
+// própria sincronização (COOLDOWN_MS em financeiroExtrato.js).
+const EXTRATO_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 
 // Roda as duas em sequência (nunca em paralelo) porque o Wik não permite
 // duas sessões simultâneas com o mesmo login.
@@ -59,6 +67,15 @@ app.listen(PORT, () => {
   setInterval(() => {
     sincronizarTodasAtivas().catch((err) => console.error('[marketplace-sync]', err.message));
   }, SYNC_INTERVAL_MS);
+
+  // Extrato financeiro (módulo Financeiro). Espera 2min na subida pra não
+  // concorrer com o primeiro ciclo de pedidos pelo mesmo token.
+  setTimeout(() => {
+    sincronizarExtratoTodasAtivas().catch((err) => console.error('[financeiro-extrato]', err.message));
+  }, 2 * 60 * 1000);
+  setInterval(() => {
+    sincronizarExtratoTodasAtivas().catch((err) => console.error('[financeiro-extrato]', err.message));
+  }, EXTRATO_SYNC_INTERVAL_MS);
 
   // Renovação do token do Wik SÓ POR AGENDA — nunca em reação a erro (ver
   // comentário completo em wikSync.js). Roda ANTES do primeiro ciclo de

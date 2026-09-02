@@ -48,6 +48,7 @@ import RelatorioLucratividadePage from './pages/RelatorioLucratividadePage';
 import MetricasMarketplacePage from './pages/MetricasMarketplacePage';
 import RelatorioTaxasPage from './pages/RelatorioTaxasPage';
 import ImportarPedidosPage from './pages/ImportarPedidosPage';
+import FinanceiroPage from './pages/FinanceiroPage';
 import ViagensListPage from './pages/ViagensListPage';
 import ViagemDetailPage from './pages/ViagemDetailPage';
 import AjudaPage from './pages/AjudaPage';
@@ -115,6 +116,14 @@ function AppRoutes() {
                   <Route path="/marketplace/metricas" element={<MetricasMarketplacePage />} />
                   <Route path="/marketplace/taxas" element={<RelatorioTaxasPage />} />
                   <Route path="/marketplace/importar-pedidos" element={<ImportarPedidosPage />} />
+                  {/* Módulo Financeiro: três rotas, um componente só — as três
+                      abas leem a mesma base (o extrato do marketplace) e mudam
+                      só a pergunta. Rota própria por aba pra cada uma poder ser
+                      salva/compartilhada como link. */}
+                  <Route path="/financeiro" element={<Navigate to="/financeiro/movimentacao" replace />} />
+                  <Route path="/financeiro/movimentacao" element={<FinanceiroPage aba="movimentacao" />} />
+                  <Route path="/financeiro/repasses" element={<FinanceiroPage aba="repasses" />} />
+                  <Route path="/financeiro/conferencia" element={<FinanceiroPage aba="conferencia" />} />
                   <Route path="/viagens" element={<ViagensListPage />} />
                   <Route path="/viagens/:id" element={<ViagemDetailPage />} />
                   <Route path="/fornecedores" element={<FornecedoresListPage />} />

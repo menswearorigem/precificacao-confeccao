@@ -4,7 +4,7 @@ import {
   Warehouse, Barcode, Tags, Printer, Users, ClipboardList, ShoppingCart,
   Truck, BarChart3, ShieldCheck, Plug, TrendingUp, ReceiptText, Store, Plane,
   LineChart, SearchCheck, Layers, AlertTriangle, CalendarDays, UsersRound,
-  LayoutTemplate,
+  LayoutTemplate, Wallet, ArrowLeftRight, Scale,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -56,6 +56,21 @@ export const MODULES = [
       { to: '/marketplace/metricas', label: 'Métricas', icon: LineChart },
       { to: '/marketplace/taxas', label: 'Taxas Cobradas', icon: ReceiptText },
       { to: '/marketplace/importar-pedidos', label: 'Importar Pedidos', icon: Upload },
+    ],
+  },
+  {
+    // Nono módulo (02/09/2026). Separado de Marketplace de propósito: quem
+    // cuida do caixa precisa da movimentação da conta e NÃO precisa ver
+    // custo de peça, margem nem ficha de precificação — dar o módulo
+    // Marketplace pra alguém do financeiro abriria a Lucratividade junto.
+    key: 'financeiro',
+    label: 'Financeiro',
+    icon: Wallet,
+    color: 'var(--success)',
+    pages: [
+      { to: '/financeiro/movimentacao', label: 'Movimentação', icon: Wallet },
+      { to: '/financeiro/repasses', label: 'Repasses', icon: ArrowLeftRight },
+      { to: '/financeiro/conferencia', label: 'Conferência', icon: Scale },
     ],
   },
   {

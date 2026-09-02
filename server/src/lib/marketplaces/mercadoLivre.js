@@ -612,6 +612,269 @@ async function buscarMetricasAnunciosPorDia({ accessToken, advertiserId, data: d
     .filter((a) => a.itemId);
 }
 
+// ---------- Extrato financeiro (Relatório de Liberações do Mercado Pago) ----------
+//
+// Por que NÃO dá pra montar o extrato somando `/payments`: o pagamento
+// conta só a venda. O que cai na conta tem mais coisa — desconto de
+// publicidade, estorno de um pedido de dois meses atrás, tarifa de
+// antecipação, ajuste, saque pro banco. Nada disso é pagamento de pedido
+// nenhum, e nenhum desses valores aparece em `/payments`. O único lugar em
+// que o Mercado Pago mostra a movimentação inteira é o **Relatório de
+// Liberações** (release report) — o mesmo relatório que o painel do Mercado
+// Pago exporta em CSV.
+//
+// O relatório é ASSÍNCRONO: pede-se a geração (POST), o Mercado Pago
+// processa, e o arquivo aparece na listagem minutos depois. Por isso a
+// sincronização do extrato do ML tem duas fases (ver financeiroExtrato.js):
+// um ciclo pede, o ciclo seguinte baixa.
+const RELEASE_REPORT_PATH = '/v1/account/release_report';
+
+// Pede a geração de um relatório da janela informada. Devolve o corpo da
+// resposta do Mercado Pago (que costuma trazer o `file_name` já, mas nem
+// sempre — daí a listagem existir).
+async function solicitarRelatorioLiberacoes({ accessToken, inicio, fim }) {
+  const res = await fetch(`${MP_API_BASE}${RELEASE_REPORT_PATH}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      begin_date: `${inicio}T00:00:00Z`,
+      end_date: `${fim}T23:59:59Z`,
+    }),
+  });
+  const data = await lerRespostaJson(res, RELEASE_REPORT_PATH);
+  if (!res.ok) {
+    throw erroComStatus(data.message || `Erro ao pedir o relatório de liberações (${res.status})`, res.status);
+  }
+  return data;
+}
+
+// Relatórios já gerados e disponíveis pra download, mais novos primeiro.
+async function listarRelatoriosLiberacoes({ accessToken }) {
+  const data = await chamarApiComBase(MP_API_BASE, `${RELEASE_REPORT_PATH}/list`, accessToken);
+  const lista = Array.isArray(data) ? data : (data.results || []);
+  return lista
+    .map((r) => ({
+      arquivo: r.file_name || r.fileName || null,
+      criadoEm: r.date_created || r.created_from || null,
+      de: r.begin_date || null,
+      ate: r.end_date || null,
+    }))
+    .filter((r) => r.arquivo)
+    .sort((a, b) => new Date(b.criadoEm || 0) - new Date(a.criadoEm || 0));
+}
+
+// Baixa o CSV cru. Não passa por lerRespostaJson de propósito — a resposta
+// aqui é texto/CSV, e tentar interpretar como JSON esconderia o conteúdo
+// dentro de um erro de parse.
+async function baixarRelatorioLiberacoes({ accessToken, arquivo }) {
+  const path = `${RELEASE_REPORT_PATH}/${encodeURIComponent(arquivo)}`;
+  const res = await fetch(`${MP_API_BASE}${path}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const texto = await res.text();
+  if (!res.ok) {
+    throw erroComStatus(`Erro ao baixar o relatório de liberações (${res.status}): ${texto.slice(0, 300)}`, res.status);
+  }
+  return texto;
+}
+
+// Divide uma linha de CSV respeitando aspas (campo de descrição do Mercado
+// Pago vem com vírgula dentro com frequência). Separador é detectado por
+// linha — o relatório sai com ponto e vírgula em algumas contas.
+function partirLinhaCsv(linha, separador) {
+  const campos = [];
+  let atual = '';
+  let dentroDeAspas = false;
+  for (let i = 0; i < linha.length; i += 1) {
+    const c = linha[i];
+    if (c === '"') {
+      if (dentroDeAspas && linha[i + 1] === '"') { atual += '"'; i += 1; }
+      else dentroDeAspas = !dentroDeAspas;
+    } else if (c === separador && !dentroDeAspas) {
+      campos.push(atual);
+      atual = '';
+    } else {
+      atual += c;
+    }
+  }
+  campos.push(atual);
+  return campos.map((s) => s.trim());
+}
+
+function detectarSeparador(cabecalho) {
+  const porVirgula = partirLinhaCsv(cabecalho, ',').length;
+  const porPontoEVirgula = partirLinhaCsv(cabecalho, ';').length;
+  return porPontoEVirgula > porVirgula ? ';' : ',';
+}
+
+// Converte "1.234,56" ou "1234.56" em número. Devolve null (nunca 0) quando
+// o campo está vazio ou não é número — "não informado" e "zero" são coisas
+// diferentes, e tratar um como o outro é exatamente o que a REGRA 2 proíbe.
+function numeroDoRelatorio(valor) {
+  if (valor == null) return null;
+  const texto = String(valor).trim();
+  if (!texto) return null;
+  // Formato brasileiro só quando a vírgula vem depois do último ponto.
+  const normalizado = texto.lastIndexOf(',') > texto.lastIndexOf('.')
+    ? texto.replace(/\./g, '').replace(',', '.')
+    : texto.replace(/,/g, '');
+  const n = Number(normalizado);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Nomes de coluna variam entre versões do relatório e entre contas (algumas
+// saem em inglês, outras com o prefixo do detalhamento). Em vez de fixar um
+// nome, procura pelo primeiro alias presente no cabeçalho — e devolve
+// undefined quando nenhum bate, pra quem chama poder registrar a linha como
+// não interpretada em vez de assumir zero.
+function valorDaColuna(linha, cabecalhos, aliases) {
+  for (const alias of aliases) {
+    const idx = cabecalhos.indexOf(alias);
+    if (idx !== -1 && linha[idx] !== undefined && linha[idx] !== '') return linha[idx];
+  }
+  return undefined;
+}
+
+// Mapa "DESCRIPTION do Mercado Pago" -> tipo normalizado do nosso extrato.
+// O que não estiver aqui NÃO é chutado dentro do tipo mais parecido: vira
+// "outros", preservando a descrição original na tela.
+const TIPO_POR_DESCRICAO_ML = {
+  payment: 'repasse_venda',
+  credit_payment: 'repasse_venda',
+  settlement: 'repasse_venda',
+  refund: 'devolucao',
+  partial_refund: 'devolucao',
+  reserve_for_dispute: 'devolucao',
+  dispute: 'devolucao',
+  chargeback: 'devolucao',
+  reserve_for_chargeback: 'devolucao',
+  released_from_dispute: 'ajuste',
+  adjustment: 'ajuste',
+  reserve_for_debt_payment: 'ajuste',
+  tax: 'taxa',
+  fee: 'taxa',
+  mediation: 'taxa',
+  shipping: 'taxa',
+  advance_money: 'antecipacao',
+  discount_advance: 'antecipacao',
+  payout: 'saque',
+  withdrawal: 'saque',
+  transfer: 'saque',
+  money_transfer: 'saque',
+  advertising: 'ads',
+  ads: 'ads',
+};
+
+function tipoNormalizadoML(descricao, recordType) {
+  const chave = String(descricao || recordType || '').trim().toLowerCase();
+  if (TIPO_POR_DESCRICAO_ML[chave]) return TIPO_POR_DESCRICAO_ML[chave];
+  // Alguns rótulos chegam compostos ("payment_reserve", "refund_shipping").
+  for (const [prefixo, tipo] of Object.entries(TIPO_POR_DESCRICAO_ML)) {
+    if (chave.startsWith(prefixo)) return tipo;
+  }
+  return 'outros';
+}
+
+// Converte a data do relatório (ISO com fuso, ou "dd/mm/aaaa hh:mm:ss") no
+// par { dataLiberacao (dia no fuso de Brasília), dataEvento (instante) }.
+function datasDoRelatorio(valor) {
+  if (!valor) return { dataLiberacao: null, dataEvento: null };
+  const texto = String(valor).trim();
+  let data = new Date(texto);
+  if (Number.isNaN(data.getTime())) {
+    const m = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+    if (!m) return { dataLiberacao: null, dataEvento: null };
+    data = new Date(`${m[3]}-${m[2]}-${m[1]}T${m[4] || '00'}:${m[5] || '00'}:${m[6] || '00'}-03:00`);
+    if (Number.isNaN(data.getTime())) return { dataLiberacao: null, dataEvento: null };
+  }
+  // Dia no fuso de Brasília — o financeiro fecha o dia pelo calendário
+  // daqui, não pelo UTC (a partir das 21h o UTC já virou o dia seguinte).
+  const brasilia = new Date(data.getTime() - 3 * 60 * 60 * 1000);
+  return { dataLiberacao: brasilia.toISOString().slice(0, 10), dataEvento: data.toISOString() };
+}
+
+// Transforma o CSV do relatório de liberações na lista de lançamentos
+// normalizados do nosso extrato.
+//
+// `valor` sai ASSINADO: crédito positivo, débito negativo. Quando o
+// relatório traz as duas colunas separadas (NET_CREDIT_AMOUNT /
+// NET_DEBIT_AMOUNT), o valor é crédito − débito; quando traz uma coluna
+// única já assinada, ela é usada como está.
+//
+// Linha cuja data ou cujo valor não dá pra ler NÃO entra com zero: entra na
+// lista `naoInterpretadas`, que a sincronização registra como ressalva. Uma
+// linha de extrato que virou R$ 0,00 é pior que uma linha ausente, porque
+// ninguém percebe.
+function mapearRelatorioLiberacoes(csv) {
+  const linhas = String(csv || '').split(/\r?\n/).filter((l) => l.trim() !== '');
+  if (linhas.length < 2) return { lancamentos: [], naoInterpretadas: [], totalLinhas: 0 };
+
+  const separador = detectarSeparador(linhas[0]);
+  const cabecalhos = partirLinhaCsv(linhas[0], separador).map((h) => h.replace(/^﻿/, '').toUpperCase());
+
+  const lancamentos = [];
+  const naoInterpretadas = [];
+
+  for (let i = 1; i < linhas.length; i += 1) {
+    const campos = partirLinhaCsv(linhas[i], separador);
+    // "Total"/rodapé do relatório: menos campos que o cabeçalho.
+    if (campos.length < 2) continue;
+
+    const bruta = valorDaColuna(campos, cabecalhos, ['DATE', 'SETTLEMENT_DATE', 'RELEASE_DATE', 'DATE_RELEASED', 'MONEY_RELEASE_DATE']);
+    const { dataLiberacao, dataEvento } = datasDoRelatorio(bruta);
+
+    const credito = numeroDoRelatorio(valorDaColuna(campos, cabecalhos, ['NET_CREDIT_AMOUNT', 'CREDIT_AMOUNT']));
+    const debito = numeroDoRelatorio(valorDaColuna(campos, cabecalhos, ['NET_DEBIT_AMOUNT', 'DEBIT_AMOUNT']));
+    const unico = numeroDoRelatorio(valorDaColuna(campos, cabecalhos, ['SETTLEMENT_NET_AMOUNT', 'NET_AMOUNT', 'AMOUNT', 'TRANSACTION_AMOUNT']));
+
+    let valor = null;
+    if (credito !== null || debito !== null) valor = (credito || 0) - (debito || 0);
+    else if (unico !== null) valor = unico;
+
+    if (!dataLiberacao || valor === null) {
+      naoInterpretadas.push({ linha: i + 1, conteudo: linhas[i].slice(0, 300) });
+      continue;
+    }
+
+    const descricao = valorDaColuna(campos, cabecalhos, ['DESCRIPTION', 'TRANSACTION_TYPE', 'DETAIL']) || null;
+    const recordType = valorDaColuna(campos, cabecalhos, ['RECORD_TYPE']) || null;
+    const sourceId = valorDaColuna(campos, cabecalhos, ['SOURCE_ID', 'PAYMENT_ID', 'ID']) || null;
+    const pedidoExterno = valorDaColuna(campos, cabecalhos, ['ORDER_ID', 'EXTERNAL_REFERENCE']) || null;
+    const saldo = numeroDoRelatorio(valorDaColuna(campos, cabecalhos, ['BALANCE_AMOUNT']));
+
+    // Sem SOURCE_ID (acontece em linhas de ajuste), a chave usa data +
+    // descrição + posição na linha — estável entre releituras do MESMO
+    // relatório, que é o que importa pro ON CONFLICT.
+    const idExterno = sourceId
+      ? `${sourceId}`
+      : `linha:${dataLiberacao}:${(descricao || 'sem-descricao').slice(0, 40)}:${i}`;
+
+    lancamentos.push({
+      idExterno,
+      tipo: tipoNormalizadoML(descricao, recordType),
+      descricaoExterna: descricao || recordType || null,
+      dataLiberacao,
+      dataEvento,
+      valor,
+      moeda: valorDaColuna(campos, cabecalhos, ['SETTLEMENT_CURRENCY', 'TRANSACTION_CURRENCY', 'CURRENCY']) || 'BRL',
+      pedidoIdExterno: pedidoExterno,
+      repasseIdExterno: null,
+      status: 'liberado',
+      detalhe: {
+        recordType,
+        saldoApos: saldo,
+        taxaMp: numeroDoRelatorio(valorDaColuna(campos, cabecalhos, ['MP_FEE_AMOUNT'])),
+        taxaFrete: numeroDoRelatorio(valorDaColuna(campos, cabecalhos, ['SHIPPING_FEE_AMOUNT'])),
+        taxaFinanciamento: numeroDoRelatorio(valorDaColuna(campos, cabecalhos, ['FINANCING_FEE_AMOUNT'])),
+        impostos: numeroDoRelatorio(valorDaColuna(campos, cabecalhos, ['TAXES_AMOUNT'])),
+        bruto: numeroDoRelatorio(valorDaColuna(campos, cabecalhos, ['GROSS_AMOUNT'])),
+      },
+    });
+  }
+
+  return { lancamentos, naoInterpretadas, totalLinhas: linhas.length - 1 };
+}
+
 module.exports = {
   buildAuthorizeUrl,
   trocarCodigoPorToken,
@@ -636,4 +899,8 @@ module.exports = {
   buscarAdvertiserIdAds,
   buscarCampanhasAds,
   buscarMetricasAnunciosPorDia,
+  solicitarRelatorioLiberacoes,
+  listarRelatoriosLiberacoes,
+  baixarRelatorioLiberacoes,
+  mapearRelatorioLiberacoes,
 };

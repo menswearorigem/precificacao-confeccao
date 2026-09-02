@@ -14,6 +14,7 @@ import { verbetesProduto } from './verbetes/produto';
 import { verbetesEstoque } from './verbetes/estoque';
 import { verbetesVendas } from './verbetes/vendas';
 import { verbetesMarketplace } from './verbetes/marketplace';
+import { verbetesFinanceiro } from './verbetes/financeiro';
 import { verbetesViagens } from './verbetes/viagens';
 import { verbetesCompras } from './verbetes/compras';
 import { verbetesAnalises } from './verbetes/analises';
@@ -26,6 +27,7 @@ const TODOS_OS_VERBETES = [
   ...verbetesEstoque,
   ...verbetesVendas,
   ...verbetesMarketplace,
+  ...verbetesFinanceiro,
   ...verbetesViagens,
   ...verbetesCompras,
   ...verbetesAnalises,
