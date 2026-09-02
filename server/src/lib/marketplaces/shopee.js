@@ -600,12 +600,72 @@ function extrairMetricaAds(m) {
 // (item_id) — mesma forma da função equivalente do Mercado Livre, pra
 // alimentar ads_metricas_diarias sem o orquestrador precisar saber de qual
 // marketplace veio.
+// O desempenho diário identifica só a CAMPANHA — não diz de qual anúncio
+// ela é. Sem o item_id não há como ligar o gasto à venda, e o custo inteiro
+// cai no balde de "não atribuído" (foi exatamente o que aconteceu na
+// primeira sincronização de verdade: 196 linhas, todas como
+// `campanha:113721779` e sem produto). A configuração da campanha traz esse
+// vínculo; como campanha de produto é sempre do mesmo anúncio, resolve-se
+// uma vez e guarda em cache no processo.
+const itemPorCampanhaCache = new Map();
+
+function extrairItemIdDaCampanha(entrada) {
+  if (!entrada) return null;
+  const candidatos = [
+    entrada.item_id,
+    entrada.common_info?.item_id,
+    entrada.campaign_info?.item_id,
+    Array.isArray(entrada.item_id_list) && entrada.item_id_list.length === 1 ? entrada.item_id_list[0] : null,
+    Array.isArray(entrada.common_info?.item_id_list) && entrada.common_info.item_id_list.length === 1
+      ? entrada.common_info.item_id_list[0]
+      : null,
+  ];
+  const achado = candidatos.find((v) => v !== undefined && v !== null && String(v).length > 0);
+  return achado ? String(achado) : null;
+}
+
+async function resolverAnunciosDasCampanhas(credenciais, campaignIds) {
+  const mapa = new Map();
+  const faltando = [];
+  for (const id of campaignIds) {
+    const chaveCache = `${credenciais.shopId}::${id}`;
+    if (itemPorCampanhaCache.has(chaveCache)) {
+      mapa.set(String(id), itemPorCampanhaCache.get(chaveCache));
+    } else {
+      faltando.push(id);
+    }
+  }
+
+  for (let i = 0; i < faltando.length; i += 50) {
+    const lote = faltando.slice(i, i + 50);
+    try {
+      const data = await chamarDaLoja('/api/v2/ads/get_product_level_campaign_setting_info', {
+        ...credenciais,
+        query: { campaign_id_list: lote.join(','), info_type_list: '1,2,3' },
+      });
+      for (const entrada of data.response?.campaign_list || []) {
+        const campanhaId = entrada.campaign_id ? String(entrada.campaign_id) : null;
+        if (!campanhaId) continue;
+        const itemId = extrairItemIdDaCampanha(entrada);
+        mapa.set(campanhaId, itemId);
+        itemPorCampanhaCache.set(`${credenciais.shopId}::${campanhaId}`, itemId);
+      }
+    } catch {
+      // Lote pontual falhando não pode derrubar a sincronização inteira —
+      // essas campanhas seguem sem anúncio identificado (gasto não
+      // atribuído) e são tentadas de novo no próximo ciclo.
+    }
+  }
+  return mapa;
+}
+
 async function buscarMetricasAnunciosPorDia({ partnerId, partnerKey, accessToken, shopId, data: dia }) {
   const credenciais = { partnerId, partnerKey, accessToken, shopId };
   const campanhas = await listarCampanhasAds(credenciais);
   if (campanhas.length === 0) return [];
 
   const ids = campanhas.map((c) => c.campaign_id).filter(Boolean);
+  const itemPorCampanha = await resolverAnunciosDasCampanhas(credenciais, ids);
   const porAnuncio = new Map();
 
   for (let i = 0; i < ids.length; i += 100) {
@@ -622,11 +682,7 @@ async function buscarMetricasAnunciosPorDia({ partnerId, partnerKey, accessToken
     const lista = resposta.response?.campaign_list || [];
     for (const campanha of lista) {
       const campanhaId = campanha.campaign_id ? String(campanha.campaign_id) : null;
-      const itemId = campanha.item_id
-        ? String(campanha.item_id)
-        : (Array.isArray(campanha.item_id_list) && campanha.item_id_list.length === 1
-          ? String(campanha.item_id_list[0])
-          : null);
+      const itemId = extrairItemIdDaCampanha(campanha) || (campanhaId ? itemPorCampanha.get(campanhaId) : null);
       // Sem anúncio identificável, o gasto continua sendo real — só não dá
       // pra dizer de qual anúncio ele é. Guarda numa chave própria de
       // campanha, que nunca casa com item de pedido nenhum e por isso cai
@@ -665,6 +721,7 @@ async function buscarCampanhasAds({ partnerId, partnerKey, accessToken, shopId, 
   const campanhas = await listarCampanhasAds(credenciais);
   if (campanhas.length === 0) return [];
   const ids = campanhas.map((c) => c.campaign_id).filter(Boolean);
+  const itemPorCampanha = await resolverAnunciosDasCampanhas(credenciais, ids);
   const resultado = [];
 
   for (let i = 0; i < ids.length; i += 100) {
@@ -703,7 +760,7 @@ async function buscarCampanhasAds({ partnerId, partnerKey, accessToken, shopId, 
         acosAlvo: null,
         roasAlvo: campanha.roi_target != null ? Number(campanha.roi_target) : null,
         orcamentoDiario: campanha.daily_budget != null ? Number(campanha.daily_budget) : null,
-        anuncioId: campanha.item_id ? String(campanha.item_id) : null,
+        anuncioId: extrairItemIdDaCampanha(campanha) || itemPorCampanha.get(String(campanha.campaign_id)) || null,
         metricas: {
           impressoes: soma.impressoes,
           cliques: soma.cliques,
@@ -818,6 +875,7 @@ module.exports = {
   buscarDevolucoes,
   buscarCampanhasAds,
   buscarMetricasAnunciosPorDia,
+  resolverAnunciosDasCampanhas,
   buscarSaldoAds,
   buscarDesempenhoLoja,
   buscarAvaliacoesLoja,

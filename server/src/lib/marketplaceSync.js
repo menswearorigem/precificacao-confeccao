@@ -838,6 +838,18 @@ async function sincronizarAdsDiasShopee(integracao, dias) {
     const dia = formatarDataISO(new Date(Date.now() - i * 24 * 60 * 60 * 1000));
     try {
       const metricas = await shopee.buscarMetricasAnunciosPorDia({ ...credenciais, data: dia });
+      // Apaga o que já estava gravado naquele dia antes de regravar. A chave
+      // do gasto é o ANÚNCIO, e ela pode mudar entre uma sincronização e
+      // outra: enquanto a campanha não tinha anúncio identificado, o gasto
+      // era guardado como `campanha:<id>`; assim que o vínculo é resolvido,
+      // ele passa a ser guardado no item_id de verdade. Sem apagar antes, as
+      // duas linhas conviveriam e o MESMO gasto seria contado duas vezes —
+      // uma rateada no pedido e outra como "não atribuído". O upsert sozinho
+      // não resolve isso, porque são chaves diferentes.
+      await pool.query(
+        'DELETE FROM ads_metricas_diarias WHERE origem_integracao_id = $1 AND data = $2',
+        [integracao.id, dia]
+      );
       registros += await gravarMetricasAdsDoDia(integracao.id, dia, metricas);
     } catch (err) {
       ultimoErro = `Dia ${dia}: ${err.message}`;
