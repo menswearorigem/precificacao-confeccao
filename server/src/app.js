@@ -2,6 +2,9 @@ const path = require('path');
 const express = require('express');
 
 const { requireAuth, requireModulo, requireAdmin } = require('./middleware/auth');
+const { cabecalhosSeguranca, forcarHttps, conferirOrigem } = require('./middleware/seguranca');
+const { limitadorAutenticacao, limitadorApi } = require('./lib/rateLimit');
+const { middlewareAuditoria } = require('./lib/auditoria');
 const authRoutes = require('./routes/auth.routes');
 const usuariosRoutes = require('./routes/usuarios.routes');
 const configuracoesRoutes = require('./routes/configuracoes.routes');
@@ -31,6 +34,8 @@ const calendarioRoutes = require('./routes/calendario.routes');
 const gruposRoutes = require('./routes/grupos.routes');
 const produtoMarketplaceRoutes = require('./routes/produtoMarketplace.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
+const auditoriaRoutes = require('./routes/auditoria.routes');
+const emailRoutes = require('./routes/email.routes');
 
 const CLIENT_DIST = path.join(__dirname, '..', '..', 'client', 'dist');
 
@@ -43,10 +48,37 @@ function createApp() {
   // marketplace (que precisa bater exatamente com o cadastrado no app).
   app.set('trust proxy', 1);
 
-  app.use(express.json({ limit: '15mb' }));
+  // Não anuncia "Express" pra quem estiver catalogando alvos.
+  app.disable('x-powered-by');
+
+  // ---------------------------------------------------------------------
+  // Blindagem (varredura de segurança de 03/09/2026). A ordem importa:
+  // HTTPS antes de qualquer coisa, cabeçalhos em toda resposta, limite de
+  // requisições antes de tocar no banco, conferência de origem antes de
+  // qualquer rota que muda dado.
+  // ---------------------------------------------------------------------
+  app.use(forcarHttps);
+  app.use(cabecalhosSeguranca);
+  app.use('/api', limitadorApi);
+  app.use('/api/auth', limitadorAutenticacao);
+
+  // Corpo de requisição: 15MB valia pra TODAS as rotas, inclusive o login —
+  // qualquer um podia empurrar 15MB de JSON sem estar logado. Agora o padrão
+  // é 1MB e só as rotas que realmente recebem planilha/base64 ficam com o
+  // limite grande.
+  const jsonGrande = express.json({ limit: '15mb' });
+  app.use('/api/importacao', jsonGrande);
+  app.use('/api/estoque', jsonGrande);
+  app.use('/api/pedidos', jsonGrande);
+  app.use('/api/produtos', jsonGrande);
+  app.use('/api/financeiro', jsonGrande);
+  app.use(express.json({ limit: '1mb' }));
+
+  app.use(conferirOrigem);
+  app.use(middlewareAuditoria);
 
   app.get('/api/health', (req, res) => {
-    res.json({ ok: true, uptimeSec: Math.round(process.uptime()) });
+    res.json({ ok: true });
   });
 
   app.use('/api/auth', authRoutes);
@@ -121,6 +153,10 @@ function createApp() {
   app.use('/api/conferencia-dados', requireAuth, requireAdmin, conferenciaDadosRoutes);
   app.use('/api/qualidade-dados', requireAuth, requireAdmin, qualidadeDadosRoutes);
 
+  // Histórico de alteração por usuário e diagnóstico de e-mail — só admin.
+  app.use('/api/auditoria', requireAuth, requireAdmin, auditoriaRoutes);
+  app.use('/api/email', requireAuth, requireAdmin, emailRoutes);
+
   // Build do React em produção (um único serviço no Render).
   app.use(express.static(CLIENT_DIST));
   app.get(/^(?!\/api).*/, (req, res) => {
@@ -131,8 +167,19 @@ function createApp() {
 
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
-    console.error(err);
-    res.status(500).json({ error: 'Erro interno do servidor.' });
+    // Erros que o multer levanta chegam aqui como 500 e a pessoa via só
+    // "Erro interno do servidor" — agora ela lê o motivo.
+    if (err && err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'O arquivo é maior que o limite permitido.' });
+    }
+    if (err && err.type === 'entity.too.large') {
+      return res.status(413).json({ error: 'O conteúdo enviado é maior que o limite permitido.' });
+    }
+    // Um número curto e aleatório no log e na resposta: a pessoa manda esse
+    // número e dá pra achar o erro exato no log, sem expor detalhe interno.
+    const marca = Math.random().toString(36).slice(2, 8).toUpperCase();
+    console.error(`[erro ${marca}]`, err);
+    res.status(500).json({ error: `Erro interno do servidor. Se precisar de ajuda, informe o código ${marca}.` });
   });
 
   return app;

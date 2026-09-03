@@ -1,7 +1,24 @@
 const { verifyToken } = require('../lib/authToken');
+const { ehProducao } = require('../lib/config');
 const pool = require('../db/pool');
 
 const COOKIE_NAME = 'precificacao_session';
+
+// Opções do cookie de sessão, num lugar só — antes o "set" e o "clear" usavam
+// listas diferentes, e cookie limpo com opção diferente da que criou pode
+// sobrar no navegador.
+//
+// secure: em produção é sempre true. Antes dependia de NODE_ENV estar escrito
+// certo no painel do Render; se a variável faltasse, o cookie de sessão saía
+// sem a marca "Secure" e podia trafegar em HTTP puro.
+function opcoesCookie() {
+  return {
+    httpOnly: true,
+    secure: ehProducao,
+    sameSite: 'lax',
+    path: '/',
+  };
+}
 
 function parseCookies(header) {
   const out = {};
@@ -17,26 +34,41 @@ function parseCookies(header) {
 }
 
 // Carrega o usuário (e os módulos liberados pra ele) a partir do cookie de
-// sessão, e recusa se a conta foi desativada nesse meio tempo — assim dar
-// baixa num usuário revoga o acesso dele na hora, sem precisar esperar o
-// token expirar.
+// sessão, e recusa se: a conta foi desativada, foi excluída, ou a sessão foi
+// invalidada depois que o token foi emitido (troca de senha, redefinição,
+// "sair de todos os aparelhos").
 async function requireAuth(req, res, next) {
   try {
     const cookies = parseCookies(req.headers.cookie);
     const token = cookies[COOKIE_NAME];
-    const usuarioId = verifyToken(token);
-    if (!usuarioId) return res.status(401).json({ error: 'Não autenticado.' });
+    const dados = verifyToken(token);
+    if (!dados) return res.status(401).json({ error: 'Não autenticado.' });
 
     const { rows } = await pool.query(
-      'SELECT id, nome, email, role, ativo FROM usuarios WHERE id = $1',
-      [usuarioId]
+      'SELECT id, nome, email, role, ativo, sessoes_validas_apos FROM usuarios WHERE id = $1',
+      [dados.usuarioId]
     );
     if (rows.length === 0 || !rows[0].ativo) {
       return res.status(401).json({ error: 'Não autenticado.' });
     }
+
+    const validasApos = rows[0].sessoes_validas_apos
+      ? new Date(rows[0].sessoes_validas_apos).getTime()
+      : 0;
+    // Comparação estrita: qualquer token emitido ANTES da invalidação cai.
+    // Não há tolerância aqui de propósito — tolerância aqui é exatamente o
+    // tamanho da janela em que uma sessão que deveria ter caído continua
+    // valendo. A diferença de relógio é resolvida na emissão do token novo
+    // (ver createToken), não afrouxando a conferência.
+    if (dados.emitidoEm < validasApos) {
+      return res.status(401).json({
+        error: 'Sua sessão foi encerrada porque a senha desta conta mudou. Entre de novo.',
+      });
+    }
+
     const { rows: moduloRows } = await pool.query(
       'SELECT modulo FROM usuario_modulos WHERE usuario_id = $1',
-      [usuarioId]
+      [dados.usuarioId]
     );
 
     req.user = {
@@ -72,4 +104,4 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-module.exports = { requireAuth, requireModulo, requireAdmin, parseCookies, COOKIE_NAME };
+module.exports = { requireAuth, requireModulo, requireAdmin, parseCookies, COOKIE_NAME, opcoesCookie };

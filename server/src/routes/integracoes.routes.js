@@ -621,8 +621,18 @@ module.exports = router;
 // ---------- callbacks (sem autenticação — chamados pelo redirect do marketplace) ----------
 
 async function consumirState(state) {
+  // Faxina do que venceu, aproveitando que já estamos aqui.
+  pool
+    .query("DELETE FROM integracoes_oauth_state WHERE criado_em < now() - INTERVAL '1 hour'")
+    .catch(() => {});
+  if (!state || typeof state !== 'string' || state.length < 20) return null;
   const { rows } = await pool.query(
-    'DELETE FROM integracoes_oauth_state WHERE state = $1 RETURNING integracao_id',
+    // Uso único E prazo de validade (10 minutos). Antes o state só era
+    // apagado ao ser usado — um state gerado meses atrás continuava valendo,
+    // e a tabela nunca parava de crescer.
+    `DELETE FROM integracoes_oauth_state
+      WHERE state = $1 AND criado_em > now() - INTERVAL '10 minutes'
+      RETURNING integracao_id`,
     [state]
   );
   return rows[0]?.integracao_id || null;

@@ -79,7 +79,7 @@ function LoginForm({ onSuccess }) {
       />
 
       <div style={{ textAlign: 'right', marginBottom: 16, marginTop: -6 }}>
-        <Link to="/esqueci-senha" className="login-link">Esqueci minha senha</Link>
+        <Link to="/esqueci-senha" className="login-link">Esqueci minha senha ou meu usuário</Link>
       </div>
 
       <button className="login-enter" type="submit" disabled={loading}>

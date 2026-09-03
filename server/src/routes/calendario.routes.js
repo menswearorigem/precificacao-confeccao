@@ -7,7 +7,60 @@ const {
 } = require('../lib/calendarioEventos');
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
+// Anexo de evento. A varredura de segurança de 03/09/2026 achou aqui o pior
+// buraco do sistema: aceitava-se QUALQUER tipo de arquivo, o tipo declarado
+// pelo navegador era guardado como veio, e o download devolvia esse mesmo
+// tipo. Dava pra subir uma página HTML disfarçada e, ao abrir o anexo, ela
+// rodava DENTRO do endereço do sistema — com acesso à sessão de quem clicou.
+//
+// Agora: lista fechada de tipos, conferência da assinatura do arquivo (os
+// primeiros bytes, que o navegador não escolhe) e download sempre como
+// anexo, com tipo neutro.
+const TIPOS_ANEXO_PERMITIDOS = new Set([
+  'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+  'application/pdf',
+  'text/plain', 'text/csv',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.ms-excel',
+]);
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => cb(null, TIPOS_ANEXO_PERMITIDOS.has(file.mimetype)),
+});
+
+// Assinatura dos formatos que aceitamos (primeiros bytes do arquivo). Se o
+// arquivo não parecer o que diz ser, recusamos. Os formatos de texto não têm
+// assinatura, então valem pela lista de tipos e pelo download forçado.
+const ASSINATURAS = [
+  { mime: /^image\/jpeg$/, bytes: [0xff, 0xd8, 0xff] },
+  { mime: /^image\/png$/, bytes: [0x89, 0x50, 0x4e, 0x47] },
+  { mime: /^image\/gif$/, bytes: [0x47, 0x49, 0x46, 0x38] },
+  { mime: /^application\/pdf$/, bytes: [0x25, 0x50, 0x44, 0x46] },
+  // .xlsx/.docx/.pptx são ZIP por dentro.
+  { mime: /officedocument|ms-excel/, bytes: [0x50, 0x4b, 0x03, 0x04] },
+];
+
+function assinaturaConfere(buffer, mime) {
+  if (mime === 'image/webp') {
+    return buffer.length > 12 && buffer.slice(0, 4).toString('ascii') === 'RIFF' && buffer.slice(8, 12).toString('ascii') === 'WEBP';
+  }
+  const regra = ASSINATURAS.find((r) => r.mime.test(mime));
+  if (!regra) return true; // text/plain e text/csv não têm assinatura
+  return regra.bytes.every((b, i) => buffer[i] === b);
+}
+
+// Nome de arquivo sem caminho, sem aspas e sem quebra de linha — o que
+// impede de mexer no cabeçalho da resposta pelo nome do arquivo.
+function nomeSeguro(nome) {
+  return String(nome || 'anexo')
+    .replace(/[\r\n"\\]/g, '')
+    .replace(/[/\\]/g, '-')
+    .slice(0, 120) || 'anexo';
+}
 
 const CAMPOS_EDITAVEIS = [
   'template_id', 'titulo', 'descricao', 'categoria', 'data_inicio', 'data_prevista_fim',
@@ -690,7 +743,14 @@ router.post('/eventos/:id/comentarios', async (req, res, next) => {
 
 router.post('/eventos/:id/anexos', upload.single('arquivo'), async (req, res, next) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'Envie um arquivo de até 8MB.' });
+    if (!req.file) {
+      return res.status(400).json({
+        error: 'Envie um arquivo de até 8MB nos formatos aceitos: imagem (JPG, PNG, WEBP, GIF), PDF, texto/CSV, Excel, Word ou PowerPoint.',
+      });
+    }
+    if (!assinaturaConfere(req.file.buffer, req.file.mimetype)) {
+      return res.status(400).json({ error: 'O conteúdo do arquivo não corresponde ao tipo dele. Envie o arquivo original.' });
+    }
     const { rows: contagem } = await pool.query('SELECT COUNT(*)::int AS total FROM calendario_anexos WHERE evento_id = $1', [req.params.id]);
     if (contagem[0].total >= 5) {
       return res.status(400).json({ error: 'Esse evento já tem 5 anexos — remova algum antes de adicionar outro.' });
@@ -698,7 +758,7 @@ router.post('/eventos/:id/anexos', upload.single('arquivo'), async (req, res, ne
     await pool.query(
       `INSERT INTO calendario_anexos (evento_id, dados, mime_type, nome_arquivo, tamanho)
        VALUES ($1, $2, $3, $4, $5)`,
-      [req.params.id, req.file.buffer, req.file.mimetype, req.file.originalname, req.file.size]
+      [req.params.id, req.file.buffer, req.file.mimetype, nomeSeguro(req.file.originalname), req.file.size]
     );
     res.status(201).json({ ok: true });
   } catch (err) {
@@ -712,8 +772,14 @@ router.get('/anexos/:id', async (req, res, next) => {
     const { rows } = await pool.query('SELECT * FROM calendario_anexos WHERE id = $1', [req.params.id]);
     if (rows.length === 0) return res.status(404).end();
     const anexo = rows[0];
-    res.set('Content-Type', anexo.mime_type);
-    res.set('Content-Disposition', `attachment; filename="${encodeURIComponent(anexo.nome_arquivo)}"`);
+    // Tipo neutro + nosniff + download forçado: mesmo que algum arquivo
+    // antigo (gravado antes desta correção) tenha tipo perigoso, o navegador
+    // baixa em vez de abrir.
+    const tipoSeguro = TIPOS_ANEXO_PERMITIDOS.has(anexo.mime_type) ? anexo.mime_type : 'application/octet-stream';
+    res.set('Content-Type', tipoSeguro);
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Content-Security-Policy', "default-src 'none'; sandbox");
+    res.set('Content-Disposition', `attachment; filename="${nomeSeguro(anexo.nome_arquivo)}"; filename*=UTF-8''${encodeURIComponent(anexo.nome_arquivo)}`);
     res.send(anexo.dados);
   } catch (err) {
     next(err);

@@ -58,9 +58,24 @@ Ainda na tela de criação (ou depois em **Environment**), adicione:
 |---|---|
 | `DATABASE_URL` | a Internal Database URL copiada no passo 1 |
 | `DATABASE_SSL` | `true` |
-| `APP_PASSWORD` | a senha que a equipe vai usar para entrar no sistema (escolha uma senha de verdade, não deixe a padrão) |
-| `SESSION_SECRET` | qualquer texto longo e aleatório (ex: gere com `openssl rand -hex 32`) |
+| `APP_PASSWORD` | trava usada só para criar a primeira conta de administrador. **Mínimo 12 caracteres.** |
+| `SESSION_SECRET` | texto longo e aleatório, **mínimo 32 caracteres** — gere com `openssl rand -hex 32` |
 | `NODE_ENV` | `production` |
+
+> ### ⚠️ Sem `SESSION_SECRET` e `APP_PASSWORD`, o servidor não sobe
+>
+> Isso é de propósito, e mudou na varredura de segurança de 03/09/2026. Antes,
+> se uma dessas variáveis faltasse, o sistema subia usando um valor padrão que
+> **está publicado no código-fonte** — e qualquer pessoa que soubesse disso
+> conseguiria fabricar um cookie de administrador e entrar como dona do
+> sistema, sem senha nenhuma. Agora, faltando, o serviço para na subida e
+> escreve no log exatamente o que falta. Errar em voz alta é melhor que rodar
+> aberto em silêncio.
+>
+> `SESSION_SECRET` é a chave do cofre: quem tem esse valor entra como qualquer
+> pessoa. Não mande por WhatsApp, não coloque em documento compartilhado.
+> Trocá-lo desconecta todo mundo (é o jeito de "cortar todas as sessões" se
+> houver suspeita de vazamento).
 | `APP_URL` | a URL pública do serviço, ex: `https://precificacao-confeccao.onrender.com` (sem barra no final) — usada nas integrações com marketplaces (Mercado Livre/Shopee) pra montar o link de retorno da autorização, e também no link de "esqueci minha senha" |
 
 Não precisa definir `PORT` — o Render define isso sozinho.
@@ -68,9 +83,9 @@ Não precisa definir `PORT` — o Render define isso sozinho.
 #### E-mail (recuperação de senha)
 
 Sem estas variáveis, o link de "esqueci minha senha" é gerado normalmente
-mas o **e-mail não é enviado** — fica só um aviso no log do servidor. Pra
-funcionar de verdade em produção, defina (exemplo com Gmail, mas qualquer
-provedor SMTP serve — SendGrid, Mailgun, etc.):
+mas o **e-mail não é enviado**. Pra funcionar de verdade em produção, defina
+(exemplo com Gmail, mas qualquer provedor SMTP serve — SendGrid, Mailgun,
+etc.):
 
 | Variável | Valor |
 |---|---|
@@ -80,6 +95,13 @@ provedor SMTP serve — SendGrid, Mailgun, etc.):
 | `SMTP_USER` | o e-mail/usuário da conta SMTP |
 | `SMTP_PASS` | a senha — no Gmail, precisa ser uma [senha de app](https://myaccount.google.com/apppasswords), não a senha normal da conta |
 | `SMTP_FROM` | o remetente que aparece no e-mail (pode ser igual a `SMTP_USER`) |
+
+**Como conferir que funcionou, sem esperar alguém precisar:** entre como
+administrador e vá em **Acessos › Histórico**. No topo da tela aparece o estado
+do envio de e-mail e o botão **Enviar e-mail de teste**. Se o quadro estiver
+amarelo, a recuperação de senha não vai funcionar para ninguém — e a única
+saída, enquanto estiver assim, é um administrador definir a senha da pessoa na
+aba Usuários.
 
 4. Clique em **Create Web Service**. O Render vai clonar o repositório,
    instalar, buildar, migrar o banco e subir o servidor. Acompanhe pela aba
@@ -95,7 +117,11 @@ provedor SMTP serve — SendGrid, Mailgun, etc.):
 2. Você deve cair na tela de login. Entre com a senha definida em
    `APP_PASSWORD`.
 3. Confira `https://SEU-SERVICO.onrender.com/api/health` — deve responder
-   `{"ok":true,...}`.
+   `{"ok":true}`.
+4. **Confira a blindagem**: em Acessos › Histórico, o quadro de e-mail deve
+   estar verde, e a sua entrada no sistema deve aparecer na lista logo abaixo.
+   Se o histórico estiver vazio depois de você entrar, a migration `0044` não
+   rodou — veja os logs do deploy.
 
 ## 5. Deploys futuros
 

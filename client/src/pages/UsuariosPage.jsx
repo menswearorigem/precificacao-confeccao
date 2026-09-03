@@ -167,8 +167,10 @@ export default function UsuariosPage() {
   }
 
   async function resetarSenha(id) {
-    if (!novaSenha || novaSenha.length < 6) {
-      setError('A nova senha precisa ter pelo menos 6 caracteres.');
+    // A regra completa vive no servidor (server/src/lib/senhaPolitica.js) —
+    // aqui é só o aviso imediato pra não mandar requisição à toa.
+    if (!novaSenha || novaSenha.length < 10) {
+      setError('A nova senha precisa ter pelo menos 10 caracteres. Uma frase curta funciona bem.');
       return;
     }
     setError('');

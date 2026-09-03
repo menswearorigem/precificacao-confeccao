@@ -21,7 +21,7 @@
 //   DATABASE_URL=postgres://... DATABASE_SSL=false node server/scripts/teste-financeiro-extrato.js
 
 process.env.APP_PASSWORD = process.env.APP_PASSWORD || 'teste-financeiro';
-process.env.SESSION_SECRET = process.env.SESSION_SECRET || 'teste-financeiro-secret';
+process.env.SESSION_SECRET = process.env.SESSION_SECRET || 'teste-financeiro-secret-com-32-caracteres-ou-mais';
 
 const http = require('http');
 const criarApp = require('../src/app');
@@ -270,7 +270,9 @@ async function main() {
 
   // Setup na primeira rodada; nas seguintes o banco já tem a conta, então
   // cai no login normal (o script precisa poder rodar duas vezes seguidas).
-  const credenciais = { nome: 'teste-fin', senha: 'teste123' };
+  // Senha longa por causa da regra de senha criada na varredura de
+// segurança (03/09/2026): mínimo de 10 caracteres, ver senhaPolitica.js.
+  const credenciais = { nome: 'teste-fin', senha: 'teste do financeiro 123' };
   let auth = await postar(porta, '/api/auth/setup', {
     ...credenciais, email: 'fin@exemplo.com', appPassword: process.env.APP_PASSWORD,
   });

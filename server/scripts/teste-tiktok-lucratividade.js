@@ -23,7 +23,7 @@
 //   DATABASE_URL=postgres://... DATABASE_SSL=false node server/scripts/teste-tiktok-lucratividade.js
 
 process.env.APP_PASSWORD = process.env.APP_PASSWORD || 'teste-tiktok';
-process.env.SESSION_SECRET = process.env.SESSION_SECRET || 'teste-tiktok-secret';
+process.env.SESSION_SECRET = process.env.SESSION_SECRET || 'teste-tiktok-secret-com-32-caracteres-ou-mais';
 
 const http = require('http');
 const criarApp = require('../src/app');
@@ -267,7 +267,7 @@ async function main() {
   const porta = servidor.address().port;
 
   const setup = await postar(porta, '/api/auth/setup', {
-    nome: 'teste', email: 'teste-tiktok@exemplo.com', senha: 'teste123', appPassword: process.env.APP_PASSWORD,
+    nome: 'conferente', email: 'teste-tiktok@exemplo.com', senha: 'roupa azul de verao', appPassword: process.env.APP_PASSWORD,
   });
   if (setup.status !== 201 && setup.status !== 200) throw new Error(`Setup falhou: ${setup.status} ${setup.corpo}`);
   const cookie = (setup.headers['set-cookie'] || []).map((c) => c.split(';')[0]).join('; ');

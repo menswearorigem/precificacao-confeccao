@@ -179,7 +179,10 @@ router.get('/:id/foto', async (req, res, next) => {
   try {
     const { rows } = await pool.query('SELECT dados, mime_type, updated_at FROM produto_fotos WHERE produto_id = $1', [req.params.id]);
     if (rows.length === 0) return res.status(404).end();
-    res.set('Content-Type', rows[0].mime_type);
+    const tipo = /^image\/(jpeg|png|webp)$/.test(rows[0].mime_type) ? rows[0].mime_type : 'application/octet-stream';
+    res.set('Content-Type', tipo);
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Content-Disposition', 'inline');
     res.set('Cache-Control', 'private, max-age=86400');
     res.send(rows[0].dados);
   } catch (err) {
@@ -189,13 +192,27 @@ router.get('/:id/foto', async (req, res, next) => {
 
 const uploadFoto = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
   fileFilter: (req, file, cb) => cb(null, /^image\/(jpeg|png|webp)$/.test(file.mimetype)),
 });
+
+// O tipo que o navegador declara é escolhido por quem envia — dá pra dizer
+// "image/png" mandando outra coisa. Estes são os primeiros bytes reais de
+// cada formato, que não dá pra falsificar sem deixar de ser aquele formato.
+function ehImagemDeVerdade(buffer, mime) {
+  if (!buffer || buffer.length < 12) return false;
+  if (mime === 'image/jpeg') return buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  if (mime === 'image/png') return buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47;
+  if (mime === 'image/webp') return buffer.slice(0, 4).toString('ascii') === 'RIFF' && buffer.slice(8, 12).toString('ascii') === 'WEBP';
+  return false;
+}
 
 router.post('/:id/foto', uploadFoto.single('foto'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Envie uma imagem JPEG, PNG ou WEBP de até 5MB.' });
+    if (!ehImagemDeVerdade(req.file.buffer, req.file.mimetype)) {
+      return res.status(400).json({ error: 'Esse arquivo não é uma imagem JPEG, PNG ou WEBP de verdade. Envie a imagem original.' });
+    }
     const { rows: produtoRows } = await pool.query('SELECT id FROM produtos WHERE id = $1', [req.params.id]);
     if (produtoRows.length === 0) return res.status(404).json({ error: 'Produto não encontrado.' });
     await pool.query(

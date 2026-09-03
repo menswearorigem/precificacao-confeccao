@@ -1,10 +1,10 @@
 // Teste de fumaça das rotas novas de Compras e Fornecedores: monta os dois
 // routers num express sem auth, popula dado de exemplo e confere as respostas.
 const express = require('express');
-const pool = require('/home/claude/repo/server/src/db/pool');
+const pool = require('../src/db/pool');
 
-const fornecedores = require('/home/claude/repo/server/src/routes/fornecedores.routes');
-const compras = require('/home/claude/repo/server/src/routes/compras.routes');
+const fornecedores = require('../src/routes/fornecedores.routes');
+const compras = require('../src/routes/compras.routes');
 
 const app = express();
 app.use(express.json());

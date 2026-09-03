@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ShieldCheck, UsersRound } from 'lucide-react';
+import { ShieldCheck, UsersRound, History } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import UsuariosPage from './UsuariosPage';
 import GruposPage from './GruposPage';
+import HistoricoPage from './HistoricoPage';
 
 // Página fundida (Etapa 2): "Usuários" e "Grupos" viravam 2 abas separadas
 // — agora são sub-abas de "Acessos". Conteúdo de cada uma inalterado.
@@ -19,6 +20,11 @@ import GruposPage from './GruposPage';
 const SUBABAS_ADMIN = [
   { chave: 'usuarios', label: 'Usuários', Icone: ShieldCheck },
   { chave: 'grupos', label: 'Grupos', Icone: UsersRound },
+  // Histórico é só de administrador: mostra IP, tentativa de login que falhou
+  // e o que cada pessoa alterou. Fica aqui, ao lado de Usuários, porque é a
+  // mesma pergunta vista pelos dois lados — "quem tem acesso" e "o que essa
+  // pessoa fez com o acesso que tem".
+  { chave: 'historico', label: 'Histórico', Icone: History },
 ];
 const SUBABAS_LIMITADO = [
   { chave: 'grupos', label: 'Grupos', Icone: UsersRound },
@@ -29,7 +35,8 @@ export default function AcessosPage() {
   const isAdmin = user?.role === 'admin';
   const subabas = isAdmin ? SUBABAS_ADMIN : SUBABAS_LIMITADO;
   const [searchParams, setSearchParams] = useSearchParams();
-  const abaPedida = searchParams.get('aba') === 'grupos' ? 'grupos' : 'usuarios';
+  const abaUrl = searchParams.get('aba');
+  const abaPedida = abaUrl === 'grupos' || abaUrl === 'historico' ? abaUrl : 'usuarios';
   const inicial = isAdmin ? abaPedida : 'grupos';
   const [aba, setAba] = useState(inicial);
 
@@ -57,7 +64,7 @@ export default function AcessosPage() {
         </div>
       )}
 
-      {aba === 'usuarios' && isAdmin ? <UsuariosPage /> : <GruposPage />}
+      {!isAdmin ? <GruposPage /> : aba === 'grupos' ? <GruposPage /> : aba === 'historico' ? <HistoricoPage /> : <UsuariosPage />}
     </div>
   );
 }
