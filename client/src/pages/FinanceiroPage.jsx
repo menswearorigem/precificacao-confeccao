@@ -1,15 +1,27 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, Printer, Link2, AlertTriangle, History } from 'lucide-react';
+import {
+  RefreshCw, Printer, Link2, AlertTriangle, History, Info, Banknote, ArrowDownCircle,
+  ArrowUpCircle, Hourglass, Landmark, ScrollText, CheckCircle2, ScanSearch,
+} from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
-import { brl, dataBr } from '../lib/format';
-import { Select, Checkbox, ThOrdenavel, Paginacao, BotaoExportar, StatCard, EstadoVazio } from '../components/ui';
+import { brl, dataBr, formatQtd, numeroBr } from '../lib/format';
+import {
+  Select, Checkbox, ThOrdenavel, Paginacao, BotaoExportar, BotaoRelatorio,
+  IndicadorDestaque, EstadoVazio,
+} from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { PRESETS_PERIODO } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import DataTable from '../components/DataTable';
 import { useTabela } from '../lib/useTabela';
+import {
+  CartaoGrafico, GraficoEvolucao, GraficoColunas, GraficoLinha, BarraRanking,
+  useRefGrafico, capturarGraficos,
+} from '../components/graficos';
+import { usePaletaGrafico, corPorIndice } from '../lib/coresGrafico';
+import { definicaoMovimentacao, definicaoRepasses, definicaoConferencia } from '../lib/relatorioFinanceiro';
 
 // Tela do módulo Financeiro. Três abas, mesma fonte de dado (o extrato lido
 // da própria plataforma), três perguntas diferentes:
@@ -22,6 +34,11 @@ import { useTabela } from '../lib/useTabela';
 //
 // Nada aqui recalcula preço, margem ou imposto — a tela só lê o que a API
 // devolve (REGRA 1).
+//
+// Redesenho: cada número de destaque agora vem com a frase que explica o que
+// ele é, e cada gráfico com a frase que explica o que ele mostra. A regra que
+// guiou tudo: quem abre esta tela pela primeira vez tem que entender o que
+// está vendo sem perguntar a ninguém.
 
 // Chave de tipo -> rótulo em português. A ordem é a ordem em que os chips de
 // filtro aparecem: primeiro o que é dinheiro de venda, depois o que sai.
@@ -38,6 +55,10 @@ const TIPOS = [
 const TIPO_LABEL = Object.fromEntries(TIPOS.map((t) => [t.chave, t.rotulo]));
 
 const STATUS_LABEL = { liberado: 'Liberado', pendente: 'Pendente' };
+
+const rotuloTipo = (t) => TIPO_LABEL[t] || t;
+const rotuloPlataforma = (m) => PLATAFORMA_LABEL[m] || m;
+const rotuloStatus = (s) => STATUS_LABEL[s] || s;
 
 // Período padrão da tela: mês passado inteiro. O financeiro trabalha por
 // fechamento de mês, não pelo dia de hoje — abrir em "hoje" mostraria uma
@@ -177,6 +198,18 @@ export default function FinanceiroPage({ aba = 'movimentacao' }) {
   const semExtrato = conexoesAutorizadas.length > 0
     && conexoesAutorizadas.every((c) => Number(c.lancamentos || 0) === 0);
 
+  // Os filtros escritos por extenso — viajam no cabeçalho de todo relatório
+  // exportado, pra ninguém receber um PDF e não saber de que recorte ele é.
+  const filtrosTexto = [
+    marketplace ? `Plataforma: ${rotuloPlataforma(marketplace)}` : 'Todas as plataformas',
+    lojaId ? `Loja: ${conexoes.find((c) => String(c.id) === String(lojaId))?.nome || lojaId}` : null,
+    tiposMarcados.size < TIPOS.length ? `Tipos: ${[...tiposMarcados].map(rotuloTipo).join(', ')}` : null,
+    aba === 'movimentacao' && statusFiltro ? `Lista: ${statusFiltro === 'liberado' ? 'só o já liberado' : 'só o pendente'}` : null,
+    aba === 'movimentacao' && comPedido ? `Vínculo: ${comPedido === 'sim' ? 'só com pedido' : 'só sem pedido'}` : null,
+  ].filter(Boolean);
+
+  const contexto = { periodo: { inicio: dataInicio, fim: dataFim }, filtros: filtrosTexto };
+
   return (
     <div className="page-wide">
       <div className="no-print">
@@ -249,6 +282,10 @@ export default function FinanceiroPage({ aba = 'movimentacao' }) {
         {aba === 'movimentacao' && (
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-head">O que aparece na tela</div>
+            <p className="grafico-explicacao">
+              Desmarque um tipo para tirá-lo dos números e dos gráficos. É assim que se responde, por
+              exemplo, “quanto sobrou sem contar a publicidade”.
+            </p>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
               {TIPOS.map((t) => (
                 <label key={t.chave} className="toggle">
@@ -275,9 +312,9 @@ export default function FinanceiroPage({ aba = 'movimentacao' }) {
         <AvisosDasConexoes conexoes={conexoes} />
       </div>
 
-      {aba === 'movimentacao' && <AbaMovimentacao dados={dados} podeAbrirPedido={podeAbrirPedido} />}
-      {aba === 'repasses' && <AbaRepasses dados={dados} />}
-      {aba === 'conferencia' && <AbaConferencia dados={dados} />}
+      {aba === 'movimentacao' && <AbaMovimentacao dados={dados} podeAbrirPedido={podeAbrirPedido} contexto={contexto} />}
+      {aba === 'repasses' && <AbaRepasses dados={dados} contexto={contexto} />}
+      {aba === 'conferencia' && <AbaConferencia dados={dados} contexto={contexto} />}
     </div>
   );
 }
@@ -333,9 +370,13 @@ const EXPORTACAO_LANCAMENTO = [
   { rotulo: 'Situação', valor: (l) => STATUS_LABEL[l.status] || l.status },
 ];
 
-function AbaMovimentacao({ dados, podeAbrirPedido }) {
+function AbaMovimentacao({ dados, podeAbrirPedido, contexto }) {
+  const paleta = usePaletaGrafico();
   const lancamentos = dados?.lancamentos || [];
   const tabela = useTabela(lancamentos, { colunas: COLUNAS_LANCAMENTO, colunaPadrao: 'data', direcaoPadrao: 'desc', prefixo: 'lanc' });
+
+  const refDias = useRefGrafico();
+  const refTipos = useRefGrafico();
 
   // Resumo por data: uma linha por dia, uma coluna por plataforma. É a
   // pergunta original do financeiro — "quanto foi liberado por data e
@@ -345,10 +386,11 @@ function AbaMovimentacao({ dados, podeAbrirPedido }) {
   // deixou de pagar: é o mesmo dinheiro saindo da plataforma pra conta da
   // empresa. Somado aqui, um dia de saque grande vira um vermelho enorme que
   // não significa nada. Ele tem coluna própria, à direita.
-  const { dias, plataformasNaTela, totalPorPlataforma } = useMemo(() => {
+  const { dias, plataformasNaTela, totalPorPlataforma, porPlataforma } = useMemo(() => {
     const porDia = new Map();
     const plataformas = new Set();
     const totais = {};
+    const contagem = {};
     for (const r of (dados?.resumoPorData || [])) {
       if (r.status !== 'liberado') continue;
       const data = dataIso(r.data_liberacao);
@@ -361,13 +403,18 @@ function AbaMovimentacao({ dados, podeAbrirPedido }) {
         linha[r.marketplace] = (linha[r.marketplace] || 0) + valor;
         linha.total += valor;
         totais[r.marketplace] = (totais[r.marketplace] || 0) + valor;
+        contagem[r.marketplace] = (contagem[r.marketplace] || 0) + Number(r.quantidade || 0);
       }
       porDia.set(data, linha);
     }
+    const lista = [...plataformas];
     return {
       dias: [...porDia.values()].sort((a, b) => (a.data < b.data ? 1 : -1)),
-      plataformasNaTela: [...plataformas],
+      plataformasNaTela: lista,
       totalPorPlataforma: totais,
+      porPlataforma: lista
+        .map((m) => ({ marketplace: m, total: totais[m] || 0, quantidade: contagem[m] || 0 }))
+        .sort((a, b) => b.total - a.total),
     };
   }, [dados]);
 
@@ -388,6 +435,47 @@ function AbaMovimentacao({ dados, podeAbrirPedido }) {
     return [...mapa.values()].sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
   }, [dados]);
 
+  // Gráficos precisam do eixo em ordem crescente; a tabela mostra do mais
+  // recente pro mais antigo. São duas leituras da mesma lista, não dois dados.
+  const diasCrescente = useMemo(() => (
+    [...dias].reverse().map((d) => ({ ...d, rotulo: dataBr(d.data) }))
+  ), [dias]);
+
+  // Barras com sinal: o que entrou sobe, o que saiu desce. É a leitura que um
+  // leigo faz sem precisar de legenda.
+  const barrasTipo = useMemo(() => (
+    porTipo
+      .filter((t) => t.tipo !== 'saque')
+      .map((t) => ({
+        rotulo: rotuloTipo(t.tipo),
+        total: t.total,
+        cor: t.total >= 0 ? paleta.positivo : paleta.negativo,
+      }))
+  ), [porTipo, paleta]);
+
+  async function montarRelatorio(tipo) {
+    if (!dados) return null;
+    const graficos = await capturarGraficos([
+      { titulo: 'Quanto entrou na conta, dia a dia', ref: refDias },
+      { titulo: 'Para onde o dinheiro foi', ref: refTipos },
+    ]);
+    return definicaoMovimentacao({
+      tipo,
+      dados,
+      dias,
+      plataformasNaTela,
+      totalPorPlataforma,
+      porTipo,
+      porPlataforma,
+      rotuloTipo,
+      rotuloPlataforma,
+      rotuloStatus,
+      periodo: contexto.periodo,
+      filtros: contexto.filtros,
+      graficos,
+    });
+  }
+
   if (!dados) return null;
   if (lancamentos.length === 0 && dias.length === 0) {
     return (
@@ -400,19 +488,117 @@ function AbaMovimentacao({ dados, podeAbrirPedido }) {
     );
   }
 
-  const totalDia = (d) => d.total;
-
   return (
     <>
-      <div className="grid-4" style={{ marginBottom: 16 }}>
-        <StatCard label="Liberado pelo marketplace" value={brl(dados.totais.liberado)} />
-        <StatCard label="Entradas" value={brl(dados.totais.entradas)} />
-        <StatCard label="Saídas" value={brl(dados.totais.saidas)} />
-        <StatCard label="Ainda pendente" value={brl(dados.totais.pendente)} />
+      <div className="acoes-relatorio no-print">
+        <div className="acoes-relatorio-texto">
+          <strong>Relatório deste período</strong>
+          <span>Resumo para mandar, ou completo para conferir — em PDF ou Excel.</span>
+        </div>
+        <BotaoRelatorio
+          montar={montarRelatorio}
+          rotulo="Gerar relatório"
+          descricaoResumo="Os indicadores, os dois gráficos e as quebras por data, tipo e plataforma."
+          descricaoCompleto="O resumo mais o extrato linha a linha, com o identificador de cada lançamento na plataforma."
+        />
       </div>
-      <div className="grid-2" style={{ marginBottom: 16 }}>
-        <StatCard label="Transferido para o banco" value={brl(dados.totais.transferidoBanco)} />
-        <StatCard label="Transferência em andamento" value={brl(dados.totais.transferenciaEmAndamento)} />
+
+      <div className="indicadores-faixa">
+        <IndicadorDestaque
+          destaque
+          Icone={Banknote}
+          rotulo="Liberado pelo marketplace"
+          valor={brl(dados.totais.liberado)}
+          explicacao="O que a plataforma de fato creditou: venda menos publicidade, taxa e devolução. O saque para o banco não entra aqui."
+        />
+        <IndicadorDestaque
+          Icone={ArrowDownCircle}
+          tom="positivo"
+          rotulo="Entradas"
+          valor={brl(dados.totais.entradas)}
+          explicacao="Tudo que entrou no período, antes de qualquer desconto."
+        />
+        <IndicadorDestaque
+          Icone={ArrowUpCircle}
+          tom="negativo"
+          rotulo="Saídas"
+          valor={brl(dados.totais.saidas)}
+          explicacao="Publicidade, taxas, multas e devoluções descontadas pela plataforma."
+        />
+        <IndicadorDestaque
+          Icone={Hourglass}
+          tom={Number(dados.totais.pendente) !== 0 ? 'atencao' : undefined}
+          rotulo="Ainda pendente"
+          valor={brl(dados.totais.pendente)}
+          explicacao={`${formatQtd(dados.totais.quantidadePendente)} lançamento(s) que a plataforma já reconhece e ainda não soltou. Nunca é somado ao liberado.`}
+        />
+        {/* Concluído e em andamento no mesmo cartão: são as duas metades da
+            mesma pergunta ("o dinheiro já saiu da plataforma?"), e separados
+            sobrava um sexto cartão órfão numa segunda linha. */}
+        <IndicadorDestaque
+          Icone={Landmark}
+          rotulo="Transferido para o banco"
+          valor={brl(dados.totais.transferidoBanco)}
+          explicacao={`Saques concluídos no período — o mesmo dinheiro saindo da plataforma para a conta da empresa. Em andamento: ${brl(dados.totais.transferenciaEmAndamento)}.`}
+        />
+      </div>
+
+      <div className="nota-precisao">
+        <Info size={14} />
+        <span>
+          Estes números vêm do <strong>extrato da própria plataforma</strong>, não da soma dos pedidos — por
+          isso incluem o que não pertence a venda nenhuma. O <strong>liberado</strong> e o{' '}
+          <strong>pendente</strong> são somados separados de propósito: pendente ainda não é movimentação
+          bancária.
+        </span>
+      </div>
+
+      <CartaoGrafico
+        titulo="Quanto entrou na conta, dia a dia"
+        explicacao="Cada faixa é uma plataforma; a altura total é o liberado do dia. Dias sem movimentação não aparecem no eixo. O saque para o banco fica de fora — ele não é dinheiro a mais nem a menos."
+        refGrafico={refDias}
+        altura={280}
+        vazio={diasCrescente.length === 0 ? 'Nenhum dia com movimentação no período.' : null}
+        rodape={`${formatQtd(diasCrescente.length)} dia(s) com movimentação · total liberado ${brl(dados.totais.liberado)}`}
+        legenda={plataformasNaTela.map((m, i) => ({
+          rotulo: rotuloPlataforma(m),
+          valor: brl(totalPorPlataforma[m] || 0),
+          cor: corPorIndice(paleta, i),
+        }))}
+      >
+        <GraficoEvolucao
+          dados={diasCrescente}
+          series={plataformasNaTela.map((m) => ({ chave: m, nome: rotuloPlataforma(m) }))}
+          altura={280}
+          empilhado
+        />
+      </CartaoGrafico>
+
+      <div className="coluna-larga">
+        <CartaoGrafico
+          titulo="Para onde o dinheiro foi"
+          explicacao="Barra para cima é dinheiro que entrou; para baixo, dinheiro que a plataforma descontou. O saque para o banco não aparece aqui — ele tem indicador próprio lá em cima."
+          refGrafico={refTipos}
+          altura={270}
+          vazio={barrasTipo.length === 0 ? 'Nada no período.' : null}
+        >
+          <GraficoColunas dados={barrasTipo} series={[{ chave: 'total', nome: 'Total' }]} altura={270} comZero />
+        </CartaoGrafico>
+
+        <div className="card">
+          <div className="card-head">Quanto cada plataforma liberou</div>
+          <p className="grafico-explicacao">
+            No período e com os filtros atuais. A porcentagem é o peso de cada plataforma no total liberado.
+          </p>
+          <BarraRanking
+            itens={porPlataforma.map((p) => ({
+              rotulo: rotuloPlataforma(p.marketplace),
+              detalhe: `${formatQtd(p.quantidade)} lançamento(s)`,
+              valor: p.total,
+            }))}
+            vazio="Nenhuma plataforma com movimentação no período."
+          />
+        </div>
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
@@ -442,7 +628,7 @@ function AbaMovimentacao({ dados, podeAbrirPedido }) {
                   {plataformasNaTela.map((m) => (
                     <td key={m} className="mono">{d[m] === undefined ? '—' : <ValorAssinado valor={d[m]} />}</td>
                   ))}
-                  <td className="mono"><ValorAssinado valor={totalDia(d)} forte /></td>
+                  <td className="mono"><ValorAssinado valor={d.total} forte /></td>
                   {houveSaque && (
                     <td className="mono">{d.saque === 0 ? '—' : <ValorAssinado valor={d.saque} />}</td>
                   )}
@@ -464,24 +650,34 @@ function AbaMovimentacao({ dados, podeAbrirPedido }) {
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-head">Para onde o dinheiro foi</div>
+        <div className="card-head">Para onde o dinheiro foi, em número</div>
         <DataTable>
           <table className="data-table">
             <thead>
-              <tr><th>Tipo</th><th>Lançamentos</th><th>Total</th></tr>
+              <tr><th>Tipo</th><th>Lançamentos</th><th>Total</th><th>Peso no período</th></tr>
             </thead>
             <tbody>
-              {porTipo.map((t) => (
-                <tr key={t.tipo}>
-                  <td>{TIPO_LABEL[t.tipo] || t.tipo}</td>
-                  <td className="mono">{t.quantidade.toLocaleString('pt-BR')}</td>
-                  <td className="mono"><ValorAssinado valor={t.total} /></td>
-                </tr>
-              ))}
-              {porTipo.length === 0 && <tr><td colSpan="3">Nada no período.</td></tr>}
+              {porTipo.map((t) => {
+                const base = porTipo.reduce((s, x) => s + Math.abs(x.total), 0);
+                return (
+                  <tr key={t.tipo}>
+                    <td>{TIPO_LABEL[t.tipo] || t.tipo}</td>
+                    <td className="mono">{t.quantidade.toLocaleString('pt-BR')}</td>
+                    <td className="mono"><ValorAssinado valor={t.total} /></td>
+                    {/* Peso pelo VALOR ABSOLUTO: com sinal, entrada e saída se
+                        anulariam e a soma da coluna não daria 100%. */}
+                    <td className="mono">{base ? `${numeroBr((Math.abs(t.total) / base) * 100, 1)}%` : '—'}</td>
+                  </tr>
+                );
+              })}
+              {porTipo.length === 0 && <tr><td colSpan="4">Nada no período.</td></tr>}
             </tbody>
           </table>
         </DataTable>
+        <div className="grafico-rodape">
+          “Peso no período” usa o valor sem o sinal — senão entrada e saída se anulariam e a coluna não
+          somaria 100%.
+        </div>
       </div>
 
       <div className="card">
@@ -569,21 +765,127 @@ const EXPORTACAO_REPASSE = [
   { rotulo: 'Situação', valor: (r) => r.status },
 ];
 
-function AbaRepasses({ dados }) {
+function AbaRepasses({ dados, contexto }) {
+  const paleta = usePaletaGrafico();
   const repasses = dados?.repasses || [];
   const tabela = useTabela(repasses, { colunas: COLUNAS_REPASSE, colunaPadrao: 'data', direcaoPadrao: 'desc', prefixo: 'rep' });
+  const refDias = useRefGrafico();
+
   const totalPago = repasses.filter((r) => r.status === 'pago').reduce((s, r) => s + (Number(r.valor_liquido) || 0), 0);
   const totalAndamento = repasses.filter((r) => r.status !== 'pago').reduce((s, r) => s + (Number(r.valor_liquido) || 0), 0);
+
+  const porPlataforma = useMemo(() => {
+    const mapa = new Map();
+    for (const r of repasses) {
+      const atual = mapa.get(r.marketplace) || { marketplace: r.marketplace, quantidade: 0, pago: 0, andamento: 0 };
+      atual.quantidade += 1;
+      const v = Number(r.valor_liquido) || 0;
+      if (r.status === 'pago') atual.pago += v; else atual.andamento += v;
+      mapa.set(r.marketplace, atual);
+    }
+    return [...mapa.values()].sort((a, b) => (b.pago + b.andamento) - (a.pago + a.andamento));
+  }, [repasses]);
+
+  // Um ponto por dia com repasse, na ordem cronológica.
+  const porDia = useMemo(() => {
+    const mapa = new Map();
+    for (const r of repasses) {
+      const dia = dataIso(r.data_liberacao);
+      if (!dia) continue;
+      const atual = mapa.get(dia) || { data: dia, pago: 0, andamento: 0 };
+      const v = Number(r.valor_liquido) || 0;
+      if (r.status === 'pago') atual.pago += v; else atual.andamento += v;
+      mapa.set(dia, atual);
+    }
+    return [...mapa.values()]
+      .sort((a, b) => (a.data < b.data ? -1 : 1))
+      .map((d) => ({ ...d, rotulo: dataBr(d.data) }));
+  }, [repasses]);
+
+  async function montarRelatorio(tipo) {
+    if (!dados) return null;
+    const graficos = await capturarGraficos([{ titulo: 'Repasses por data', ref: refDias }]);
+    return definicaoRepasses({
+      tipo, repasses, totalPago, totalAndamento, porPlataforma, rotuloPlataforma,
+      periodo: contexto.periodo, filtros: contexto.filtros, graficos,
+    });
+  }
 
   if (!dados) return null;
 
   return (
     <>
-      <div className="grid-2" style={{ marginBottom: 16 }}>
-        <StatCard label="Repasses já pagos no período" value={brl(totalPago)} />
-        <StatCard label="Em processamento ou previstos" value={brl(totalAndamento)} />
+      <div className="acoes-relatorio no-print">
+        <div className="acoes-relatorio-texto">
+          <strong>Relatório de repasses</strong>
+          <span>O que a plataforma transferiu no período, pronto para conferir com o extrato do banco.</span>
+        </div>
+        <BotaoRelatorio
+          montar={montarRelatorio}
+          disabled={repasses.length === 0}
+          rotulo="Gerar relatório"
+          descricaoResumo="Os indicadores, o gráfico por data e o total por plataforma."
+          descricaoCompleto="O resumo mais todos os repasses, um por linha, com o identificador de cada um."
+        />
       </div>
-      <div className="card">
+
+      <div className="indicadores-faixa">
+        <IndicadorDestaque
+          destaque
+          Icone={CheckCircle2}
+          rotulo="Repasses já pagos no período"
+          valor={brl(totalPago)}
+          explicacao="Dinheiro que a plataforma já transferiu para a conta da empresa. É o valor que deve aparecer no extrato do banco."
+        />
+        <IndicadorDestaque
+          Icone={Hourglass}
+          tom={totalAndamento !== 0 ? 'atencao' : undefined}
+          rotulo="Em processamento ou previstos"
+          valor={brl(totalAndamento)}
+          explicacao="Repasse anunciado pela plataforma que ainda não caiu. Somado separado de propósito — ainda não é dinheiro na conta."
+        />
+        <IndicadorDestaque
+          Icone={ScrollText}
+          rotulo="Transferências no período"
+          valor={formatQtd(repasses.length)}
+          explicacao="Cada transferência é uma linha que deve casar com um crédito no extrato bancário."
+        />
+      </div>
+
+      <CartaoGrafico
+        titulo="Repasses por data"
+        explicacao="Cada barra é um dia em que a plataforma mandou dinheiro. A parte mais clara é o que ainda está em processamento e não caiu na conta."
+        refGrafico={refDias}
+        altura={260}
+        vazio={porDia.length === 0 ? 'Nenhum repasse no período.' : null}
+        legenda={[
+          { rotulo: 'Já pago', valor: brl(totalPago), cor: corPorIndice(paleta, 0) },
+          { rotulo: 'Em processamento', valor: brl(totalAndamento), cor: corPorIndice(paleta, 1) },
+        ]}
+      >
+        <GraficoColunas
+          dados={porDia}
+          series={[{ chave: 'pago', nome: 'Já pago' }, { chave: 'andamento', nome: 'Em processamento' }]}
+          altura={260}
+          empilhado
+        />
+      </CartaoGrafico>
+
+      {porPlataforma.length > 0 && (
+        <div className="card">
+          <div className="card-head">Quanto cada plataforma repassou</div>
+          <p className="grafico-explicacao">Somando só o que já foi pago — o que está em processamento fica fora.</p>
+          <BarraRanking
+            itens={porPlataforma.map((p) => ({
+              rotulo: rotuloPlataforma(p.marketplace),
+              detalhe: `${formatQtd(p.quantidade)} transferência(s)${p.andamento ? ` · ${brl(p.andamento)} em processamento` : ''}`,
+              valor: p.pago,
+            }))}
+          />
+        </div>
+      )}
+
+      <div className="card" style={{ marginTop: 16 }}>
         <div className="card-head-linha">
           <div className="card-head">Repasses</div>
           <BotaoExportar nomeBase="repasses-marketplace" colunas={EXPORTACAO_REPASSE} itens={tabela.itensOrdenados} disabled={tabela.totalItens === 0} />
@@ -655,40 +957,118 @@ const EXPORTACAO_CONFERENCIA = [
   { rotulo: 'Diferença não explicada', valor: (l) => (l.diferencaNaoExplicada === null ? '—' : brl(l.diferencaNaoExplicada)) },
 ];
 
-function AbaConferencia({ dados }) {
+function AbaConferencia({ dados, contexto }) {
+  const paleta = usePaletaGrafico();
   const linhas = dados?.linhas || [];
   const tabela = useTabela(linhas, { colunas: COLUNAS_CONFERENCIA, colunaPadrao: 'data', direcaoPadrao: 'desc', prefixo: 'conf' });
+  const refComparacao = useRefGrafico();
+
+  // Só os dias em que dá pra comparar entram no gráfico: dia com um lado
+  // faltando viraria uma queda a zero que não aconteceu (REGRA 2).
+  const comparacao = useMemo(() => (
+    linhas
+      .filter((l) => l.extratoTotal !== null && l.pedidosTotal !== null)
+      .sort((a, b) => (a.data < b.data ? -1 : 1))
+      .map((l) => ({
+        rotulo: dataBr(l.data),
+        extrato: l.extratoTotal,
+        pedidos: l.pedidosTotal,
+      }))
+  ), [linhas]);
+
+  const comparaveis = linhas.filter((l) => l.confere !== null).length;
+
+  async function montarRelatorio(tipo) {
+    if (!dados) return null;
+    const graficos = await capturarGraficos([{ titulo: 'Extrato x soma dos pedidos', ref: refComparacao }]);
+    return definicaoConferencia({
+      tipo, dados, linhas, rotuloPlataforma,
+      periodo: contexto.periodo, filtros: contexto.filtros, graficos,
+    });
+  }
+
   if (!dados) return null;
 
   return (
     <>
-      <div className="card" style={{ marginBottom: 16 }}>
-        <p className="page-sub" style={{ marginTop: 0 }}>
-          Compara duas leituras independentes do mesmo dia: o <strong>extrato</strong> da plataforma e a{' '}
-          <strong>soma do valor recebido dos pedidos</strong> liberados naquele dia. A diferença entre elas
-          normalmente <em>não</em> é erro — é exatamente o que o extrato tem e a venda não: publicidade,
-          multa, ajuste, estorno. Por isso a coluna que importa é a última: o que sobra depois de descontar
-          esses lançamentos. O <strong>saque para o banco</strong> fica fora da comparação (é o mesmo
-          dinheiro mudando de conta, não um pagamento a mais ou a menos), mas continua visível na
-          coluna própria.
-        </p>
-        <div className="row-line">
-          <span>Dias com diferença não explicada</span>
-          <span className={'stamp sm ' + (dados.diasDivergentes > 0 ? 'tone-atencao' : 'tone-saudavel')}>
-            {dados.diasDivergentes}
-          </span>
+      <div className="acoes-relatorio no-print">
+        <div className="acoes-relatorio-texto">
+          <strong>Relatório de conferência</strong>
+          <span>Leve só os dias que não fecharam, ou a conferência inteira do período.</span>
         </div>
-        <div className="row-line">
-          <span>Dias em que só existe um dos dois lados</span>
-          <span className="mono">{dados.diasSemExtrato + dados.diasSemPedidos}</span>
-        </div>
+        <BotaoRelatorio
+          montar={montarRelatorio}
+          disabled={linhas.length === 0}
+          rotulo="Gerar relatório"
+          descricaoResumo="Os indicadores, o gráfico de comparação e só os dias que não fecharam."
+          descricaoCompleto="O resumo mais todos os dias comparados, inclusive os que bateram."
+        />
       </div>
+
+      <div className="indicadores-faixa">
+        <IndicadorDestaque
+          destaque
+          Icone={ScanSearch}
+          tom={dados.diasDivergentes > 0 ? 'negativo' : 'positivo'}
+          rotulo="Dias com diferença sem explicação"
+          valor={formatQtd(dados.diasDivergentes)}
+          explicacao="Dias em que sobrou diferença mesmo depois de descontar publicidade, taxa, multa e estorno. São estes que merecem ser investigados."
+        />
+        <IndicadorDestaque
+          Icone={CheckCircle2}
+          rotulo="Dias conferidos"
+          valor={formatQtd(comparaveis)}
+          explicacao="Dias em que existem os dois lados — extrato lido e pedidos liberados — e por isso dá para comparar."
+        />
+        <IndicadorDestaque
+          Icone={AlertTriangle}
+          rotulo="Só com um dos lados"
+          valor={formatQtd(dados.diasSemExtrato + dados.diasSemPedidos)}
+          explicacao="Ou o extrato do dia ainda não foi lido, ou não houve pedido liberado. Não é divergência: é falta de um dos lados."
+        />
+      </div>
+
+      <div className="nota-precisao">
+        <Info size={14} />
+        <span>
+          Esta aba compara <strong>duas leituras independentes do mesmo dia</strong>: o extrato da plataforma
+          e a soma do valor recebido dos pedidos liberados naquele dia. A diferença entre elas normalmente{' '}
+          <em>não</em> é erro — é exatamente o que o extrato tem e a venda não: publicidade, multa, ajuste,
+          estorno. Por isso a coluna que importa é a última.
+        </span>
+      </div>
+
+      <CartaoGrafico
+        titulo="Extrato x soma dos pedidos"
+        explicacao="As duas linhas deveriam andar juntas. Quando o extrato fica acima, quase sempre é dinheiro que entrou sem ser venda; quando fica abaixo, é desconto da plataforma. Só aparecem os dias em que existem os dois lados."
+        refGrafico={refComparacao}
+        altura={280}
+        vazio={comparacao.length === 0 ? 'Nenhum dia do período tem os dois lados para comparar.' : null}
+        rodape={`${formatQtd(comparacao.length)} dia(s) com os dois lados disponíveis.`}
+        legenda={[
+          { rotulo: 'Extrato da plataforma', cor: corPorIndice(paleta, 0) },
+          { rotulo: 'Soma dos pedidos', cor: corPorIndice(paleta, 1) },
+        ]}
+      >
+        <GraficoLinha
+          dados={comparacao}
+          series={[
+            { chave: 'extrato', nome: 'Extrato da plataforma' },
+            { chave: 'pedidos', nome: 'Soma dos pedidos', tracejada: true },
+          ]}
+          altura={280}
+        />
+      </CartaoGrafico>
 
       <div className="card">
         <div className="card-head-linha">
           <div className="card-head">Extrato x pedidos, por dia</div>
           <BotaoExportar nomeBase="conferencia-financeira" colunas={EXPORTACAO_CONFERENCIA} itens={tabela.itensOrdenados} disabled={tabela.totalItens === 0} />
         </div>
+        <p className="grafico-explicacao">
+          O <strong>saque para o banco</strong> fica fora da comparação (é o mesmo dinheiro mudando de conta,
+          não um pagamento a mais ou a menos), mas continua visível na coluna própria.
+        </p>
         <Paginacao {...tabela} posicao="topo" />
         <DataTable>
           <table className="data-table">

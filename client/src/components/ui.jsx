@@ -7,7 +7,8 @@ import {
 } from 'lucide-react';
 import { TAMANHOS_PAGINA } from '../lib/useTabela';
 import { exportarCsv, exportarXlsx } from '../lib/exportar';
-import { Download } from 'lucide-react';
+import { gerarRelatorio } from '../lib/relatorio';
+import { Download, FileDown, Search, X, SlidersHorizontal, Loader2 } from 'lucide-react';
 
 // Painéis flutuantes (lista do Select, calendário do DateInput) precisam
 // escapar de qualquer ancestral com overflow:hidden/auto (todo .card do
@@ -497,6 +498,199 @@ export function BotaoExportar({ nomeBase, colunas, itens, disabled }) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// Botão de relatório: quatro saídas a partir da mesma tela — resumo e
+// completo, cada um em PDF e em Excel.
+//
+// `montar(tipo)` é assíncrono de propósito: quem chama precisa poder capturar
+// os gráficos em imagem (e, no completo, buscar a lista item a item na API)
+// antes de montar a definição. Enquanto isso o botão fica em "Gerando…", que
+// é o mínimo pra ninguém clicar quatro vezes achando que travou.
+//
+// `descricoes` deixa a tela explicar, em uma linha, o que entra em cada
+// arquivo — é o que faz alguém escolher certo sem abrir os dois.
+export function BotaoRelatorio({
+  montar,
+  disabled,
+  rotulo = 'Exportar',
+  descricaoResumo = 'Os indicadores, os gráficos e as quebras principais — cabe em poucas páginas.',
+  descricaoCompleto = 'Tudo do resumo mais a lista item a item, o ranking e o comparativo.',
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [gerando, setGerando] = useState('');
+  const [erro, setErro] = useState('');
+
+  async function executar(tipo, formato) {
+    setGerando(`${tipo}-${formato}`);
+    setErro('');
+    try {
+      const definicao = await montar(tipo, formato);
+      if (!definicao) throw new Error('Não há dado para exportar com os filtros atuais.');
+      await gerarRelatorio(definicao, formato);
+      setAberto(false);
+    } catch (err) {
+      // Falhar em silêncio aqui é o pior caso: a pessoa acha que baixou.
+      setErro(err?.message || 'Não consegui gerar o arquivo.');
+    } finally {
+      setGerando('');
+    }
+  }
+
+  const opcoes = [
+    { tipo: 'resumo', formato: 'pdf', titulo: 'Resumo em PDF', descricao: descricaoResumo, extensao: 'pdf' },
+    { tipo: 'resumo', formato: 'xlsx', titulo: 'Resumo em Excel', descricao: descricaoResumo, extensao: 'xlsx' },
+    { tipo: 'completo', formato: 'pdf', titulo: 'Completo em PDF', descricao: descricaoCompleto, extensao: 'pdf' },
+    { tipo: 'completo', formato: 'xlsx', titulo: 'Completo em Excel', descricao: descricaoCompleto, extensao: 'xlsx' },
+  ];
+
+  return (
+    <div className="exportar">
+      <button type="button" className="btn btn-primary" disabled={disabled} onClick={() => setAberto((v) => !v)}>
+        <FileDown size={14} /> {rotulo}
+      </button>
+      {aberto && (
+        <>
+          <div className="exportar-backdrop" onClick={() => setAberto(false)} />
+          <div className="exportar-menu exportar-menu-largo">
+            <div className="exportar-grupo">Resumo — para mandar por WhatsApp ou imprimir</div>
+            {opcoes.slice(0, 2).map((o) => (
+              <ItemRelatorio key={o.formato} opcao={o} gerando={gerando} onClick={executar} />
+            ))}
+            <div className="exportar-grupo">Completo — para conferência e arquivo</div>
+            {opcoes.slice(2).map((o) => (
+              <ItemRelatorio key={o.formato} opcao={o} gerando={gerando} onClick={executar} />
+            ))}
+            {erro && <div className="exportar-erro">{erro}</div>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ItemRelatorio({ opcao, gerando, onClick }) {
+  const ativo = gerando === `${opcao.tipo}-${opcao.formato}`;
+  return (
+    <button
+      type="button"
+      className="exportar-item exportar-item-rico"
+      disabled={Boolean(gerando)}
+      onClick={() => onClick(opcao.tipo, opcao.formato)}
+    >
+      {ativo ? <Loader2 size={22} className="girando" /> : <FileTypeIcon extensao={opcao.extensao} size={22} />}
+      <span className="exportar-item-texto">
+        <strong>{ativo ? 'Gerando…' : opcao.titulo}</strong>
+        <small>{opcao.descricao}</small>
+      </span>
+    </button>
+  );
+}
+
+// Campo de busca com lupa embutida, botão de limpar e — quando a tela oferece
+// mais de um jeito de procurar — um seletor de "onde procurar" colado nele.
+// Serve pra pessoa não precisar saber de antemão em qual coluna está o que
+// ela lembra.
+export function CampoBusca({
+  valor, onChange, onSubmit, placeholder = 'Buscar…',
+  campos, campo, onCampo, autoFocus,
+}) {
+  return (
+    <form
+      className="busca-composta"
+      onSubmit={(e) => { e.preventDefault(); onSubmit?.(); }}
+      role="search"
+    >
+      <Search size={15} className="busca-composta-lupa" />
+      <input
+        value={valor}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoFocus={autoFocus}
+        aria-label={placeholder}
+      />
+      {valor && (
+        <button type="button" className="busca-composta-limpar" onClick={() => { onChange(''); onSubmit?.(''); }} title="Limpar busca">
+          <X size={14} />
+        </button>
+      )}
+      {campos?.length > 0 && (
+        <Select value={campo} onChange={(e) => onCampo(e.target.value)} className="busca-composta-campo">
+          <option value="">Em todos os campos</option>
+          {campos.map((c) => <option key={c.chave} value={c.chave}>{c.rotulo}</option>)}
+        </Select>
+      )}
+      <button type="submit" className="btn btn-primary busca-composta-acao">Buscar</button>
+    </form>
+  );
+}
+
+// Os filtros que estão valendo agora, como fichas removíveis. Some quando não
+// há filtro nenhum. É a resposta para "por que essa lista está vazia?" — a
+// causa fica escrita na tela em vez de escondida dentro de um painel fechado.
+export function ChipsFiltros({ itens, onLimparTudo }) {
+  if (!itens?.length) return null;
+  return (
+    <div className="chips-filtros">
+      <span className="chips-filtros-titulo">Filtrando por</span>
+      {itens.map((f) => (
+        <span key={f.chave} className="chip-filtro">
+          <span className="chip-filtro-campo">{f.rotulo}</span>
+          <span className="chip-filtro-valor">{f.valor}</span>
+          {f.onRemover && (
+            <button type="button" onClick={f.onRemover} title={`Remover o filtro ${f.rotulo}`}><X size={12} /></button>
+          )}
+        </span>
+      ))}
+      {onLimparTudo && (
+        <button type="button" className="chips-filtros-limpar" onClick={onLimparTudo}>Limpar tudo</button>
+      )}
+    </div>
+  );
+}
+
+// Painel de filtros avançados que abre e fecha, com a contagem de quantos
+// estão ativos no próprio botão — pra ninguém esquecer um filtro ligado lá
+// dentro e passar meia hora achando que o sistema perdeu dado.
+export function FiltrosAvancados({ ativos = 0, children, aberto, onAlternar, resumo }) {
+  return (
+    <div className="filtros-avancados">
+      <button
+        type="button"
+        className={'btn btn-ghost filtros-avancados-botao' + (ativos > 0 ? ' tem-filtro' : '')}
+        onClick={onAlternar}
+        aria-expanded={aberto}
+      >
+        <SlidersHorizontal size={14} />
+        Filtros
+        {ativos > 0 && <span className="filtros-avancados-contador">{ativos}</span>}
+      </button>
+      {aberto && (
+        <div className="card filtros-avancados-painel">
+          {resumo && <p className="page-sub filtros-avancados-resumo">{resumo}</p>}
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Indicador grande de abertura de tela: número em destaque, uma frase abaixo
+// explicando o que ele significa em português comum, e opcionalmente a
+// variação contra o período anterior. É o cartão que faz um leigo entender a
+// tela sem perguntar nada a ninguém.
+export function IndicadorDestaque({ rotulo, valor, explicacao, variacao, tom, Icone, destaque }) {
+  return (
+    <div className={'indicador' + (destaque ? ' indicador-destaque' : '') + (tom ? ` indicador-${tom}` : '')}>
+      <div className="indicador-topo">
+        <span className="indicador-rotulo">{rotulo}</span>
+        {Icone && <Icone size={18} className="indicador-icone" />}
+      </div>
+      <span className="mono indicador-valor">{valor}</span>
+      {variacao && <span className="indicador-variacao">{variacao}</span>}
+      {explicacao && <p className="indicador-explicacao">{explicacao}</p>}
     </div>
   );
 }

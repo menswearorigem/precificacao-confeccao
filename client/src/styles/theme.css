@@ -91,6 +91,26 @@
      porque também são fundo sólido de chip/Kanban — mas essa mesma força
      na borda de um selo pequeno, em cima do marrom, vira adesivo colado na
      tela. Metade do anel misturado ao próprio fundo do selo resolve. */
+  /* ---- paleta dos gráficos (Compras e Financeiro) ----
+     Série categórica de 8 cores, na ordem em que os gráficos usam. Vêm da
+     mesma família do sistema (couro, terracota, latão, verde, azul, ameixa,
+     teal) porque um gráfico com cor de fora da paleta parece colado de outro
+     programa. Lidas em JS por lib/coresGrafico.js — é por isso que precisam
+     existir como variável, e não como valor escrito no componente. */
+  --gr-1: #b5651d;
+  --gr-2: #33512f;
+  --gr-3: #2c4a63;
+  --gr-4: #9c7a3c;
+  --gr-5: #5c3157;
+  --gr-6: #1f6f66;
+  --gr-7: #7a2a1d;
+  --gr-8: #6b4423;
+  --gr-positivo: #33512f;
+  --gr-negativo: #7a2a1d;
+  --gr-neutro: #96897a;
+  --gr-grade: #ebe2cd;
+  --gr-eixo: #ddd0b4;
+  --gr-rotulo: #6b5d4d;
   --tone-edge: 100%;
 }
 
@@ -175,6 +195,20 @@
     --zebra-overlay: rgba(255, 240, 214, 0.028);
     --zebra-frozen: #322416;
     --zebra-frozen-hover: #40301d;
+    --gr-1: #d9832f;
+    --gr-2: #7ea86f;
+    --gr-3: #7fa9c9;
+    --gr-4: #c49a4f;
+    --gr-5: #b98ab3;
+    --gr-6: #4fb5a6;
+    --gr-7: #d4735c;
+    --gr-8: #c2a184;
+    --gr-positivo: #7ea86f;
+    --gr-negativo: #d4735c;
+    --gr-neutro: #9c8a73;
+    --gr-grade: #3b2d1e;
+    --gr-eixo: #54422d;
+    --gr-rotulo: #cbb99e;
     --table-edge-shadow: rgba(0, 0, 0, 0.55);
   }
 }
@@ -252,6 +286,20 @@
   --zebra-overlay: rgba(255, 240, 214, 0.028);
   --zebra-frozen: #322416;
   --zebra-frozen-hover: #40301d;
+  --gr-1: #d9832f;
+  --gr-2: #7ea86f;
+  --gr-3: #7fa9c9;
+  --gr-4: #c49a4f;
+  --gr-5: #b98ab3;
+  --gr-6: #4fb5a6;
+  --gr-7: #d4735c;
+  --gr-8: #c2a184;
+  --gr-positivo: #7ea86f;
+  --gr-negativo: #d4735c;
+  --gr-neutro: #9c8a73;
+  --gr-grade: #3b2d1e;
+  --gr-eixo: #54422d;
+  --gr-rotulo: #cbb99e;
   --table-edge-shadow: rgba(0, 0, 0, 0.55);
 }
 /* A impressão continua sempre clara, mesmo com tema escuro ativo — a
@@ -3930,4 +3978,474 @@ table.ficha-doc-tabela {
   .manu-item { min-height: 44px; justify-content: center; }
 
   .ajuda-mascote { width: 40px; height: 40px; }
+}
+
+/* ===========================================================================
+   Redesenho de Compras e Financeiro
+   ---------------------------------------------------------------------------
+   Componentes compartilhados pelos dois módulos: faixa de indicadores com
+   explicação escrita, cartão de gráfico, rosca com legenda, ranking em barra,
+   busca composta, fichas de filtro ativo e painel de filtros avançados.
+   Nenhuma cor solta — tudo sai das variáveis do tema (REGRA 3).
+   =========================================================================== */
+
+/* ---- faixa de indicadores ------------------------------------------------ */
+
+/* auto-fit + minmax em vez de um número fixo de colunas: a mesma faixa serve
+   pra 3, 4 ou 6 indicadores e se reorganiza sozinha no celular, sem media
+   query e sem style inline (que venceria a media query — ver convenções). */
+.indicadores-faixa {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(205px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.indicadores-faixa.compacta { grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); }
+
+.indicador {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px 13px;
+  box-shadow: var(--card-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  position: relative;
+  overflow: hidden;
+}
+/* Fio de acento no topo: é o que diferencia o indicador de um card comum
+   sem precisar de fundo colorido, que brigaria com o couro. */
+.indicador::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--brass);
+  opacity: 0.55;
+}
+.indicador-destaque { background: linear-gradient(160deg, var(--surface-raised), var(--surface)); }
+.indicador-destaque::before { background: var(--terracotta); opacity: 1; height: 4px; }
+.indicador-positivo::before { background: var(--success-ring); opacity: 1; }
+.indicador-negativo::before { background: var(--danger-ring); opacity: 1; }
+.indicador-atencao::before { background: var(--warning-ring); opacity: 1; }
+
+.indicador-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.indicador-rotulo {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  font-weight: 600;
+}
+.indicador-icone { color: var(--brass); flex-shrink: 0; }
+.indicador-destaque .indicador-icone { color: var(--terracotta); }
+/* clamp em vez de tamanho fixo: "R$ 1.985.046,87" em 30px estoura a largura
+   do cartão e quebra em duas linhas no meio do número. O clamp encolhe o
+   suficiente em tela estreita e cresce no monitor largo. */
+.indicador-valor {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(19px, 1.45vw, 24px);
+  line-height: 1.14;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: break-word;
+}
+.indicador-destaque .indicador-valor { font-size: clamp(21px, 1.65vw, 28px); }
+.indicador-variacao {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 600;
+  color: var(--ink-soft);
+  display: flex;
+  /* flex-start + o respiro no ícone: quando o texto quebra em duas linhas, o
+     ícone centralizado ficava no meio das duas, parecendo solto. */
+  align-items: flex-start;
+  gap: 5px;
+}
+.indicador-variacao svg { flex-shrink: 0; margin-top: 2px; }
+.indicador-variacao.subiu { color: var(--success); }
+.indicador-variacao.caiu { color: var(--danger); }
+/* A frase que explica o número. É ela que faz a tela ser entendida por quem
+   nunca abriu o sistema — não some no celular. */
+.indicador-explicacao {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
+/* ---- cartão de gráfico --------------------------------------------------- */
+
+.grafico-card { margin-bottom: 16px; }
+.grafico-explicacao {
+  margin: -2px 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  max-width: 78ch;
+}
+.grafico-area { width: 100%; }
+.grafico-rodape {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px dashed var(--border);
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+.grafico-vazio {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 22px;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  background: var(--surface-alt);
+  border-radius: var(--radius-sm);
+}
+
+.grafico-tooltip {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  box-shadow: var(--shadow-md);
+  min-width: 170px;
+}
+.grafico-tooltip-titulo {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--leather-ink);
+  margin-bottom: 5px;
+}
+.grafico-tooltip-linha { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 2px 0; }
+.grafico-tooltip-bolinha { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.grafico-tooltip-nome { color: var(--ink-soft); }
+.grafico-tooltip-valor { margin-left: auto; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* ---- rosca de composição ------------------------------------------------- */
+
+/* align-items: start (e não center) + legenda sem altura máxima: com o
+   centro travado, uma legenda mais alta que o desenho era cortada no pé do
+   cartão e a última categoria simplesmente sumia. */
+.grafico-rosca { display: grid; grid-template-columns: minmax(190px, 0.95fr) minmax(235px, 1.05fr); gap: 18px; align-items: start; }
+.grafico-rosca-desenho { position: relative; }
+.grafico-rosca-centro {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  pointer-events: none;
+  text-align: center;
+  /* O buraco da rosca é menor do que parece — sem folga, o rótulo encosta
+     no anel e fica ilegível. */
+  padding: 0 19%;
+}
+.grafico-rosca-centro-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.25;
+  color: var(--ink-faint);
+  font-weight: 600;
+}
+.grafico-rosca-centro-valor {
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.grafico-legenda { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+/* flex com quebra, não grid: numa coluna estreita o valor (que não pode
+   quebrar) espremia o nome até virar "Material de Escritóri/o". Aqui o valor
+   desce para a linha de baixo em vez de esmagar o nome. */
+.grafico-legenda li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 9px;
+  padding: 5px 7px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+.grafico-legenda-cor { flex-shrink: 0; }
+.grafico-legenda-nome { flex: 1 1 118px; min-width: 0; }
+.grafico-legenda-valor { margin-left: auto; }
+.grafico-legenda li:hover { background: var(--row-hover); }
+.grafico-legenda-cor { width: 10px; height: 10px; border-radius: 3px; }
+/* Deixa o nome quebrar em duas linhas em vez de virar "Mat…": com duas
+   categorias começando por "Matéria"/"Material", o corte tornava a legenda
+   inútil. */
+/* break-word (e não anywhere): quebra ENTRE palavras. Com `anywhere`,
+   "Material de Escritório" virava "Materi/al de/Escritó/rio". */
+.grafico-legenda-nome { color: var(--ink); line-height: 1.3; word-break: normal; overflow-wrap: break-word; }
+.grafico-legenda-valor {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.grafico-legenda-pct { color: var(--ink-faint); font-weight: 500; margin-left: 6px; }
+
+/* Legenda horizontal para gráfico de várias séries (linha/área/coluna). Usa
+   as mesmas classes da legenda da rosca — é assim que a captura para o PDF
+   acha as duas sem precisar saber de qual gráfico vieram. */
+.grafico-legenda-inline { flex-direction: row; flex-wrap: wrap; gap: 2px 16px; margin-top: 8px; }
+.grafico-legenda-inline li { flex: 0 0 auto; gap: 7px; }
+.grafico-legenda-inline .grafico-legenda-nome { flex: 0 0 auto; }
+.grafico-legenda-inline .grafico-legenda-valor { margin-left: 0; }
+
+/* ---- ranking em barra ---------------------------------------------------- */
+
+.ranking { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.ranking-linha {
+  display: grid;
+  grid-template-columns: 22px minmax(90px, 1.5fr) minmax(60px, 2fr) auto 52px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.ranking-linha-clicavel { cursor: pointer; }
+.ranking-linha-clicavel:hover { background: var(--row-hover); }
+.ranking-posicao { color: var(--ink-faint); font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+.ranking-nome { overflow: hidden; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ranking-nome > small { color: var(--ink-faint); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ranking-barra { background: var(--surface-alt); border-radius: 999px; height: 9px; overflow: hidden; }
+.ranking-barra > span { display: block; height: 100%; border-radius: 999px; }
+.ranking-valor { font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.ranking-pct { color: var(--ink-faint); font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---- busca composta ------------------------------------------------------ */
+
+.busca-composta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--field-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 5px 6px 5px 12px;
+  box-shadow: var(--shadow-inset);
+}
+.busca-composta:focus-within { border-color: var(--terracotta); box-shadow: 0 0 0 3px var(--focus-ring); }
+.busca-composta-lupa { color: var(--ink-faint); flex-shrink: 0; }
+.busca-composta > input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 6px 0;
+  font-size: 13.5px;
+}
+.busca-composta > input:focus { border: none; box-shadow: none; outline: none; }
+.busca-composta-limpar {
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  display: flex;
+  padding: 4px;
+  border-radius: 50%;
+}
+.busca-composta-limpar:hover { background: var(--surface-alt); color: var(--ink); }
+.busca-composta .busca-composta-campo { width: auto; min-width: 172px; flex-shrink: 0; }
+.busca-composta-acao { flex-shrink: 0; }
+
+/* ---- fichas de filtro ativo ---------------------------------------------- */
+
+.chips-filtros { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin: 12px 0 4px; }
+.chips-filtros-titulo { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); font-weight: 600; }
+.chip-filtro {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 5px 3px 10px;
+  font-size: 11.5px;
+}
+.chip-filtro-campo { color: var(--ink-faint); }
+.chip-filtro-valor { color: var(--ink); font-weight: 600; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-filtro > button {
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  display: flex;
+  padding: 3px;
+  border-radius: 50%;
+}
+.chip-filtro > button:hover { background: var(--surface); color: var(--danger); }
+.chips-filtros-limpar {
+  border: none;
+  background: transparent;
+  color: var(--terracotta);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 2px 4px;
+}
+
+/* ---- filtros avançados --------------------------------------------------- */
+
+.filtros-avancados { position: relative; }
+.filtros-avancados-botao.tem-filtro { border-color: var(--terracotta); color: var(--terracotta); }
+.filtros-avancados-contador {
+  background: var(--terracotta);
+  color: var(--on-accent);
+  border-radius: 999px;
+  min-width: 17px;
+  height: 17px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 0 5px;
+}
+.filtros-avancados-painel { margin-top: 12px; }
+.filtros-avancados-resumo { margin-top: 0; }
+
+/* ---- menu de relatório --------------------------------------------------- */
+
+.exportar-menu-largo { width: 340px; max-width: calc(100vw - 32px); }
+.exportar-grupo {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-faint);
+  font-weight: 700;
+  padding: 9px 12px 4px;
+}
+.exportar-item-rico { align-items: flex-start; text-align: left; }
+.exportar-item-texto { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.exportar-item-texto > strong { font-size: 12.5px; color: var(--ink); font-weight: 600; }
+.exportar-item-texto > small { font-size: 11px; color: var(--ink-soft); line-height: 1.4; white-space: normal; }
+.exportar-erro { padding: 9px 12px; font-size: 11.5px; color: var(--danger); background: var(--danger-bg); }
+.girando { animation: girar 0.9s linear infinite; color: var(--terracotta); }
+@keyframes girar { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .girando { animation: none; } }
+
+/* Faixa que apresenta a exportação: sem ela o botão de relatório ficava
+   solto no canto direito, parecendo esquecido no meio da tela. */
+.acoes-relatorio {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: var(--surface-alt);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+.acoes-relatorio-texto { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.acoes-relatorio-texto > strong { font-size: 13px; color: var(--ink); font-weight: 600; }
+.acoes-relatorio-texto > span { font-size: 11.5px; color: var(--ink-soft); }
+
+/* ---- blocos de apoio das duas telas -------------------------------------- */
+
+/* Duas colunas que viram uma só quando não cabe — sem media query, pelo mesmo
+   motivo da faixa de indicadores. */
+.duas-colunas { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
+.duas-colunas > * { min-width: 0; }
+.coluna-larga { display: grid; grid-template-columns: minmax(320px, 1.5fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
+.coluna-larga > * { min-width: 0; }
+
+/* Cabeçalho de página com ações à direita, substituindo o
+   style={{display:'flex'...}} repetido em cada tela. */
+.pagina-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 4px; }
+.pagina-topo-acoes { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* Célula de tabela com um valor forte e um apoio pequeno embaixo — usada em
+   Fornecedor (razão social + fantasia) e em Compra (fornecedor + documento).
+   Economiza duas colunas sem esconder informação. */
+.cel-dupla { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.cel-dupla > strong { font-weight: 600; color: var(--ink); }
+.cel-dupla > small { color: var(--ink-faint); font-size: 10.8px; }
+
+.legenda-inline { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; font-size: 11.5px; color: var(--ink-soft); }
+.legenda-inline > span { display: inline-flex; align-items: center; gap: 6px; }
+.legenda-inline i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+/* Aviso de leitura: a frase que diz sobre quantos registros o painel foi
+   calculado (ressalva 2 do PRECISAO-RESSALVAS). */
+.nota-precisao {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  background: var(--surface-alt);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  margin-bottom: 16px;
+}
+.nota-precisao svg { color: var(--brass); flex-shrink: 0; margin-top: 1px; }
+
+@media print {
+  .grafico-explicacao, .indicador-explicacao { color: #444; }
+  .indicador, .grafico-card, .ranking-linha { break-inside: avoid; }
+  .busca-composta, .filtros-avancados, .chips-filtros { display: none !important; }
+  .grafico-rosca { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 900px) {
+  .grafico-rosca { grid-template-columns: 1fr; }
+  .grafico-legenda { max-height: none; }
+  .coluna-larga { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  /* Uma tira que rola de lado, em vez de onze fichas empilhadas empurrando
+     os números para fora da primeira tela. */
+  .categorias-rolagem {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+    margin-left: -2px;
+    padding-left: 2px;
+  }
+  .categorias-rolagem::-webkit-scrollbar { display: none; }
+  .categorias-rolagem .subtab-btn { flex: 0 0 auto; }
+
+  .indicador-valor { font-size: 22px; }
+  .indicador-destaque .indicador-valor { font-size: 25px; }
+  .busca-composta { flex-wrap: wrap; padding: 8px; }
+  .busca-composta > input { font-size: 16px; } /* evita o zoom automático do Safari no iPhone */
+  .busca-composta .busca-composta-campo,
+  .busca-composta-acao { width: 100%; min-width: 0; }
+  .ranking-linha { grid-template-columns: 20px minmax(0, 1fr) auto; row-gap: 4px; }
+  .ranking-barra { grid-column: 2 / -1; }
+  .ranking-pct { display: none; }
 }

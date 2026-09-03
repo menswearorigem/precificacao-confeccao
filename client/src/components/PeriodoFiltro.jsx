@@ -8,7 +8,12 @@ import { dataBr } from '../lib/format';
 // "Últimos 7 dias"...) e, ao clicar, abre um painel com os atalhos mais
 // comuns + um período personalizado — no lugar dos dois campos soltos de
 // Data Início/Data Fim que ocupavam um bloco inteiro da tela.
-export function PeriodoFiltro({ inicio, fim, onChange }) {
+// `permitirTudo`: acrescenta o atalho "Todo o período", que limpa as duas
+// datas. Existe para Compras e Fornecedores, onde a pergunta mais comum é
+// histórica ("quanto já comprei desse fornecedor") e abrir a tela num mês
+// esconderia a maior parte do cadastro. As telas de Marketplace e Financeiro
+// continuam sem ele: lá, período sempre existe.
+export function PeriodoFiltro({ inicio, fim, onChange, permitirTudo }) {
   const [aberto, setAberto] = useState(false);
   const raizRef = useRef(null);
 
@@ -34,10 +39,13 @@ export function PeriodoFiltro({ inicio, fim, onChange }) {
     };
   }, [aberto]);
 
-  const presetAtivo = detectarPreset(inicio, fim);
-  const rotulo = presetAtivo
-    ? presetAtivo.rotulo
-    : (inicio && fim ? `${dataBr(inicio)} – ${dataBr(fim)}` : 'Selecionar período');
+  const semPeriodo = !inicio && !fim;
+  const presetAtivo = semPeriodo ? null : detectarPreset(inicio, fim);
+  const rotulo = permitirTudo && semPeriodo
+    ? 'Todo o período'
+    : presetAtivo
+      ? presetAtivo.rotulo
+      : (inicio && fim ? `${dataBr(inicio)} – ${dataBr(fim)}` : 'Selecionar período');
 
   function escolherPreset(preset) {
     onChange(preset.calcular());
@@ -65,6 +73,15 @@ export function PeriodoFiltro({ inicio, fim, onChange }) {
       {aberto && (
         <div className="periodo-filtro-painel">
           <div className="periodo-filtro-presets">
+            {permitirTudo && (
+              <button
+                type="button"
+                className={'periodo-filtro-preset' + (semPeriodo ? ' active' : '')}
+                onClick={() => { onChange({ inicio: '', fim: '' }); setAberto(false); }}
+              >
+                Todo o período
+              </button>
+            )}
             {PRESETS_PERIODO.map((p) => (
               <button
                 type="button"
