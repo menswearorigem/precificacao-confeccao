@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, Printer, Link2, AlertTriangle } from 'lucide-react';
+import { RefreshCw, Printer, Link2, AlertTriangle, History } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { brl, dataBr } from '../lib/format';
@@ -141,12 +141,16 @@ export default function FinanceiroPage({ aba = 'movimentacao' }) {
       .finally(() => setLoading(false));
   }, [aba, params, tiposMarcados.size]);
 
-  async function sincronizarAgora() {
+  // `periodo: true` relê exatamente o intervalo que está no filtro — usado
+  // no fechamento de mês e quando o financeiro quer conferir um período
+  // antigo sem esperar o histórico chegar sozinho.
+  async function sincronizarAgora({ periodo = false } = {}) {
     setSincronizando(true);
     setAviso('');
     setErro('');
     try {
-      const r = await api.post('/financeiro/sincronizar', {});
+      const corpo = periodo ? { desde: dataInicio, ate: dataFim } : {};
+      const r = await api.post('/financeiro/sincronizar', corpo);
       const partes = (r.resultados || []).map((res) => {
         const conexao = conexoes.find((c) => c.id === res.integracaoId);
         const nome = conexao ? (conexao.nome || PLATAFORMA_LABEL[conexao.marketplace]) : `Conexão ${res.integracaoId}`;
@@ -154,7 +158,9 @@ export default function FinanceiroPage({ aba = 'movimentacao' }) {
         if (res.pulado) return `${nome}: já sincronizado há pouco`;
         if (res.fase === 'solicitado') return `${nome}: relatório de liberações pedido ao Mercado Pago — ele fica pronto em alguns minutos e será baixado no próximo ciclo`;
         if (res.fase === 'aguardando') return `${nome}: aguardando o Mercado Pago liberar o relatório`;
-        return `${nome}: ${res.gravados || 0} lançamento(s) atualizados`;
+        const historico = res.faseJanela === 'historico' ? ' (lendo o histórico mais antigo)' : '';
+        const cortada = res.janelaEncurtada ? ' — o período pedido foi maior do que a plataforma entrega de uma vez, o resto vem nos próximos ciclos' : '';
+        return `${nome}: ${res.gravados || 0} lançamento(s) atualizados${historico}${cortada}`;
       });
       setAviso(partes.join(' · ') || 'Nenhuma conexão ativa para sincronizar.');
       const rota = aba === 'repasses' ? 'repasses' : aba === 'conferencia' ? 'conciliacao' : 'extrato';
@@ -223,8 +229,16 @@ export default function FinanceiroPage({ aba = 'movimentacao' }) {
           )}
           <div className="filtros-barra-acoes">
             {loading && <span className="page-sub" style={{ margin: 0 }}>Atualizando…</span>}
-            <button className="btn btn-ghost" onClick={sincronizarAgora} disabled={sincronizando}>
+            <button className="btn btn-ghost" onClick={() => sincronizarAgora()} disabled={sincronizando}>
               <RefreshCw size={14} /> {sincronizando ? 'Puxando extrato…' : 'Puxar extrato agora'}
+            </button>
+            <button
+              className="btn btn-ghost"
+              onClick={() => sincronizarAgora({ periodo: true })}
+              disabled={sincronizando || !dataInicio || !dataFim}
+              title="Relê exatamente o período escolhido no filtro, sem esperar o histórico chegar sozinho"
+            >
+              <History size={14} /> Reler este período
             </button>
             <button className="btn btn-ghost" onClick={() => window.print()}>
               <Printer size={14} /> Imprimir
@@ -323,14 +337,14 @@ function AbaMovimentacao({ dados, podeAbrirPedido }) {
   const lancamentos = dados?.lancamentos || [];
   const tabela = useTabela(lancamentos, { colunas: COLUNAS_LANCAMENTO, colunaPadrao: 'data', direcaoPadrao: 'desc', prefixo: 'lanc' });
 
-  // Entradas e saídas somadas separadamente: o líquido sozinho esconde um
-  // mês em que entrou muito e saiu quase tudo.
-  const entradas = useMemo(() => lancamentos.reduce((s, l) => (Number(l.valor) > 0 ? s + Number(l.valor) : s), 0), [lancamentos]);
-  const saidas = useMemo(() => lancamentos.reduce((s, l) => (Number(l.valor) < 0 ? s + Number(l.valor) : s), 0), [lancamentos]);
-
   // Resumo por data: uma linha por dia, uma coluna por plataforma. É a
   // pergunta original do financeiro — "quanto foi liberado por data e
   // plataforma" — respondida do jeito mais direto possível.
+  //
+  // O SAQUE fica fora desta tabela. Ele não é dinheiro que o marketplace
+  // deixou de pagar: é o mesmo dinheiro saindo da plataforma pra conta da
+  // empresa. Somado aqui, um dia de saque grande vira um vermelho enorme que
+  // não significa nada. Ele tem coluna própria, à direita.
   const { dias, plataformasNaTela, totalPorPlataforma } = useMemo(() => {
     const porDia = new Map();
     const plataformas = new Set();
@@ -338,12 +352,17 @@ function AbaMovimentacao({ dados, podeAbrirPedido }) {
     for (const r of (dados?.resumoPorData || [])) {
       if (r.status !== 'liberado') continue;
       const data = dataIso(r.data_liberacao);
-      plataformas.add(r.marketplace);
-      const linha = porDia.get(data) || { data, total: 0 };
-      linha[r.marketplace] = (linha[r.marketplace] || 0) + Number(r.total || 0);
-      linha.total += Number(r.total || 0);
+      const valor = Number(r.total || 0);
+      const linha = porDia.get(data) || { data, total: 0, saque: 0 };
+      if (r.tipo === 'saque') {
+        linha.saque += valor;
+      } else {
+        plataformas.add(r.marketplace);
+        linha[r.marketplace] = (linha[r.marketplace] || 0) + valor;
+        linha.total += valor;
+        totais[r.marketplace] = (totais[r.marketplace] || 0) + valor;
+      }
       porDia.set(data, linha);
-      totais[r.marketplace] = (totais[r.marketplace] || 0) + Number(r.total || 0);
     }
     return {
       dias: [...porDia.values()].sort((a, b) => (a.data < b.data ? 1 : -1)),
@@ -351,6 +370,9 @@ function AbaMovimentacao({ dados, podeAbrirPedido }) {
       totalPorPlataforma: totais,
     };
   }, [dados]);
+
+  const houveSaque = dias.some((d) => d.saque !== 0);
+  const totalSaque = dias.reduce((s, d) => s + d.saque, 0);
 
   const porTipo = useMemo(() => {
     const mapa = new Map();
@@ -383,20 +405,25 @@ function AbaMovimentacao({ dados, podeAbrirPedido }) {
   return (
     <>
       <div className="grid-4" style={{ marginBottom: 16 }}>
-        <StatCard label="Liberado no período" value={brl(dados.totais.liberado)} />
-        <StatCard label="Entradas" value={brl(entradas)} />
-        <StatCard label="Saídas" value={brl(saidas)} />
-        <StatCard
-          label="Ainda pendente"
-          value={brl(dados.totais.pendente)}
-        />
+        <StatCard label="Liberado pelo marketplace" value={brl(dados.totais.liberado)} />
+        <StatCard label="Entradas" value={brl(dados.totais.entradas)} />
+        <StatCard label="Saídas" value={brl(dados.totais.saidas)} />
+        <StatCard label="Ainda pendente" value={brl(dados.totais.pendente)} />
+      </div>
+      <div className="grid-2" style={{ marginBottom: 16 }}>
+        <StatCard label="Transferido para o banco" value={brl(dados.totais.transferidoBanco)} />
+        <StatCard label="Transferência em andamento" value={brl(dados.totais.transferenciaEmAndamento)} />
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-head">Liberado por data e plataforma</div>
         <p className="page-sub" style={{ marginTop: 0 }}>
-          Só o que já foi liberado — o pendente ({brl(dados.totais.pendente)}, {dados.totais.quantidadePendente}{' '}
-          lançamento(s)) fica de fora desta tabela de propósito: ainda não é movimentação bancária.
+          <strong>Liberado pelo marketplace</strong> é venda menos publicidade, taxa e devolução — o que a
+          plataforma de fato creditou. O <strong>saque</strong> aparece em coluna separada porque não é
+          dinheiro que eles deixaram de pagar: é o mesmo dinheiro saindo da plataforma para a conta da
+          empresa.{' '}
+          O pendente ({brl(dados.totais.pendente)}, {dados.totais.quantidadePendente} lançamento(s)) fica de
+          fora desta tabela de propósito: ainda não é movimentação bancária.
         </p>
         <DataTable>
           <table className="data-table">
@@ -404,7 +431,8 @@ function AbaMovimentacao({ dados, podeAbrirPedido }) {
               <tr>
                 <th style={{ width: 110 }}>Data</th>
                 {plataformasNaTela.map((m) => <th key={m}>{PLATAFORMA_LABEL[m] || m}</th>)}
-                <th>Total do dia</th>
+                <th>Liberado no dia</th>
+                {houveSaque && <th>Saque p/ o banco</th>}
               </tr>
             </thead>
             <tbody>
@@ -415,6 +443,9 @@ function AbaMovimentacao({ dados, podeAbrirPedido }) {
                     <td key={m} className="mono">{d[m] === undefined ? '—' : <ValorAssinado valor={d[m]} />}</td>
                   ))}
                   <td className="mono"><ValorAssinado valor={totalDia(d)} forte /></td>
+                  {houveSaque && (
+                    <td className="mono">{d.saque === 0 ? '—' : <ValorAssinado valor={d.saque} />}</td>
+                  )}
                 </tr>
               ))}
               {dias.length > 0 && (
@@ -424,6 +455,7 @@ function AbaMovimentacao({ dados, podeAbrirPedido }) {
                     <td key={m} className="mono"><ValorAssinado valor={totalPorPlataforma[m] || 0} forte /></td>
                   ))}
                   <td className="mono"><ValorAssinado valor={dados.totais.liberado} forte /></td>
+                  {houveSaque && <td className="mono"><ValorAssinado valor={totalSaque} forte /></td>}
                 </tr>
               )}
             </tbody>
@@ -618,6 +650,7 @@ const EXPORTACAO_CONFERENCIA = [
   { rotulo: 'Extrato (total liberado)', valor: (l) => (l.extratoTotal === null ? '—' : brl(l.extratoTotal)) },
   { rotulo: 'Extrato — repasse de venda', valor: (l) => (l.extratoRepasseVenda === null ? '—' : brl(l.extratoRepasseVenda)) },
   { rotulo: 'Extrato — outros lançamentos', valor: (l) => (l.extratoOutros === null ? '—' : brl(l.extratoOutros)) },
+  { rotulo: 'Saque para o banco', valor: (l) => brl(l.extratoSaque || 0) },
   { rotulo: 'Soma dos pedidos', valor: (l) => (l.pedidosTotal === null ? '—' : brl(l.pedidosTotal)) },
   { rotulo: 'Diferença não explicada', valor: (l) => (l.diferencaNaoExplicada === null ? '—' : brl(l.diferencaNaoExplicada)) },
 ];
@@ -635,7 +668,9 @@ function AbaConferencia({ dados }) {
           <strong>soma do valor recebido dos pedidos</strong> liberados naquele dia. A diferença entre elas
           normalmente <em>não</em> é erro — é exatamente o que o extrato tem e a venda não: publicidade,
           multa, ajuste, estorno. Por isso a coluna que importa é a última: o que sobra depois de descontar
-          esses lançamentos.
+          esses lançamentos. O <strong>saque para o banco</strong> fica fora da comparação (é o mesmo
+          dinheiro mudando de conta, não um pagamento a mais ou a menos), mas continua visível na
+          coluna própria.
         </p>
         <div className="row-line">
           <span>Dias com diferença não explicada</span>
@@ -664,6 +699,7 @@ function AbaConferencia({ dados }) {
                 <ThOrdenavel coluna="extrato" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Extrato</ThOrdenavel>
                 <th>Repasse de venda</th>
                 <th>Outros lançamentos</th>
+                <th>Saque p/ o banco</th>
                 <ThOrdenavel coluna="pedidos" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Soma dos pedidos</ThOrdenavel>
                 <ThOrdenavel coluna="diferenca" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Sobra sem explicação</ThOrdenavel>
               </tr>
@@ -676,6 +712,7 @@ function AbaConferencia({ dados }) {
                   <td className="mono">{l.extratoTotal === null ? <span title="Extrato desse dia ainda não foi lido">— não lido</span> : brl(l.extratoTotal)}</td>
                   <td className="mono">{l.extratoRepasseVenda === null ? '—' : brl(l.extratoRepasseVenda)}</td>
                   <td className="mono">{l.extratoOutros === null ? '—' : <ValorAssinado valor={l.extratoOutros} />}</td>
+                  <td className="mono">{!l.extratoSaque ? '—' : <ValorAssinado valor={l.extratoSaque} />}</td>
                   <td className="mono">{l.pedidosTotal === null ? <span title="Nenhum pedido com repasse liberado nesse dia">— sem pedido</span> : brl(l.pedidosTotal)}</td>
                   <td className="mono">
                     {l.diferencaNaoExplicada === null ? (
@@ -688,7 +725,7 @@ function AbaConferencia({ dados }) {
                   </td>
                 </tr>
               ))}
-              {tabela.totalItens === 0 && <tr><td colSpan="7">Nada para conferir no período.</td></tr>}
+              {tabela.totalItens === 0 && <tr><td colSpan="8">Nada para conferir no período.</td></tr>}
             </tbody>
           </table>
         </DataTable>

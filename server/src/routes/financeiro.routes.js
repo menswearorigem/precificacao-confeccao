@@ -82,10 +82,16 @@ router.get('/extrato', async (req, res, next) => {
 
     const [porData, porPlataforma, porTipo, totais, lancamentos, avisos] = await Promise.all([
       pool.query(
-        `SELECT l.data_liberacao, l.marketplace, l.status,
+        // `tipo` entra no agrupamento por causa do SAQUE. Transferir o saldo
+        // da plataforma pra conta da empresa não é dinheiro que o marketplace
+        // deixou de pagar — é o mesmo dinheiro mudando de lugar. Somado junto,
+        // ele zera o total do dia (entra a venda, sai o saque) e o número que
+        // o financeiro precisa desaparece. Com o tipo aqui, a tela separa as
+        // duas leituras sem precisar de outra consulta.
+        `SELECT l.data_liberacao, l.marketplace, l.status, l.tipo,
                 SUM(l.valor) AS total, COUNT(*) AS quantidade
            FROM fin_extrato_lancamentos l ${resumo.where}
-          GROUP BY l.data_liberacao, l.marketplace, l.status
+          GROUP BY l.data_liberacao, l.marketplace, l.status, l.tipo
           ORDER BY l.data_liberacao DESC, l.marketplace`,
         resumo.values
       ),
@@ -102,10 +108,15 @@ router.get('/extrato', async (req, res, next) => {
         resumo.values
       ),
       pool.query(
-        `SELECT l.status, SUM(l.valor) AS total, COUNT(*) AS quantidade,
-                MIN(l.data_liberacao) AS primeira, MAX(l.data_liberacao) AS ultima
+        // Entradas e saídas separadas, e o saque separado das duas: com ele
+        // dentro, um mês em que entraram R$ 212 mil e foram sacados R$ 209 mil
+        // aparece como "R$ 2,5 mil liberados", que responde a pergunta errada.
+        `SELECT l.status, (l.tipo = 'saque') AS eh_saque,
+                SUM(l.valor) FILTER (WHERE l.valor > 0) AS entradas,
+                SUM(l.valor) FILTER (WHERE l.valor < 0) AS saidas,
+                SUM(l.valor) AS total, COUNT(*) AS quantidade
            FROM fin_extrato_lancamentos l ${resumo.where}
-          GROUP BY l.status`,
+          GROUP BY l.status, (l.tipo = 'saque')`,
         resumo.values
       ),
       pool.query(
@@ -134,8 +145,21 @@ router.get('/extrato', async (req, res, next) => {
       ),
     ]);
 
-    const totalLiberado = Number(totais.rows.find((r) => r.status === 'liberado')?.total || 0);
-    const totalPendente = Number(totais.rows.find((r) => r.status === 'pendente')?.total || 0);
+    // Quatro números diferentes, e cada um responde a uma pergunta:
+    //   liberado          — quanto o marketplace de fato creditou (venda menos
+    //                       Ads, taxa, devolução). É a resposta ao "quanto
+    //                       eles me pagaram". SEM o saque.
+    //   transferidoBanco  — quanto saiu da plataforma pra conta da empresa.
+    //   pendente          — o que a plataforma já reconhece e ainda não soltou.
+    const somar = (filtro, campo) => totais.rows
+      .filter(filtro)
+      .reduce((s, r) => s + Number(r[campo] || 0), 0);
+
+    const liberadoSemSaque = (r) => r.status === 'liberado' && !r.eh_saque;
+    const totalLiberado = somar(liberadoSemSaque, 'total');
+    const totalPendente = somar((r) => r.status === 'pendente' && !r.eh_saque, 'total');
+    const transferidoBanco = Math.abs(somar((r) => r.status === 'liberado' && r.eh_saque, 'total'));
+    const transferenciaEmAndamento = Math.abs(somar((r) => r.status === 'pendente' && r.eh_saque, 'total'));
 
     res.json({
       resumoPorData: porData.rows,
@@ -147,8 +171,12 @@ router.get('/extrato', async (req, res, next) => {
       totais: {
         liberado: totalLiberado,
         pendente: totalPendente,
-        quantidadeLiberada: Number(totais.rows.find((r) => r.status === 'liberado')?.quantidade || 0),
-        quantidadePendente: Number(totais.rows.find((r) => r.status === 'pendente')?.quantidade || 0),
+        entradas: somar(liberadoSemSaque, 'entradas'),
+        saidas: somar(liberadoSemSaque, 'saidas'),
+        transferidoBanco,
+        transferenciaEmAndamento,
+        quantidadeLiberada: somar(liberadoSemSaque, 'quantidade'),
+        quantidadePendente: somar((r) => r.status === 'pendente', 'quantidade'),
       },
       avisos: avisos.rows,
       rotulos: LABEL,
@@ -220,10 +248,16 @@ router.get('/conciliacao', async (req, res, next) => {
     const whereExtrato = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
 
     const { rows: extrato } = await pool.query(
+      // O saque fica FORA dos três totais: ele não é dinheiro que o
+      // marketplace pagou nem deixou de pagar, é o mesmo dinheiro saindo da
+      // plataforma pra conta da empresa. Comparado contra a soma dos pedidos,
+      // ele apareceria como uma diferença gigante que não significa nada.
+      // Vai numa coluna própria, pra continuar visível.
       `SELECT data_liberacao AS data, marketplace,
-              SUM(valor) FILTER (WHERE status = 'liberado') AS total_liberado,
+              SUM(valor) FILTER (WHERE status = 'liberado' AND tipo <> 'saque') AS total_liberado,
               SUM(valor) FILTER (WHERE status = 'liberado' AND tipo = 'repasse_venda') AS repasse_venda,
-              SUM(valor) FILTER (WHERE status = 'liberado' AND tipo <> 'repasse_venda') AS outros_lancamentos,
+              SUM(valor) FILTER (WHERE status = 'liberado' AND tipo NOT IN ('repasse_venda', 'saque')) AS outros_lancamentos,
+              SUM(valor) FILTER (WHERE status = 'liberado' AND tipo = 'saque') AS saque,
               COUNT(*) AS quantidade
          FROM fin_extrato_lancamentos
          ${whereExtrato}
@@ -265,6 +299,7 @@ router.get('/conciliacao', async (req, res, next) => {
         extratoTotal: Number(e.total_liberado || 0),
         extratoRepasseVenda: Number(e.repasse_venda || 0),
         extratoOutros: Number(e.outros_lancamentos || 0),
+        extratoSaque: Number(e.saque || 0),
         lancamentos: Number(e.quantidade || 0),
         pedidosTotal: null,
         pedidosQuantidade: 0,
@@ -279,6 +314,7 @@ router.get('/conciliacao', async (req, res, next) => {
         extratoTotal: null,
         extratoRepasseVenda: null,
         extratoOutros: null,
+        extratoSaque: 0,
         lancamentos: 0,
       };
       atual.pedidosTotal = Number(p.total_pedidos || 0);

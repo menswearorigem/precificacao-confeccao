@@ -28,7 +28,10 @@ const criarApp = require('../src/app');
 const pool = require('../src/db/pool');
 const mercadoLivre = require('../src/lib/marketplaces/mercadoLivre');
 const shopee = require('../src/lib/marketplaces/shopee');
-const { gravarLancamentos, vincularPedidos, gravarRepasse } = require('../src/lib/financeiroExtrato');
+const {
+  gravarLancamentos, vincularPedidos, gravarRepasse,
+  planejarJanela, cursoresApos, JANELA_MAXIMA_DIAS, HISTORICO_ALVO_DIAS,
+} = require('../src/lib/financeiroExtrato');
 
 let falhas = 0;
 function conferir(descricao, condicao, detalhe) {
@@ -222,6 +225,44 @@ async function main() {
   conferir('vínculo por order_sn (Shopee)', vincPorId['9001'] != null);
   conferir('gasto de Ads continua sem pedido (correto — não é venda)', vincPorId['222222222'] == null);
 
+  console.log('\n4b. Janela de leitura (o erro de 90 dias do Mercado Pago)');
+  const HOJE = '2026-09-03';
+  const dias = (a, b) => Math.round(
+    (new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 86400000
+  );
+
+  // Primeira carga: era aqui que a versão anterior pedia 180 dias e o
+  // Mercado Pago recusava com "Date interval should be less than 90 days".
+  const primeiraML = planejarJanela('mercado_livre', {}, HOJE);
+  conferir('primeira carga do ML cabe na janela que o Mercado Pago aceita',
+    dias(primeiraML.inicio, primeiraML.fim) < 89, `${primeiraML.inicio} → ${primeiraML.fim}`);
+  conferir('primeira carga do ML usa o teto configurado',
+    dias(primeiraML.inicio, primeiraML.fim) === JANELA_MAXIMA_DIAS.mercado_livre);
+  conferir('primeira carga começa pelo recente, não pelo histórico', primeiraML.fase === 'recente');
+
+  // Recente em dia -> passa a ler o histórico, um pedaço por ciclo, pra trás.
+  const comRecenteEmDia = { lido_ate: HOJE, lido_desde: '2026-06-15' };
+  const historicoML = planejarJanela('mercado_livre', comRecenteEmDia, HOJE);
+  conferir('com o recente em dia, o ciclo passa a ler o histórico', historicoML.fase === 'historico');
+  conferir('o pedaço de histórico termina onde o anterior começou', historicoML.fim === '2026-06-14', historicoML.fim);
+  conferir('o pedaço de histórico também respeita o teto',
+    dias(historicoML.inicio, historicoML.fim) <= JANELA_MAXIMA_DIAS.mercado_livre);
+
+  // Recente atrasado -> prioridade é o recente, nunca o histórico.
+  const atrasado = planejarJanela('mercado_livre', { lido_ate: '2026-08-20', lido_desde: '2026-01-01' }, HOJE);
+  conferir('recente atrasado tem prioridade sobre o histórico', atrasado.fase === 'recente');
+  conferir('recente reabre alguns dias pra trás (lançamento retroativo)', atrasado.inicio < '2026-08-20', atrasado.inicio);
+
+  // Histórico completo -> para de andar pra trás.
+  const limite = planejarJanela('mercado_livre', { lido_ate: HOJE, lido_desde: '2025-08-01' }, HOJE);
+  conferir('histórico completo para de andar pra trás', limite.fase === 'recente');
+  conferir('o alvo de histórico é de um ano', HISTORICO_ALVO_DIAS === 365);
+
+  // Cursores: um anda pra frente, o outro pra trás, e nunca ao contrário.
+  const cursores = cursoresApos({ lido_ate: '2026-09-01', lido_desde: '2026-07-01' }, { inicio: '2026-05-01', fim: '2026-08-15' });
+  conferir('ler histórico não faz o cursor recente retroceder', cursores.lido_ate === '2026-09-01', cursores.lido_ate);
+  conferir('ler histórico empurra o cursor antigo pra trás', cursores.lido_desde === '2026-05-01', cursores.lido_desde);
+
   console.log('\n5. API do módulo Financeiro');
   const servidor = http.createServer(criarApp());
   await new Promise((r) => servidor.listen(0, '127.0.0.1', r));
@@ -242,12 +283,20 @@ async function main() {
   conferir('GET /extrato responde 200', extratoRes.status === 200, extratoRes.corpo.slice(0, 200));
   const extrato = JSON.parse(extratoRes.corpo);
 
-  // Soma esperada do que está LIBERADO: tudo menos o saque da Shopee
-  // (9004, pendente).
-  const esperadoLiberado = 150.25 - 48.90 - 89.90 - 1000.00 + 12.00 + 80.00 + 118.40 - 37.50 - 10.00;
-  conferir('total liberado bate com a soma do extrato', perto(extrato.totais.liberado, esperadoLiberado), `${extrato.totais.liberado} vs ${esperadoLiberado}`);
-  conferir('pendente é somado à parte, não junto', perto(extrato.totais.pendente, -70.90), String(extrato.totais.pendente));
+  // "Liberado pelo marketplace" NÃO inclui o saque (o payout de R$ 1.000 do
+  // Mercado Livre): transferir o saldo pro banco não é dinheiro que o
+  // marketplace deixou de pagar. Era isso que fazia a tela mostrar
+  // "R$ 2,5 mil liberados" num mês de R$ 212 mil de entrada.
+  const esperadoLiberado = 150.25 - 48.90 - 89.90 + 12.00 + 80.00 + 118.40 - 37.50 - 10.00;
+  conferir('total liberado exclui o saque para o banco', perto(extrato.totais.liberado, esperadoLiberado), `${extrato.totais.liberado} vs ${esperadoLiberado}`);
+  conferir('o saque aparece em número próprio', perto(extrato.totais.transferidoBanco, 1000.00), String(extrato.totais.transferidoBanco));
+  conferir('saque em processamento fica em "transferência em andamento"', perto(extrato.totais.transferenciaEmAndamento, 70.90), String(extrato.totais.transferenciaEmAndamento));
+  conferir('pendente não engole o saque em andamento', perto(extrato.totais.pendente, 0), String(extrato.totais.pendente));
+  conferir('entradas e saídas vêm da API, sem o saque',
+    perto(extrato.totais.entradas, 150.25 + 12.00 + 80.00 + 118.40) && perto(extrato.totais.saidas, -(48.90 + 89.90 + 37.50 + 10.00)),
+    `${extrato.totais.entradas} / ${extrato.totais.saidas}`);
   conferir('resumo por data traz mais de um dia', new Set(extrato.resumoPorData.map((r) => String(r.data_liberacao).slice(0, 10))).size >= 4);
+  conferir('resumo por data separa o tipo (pra tirar o saque da coluna do dia)', extrato.resumoPorData.every((r) => r.tipo));
   conferir('resumo por plataforma traz as duas conectadas', new Set(extrato.resumoPorPlataforma.map((r) => r.marketplace)).size === 2);
   conferir('lista detalhada não veio truncada', extrato.listaTruncada === false);
 
@@ -275,6 +324,12 @@ async function main() {
   conferir('e por isso não dá pra comparar esse dia', dia11ml && dia11ml.diferencaNaoExplicada === null);
   conferir('Shopee: Ads e multa entram como diferença explicada', dia10sh && perto(dia10sh.extratoOutros, -47.50), JSON.stringify(dia10sh));
   conferir('Shopee: o que sobra sem explicação é zero', dia10sh && dia10sh.confere === true, String(dia10sh?.diferencaNaoExplicada));
+
+  const dia12ml = conc.linhas.find((l) => l.data === '2026-08-12' && l.marketplace === 'mercado_livre');
+  conferir('o saque de R$ 1.000 não entra no total do extrato da conferência',
+    dia12ml && perto(dia12ml.extratoTotal, 12.00), JSON.stringify(dia12ml));
+  conferir('mas continua visível em coluna própria',
+    dia12ml && perto(dia12ml.extratoSaque, -1000.00), String(dia12ml?.extratoSaque));
 
   console.log('\n7. Fronteiras (REGRA 1 e REGRA 4)');
   const { rows: colunas } = await pool.query(

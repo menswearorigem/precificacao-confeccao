@@ -40,8 +40,27 @@ const LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee', tiktok_shop: '
 // chave única (integração + id do lançamento + tipo) descarta repetição.
 const JANELA_RELEITURA_DIAS = 45;
 
-// Primeira carga de uma conexão que nunca teve extrato lido.
-const JANELA_PRIMEIRA_CARGA_DIAS = 180;
+// Teto de janela por plataforma, em dias. NÃO é preferência nossa: é o que
+// cada API aceita numa chamada só.
+//
+// Mercado Livre: o Mercado Pago recusa qualquer pedido de relatório com
+// intervalo de 90 dias ou mais ("Date interval should be less than 90 days")
+// — foi o erro que derrubou as duas conexões do ML na primeira carga, que
+// pedia 180 dias de uma vez. 80 deixa folga confortável abaixo do limite.
+//
+// Shopee e TikTok: a quebra em pedaços já é feita dentro do próprio cliente
+// (15 dias na Shopee, paginação por page_token na TikTok), então aqui o teto
+// existe só pra não montar uma janela absurda.
+const JANELA_MAXIMA_DIAS = {
+  mercado_livre: 80,
+  shopee: 180,
+  tiktok_shop: 180,
+};
+
+// Até onde pra trás o histórico é buscado sozinho, andando um pedaço por
+// ciclo. Um ano cobre o fechamento contábil e a comparação com o mesmo mês
+// do ano passado.
+const HISTORICO_ALVO_DIAS = 365;
 
 const COOLDOWN_MS = 30 * 60 * 1000;
 const ultimaSincronizacaoPorIntegracao = new Map();
@@ -69,6 +88,81 @@ function diasAtras(n) {
   const d = new Date();
   d.setDate(d.getDate() - n);
   return d;
+}
+
+function isoMenosDias(iso, n) {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() - n);
+  return isoDoDia(d);
+}
+
+function diferencaEmDias(inicioIso, fimIso) {
+  const a = new Date(`${inicioIso}T12:00:00`).getTime();
+  const b = new Date(`${fimIso}T12:00:00`).getTime();
+  return Math.round((b - a) / (24 * 60 * 60 * 1000));
+}
+
+function maiorIso(a, b) { return a > b ? a : b; }
+
+// Decide qual pedaço do extrato ler neste ciclo.
+//
+// A lógica tem duas prioridades, nesta ordem:
+//
+//   1. O RECENTE primeiro. Enquanto os últimos dias não estiverem lidos, é
+//      isso que interessa — o financeiro pergunta pelo mês corrente, não
+//      pelo ano passado.
+//   2. Só depois o HISTÓRICO, um pedaço por ciclo, andando pra trás até
+//      `HISTORICO_ALVO_DIAS`. Isso existe porque a plataforma limita o
+//      tamanho da janela (80 dias no Mercado Pago), então um ano só entra
+//      em partes.
+//
+// A janela recente sempre reabre `JANELA_RELEITURA_DIAS` pra trás do que já
+// foi lido: a plataforma insere lançamento com data retroativa (estorno de
+// venda antiga, ajuste, correção de frete), e um cursor que só andasse pra
+// frente perderia esse dinheiro pra sempre.
+function planejarJanela(marketplace, estado, hojeIso) {
+  const maximo = JANELA_MAXIMA_DIAS[marketplace] || 80;
+  const limiteHistorico = isoMenosDias(hojeIso, HISTORICO_ALVO_DIAS);
+
+  // Nunca leu nada: começa pelo pedaço mais recente que a API aceita.
+  if (!estado.lido_ate) {
+    return { inicio: maiorIso(isoMenosDias(hojeIso, maximo), limiteHistorico), fim: hojeIso, fase: 'recente' };
+  }
+
+  const lidoAte = String(estado.lido_ate).slice(0, 10);
+  const inicioRecente = maiorIso(isoMenosDias(lidoAte, JANELA_RELEITURA_DIAS), isoMenosDias(hojeIso, maximo));
+
+  // O recente ainda não está em dia, ou a releitura ainda cabe na janela:
+  // é sempre esta a prioridade.
+  if (lidoAte < hojeIso || !estado.lido_desde) {
+    return { inicio: inicioRecente, fim: hojeIso, fase: 'recente' };
+  }
+
+  // Recente em dia. Sobrou histórico pra trás?
+  const lidoDesde = String(estado.lido_desde).slice(0, 10);
+  if (lidoDesde > limiteHistorico) {
+    // O pedaço anterior termina um dia antes do que já foi lido, pra não
+    // reler à toa o que já está no banco.
+    const fim = isoMenosDias(lidoDesde, 1);
+    const inicio = maiorIso(isoMenosDias(fim, maximo), limiteHistorico);
+    return { inicio, fim, fase: 'historico' };
+  }
+
+  // Nada de histórico faltando — segue relendo o recente, que é onde o
+  // dado muda.
+  return { inicio: inicioRecente, fim: hojeIso, fase: 'recente' };
+}
+
+// Avança os dois cursores depois de ler uma janela com sucesso. `lido_ate`
+// só anda pra frente e `lido_desde` só anda pra trás — assim uma leitura
+// de histórico não faz o cursor recente retroceder, nem vice-versa.
+function cursoresApos(estado, { inicio, fim }) {
+  const ateAtual = estado.lido_ate ? String(estado.lido_ate).slice(0, 10) : null;
+  const desdeAtual = estado.lido_desde ? String(estado.lido_desde).slice(0, 10) : null;
+  return {
+    lido_ate: !ateAtual || fim > ateAtual ? fim : ateAtual,
+    lido_desde: !desdeAtual || inicio < desdeAtual ? inicio : desdeAtual,
+  };
 }
 
 // Dia no fuso de Brasília a partir de um unix em segundos. O financeiro
@@ -288,34 +382,63 @@ async function sincronizarExtratoMercadoLivre(integracao, { inicio, fim }) {
       });
     }
 
+    // Os cursores avançam com a janela QUE O RELATÓRIO COBRE, não com a
+    // janela que este ciclo calculou: quem pediu foi o ciclo anterior, e no
+    // meio do caminho a data de hoje pode ter virado. Sem isso, um pedaço do
+    // histórico seria marcado como lido sem nunca ter sido baixado.
+    const janelaDoRelatorio = {
+      inicio: estado.relatorio_de ? String(estado.relatorio_de).slice(0, 10) : inicio,
+      fim: estado.relatorio_ate ? String(estado.relatorio_ate).slice(0, 10) : fim,
+    };
+
     await gravarEstado(integracao.id, {
       relatorio_pendente: null,
       relatorio_pedido_em: null,
-      lido_ate: fim,
+      relatorio_de: null,
+      relatorio_ate: null,
+      ...cursoresApos(estado, janelaDoRelatorio),
       ultimo_erro: null,
       ultimo_aviso: naoInterpretadas.length > 0
         ? `${naoInterpretadas.length} de ${totalLinhas} linha(s) do relatório de liberações não puderam ser interpretadas (data ou valor ilegível) e ficaram FORA do extrato. Primeira delas, linha ${naoInterpretadas[0].linha}: ${naoInterpretadas[0].conteudo}`
         : null,
     });
-    return { fase: 'baixado', gravados, naoInterpretadas: naoInterpretadas.length, totalLinhas };
+    return {
+      fase: 'baixado', gravados, naoInterpretadas: naoInterpretadas.length, totalLinhas,
+      janela: janelaDoRelatorio,
+    };
   }
 
   // Fase 1: pede a geração do relatório da janela.
+  //
+  // O Mercado Pago recusa intervalo de 90 dias ou mais. `planejarJanela` já
+  // devolve no máximo 80, mas a conferência fica aqui também porque esta
+  // função também é chamada com janela escolhida à mão pela tela ("reler
+  // este período") — e ali o período vem do filtro do usuário.
+  const dias = diferencaEmDias(inicio, fim);
+  if (dias >= 89) {
+    throw new Error(
+      `O Mercado Pago só entrega o relatório de liberações em janelas de até 89 dias, e este período tem ${dias}. `
+      + 'Peça um período menor — o histórico mais antigo é completado sozinho, um pedaço a cada ciclo.'
+    );
+  }
+
   const resposta = await mercadoLivre.solicitarRelatorioLiberacoes({ accessToken, inicio, fim });
   const arquivo = resposta?.file_name || resposta?.fileName || null;
   await gravarEstado(integracao.id, {
     relatorio_pendente: arquivo || 'aguardando',
     relatorio_pedido_em: new Date(),
+    relatorio_de: inicio,
+    relatorio_ate: fim,
     ultimo_erro: null,
   });
-  return { fase: 'solicitado', gravados: 0 };
+  return { fase: 'solicitado', gravados: 0, janela: { inicio, fim } };
 }
 
 // ---------------------------------------------------------------------------
 // Shopee — extrato da carteira (síncrono)
 // ---------------------------------------------------------------------------
 
-async function sincronizarExtratoShopee(integracao, { inicio, fim }) {
+async function sincronizarExtratoShopee(integracao, { inicio, fim }, estado) {
   const desdeUnix = Math.floor(new Date(`${inicio}T00:00:00-03:00`).getTime() / 1000);
   const ateUnix = Math.floor(new Date(`${fim}T23:59:59-03:00`).getTime() / 1000);
 
@@ -354,21 +477,21 @@ async function sincronizarExtratoShopee(integracao, { inicio, fim }) {
   }
 
   await gravarEstado(integracao.id, {
-    lido_ate: fim,
+    ...cursoresApos(estado, { inicio, fim }),
     ultimo_erro: null,
     ultimo_aviso: descartadas > 0
       ? `${descartadas} transação(ões) da carteira da Shopee vieram sem data ou sem valor legível e ficaram FORA do extrato — não foram lançadas como R$ 0,00.`
       : null,
   });
 
-  return { gravados, descartadas, lidas: cruas.length };
+  return { gravados, descartadas, lidas: cruas.length, janela: { inicio, fim } };
 }
 
 // ---------------------------------------------------------------------------
 // TikTok Shop — statements (cada um é um repasse) + saques
 // ---------------------------------------------------------------------------
 
-async function sincronizarExtratoTikTok(integracao, { inicio, fim }) {
+async function sincronizarExtratoTikTok(integracao, { inicio, fim }, estado) {
   const credenciais = {
     appKey: integracao.client_id,
     appSecret: integracao.client_secret,
@@ -433,14 +556,14 @@ async function sincronizarExtratoTikTok(integracao, { inicio, fim }) {
   })));
 
   await gravarEstado(integracao.id, {
-    lido_ate: fim,
+    ...cursoresApos(estado, { inicio, fim }),
     ultimo_erro: null,
     ultimo_aviso: descartadas > 0
       ? `${descartadas} linha(s) de repasse da TikTok Shop vieram sem valor reconhecível e ficaram FORA do extrato — não foram lançadas como R$ 0,00.`
       : null,
   });
 
-  return { gravados, descartadas, repasses: statements.length };
+  return { gravados, descartadas, repasses: statements.length, janela: { inicio, fim } };
 }
 
 // ---------------------------------------------------------------------------
@@ -461,9 +584,22 @@ async function sincronizarExtratoIntegracao(integracaoId, { forcar = false, desd
   ultimaSincronizacaoPorIntegracao.set(integracaoId, Date.now());
 
   const estado = await lerEstado(integracaoId);
-  const janelaDias = estado.lido_ate ? JANELA_RELEITURA_DIAS : JANELA_PRIMEIRA_CARGA_DIAS;
-  const inicio = desde || isoDoDia(diasAtras(janelaDias));
-  const fim = ate || isoDoDia(new Date());
+  const hoje = isoDoDia(new Date());
+
+  // Sem período pedido à mão, quem decide o pedaço a ler é planejarJanela:
+  // recente primeiro, histórico depois, sempre dentro do teto que a API da
+  // plataforma aceita. Com período pedido à mão (tela: "reler este
+  // período"), o pedido do usuário manda — mas ainda passa pelo teto, senão
+  // a plataforma devolve erro e a leitura inteira se perde.
+  const planejada = planejarJanela(integracao.marketplace, estado, hoje);
+  const maximo = JANELA_MAXIMA_DIAS[integracao.marketplace] || 80;
+  let inicio = desde || planejada.inicio;
+  const fim = ate || planejada.fim;
+  let janelaEncurtada = false;
+  if (diferencaEmDias(inicio, fim) > maximo) {
+    inicio = isoMenosDias(fim, maximo);
+    janelaEncurtada = true;
+  }
 
   await gravarEstado(integracaoId, { status: 'rodando' });
 
@@ -472,18 +608,25 @@ async function sincronizarExtratoIntegracao(integracaoId, { forcar = false, desd
 
     let resultado;
     if (integracao.marketplace === 'mercado_livre') {
-      resultado = await sincronizarExtratoMercadoLivre(integracao, { inicio, fim });
+      resultado = await sincronizarExtratoMercadoLivre(integracao, { inicio, fim }, estado);
     } else if (integracao.marketplace === 'shopee') {
-      resultado = await sincronizarExtratoShopee(integracao, { inicio, fim });
+      resultado = await sincronizarExtratoShopee(integracao, { inicio, fim }, estado);
     } else if (integracao.marketplace === 'tiktok_shop') {
-      resultado = await sincronizarExtratoTikTok(integracao, { inicio, fim });
+      resultado = await sincronizarExtratoTikTok(integracao, { inicio, fim }, estado);
     } else {
       throw new Error(`Extrato ainda não implementado para "${integracao.marketplace}".`);
     }
 
     const vinculados = await vincularPedidos(integracaoId);
     await gravarEstado(integracaoId, { status: 'idle', ultima_sincronizacao: new Date() });
-    return { ...resultado, vinculados, janela: { inicio, fim }, marketplace: integracao.marketplace };
+    return {
+      ...resultado,
+      vinculados,
+      janela: resultado.janela || { inicio, fim },
+      faseJanela: desde || ate ? 'manual' : planejada.fase,
+      janelaEncurtada,
+      marketplace: integracao.marketplace,
+    };
   } catch (err) {
     await gravarEstado(integracaoId, { status: 'erro', ultimo_erro: err.message });
     throw err;
@@ -526,6 +669,8 @@ module.exports = {
   sincronizarExtratoTodasAtivas,
   sincronizarExtratoSeNecessario,
   vincularPedidos,
+  planejarJanela,
+  cursoresApos,
   gravarLancamentos,
   gravarRepasse,
   lerEstado,
@@ -533,4 +678,6 @@ module.exports = {
   LABEL,
   TIPOS_VALIDOS,
   JANELA_RELEITURA_DIAS,
+  JANELA_MAXIMA_DIAS,
+  HISTORICO_ALVO_DIAS,
 };
