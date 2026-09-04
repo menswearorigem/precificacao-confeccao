@@ -90,8 +90,41 @@ function diasAtras(n) {
   return d;
 }
 
+// Converte o que veio do banco numa data ISO (yyyy-mm-dd).
+//
+// POR QUE ESTA FUNÇÃO EXISTE: o driver `pg` devolve coluna DATE como
+// **objeto Date do JavaScript**, não como texto. E `String(new Date(...))`
+// devolve "Thu Sep 03 2026 00:00:00 GMT-0300 (...)" — cortar os 10
+// primeiros caracteres disso dá **"Thu Sep 03"**, que não é data nenhuma.
+//
+// Foi exatamente isso que derrubou as cinco conexões em 03/09/2026: o valor
+// mutilado voltava pro banco ("invalid input syntax for type date: Thu Sep
+// 03") e, no caminho da TikTok, virava NaN antes disso ("statement_time_ge
+// is invalid, expected type:int"). Um erro só, cinco sintomas diferentes.
+//
+// Não dá pra resolver trocando o parser global do `pg` para DATE: isso
+// mudaria o tipo devolvido em `data_pedido`, `data_compra` e em todas as
+// outras telas do sistema, que hoje contam com um objeto Date. A conversão
+// fica aqui, no único módulo que precisa dela.
+function paraIso(valor) {
+  if (!valor) return null;
+  if (valor instanceof Date) {
+    if (Number.isNaN(valor.getTime())) return null;
+    // Coluna DATE chega como meia-noite no fuso do servidor. Formatar pelos
+    // componentes LOCAIS devolve o mesmo dia que está gravado — usar
+    // toISOString() aqui devolveria o dia anterior em qualquer fuso a oeste
+    // de Greenwich, que é o nosso caso.
+    return isoDoDia(valor);
+  }
+  const texto = String(valor).slice(0, 10);
+  // Só aceita o formato certo. Texto irreconhecível vira null (= "não li
+  // nada ainda"), nunca uma data inventada.
+  return /^\d{4}-\d{2}-\d{2}$/.test(texto) ? texto : null;
+}
+
 function isoMenosDias(iso, n) {
   const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
   d.setDate(d.getDate() - n);
   return isoDoDia(d);
 }
@@ -124,22 +157,24 @@ function planejarJanela(marketplace, estado, hojeIso) {
   const maximo = JANELA_MAXIMA_DIAS[marketplace] || 80;
   const limiteHistorico = isoMenosDias(hojeIso, HISTORICO_ALVO_DIAS);
 
-  // Nunca leu nada: começa pelo pedaço mais recente que a API aceita.
-  if (!estado.lido_ate) {
+  const lidoAte = paraIso(estado.lido_ate);
+  const lidoDesde = paraIso(estado.lido_desde);
+
+  // Nunca leu nada (ou o cursor gravado é ilegível): começa pelo pedaço mais
+  // recente que a API aceita.
+  if (!lidoAte) {
     return { inicio: maiorIso(isoMenosDias(hojeIso, maximo), limiteHistorico), fim: hojeIso, fase: 'recente' };
   }
 
-  const lidoAte = String(estado.lido_ate).slice(0, 10);
   const inicioRecente = maiorIso(isoMenosDias(lidoAte, JANELA_RELEITURA_DIAS), isoMenosDias(hojeIso, maximo));
 
   // O recente ainda não está em dia, ou a releitura ainda cabe na janela:
   // é sempre esta a prioridade.
-  if (lidoAte < hojeIso || !estado.lido_desde) {
+  if (lidoAte < hojeIso || !lidoDesde) {
     return { inicio: inicioRecente, fim: hojeIso, fase: 'recente' };
   }
 
   // Recente em dia. Sobrou histórico pra trás?
-  const lidoDesde = String(estado.lido_desde).slice(0, 10);
   if (lidoDesde > limiteHistorico) {
     // O pedaço anterior termina um dia antes do que já foi lido, pra não
     // reler à toa o que já está no banco.
@@ -157,12 +192,31 @@ function planejarJanela(marketplace, estado, hojeIso) {
 // só anda pra frente e `lido_desde` só anda pra trás — assim uma leitura
 // de histórico não faz o cursor recente retroceder, nem vice-versa.
 function cursoresApos(estado, { inicio, fim }) {
-  const ateAtual = estado.lido_ate ? String(estado.lido_ate).slice(0, 10) : null;
-  const desdeAtual = estado.lido_desde ? String(estado.lido_desde).slice(0, 10) : null;
+  const ateAtual = paraIso(estado.lido_ate);
+  const desdeAtual = paraIso(estado.lido_desde);
+  const ateNovo = paraIso(fim);
+  const desdeNovo = paraIso(inicio);
+
+  // Se a janela lida não for legível, os cursores ficam como estão. Melhor
+  // reler o mesmo pedaço no próximo ciclo do que gravar lixo numa coluna
+  // DATE — foi o que quebrou as cinco conexões em 03/09.
   return {
-    lido_ate: !ateAtual || fim > ateAtual ? fim : ateAtual,
-    lido_desde: !desdeAtual || inicio < desdeAtual ? inicio : desdeAtual,
+    lido_ate: !ateNovo ? ateAtual : (!ateAtual || ateNovo > ateAtual ? ateNovo : ateAtual),
+    lido_desde: !desdeNovo ? desdeAtual : (!desdeAtual || desdeNovo < desdeAtual ? desdeNovo : desdeAtual),
   };
+}
+
+// Converte a janela em unix (segundos), que é o formato que a Shopee e a
+// TikTok exigem. Data ilegível para AQUI com uma mensagem clara em vez de
+// virar NaN e chegar na API como "statement_time_ge inválido" — que foi o
+// sintoma da TikTok em 03/09, e que não dizia nada sobre a causa real.
+function janelaEmUnix(inicio, fim) {
+  const de = new Date(`${inicio}T00:00:00-03:00`).getTime();
+  const ate = new Date(`${fim}T23:59:59-03:00`).getTime();
+  if (Number.isNaN(de) || Number.isNaN(ate)) {
+    throw new Error(`Janela de leitura inválida (início "${inicio}", fim "${fim}").`);
+  }
+  return { desdeUnix: Math.floor(de / 1000), ateUnix: Math.floor(ate / 1000) };
 }
 
 // Dia no fuso de Brasília a partir de um unix em segundos. O financeiro
@@ -193,11 +247,19 @@ async function lerEstado(integracaoId) {
   return criados[0];
 }
 
+// Colunas DATE da tabela de estado. Qualquer valor gravado nelas passa pelo
+// `paraIso` antes de ir pro banco — é a rede de segurança contra o erro de
+// 03/09 ("invalid input syntax for type date"), que travou a leitura das
+// cinco conexões. Um valor irreconhecível vira NULL (que a sincronização lê
+// como "começa do zero") em vez de derrubar a atualização inteira.
+const CAMPOS_DATA_SYNC = new Set(['lido_ate', 'lido_desde', 'relatorio_de', 'relatorio_ate']);
+
 async function gravarEstado(integracaoId, patch) {
   const campos = [];
   const valores = [];
   let i = 1;
-  for (const [chave, valor] of Object.entries(patch)) {
+  for (const [chave, valorBruto] of Object.entries(patch)) {
+    const valor = CAMPOS_DATA_SYNC.has(chave) ? paraIso(valorBruto) : valorBruto;
     campos.push(`${chave} = $${i}`);
     valores.push(valor);
     i += 1;
@@ -387,8 +449,8 @@ async function sincronizarExtratoMercadoLivre(integracao, { inicio, fim }) {
     // meio do caminho a data de hoje pode ter virado. Sem isso, um pedaço do
     // histórico seria marcado como lido sem nunca ter sido baixado.
     const janelaDoRelatorio = {
-      inicio: estado.relatorio_de ? String(estado.relatorio_de).slice(0, 10) : inicio,
-      fim: estado.relatorio_ate ? String(estado.relatorio_ate).slice(0, 10) : fim,
+      inicio: paraIso(estado.relatorio_de) || inicio,
+      fim: paraIso(estado.relatorio_ate) || fim,
     };
 
     await gravarEstado(integracao.id, {
@@ -439,8 +501,7 @@ async function sincronizarExtratoMercadoLivre(integracao, { inicio, fim }) {
 // ---------------------------------------------------------------------------
 
 async function sincronizarExtratoShopee(integracao, { inicio, fim }, estado) {
-  const desdeUnix = Math.floor(new Date(`${inicio}T00:00:00-03:00`).getTime() / 1000);
-  const ateUnix = Math.floor(new Date(`${fim}T23:59:59-03:00`).getTime() / 1000);
+  const { desdeUnix, ateUnix } = janelaEmUnix(inicio, fim);
 
   const cruas = await shopee.buscarExtratoCarteira({
     partnerId: integracao.client_id,
@@ -498,8 +559,7 @@ async function sincronizarExtratoTikTok(integracao, { inicio, fim }, estado) {
     accessToken: integracao.access_token,
     shopCipher: integracao.shop_cipher,
   };
-  const desdeUnix = Math.floor(new Date(`${inicio}T00:00:00-03:00`).getTime() / 1000);
-  const ateUnix = Math.floor(new Date(`${fim}T23:59:59-03:00`).getTime() / 1000);
+  const { desdeUnix, ateUnix } = janelaEmUnix(inicio, fim);
 
   const statements = await tiktokShop.buscarStatements({ ...credenciais, desdeUnix, ateUnix });
 
@@ -669,11 +729,13 @@ module.exports = {
   sincronizarExtratoTodasAtivas,
   sincronizarExtratoSeNecessario,
   vincularPedidos,
+  paraIso,
   planejarJanela,
   cursoresApos,
   gravarLancamentos,
   gravarRepasse,
   lerEstado,
+  gravarEstado,
   diaBrasilia,
   LABEL,
   TIPOS_VALIDOS,

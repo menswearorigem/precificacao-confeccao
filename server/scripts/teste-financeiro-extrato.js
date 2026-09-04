@@ -30,7 +30,8 @@ const mercadoLivre = require('../src/lib/marketplaces/mercadoLivre');
 const shopee = require('../src/lib/marketplaces/shopee');
 const {
   gravarLancamentos, vincularPedidos, gravarRepasse,
-  planejarJanela, cursoresApos, JANELA_MAXIMA_DIAS, HISTORICO_ALVO_DIAS,
+  planejarJanela, cursoresApos, paraIso, lerEstado,
+  JANELA_MAXIMA_DIAS, HISTORICO_ALVO_DIAS,
 } = require('../src/lib/financeiroExtrato');
 
 let falhas = 0;
@@ -262,6 +263,67 @@ async function main() {
   const cursores = cursoresApos({ lido_ate: '2026-09-01', lido_desde: '2026-07-01' }, { inicio: '2026-05-01', fim: '2026-08-15' });
   conferir('ler histórico não faz o cursor recente retroceder', cursores.lido_ate === '2026-09-01', cursores.lido_ate);
   conferir('ler histórico empurra o cursor antigo pra trás', cursores.lido_desde === '2026-05-01', cursores.lido_desde);
+
+  console.log('\n4c. Datas vindas do BANCO (o erro "Thu Sep 03")');
+  // Este bloco existe por causa de um erro real em produção (03/09/2026): o
+  // driver pg devolve coluna DATE como objeto Date, e o código tratava como
+  // texto. As cinco conexões pararam de ler o extrato. O teste anterior não
+  // pegou porque montava o estado à mão, com strings — aqui o estado vem do
+  // banco, como na vida real.
+  await pool.query(
+    `INSERT INTO fin_extrato_sync (origem_integracao_id, lido_ate, lido_desde, relatorio_de, relatorio_ate)
+     VALUES ($1, '2026-09-03', '2026-06-15', '2026-06-15', '2026-09-03')
+     ON CONFLICT (origem_integracao_id) DO UPDATE
+       SET lido_ate = EXCLUDED.lido_ate, lido_desde = EXCLUDED.lido_desde,
+           relatorio_de = EXCLUDED.relatorio_de, relatorio_ate = EXCLUDED.relatorio_ate`,
+    [ids.ml]
+  );
+  const estadoDoBanco = await lerEstado(ids.ml);
+
+  conferir('o driver realmente devolve DATE como objeto Date (a causa do erro)',
+    estadoDoBanco.lido_ate instanceof Date, typeof estadoDoBanco.lido_ate);
+  conferir('paraIso converte o objeto Date do banco em data ISO',
+    paraIso(estadoDoBanco.lido_ate) === '2026-09-03', String(paraIso(estadoDoBanco.lido_ate)));
+  conferir('paraIso também aceita texto já em ISO', paraIso('2026-09-03') === '2026-09-03');
+  conferir('paraIso recusa texto que não é data (não inventa uma)',
+    paraIso('Thu Sep 03') === null, String(paraIso('Thu Sep 03')));
+
+  const planoDoBanco = planejarJanela('mercado_livre', estadoDoBanco, '2026-09-03');
+  conferir('a janela calculada a partir do banco tem datas válidas',
+    /^\d{4}-\d{2}-\d{2}$/.test(planoDoBanco.inicio) && /^\d{4}-\d{2}-\d{2}$/.test(planoDoBanco.fim),
+    `${planoDoBanco.inicio} → ${planoDoBanco.fim}`);
+
+  const cursoresDoBanco = cursoresApos(estadoDoBanco, { inicio: '2026-05-01', fim: '2026-09-03' });
+  conferir('os cursores calculados a partir do banco são datas válidas',
+    /^\d{4}-\d{2}-\d{2}$/.test(cursoresDoBanco.lido_ate) && /^\d{4}-\d{2}-\d{2}$/.test(cursoresDoBanco.lido_desde),
+    JSON.stringify(cursoresDoBanco));
+
+  // O teste decisivo: gravar de volta o que foi lido do banco. Era aqui que
+  // o Postgres recusava com "invalid input syntax for type date: Thu Sep 03".
+  let gravouDeVolta = true;
+  let erroDaGravacao = '';
+  try {
+    await pool.query(
+      'UPDATE fin_extrato_sync SET lido_ate = $1, lido_desde = $2 WHERE origem_integracao_id = $3',
+      [cursoresDoBanco.lido_ate, cursoresDoBanco.lido_desde, ids.ml]
+    );
+  } catch (err) {
+    gravouDeVolta = false;
+    erroDaGravacao = err.message;
+  }
+  conferir('gravar de volta no banco o cursor lido do banco funciona', gravouDeVolta, erroDaGravacao);
+
+  // A rede de segurança: mesmo que algum caminho futuro produza lixo, ele
+  // não pode derrubar a atualização inteira.
+  const { gravarEstado } = require('../src/lib/financeiroExtrato');
+  if (typeof gravarEstado === 'function') {
+    let redeOk = true;
+    try { await gravarEstado(ids.ml, { lido_ate: 'Thu Sep 03' }); } catch { redeOk = false; }
+    conferir('valor de data irreconhecível não derruba a gravação do estado', redeOk);
+  }
+
+  // Restaura um estado limpo pras seções seguintes.
+  await pool.query('DELETE FROM fin_extrato_sync WHERE origem_integracao_id = $1', [ids.ml]);
 
   console.log('\n5. API do módulo Financeiro');
   const servidor = http.createServer(criarApp());
