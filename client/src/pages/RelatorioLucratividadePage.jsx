@@ -10,6 +10,9 @@ import { Select, StatCard, ThOrdenavel, ThGrupoOrdenavel, Paginacao, BotaoExport
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL, CANAIS_COM_REPASSE } from '../lib/marketplaces';
+import {
+  CanalMarketplace, carimbarCanal, indiceDeLojas, nomeDaLoja, CAMINHO_LOJAS,
+} from '../lib/canalMarketplace';
 import FotoProduto from '../components/FotoProduto';
 import DataTable from '../components/DataTable';
 import CopiarBotao from '../components/CopiarBotao';
@@ -20,7 +23,7 @@ const COLUNAS_PEDIDOS_ORDENAVEIS = {
   numero: (p) => Number(p.numero) || 0,
   data: (p) => new Date(p.data_pedido).getTime(),
   cliente: (p) => p.cliente_nome,
-  canal: (p) => p.canal_venda,
+  canal: (p) => p._canal?.texto || p.canal_venda,
   receita: (p) => Number(p.receita) || 0,
   custo: (p) => Number(p.custo) || 0,
   taxaMarketplace: (p) => Number(p.taxaMarketplace) || 0,
@@ -32,7 +35,7 @@ const COLUNAS_PEDIDOS_EXPORTACAO = [
   { rotulo: 'Nº', valor: (p) => p.numeroExibicao || p.numero },
   { rotulo: 'Data', valor: (p) => new Date(p.data_pedido).toLocaleDateString('pt-BR') },
   { rotulo: 'Cliente', valor: (p) => p.cliente_nome || '' },
-  { rotulo: 'Canal', valor: (p) => p.canal_venda || '' },
+  { rotulo: 'Canal', valor: (p) => p._canal?.texto || p.canal_venda || '' },
   { rotulo: 'Receita', valor: (p) => brl(p.receita) },
   { rotulo: 'Custo', valor: (p) => brl(p.custo) },
   { rotulo: 'Taxa Marketplace', valor: (p) => (p.taxaMarketplace ? brl(p.taxaMarketplace) : '—') },
@@ -464,7 +467,10 @@ function VendaDetalheCard({ p, config }) {
               {p.pacote && <span className="stamp sm tone-neutro" style={{ marginLeft: 8 }} title="Compra com mais de um anúncio no mesmo carrinho — o Mercado Livre paga tudo junto, então os itens entram num card só.">pacote</span>}
               {p.indisponivelNoMarketplace && <span className="stamp sm tone-atencao" style={{ marginLeft: 8 }} title="Esse pedido não existe mais no Mercado Livre quando tentamos rebuscar — algum dado (valor recebido, pacote, ID de anúncio) pode ter ficado incompleto pra sempre.">sumiu do ML</span>}
             </div>
-            <div className="venda-card-sub">{dataBr(String(p.data_pedido).slice(0, 10))} · {p.canal_venda || '—'}</div>
+            <div className="venda-card-sub">
+              {dataBr(String(p.data_pedido).slice(0, 10))} ·{' '}
+              <CanalMarketplace registro={p} size={13} />
+            </div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -878,7 +884,9 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
   const isMarketplace = origemFiltro === 'marketplace';
 
   useEffect(() => { api.get('/configuracoes').then(setConfig).catch(() => {}); }, []);
-  useEffect(() => { if (isMarketplace) api.get('/integracoes').then(setIntegracoes).catch(() => {}); }, [isMarketplace]);
+  useEffect(() => { if (isMarketplace) api.get(CAMINHO_LOJAS).then(setIntegracoes).catch(() => {}); }, [isMarketplace]);
+
+  const indiceLojas = useMemo(() => indiceDeLojas(integracoes), [integracoes]);
 
   const lojasDisponiveis = useMemo(() => (
     integracoes.filter((i) => !canalVenda || PLATAFORMA_LABEL[i.marketplace] === canalVenda)
@@ -949,9 +957,12 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
   // esta lista filtrada direto, sem paginar).
   const pedidosExibidos = useMemo(() => {
     if (!relatorio) return [];
+    // Carimba o nome da loja ("MELI Origem") antes de filtrar: a partir daqui
+    // card, tabela, ordenação e exportação usam o mesmo texto de canal.
+    const base = carimbarCanal(relatorio.pedidos, indiceLojas);
     const termo = busca.trim().toLowerCase();
-    if (!termo) return relatorio.pedidos;
-    return relatorio.pedidos.filter((p) => {
+    if (!termo) return base;
+    return base.filter((p) => {
       if (String(p.numero).toLowerCase().includes(termo)) return true;
       if (String(p.numeroExibicao || '').toLowerCase().includes(termo)) return true;
       if ((p.cliente_nome || '').toLowerCase().includes(termo)) return true;
@@ -959,7 +970,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
         (it.skuExterno || '').toLowerCase().includes(termo) || (it.referencia || '').toLowerCase().includes(termo)
       ));
     });
-  }, [relatorio, busca]);
+  }, [relatorio, busca, indiceLojas]);
 
   const tabelaPedidos = useTabela(pedidosExibidos, { colunas: COLUNAS_PEDIDOS_ORDENAVEIS, colunaPadrao: 'data', direcaoPadrao: 'desc' });
 
@@ -986,7 +997,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
               <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)} style={{ maxWidth: 180 }}>
                 <option value="">Todas as lojas</option>
                 {lojasDisponiveis.map((i) => (
-                  <option key={i.id} value={i.id}>{i.nome || PLATAFORMA_LABEL[i.marketplace]}</option>
+                  <option key={i.id} value={i.id}>{nomeDaLoja(i)}</option>
                 ))}
               </Select>
             </>
@@ -1262,7 +1273,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                               </span>
                               <span className="cel-secundaria">
                                 <span className="mono">{new Date(p.data_pedido).toLocaleDateString('pt-BR')}</span>
-                                <span>· {p.canal_venda || '—'}</span>
+                                <span>· <CanalMarketplace registro={p} indiceLojas={indiceLojas} size={12} /></span>
                               </span>
                             </div>
                           </td>

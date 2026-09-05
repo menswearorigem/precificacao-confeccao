@@ -875,11 +875,231 @@ function mapearRelatorioLiberacoes(csv) {
   return { lancamentos, naoInterpretadas, totalLinhas: linhas.length - 1 };
 }
 
+// ===========================================================================
+// CATÁLOGO ANUNCIADO (aba Marketplace › Anúncios, 04/09/2026)
+// ===========================================================================
+// Tudo daqui pra baixo é LEITURA E ESCRITA DE ANÚNCIO. Nada abaixo desta
+// linha é chamado pelo sincronismo de pedidos, pela Lucratividade ou pelo
+// Financeiro — as funções acima continuam exatamente como estavam.
+
+// PUT/POST autenticado. O `chamarApi` acima é só GET; escrever num anúncio
+// precisa de método e corpo, então esta é uma função à parte em vez de um
+// parâmetro novo naquela (que é usada por todo o sincronismo de pedidos).
+async function chamarApiComCorpo(path, accessToken, { metodo = 'PUT', corpo }) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: metodo,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: corpo === undefined ? undefined : JSON.stringify(corpo),
+  });
+  const data = await lerRespostaJson(res, path);
+  if (!res.ok) {
+    // O ML devolve o motivo de recusa em `cause` (lista) — sem isso a tela
+    // mostraria só "erro 400" e ninguém saberia qual campo o anúncio
+    // recusou.
+    const causa = Array.isArray(data.cause)
+      ? data.cause.map((c) => c.message || c.code).filter(Boolean).join(' · ')
+      : '';
+    throw erroComStatus(
+      [data.message || `Erro na API do Mercado Livre (${res.status}): ${path}`, causa].filter(Boolean).join(' — '),
+      res.status
+    );
+  }
+  return data;
+}
+
+const STATUS_ANUNCIO_ML = {
+  active: 'ativo',
+  paused: 'pausado',
+  closed: 'encerrado',
+  under_review: 'em_analise',
+  inactive: 'pausado',
+  payment_required: 'pausado',
+};
+
+// A busca por offset do Mercado Livre para em 1.000 resultados. Quem tem
+// mais anúncios que isso (o caso aqui) só consegue a lista inteira pelo
+// modo `scan`, que devolve um scroll_id em vez de offset. Usar offset
+// silenciosamente truncaria o catálogo em 1.000 e ninguém perceberia —
+// REGRA 2: melhor a chamada certa do que uma lista pela metade.
+async function listarIdsAnuncios({ accessToken, sellerId, limiteSeguranca = 20000 }) {
+  const ids = [];
+  let scrollId = null;
+  for (let pagina = 0; pagina < 400; pagina += 1) {
+    const params = new URLSearchParams({ search_type: 'scan', limit: '100' });
+    if (scrollId) params.set('scroll_id', scrollId);
+    const data = await chamarApi(`/users/${sellerId}/items/search?${params.toString()}`, accessToken);
+    const lote = data.results || [];
+    ids.push(...lote);
+    scrollId = data.scroll_id || null;
+    if (lote.length === 0 || !scrollId || ids.length >= limiteSeguranca) break;
+  }
+  return ids;
+}
+
+// Detalhe em lote. O endpoint /items?ids= aceita no máximo 20 por chamada e
+// devolve cada item embrulhado em { code, body } — um item que falhou vem
+// com code != 200 e NÃO é descartado em silêncio: volta na lista de falhas
+// pra tela poder dizer quantos anúncios não puderam ser lidos.
+async function buscarDetalheAnuncios({ accessToken, ids }) {
+  const encontrados = [];
+  const falhas = [];
+  for (let i = 0; i < ids.length; i += 20) {
+    const lote = ids.slice(i, i + 20);
+    const data = await chamarApi(`/items?ids=${lote.join(',')}`, accessToken);
+    for (const entrada of data || []) {
+      if (entrada.code === 200 && entrada.body) encontrados.push(entrada.body);
+      else falhas.push({ id: entrada.body?.id || null, code: entrada.code });
+    }
+  }
+  return { encontrados, falhas };
+}
+
+// Visitas por anúncio (o número que a tela mostra como "visitas"). Endpoint
+// separado do item — sem ele o campo ficaria NULO, e nulo aqui significa
+// "não foi possível ler", nunca zero.
+async function buscarVisitasAnuncios({ accessToken, ids }) {
+  const porId = new Map();
+  for (let i = 0; i < ids.length; i += 50) {
+    const lote = ids.slice(i, i + 50);
+    try {
+      const data = await chamarApi(`/visits/items?ids=${lote.join(',')}`, accessToken);
+      for (const [id, visitas] of Object.entries(data || {})) {
+        porId.set(id, Number.isFinite(Number(visitas)) ? Number(visitas) : null);
+      }
+    } catch {
+      // Visita é informação acessória: se o endpoint recusar, o anúncio
+      // ainda vale. Fica sem visita em vez de derrubar a varredura inteira.
+    }
+  }
+  return porId;
+}
+
+// Traduz o item cru do ML pro formato comum das três plataformas, que é o
+// que anunciosSync.js grava. Nenhum número é inventado: campo que o ML não
+// mandou sai como null.
+function mapearAnuncio(item) {
+  const variacoes = (item.variations || []).map((v) => ({
+    variacaoIdExterna: String(v.id),
+    skuExterno: extrairAtributo(v.attributes, 'SELLER_SKU') || v.seller_custom_field || null,
+    cor: extrairAtributo(v.attribute_combinations, 'COLOR')
+      || extrairAtributo(v.attribute_combinations, 'MAIN_COLOR') || null,
+    tamanho: extrairAtributo(v.attribute_combinations, 'SIZE') || null,
+    preco: v.price != null ? Number(v.price) : (item.price != null ? Number(item.price) : null),
+    estoque: v.available_quantity != null ? Number(v.available_quantity) : null,
+  }));
+
+  return {
+    anuncioIdExterno: String(item.id),
+    titulo: item.title || null,
+    skuExterno: extrairSku(item, null),
+    preco: item.price != null ? Number(item.price) : null,
+    precoOriginal: item.original_price != null ? Number(item.original_price) : null,
+    // Anúncio com variação: o ML devolve available_quantity do anúncio como
+    // a SOMA das variações. Somamos as variações à mão só quando o campo do
+    // anúncio vier ausente — não recalculamos por cima do que a plataforma
+    // já respondeu (REGRA 2).
+    estoque: item.available_quantity != null
+      ? Number(item.available_quantity)
+      : (variacoes.length ? variacoes.reduce((s, v) => s + (v.estoque || 0), 0) : null),
+    status: STATUS_ANUNCIO_ML[item.status] || 'pausado',
+    statusExterno: item.status || null,
+    url: item.permalink || null,
+    fotoUrl: item.thumbnail || item.pictures?.[0]?.secure_url || item.pictures?.[0]?.url || null,
+    categoriaExterna: item.category_id || null,
+    tipoAnuncio: mapearTipoAnuncio(item.listing_type_id),
+    vendasTotal: item.sold_quantity != null ? Number(item.sold_quantity) : null,
+    visitas: null, // preenchido por buscarVisitasAnuncios
+    curtidas: null, // o ML não expõe
+    criadoEmPlataforma: item.date_created || null,
+    atualizadoEmPlataforma: item.last_updated || null,
+    variacoes,
+    bruto: item,
+  };
+}
+
+// A varredura completa de uma conta: ids -> detalhe -> visitas.
+async function buscarAnuncios({ accessToken, sellerId }) {
+  const ids = await listarIdsAnuncios({ accessToken, sellerId });
+  if (ids.length === 0) return { anuncios: [], falhas: [] };
+  const { encontrados, falhas } = await buscarDetalheAnuncios({ accessToken, ids });
+  const visitas = await buscarVisitasAnuncios({ accessToken, ids });
+  const anuncios = encontrados.map((item) => {
+    const mapeado = mapearAnuncio(item);
+    if (visitas.has(mapeado.anuncioIdExterno)) mapeado.visitas = visitas.get(mapeado.anuncioIdExterno);
+    return mapeado;
+  });
+  return { anuncios, falhas };
+}
+
+// Escrita de volta no anúncio. Só os campos passados são enviados — mandar
+// o item inteiro de volta arriscaria sobrescrever com um valor lido antes.
+//
+// Preço e estoque de anúncio COM VARIAÇÃO não moram no anúncio: têm de ir
+// dentro de `variations`. Mandar `price` no corpo de um anúncio com
+// variação é recusado pelo ML (é por isso que a função exige a variação).
+async function atualizarAnuncio({ accessToken, anuncioId, preco, estoque, titulo, status, variacoes }) {
+  const corpo = {};
+  if (titulo != null) corpo.title = titulo;
+  if (status != null) corpo.status = status;
+
+  if (Array.isArray(variacoes) && variacoes.length > 0) {
+    corpo.variations = variacoes.map((v) => {
+      const item = { id: Number(v.variacaoIdExterna) };
+      if (v.preco != null) item.price = Number(v.preco);
+      if (v.estoque != null) item.available_quantity = Number(v.estoque);
+      return item;
+    });
+  } else {
+    if (preco != null) corpo.price = Number(preco);
+    if (estoque != null) corpo.available_quantity = Number(estoque);
+  }
+
+  if (Object.keys(corpo).length === 0) return null;
+  return chamarApiComCorpo(`/items/${anuncioId}`, accessToken, { metodo: 'PUT', corpo });
+}
+
+// Estado das campanhas de Ads por anúncio (ligada/pausada, orçamento). O
+// GASTO e o RETORNO continuam vindo de buscarMetricasAnunciosPorDia, que
+// alimenta ads_metricas_diarias — isto aqui não duplica número nenhum.
+async function buscarStatusCampanhasPorAnuncio({ accessToken, advertiserId }) {
+  const porAnuncio = new Map();
+  try {
+    const data = await chamarApiAds(
+      `/advertising/product_ads/ads?advertiser_id=${advertiserId}&limit=200`,
+      accessToken
+    );
+    for (const anuncio of data.results || data.ads || []) {
+      const itemId = anuncio.item_id || anuncio.id;
+      if (!itemId) continue;
+      porAnuncio.set(String(itemId), {
+        campanhaId: String(anuncio.campaign_id || anuncio.campaign?.id || ''),
+        campanhaNome: anuncio.campaign?.name || anuncio.campaign_name || null,
+        status: anuncio.status === 'active' ? 'ativa' : (anuncio.status === 'paused' ? 'pausada' : 'encerrada'),
+        statusExterno: anuncio.status || null,
+        tipo: anuncio.campaign?.strategy || null,
+        orcamentoDiario: anuncio.campaign?.budget != null ? Number(anuncio.campaign.budget) : null,
+        acps: anuncio.campaign?.acos_target != null ? Number(anuncio.campaign.acos_target) : null,
+      });
+    }
+  } catch {
+    // Conta sem Ads, ou sem permissão de publicidade no app: a aba de
+    // anúncios continua funcionando, só sem o bloco de campanha.
+  }
+  return porAnuncio;
+}
+
 module.exports = {
   buildAuthorizeUrl,
   trocarCodigoPorToken,
   renovarToken,
   buscarUsuario,
+  buscarAnuncios,
+  mapearAnuncio,
+  atualizarAnuncio,
+  buscarStatusCampanhasPorAnuncio,
   buscarPedidos,
   buscarIdsPedidosCancelados,
   buscarPedidoPorId,

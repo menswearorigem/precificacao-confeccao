@@ -288,3 +288,88 @@ pedidos do mesmo valor no mesmo dia são o caso comum, não a exceção, e
 casar por aproximação atribuiria dinheiro ao pedido errado. Lançamento sem
 vínculo aparece na tela com o filtro "só sem pedido vinculado", em vez de
 receber um pedido chutado.
+
+---
+
+# Marketplace › Anúncios (04/09/2026)
+
+## 5. Os nomes de campo das APIs de catálogo não foram conferidos contra as contas reais
+
+**O QUE FOI PEDIDO:** puxar todos os anúncios de todas as lojas e permitir
+alterar preço, estoque, título e situação por aqui.
+
+**POR QUE É UMA RESSALVA:** a leitura de catálogo e a escrita de volta foram
+escritas a partir da documentação pública de cada plataforma, sem acesso às
+contas reais da casa no momento em que o módulo foi feito. Nome de campo,
+formato de preço e nome de endpoint de catálogo mudam com mais frequência
+que os de pedido — e o de pedido, esse sim, está conferido contra a operação
+real desde as integrações anteriores. É a mesma ressalva que já vale para as
+colunas do Relatório de Liberações do Mercado Pago (item 1).
+
+**O QUE SERIA PRECISO:** uma primeira sincronização com as contas de verdade
+(Origem e Hoggar, nas três plataformas conectadas), conferindo alguns
+anúncios lado a lado com o painel de cada loja.
+
+**O QUE FIZ NO LUGAR:** campo que a plataforma não devolver fica **NULO**, e
+a tela escreve "—" em vez de zero. Um anúncio cujo detalhe falhou entra na
+lista de falhas devolvida pela sincronização e aparece no aviso da tela, em
+vez de sumir em silêncio. A escrita de volta exige confirmação explícita
+(`confirmar: true`) e registra a tentativa no histórico mesmo quando a
+plataforma recusa — nenhuma alteração é dada como feita sem a plataforma ter
+aceitado.
+
+## 6. "V. RECE." do Mercado Livre continua sendo preenchido à mão
+
+**O QUE FOI PEDIDO:** exportar a planilha no formato exato do arquivo da
+casa, com as fórmulas de cada plataforma.
+
+**POR QUE É UMA RESSALVA:** Shopee, TikTok e Shein têm regra fechada de taxa,
+e por isso viram fórmula na planilha, letra por letra como no arquivo modelo.
+O Mercado Livre não tem: a taxa depende do tipo do anúncio
+(clássico/premium), do frete grátis e da faixa de preço. No arquivo que a
+dona usa hoje, essa célula é digitada à mão — e continua sendo.
+
+**O QUE SERIA PRECISO:** a tabela de comissão por tipo de anúncio e faixa de
+preço do Mercado Livre cadastrada e conferida em Configurações › Taxas, mais
+o tipo de cada anúncio confirmado pela API de catálogo.
+
+**O QUE FIZ NO LUGAR:** quando existe um pedido do próprio anúncio já
+conciliado — com UM anúncio só no pedido, pra não ter de ratear repasse —, a
+célula sai com o **valor realmente repassado por unidade**, que é dado
+observado, com uma nota na célula dizendo de onde veio. Quando não existe, a
+célula sai **vazia**, com nota explicando que é pra preencher à mão. Em
+nenhum dos dois casos há estimativa.
+
+## 7. O histórico de alteração do anúncio começa em branco
+
+**O QUE FOI PEDIDO:** ver o histórico de alterações de cada anúncio.
+
+**POR QUE É UMA RESSALVA:** o histórico é montado comparando cada leitura com
+a anterior. Antes da primeira leitura não existe "anterior", e nenhuma das
+três plataformas oferece um histórico retroativo de preço e estoque que dê
+pra importar.
+
+**O QUE SERIA PRECISO:** que as plataformas expusessem o histórico — o
+Mercado Livre expõe uma parte, Shopee e TikTok praticamente nada, o que
+deixaria a tela desigual entre as lojas.
+
+**O QUE FIZ NO LUGAR:** a aba Histórico diz por escrito desde quando o
+registro existe, pra ninguém ler "nenhuma alteração" como "nada mudou"
+quando na verdade é "não foi gravado". A primeira leitura de um anúncio
+**não** gera linha de histórico (seria uma enxurrada de "de nada para X" no
+dia da estreia).
+
+## 8. Shein aparece na tela e na planilha, mas ainda não é lida
+
+**O QUE FOI PEDIDO:** incluir a Shein com a cor azulada, sabendo que ela
+ainda não está vinculada.
+
+**POR QUE É UMA RESSALVA:** não existe integração de Shein no sistema. Uma
+varredura de Shein não devolveria "zero anúncios" — ela recusa
+explicitamente, porque "zero anúncios" e "loja não conectada" são coisas
+diferentes e a tela não pode confundir as duas.
+
+**O QUE FIZ NO LUGAR:** a Shein tem cor, selo e linha própria na planilha
+exportada — a linha sai como **"NÃO ESTÁ ANUNCIADO"**, igual a qualquer
+outra loja sem aquele anúncio. Assim que a integração existir, o mesmo
+código passa a preencher a linha sem mudar o formato da planilha.

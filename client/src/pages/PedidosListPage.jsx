@@ -7,6 +7,9 @@ import { Select, SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, Es
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
+import {
+  CanalMarketplace, carimbarCanal, indiceDeLojas, nomeDaLoja, CAMINHO_LOJAS,
+} from '../lib/canalMarketplace';
 import DataTable from '../components/DataTable';
 import CopiarBotao from '../components/CopiarBotao';
 import { useTabela } from '../lib/useTabela';
@@ -27,7 +30,7 @@ const COLUNAS_ORDENAVEIS = {
   numero: (p) => Number(p.numero) || 0,
   data: (p) => new Date(p.data_pedido).getTime(),
   cliente: (p) => p.cliente_nome,
-  canal: (p) => p.canal_venda,
+  canal: (p) => p._canal?.texto || p.canal_venda,
   qtd: (p) => Number(p.quantidade_pecas) || 0,
   total: (p) => Number(p.total_liquido) || 0,
   situacao: (p) => p.situacao,
@@ -37,7 +40,9 @@ const COLUNAS_EXPORTACAO = [
   { rotulo: 'Nº', valor: (p) => p.numero },
   { rotulo: 'Data', valor: (p) => new Date(p.data_pedido).toLocaleDateString('pt-BR') },
   { rotulo: 'Cliente', valor: (p) => p.cliente_nome || '' },
-  { rotulo: 'Canal', valor: (p) => p.canal_venda || '' },
+  // Exportação leva o NOME DA LOJA ("MELI Origem"), não o canal genérico —
+  // é o que a planilha precisa pra separar as duas contas da mesma plataforma.
+  { rotulo: 'Canal', valor: (p) => p._canal?.texto || p.canal_venda || '' },
   { rotulo: 'Qtd. Peças', valor: (p) => formatQtd(p.quantidade_pecas) },
   { rotulo: 'Total Líquido', valor: (p) => brl(p.total_liquido) },
   { rotulo: 'Situação', valor: (p) => SITUACAO_LABEL[p.situacao] || p.situacao },
@@ -56,7 +61,10 @@ export default function PedidosListPage({ origemFiltro }) {
   const [loading, setLoading] = useState(true);
   const [criando, setCriando] = useState(false);
 
-  useEffect(() => { if (isMarketplace) api.get('/integracoes').then(setIntegracoes).catch(() => {}); }, [isMarketplace]);
+  useEffect(() => { if (isMarketplace) api.get(CAMINHO_LOJAS).then(setIntegracoes).catch(() => {}); }, [isMarketplace]);
+
+  const indiceLojas = useMemo(() => indiceDeLojas(integracoes), [integracoes]);
+  const pedidosComCanal = useMemo(() => carimbarCanal(pedidos, indiceLojas), [pedidos, indiceLojas]);
 
   const lojasDisponiveis = useMemo(() => (
     integracoes.filter((i) => !plataforma || PLATAFORMA_LABEL[i.marketplace] === plataforma)
@@ -93,7 +101,7 @@ export default function PedidosListPage({ origemFiltro }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [situacao, plataforma, lojaId, dataInicio, dataFim, busca]);
 
-  const tabela = useTabela(pedidos, { colunas: COLUNAS_ORDENAVEIS, colunaPadrao: 'data', direcaoPadrao: 'desc' });
+  const tabela = useTabela(pedidosComCanal, { colunas: COLUNAS_ORDENAVEIS, colunaPadrao: 'data', direcaoPadrao: 'desc' });
 
   async function novoPedido() {
     setCriando(true);
@@ -155,7 +163,7 @@ export default function PedidosListPage({ origemFiltro }) {
             <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)} style={{ maxWidth: 180 }}>
               <option value="">Todas as lojas</option>
               {lojasDisponiveis.map((i) => (
-                <option key={i.id} value={i.id}>{i.nome || PLATAFORMA_LABEL[i.marketplace]}</option>
+                <option key={i.id} value={i.id}>{nomeDaLoja(i)}</option>
               ))}
             </Select>
           </>
@@ -192,7 +200,7 @@ export default function PedidosListPage({ origemFiltro }) {
                 </td>
                 <td className="mono">{new Date(p.data_pedido).toLocaleDateString('pt-BR')}</td>
                 <td>{p.cliente_nome || '—'}</td>
-                <td>{p.canal_venda || '—'}</td>
+                <td><CanalMarketplace registro={p} indiceLojas={indiceLojas} /></td>
                 <td className="mono">{formatQtd(p.quantidade_pecas)} {Number(p.quantidade_pecas) === 1 ? 'peça' : 'peças'}</td>
                 <td className="mono">{brl(p.total_liquido)}</td>
                 <td><span className={'stamp sm ' + (SITUACAO_TONE[p.situacao] || 'tone-neutro')}>{SITUACAO_LABEL[p.situacao] || p.situacao}</span></td>

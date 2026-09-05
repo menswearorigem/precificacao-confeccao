@@ -51,6 +51,7 @@ export const MODULES = [
     icon: Store,
     color: 'var(--plum)',
     pages: [
+      { to: '/marketplace/anuncios', label: 'Anúncios', icon: Store },
       { to: '/marketplace/pedidos', label: 'Pedidos', icon: ClipboardList },
       { to: '/marketplace/lucratividade', label: 'Lucratividade', icon: TrendingUp },
       { to: '/marketplace/metricas', label: 'Métricas', icon: LineChart },

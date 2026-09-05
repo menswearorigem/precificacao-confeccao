@@ -991,11 +991,235 @@ function mapearTransacaoCarteira(t) {
   };
 }
 
+// ===========================================================================
+// CATÁLOGO ANUNCIADO (aba Marketplace › Anúncios, 04/09/2026)
+// ===========================================================================
+// Só leitura e escrita de anúncio. Nada daqui pra baixo é usado pelo
+// sincronismo de pedidos, pela Lucratividade ou pelo Financeiro.
+
+const STATUS_ANUNCIO_SHOPEE = {
+  NORMAL: 'ativo',
+  UNLIST: 'pausado',
+  BANNED: 'violacao',
+  DELETED: 'encerrado',
+  REVIEWING: 'em_analise',
+};
+
+// A Shopee pagina a lista de produtos por offset, em blocos de 100, e um
+// item_status por chamada — por isso o laço externo pelos quatro status.
+// Pedir só NORMAL esconderia o anúncio pausado e o banido, que são
+// exatamente os dois que interessa ver na tela.
+async function listarItemIds(credenciais) {
+  const ids = [];
+  for (const status of ['NORMAL', 'UNLIST', 'BANNED']) {
+    let offset = 0;
+    for (let pagina = 0; pagina < 200; pagina += 1) {
+      const data = await chamarDaLoja('/api/v2/product/get_item_list', {
+        ...credenciais,
+        query: { offset: String(offset), page_size: '100', item_status: status },
+      });
+      const lote = data.response?.item || [];
+      for (const item of lote) ids.push({ itemId: String(item.item_id), statusExterno: item.item_status || status });
+      if (!data.response?.has_next_page || lote.length === 0) break;
+      offset = data.response?.next_offset ?? offset + lote.length;
+    }
+  }
+  // A mesma loja pode devolver o item em mais de um status entre chamadas
+  // (o estado muda no meio da varredura) — fica o primeiro visto.
+  const porId = new Map();
+  for (const entrada of ids) if (!porId.has(entrada.itemId)) porId.set(entrada.itemId, entrada);
+  return [...porId.values()];
+}
+
+// Detalhe em lote: get_item_base_info aceita até 50 ids por chamada.
+async function buscarInfoBaseItens(credenciais, itemIds) {
+  const itens = [];
+  for (let i = 0; i < itemIds.length; i += 50) {
+    const lote = itemIds.slice(i, i + 50);
+    const data = await chamarDaLoja('/api/v2/product/get_item_base_info', {
+      ...credenciais,
+      query: { item_id_list: lote.join(','), need_tax_info: 'false', need_complaint_policy: 'false' },
+    });
+    itens.push(...(data.response?.item_list || []));
+  }
+  return itens;
+}
+
+// Variações (models). Na Shopee o PREÇO e o ESTOQUE moram na variação, não
+// no anúncio — o anúncio só tem a faixa. Por isso a varredura busca os
+// models de cada item: sem isso não dá pra dizer o preço de nada.
+async function buscarModelsDoItem(credenciais, itemId) {
+  const data = await chamarDaLoja('/api/v2/product/get_model_list', {
+    ...credenciais,
+    query: { item_id: String(itemId) },
+  });
+  const tiers = data.response?.tier_variation || [];
+  return (data.response?.model || []).map((m) => {
+    // model.tier_index aponta a posição do nome da opção dentro de cada
+    // eixo de variação (0 = geralmente cor, 1 = tamanho). É assim que se
+    // recompõe "PRETO / GG" — a Shopee não manda o texto pronto.
+    const nomes = (m.tier_index || []).map((idx, eixo) => tiers[eixo]?.option_list?.[idx]?.option || null);
+    return {
+      variacaoIdExterna: String(m.model_id),
+      skuExterno: m.model_sku || null,
+      cor: nomes[0] || null,
+      tamanho: nomes[1] || null,
+      // A Shopee manda preço em `current_price`/`original_price` dentro de
+      // price_info. Já vem na moeda da loja (BRL), sem divisão por 100.
+      preco: m.price_info?.[0]?.current_price != null ? Number(m.price_info[0].current_price) : null,
+      precoOriginal: m.price_info?.[0]?.original_price != null ? Number(m.price_info[0].original_price) : null,
+      estoque: m.stock_info_v2?.summary_info?.total_available_stock != null
+        ? Number(m.stock_info_v2.summary_info.total_available_stock)
+        : null,
+      bruto: m,
+    };
+  });
+}
+
+function mapearAnuncioShopee(item, variacoes) {
+  const precos = variacoes.map((v) => v.preco).filter((p) => p != null);
+  const estoques = variacoes.map((v) => v.estoque).filter((e) => e != null);
+  return {
+    anuncioIdExterno: String(item.item_id),
+    titulo: item.item_name || null,
+    skuExterno: item.item_sku || null,
+    // Anúncio sem variação: a Shopee devolve um único model, então o preço
+    // do anúncio é o menor dos models. Quando não veio model nenhum o campo
+    // fica NULO — não é zero, é "não foi possível ler".
+    preco: precos.length ? Math.min(...precos) : (item.price_info?.[0]?.current_price != null ? Number(item.price_info[0].current_price) : null),
+    precoOriginal: item.price_info?.[0]?.original_price != null ? Number(item.price_info[0].original_price) : null,
+    estoque: estoques.length
+      ? estoques.reduce((s, e) => s + e, 0)
+      : (item.stock_info_v2?.summary_info?.total_available_stock != null
+        ? Number(item.stock_info_v2.summary_info.total_available_stock)
+        : null),
+    status: STATUS_ANUNCIO_SHOPEE[item.item_status] || 'pausado',
+    statusExterno: item.item_status || null,
+    url: item.item_id ? `https://shopee.com.br/product/${item.shop_id || ''}/${item.item_id}` : null,
+    fotoUrl: item.image?.image_url_list?.[0] || null,
+    categoriaExterna: item.category_id != null ? String(item.category_id) : null,
+    tipoAnuncio: item.item_status === 'NORMAL' && item.has_model ? 'com_variacao' : 'simples',
+    vendasTotal: item.sold != null ? Number(item.sold) : null,
+    visitas: item.views != null ? Number(item.views) : null,
+    curtidas: item.likes != null ? Number(item.likes) : null,
+    criadoEmPlataforma: item.create_time ? new Date(item.create_time * 1000).toISOString() : null,
+    atualizadoEmPlataforma: item.update_time ? new Date(item.update_time * 1000).toISOString() : null,
+    variacoes,
+    bruto: item,
+  };
+}
+
+async function buscarAnuncios({ partnerId, partnerKey, accessToken, shopId }) {
+  const credenciais = { partnerId, partnerKey, accessToken, shopId };
+  const listados = await listarItemIds(credenciais);
+  if (listados.length === 0) return { anuncios: [], falhas: [] };
+
+  const itens = await buscarInfoBaseItens(credenciais, listados.map((l) => l.itemId));
+  const anuncios = [];
+  const falhas = [];
+  for (const item of itens) {
+    let variacoes = [];
+    try {
+      variacoes = await buscarModelsDoItem(credenciais, item.item_id);
+    } catch (err) {
+      // Sem os models não dá pra saber preço nem estoque desse anúncio. Ele
+      // entra assim mesmo (o título e o status valem), mas a falha é
+      // devolvida pra tela poder dizer que aquele preço não foi lido.
+      falhas.push({ id: String(item.item_id), erro: err.message });
+    }
+    anuncios.push(mapearAnuncioShopee({ ...item, shop_id: shopId }, variacoes));
+  }
+  return { anuncios, falhas };
+}
+
+// Escrita de volta. Preço e estoque são endpoints SEPARADOS na Shopee, e
+// os dois trabalham por model_id — anúncio com variação não aceita um preço
+// só. Quando o anúncio não tem variação, a própria Shopee cria um model
+// único, e é o model_id dele que vai aqui.
+async function atualizarPrecoShopee({ partnerId, partnerKey, accessToken, shopId, itemId, precos }) {
+  return chamarDaLoja('/api/v2/product/update_price', {
+    partnerId,
+    partnerKey,
+    accessToken,
+    shopId,
+    method: 'POST',
+    body: {
+      item_id: Number(itemId),
+      price_list: precos.map((p) => ({ model_id: Number(p.variacaoIdExterna), original_price: Number(p.preco) })),
+    },
+  });
+}
+
+async function atualizarEstoqueShopee({ partnerId, partnerKey, accessToken, shopId, itemId, estoques }) {
+  return chamarDaLoja('/api/v2/product/update_stock', {
+    partnerId,
+    partnerKey,
+    accessToken,
+    shopId,
+    method: 'POST',
+    body: {
+      item_id: Number(itemId),
+      stock_list: estoques.map((e) => ({
+        model_id: Number(e.variacaoIdExterna),
+        seller_stock: [{ stock: Number(e.estoque) }],
+      })),
+    },
+  });
+}
+
+// Só o título/estado do anúncio (update_item aceita os dois; preço e
+// estoque vão pelos endpoints acima, de propósito).
+async function atualizarItemShopee({ partnerId, partnerKey, accessToken, shopId, itemId, titulo, itemStatus }) {
+  const body = { item_id: Number(itemId) };
+  if (titulo != null) body.item_name = titulo;
+  if (itemStatus != null) body.item_status = itemStatus;
+  if (Object.keys(body).length === 1) return null;
+  return chamarDaLoja('/api/v2/product/update_item', {
+    partnerId, partnerKey, accessToken, shopId, method: 'POST', body,
+  });
+}
+
+// Estado das campanhas por anúncio. Reaproveita listarCampanhasAds e
+// resolverAnunciosDasCampanhas, que já existiam pra métrica diária — aqui
+// só se lê o ESTADO (ligada/pausada, orçamento), sem tocar em gasto.
+async function buscarStatusCampanhasPorAnuncio({ partnerId, partnerKey, accessToken, shopId }) {
+  const porAnuncio = new Map();
+  try {
+    const campanhas = await listarCampanhasAds({ partnerId, partnerKey, accessToken, shopId });
+    const ids = campanhas.map((c) => c.campaign_id).filter(Boolean);
+    const anuncioPorCampanha = await resolverAnunciosDasCampanhas(
+      { partnerId, partnerKey, accessToken, shopId },
+      ids
+    );
+    for (const c of campanhas) {
+      const itemId = anuncioPorCampanha.get(String(c.campaign_id)) || extrairItemIdDaCampanha(c);
+      if (!itemId) continue;
+      porAnuncio.set(String(itemId), {
+        campanhaId: String(c.campaign_id),
+        campanhaNome: c.ad_name || c.campaign_name || null,
+        status: c.status === 'ongoing' ? 'ativa' : (c.status === 'paused' ? 'pausada' : 'encerrada'),
+        statusExterno: c.status || null,
+        tipo: c.campaign_type || c.ad_type || null,
+        orcamentoDiario: c.daily_budget != null ? Number(c.daily_budget) : null,
+        acps: c.roi_target != null ? Number(c.roi_target) : null,
+      });
+    }
+  } catch {
+    // Loja sem Ads ou sem permissão de publicidade: a aba segue viva.
+  }
+  return porAnuncio;
+}
+
 module.exports = {
   buildAuthorizeUrl,
   trocarCodigoPorToken,
   renovarToken,
   buscarInfoLoja,
+  buscarAnuncios,
+  atualizarPrecoShopee,
+  atualizarEstoqueShopee,
+  atualizarItemShopee,
+  buscarStatusCampanhasPorAnuncio,
   buscarPedidos,
   buscarPedidoPorId,
   buscarStatusPedidos,

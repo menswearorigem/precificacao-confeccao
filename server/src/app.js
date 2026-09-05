@@ -33,6 +33,7 @@ const qualidadeDadosRoutes = require('./routes/qualidadeDados.routes');
 const calendarioRoutes = require('./routes/calendario.routes');
 const gruposRoutes = require('./routes/grupos.routes');
 const produtoMarketplaceRoutes = require('./routes/produtoMarketplace.routes');
+const anunciosRoutes = require('./routes/anuncios.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
 const auditoriaRoutes = require('./routes/auditoria.routes');
 const emailRoutes = require('./routes/email.routes');
@@ -123,6 +124,11 @@ function createApp() {
     requireModulo(['produto', 'estoque', 'configuracoes']),
     produtoMarketplaceRoutes
   );
+  // Aba Marketplace › Anúncios (04/09/2026). Fica sob o módulo `marketplace`
+  // — o mesmo de Pedidos e Lucratividade — e NÃO sob `configuracoes`: quem
+  // cuida de anúncio precisa disto no dia a dia, e nenhuma permissão
+  // existente muda por causa desta rota nova.
+  app.use('/api/anuncios', requireAuth, requireModulo('marketplace'), anunciosRoutes);
   app.use('/api/clientes', requireAuth, requireModulo('vendas'), clientesRoutes);
   app.use('/api/pedidos', requireAuth, requireModulo(['vendas', 'marketplace']), pedidosRoutes);
   app.use('/api/fornecedores', requireAuth, requireModulo('compras'), fornecedoresRoutes);

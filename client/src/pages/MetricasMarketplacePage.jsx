@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts';
 import {
   ArrowDownRight, ArrowUpRight, Banknote, ShoppingCart, CheckCircle2,
-  Users, TrendingUp, Store, Boxes, PackageMinus, Handshake, ShoppingBag,
+  Users, TrendingUp, Boxes, PackageMinus,
   Flame, Layers, Star, ShieldCheck, Swords, Megaphone, MousePointerClick, Eye, RefreshCw, ChevronDown, Search,
 } from 'lucide-react';
 import { api } from '../api/client';
@@ -11,6 +11,9 @@ import { DateInput, Select, StatCard } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { PRESETS_PERIODO } from '../lib/periodos';
 import { PLATAFORMA_LABEL, PLATAFORMAS_COM_ADS } from '../lib/marketplaces';
+import {
+  CanalMarketplace, SeloPlataforma, indiceDeLojas, nomeDaLoja, CAMINHO_LOJAS,
+} from '../lib/canalMarketplace';
 import FotoProduto from '../components/FotoProduto';
 import DataTable from '../components/DataTable';
 
@@ -35,35 +38,11 @@ const LINK_STYLE = { background: 'none', border: 'none', color: 'var(--terracott
 // lojas da MESMA plataforma). Não são os logos exatos (sem acesso ao
 // arquivo de imagem), mas usam a cor de marca + um ícone representativo —
 // vetorial, então fica nítido em qualquer tamanho/resolução.
-const PLATAFORMA_MARCA = {
-  mercado_livre: { cor: '#FFE600', corIcone: '#2d2d6b', Icone: Handshake },
-  shopee: { cor: '#EE4D2D', corIcone: '#ffffff', Icone: ShoppingBag },
-};
-
-function IconePlataforma({ marketplace, size = 24 }) {
-  const marca = PLATAFORMA_MARCA[marketplace];
-  if (!marca) {
-    return (
-      <span style={{
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        width: size, height: size, borderRadius: '50%', background: 'var(--surface-alt)',
-        border: '1px solid var(--border)', flexShrink: 0,
-      }}>
-        <Store size={size * 0.56} color="var(--ink-faint)" strokeWidth={2.2} />
-      </span>
-    );
-  }
-  const { cor, corIcone, Icone } = marca;
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      width: size, height: size, borderRadius: '50%', background: cor,
-      boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.08)', flexShrink: 0,
-    }}>
-      <Icone size={size * 0.56} color={corIcone} strokeWidth={2.4} />
-    </span>
-  );
-}
+// O símbolo de plataforma agora mora em lib/canalMarketplace.jsx (SeloPlataforma):
+// era um componente local que só conhecia Mercado Livre e Shopee, com cor de
+// marca escrita à mão. O selo compartilhado cobre as quatro plataformas e usa
+// os tokens --mkt-* do tema.
+const IconePlataforma = ({ marketplace, size = 24 }) => <SeloPlataforma chave={marketplace} size={size} />;
 
 // ROAS é multiplicador (2.0 = "a cada R$1 investido em Ads, voltam R$2 em
 // venda"), não porcentagem — formata como "2,0x" em vez de passar pelo
@@ -367,10 +346,25 @@ function PorLojaTab({ filtros }) {
             {dados.lojas.map((l) => (
               <tr key={l.integracaoId || 'sem-integracao'}>
                 <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <IconePlataforma marketplace={l.marketplace} size={22} />
-                  {l.nome}
+                  <SeloPlataforma chave={l.marketplace} size={22} />
+                  {nomeDaLoja({ marketplace: l.marketplace, nome: l.nome })}
                 </td>
-                <td>{l.canalVenda || '—'}</td>
+                <td>
+                  {/* O canal genérico ("Mercado Livre") virou o nome da loja
+                      ("MELI Origem") — a própria linha já traz o nome da
+                      conexão, então não precisa do índice de lojas aqui. */}
+                  <CanalMarketplace
+                    registro={{
+                      marketplace: l.marketplace,
+                      canal_venda: l.canalVenda,
+                      _canal: {
+                        chave: l.marketplace,
+                        texto: nomeDaLoja({ marketplace: l.marketplace, nome: l.nome }),
+                        lojaConhecida: Boolean(l.nome),
+                      },
+                    }}
+                  />
+                </td>
                 <td className="mono">{brl(l.valorTotalVendas)}</td>
                 <td className="mono">{formatQtd(l.totalPedidos)}</td>
                 <td className="mono">{brl(l.valorVendasValidas)}</td>
@@ -937,7 +931,7 @@ function PublicidadeTab({ integracoes }) {
             <div className="field">
               <span className="field-label">Loja</span>
               <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)}>
-                {lojasML.map((l) => <option key={l.id} value={l.id}>{`${l.nome} — ${PLATAFORMA_LABEL[l.marketplace]}`}</option>)}
+                {lojasML.map((l) => <option key={l.id} value={l.id}>{nomeDaLoja(l)}</option>)}
               </Select>
             </div>
           )}
@@ -1469,7 +1463,7 @@ export default function MetricasMarketplacePage() {
   const abaEmMais = TABS_MAIS.some((t) => t.key === subTab);
   const [integracoes, setIntegracoes] = useState([]);
 
-  useEffect(() => { api.get('/integracoes').then(setIntegracoes).catch(() => {}); }, []);
+  useEffect(() => { api.get(CAMINHO_LOJAS).then(setIntegracoes).catch(() => {}); }, []);
 
   // Loja só mostra as integrações da Plataforma escolhida (ou todas, se
   // nenhuma plataforma foi selecionada ainda) — evita listar "Shopee X"
@@ -1513,7 +1507,7 @@ export default function MetricasMarketplacePage() {
         <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)} style={{ maxWidth: 180 }}>
           <option value="">Todas as lojas</option>
           {lojasDisponiveis.map((i) => (
-            <option key={i.id} value={i.id}>{i.nome || PLATAFORMA_LABEL[i.marketplace]}</option>
+            <option key={i.id} value={i.id}>{nomeDaLoja(i)}</option>
           ))}
         </Select>
         {(subTab === 'vendasPorAnuncio' || subTab === 'abc') && (

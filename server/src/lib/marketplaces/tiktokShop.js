@@ -577,11 +577,185 @@ async function buscarSaques({ appKey, appSecret, accessToken, shopCipher, desdeU
   return saques;
 }
 
+// ===========================================================================
+// CATÁLOGO ANUNCIADO (aba Marketplace › Anúncios, 04/09/2026)
+// ===========================================================================
+// Só leitura e escrita de anúncio. Nada daqui pra baixo é chamado pelo
+// sincronismo de pedidos, pelo settlement ou pelo Financeiro.
+
+const STATUS_ANUNCIO_TIKTOK = {
+  ACTIVATE: 'ativo',
+  DRAFT: 'pausado',
+  PENDING: 'em_analise',
+  FAILED: 'violacao',
+  SELLER_DEACTIVATED: 'pausado',
+  PLATFORM_DEACTIVATED: 'violacao',
+  FREEZE: 'pausado',
+  DELETED: 'encerrado',
+};
+
+// A busca de produtos da TikTok é POST com paginação por page_token (não
+// por offset). `status` vazio traz todos — inclusive o desativado e o
+// reprovado, que são os que interessa enxergar na tela.
+async function buscarAnunciosBrutos({ appKey, appSecret, accessToken, shopCipher }) {
+  const produtos = [];
+  let pageToken = '';
+  for (let pagina = 0; pagina < 200; pagina += 1) {
+    const query = { shop_cipher: shopCipher, page_size: 100 };
+    if (pageToken) query.page_token = pageToken;
+    const data = await chamarApi('/product/202312/products/search', {
+      appKey,
+      appSecret,
+      accessToken,
+      query,
+      method: 'POST',
+      body: {},
+    });
+    const lote = data.products || [];
+    produtos.push(...lote);
+    pageToken = data.next_page_token || '';
+    if (!pageToken || lote.length === 0) break;
+  }
+  return produtos;
+}
+
+// A busca devolve o produto resumido. O detalhe (foto, categoria, preço por
+// SKU) só vem em /products/{id} — buscado um a um, que é o único jeito que
+// a API oferece.
+async function buscarDetalheAnuncio({ appKey, appSecret, accessToken, shopCipher, productId }) {
+  return chamarApi(`/product/202309/products/${productId}`, {
+    appKey,
+    appSecret,
+    accessToken,
+    query: { shop_cipher: shopCipher },
+  });
+}
+
+function mapearAnuncioTikTok(produto) {
+  const skus = produto.skus || [];
+  const variacoes = skus.map((s) => {
+    const atributos = s.sales_attributes || [];
+    const acha = (nomes) => atributos.find((a) => nomes.includes(String(a.name || '').toLowerCase()))?.value_name || null;
+    return {
+      variacaoIdExterna: String(s.id),
+      skuExterno: s.seller_sku || null,
+      cor: acha(['cor', 'color', 'cores']),
+      tamanho: acha(['tamanho', 'size']),
+      // price.sale_price vem como STRING na TikTok ("59.90"). Number() aqui
+      // preserva as casas; parseInt cortaria os centavos.
+      preco: s.price?.sale_price != null ? Number(s.price.sale_price) : null,
+      precoOriginal: s.price?.tax_exclusive_price != null ? Number(s.price.tax_exclusive_price) : null,
+      estoque: Array.isArray(s.inventory)
+        ? s.inventory.reduce((soma, i) => soma + (Number(i.quantity) || 0), 0)
+        : null,
+      bruto: s,
+    };
+  });
+
+  const precos = variacoes.map((v) => v.preco).filter((p) => p != null);
+  const estoques = variacoes.map((v) => v.estoque).filter((e) => e != null);
+
+  return {
+    anuncioIdExterno: String(produto.id),
+    titulo: produto.title || null,
+    skuExterno: skus[0]?.seller_sku || null,
+    preco: precos.length ? Math.min(...precos) : null,
+    precoOriginal: null,
+    estoque: estoques.length ? estoques.reduce((s, e) => s + e, 0) : null,
+    status: STATUS_ANUNCIO_TIKTOK[produto.status] || 'pausado',
+    statusExterno: produto.status || null,
+    url: produto.id ? `https://shop.tiktok.com/view/product/${produto.id}` : null,
+    fotoUrl: produto.main_images?.[0]?.urls?.[0] || null,
+    categoriaExterna: produto.category_chains?.map((c) => c.local_name).filter(Boolean).join(' > ') || null,
+    tipoAnuncio: variacoes.length > 1 ? 'com_variacao' : 'simples',
+    // A busca de produtos da TikTok NÃO devolve vendas nem visitas. Fica
+    // NULO de propósito — nulo aqui significa "a plataforma não informa",
+    // e a tela escreve isso; zero seria mentira (REGRA 2).
+    vendasTotal: null,
+    visitas: null,
+    curtidas: null,
+    criadoEmPlataforma: produto.create_time ? new Date(produto.create_time * 1000).toISOString() : null,
+    atualizadoEmPlataforma: produto.update_time ? new Date(produto.update_time * 1000).toISOString() : null,
+    variacoes,
+    bruto: produto,
+  };
+}
+
+async function buscarAnuncios({ appKey, appSecret, accessToken, shopCipher }) {
+  const resumidos = await buscarAnunciosBrutos({ appKey, appSecret, accessToken, shopCipher });
+  const anuncios = [];
+  const falhas = [];
+  for (const resumo of resumidos) {
+    try {
+      const detalhe = await buscarDetalheAnuncio({
+        appKey, appSecret, accessToken, shopCipher, productId: resumo.id,
+      });
+      anuncios.push(mapearAnuncioTikTok({ ...resumo, ...detalhe }));
+    } catch (err) {
+      // Sem o detalhe ainda dá pra registrar o anúncio pelo resumo — some
+      // a foto e a categoria, mas o título, o status e o id ficam.
+      falhas.push({ id: String(resumo.id), erro: err.message });
+      anuncios.push(mapearAnuncioTikTok(resumo));
+    }
+  }
+  return { anuncios, falhas };
+}
+
+// Escrita de volta: preço e estoque são chamadas separadas, as duas por SKU.
+async function atualizarPrecoTikTok({ appKey, appSecret, accessToken, shopCipher, productId, precos }) {
+  return chamarApi(`/product/202309/products/${productId}/prices`, {
+    appKey,
+    appSecret,
+    accessToken,
+    query: { shop_cipher: shopCipher },
+    method: 'POST',
+    body: {
+      skus: precos.map((p) => ({
+        id: String(p.variacaoIdExterna),
+        price: { amount: Number(p.preco).toFixed(2), currency: 'BRL' },
+      })),
+    },
+  });
+}
+
+async function atualizarEstoqueTikTok({ appKey, appSecret, accessToken, shopCipher, productId, estoques }) {
+  return chamarApi(`/product/202309/products/${productId}/inventory/update`, {
+    appKey,
+    appSecret,
+    accessToken,
+    query: { shop_cipher: shopCipher },
+    method: 'POST',
+    body: {
+      skus: estoques.map((e) => ({
+        id: String(e.variacaoIdExterna),
+        inventory: [{ quantity: Number(e.estoque) }],
+      })),
+    },
+  });
+}
+
+// Ativar/desativar o anúncio. A TikTok separa isso do resto da edição.
+async function alterarStatusTikTok({ appKey, appSecret, accessToken, shopCipher, productIds, ativar }) {
+  const caminho = ativar ? 'activate' : 'deactivate';
+  return chamarApi(`/product/202309/products/${caminho}`, {
+    appKey,
+    appSecret,
+    accessToken,
+    query: { shop_cipher: shopCipher },
+    method: 'POST',
+    body: { product_ids: productIds.map(String) },
+  });
+}
+
 module.exports = {
   buildAuthorizeUrl,
   trocarCodigoPorToken,
   renovarToken,
   buscarLojasAutorizadas,
+  buscarAnuncios,
+  atualizarPrecoTikTok,
+  atualizarEstoqueTikTok,
+  alterarStatusTikTok,
   buscarPedidos,
   buscarPedidoPorId,
   buscarIdsPedidosCancelados,

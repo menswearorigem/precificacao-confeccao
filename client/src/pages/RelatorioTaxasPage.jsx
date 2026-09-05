@@ -6,6 +6,9 @@ import { Select, ThOrdenavel, Paginacao, Checkbox, BotaoExportar } from '../comp
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
+import {
+  CanalMarketplace, carimbarCanal, indiceDeLojas, nomeDaLoja, CAMINHO_LOJAS,
+} from '../lib/canalMarketplace';
 import DataTable from '../components/DataTable';
 import CopiarBotao from '../components/CopiarBotao';
 import { useTabela } from '../lib/useTabela';
@@ -13,7 +16,7 @@ import { useTabela } from '../lib/useTabela';
 const COLUNAS_ORDENAVEIS = {
   numero: (p) => Number(p.numero) || 0,
   data: (p) => new Date(p.data_pedido).getTime(),
-  canal: (p) => p.canal_venda,
+  canal: (p) => p._canal?.texto || p.canal_venda,
   receita: (p) => Number(p.receita) || 0,
   taxaCobrada: (p) => Number(p.taxaCobrada) || 0,
   taxaEsperada: (p) => (p.semTabelaCadastrada ? -Infinity : Number(p.taxaEsperada) || 0),
@@ -26,7 +29,7 @@ const COLUNAS_ORDENAVEIS = {
 const COLUNAS_EXPORTACAO = [
   { rotulo: 'Nº', valor: (p) => p.numero },
   { rotulo: 'Data', valor: (p) => new Date(p.data_pedido).toLocaleDateString('pt-BR') },
-  { rotulo: 'Canal', valor: (p) => p.canal_venda },
+  { rotulo: 'Canal', valor: (p) => p._canal?.texto || p.canal_venda },
   { rotulo: 'Receita', valor: (p) => brl(p.receita) },
   { rotulo: 'Taxa Cobrada', valor: (p) => brl(p.taxaCobrada) },
   { rotulo: 'Taxa Esperada', valor: (p) => (p.semTabelaCadastrada ? '—' : brl(p.taxaEsperada)) },
@@ -48,7 +51,9 @@ export default function RelatorioTaxasPage() {
   const [revinculando, setRevinculando] = useState(false);
   const [avisoRevinculo, setAvisoRevinculo] = useState('');
 
-  useEffect(() => { api.get('/integracoes').then(setIntegracoes).catch(() => {}); }, []);
+  useEffect(() => { api.get(CAMINHO_LOJAS).then(setIntegracoes).catch(() => {}); }, []);
+
+  const indiceLojas = useMemo(() => indiceDeLojas(integracoes), [integracoes]);
 
   const lojasDisponiveis = useMemo(() => (
     integracoes.filter((i) => !canalVenda || PLATAFORMA_LABEL[i.marketplace] === canalVenda)
@@ -87,8 +92,11 @@ export default function RelatorioTaxasPage() {
 
   const pedidosFiltrados = useMemo(() => {
     if (!relatorio) return [];
-    return somenteDivergentes ? relatorio.pedidos.filter((p) => p.divergente) : relatorio.pedidos;
-  }, [relatorio, somenteDivergentes]);
+    const base = somenteDivergentes ? relatorio.pedidos.filter((p) => p.divergente) : relatorio.pedidos;
+    // Carimba o nome da loja uma vez só: tabela, ordenação e exportação
+    // passam a falar "MELI Origem" em vez do canal genérico.
+    return carimbarCanal(base, indiceLojas);
+  }, [relatorio, somenteDivergentes, indiceLojas]);
 
   const tabela = useTabela(pedidosFiltrados, { colunas: COLUNAS_ORDENAVEIS, colunaPadrao: 'data', direcaoPadrao: 'desc' });
 
@@ -134,7 +142,7 @@ export default function RelatorioTaxasPage() {
           <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)} style={{ maxWidth: 180 }}>
             <option value="">Todas as lojas</option>
             {lojasDisponiveis.map((i) => (
-              <option key={i.id} value={i.id}>{i.nome || PLATAFORMA_LABEL[i.marketplace]}</option>
+              <option key={i.id} value={i.id}>{nomeDaLoja(i)}</option>
             ))}
           </Select>
           <div className="filtros-barra-acoes">
@@ -224,7 +232,7 @@ export default function RelatorioTaxasPage() {
                         </span>
                       </td>
                       <td className="mono">{new Date(p.data_pedido).toLocaleDateString('pt-BR')}</td>
-                      <td>{p.canal_venda}</td>
+                      <td><CanalMarketplace registro={p} indiceLojas={indiceLojas} /></td>
                       <td className="mono">{brl(p.receita)}</td>
                       <td className="mono">{brl(p.taxaCobrada)}</td>
                       <td className="mono">

@@ -112,6 +112,27 @@
   --gr-eixo: #ddd0b4;
   --gr-rotulo: #6b5d4d;
   --tone-edge: 100%;
+
+  /* ---------- cor por plataforma de marketplace (aba Anúncios, 04/09/2026)
+     Cada plataforma tem um TOM próprio, pedido pela dona: Mercado Livre
+     amarelado, Shopee alaranjado, TikTok Shop acinzentado, Shein azulado.
+     São tokens de IDENTIFICAÇÃO, não de estado — não confundir com
+     --success/--warning/--danger, que continuam significando estado do dado
+     (REGRA 3). Cada plataforma tem três: `-ink` (texto e selo), `-bg`
+     (fundo do cartão) e `-edge` (borda esquerda, a marca visual que
+     diferencia a loja de longe). */
+  --mkt-meli-ink: #7a5a12;
+  --mkt-meli-bg: #fbf1d3;
+  --mkt-meli-edge: #d8b23a;
+  --mkt-shopee-ink: #8f3d12;
+  --mkt-shopee-bg: #fce3d4;
+  --mkt-shopee-edge: #e2622a;
+  --mkt-tiktok-ink: #3b3630;
+  --mkt-tiktok-bg: #e8e4dc;
+  --mkt-tiktok-edge: #8b8177;
+  --mkt-shein-ink: #23445e;
+  --mkt-shein-bg: #d9e6f0;
+  --mkt-shein-edge: #3f7099;
 }
 
 /* ---------- tema escuro (Onda 4.10) ----------
@@ -210,6 +231,18 @@
     --gr-eixo: #54422d;
     --gr-rotulo: #cbb99e;
     --table-edge-shadow: rgba(0, 0, 0, 0.55);
+    --mkt-meli-ink: #e2c069;
+    --mkt-meli-bg: #35291180;
+    --mkt-meli-edge: #c9a251;
+    --mkt-shopee-ink: #efa273;
+    --mkt-shopee-bg: #3a241680;
+    --mkt-shopee-edge: #d2743c;
+    --mkt-tiktok-ink: #cfc6b8;
+    --mkt-tiktok-bg: #2e281f80;
+    --mkt-tiktok-edge: #8b8177;
+    --mkt-shein-ink: #9dbdd6;
+    --mkt-shein-bg: #1e2b3680;
+    --mkt-shein-edge: #5f8fb5;
   }
 }
 :root[data-theme="dark"] {
@@ -301,6 +334,18 @@
   --gr-eixo: #54422d;
   --gr-rotulo: #cbb99e;
   --table-edge-shadow: rgba(0, 0, 0, 0.55);
+  --mkt-meli-ink: #e2c069;
+  --mkt-meli-bg: #35291180;
+  --mkt-meli-edge: #c9a251;
+  --mkt-shopee-ink: #efa273;
+  --mkt-shopee-bg: #3a241680;
+  --mkt-shopee-edge: #d2743c;
+  --mkt-tiktok-ink: #cfc6b8;
+  --mkt-tiktok-bg: #2e281f80;
+  --mkt-tiktok-edge: #8b8177;
+  --mkt-shein-ink: #9dbdd6;
+  --mkt-shein-bg: #1e2b3680;
+  --mkt-shein-edge: #5f8fb5;
 }
 /* A impressão continua sempre clara, mesmo com tema escuro ativo — a
    ficha impressa é pra ler no papel, não na tela. */
@@ -4448,4 +4493,166 @@ table.ficha-doc-tabela {
   .ranking-linha { grid-template-columns: 20px minmax(0, 1fr) auto; row-gap: 4px; }
   .ranking-barra { grid-column: 2 / -1; }
   .ranking-pct { display: none; }
+}
+
+/* ===========================================================================
+   Marketplace › Anúncios (04/09/2026)
+   Grade de cartões no formato que a dona já conhece do painel da Shopee:
+   foto grande, título em duas linhas, preço em destaque, estoque e as três
+   métricas embaixo. O que muda: cada cartão carrega a COR DA PLATAFORMA e o
+   nome da LOJA, porque aqui convivem quatro plataformas e duas contas em
+   cada uma — sem isso não dá pra saber de quem é o anúncio de relance.
+   =========================================================================== */
+
+/* Selo de plataforma — duas letras na cor do canal. Usado também nas telas
+   de Pedidos, Taxas, Lucratividade e Métricas pra substituir o canal
+   genérico. */
+.selo-plataforma {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--selo-size, 16px);
+  height: var(--selo-size, 16px);
+  border-radius: 5px;
+  line-height: 1;
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+}
+.selo-plataforma svg { display: block; }
+.selo-plataforma.plataforma-mercado_livre { background: var(--mkt-meli-bg); color: var(--mkt-meli-ink); border-color: var(--mkt-meli-edge); }
+.selo-plataforma.plataforma-shopee { background: var(--mkt-shopee-bg); color: var(--mkt-shopee-ink); border-color: var(--mkt-shopee-edge); }
+.selo-plataforma.plataforma-tiktok_shop { background: var(--mkt-tiktok-bg); color: var(--mkt-tiktok-ink); border-color: var(--mkt-tiktok-edge); }
+.selo-plataforma.plataforma-shein { background: var(--mkt-shein-bg); color: var(--mkt-shein-ink); border-color: var(--mkt-shein-edge); }
+.selo-plataforma-desconhecida { background: var(--surface-alt); color: var(--ink-faint); border-color: var(--border); }
+
+.canal-marketplace { display: inline-flex; align-items: center; gap: 6px; }
+/* Canal sem loja identificada fica em tom apagado — é a dica visual de que
+   ali falta vínculo, não de que a loja se chama assim. */
+.canal-marketplace-generico { color: var(--ink-faint); font-style: italic; }
+
+/* ---- grade de anúncios ---- */
+.anuncios-grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px;
+}
+.anuncio-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+  transition: box-shadow 140ms var(--ease), transform 140ms var(--ease);
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+.anuncio-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.anuncio-card:focus-visible { outline: 2px solid var(--terracotta); outline-offset: 2px; }
+.anuncio-card.selecionado { box-shadow: 0 0 0 2px var(--terracotta); }
+
+/* A cor da plataforma: fundo do cartão e faixa na borda esquerda. */
+.anuncio-card.plataforma-mercado_livre { background: var(--mkt-meli-bg); border-left-color: var(--mkt-meli-edge); }
+.anuncio-card.plataforma-shopee { background: var(--mkt-shopee-bg); border-left-color: var(--mkt-shopee-edge); }
+.anuncio-card.plataforma-tiktok_shop { background: var(--mkt-tiktok-bg); border-left-color: var(--mkt-tiktok-edge); }
+.anuncio-card.plataforma-shein { background: var(--mkt-shein-bg); border-left-color: var(--mkt-shein-edge); }
+
+.anuncio-card-foto {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  background: var(--surface-alt);
+  overflow: hidden;
+}
+.anuncio-card-foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.anuncio-card-foto-vazia {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ink-faint);
+}
+/* Selo da loja sobre a foto — o "elemento visual claro" que diz de qual
+   conta é aquele anúncio sem precisar ler nada. */
+.anuncio-card-loja {
+  position: absolute;
+  top: 6px; left: 6px;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 7px 3px 4px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-xs);
+  max-width: calc(100% - 12px);
+}
+.anuncio-card-loja span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anuncio-card-desconto {
+  position: absolute; top: 6px; right: 6px;
+  padding: 2px 6px; border-radius: var(--radius-sm);
+  background: var(--danger); color: var(--on-accent);
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+}
+.anuncio-card-ads {
+  position: absolute; bottom: 6px; left: 6px;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 7px; border-radius: 999px;
+  background: var(--terracotta); color: var(--on-accent);
+  font-size: 10px; font-weight: 700;
+}
+.anuncio-card-corpo { padding: 9px 10px 10px; display: flex; flex-direction: column; gap: 5px; flex: 1; }
+.anuncio-card-titulo {
+  font-size: 12px; line-height: 1.32; margin: 0;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  min-height: 2.64em;
+}
+.anuncio-card-preco { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 700; color: var(--terracotta); }
+.anuncio-card-preco small { font-size: 10px; color: var(--ink-faint); text-decoration: line-through; margin-left: 5px; font-weight: 400; }
+.anuncio-card-estoque { font-size: 11px; color: var(--ink-soft); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.anuncio-card-metricas {
+  display: flex; gap: 10px; flex-wrap: wrap;
+  font-size: 10.5px; color: var(--ink-soft);
+  border-top: 1px solid var(--border-soft); padding-top: 6px; margin-top: auto;
+}
+.anuncio-card-metricas span { display: inline-flex; align-items: center; gap: 3px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.anuncio-card-ref { font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); }
+.anuncio-card-sem-vinculo { color: var(--warning); font-weight: 600; }
+
+/* ---- painel lateral de detalhe ---- */
+.anuncio-painel {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(560px, 100%);
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  z-index: 60;
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+}
+.anuncio-painel-topo {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.anuncio-painel-corpo { padding: 14px 16px 40px; display: flex; flex-direction: column; gap: 16px; }
+.anuncio-painel-fundo {
+  position: fixed; inset: 0; background: var(--overlay); z-index: 59; border: 0;
+}
+.anuncio-historico-linha {
+  display: grid; grid-template-columns: 108px 1fr; gap: 8px;
+  padding: 7px 0; border-bottom: 1px solid var(--border-soft);
+  font-size: 12px;
+}
+.anuncio-historico-data { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); }
+.anuncio-historico-de-para { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.anuncio-historico-antes { color: var(--ink-faint); text-decoration: line-through; }
+
+@media (max-width: 720px) {
+  .anuncios-grade { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .anuncio-painel { width: 100%; }
+  .anuncio-historico-linha { grid-template-columns: 1fr; }
 }
