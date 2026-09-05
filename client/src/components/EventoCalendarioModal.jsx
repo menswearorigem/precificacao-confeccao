@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
-import { X, Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { X, Plus, Trash2, ChevronDown, ChevronRight, FileUp, Users } from 'lucide-react';
 import { api } from '../api/client';
 import { Select, DateInput, Checkbox, Toggle, FileTypeIcon } from './ui';
+import { confirmar } from './ConfirmDialog';
 import FotoProduto from './FotoProduto';
 import FileDropzone from './FileDropzone';
 import GradeVariacoes from './GradeVariacoes';
@@ -250,6 +251,24 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
 
+  // ------------------------------------------------------------------
+  // Rascunho: sair sem terminar e retomar depois
+  // ------------------------------------------------------------------
+  // `snapshotInicial` é o formulário como ele estava assim que abriu. Tudo o
+  // que a tela chama de "não salvo" é a comparação com isso — não um
+  // sinalizador levantado no primeiro clique, que acusaria alteração até em
+  // quem só abriu e fechou.
+  const snapshotInicial = useRef(null);
+  const [importandoOp, setImportandoOp] = useState(false);
+  const [avisosOp, setAvisosOp] = useState([]);
+  const [resumoOp, setResumoOp] = useState(null);
+  const [retomouRascunho, setRetomouRascunho] = useState(false);
+  // Enquanto for `false`, o formulário ainda não sabe se existe um rascunho
+  // daquela data — e por isso não tira a "foto" inicial nem deixa fechar
+  // achando que nada mudou. Evento já existente não tem rascunho: nasce
+  // verificado.
+  const [rascunhoVerificado, setRascunhoVerificado] = useState(Boolean(eventoId) || !dataPadrao);
+
   const template = useMemo(() => templates.find((t) => t.id === templateId) || null, [templates, templateId]);
   const nomeTemplate = template?.nome || '';
   // Toggle da grade só aparece pro modelo fixo "Corte" (formulário próprio,
@@ -332,6 +351,41 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
     }).catch((err) => { setErro(err.message); setCarregando(false); });
   }, [eventoId]);
 
+  // Evento inacabado daquela data (ver 0046_calendario_rascunho.sql). Roda uma
+  // vez, na abertura de um evento NOVO. O servidor já devolve "não existe"
+  // pro rascunho vencido (mais de 1 semana), então aqui não há conta de prazo
+  // nenhuma — a regra mora num lugar só.
+  useEffect(() => {
+    if (eventoId || !dataPadrao) return;
+    let cancelado = false;
+    api.get(`/calendario/rascunhos/${dataPadrao}`)
+      .then(async (r) => {
+        if (cancelado || !r?.existe) { setRascunhoVerificado(true); return; }
+        const quando = r.atualizado_em ? dataBr(String(r.atualizado_em).slice(0, 10)) : 'outro dia';
+        const retomar = await confirmar(
+          `Você tem um evento desta data que ficou pela metade (parou em ${quando}). Quer continuar de onde parou ou começar um novo?`,
+          {
+            titulo: 'Evento não terminado',
+            perigo: false,
+            confirmarTexto: 'Continuar de onde parei',
+            cancelarTexto: 'Começar um novo',
+          }
+        );
+        if (cancelado) return;
+        if (retomar) {
+          aplicarCorpo(r.dados);
+          setRetomouRascunho(true);
+        }
+        // Escolhendo "começar um novo", o rascunho NÃO é apagado aqui de
+        // propósito: fechar a janela por engano não pode custar o trabalho
+        // guardado. Ele é substituído na próxima saída sem salvar, e some
+        // sozinho quando um evento daquela data é salvo de verdade.
+        setRascunhoVerificado(true);
+      })
+      .catch(() => { if (!cancelado) setRascunhoVerificado(true); });
+    return () => { cancelado = true; };
+  }, [eventoId, dataPadrao]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!produto?.id) { setVariantesSugeridas([]); return; }
     api.get(`/calendario/produtos/${produto.id}/variantes-sugeridas`).then(setVariantesSugeridas).catch(() => setVariantesSugeridas([]));
@@ -360,6 +414,85 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
     setCampoExtra((atual) => ({ ...atual, [nome]: valor }));
   }
 
+  // O formulário inteiro num objeto só. Serve pra três coisas ao mesmo tempo:
+  // mandar pro servidor ao salvar, guardar como rascunho ao sair sem salvar,
+  // e comparar com o estado inicial pra saber se há mudança pendente. Uma
+  // fonte só evita o clássico "o rascunho salvou um campo a menos que o save".
+  function montarCorpo() {
+    const campos_extra = { ...campoExtra };
+    if (fornecedor) { campos_extra.fornecedor_id = fornecedor.id; campos_extra.fornecedor_nome = fornecedor.nome; }
+    return {
+      template_id: templateId,
+      titulo: titulo.trim(),
+      descricao: descricao.trim() || null,
+      categoria: categoria || null,
+      data_inicio: dataInicio || null,
+      data_prevista_fim: dataPrevistaFim,
+      data_conclusao_real: status === 'concluido' ? (dataConclusaoReal || new Date().toISOString().slice(0, 10)) : null,
+      status,
+      prioridade,
+      produto_id: produto?.id || null,
+      // O produto vai junto (não só o id) porque o rascunho precisa
+      // reconstruir o cartão do produto sem uma busca a mais ao retomar.
+      produto_snapshot: produto || null,
+      campos_extra,
+      responsaveis_ids: responsaveisIds,
+      permissoes: permissoes.map((p) => (
+        p.grupoId ? { grupo_id: p.grupoId, nivel: p.nivel } : { usuario_id: p.usuarioId, nivel: p.nivel }
+      )),
+      usa_grade: templateTemGrade && usaGrade,
+      grade: templateTemGrade && usaGrade ? grade.filter((l) => l.cor || l.tamanho) : [],
+    };
+  }
+
+  function aplicarCorpo(dados) {
+    if (!dados) return;
+    setTemplateId(dados.template_id ?? null);
+    setTitulo(dados.titulo || '');
+    setDescricao(dados.descricao || '');
+    setCategoria(dados.categoria || '');
+    setDataInicio(dados.data_inicio || '');
+    setDataPrevistaFim(dados.data_prevista_fim || '');
+    setDataConclusaoReal(dados.data_conclusao_real || '');
+    setStatus(dados.status || 'nao_iniciado');
+    setPrioridade(dados.prioridade || 'media');
+    setProduto(dados.produto_snapshot || null);
+    setCampoExtra(dados.campos_extra || {});
+    setResponsaveisIds(dados.responsaveis_ids || []);
+    setPermissoes((dados.permissoes || []).map((p) => (
+      p.grupo_id ? { grupoId: p.grupo_id, nivel: p.nivel } : { usuarioId: p.usuario_id, nivel: p.nivel }
+    )));
+    setUsaGrade(Boolean(dados.usa_grade));
+    setGrade(dados.grade || []);
+    if (dados.campos_extra?.fornecedor_id) {
+      setFornecedor({ id: dados.campos_extra.fornecedor_id, nome: dados.campos_extra.fornecedor_nome || `Fornecedor #${dados.campos_extra.fornecedor_id}` });
+    }
+    if (dados.categoria) setAvancadoAberto(true);
+  }
+
+  // Chave do rascunho: a data que a pessoa escolheu no calendário. Só existe
+  // pra evento NOVO — editar um evento já salvo não gera rascunho, porque o
+  // que está no banco continua valendo mesmo se ela fechar a janela.
+  const chaveRascunho = !eventoId ? (dataPadrao || '') : '';
+
+  // Guarda a "foto" do formulário recém-aberto, uma vez só, depois que os
+  // dados terminaram de entrar (evento carregado, ou rascunho aplicado).
+  useEffect(() => {
+    if (carregando) return;
+    if (snapshotInicial.current !== null) return;
+    // Os modelos precisam ter chegado: `templateTemGrade` depende deles, e uma
+    // foto tirada antes disso mostraria "usa_grade: false" num evento que usa
+    // grade — e a janela acusaria alteração pendente em quem só abriu e fechou.
+    if (templates.length === 0) return;
+    if (!eventoId && chaveRascunho && !rascunhoVerificado) return; // espera a pergunta do rascunho
+    snapshotInicial.current = JSON.stringify(montarCorpo());
+  }); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function temAlteracaoPendente() {
+    if (snapshotInicial.current === null) return false;
+    return JSON.stringify(montarCorpo()) !== snapshotInicial.current;
+  }
+
   async function salvar() {
     if (!titulo.trim() || !dataPrevistaFim) {
       setErro('Preencha ao menos o título e a data prevista de fim.');
@@ -374,32 +507,15 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
     }
     setSalvando(true);
     setErro('');
-    const campos_extra = { ...campoExtra };
-    if (fornecedor) { campos_extra.fornecedor_id = fornecedor.id; campos_extra.fornecedor_nome = fornecedor.nome; }
-    const body = {
-      template_id: templateId,
-      titulo: titulo.trim(),
-      descricao: descricao.trim() || null,
-      categoria: categoria || null,
-      data_inicio: dataInicio || null,
-      data_prevista_fim: dataPrevistaFim,
-      data_conclusao_real: status === 'concluido' ? (dataConclusaoReal || new Date().toISOString().slice(0, 10)) : null,
-      status,
-      prioridade,
-      produto_id: produto?.id || null,
-      campos_extra,
-      responsaveis_ids: responsaveisIds,
-      permissoes: permissoes.map((p) => (
-        p.grupoId ? { grupo_id: p.grupoId, nivel: p.nivel } : { usuario_id: p.usuarioId, nivel: p.nivel }
-      )),
-      usa_grade: templateTemGrade && usaGrade,
-      grade: templateTemGrade && usaGrade ? grade.filter((l) => l.cor || l.tamanho) : [],
-    };
+    const { produto_snapshot: _snapshot, ...body } = montarCorpo();
     try {
       if (eventoId) {
         await api.put(`/calendario/eventos/${eventoId}`, body);
       } else {
         await api.post('/calendario/eventos', body);
+        // Salvou de verdade: o rascunho daquela data não serve mais e sai do
+        // caminho, pra não perguntar "quer retomar?" de um evento que já existe.
+        if (chaveRascunho) await api.del(`/calendario/rascunhos/${chaveRascunho}`).catch(() => {});
       }
       onSalvo();
     } catch (err) {
@@ -407,6 +523,37 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
     } finally {
       setSalvando(false);
     }
+  }
+
+  // Fechar a janela. Se houver coisa preenchida e não salva, pergunta antes —
+  // e, ao sair, guarda o que estava preenchido como rascunho daquela data.
+  async function tentarFechar() {
+    if (!temAlteracaoPendente()) { onClose(); return; }
+
+    const guardaRascunho = Boolean(chaveRascunho);
+    const ok = await confirmar(
+      guardaRascunho
+        ? 'Você começou a preencher este evento e ainda não salvou. Se sair agora, guardo o que já está preenchido por 1 semana — quando clicar nesse mesmo dia de novo, eu pergunto se você quer retomar.'
+        : 'Você alterou este evento e ainda não salvou. Se sair agora, as alterações se perdem.',
+      {
+        titulo: guardaRascunho ? 'Sair sem terminar?' : 'Sair sem salvar?',
+        perigo: !guardaRascunho,
+        confirmarTexto: guardaRascunho ? 'Sair e guardar' : 'Sair sem salvar',
+        cancelarTexto: 'Continuar preenchendo',
+      }
+    );
+    if (!ok) return;
+
+    if (guardaRascunho) {
+      try {
+        await api.put(`/calendario/rascunhos/${chaveRascunho}`, { dados: montarCorpo() });
+      } catch {
+        // Falhar em guardar o rascunho não pode prender a pessoa na janela —
+        // ela pediu pra sair. O aviso acima já dizia "guardo"; se não deu,
+        // ela descobre ao voltar e o formulário estar limpo.
+      }
+    }
+    onClose();
   }
 
   async function excluir() {
@@ -453,6 +600,56 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
     }
   }
 
+  // Anexar a Ordem de Produção e deixar o sistema preencher o formulário.
+  // O servidor lê o arquivo e devolve SÓ o que conseguiu identificar com
+  // certeza — o que não deu, volta em `avisos` e continua em branco (o leitor
+  // não chuta referência nem fornecedor). Aqui a gente só aplica o que veio.
+  async function importarOrdemProducao(e) {
+    const arquivo = e.target.files?.[0];
+    if (!arquivo) return;
+    setImportandoOp(true);
+    setErro('');
+    setAvisosOp([]);
+    setResumoOp(null);
+    const formData = new FormData();
+    formData.append('arquivo', arquivo);
+    try {
+      const r = await api.upload('/calendario/ordem-producao/ler', formData);
+      const achado = r.encontrado || {};
+      if (achado.produto) {
+        setProduto(achado.produto);
+        setCampoExtra((atual) => ({ ...atual, referencia_texto: atual.referencia_texto || achado.produto.referencia }));
+      }
+      if (achado.fornecedor) setFornecedor(achado.fornecedor);
+      if (achado.quantidade !== null && achado.quantidade !== undefined) {
+        setCampoExtra((atual) => ({ ...atual, quantidade: achado.quantidade }));
+      }
+      if (achado.cor_tecido) setCampoExtra((atual) => ({ ...atual, cor_tecido: achado.cor_tecido }));
+      if (achado.numero_op) setCampoExtra((atual) => ({ ...atual, numero_op: achado.numero_op }));
+      if ((r.grade || []).length > 0) {
+        setGrade(r.grade.map((l) => ({ cor: l.cor, tamanho: l.tamanho, quantidade: l.quantidade, origem: 'wiki_op' })));
+        setUsaGrade(true);
+      }
+      // Título só é sugerido quando está vazio — nunca por cima do que a
+      // pessoa já escreveu.
+      if (!titulo.trim() && achado.produto) {
+        setTitulo(`Chegada de corte ${achado.produto.referencia}${achado.numero_op ? ` — OP ${achado.numero_op}` : ''}`);
+      }
+      setAvisosOp(r.avisos || []);
+      setResumoOp({
+        arquivo: arquivo.name,
+        linhasGrade: (r.grade || []).length,
+        quantidade: achado.quantidade ?? null,
+        numeroOp: achado.numero_op || null,
+      });
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setImportandoOp(false);
+      e.target.value = ''; // permite reenviar o mesmo arquivo depois de corrigir
+    }
+  }
+
   async function removerAnexo(id) {
     try {
       await api.del(`/calendario/anexos/${id}`);
@@ -471,12 +668,18 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onMouseDown={(e) => { if (e.target === e.currentTarget) tentarFechar(); }}>
       <div className="card" style={{ maxWidth: 640, width: '94%', maxHeight: '88vh', overflowY: 'auto' }}>
         <div className="card-head-linha">
           <div className="card-head">{eventoId ? 'Editar evento' : 'Novo evento'}</div>
-          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+          <button className="icon-btn" onClick={tentarFechar}><X size={16} /></button>
         </div>
+
+        {retomouRascunho && (
+          <p className="page-sub" style={{ marginTop: 0 }}>
+            Retomado do que você tinha deixado pela metade nesta data. Salve pra valer quando terminar.
+          </p>
+        )}
 
         {erro && <div className="login-error" style={{ marginBottom: 10 }}>{erro}</div>}
 
@@ -576,6 +779,41 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
           </div>
         )}
 
+        {/* Anexar a Ordem de Produção e deixar o resto se preencher sozinho.
+            Aparece nos modelos que têm grade (Corte e qualquer modelo com
+            campo do tipo 'grade'), que é onde a OP faz sentido. O Wik não
+            expõe endpoint de Ordem de Produção hoje — por isso a OP entra
+            pelo arquivo; as linhas gravadas já saem marcadas com a origem que
+            a estrutura do banco reservou pra ela. */}
+        {templateTemGrade && podeEditar && (
+          <div className="card" style={{ background: 'var(--surface-alt)', marginBottom: 12 }}>
+            <div className="card-head" style={{ marginBottom: 4 }}>
+              <FileUp size={14} style={{ verticalAlign: -2, marginRight: 6 }} />
+              Puxar da Ordem de Produção
+            </div>
+            <p className="page-sub" style={{ marginTop: 0 }}>
+              Anexe a OP em Excel, CSV, texto ou PDF e eu preencho referência, fornecedor, quantidade e a grade
+              de cor e tamanho. Aí você só escolhe a data. O que eu não conseguir identificar com certeza fica
+              em branco e eu aviso — não preencho no chute.
+            </p>
+            <FileDropzone onChange={importarOrdemProducao} formatosTexto="Excel (.xlsx), CSV, texto ou PDF, até 8MB" />
+            {importandoOp && <p className="page-sub">Lendo a ordem de produção…</p>}
+            {resumoOp && (
+              <p className="page-sub" style={{ marginBottom: 4 }}>
+                Li <strong>{resumoOp.arquivo}</strong>
+                {resumoOp.numeroOp && <> · OP <span className="mono">{resumoOp.numeroOp}</span></>}
+                {resumoOp.linhasGrade > 0 && <> · {resumoOp.linhasGrade} linha(s) de grade</>}
+                {resumoOp.quantidade !== null && <> · <span className="mono">{resumoOp.quantidade}</span> peças no total</>}
+              </p>
+            )}
+            {avisosOp.length > 0 && (
+              <ul className="calendario-op-avisos">
+                {avisosOp.map((a) => <li key={a}>{a}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
+
         {nomeTemplate === 'Previsão de chegada de corte' && (
           <div className="card" style={{ background: 'var(--surface-alt)', marginBottom: 12 }}>
             <div className="card-head" style={{ marginBottom: 8 }}>Campos de Corte</div>
@@ -665,8 +903,33 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
 
         <div className="field" style={{ marginBottom: 12 }}>
           <span className="field-label">Quem vê / quem edita este evento</span>
-          <p className="page-sub" style={{ marginTop: 0 }}>Você (quem criou) e administradores sempre veem e editam. Sem nenhuma liberação aqui, mais ninguém enxerga este evento.</p>
+          <p className="page-sub" style={{ marginTop: 0 }}>
+            Você (quem criou), os administradores e quem estiver como <strong>responsável</strong> sempre enxergam
+            este evento. Fora esses, só quem for liberado aqui.
+          </p>
           <SeletorMultiplo usuarios={usuarios} grupos={grupos} itens={permissoes} onChange={setPermissoes} comNivel />
+          {/* Resumo em português do que está selecionado. Até 04/09/2026 essa
+              lista sumia depois de salva e a liberação parecia enfeite — é
+              esta linha que mostra, ali mesmo, quem passa a enxergar. */}
+          <p className="calendario-quem-ve-resumo">
+            <Users size={12} />
+            {(() => {
+              const nomeDe = (p) => (p.grupoId
+                ? `Grupo ${grupos.find((g) => g.id === p.grupoId)?.nome || '—'}`
+                : usuarios.find((u) => u.id === p.usuarioId)?.nome || '—');
+              const responsaveisNomes = responsaveisIds
+                .map((id) => usuarios.find((u) => u.id === id)?.nome)
+                .filter(Boolean);
+              const veem = permissoes.filter((p) => p.nivel !== 'editar').map(nomeDe);
+              const editam = permissoes.filter((p) => p.nivel === 'editar').map(nomeDe);
+              const partes = [];
+              if (responsaveisNomes.length > 0) partes.push(`${responsaveisNomes.join(', ')} (responsável, vê)`);
+              if (veem.length > 0) partes.push(`${veem.join(', ')} (só vê)`);
+              if (editam.length > 0) partes.push(`${editam.join(', ')} (vê e edita)`);
+              if (partes.length === 0) return 'Hoje só você e os administradores enxergam este evento.';
+              return `Além de você e dos administradores, enxergam: ${partes.join(' · ')}.`;
+            })()}
+          </p>
         </div>
 
         {eventoId && (

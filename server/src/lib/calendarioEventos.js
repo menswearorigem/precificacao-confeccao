@@ -1,9 +1,17 @@
 // Regras de permissão e cálculo compartilhadas do módulo Calendário.
-// Visibilidade final = liberação direta (usuario_id) + liberação por
-// qualquer grupo do qual o usuário participa — sem permissão de visualizar,
-// o evento não aparece nem existe pra aquele usuário (nunca 403, sempre como
-// se não existisse). Administrador sempre vê e edita tudo, igual ao resto
-// do sistema.
+// Visibilidade final = quem criou + quem é RESPONSÁVEL + liberação direta
+// (usuario_id) + liberação por qualquer grupo do qual o usuário participa —
+// sem nenhuma dessas, o evento não aparece nem existe pra aquele usuário
+// (nunca 403, sempre como se não existisse). Administrador sempre vê e edita
+// tudo, igual ao resto do sistema.
+//
+// Correção de 04/09/2026 — RESPONSÁVEL PASSOU A ENXERGAR O EVENTO.
+// Era o buraco que fazia a tela de "quem vê / quem edita" parecer enfeite:
+// dava pra pôr alguém como responsável pelo corte e essa pessoa não via o
+// evento em lugar nenhum, porque responsável e liberação eram duas listas
+// separadas e só a segunda contava. Quem é apontado como responsável por uma
+// tarefa precisa, no mínimo, conseguir vê-la; se também tiver que editar,
+// isso continua vindo da liberação com nível "editar".
 
 // Fragmento de WHERE reutilizado tanto na listagem quanto (com evento_id
 // fixo) na checagem de um evento só. `alias` é o alias da tabela
@@ -14,6 +22,10 @@ function condicaoVisibilidade(alias, paramIndexInicial) {
   const sql = `(
     ${alias}.criado_por = $${usuarioIdParam}
     OR EXISTS (
+      SELECT 1 FROM calendario_eventos_responsaveis r
+      WHERE r.evento_id = ${alias}.id AND r.usuario_id = $${usuarioIdParam}
+    )
+    OR EXISTS (
       SELECT 1 FROM calendario_eventos_permissoes p
       WHERE p.evento_id = ${alias}.id AND p.usuario_id = $${usuarioIdParam}
     )
@@ -22,6 +34,19 @@ function condicaoVisibilidade(alias, paramIndexInicial) {
       JOIN grupo_usuarios gu ON gu.grupo_id = p.grupo_id
       WHERE p.evento_id = ${alias}.id AND gu.usuario_id = $${usuarioIdParam}
     )
+  )`;
+  return { sql, proximoIndex: i };
+}
+
+// "Sou responsável por este evento" — usado pelo filtro de escopo da tela
+// (Meus eventos / Onde sou responsável). Separado de condicaoVisibilidade
+// de propósito: um é regra de PERMISSÃO, o outro é regra de FILTRO.
+function condicaoResponsavel(alias, paramIndexInicial) {
+  let i = paramIndexInicial;
+  const usuarioIdParam = i; i += 1;
+  const sql = `EXISTS (
+    SELECT 1 FROM calendario_eventos_responsaveis r
+    WHERE r.evento_id = ${alias}.id AND r.usuario_id = $${usuarioIdParam}
   )`;
   return { sql, proximoIndex: i };
 }
@@ -107,6 +132,7 @@ function diffCampos(antes, depois, campos) {
 
 module.exports = {
   condicaoVisibilidade,
+  condicaoResponsavel,
   condicaoEdicao,
   podeEditarEvento,
   calcularAtrasado,

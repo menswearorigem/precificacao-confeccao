@@ -3,8 +3,10 @@ const multer = require('multer');
 const pool = require('../db/pool');
 const { requireModulo } = require('../middleware/auth');
 const {
-  condicaoVisibilidade, condicaoEdicao, podeEditarEvento, calcularAtrasado, diasParaPrazo, registrarHistorico, diffCampos,
+  condicaoVisibilidade, condicaoResponsavel, condicaoEdicao, podeEditarEvento,
+  calcularAtrasado, diasParaPrazo, registrarHistorico, diffCampos,
 } = require('../lib/calendarioEventos');
+const { lerOrdemDeProducao } = require('../lib/ordemProducaoParser');
 
 const router = express.Router();
 // Anexo de evento. A varredura de segurança de 03/09/2026 achou aqui o pior
@@ -83,6 +85,33 @@ async function carregarResponsaveis(eventoIds) {
   return mapa;
 }
 
+// Quem enxerga cada evento, em texto pronto pra tela. Existe por um motivo
+// específico: até 04/09/2026 a liberação "quem vê / quem edita" era invisível
+// depois de salva — dava pra escolher e nunca mais ver o resultado, o que
+// fazia a funcionalidade inteira parecer enfeite. Agora cada evento carrega o
+// resumo de com quem está compartilhado, e a lista/o cartão mostram isso.
+async function carregarPermissoesResumo(eventoIds) {
+  if (eventoIds.length === 0) return new Map();
+  const { rows } = await pool.query(
+    `SELECT p.evento_id, p.nivel, u.nome AS usuario_nome, g.nome AS grupo_nome
+       FROM calendario_eventos_permissoes p
+       LEFT JOIN usuarios u ON u.id = p.usuario_id
+       LEFT JOIN grupos g ON g.id = p.grupo_id
+      WHERE p.evento_id = ANY($1)`,
+    [eventoIds]
+  );
+  const mapa = new Map();
+  for (const row of rows) {
+    if (!mapa.has(row.evento_id)) mapa.set(row.evento_id, []);
+    mapa.get(row.evento_id).push({
+      nome: row.grupo_nome ? `Grupo ${row.grupo_nome}` : row.usuario_nome,
+      nivel: row.nivel,
+      ehGrupo: Boolean(row.grupo_nome),
+    });
+  }
+  return mapa;
+}
+
 // Grade de variações (cor/tamanho/quantidade) do evento — carregada junto
 // (não em campos_extra) porque é uma lista de linhas com identidade própria,
 // não um valor único de campo (ver 0038_calendario_grade.sql).
@@ -113,7 +142,7 @@ async function carregarProdutosSnapshot(produtoIds) {
   return new Map(rows.map((r) => [r.id, r]));
 }
 
-function montarEventoResposta(row, { responsaveis, produtoSnapshot, podeEditar, grade }) {
+function montarEventoResposta(row, { responsaveis, produtoSnapshot, podeEditar, grade, compartilhadoCom }) {
   const { pode_editar: _poderEditarBruto, ...campos } = row;
   return {
     ...campos,
@@ -123,6 +152,7 @@ function montarEventoResposta(row, { responsaveis, produtoSnapshot, podeEditar, 
     produto: produtoSnapshot || null,
     podeEditar: Boolean(podeEditar ?? row.pode_editar),
     grade: grade || [],
+    compartilhadoCom: compartilhadoCom || [],
   };
 }
 
@@ -131,17 +161,40 @@ function montarEventoResposta(row, { responsaveis, produtoSnapshot, podeEditar, 
 // e a mesma regra de visibilidade, pra exportar exatamente o que a tela
 // está mostrando.
 async function buscarEventosFiltrados(req) {
-  const { data_inicio, data_fim, categoria, responsavel_id, status, busca } = req.query;
+  const { data_inicio, data_fim, categoria, responsavel_id, status, busca, escopo } = req.query;
   const isAdmin = req.user.role === 'admin';
   const values = [];
   const conditions = [];
   let i = 1;
 
+  // Regra de PERMISSÃO: quem não é administrador só enxerga o que foi
+  // liberado pra ele. Isso nunca depende do filtro escolhido na tela.
   if (!isAdmin) {
     const { sql, proximoIndex } = condicaoVisibilidade('e', i);
     conditions.push(sql);
     values.push(req.user.id);
     i = proximoIndex;
+  }
+
+  // Regra de FILTRO (o "Quem vê" da barra de filtros). Serve principalmente
+  // pro administrador, que por definição enxerga o calendário inteiro e
+  // reclamava — com razão — de não conseguir separar o que é dele do que é
+  // de todo mundo. 'todos' é o comportamento antigo e continua sendo o
+  // padrão de quem não manda nada.
+  if (escopo === 'meus') {
+    const { sql, proximoIndex } = condicaoVisibilidade('e', i);
+    conditions.push(sql);
+    values.push(req.user.id);
+    i = proximoIndex;
+  } else if (escopo === 'responsavel') {
+    const { sql, proximoIndex } = condicaoResponsavel('e', i);
+    conditions.push(sql);
+    values.push(req.user.id);
+    i = proximoIndex;
+  } else if (escopo === 'criados_por_mim') {
+    conditions.push(`e.criado_por = $${i}`);
+    values.push(req.user.id);
+    i += 1;
   }
   if (data_inicio && data_fim) {
     conditions.push(`COALESCE(e.data_inicio, e.data_prevista_fim) <= $${i} AND e.data_prevista_fim >= $${i + 1}`);
@@ -189,10 +242,11 @@ router.get('/eventos', async (req, res, next) => {
   try {
     const rows = await buscarEventosFiltrados(req);
     const ids = rows.map((r) => r.id);
-    const [responsaveisPorEvento, produtosPorId, gradesPorEvento] = await Promise.all([
+    const [responsaveisPorEvento, produtosPorId, gradesPorEvento, permissoesPorEvento] = await Promise.all([
       carregarResponsaveis(ids),
       carregarProdutosSnapshot(rows.map((r) => r.produto_id)),
       carregarGrades(ids),
+      carregarPermissoesResumo(ids),
     ]);
 
     res.json(rows.map((row) => montarEventoResposta(row, {
@@ -200,6 +254,7 @@ router.get('/eventos', async (req, res, next) => {
       produtoSnapshot: produtosPorId.get(row.produto_id),
       podeEditar: row.pode_editar,
       grade: gradesPorEvento.get(row.id),
+      compartilhadoCom: permissoesPorEvento.get(row.id),
     })));
   } catch (err) {
     next(err);
@@ -792,6 +847,125 @@ router.delete('/anexos/:id', async (req, res, next) => {
     res.status(204).end();
   } catch (err) {
     next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Rascunho de evento — "saí sem terminar, quero retomar"
+// ---------------------------------------------------------------------------
+// O rascunho é por PESSOA e por DATA (ver 0046_calendario_rascunho.sql): é
+// clicando naquele dia de novo que ela retoma. Vale 1 semana; passou disso, a
+// leitura já devolve "não existe" e apaga a linha, sem rotina agendada.
+
+const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+router.get('/rascunhos/:data', async (req, res, next) => {
+  try {
+    if (!DATA_ISO.test(req.params.data)) return res.status(400).json({ error: 'Data inválida.' });
+    // Limpeza preguiçosa: o vencido morre na primeira vez que alguém tenta
+    // lê-lo, em vez de ficar ocupando espaço até alguém lembrar.
+    await pool.query('DELETE FROM calendario_eventos_rascunho WHERE expira_em < now()');
+    const { rows } = await pool.query(
+      `SELECT id, dados, atualizado_em, expira_em
+         FROM calendario_eventos_rascunho
+        WHERE usuario_id = $1 AND data_evento = $2 AND expira_em >= now()`,
+      [req.user.id, req.params.data]
+    );
+    if (rows.length === 0) return res.json({ existe: false });
+    res.json({ existe: true, ...rows[0] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/rascunhos/:data', async (req, res, next) => {
+  try {
+    if (!DATA_ISO.test(req.params.data)) return res.status(400).json({ error: 'Data inválida.' });
+    const dados = req.body?.dados;
+    if (!dados || typeof dados !== 'object') return res.status(400).json({ error: 'Nada pra guardar.' });
+    const { rows } = await pool.query(
+      `INSERT INTO calendario_eventos_rascunho (usuario_id, data_evento, dados)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (usuario_id, data_evento) DO UPDATE
+         SET dados = EXCLUDED.dados,
+             atualizado_em = now(),
+             -- Mexer no rascunho renova a semana: o prazo conta a partir da
+             -- última vez que a pessoa trabalhou nele, não da primeira.
+             expira_em = now() + INTERVAL '7 days'
+       RETURNING id, atualizado_em, expira_em`,
+      [req.user.id, req.params.data, JSON.stringify(dados)]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/rascunhos/:data', async (req, res, next) => {
+  try {
+    if (!DATA_ISO.test(req.params.data)) return res.status(400).json({ error: 'Data inválida.' });
+    await pool.query(
+      'DELETE FROM calendario_eventos_rascunho WHERE usuario_id = $1 AND data_evento = $2',
+      [req.user.id, req.params.data]
+    );
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Ordem de Produção — anexar o arquivo e o sistema preenche o formulário
+// ---------------------------------------------------------------------------
+// Este endpoint NÃO grava nada: ele lê o arquivo e devolve o que conseguiu
+// identificar, pra pessoa conferir na tela antes de salvar o evento. O que
+// não foi identificado volta em `avisos` e fica em branco — o leitor não
+// adivinha referência nem fornecedor (REGRA 2, ver ordemProducaoParser.js).
+//
+// Nota sobre o Wik: o ERP não expõe endpoint de Ordem de Produção (ver
+// INTEGRACAO-WIK.md). Enquanto não expuser, a OP entra pelo arquivo — e as
+// linhas gravadas na grade já saem marcadas com origem 'wiki_op', que é
+// exatamente o que a 0038_calendario_grade.sql deixou preparado. No dia em
+// que o endpoint existir, muda a fonte e não muda mais nada.
+const TIPOS_ORDEM_PRODUCAO = new Set([
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'application/pdf',
+  'text/plain',
+  'text/csv',
+  'application/csv',
+]);
+
+const uploadOrdem = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => cb(null, TIPOS_ORDEM_PRODUCAO.has(file.mimetype)),
+});
+
+router.post('/ordem-producao/ler', uploadOrdem.single('arquivo'), async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Envie a ordem de produção em Excel (.xlsx), CSV, texto ou PDF, com até 8MB.' });
+    }
+    const [produtos, fornecedores, tamanhos] = await Promise.all([
+      pool.query('SELECT id, referencia, codigo, descricao FROM produtos').then((r) => r.rows),
+      pool.query('SELECT id, nome, nome_fantasia FROM fornecedores WHERE ativo = TRUE').then((r) => r.rows),
+      pool.query("SELECT DISTINCT tamanho FROM estoque_variantes WHERE tamanho <> '' AND ativo = TRUE").then((r) => r.rows.map((x) => x.tamanho)),
+    ]);
+    const resultado = await lerOrdemDeProducao(req.file.buffer, req.file.originalname, req.file.mimetype, {
+      produtos,
+      fornecedores,
+      // Tamanhos do cadastro + os clássicos de confecção, pra reconhecer a
+      // grade mesmo em referência nova que ainda não tem variante gravada.
+      tamanhos: [...new Set([...tamanhos, 'PP', 'P', 'M', 'G', 'GG', 'XG', 'XGG', 'U', 'UNICO', '36', '38', '40', '42', '44', '46', '48', '50'])],
+    });
+    res.json(resultado);
+  } catch (err) {
+    if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'Arquivo maior que 8MB.' });
+    console.error('[ordem-producao] falha ao ler o arquivo:', err);
+    return res.status(400).json({
+      error: 'Não consegui ler este arquivo. Aceito Excel (.xlsx), CSV, texto e PDF com texto de verdade (PDF que é só foto do papel não dá).',
+    });
   }
 });
 

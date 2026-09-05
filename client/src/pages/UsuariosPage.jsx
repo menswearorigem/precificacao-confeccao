@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, KeyRound, ShieldCheck, Search } from 'lucide-react';
+import { Plus, Trash2, KeyRound, ShieldCheck, Search, Pencil } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { Field, Select, Checkbox, Toggle } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 
+// Esta lista precisa espelhar MODULOS_VALIDOS de
+// server/src/routes/usuarios.routes.js. O Calendário existia no backend e na
+// navegação desde a migration 0034, mas nunca tinha sido acrescentado AQUI —
+// e era só por isso que ele não podia ser liberado pra ninguém e acabava
+// funcionando só pra administrador. Corrigido em 04/09/2026, a pedido da
+// dona do projeto (REGRA 4 — mexe em permissão de módulo).
 const MODULOS = [
   { key: 'produto', label: 'Produto' },
   { key: 'estoque', label: 'Estoque' },
@@ -14,6 +20,7 @@ const MODULOS = [
   { key: 'viagens', label: 'Viagens' },
   { key: 'compras', label: 'Compras' },
   { key: 'analises', label: 'Análises' },
+  { key: 'calendario', label: 'Calendário' },
   { key: 'configuracoes', label: 'Configurações' },
 ];
 
@@ -52,6 +59,12 @@ export default function UsuariosPage() {
   const [error, setError] = useState('');
   const [resetandoId, setResetandoId] = useState(null);
   const [novaSenha, setNovaSenha] = useState('');
+  // Edição de nome e e-mail (04/09/2026). Antes só dava pra excluir a conta e
+  // criar outra — o que, além de trabalhoso, apagava o histórico de alteração
+  // daquela pessoa junto. O backend (PUT /usuarios/:id) já aceitava os dois
+  // campos; faltava a tela.
+  const [editandoId, setEditandoId] = useState(null);
+  const [rascunhoEdicao, setRascunhoEdicao] = useState({ nome: '', email: '' });
 
   const [busca, setBusca] = useState('');
   const [filtroPerfil, setFiltroPerfil] = useState('');
@@ -141,6 +154,35 @@ export default function UsuariosPage() {
     } catch (err) {
       setError(err.message);
     }
+  }
+
+  function comecarEdicao(u) {
+    setEditandoId(u.id);
+    setRascunhoEdicao({ nome: u.nome, email: u.email || '' });
+    setError('');
+  }
+
+  async function salvarEdicao(u) {
+    const nome = rascunhoEdicao.nome.trim();
+    const email = rascunhoEdicao.email.trim();
+    if (!nome) { setError('O nome não pode ficar em branco.'); return; }
+    if (!email) { setError('O e-mail não pode ficar em branco — é por ele que a pessoa recupera a conta.'); return; }
+    // Só manda o que mudou de verdade: um PUT com o nome igual gravaria uma
+    // linha no histórico de alteração dizendo que algo mudou quando nada mudou.
+    const patch = {};
+    if (nome !== u.nome) patch.nome = nome;
+    if (email !== (u.email || '')) patch.email = email;
+    if (Object.keys(patch).length === 0) { setEditandoId(null); return; }
+
+    if (patch.nome) {
+      const ok = await confirmar(
+        `O nome é o que essa pessoa digita pra entrar no sistema. Mudando de "${u.nome}" para "${nome}", ela precisa passar a entrar com o nome novo. Confirma?`,
+        { titulo: 'Trocar o nome de acesso', perigo: false, confirmarTexto: 'Trocar o nome' }
+      );
+      if (!ok) return;
+    }
+    await atualizarUsuario(u.id, patch);
+    setEditandoId(null);
   }
 
   function toggleModuloExistente(usuario, chave) {
@@ -285,6 +327,9 @@ export default function UsuariosPage() {
               {!u.ativo && <span className="stamp sm tone-prejuizo">Inativo</span>}
             </span>
             <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-ghost" onClick={() => (editandoId === u.id ? setEditandoId(null) : comecarEdicao(u))}>
+                <Pencil size={13} /> {editandoId === u.id ? 'Cancelar edição' : 'Editar dados'}
+              </button>
               <button className="btn btn-ghost" onClick={() => { setResetandoId(resetandoId === u.id ? null : u.id); setNovaSenha(''); }}>
                 <KeyRound size={13} /> Resetar senha
               </button>
@@ -294,9 +339,38 @@ export default function UsuariosPage() {
             </div>
           </div>
 
+          {editandoId === u.id && (
+            <div className="card" style={{ background: 'var(--surface-alt)', marginBottom: 12 }}>
+              <div className="card-head" style={{ marginBottom: 8 }}>Editar dados da conta</div>
+              <div className="form-grid">
+                <Field label="Nome (é com ele que a pessoa entra no sistema)">
+                  <input
+                    value={rascunhoEdicao.nome}
+                    onChange={(e) => setRascunhoEdicao((r) => ({ ...r, nome: e.target.value }))}
+                    autoFocus
+                  />
+                </Field>
+                <Field label="E-mail (usado pra recuperar a conta)">
+                  <input
+                    type="email"
+                    value={rascunhoEdicao.email}
+                    onChange={(e) => setRascunhoEdicao((r) => ({ ...r, email: e.target.value }))}
+                  />
+                </Field>
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button className="btn btn-primary" onClick={() => salvarEdicao(u)}>Salvar dados</button>
+                <button className="btn btn-ghost" onClick={() => setEditandoId(null)}>Cancelar</button>
+              </div>
+              <p className="page-sub" style={{ marginBottom: 0 }}>
+                Trocar a senha continua sendo pelo botão “Resetar senha” — e isso encerra as sessões abertas da pessoa.
+              </p>
+            </div>
+          )}
+
           <div className="form-grid" style={{ marginBottom: 10 }}>
             <Field label="E-mail">
-              <input value={u.email} disabled style={{ opacity: 0.7 }} />
+              <input value={u.email || ''} disabled style={{ opacity: 0.7 }} />
             </Field>
             <Field label="Perfil">
               <Select value={u.role} onChange={(e) => atualizarUsuario(u.id, { role: e.target.value })}>

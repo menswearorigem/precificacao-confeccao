@@ -2626,6 +2626,10 @@ table.ficha-doc-tabela {
 .viagem-modal { max-width: 720px; width: 100%; max-height: 86vh; overflow-y: auto; }
 
 /* ---------- ConfirmDialog (substituto do window.confirm nativo) ---------- */
+/* Sempre por cima de tudo: a pergunta pode vir de dentro de outro modal
+   (ver ConfirmDialog.jsx). 2000 fica acima do modal de evento do Calendário
+   (1000) e de qualquer painel flutuante. */
+.confirm-dialog-overlay { z-index: 2000; }
 .confirm-modal { max-width: 360px; width: 100%; text-align: center; }
 .confirm-modal-icone {
   width: 40px;
@@ -2799,7 +2803,11 @@ table.ficha-doc-tabela {
 /* ---------- Calendário (módulo) ---------- */
 .calendario-grade {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  /* minmax(0, 1fr) e não 1fr: com 1fr puro, a coluna cresce até caber o
+     título mais comprido do dia, e as sete colunas ficam de larguras
+     diferentes — a terça com o dobro da segunda. Com o mínimo zerado, a
+     semana fica sempre em sete colunas iguais e o título é que corta. */
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 1px;
   background: var(--border-soft);
   border: 1px solid var(--border-soft);
@@ -3153,6 +3161,126 @@ table.ficha-doc-tabela {
 .calendario-lista-tabela th { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-soft); }
 .calendario-lista-linha { cursor: pointer; }
 .calendario-lista-linha:hover { background: var(--surface-alt); }
+/* "Quem vê" pode ser uma frase comprida (várias pessoas e grupos). Fica em
+   corpo menor e com largura travada pra não empurrar prazo e status pra
+   fora da tela. */
+.calendario-lista-quem-ve {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  max-width: 240px;
+}
+
+/* ---------- Calendário — compartilhamento visível na tela ---------- */
+/* O ícone de pessoas no chip do dia: é o sinal de que aquele evento não é só
+   seu. Sem ele, a liberação por pessoa/grupo continuava invisível depois de
+   salva — que era a queixa de "isso é só cosmético". */
+.calendario-chip-compartilhado { opacity: 0.8; flex-shrink: 0; margin-left: auto; }
+
+.calendario-quem-ve-resumo {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border-soft);
+  font-size: 12px;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+.calendario-quem-ve-resumo svg { margin-top: 2px; flex-shrink: 0; }
+
+/* Avisos do leitor de Ordem de Produção — o que ele NÃO conseguiu
+   identificar. Latão porque é atenção, não erro (REGRA 3): o formulário
+   funciona, só ficou campo pra completar na mão. */
+.calendario-op-avisos {
+  margin: 8px 0 0;
+  padding: 8px 10px 8px 26px;
+  border-radius: 8px;
+  border: 1px solid var(--warning-ring);
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.calendario-op-avisos li + li { margin-top: 4px; }
+
+/* Filtro de data da visão Lista, na barra de filtros. */
+.calendario-filtro-datas { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.calendario-filtro-datas .field-label { margin: 0; }
+
+/* ---------- Calendário — exportação em UMA folha ----------
+   O PDF antigo gastava a primeira folha só com o título da tela e os três
+   indicadores, e o calendário começava na segunda. O `no-print` na tela
+   resolveu isso; o que sobrou aqui é fazer grade, quadro e detalhamento
+   caberem numa folha só.
+
+   Deitada (landscape) porque a grade tem 7 colunas e o detalhamento tem 6 —
+   em pé, as duas coisas ficam ilegíveis. */
+@media print {
+  /* Folha nomeada: só a exportação do calendário sai deitada. As fichas de
+     produto, estoque e venda continuam em pé, como sempre foram. Navegador
+     que não entende folha nomeada simplesmente imprime em pé — o conteúdo
+     continua certo, só fica mais apertado. */
+  @page calendario { size: A4 landscape; margin: 8mm; }
+  .calendario-impressao { page: calendario; }
+
+  /* Aperta a moldura: o cartão tem folga generosa na tela, e no papel cada
+     milímetro é uma linha a mais que cabe antes de virar a folha. */
+  .calendario-impressao { font-size: 9px; padding: 6px 8px; border: none !important; }
+  .calendario-impressao .ficha-doc-topo { padding-bottom: 4px; margin-bottom: 6px; }
+  .calendario-impressao .ficha-doc-titulo { font-size: 14px; }
+  /* Só a grade e o quadro não podem ser partidos no meio. O cartão inteiro
+     NÃO leva break-inside: avoid — com ele, o detalhamento não cabia junto e
+     era empurrado sozinho pra segunda folha, deixando meia página em branco
+     na primeira. Quem controla a quebra é a linha da tabela. */
+  .calendario-impressao .calendario-grade,
+  .calendario-impressao .calendario-kanban { break-inside: avoid; page-break-inside: avoid; }
+  .calendario-impressao .ficha-doc-tabela tr { break-inside: avoid; page-break-inside: avoid; }
+  .calendario-impressao.ficha-page { break-after: auto; }
+  /* `.ficha-doc-grid` (usado pelas fichas de produto/estoque/venda) manda o
+     bloco inteiro não ser partido. Aqui isso trabalhava contra: com um
+     evento a mais do que cabia, o navegador jogava sobra pra outra folha
+     deixando espaço vazio na primeira. Quem decide a quebra é a linha. */
+  .calendario-impressao.ficha-doc-grid { break-inside: auto; page-break-inside: auto; }
+
+  .calendario-impressao .calendario-dia { min-height: 0; padding: 3px 4px; }
+  .calendario-impressao .calendario-dia-numero { font-size: 9px; }
+  .calendario-impressao .calendario-chip {
+    font-size: 8px;
+    padding: 1px 3px;
+    line-height: 1.25;
+    white-space: normal;
+  }
+  .calendario-impressao .calendario-cabecalho-dia { font-size: 8px; padding: 2px; }
+
+  .calendario-impressao .calendario-kanban { display: flex; gap: 6px; }
+  /* min-height: 0 é o que impede a coluna vazia (Cancelado, quase sempre) de
+     esticar as quatro e empurrar o detalhamento pra folha seguinte. */
+  .calendario-impressao .kanban-coluna { flex: 1; min-width: 0; min-height: 0; padding: 4px; }
+  .calendario-impressao .kanban-coluna-head { font-size: 8px; margin-bottom: 3px; }
+  .calendario-impressao .kanban-cartao { padding: 2px 4px; margin-bottom: 2px; line-height: 1.25; }
+  .calendario-impressao .kanban-cartao-titulo { font-size: 8.5px; margin-bottom: 1px; }
+  .calendario-impressao .kanban-cartao-meta { font-size: 7.5px; }
+
+  .calendario-impressao-filtros { font-size: 8.5px; color: var(--ink-soft); margin-top: 2px; }
+  .calendario-impressao .ficha-doc-meta { font-size: 8.5px; }
+  /* Corpo pequeno de propósito: é o que faz o mês inteiro caber numa folha
+     só. Em A4 deitada, 7,5px ainda lê bem — e o objetivo aqui é a folha
+     única que a dona do projeto pediu, não conforto de leitura de livro. */
+  .calendario-impressao-detalhe { margin-top: 8px; font-size: 7.5px; line-height: 1.15; }
+  .calendario-impressao-detalhe th, .calendario-impressao-detalhe td { padding: 1px 4px; }
+  /* O cabeçalho da grade de variação saía quase invisível no papel (cinza
+     claro sobre bege). No papel, cabeçalho é texto escuro. */
+  .calendario-impressao .grade-variacoes-mini { font-size: 8px; }
+  .calendario-impressao .grade-variacoes-mini th {
+    color: var(--ink);
+    font-size: 7.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+}
 
 /* ---------- Ícone de tipo de arquivo (Seção 6) — mesmo padrão de gradiente
    do .module-badge (150deg, cor -> mix mais escuro, ícone branco) aplicado

@@ -55,7 +55,12 @@ export function ConfirmDialogRoot() {
   if (!estado.aberto) return null;
 
   return createPortal(
-    <div className="viagem-modal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) concluir(false); }}>
+    // confirm-dialog-overlay sobe o z-index acima de qualquer outra janela do
+    // sistema. Sem isso, uma pergunta disparada de dentro de outro modal (o
+    // de evento do Calendário, por exemplo, que fica em z-index 1000) nascia
+    // ATRÁS dele: a pessoa via o fundo escurecer e não conseguia clicar em
+    // nada. Pergunta que bloqueia o fluxo tem que ser sempre a camada de cima.
+    <div className="viagem-modal-overlay confirm-dialog-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) concluir(false); }}>
       <div className="card confirm-modal" role="alertdialog" aria-modal="true">
         <div className={'confirm-modal-icone' + (estado.perigo ? ' perigo' : '')}>
           {estado.perigo ? <AlertTriangle size={20} /> : <HelpCircle size={20} />}

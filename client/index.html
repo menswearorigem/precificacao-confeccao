@@ -11,6 +11,21 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <title>HBN Hub</title>
     <link rel="icon" type="image/png" href="/favicon.png" />
+
+    <!-- Aplicativo instalável (PWA). O manifesto é o que faz o Android
+         oferecer "Instalar aplicativo" e o que define nome, ícone e a
+         abertura em tela cheia (display: standalone).
+         A cor do theme-color acima é a MESMA do manifesto (--leather-deep,
+         #2f1c0d): é ela que pinta a barra de status do celular. -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- iPhone/iPad ignoram o manifesto: o Safari lê estas três tags pra
+         "Adicionar à Tela de Início". Sem elas o atalho abre no navegador
+         com barra de endereço, em vez de abrir como aplicativo. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="HBN Hub" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

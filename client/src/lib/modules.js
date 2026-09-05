@@ -107,6 +107,21 @@ export const MODULES = [
     ],
   },
   {
+    // O Calendário vem ANTES de Configurações de propósito (04/09/2026): é
+    // tela de uso diário — prazo de corte, meta, chegada de mercadoria — e
+    // estava caindo depois de Configurações, que é tela de ajuste, aberta
+    // uma vez por mês. Menu se ordena por frequência de uso, não por ordem
+    // de nascimento do módulo.
+    key: 'calendario',
+    label: 'Calendário',
+    icon: CalendarDays,
+    color: 'var(--leather)',
+    pages: [
+      { to: '/calendario', label: 'Calendário', icon: CalendarDays },
+      { to: '/calendario/modelos', label: 'Modelos', icon: LayoutTemplate, adminOnly: true },
+    ],
+  },
+  {
     key: 'configuracoes',
     label: 'Configurações',
     icon: Settings,
@@ -137,16 +152,6 @@ export const MODULES = [
       { to: '/acessos', label: 'Acessos', icon: ShieldCheck },
       { to: '/integracoes', label: 'Integrações', icon: Plug, adminOnly: true },
       { to: '/saude-dados', label: 'Saúde dos Dados', icon: Layers, adminOnly: true },
-    ],
-  },
-  {
-    key: 'calendario',
-    label: 'Calendário',
-    icon: CalendarDays,
-    color: 'var(--leather)',
-    pages: [
-      { to: '/calendario', label: 'Calendário', icon: CalendarDays },
-      { to: '/calendario/modelos', label: 'Modelos', icon: LayoutTemplate, adminOnly: true },
     ],
   },
 ];
