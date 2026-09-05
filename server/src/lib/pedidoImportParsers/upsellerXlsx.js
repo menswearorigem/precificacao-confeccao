@@ -41,6 +41,19 @@ async function parseUpsellerXlsx(buffer) {
   const idxPreco = col('preco de produto');
   const idxQtd = col('qtd do produto');
 
+  // Código de rastreio — para a Conferência de Pedidos (a etiqueta que a
+  // pessoa bipa no galpão pra abrir a caixa certa). É OPCIONAL de propósito:
+  // não sabemos se toda exportação do UpSeller traz essa coluna, e a
+  // importação não pode quebrar por causa dela. Vários nomes possíveis
+  // porque o rótulo muda conforme a versão da exportação; se nenhum bater, o
+  // pedido entra sem rastreio e o galpão vincula a etiqueta bipando uma vez
+  // (ver POST /conferencia/pedidos/:id/vincular-rastreio).
+  const idxRastreio = ['codigo de rastreio', 'codigo de rastreamento', 'rastreio',
+    'numero de rastreio', 'n de rastreio', 'tracking number', 'tracking',
+    'codigo de envio', 'numero do envio']
+    .map((nome) => col(nome))
+    .find((i) => i !== undefined);
+
   if (idxId === undefined || idxPlataforma === undefined || idxQtd === undefined) {
     throw new Error('Não reconheci as colunas esperadas da exportação do UpSeller (Nº de Pedido da Plataforma, Plataformas, Qtd. do Produto). Confira se é o arquivo certo.');
   }
@@ -68,11 +81,22 @@ async function parseUpsellerXlsx(buffer) {
         valorFrete: idxFrete !== undefined ? Math.abs(numeroCelula(row[idxFrete])) : 0,
         taxaMarketplace: idxComissao !== undefined ? Math.abs(numeroCelula(row[idxComissao])) : 0,
         formaPagamento: null,
+        codigosRastreio: [],
         itens: [],
       });
     }
 
     const pedido = pedidosPorId.get(chave);
+
+    // O rastreio vem repetido em toda linha do mesmo pedido (a planilha é uma
+    // linha por ITEM). Guarda sem repetir e em maiúscula — é assim que a
+    // conferência procura depois.
+    if (idxRastreio !== undefined) {
+      const rastreio = textoCelula(row[idxRastreio]).trim().toUpperCase();
+      if (rastreio && rastreio.length >= 4 && !pedido.codigosRastreio.includes(rastreio)) {
+        pedido.codigosRastreio.push(rastreio);
+      }
+    }
     pedido.itens.push({
       skuExterno: idxSku !== undefined ? textoCelula(row[idxSku]).trim() || null : null,
       eanExterno: null,

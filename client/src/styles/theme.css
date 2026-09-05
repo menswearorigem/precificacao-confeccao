@@ -3170,6 +3170,172 @@ table.ficha-doc-tabela {
   max-width: 240px;
 }
 
+/* ---------- Conferência de Pedidos (expedição) ----------
+   Tela de galpão: a pessoa está em pé, a um braço de distância, com um leitor
+   na mão. Tudo aqui é maior do que no resto do sistema de propósito — número
+   de peças grande o bastante pra ler de relance, aviso com cor cheia, e o
+   campo de leitura ocupando a largura inteira pra nunca ficar em dúvida sobre
+   onde o código vai cair. */
+.conferencia-scanner { margin-bottom: 12px; }
+.conferencia-scanner-linha {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  border: 2px solid var(--terracotta);
+  border-radius: var(--radius-sm);
+  background: var(--field-bg);
+}
+.conferencia-scanner-linha svg { color: var(--terracotta); flex-shrink: 0; }
+.conferencia-scanner-linha input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 22px;
+  padding: 10px 0;
+  outline: none;
+  color: var(--ink);
+}
+.conferencia-scanner-linha input:disabled { opacity: 0.5; }
+
+.conferencia-aviso {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.conferencia-aviso svg { flex-shrink: 0; }
+.conferencia-aviso .btn { margin-left: auto; }
+.conferencia-aviso.ok { color: var(--success); background: var(--success-bg); border-color: var(--success-ring); }
+.conferencia-aviso.aviso { color: var(--warning); background: var(--warning-bg); border-color: var(--warning-ring); }
+.conferencia-aviso.erro { color: var(--danger); background: var(--danger-bg); border-color: var(--danger-ring); }
+
+.conferencia-cabecalho {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.conferencia-contador { text-align: right; white-space: nowrap; }
+.conferencia-contador > span:first-child {
+  font-family: var(--font-display);
+  font-size: 34px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1;
+}
+.conferencia-contador > span:first-child.completo { color: var(--success); }
+.conferencia-contador .de { display: block; font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+
+.conferencia-itens { display: flex; flex-direction: column; gap: 8px; }
+.conferencia-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+/* Item fechado sai do caminho visualmente: quem está bipando só precisa
+   enxergar o que ainda falta. */
+.conferencia-item.pronto { background: var(--success-bg); border-color: var(--success-ring); opacity: 0.72; }
+.conferencia-item-texto { flex: 1; min-width: 0; }
+.conferencia-item-desc { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+.conferencia-item-desc.aviso { color: var(--warning); font-weight: 600; }
+.conferencia-item-contagem { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.conferencia-item-contagem > span {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.conferencia-item-contagem > span.completo { color: var(--success); }
+
+.conferencia-acoes {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.conferencia-log { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow-y: auto; }
+.conferencia-log-linha {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  align-items: center;
+}
+.conferencia-log-linha.ok { color: var(--success); background: var(--success-bg); }
+.conferencia-log-linha.aviso { color: var(--warning); background: var(--warning-bg); }
+.conferencia-log-linha.erro { color: var(--danger); background: var(--danger-bg); }
+.conferencia-log-hora { font-family: var(--font-mono); font-size: 11px; opacity: 0.75; }
+
+/* Aviso de tela cheia ao fechar a caixa: 2 segundos, sem clique nenhum. É o
+   que deixa a pessoa fechar a fita e já pegar a próxima caixa sem tirar a
+   mão do leitor — veio da ferramenta antiga e é o detalhe que mais economiza
+   tempo no turno. `pointer-events: none` porque ele não deve roubar o clique
+   nem o foco do campo de leitura. */
+.conferencia-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--success);
+  color: var(--on-accent);
+  animation: conferencia-surgir 0.14s var(--ease);
+}
+.conferencia-overlay.alerta { background: var(--warning); }
+.conferencia-overlay-titulo { font-family: var(--font-display); font-size: 40px; font-weight: 600; }
+.conferencia-overlay-sub { font-size: 17px; opacity: 0.92; }
+@keyframes conferencia-surgir { from { opacity: 0; } to { opacity: 1; } }
+
+/* No celular a linha do item não cabe em três colunas: a foto e a contagem
+   espremiam o texto num filete de ~100px e a referência quebrava letra a
+   letra. Aqui ela vira duas linhas — foto + contagem em cima, descrição
+   inteira embaixo — mantendo a contagem grande, que é o que a pessoa olha. */
+@media (max-width: 720px) {
+  .conferencia-scanner-linha { padding: 4px 10px; }
+  .conferencia-scanner-linha input { font-size: 17px; }
+
+  .conferencia-cabecalho { align-items: flex-start; }
+  .conferencia-contador { text-align: left; display: flex; align-items: baseline; gap: 8px; }
+  .conferencia-contador .de { margin-top: 0; }
+
+  .conferencia-item { flex-wrap: wrap; row-gap: 6px; }
+  .conferencia-item > :first-child { order: 1; }
+  .conferencia-item-contagem { order: 2; margin-left: auto; }
+  .conferencia-item-texto { order: 3; flex: 1 1 100%; }
+
+  .conferencia-acoes .btn { flex: 1 1 auto; justify-content: center; }
+  .conferencia-aviso { font-size: 14px; flex-wrap: wrap; }
+  .conferencia-aviso .btn { margin-left: 0; width: 100%; justify-content: center; }
+  .conferencia-log-linha { grid-template-columns: minmax(0, 1fr) auto; row-gap: 2px; }
+  .conferencia-log-hora { grid-column: 2; }
+  .conferencia-overlay-titulo { font-size: 30px; }
+  .conferencia-overlay-sub { font-size: 15px; padding: 0 20px; text-align: center; }
+}
+
 /* ---------- Calendário — compartilhamento visível na tela ---------- */
 /* O ícone de pessoas no chip do dia: é o sinal de que aquele evento não é só
    seu. Sem ele, a liberação por pessoa/grupo continuava invisível depois de

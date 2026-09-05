@@ -4,7 +4,7 @@ import {
   Warehouse, Barcode, Tags, Printer, Users, ClipboardList, ShoppingCart,
   Truck, BarChart3, ShieldCheck, Plug, TrendingUp, ReceiptText, Store, Plane,
   LineChart, SearchCheck, Layers, AlertTriangle, CalendarDays, UsersRound,
-  LayoutTemplate, Wallet, ArrowLeftRight, Scale,
+  LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -53,6 +53,9 @@ export const MODULES = [
     pages: [
       { to: '/marketplace/anuncios', label: 'Anúncios', icon: Store },
       { to: '/marketplace/pedidos', label: 'Pedidos', icon: ClipboardList },
+      // Conferência de expedição — primeira depois de Pedidos porque é a
+      // única tela deste módulo usada TODO dia, em pé, no galpão.
+      { to: '/marketplace/conferencia', label: 'Conferência', icon: ScanLine },
       { to: '/marketplace/lucratividade', label: 'Lucratividade', icon: TrendingUp },
       { to: '/marketplace/metricas', label: 'Métricas', icon: LineChart },
       { to: '/marketplace/taxas', label: 'Taxas Cobradas', icon: ReceiptText },

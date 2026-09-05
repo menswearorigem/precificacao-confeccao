@@ -49,6 +49,7 @@ import MetricasMarketplacePage from './pages/MetricasMarketplacePage';
 import AnunciosPage from './pages/AnunciosPage';
 import RelatorioTaxasPage from './pages/RelatorioTaxasPage';
 import ImportarPedidosPage from './pages/ImportarPedidosPage';
+import ConferenciaPedidosPage from './pages/ConferenciaPedidosPage';
 import FinanceiroPage from './pages/FinanceiroPage';
 import ViagensListPage from './pages/ViagensListPage';
 import ViagemDetailPage from './pages/ViagemDetailPage';
@@ -118,6 +119,7 @@ function AppRoutes() {
                   <Route path="/marketplace/metricas" element={<MetricasMarketplacePage />} />
                   <Route path="/marketplace/taxas" element={<RelatorioTaxasPage />} />
                   <Route path="/marketplace/importar-pedidos" element={<ImportarPedidosPage />} />
+                  <Route path="/marketplace/conferencia" element={<ConferenciaPedidosPage />} />
                   {/* Módulo Financeiro: três rotas, um componente só — as três
                       abas leem a mesma base (o extrato do marketplace) e mudam
                       só a pergunta. Rota própria por aba pra cada uma poder ser

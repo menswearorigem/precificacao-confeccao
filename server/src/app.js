@@ -31,6 +31,7 @@ const wikRoutes = require('./routes/wik.routes');
 const conferenciaDadosRoutes = require('./routes/conferenciaDados.routes');
 const qualidadeDadosRoutes = require('./routes/qualidadeDados.routes');
 const calendarioRoutes = require('./routes/calendario.routes');
+const conferenciaRoutes = require('./routes/conferencia.routes');
 const gruposRoutes = require('./routes/grupos.routes');
 const produtoMarketplaceRoutes = require('./routes/produtoMarketplace.routes');
 const anunciosRoutes = require('./routes/anuncios.routes');
@@ -134,6 +135,12 @@ function createApp() {
   app.use('/api/fornecedores', requireAuth, requireModulo('compras'), fornecedoresRoutes);
   app.use('/api/compras', requireAuth, requireModulo('compras'), comprasRoutes);
   app.use('/api/viagens', requireAuth, requireModulo('viagens'), viagensRoutes);
+
+  // Conferência de expedição. Fica no módulo Marketplace porque é ele que
+  // traz os pedidos que são conferidos — mas note que a rota NÃO devolve
+  // preço, custo nem margem de nada: quem confere caixa precisa saber o que
+  // vai dentro, não quanto custou.
+  app.use('/api/conferencia', requireAuth, requireModulo('marketplace'), conferenciaRoutes);
   app.use('/api/calendario', requireAuth, requireModulo('calendario'), calendarioRoutes);
 
   // Financeiro é o nono módulo, e é PROPOSITALMENTE separado de Marketplace:

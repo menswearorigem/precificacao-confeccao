@@ -341,12 +341,42 @@ function removerItensFantasmaDuplicados(itens) {
 // e o % de nota fiscal configurados ali (mesma lógica de taxa_marketplace:
 // se a integração mudar depois, pedidos já importados não mudam junto).
 // É null pra importação manual por planilha (sem integração associada).
+// Acrescenta códigos de rastreio a um pedido sem repetir e sem apagar os que
+// já estão lá — um envio pode ter mais de uma etiqueta (Correios + logística
+// do marketplace no mesmo pacote). Guardados em MAIÚSCULA, que é como a
+// Conferência procura.
+async function acrescentarRastreios(client, pedidoId, codigos) {
+  const limpos = [...new Set((codigos || [])
+    .map((c) => String(c || '').trim().toUpperCase())
+    .filter((c) => c.length >= 4))];
+  if (limpos.length === 0) return;
+  await client.query(
+    `UPDATE pedidos_venda
+        SET codigos_rastreio = (
+              SELECT ARRAY(SELECT DISTINCT unnest(COALESCE(codigos_rastreio, ARRAY[]::text[]) || $2::text[]))
+            )
+      WHERE id = $1`,
+    [pedidoId, limpos]
+  );
+}
+
 async function importarPedido(client, pedidoGenerico, integracao) {
   const { rows: existentes } = await client.query(
     'SELECT id FROM pedidos_venda WHERE origem_marketplace = $1 AND origem_pedido_id = $2',
     [pedidoGenerico.marketplace, pedidoGenerico.idExterno]
   );
-  if (existentes.length > 0) return false;
+  if (existentes.length > 0) {
+    // Pedido já importado: nada dele é reescrito — nem valor, nem taxa, nem
+    // item. A ÚNICA exceção é o código de rastreio, que é acrescentado
+    // (nunca substituído) quando a planilha traz e o pedido ainda não tem.
+    // Motivo: o rastreio costuma sair só depois que a etiqueta é gerada, ou
+    // seja, numa exportação POSTERIOR à que trouxe o pedido. Sem isto, o
+    // pedido ficaria para sempre sem etiqueta e a Conferência não
+    // conseguiria abri-lo bipando. É acréscimo puro numa coluna nova
+    // (0047) — nenhum campo existente é tocado.
+    await acrescentarRastreios(client, existentes[0].id, pedidoGenerico.codigosRastreio);
+    return false;
+  }
 
   const clienteId = await encontrarOuCriarCliente(client, pedidoGenerico);
 
@@ -382,6 +412,10 @@ async function importarPedido(client, pedidoGenerico, integracao) {
     ]
   );
   const pedidoId = rows[0].id;
+  // Etiqueta de envio, quando a origem trouxe (hoje: a planilha do UpSeller,
+  // se a exportação tiver a coluna). É o que faz a Conferência de Pedidos
+  // abrir a caixa certa só bipando a etiqueta.
+  await acrescentarRastreios(client, pedidoId, pedidoGenerico.codigosRastreio);
 
   let ordem = 1;
   for (const item of removerItensFantasmaDuplicados(pedidoGenerico.itens)) {
@@ -1639,6 +1673,7 @@ module.exports = {
   sincronizarAdsDias,
   sincronizarAdsTodasIntegracoes,
   limparItensFantasmaHistorico,
+  acrescentarRastreios,
   normalizarComparacao,
   partirSkuIndividual,
   partirSkuKit,
