@@ -662,7 +662,8 @@ function mapearAnuncioTikTok(produto) {
     preco: precos.length ? Math.min(...precos) : null,
     precoOriginal: null,
     estoque: estoques.length ? estoques.reduce((s, e) => s + e, 0) : null,
-    status: STATUS_ANUNCIO_TIKTOK[produto.status] || 'pausado',
+    // Ver a nota em mercadoLivre.js: desconhecido é desconhecido.
+    status: STATUS_ANUNCIO_TIKTOK[produto.status] || 'desconhecido',
     statusExterno: produto.status || null,
     url: produto.id ? `https://shop.tiktok.com/view/product/${produto.id}` : null,
     fotoUrl: produto.main_images?.[0]?.urls?.[0] || null,

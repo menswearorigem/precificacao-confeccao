@@ -1093,7 +1093,8 @@ function mapearAnuncioShopee(item, variacoes) {
       : (item.stock_info_v2?.summary_info?.total_available_stock != null
         ? Number(item.stock_info_v2.summary_info.total_available_stock)
         : null),
-    status: STATUS_ANUNCIO_SHOPEE[item.item_status] || 'pausado',
+    // Ver a nota em mercadoLivre.js: desconhecido é desconhecido.
+    status: STATUS_ANUNCIO_SHOPEE[item.item_status] || 'desconhecido',
     statusExterno: item.item_status || null,
     url: item.item_id ? `https://shopee.com.br/product/${item.shop_id || ''}/${item.item_id}` : null,
     fotoUrl: item.image?.image_url_list?.[0] || null,

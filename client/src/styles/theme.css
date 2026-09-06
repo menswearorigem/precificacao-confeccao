@@ -4945,6 +4945,53 @@ table.ficha-doc-tabela {
 .anuncio-historico-de-para { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .anuncio-historico-antes { color: var(--ink-faint); text-decoration: line-through; }
 
+/* Código do anúncio no cartão — é o que diferencia dois anúncios do mesmo
+   produto na mesma loja (06/09/2026). */
+.anuncio-card-id {
+  float: right;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--ink-faint);
+  letter-spacing: .02em;
+}
+
+/* Contador de anúncios no cartão de grupo (modo "por referência"). */
+.anuncio-card-contador {
+  position: absolute; top: 6px; right: 6px;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 7px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--border);
+  box-shadow: var(--shadow-xs);
+  font-size: 10px; font-weight: 700; color: var(--ink-soft);
+}
+
+/* Alternador "por anúncio" / "por referência". */
+.modo-exibicao {
+  display: inline-flex; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); overflow: hidden; background: var(--surface);
+}
+.modo-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  font: inherit; font-size: 12px; font-weight: 600;
+  padding: 7px 11px; border: 0; background: transparent;
+  color: var(--ink-soft); cursor: pointer; white-space: nowrap;
+}
+.modo-btn + .modo-btn { border-left: 1px solid var(--border); }
+.modo-btn:hover { background: var(--row-hover); color: var(--ink); }
+.modo-btn.active { background: var(--accent-soft); color: var(--terracotta); }
+.modo-btn:focus-visible { outline: 2px solid var(--terracotta); outline-offset: -2px; }
+
+/* Faixa de "voltar" ao entrar num grupo. */
+.voltar-grupo {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anuncio-card { transition: none; }
+  .anuncio-card:hover { transform: none; }
+}
+
 @media (max-width: 720px) {
   .anuncios-grade { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
   .anuncio-painel { width: 100%; }

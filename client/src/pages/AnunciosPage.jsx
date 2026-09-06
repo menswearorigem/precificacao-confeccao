@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Store, RefreshCw, Search, X, ImageOff, Megaphone, Eye, ShoppingBag,
   ExternalLink, History, Link2, Link2Off, PackageSearch, Download, Pencil,
-  AlertTriangle, TrendingUp,
+  AlertTriangle, TrendingUp, LayoutGrid, Layers, ArrowLeft, Copy,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { EstadoVazio, Select, Skeleton, CampoBusca, ChipsFiltros } from '../components/ui';
@@ -28,6 +28,10 @@ const STATUS_ROTULO = {
   encerrado: 'Encerrado',
   em_analise: 'Em análise',
   violacao: 'Violação',
+  // A plataforma respondeu uma situação que o sistema não conhece. NÃO é
+  // "pausado" — era esse chute que fazia anúncio ativo aparecer como pausado
+  // na tela (corrigido em 06/09/2026).
+  desconhecido: 'Situação não reconhecida',
 };
 
 const STATUS_TOM = {
@@ -36,7 +40,48 @@ const STATUS_TOM = {
   encerrado: 'tone-neutro',
   em_analise: 'tone-atencao',
   violacao: 'tone-prejuizo',
+  desconhecido: 'tone-neutro',
 };
+
+// Chave de agrupamento "por referência": loja + produto do cadastro. É
+// casamento EXATO por id — anúncio sem vínculo nunca é agrupado com outro
+// por título parecido (REGRA 2), fica sozinho e a tela diz por quê.
+function chaveDoGrupo(a) {
+  return a.produto_id ? `${a.origem_integracao_id}:${a.produto_id}` : `avulso:${a.id}`;
+}
+
+function agruparPorReferencia(anuncios) {
+  const grupos = new Map();
+  for (const a of anuncios) {
+    const chave = chaveDoGrupo(a);
+    if (!grupos.has(chave)) grupos.set(chave, []);
+    grupos.get(chave).push(a);
+  }
+  return [...grupos.entries()].map(([chave, itens]) => {
+    const precos = itens.map((i) => (i.preco != null ? Number(i.preco) : null)).filter((v) => v != null);
+    const estoques = itens.map((i) => (i.estoque != null ? Number(i.estoque) : null)).filter((v) => v != null);
+    const custo = itens.reduce((soma, i) => soma + (i.ads?.custo || 0), 0);
+    const receita = itens.reduce((soma, i) => soma + (i.ads?.receita || 0), 0);
+    return {
+      chave,
+      itens,
+      principal: itens[0],
+      quantidade: itens.length,
+      // Faixa de preço em vez de um preço só: com vários anúncios do mesmo
+      // produto, mostrar um preço qualquer seria escolher no escuro.
+      precoMin: precos.length ? Math.min(...precos) : null,
+      precoMax: precos.length ? Math.max(...precos) : null,
+      // Estoque NÃO é somado entre anúncios: os anúncios do mesmo produto
+      // costumam dividir o mesmo estoque físico, então somar inventaria peça
+      // que não existe (REGRA 2). Mostra o maior, que é o do anúncio com mais
+      // saldo publicado.
+      estoqueMaior: estoques.length ? Math.max(...estoques) : null,
+      ativos: itens.filter((i) => i.status === 'ativo').length,
+      adsCusto: custo > 0 ? custo : null,
+      adsRoas: custo > 0 ? receita / custo : null,
+    };
+  });
+}
 
 export default function AnunciosPage() {
   const [lojas, setLojas] = useState([]);
@@ -55,6 +100,10 @@ export default function AnunciosPage() {
   const [ads, setAds] = useState('');
 
   const [selecionado, setSelecionado] = useState(null);
+  // 'anuncio' = um cartão por anúncio (fiel ao painel da plataforma).
+  // 'referencia' = um cartão por produto em cada loja, com contador.
+  const [modo, setModo] = useState('anuncio');
+  const [grupoFocado, setGrupoFocado] = useState(null);
 
   const carregarLojas = useCallback(() => {
     api.get('/anuncios/lojas').then(setLojas).catch((e) => setErro(e.message));
@@ -139,6 +188,18 @@ export default function AnunciosPage() {
     return itens;
   }, [buscaAplicada, marketplace, lojaId, status, vinculo, ads, lojas]);
 
+  const grupos = useMemo(() => agruparPorReferencia(anuncios), [anuncios]);
+
+  // Ao entrar num grupo, a grade mostra só os anúncios dele — o mesmo cartão
+  // de sempre, sem inventar uma terceira tela.
+  const anunciosVisiveis = useMemo(() => (
+    grupoFocado ? (grupos.find((g) => g.chave === grupoFocado)?.itens || []) : anuncios
+  ), [grupoFocado, grupos, anuncios]);
+
+  // Trocar filtro com um grupo aberto deixaria a tela mostrando um grupo que
+  // não existe mais no resultado.
+  useEffect(() => { setGrupoFocado(null); }, [buscaAplicada, marketplace, lojaId, status, vinculo, ads]);
+
   const resumo = useMemo(() => {
     const comAds = anuncios.filter((a) => a.ads?.rodaAds);
     const gasto = comAds.reduce((s, a) => s + (a.ads.custo || 0), 0);
@@ -216,6 +277,22 @@ export default function AnunciosPage() {
             <option value="sem">Sem vínculo no cadastro</option>
             <option value="com">Vinculados ao cadastro</option>
           </Select>
+          <div className="modo-exibicao" role="group" aria-label="Como agrupar os anúncios">
+            <button
+              type="button"
+              className={'modo-btn' + (modo === 'anuncio' ? ' active' : '')}
+              onClick={() => { setModo('anuncio'); setGrupoFocado(null); }}
+            >
+              <LayoutGrid size={13} /> Por anúncio
+            </button>
+            <button
+              type="button"
+              className={'modo-btn' + (modo === 'referencia' ? ' active' : '')}
+              onClick={() => { setModo('referencia'); setGrupoFocado(null); }}
+            >
+              <Layers size={13} /> Por referência
+            </button>
+          </div>
         </div>
         {chips.length > 0 && (
           <div style={{ marginTop: 10 }}>
@@ -268,12 +345,45 @@ export default function AnunciosPage() {
           onAcao={lojas.some((l) => l.ultima_sincronizacao) ? undefined : () => sincronizar(null)}
           IconeAcao={RefreshCw}
         />
+      ) : modo === 'referencia' && !grupoFocado ? (
+        <>
+          <p className="page-sub" style={{ marginTop: -4, marginBottom: 12 }}>
+            Um cartão por referência em cada loja. Anúncios sem vínculo com o cadastro aparecem
+            sozinhos — o agrupamento é por produto, e nada é juntado por título parecido.
+          </p>
+          <div className="anuncios-grade">
+            {grupos.map((g) => (
+              <CartaoGrupo
+                key={g.chave}
+                grupo={g}
+                onAbrir={() => (g.quantidade > 1 ? setGrupoFocado(g.chave) : setSelecionado(g.principal.id))}
+              />
+            ))}
+          </div>
+        </>
       ) : (
-        <div className="anuncios-grade">
-          {anuncios.map((a) => (
-            <CartaoAnuncio key={a.id} anuncio={a} onAbrir={() => setSelecionado(a.id)} />
-          ))}
-        </div>
+        <>
+          {grupoFocado && (
+            <div className="voltar-grupo">
+              <button type="button" className="btn btn-ghost sm" onClick={() => setGrupoFocado(null)}>
+                <ArrowLeft size={13} /> Voltar para o agrupado
+              </button>
+              <span className="page-sub" style={{ margin: 0 }}>
+                {anunciosVisiveis.length} anúncio(s) de{' '}
+                <strong className="mono">{anunciosVisiveis[0]?.referencia || 'sem referência'}</strong>
+                {' '}na <strong>{nomeDaLoja({
+                  marketplace: anunciosVisiveis[0]?.marketplace,
+                  nome: anunciosVisiveis[0]?.loja_nome,
+                })}</strong>
+              </span>
+            </div>
+          )}
+          <div className="anuncios-grade">
+            {anunciosVisiveis.map((a) => (
+              <CartaoAnuncio key={a.id} anuncio={a} onAbrir={() => setSelecionado(a.id)} />
+            ))}
+          </div>
+        </>
       )}
 
       {selecionado && (
@@ -336,9 +446,17 @@ function CartaoAnuncio({ anuncio, onAbrir }) {
   const preco = anuncio.preco != null ? Number(anuncio.preco) : null;
   const precoDe = anuncio.preco_original != null ? Number(anuncio.preco_original) : null;
   const desconto = precoDe && preco && precoDe > preco ? Math.round((1 - preco / precoDe) * 100) : null;
-  const foto = anuncio.produto_tem_foto
-    ? `/api/produtos/${anuncio.produto_id}/foto`
-    : anuncio.foto_url;
+
+  // A foto é a DO ANÚNCIO, não a do produto no cadastro.
+  //
+  // Corrigido em 06/09/2026: a tela usava a foto interna do produto, que é a
+  // mesma para todos os anúncios da mesma referência. Como aqui a casa publica
+  // vários anúncios do mesmo produto (todas as cores em cada um, mudando só as
+  // fotos), e título e preço também se repetem, o resultado era meia dúzia de
+  // cartões idênticos, sem nada que os distinguisse.
+  // A EXPORTAÇÃO continua usando a foto do cadastro — lá é uma foto por
+  // produto, e foi o que a dona escolheu.
+  const foto = anuncio.foto_url || (anuncio.produto_tem_foto ? `/api/produtos/${anuncio.produto_id}/foto` : null);
 
   return (
     <button type="button" className={`anuncio-card plataforma-${chave}`} onClick={onAbrir}>
@@ -367,7 +485,12 @@ function CartaoAnuncio({ anuncio, onAbrir }) {
         <div className="anuncio-card-estoque">
           Estoque {anuncio.estoque != null ? formatQtd(anuncio.estoque) : '—'}
           {' · '}
-          <span className={`stamp sm ${STATUS_TOM[anuncio.status] || 'tone-neutro'}`}>
+          <span
+            className={`stamp sm ${STATUS_TOM[anuncio.status] || 'tone-neutro'}`}
+            title={anuncio.status === 'desconhecido' && anuncio.status_externo
+              ? `A plataforma respondeu "${anuncio.status_externo}", que o sistema ainda não conhece.`
+              : undefined}
+          >
             {STATUS_ROTULO[anuncio.status] || anuncio.status}
           </span>
         </div>
@@ -375,6 +498,12 @@ function CartaoAnuncio({ anuncio, onAbrir }) {
           {anuncio.referencia
             ? anuncio.referencia
             : <span className="anuncio-card-sem-vinculo">sem vínculo no cadastro</span>}
+          {/* O código do anúncio é a única coisa que diferencia dois anúncios
+              do mesmo produto na mesma loja — sem ele os cartões ficavam
+              indistinguíveis. */}
+          <span className="anuncio-card-id" title="Código do anúncio na plataforma">
+            {anuncio.anuncio_id_externo}
+          </span>
         </div>
         <div className="anuncio-card-metricas">
           <span title="Visitas"><Eye size={11} /> {anuncio.visitas != null ? formatQtd(anuncio.visitas) : '—'}</span>
@@ -382,6 +511,65 @@ function CartaoAnuncio({ anuncio, onAbrir }) {
           <span title="Gasto com Ads em 30 dias">
             <Megaphone size={11} /> {anuncio.ads?.custo != null ? brl(anuncio.ads.custo) : '—'}
           </span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Cartão de grupo (modo "por referência")
+// ---------------------------------------------------------------------------
+function CartaoGrupo({ grupo, onAbrir }) {
+  const { principal, quantidade } = grupo;
+  const chave = chaveDaPlataforma(principal.marketplace);
+  const foto = principal.foto_url
+    || (principal.produto_tem_foto ? `/api/produtos/${principal.produto_id}/foto` : null);
+  const faixa = grupo.precoMin == null
+    ? '—'
+    : (grupo.precoMin === grupo.precoMax
+      ? brl(grupo.precoMin)
+      : `${brl(grupo.precoMin)} – ${brl(grupo.precoMax)}`);
+
+  return (
+    <button type="button" className={`anuncio-card plataforma-${chave}`} onClick={onAbrir}>
+      <div className="anuncio-card-foto">
+        {foto
+          ? <img src={foto} alt="" loading="lazy" />
+          : <div className="anuncio-card-foto-vazia"><ImageOff size={28} /></div>}
+        <span className="anuncio-card-loja">
+          <SeloPlataforma chave={chave} size={14} />
+          <span>{nomeDaLoja({ marketplace: principal.marketplace, nome: principal.loja_nome })}</span>
+        </span>
+        {quantidade > 1 && (
+          <span className="anuncio-card-contador" title="Anúncios desta referência nesta loja">
+            <Copy size={10} /> {quantidade} anúncios
+          </span>
+        )}
+      </div>
+      <div className="anuncio-card-corpo">
+        <p className="anuncio-card-titulo">
+          {principal.produto_descricao || principal.titulo || '(sem título)'}
+        </p>
+        <div className="anuncio-card-preco">{faixa}</div>
+        <div className="anuncio-card-estoque">
+          {grupo.ativos} de {quantidade} ativo(s)
+          {grupo.estoqueMaior != null && ` · maior estoque ${formatQtd(grupo.estoqueMaior)}`}
+        </div>
+        <div className="anuncio-card-ref">
+          {principal.referencia
+            ? principal.referencia
+            : <span className="anuncio-card-sem-vinculo">sem vínculo no cadastro</span>}
+        </div>
+        <div className="anuncio-card-metricas">
+          <span title="Gasto com Ads em 30 dias, somando os anúncios do grupo">
+            <Megaphone size={11} /> {grupo.adsCusto != null ? brl(grupo.adsCusto) : '—'}
+          </span>
+          {grupo.adsRoas != null && (
+            <span title="ROAS do grupo: soma da receita ÷ soma do gasto">
+              <TrendingUp size={11} /> {numeroBr(grupo.adsRoas)}x
+            </span>
+          )}
         </div>
       </div>
     </button>
@@ -461,7 +649,8 @@ function PainelAnuncio({ anuncioId, onFechar, onAlterado }) {
 }
 
 function AbaResumo({ dado }) {
-  const foto = dado.produto_tem_foto ? `/api/produtos/${dado.produto_id}/foto` : dado.foto_url;
+  // Mesma regra do cartão: a foto do anúncio é a que identifica o anúncio.
+  const foto = dado.foto_url || (dado.produto_tem_foto ? `/api/produtos/${dado.produto_id}/foto` : null);
   return (
     <>
       <div style={{ display: 'flex', gap: 14 }}>

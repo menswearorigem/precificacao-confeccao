@@ -13,6 +13,7 @@
 const pool = require('../src/db/pool');
 const { mudou, resolverProdutoPeloSku, montarIndiceReferencias } = require('../src/lib/anunciosSync');
 const { montarPlanilhaAnuncios, generoDoProduto, pctAcrescimoDoCusto, textoAds } = require('../src/lib/anunciosExportacao');
+const mercadoLivre = require('../src/lib/marketplaces/mercadoLivre');
 
 let passou = 0;
 let falhou = 0;
@@ -162,6 +163,25 @@ async function main() {
   ok(textoAds({ custo_30d: 100, receita_30d: 340 }).includes('R$ 100,00'), 'o gasto aparece junto do ROAS');
   ok(textoAds({ custo_30d: 50, receita_30d: 0 }).includes('sem venda atribuída'),
     'gastou e não vendeu não vira "ROAS 0" — diz o que aconteceu');
+
+  console.log('\n5b. Situação do anúncio (o defeito que fazia ativo virar pausado)');
+  igual(mercadoLivre.mapearAnuncio({ id: 'MLB1', status: 'active' }).status, 'ativo',
+    'active vira ativo');
+  igual(mercadoLivre.mapearAnuncio({ id: 'MLB2', status: 'paused' }).status, 'pausado',
+    'paused vira pausado');
+  igual(mercadoLivre.mapearAnuncio({ id: 'MLB3', status: 'not_yet_active' }).status, 'em_analise',
+    'not_yet_active (que faltava no mapa) vira em análise');
+  igual(mercadoLivre.mapearAnuncio({ id: 'MLB4', status: 'algo_novo_do_ml' }).status, 'desconhecido',
+    'situação FORA do mapa vira desconhecido — nunca "pausado"');
+  igual(mercadoLivre.mapearAnuncio({ id: 'MLB4', status: 'algo_novo_do_ml' }).statusExterno, 'algo_novo_do_ml',
+    '...e o texto cru da plataforma é preservado para a tela mostrar');
+
+  console.log('\n5c. Foto do anúncio (cartões idênticos)');
+  igual(
+    mercadoLivre.mapearAnuncio({ id: 'MLB5', thumbnail: 'https://ml/foto-do-anuncio.jpg' }).fotoUrl,
+    'https://ml/foto-do-anuncio.jpg',
+    'a foto do anúncio é lida da plataforma e guardada em foto_url'
+  );
 
   console.log('\n6. Histórico e anúncio que sai do ar');
   const anuncioShopee = await inserirAnuncio(dados.lojas['shopee:Origem'], 'shopee', {

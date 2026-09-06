@@ -912,6 +912,7 @@ async function chamarApiComCorpo(path, accessToken, { metodo = 'PUT', corpo }) {
 
 const STATUS_ANUNCIO_ML = {
   active: 'ativo',
+  not_yet_active: 'em_analise',
   paused: 'pausado',
   closed: 'encerrado',
   under_review: 'em_analise',
@@ -1004,7 +1005,11 @@ function mapearAnuncio(item) {
     estoque: item.available_quantity != null
       ? Number(item.available_quantity)
       : (variacoes.length ? variacoes.reduce((s, v) => s + (v.estoque || 0), 0) : null),
-    status: STATUS_ANUNCIO_ML[item.status] || 'pausado',
+    // Situação fora do mapa NÃO vira "pausado": vira 'desconhecido', e o
+    // texto cru da plataforma segue em statusExterno pra tela mostrar. Tratar
+    // o que não se conhece como um valor específico é exatamente o que a
+    // REGRA 2 proíbe — foi assim que anúncio ativo apareceu como pausado.
+    status: STATUS_ANUNCIO_ML[item.status] || 'desconhecido',
     statusExterno: item.status || null,
     url: item.permalink || null,
     fotoUrl: item.thumbnail || item.pictures?.[0]?.secure_url || item.pictures?.[0]?.url || null,
