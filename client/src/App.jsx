@@ -47,6 +47,7 @@ import RelatorioComprasPage from './pages/RelatorioComprasPage';
 import RelatorioLucratividadePage from './pages/RelatorioLucratividadePage';
 import MetricasMarketplacePage from './pages/MetricasMarketplacePage';
 import AnunciosPage from './pages/AnunciosPage';
+import PromocoesPage from './pages/PromocoesPage';
 import RelatorioTaxasPage from './pages/RelatorioTaxasPage';
 import ImportarPedidosPage from './pages/ImportarPedidosPage';
 import ConferenciaPedidosPage from './pages/ConferenciaPedidosPage';
@@ -114,6 +115,7 @@ function AppRoutes() {
                   <Route path="/ficha-venda" element={<FichaVendaPage />} />
                   <Route path="/vendas/lucratividade" element={<RelatorioLucratividadePage origemFiltro="manual" />} />
                   <Route path="/marketplace/anuncios" element={<AnunciosPage />} />
+                  <Route path="/marketplace/promocoes" element={<PromocoesPage />} />
                   <Route path="/marketplace/pedidos" element={<PedidosListPage origemFiltro="marketplace" />} />
                   <Route path="/marketplace/lucratividade" element={<RelatorioLucratividadePage origemFiltro="marketplace" />} />
                   <Route path="/marketplace/metricas" element={<MetricasMarketplacePage />} />

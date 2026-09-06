@@ -4,7 +4,7 @@ import {
   Warehouse, Barcode, Tags, Printer, Users, ClipboardList, ShoppingCart,
   Truck, BarChart3, ShieldCheck, Plug, TrendingUp, ReceiptText, Store, Plane,
   LineChart, SearchCheck, Layers, AlertTriangle, CalendarDays, UsersRound,
-  LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine,
+  LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -52,6 +52,10 @@ export const MODULES = [
     color: 'var(--plum)',
     pages: [
       { to: '/marketplace/anuncios', label: 'Anúncios', icon: Store },
+      // Aba de Promoções (06/09/2026). Fica logo depois de Anúncios porque é
+      // a mesma pergunta ("como está o meu catálogo na loja?") vista pelo
+      // lado do preço promocional.
+      { to: '/marketplace/promocoes', label: 'Promoções', icon: Tag },
       { to: '/marketplace/pedidos', label: 'Pedidos', icon: ClipboardList },
       // Conferência de expedição — primeira depois de Pedidos porque é a
       // única tela deste módulo usada TODO dia, em pé, no galpão.

@@ -35,6 +35,7 @@ const conferenciaRoutes = require('./routes/conferencia.routes');
 const gruposRoutes = require('./routes/grupos.routes');
 const produtoMarketplaceRoutes = require('./routes/produtoMarketplace.routes');
 const anunciosRoutes = require('./routes/anuncios.routes');
+const promocoesRoutes = require('./routes/promocoes.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
 const auditoriaRoutes = require('./routes/auditoria.routes');
 const emailRoutes = require('./routes/email.routes');
@@ -130,6 +131,10 @@ function createApp() {
   // cuida de anúncio precisa disto no dia a dia, e nenhuma permissão
   // existente muda por causa desta rota nova.
   app.use('/api/anuncios', requireAuth, requireModulo('marketplace'), anunciosRoutes);
+  // Aba Marketplace › Promoções (06/09/2026). Mesmo módulo de permissão de
+  // Anúncios: é a mesma pessoa que cuida de um e de outro, e nenhuma
+  // permissão existente muda por causa desta rota nova (REGRA 4).
+  app.use('/api/promocoes', requireAuth, requireModulo('marketplace'), promocoesRoutes);
   app.use('/api/clientes', requireAuth, requireModulo('vendas'), clientesRoutes);
   app.use('/api/pedidos', requireAuth, requireModulo(['vendas', 'marketplace']), pedidosRoutes);
   app.use('/api/fornecedores', requireAuth, requireModulo('compras'), fornecedoresRoutes);

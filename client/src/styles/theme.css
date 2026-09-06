@@ -5155,3 +5155,270 @@ table.ficha-doc-tabela {
 @media (min-width: 480px) and (max-width: 720px) {
   .anuncios-grade { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ===========================================================================
+   Marketplace › Promoções (06/09/2026)
+   ===========================================================================
+   Reaproveita os tokens --mkt-* que a aba de Anúncios já criou (tinta da
+   plataforma) e os selos semânticos .tone-* — nenhuma cor solta aqui
+   (REGRA 3). O que é novo é só a forma: o cartão de promoção, a grade de
+   candidatos, a tabela do editor e a faixa de horários da relâmpago. */
+
+.promocoes-grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  gap: 14px;
+}
+
+.promocao-card {
+  display: flex; flex-direction: column;
+  text-align: left; font: inherit; cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+  transition: box-shadow 140ms ease, transform 140ms ease;
+}
+.promocao-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.promocao-card:focus-visible { outline: 2px solid var(--terracotta); outline-offset: 2px; }
+.promocao-card.selecionado { box-shadow: 0 0 0 2px var(--terracotta), var(--shadow-sm); }
+
+/* A tinta da plataforma é a mesma da aba de Anúncios, de propósito: quem
+   olha as duas telas reconhece a loja pela cor sem reler o nome. */
+.promocao-card.plataforma-mercado_livre { background: var(--mkt-meli-suave); }
+.promocao-card.plataforma-shopee { background: var(--mkt-shopee-suave); }
+.promocao-card.plataforma-tiktok_shop { background: var(--mkt-tiktok-suave); }
+.promocao-card.plataforma-shein { background: var(--mkt-shein-suave); }
+
+.promocao-card-faixa { height: 3px; flex: 0 0 auto; background: var(--border); }
+.plataforma-mercado_livre > .promocao-card-faixa { background: var(--mkt-meli-edge); }
+.plataforma-shopee > .promocao-card-faixa { background: var(--mkt-shopee-edge); }
+.plataforma-tiktok_shop > .promocao-card-faixa { background: var(--mkt-tiktok-edge); }
+.plataforma-shein > .promocao-card-faixa { background: var(--mkt-shein-edge); }
+
+.promocao-card-topo {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 12px 0;
+}
+.promocao-card-loja {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0;
+  font-size: 11px; font-weight: 700; color: var(--ink-soft);
+}
+.promocao-card-loja span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.promocao-card-corpo { padding: 8px 12px 10px; display: flex; flex-direction: column; gap: 5px; flex: 1; }
+.promocao-card-tipo {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10.5px; font-weight: 600; color: var(--ink-faint);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.promocao-card-nome {
+  font-family: var(--font-display); font-size: 15px; font-weight: 600;
+  color: var(--ink); margin: 0; line-height: 1.25;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.promocao-card-janela {
+  display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap;
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-soft);
+}
+
+.promocao-card-rodape {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 12px; border-top: 1px solid var(--border-soft);
+  font-size: 11px; color: var(--ink-soft);
+}
+.promocao-card-rodape > span { display: inline-flex; align-items: center; gap: 4px; }
+.promocao-card-recusados { color: var(--danger); font-weight: 600; }
+.promocao-card-selo-hub {
+  margin-left: auto; font-size: 9.5px; font-weight: 700; letter-spacing: 0.05em;
+  padding: 2px 6px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--terracotta);
+}
+
+/* --- selo de margem ------------------------------------------------------ */
+/* Reaproveita os tons semânticos (.tone-prejuizo / .tone-atencao /
+   .tone-saudavel) que o resto do sistema já usa pra situação de margem. */
+.promocao-margem {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--font-mono); font-size: 11.5px; font-weight: 600;
+  padding: 3px 8px; border-radius: 999px; border: 1px solid transparent;
+  white-space: nowrap;
+}
+.promocao-margem small { font-weight: 500; opacity: 0.85; }
+
+/* --- prévia e tabela do editor ------------------------------------------ */
+.promocao-previa { display: flex; flex-direction: column; gap: 14px; }
+.promocao-previa-resumo {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;
+}
+
+.tabela-promocao { border-collapse: collapse; width: 100%; font-size: 12.5px; min-width: 760px; }
+.tabela-promocao th, .tabela-promocao td {
+  padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border-soft);
+  vertical-align: middle;
+}
+.tabela-promocao thead th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--surface-raised);
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--ink-soft);
+}
+.tabela-promocao td.num, .tabela-promocao th.num { text-align: right; }
+.tabela-promocao tbody tr:hover { background: var(--row-hover); }
+/* Prejuízo é a única linha pintada: a decisão continua sendo dela, mas não
+   pode passar despercebida no meio de quarenta linhas. */
+.tabela-promocao tr.linha-prejuizo { background: var(--danger-bg); }
+.tabela-promocao tr.linha-prejuizo:hover { background: var(--danger-bg); }
+.tabela-promocao tr.linha-impedida { opacity: 0.6; }
+.tabela-promocao .numwrap input.editado {
+  border-color: var(--terracotta);
+  box-shadow: 0 0 0 1px var(--terracotta);
+}
+.tabela-promocao .selo + .selo { margin-left: 4px; }
+
+.promocao-celula-anuncio { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.promocao-celula-anuncio img {
+  width: 34px; height: 34px; border-radius: var(--radius-sm);
+  object-fit: cover; flex: 0 0 auto; background: var(--border-soft);
+}
+.promocao-celula-anuncio > span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.promocao-celula-anuncio strong { font-size: 12.5px; color: var(--ink); }
+.promocao-celula-anuncio small {
+  font-size: 10.5px; color: var(--ink-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.promocao-foto-vazia {
+  width: 34px; height: 34px; border-radius: var(--radius-sm); flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--border-soft); color: var(--ink-faint);
+}
+
+/* --- seletor de anúncios ------------------------------------------------ */
+.promocao-seletor { display: flex; flex-direction: column; gap: 12px; }
+.promocao-seletor-barra { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.promocao-seletor-rotulo {
+  display: flex; flex-direction: column; font-size: 12px; color: var(--ink);
+}
+.promocao-seletor-rotulo small { font-size: 10.5px; color: var(--ink-faint); }
+
+.promocao-seletor-grade {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 8px; max-height: 420px; overflow-y: auto; padding-right: 4px;
+}
+.promocao-candidato {
+  display: flex; align-items: center; gap: 9px; text-align: left; font: inherit;
+  padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); cursor: pointer; min-width: 0;
+}
+.promocao-candidato:hover { background: var(--row-hover); }
+.promocao-candidato.marcado { border-color: var(--terracotta); background: var(--accent-soft); }
+.promocao-candidato:focus-visible { outline: 2px solid var(--terracotta); outline-offset: 1px; }
+.promocao-candidato img {
+  width: 40px; height: 40px; border-radius: var(--radius-sm); object-fit: cover; flex: 0 0 auto;
+}
+.promocao-candidato-marca {
+  width: 16px; height: 16px; flex: 0 0 auto; border-radius: 4px;
+  border: 1px solid var(--border); display: inline-flex;
+  align-items: center; justify-content: center; color: var(--on-accent);
+}
+.promocao-candidato.marcado .promocao-candidato-marca {
+  background: var(--terracotta); border-color: var(--terracotta);
+}
+.promocao-candidato-texto { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.promocao-candidato-texto strong { font-size: 12.5px; color: var(--ink); }
+.promocao-candidato-texto small {
+  font-size: 10.5px; color: var(--ink-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.promocao-candidato-numeros { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-soft); }
+
+/* --- fluxo de criação --------------------------------------------------- */
+.promocao-fluxo { display: flex; flex-direction: column; gap: 16px; }
+.promocao-fluxo-topo { display: flex; align-items: center; gap: 10px; }
+.promocao-fluxo-topo h2 {
+  font-family: var(--font-display); font-size: 20px; margin: 0;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.promocao-regra {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px; margin-bottom: 12px;
+}
+.promocao-acoes {
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+  flex-wrap: wrap; margin-top: 14px;
+}
+.promocao-contagem { font-size: 12px; font-weight: 600; color: var(--terracotta); margin-top: 8px; }
+.promocao-nota { font-size: 11.5px; margin-top: 8px; }
+.promocao-criterios {
+  display: flex; align-items: flex-start; gap: 7px;
+  font-size: 11.5px; color: var(--warning);
+  background: var(--warning-bg); border: 1px solid var(--warning-ring);
+  border-radius: var(--radius-sm); padding: 8px 10px; margin-top: 10px;
+}
+.promocao-criterios svg { flex: 0 0 auto; margin-top: 1px; }
+
+/* --- horários da relâmpago ---------------------------------------------- */
+.promocao-horarios {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 8px; margin-top: 12px;
+}
+.promocao-horario {
+  display: flex; align-items: center; gap: 8px; text-align: left; font: inherit;
+  padding: 9px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); cursor: pointer;
+}
+.promocao-horario:hover { background: var(--row-hover); }
+.promocao-horario.marcado { border-color: var(--brass); background: var(--warning-bg); }
+.promocao-horario:focus-visible { outline: 2px solid var(--terracotta); outline-offset: 1px; }
+.promocao-horario > span { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.promocao-horario strong { font-size: 12px; color: var(--ink); text-transform: capitalize; }
+.promocao-horario small { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-soft); }
+
+/* --- painel da promoção -------------------------------------------------- */
+.promocao-painel-cabecalho { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.promocao-painel-cabecalho h2 {
+  font-family: var(--font-display); font-size: 18px; margin: 0; line-height: 1.2;
+}
+.promocao-painel-selos { display: flex; gap: 6px; flex-wrap: wrap; }
+.promocao-painel-indicadores {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px; margin-bottom: 14px;
+}
+.promocao-barra-massa {
+  display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap;
+  padding: 12px; margin-bottom: 14px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+}
+.promocao-barra-massa .promocao-regra { margin-bottom: 0; flex: 1; min-width: 260px; }
+
+.promocao-historico { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.promocao-historico li {
+  display: grid; grid-template-columns: 92px 1fr auto; gap: 10px; align-items: baseline;
+  padding-bottom: 8px; border-bottom: 1px solid var(--border-soft); font-size: 12px;
+}
+.promocao-historico-quando { font-size: 10.5px; color: var(--ink-faint); }
+.promocao-historico-texto code {
+  font-family: var(--font-mono); font-size: 11px;
+  background: var(--border-soft); padding: 1px 5px; border-radius: 4px;
+}
+.promocao-historico-origem { font-size: 10.5px; color: var(--ink-faint); white-space: nowrap; }
+
+.promocao-resultado { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12px; }
+.promocao-resultado li { padding: 4px 0; }
+.promocao-resultado li.ok { color: var(--success); }
+.promocao-resultado li.falha { color: var(--danger); }
+
+.promocao-andamento {
+  display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
+  font-size: 11.5px; color: var(--ink-soft);
+}
+.promocao-andamento span { display: inline-flex; align-items: center; gap: 5px; }
+.promocao-andamento .lendo { color: var(--terracotta); font-weight: 600; }
+
+@media (max-width: 720px) {
+  .promocoes-grade { grid-template-columns: 1fr; }
+  .promocao-historico li { grid-template-columns: 1fr; gap: 2px; }
+  .promocao-barra-massa { flex-direction: column; align-items: stretch; }
+}

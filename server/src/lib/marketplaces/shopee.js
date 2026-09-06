@@ -1211,12 +1211,659 @@ async function buscarStatusCampanhasPorAnuncio({ partnerId, partnerKey, accessTo
   return porAnuncio;
 }
 
+// ===========================================================================
+// PROMOÇÕES (aba Marketplace › Promoções, 06/09/2026)
+// ===========================================================================
+// A Shopee tem CINCO mecânicas de promoção, cada uma com seu próprio conjunto
+// de endpoints e seu próprio contador de id:
+//
+//   /discount/*         desconto de loja por período   → tipo 'desconto'
+//   /shop_flash_sale/*  oferta relâmpago com horário   → tipo 'relampago'
+//   /bundle_deal/*      leve N pague M                 → tipo 'combo'
+//   /add_on_deal/*      produto extra com desconto     → tipo 'brinde_adicional'
+//   /voucher/*          cupom da loja                  → tipo 'cupom'
+//
+// Todos os horários da Shopee são UNIX em SEGUNDOS. Converter com
+// `new Date(x)` (milissegundos) devolve 1970 — erro silencioso que faria toda
+// promoção parecer encerrada. Por isso as duas funções abaixo existem e são
+// as ÚNICAS que fazem essa conversão neste bloco.
+
+function deUnix(segundos) {
+  const n = Number(segundos);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return new Date(n * 1000);
+}
+
+function paraUnix(valor) {
+  if (valor == null) return null;
+  const d = valor instanceof Date ? valor : new Date(valor);
+  const ms = d.getTime();
+  if (!Number.isFinite(ms)) return null;
+  return Math.floor(ms / 1000);
+}
+
+// Situação da promoção. Fora do mapa vira 'desconhecido', nunca um chute:
+// mostrar "encerrada" numa promoção que a Shopee chamou de outra coisa faria
+// a dona deixar de mexer numa promoção que está no ar.
+const STATUS_PROMOCAO_SHOPEE = {
+  upcoming: 'agendada',
+  ongoing: 'ativa',
+  expired: 'encerrada',
+  deleted: 'inativa',
+};
+
+function statusPromocaoShopee(bruto) {
+  if (!bruto) return 'desconhecido';
+  return STATUS_PROMOCAO_SHOPEE[String(bruto).toLowerCase()] || 'desconhecido';
+}
+
+// A relâmpago não usa texto: a Shopee devolve um número.
+// 1 = habilitada (vai ao ar / no ar), 2 = desabilitada pela loja,
+// 3 = rejeitada/encerrada pelo sistema.
+const STATUS_RELAMPAGO_SHOPEE = { 1: 'ativa', 2: 'inativa', 3: 'encerrada' };
+
+// ---------------------------------------------------------------------------
+// Desconto de loja
+// ---------------------------------------------------------------------------
+async function listarDescontosShopee(credenciais) {
+  const encontrados = [];
+  // A Shopee separa por situação e NÃO aceita "all" junto de paginação
+  // confiável em toda região — varrer as três é o único jeito de não perder
+  // a promoção agendada, que é justamente a que interessa mexer.
+  for (const situacao of ['upcoming', 'ongoing', 'expired']) {
+    let pagina = 1;
+    for (let volta = 0; volta < 40; volta += 1) {
+      const data = await chamarDaLoja('/api/v2/discount/get_discount_list', {
+        ...credenciais,
+        query: { discount_status: situacao, page_no: String(pagina), page_size: '100' },
+      });
+      const lista = data.response?.discount_list || [];
+      encontrados.push(...lista);
+      if (!data.response?.more || lista.length === 0) break;
+      pagina += 1;
+    }
+  }
+  // Uma promoção pode aparecer em duas varreduras se virar de situação no
+  // meio da leitura. Deduplica pelo id, ficando com a leitura mais recente.
+  const porId = new Map();
+  for (const d of encontrados) porId.set(String(d.discount_id), d);
+  return [...porId.values()];
+}
+
+async function buscarItensDescontoShopee(credenciais, discountId) {
+  const itens = [];
+  let cabecalho = null;
+  let pagina = 1;
+  for (let volta = 0; volta < 50; volta += 1) {
+    const data = await chamarDaLoja('/api/v2/discount/get_discount', {
+      ...credenciais,
+      query: { discount_id: String(discountId), page_no: String(pagina), page_size: '50' },
+    });
+    const r = data.response || {};
+    if (!cabecalho) cabecalho = r;
+    itens.push(...(r.item_list || []));
+    if (!r.more) break;
+    pagina += 1;
+  }
+  return { cabecalho: cabecalho || {}, itens };
+}
+
+// Achata item + variações no formato único da aba de Promoções.
+//
+// Regra de preço, e ela importa: quando o anúncio TEM variação, a Shopee
+// devolve item_original_price = 0 e o preço de verdade fica em cada model.
+// Tratar esse 0 como preço faria a tela mostrar "desconto de 100%". Por isso
+// um item com model_list vira uma linha POR VARIAÇÃO, e nunca uma linha só.
+function achatarItensDesconto(itens) {
+  const linhas = [];
+  for (const item of itens || []) {
+    const models = item.model_list || [];
+    if (models.length > 0) {
+      for (const m of models) {
+        linhas.push({
+          anuncioIdExterno: String(item.item_id),
+          variacaoIdExterna: String(m.model_id ?? ''),
+          precoOriginal: m.model_original_price != null ? Number(m.model_original_price) : null,
+          precoPromocional: m.model_promotion_price != null ? Number(m.model_promotion_price) : null,
+          descontoPct: null, // a Shopee manda preços, não percentual
+          estoquePromocional: m.model_promotion_stock != null ? Number(m.model_promotion_stock) : null,
+          limitePorCompra: item.purchase_limit != null ? Number(item.purchase_limit) : null,
+          statusItem: null,
+          statusItemExterno: null,
+          motivoRecusa: null,
+        });
+      }
+      continue;
+    }
+    linhas.push({
+      anuncioIdExterno: String(item.item_id),
+      variacaoIdExterna: '',
+      precoOriginal: item.item_original_price != null ? Number(item.item_original_price) : null,
+      precoPromocional: item.item_promotion_price != null ? Number(item.item_promotion_price) : null,
+      descontoPct: null,
+      estoquePromocional: item.item_promotion_stock != null ? Number(item.item_promotion_stock) : null,
+      limitePorCompra: item.purchase_limit != null ? Number(item.purchase_limit) : null,
+      statusItem: null,
+      statusItemExterno: null,
+      motivoRecusa: null,
+    });
+  }
+  return linhas;
+}
+
+// ---------------------------------------------------------------------------
+// Relâmpago da loja
+// ---------------------------------------------------------------------------
+// `type` do get_shop_flash_sale_list: 1 = futuras, 2 = no ar, 3 = encerradas.
+async function listarRelampagosShopee(credenciais) {
+  const encontrados = [];
+  for (const tipo of [1, 2, 3]) {
+    let deslocamento = 0;
+    for (let volta = 0; volta < 40; volta += 1) {
+      const data = await chamarDaLoja('/api/v2/shop_flash_sale/get_shop_flash_sale_list', {
+        ...credenciais,
+        query: { type: String(tipo), offset: String(deslocamento), limit: '100' },
+      });
+      const lista = data.response?.flash_sale_list || [];
+      encontrados.push(...lista);
+      if (lista.length < 100) break;
+      deslocamento += lista.length;
+    }
+  }
+  const porId = new Map();
+  for (const f of encontrados) porId.set(String(f.flash_sale_id), f);
+  return [...porId.values()];
+}
+
+async function buscarItensRelampagoShopee(credenciais, flashSaleId) {
+  const itens = [];
+  let deslocamento = 0;
+  for (let volta = 0; volta < 50; volta += 1) {
+    const data = await chamarDaLoja('/api/v2/shop_flash_sale/get_shop_flash_sale_items', {
+      ...credenciais,
+      query: { flash_sale_id: String(flashSaleId), offset: String(deslocamento), limit: '50' },
+    });
+    const lista = data.response?.models || data.response?.item_info || [];
+    itens.push(...lista);
+    if (lista.length < 50) break;
+    deslocamento += lista.length;
+  }
+  return itens.map((m) => ({
+    anuncioIdExterno: String(m.item_id),
+    variacaoIdExterna: String(m.model_id ?? ''),
+    precoOriginal: m.original_price != null ? Number(m.original_price) : null,
+    precoPromocional: m.input_promotion_price != null ? Number(m.input_promotion_price) : null,
+    descontoPct: null,
+    estoquePromocional: m.campaign_stock != null ? Number(m.campaign_stock) : null,
+    limitePorCompra: m.purchase_limit != null ? Number(m.purchase_limit) : null,
+    // status do item na relâmpago: 1 = habilitado, 2 = desabilitado,
+    // 3 = rejeitado pela Shopee (o reject_reason diz por quê).
+    statusItem: m.status === 1 ? 'ativo' : (m.status === 2 ? 'inativo' : (m.status === 3 ? 'recusado' : null)),
+    statusItemExterno: m.status != null ? String(m.status) : null,
+    motivoRecusa: m.reject_reason || null,
+  }));
+}
+
+// Os critérios que a Shopee exige de um item pra ele poder entrar em
+// relâmpago (nota mínima, desconto mínimo e máximo, estoque reservado
+// mínimo…). É o que deixa a prévia dizer "esse aqui a Shopee vai recusar"
+// ANTES de mandar 40 anúncios e receber 40 erros.
+async function buscarCriteriosRelampagoShopee(credenciais) {
+  const data = await chamarDaLoja('/api/v2/shop_flash_sale/get_item_criteria', { ...credenciais });
+  return data.response || {};
+}
+
+// Horários disponíveis pra relâmpago numa janela. A Shopee só aceita
+// relâmpago em faixas fixas — criar uma "às 14h32" não existe.
+async function buscarHorariosRelampagoShopee(credenciais, { inicio, fim }) {
+  const data = await chamarDaLoja('/api/v2/shop_flash_sale/get_time_slot_id', {
+    ...credenciais,
+    query: { start_time: String(paraUnix(inicio)), end_time: String(paraUnix(fim)) },
+  });
+  return (data.response || []).map((t) => ({
+    timeslotId: t.timeslot_id,
+    inicioEm: deUnix(t.start_time),
+    fimEm: deUnix(t.end_time),
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Leitura completa das promoções de uma loja
+// ---------------------------------------------------------------------------
+// O detalhe dos itens só é buscado pras promoções que ainda dá pra mexer
+// (agendada ou no ar). Uma loja com dois anos de histórico tem centenas de
+// promoções encerradas, e buscar item por item de todas elas levaria a
+// varredura a milhares de chamadas — sem que ninguém possa fazer nada com o
+// resultado. O cabeçalho da encerrada continua sendo gravado.
+function podeMexer(status) {
+  return status === 'agendada' || status === 'ativa';
+}
+
+async function buscarPromocoes({ partnerId, partnerKey, accessToken, shopId }) {
+  const credenciais = { partnerId, partnerKey, accessToken, shopId };
+  const promocoes = [];
+  const falhas = [];
+
+  // --- descontos ---
+  try {
+    for (const d of await listarDescontosShopee(credenciais)) {
+      const status = statusPromocaoShopee(d.status);
+      let itens = [];
+      let itensTotal = null;
+      if (podeMexer(status)) {
+        try {
+          const detalhe = await buscarItensDescontoShopee(credenciais, d.discount_id);
+          itens = achatarItensDesconto(detalhe.itens);
+          itensTotal = itens.length;
+        } catch (err) {
+          // Falhar ao ler os itens NÃO descarta a promoção: ela aparece na
+          // tela com a contagem em branco e o aviso de leitura incompleta.
+          falhas.push(`desconto ${d.discount_id}: ${err.message}`);
+        }
+      }
+      promocoes.push({
+        promocaoIdExterno: String(d.discount_id),
+        tipo: 'desconto',
+        tipoExterno: 'discount',
+        nome: d.discount_name || null,
+        status,
+        statusExterno: d.status || null,
+        inicioEm: deUnix(d.start_time),
+        fimEm: deUnix(d.end_time),
+        itens,
+        itensTotal,
+        bruto: d,
+      });
+    }
+  } catch (err) {
+    falhas.push(`descontos: ${err.message}`);
+  }
+
+  // --- relâmpagos ---
+  try {
+    for (const f of await listarRelampagosShopee(credenciais)) {
+      const status = STATUS_RELAMPAGO_SHOPEE[f.status] || 'desconhecido';
+      let itens = [];
+      let itensTotal = f.item_count != null ? Number(f.item_count) : null;
+      if (podeMexer(status)) {
+        try {
+          itens = await buscarItensRelampagoShopee(credenciais, f.flash_sale_id);
+          if (itensTotal == null) itensTotal = itens.length;
+        } catch (err) {
+          falhas.push(`relâmpago ${f.flash_sale_id}: ${err.message}`);
+        }
+      }
+      promocoes.push({
+        promocaoIdExterno: String(f.flash_sale_id),
+        tipo: 'relampago',
+        tipoExterno: 'shop_flash_sale',
+        // A relâmpago não tem nome próprio na Shopee — ela é identificada
+        // pelo horário. Montar o rótulo aqui evita uma coluna vazia na tela.
+        nome: f.start_time ? `Relâmpago ${deUnix(f.start_time)?.toLocaleString('pt-BR') || ''}`.trim() : 'Relâmpago',
+        status,
+        statusExterno: f.status != null ? String(f.status) : null,
+        inicioEm: deUnix(f.start_time),
+        fimEm: deUnix(f.end_time),
+        itens,
+        itensTotal,
+        bruto: f,
+      });
+    }
+  } catch (err) {
+    falhas.push(`relâmpagos: ${err.message}`);
+  }
+
+  // --- combos (leve N pague M) ---
+  try {
+    let pagina = 1;
+    for (let volta = 0; volta < 40; volta += 1) {
+      const data = await chamarDaLoja('/api/v2/bundle_deal/get_bundle_deal_list', {
+        ...credenciais,
+        query: { page_no: String(pagina), page_size: '100', time_status: '4' },
+      });
+      const lista = data.response?.bundle_deal_list || [];
+      for (const b of lista) {
+        promocoes.push({
+          promocaoIdExterno: String(b.bundle_deal_id),
+          tipo: 'combo',
+          tipoExterno: 'bundle_deal',
+          nome: b.name || null,
+          status: statusPromocaoShopee(b.status) === 'desconhecido'
+            ? janelaParaStatus(deUnix(b.start_time), deUnix(b.end_time))
+            : statusPromocaoShopee(b.status),
+          statusExterno: b.status != null ? String(b.status) : null,
+          inicioEm: deUnix(b.start_time),
+          fimEm: deUnix(b.end_time),
+          itens: [],
+          itensTotal: null,
+          bruto: b,
+        });
+      }
+      if (!data.response?.more || lista.length === 0) break;
+      pagina += 1;
+    }
+  } catch (err) {
+    falhas.push(`combos: ${err.message}`);
+  }
+
+  // --- cupons ---
+  try {
+    for (const situacao of ['upcoming', 'ongoing']) {
+      let pagina = 1;
+      for (let volta = 0; volta < 20; volta += 1) {
+        const data = await chamarDaLoja('/api/v2/voucher/get_voucher_list', {
+          ...credenciais,
+          query: { status: situacao, page_no: String(pagina), page_size: '100' },
+        });
+        const lista = data.response?.voucher_list || [];
+        for (const v of lista) {
+          promocoes.push({
+            promocaoIdExterno: String(v.voucher_id),
+            tipo: 'cupom',
+            tipoExterno: 'voucher',
+            nome: v.voucher_name || v.voucher_code || null,
+            status: statusPromocaoShopee(situacao),
+            statusExterno: situacao,
+            inicioEm: deUnix(v.start_time),
+            fimEm: deUnix(v.end_time),
+            itens: [],
+            itensTotal: null,
+            bruto: v,
+          });
+        }
+        if (!data.response?.more || lista.length === 0) break;
+        pagina += 1;
+      }
+    }
+  } catch (err) {
+    falhas.push(`cupons: ${err.message}`);
+  }
+
+  return { promocoes, falhas };
+}
+
+// Situação deduzida da janela, usada SÓ quando a plataforma não mandou
+// situação nenhuma (é o caso do combo em algumas regiões). Comparar duas
+// datas que a própria plataforma mandou não é inventar dado — mas o
+// resultado fica marcado como deduzido no statusExterno de quem chama.
+function janelaParaStatus(inicio, fim) {
+  const agora = Date.now();
+  if (inicio && agora < inicio.getTime()) return 'agendada';
+  if (fim && agora > fim.getTime()) return 'encerrada';
+  if (inicio || fim) return 'ativa';
+  return 'desconhecido';
+}
+
+// ---------------------------------------------------------------------------
+// Escrita: desconto de loja
+// ---------------------------------------------------------------------------
+async function criarDescontoShopee({ partnerId, partnerKey, accessToken, shopId, nome, inicio, fim }) {
+  const data = await chamarDaLoja('/api/v2/discount/add_discount', {
+    partnerId, partnerKey, accessToken, shopId,
+    method: 'POST',
+    body: {
+      discount_name: nome,
+      start_time: paraUnix(inicio),
+      end_time: paraUnix(fim),
+    },
+  });
+  return String(data.response?.discount_id ?? '');
+}
+
+// A Shopee aceita no máximo 50 itens por chamada — o corte é feito aqui e não
+// em quem chama, pra não existirem dois lugares que precisam lembrar disso.
+function emLotesDe(lista, tamanho) {
+  const lotes = [];
+  for (let i = 0; i < lista.length; i += tamanho) lotes.push(lista.slice(i, i + tamanho));
+  return lotes;
+}
+
+// Agrupa as linhas achatadas (uma por variação) de volta no formato que a
+// Shopee espera: um item, com a lista de models dentro.
+function agruparPorItem(linhas) {
+  const porItem = new Map();
+  for (const l of linhas) {
+    const chave = String(l.anuncioIdExterno);
+    if (!porItem.has(chave)) {
+      porItem.set(chave, {
+        item_id: Number(chave),
+        purchase_limit: l.limitePorCompra != null ? Number(l.limitePorCompra) : 0,
+        model_list: [],
+      });
+    }
+    const alvo = porItem.get(chave);
+    if (l.variacaoIdExterna) {
+      const model = {
+        model_id: Number(l.variacaoIdExterna),
+        model_promotion_price: Number(l.precoPromocional),
+      };
+      if (l.estoquePromocional != null) model.model_promotion_stock = Number(l.estoquePromocional);
+      alvo.model_list.push(model);
+    } else {
+      alvo.item_promotion_price = Number(l.precoPromocional);
+      if (l.estoquePromocional != null) alvo.item_promotion_stock = Number(l.estoquePromocional);
+    }
+  }
+  // A Shopee recusa model_list vazio num item sem variação.
+  return [...porItem.values()].map((i) => (i.model_list.length === 0 ? { ...i, model_list: undefined } : i));
+}
+
+// Devolve as falhas POR ITEM que a Shopee reportou. Elas vêm num error_list
+// dentro de uma resposta 200 — ou seja, a chamada "deu certo" e mesmo assim
+// metade dos itens pode ter sido recusada. Ignorar isso faria a tela dizer
+// "40 anúncios adicionados" quando só 12 entraram.
+function falhasDoErrorList(data) {
+  return (data.response?.error_list || []).map((e) => ({
+    anuncioIdExterno: e.item_id != null ? String(e.item_id) : null,
+    variacaoIdExterna: e.model_id != null ? String(e.model_id) : '',
+    erro: e.fail_message || e.fail_error || 'recusado pela Shopee',
+  }));
+}
+
+async function adicionarItensDescontoShopee({ partnerId, partnerKey, accessToken, shopId, discountId, itens }) {
+  const falhas = [];
+  let adicionados = 0;
+  for (const lote of emLotesDe(agruparPorItem(itens), 50)) {
+    const data = await chamarDaLoja('/api/v2/discount/add_discount_item', {
+      partnerId, partnerKey, accessToken, shopId,
+      method: 'POST',
+      body: { discount_id: Number(discountId), item_list: lote },
+    });
+    adicionados += Number(data.response?.count || 0);
+    falhas.push(...falhasDoErrorList(data));
+  }
+  return { adicionados, falhas };
+}
+
+async function atualizarItensDescontoShopee({ partnerId, partnerKey, accessToken, shopId, discountId, itens }) {
+  const falhas = [];
+  let alterados = 0;
+  for (const lote of emLotesDe(agruparPorItem(itens), 50)) {
+    const data = await chamarDaLoja('/api/v2/discount/update_discount_item', {
+      partnerId, partnerKey, accessToken, shopId,
+      method: 'POST',
+      // O update não aceita estoque promocional (a própria doc diz que pra
+      // mudar estoque é preciso remover e readicionar) — mandar assim mesmo
+      // faria a Shopee recusar o lote inteiro.
+      body: {
+        discount_id: Number(discountId),
+        item_list: lote.map(({ item_promotion_stock, model_list, ...i }) => ({
+          ...i,
+          model_list: model_list?.map(({ model_promotion_stock, ...m }) => m),
+        })),
+      },
+    });
+    alterados += Number(data.response?.count || 0);
+    falhas.push(...falhasDoErrorList(data));
+  }
+  return { alterados, falhas };
+}
+
+async function removerItemDescontoShopee({ partnerId, partnerKey, accessToken, shopId, discountId, itemId, modelId }) {
+  const body = { discount_id: Number(discountId), item_id: Number(itemId) };
+  if (modelId) body.model_id = Number(modelId);
+  const data = await chamarDaLoja('/api/v2/discount/delete_discount_item', {
+    partnerId, partnerKey, accessToken, shopId, method: 'POST', body,
+  });
+  return { falhas: falhasDoErrorList(data) };
+}
+
+async function atualizarDescontoShopee({ partnerId, partnerKey, accessToken, shopId, discountId, nome, inicio, fim }) {
+  const body = { discount_id: Number(discountId) };
+  if (nome != null) body.discount_name = nome;
+  if (inicio != null) body.start_time = paraUnix(inicio);
+  if (fim != null) body.end_time = paraUnix(fim);
+  await chamarDaLoja('/api/v2/discount/update_discount', {
+    partnerId, partnerKey, accessToken, shopId, method: 'POST', body,
+  });
+}
+
+// Encerrar ≠ apagar. Encerrar tira do ar uma promoção QUE JÁ COMEÇOU e o
+// histórico dela continua existindo na Shopee; apagar só funciona em
+// promoção que ainda não começou. A aba oferece as duas com nomes diferentes
+// em vez de escolher uma por conta própria.
+async function encerrarDescontoShopee({ partnerId, partnerKey, accessToken, shopId, discountId }) {
+  await chamarDaLoja('/api/v2/discount/end_discount', {
+    partnerId, partnerKey, accessToken, shopId,
+    method: 'POST', body: { discount_id: Number(discountId) },
+  });
+}
+
+async function apagarDescontoShopee({ partnerId, partnerKey, accessToken, shopId, discountId }) {
+  await chamarDaLoja('/api/v2/discount/delete_discount', {
+    partnerId, partnerKey, accessToken, shopId,
+    method: 'POST', body: { discount_id: Number(discountId) },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Escrita: relâmpago
+// ---------------------------------------------------------------------------
+async function criarRelampagoShopee({ partnerId, partnerKey, accessToken, shopId, timeslotId }) {
+  const data = await chamarDaLoja('/api/v2/shop_flash_sale/create_shop_flash_sale', {
+    partnerId, partnerKey, accessToken, shopId,
+    method: 'POST', body: { timeslot_id: Number(timeslotId) },
+  });
+  return String(data.response?.flash_sale_id ?? '');
+}
+
+// A relâmpago exige estoque reservado por variação — não é opcional como no
+// desconto. Um item sem estoque informado é recusado pela Shopee com uma
+// mensagem que não diz isso claramente, então a checagem é feita aqui.
+function itensRelampagoParaCorpo(itens) {
+  const porItem = new Map();
+  for (const l of itens) {
+    const chave = String(l.anuncioIdExterno);
+    if (!porItem.has(chave)) {
+      porItem.set(chave, {
+        item_id: Number(chave),
+        purchase_limit: l.limitePorCompra != null ? Number(l.limitePorCompra) : 0,
+        models: [],
+      });
+    }
+    const alvo = porItem.get(chave);
+    if (l.variacaoIdExterna) {
+      alvo.models.push({
+        model_id: Number(l.variacaoIdExterna),
+        input_promo_price: Number(l.precoPromocional),
+        stock: Number(l.estoquePromocional),
+      });
+    } else {
+      alvo.item_input_promo_price = Number(l.precoPromocional);
+      alvo.item_stock = Number(l.estoquePromocional);
+    }
+  }
+  return [...porItem.values()].map((i) => (i.models.length === 0 ? { ...i, models: undefined } : i));
+}
+
+function falhasRelampago(data) {
+  return (data.response?.failed_items || []).map((e) => ({
+    anuncioIdExterno: e.item_id != null ? String(e.item_id) : null,
+    variacaoIdExterna: e.model_id != null ? String(e.model_id) : '',
+    erro: e.err_msg || `código ${e.err_code}`,
+  }));
+}
+
+async function adicionarItensRelampagoShopee({ partnerId, partnerKey, accessToken, shopId, flashSaleId, itens }) {
+  const falhas = [];
+  for (const lote of emLotesDe(itensRelampagoParaCorpo(itens), 50)) {
+    const data = await chamarDaLoja('/api/v2/shop_flash_sale/add_shop_flash_sale_items', {
+      partnerId, partnerKey, accessToken, shopId,
+      method: 'POST', body: { flash_sale_id: Number(flashSaleId), items: lote },
+    });
+    falhas.push(...falhasRelampago(data));
+  }
+  return { falhas };
+}
+
+async function atualizarItensRelampagoShopee({ partnerId, partnerKey, accessToken, shopId, flashSaleId, itens }) {
+  const falhas = [];
+  for (const lote of emLotesDe(itensRelampagoParaCorpo(itens), 50)) {
+    const data = await chamarDaLoja('/api/v2/shop_flash_sale/update_shop_flash_sale_items', {
+      partnerId, partnerKey, accessToken, shopId,
+      method: 'POST', body: { flash_sale_id: Number(flashSaleId), items: lote },
+    });
+    falhas.push(...falhasRelampago(data));
+  }
+  return { falhas };
+}
+
+async function removerItensRelampagoShopee({ partnerId, partnerKey, accessToken, shopId, flashSaleId, itemIds }) {
+  const data = await chamarDaLoja('/api/v2/shop_flash_sale/delete_shop_flash_sale_items', {
+    partnerId, partnerKey, accessToken, shopId,
+    method: 'POST',
+    body: { flash_sale_id: Number(flashSaleId), item_ids: itemIds.map(Number) },
+  });
+  return { falhas: falhasRelampago(data) };
+}
+
+// status: 1 habilita a relâmpago, 2 desabilita.
+async function situacaoRelampagoShopee({ partnerId, partnerKey, accessToken, shopId, flashSaleId, ativar }) {
+  await chamarDaLoja('/api/v2/shop_flash_sale/update_shop_flash_sale', {
+    partnerId, partnerKey, accessToken, shopId,
+    method: 'POST', body: { flash_sale_id: Number(flashSaleId), status: ativar ? 1 : 2 },
+  });
+}
+
+async function apagarRelampagoShopee({ partnerId, partnerKey, accessToken, shopId, flashSaleId }) {
+  await chamarDaLoja('/api/v2/shop_flash_sale/delete_shop_flash_sale', {
+    partnerId, partnerKey, accessToken, shopId,
+    method: 'POST', body: { flash_sale_id: Number(flashSaleId) },
+  });
+}
+
 module.exports = {
   buildAuthorizeUrl,
   trocarCodigoPorToken,
   renovarToken,
   buscarInfoLoja,
   buscarAnuncios,
+  buscarPromocoes,
+  // Funções puras exportadas para o teste automatizado (server/scripts/
+  // teste-promocoes.js). São o miolo das decisões que quebram em silêncio:
+  // achatar variação, reagrupar item e ler falha vinda dentro de um 200.
+  achatarItensDesconto,
+  agruparPorItem,
+  itensRelampagoParaCorpo,
+  falhasDoErrorList,
+  statusPromocaoShopee,
+  deUnix,
+  paraUnix,
+  buscarCriteriosRelampagoShopee,
+  buscarHorariosRelampagoShopee,
+  criarDescontoShopee,
+  adicionarItensDescontoShopee,
+  atualizarItensDescontoShopee,
+  removerItemDescontoShopee,
+  atualizarDescontoShopee,
+  encerrarDescontoShopee,
+  apagarDescontoShopee,
+  criarRelampagoShopee,
+  adicionarItensRelampagoShopee,
+  atualizarItensRelampagoShopee,
+  removerItensRelampagoShopee,
+  situacaoRelampagoShopee,
+  apagarRelampagoShopee,
   atualizarPrecoShopee,
   atualizarEstoqueShopee,
   atualizarItemShopee,

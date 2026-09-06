@@ -1096,12 +1096,307 @@ async function buscarStatusCampanhasPorAnuncio({ accessToken, advertiserId }) {
   return porAnuncio;
 }
 
+// ===========================================================================
+// PROMOÇÕES (aba Marketplace › Promoções, 06/09/2026)
+// ===========================================================================
+// O Mercado Livre tem uma API só (`seller-promotions`) pra todos os tipos de
+// promoção — o que muda é o `promotion_type`:
+//
+//   PRICE_DISCOUNT       desconto individual num anúncio (a loja decide)
+//   DEAL                 campanha tradicional do ML (a loja adere)
+//   MARKETPLACE_CAMPAIGN campanha do marketplace, com cofinanciamento
+//   SELLER_CAMPAIGN      campanha criada pela própria loja
+//   DOD                  oferta do dia
+//   LIGHTNING            oferta relâmpago
+//   VOLUME               desconto por quantidade
+//   PRE_NEGOTIATED       desconto pré-acordado por item
+//   SMART                desconto automático do ML
+//
+// ⚠️ O caminho tem DUAS formas documentadas: `/seller-promotions/...` na
+// documentação brasileira e `/marketplace/seller-promotions/...` na de Global
+// Selling. Qual delas a conta responde depende do cadastro do app, e a
+// documentação pública do ML devolve 403 pra leitura automatizada — não deu
+// pra confirmar daqui qual é a nossa. Em vez de chutar, a primeira chamada
+// testa as duas e guarda a que respondeu; se nenhuma responder, o erro sobe
+// com as duas tentativas escritas, pra ninguém perder tempo adivinhando.
+const CAMINHOS_PROMOCOES = ['/seller-promotions', '/marketplace/seller-promotions'];
+let caminhoPromocoesResolvido = null;
+
+// Os tipos que a listagem pede. Vão explícitos porque o ML devolve só os
+// tipos pedidos — sem essa lista, campanha do vendedor e relâmpago simplesmente
+// não apareceriam e a tela mostraria "nenhuma promoção" com promoção no ar.
+const TIPOS_PROMOCAO_ML = [
+  'DEAL', 'MARKETPLACE_CAMPAIGN', 'SELLER_CAMPAIGN', 'PRICE_DISCOUNT',
+  'DOD', 'LIGHTNING', 'VOLUME', 'PRE_NEGOTIATED', 'SMART',
+];
+
+const TIPO_NORMALIZADO_ML = {
+  PRICE_DISCOUNT: 'desconto_item',
+  DEAL: 'campanha_plataforma',
+  MARKETPLACE_CAMPAIGN: 'campanha_plataforma',
+  SELLER_CAMPAIGN: 'campanha_vendedor',
+  DOD: 'relampago',
+  LIGHTNING: 'relampago',
+  VOLUME: 'volume',
+  PRE_NEGOTIATED: 'desconto_item',
+  SMART: 'desconto_item',
+};
+
+const STATUS_PROMOCAO_ML = {
+  started: 'ativa',
+  active: 'ativa',
+  pending: 'agendada',
+  scheduled: 'agendada',
+  finished: 'encerrada',
+  expired: 'encerrada',
+  candidate: 'agendada',
+  paused: 'inativa',
+};
+
+function statusPromocaoML(bruto) {
+  if (!bruto) return 'desconhecido';
+  // Situação fora do mapa vira 'desconhecido' e o texto cru segue em
+  // statusExterno — nunca um chute (REGRA 2).
+  return STATUS_PROMOCAO_ML[String(bruto).toLowerCase()] || 'desconhecido';
+}
+
+// Chamada com o cabeçalho `version: v2` que a API de promoções exige. Sem
+// ele o ML responde o formato v1, com outros nomes de campo — e a leitura
+// sairia toda vazia sem nenhum erro.
+async function chamarPromocoesML(caminho, accessToken, { metodo = 'GET', corpo } = {}) {
+  const res = await fetch(`${API_BASE}${caminho}`, {
+    method: metodo,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      version: 'v2',
+    },
+    body: corpo === undefined ? undefined : JSON.stringify(corpo),
+  });
+  const data = await lerRespostaJson(res, caminho);
+  if (!res.ok) {
+    const causa = Array.isArray(data.cause)
+      ? data.cause.map((c) => c.message || c.code).filter(Boolean).join(' · ')
+      : '';
+    throw erroComStatus(
+      [data.message || `Erro na API de promoções do Mercado Livre (${res.status}): ${caminho}`, causa]
+        .filter(Boolean).join(' — '),
+      res.status
+    );
+  }
+  return data;
+}
+
+// Descobre (uma vez por processo) qual das duas formas do caminho a conta
+// responde, e devolve o prefixo. Não é um "retry por erro de token" — é uma
+// checagem de rota feita uma vez só, e um 401/403 sobe na hora sem tentar a
+// outra forma, exatamente pra não repetir chamada com credencial recusada.
+async function prefixoPromocoes(accessToken, sellerId) {
+  if (caminhoPromocoesResolvido) return caminhoPromocoesResolvido;
+  const erros = [];
+  for (const prefixo of CAMINHOS_PROMOCOES) {
+    try {
+      await chamarPromocoesML(`${prefixo}/users/${sellerId}?promotion_type=DEAL&limit=1`, accessToken);
+      caminhoPromocoesResolvido = prefixo;
+      return prefixo;
+    } catch (err) {
+      if (err.status === 401 || err.status === 403) throw err;
+      erros.push(`${prefixo}: ${err.message}`);
+    }
+  }
+  throw new Error(
+    `A API de promoções do Mercado Livre não respondeu em nenhum dos dois caminhos conhecidos. ${erros.join(' | ')}`
+  );
+}
+
+async function listarPromocoesML({ accessToken, sellerId, tipo }) {
+  const prefixo = await prefixoPromocoes(accessToken, sellerId);
+  const encontradas = [];
+  let cursor = null;
+  for (let volta = 0; volta < 40; volta += 1) {
+    const params = new URLSearchParams({ promotion_type: tipo, limit: '50' });
+    if (cursor) params.set('search_after', cursor);
+    const data = await chamarPromocoesML(`${prefixo}/users/${sellerId}?${params.toString()}`, accessToken);
+    const lista = data.results || [];
+    encontradas.push(...lista);
+    // O `search_after` do ML vale 5 minutos e não dá pra voltar página. Sem
+    // cursor novo, ou com página curta, a varredura termina aqui.
+    cursor = data.paging?.searchAfter || data.paging?.search_after || null;
+    if (!cursor || lista.length === 0) break;
+  }
+  return encontradas;
+}
+
+async function listarItensPromocaoML({ accessToken, sellerId, promotionId, tipo }) {
+  const prefixo = await prefixoPromocoes(accessToken, sellerId);
+  const itens = [];
+  let cursor = null;
+  for (let volta = 0; volta < 100; volta += 1) {
+    const params = new URLSearchParams({ promotion_type: tipo, user_id: String(sellerId), limit: '50' });
+    if (cursor) params.set('search_after', cursor);
+    const data = await chamarPromocoesML(
+      `${prefixo}/promotions/${encodeURIComponent(promotionId)}/items?${params.toString()}`,
+      accessToken
+    );
+    const lista = data.results || [];
+    itens.push(...lista);
+    cursor = data.paging?.searchAfter || data.paging?.search_after || null;
+    if (!cursor || lista.length === 0) break;
+  }
+  return itens;
+}
+
+// Item da promoção no formato único da aba.
+//
+// `status` do item importa muito aqui: no ML, "candidate" quer dizer que o
+// anúncio PODE entrar na campanha mas ainda não entrou. Tratar candidato como
+// participante faria a tela mostrar dezenas de anúncios "em promoção" que na
+// verdade estão só elegíveis — e o preço promocional que aparece é o preço
+// SUGERIDO pelo ML, não o que a loja está cobrando.
+function mapearItemPromocaoML(item) {
+  const situacao = String(item.status || '').toLowerCase();
+  return {
+    anuncioIdExterno: String(item.id || item.item_id),
+    variacaoIdExterna: '',
+    precoOriginal: item.original_price != null ? Number(item.original_price)
+      : (item.price != null ? Number(item.price) : null),
+    precoPromocional: item.deal_price != null ? Number(item.deal_price)
+      : (item.suggested_discounted_price != null ? Number(item.suggested_discounted_price) : null),
+    descontoPct: item.discount_percentage != null ? Number(item.discount_percentage) / 100 : null,
+    estoquePromocional: item.stock != null ? Number(item.stock) : null,
+    limitePorCompra: null,
+    statusItem: situacao === 'started' || situacao === 'active' ? 'ativo'
+      : (situacao === 'candidate' ? 'candidato' : (situacao ? 'inativo' : null)),
+    statusItemExterno: item.status || null,
+    motivoRecusa: item.reason || null,
+    // O ML identifica cada participação por um offer_id, e é ele — não o
+    // item_id — que algumas operações de edição pedem.
+    ofertaIdExterna: item.offer_id ? String(item.offer_id) : null,
+  };
+}
+
+async function buscarPromocoes({ accessToken, sellerId }) {
+  const promocoes = [];
+  const falhas = [];
+  for (const tipo of TIPOS_PROMOCAO_ML) {
+    try {
+      for (const p of await listarPromocoesML({ accessToken, sellerId, tipo })) {
+        const promotionId = String(p.id ?? p.promotion_id ?? '');
+        if (!promotionId) continue;
+        let itens = [];
+        try {
+          itens = (await listarItensPromocaoML({ accessToken, sellerId, promotionId, tipo }))
+            .map(mapearItemPromocaoML);
+        } catch (err) {
+          falhas.push(`itens de ${tipo} ${promotionId}: ${err.message}`);
+        }
+        promocoes.push({
+          promocaoIdExterno: promotionId,
+          tipo: TIPO_NORMALIZADO_ML[tipo] || 'desconto',
+          tipoExterno: tipo,
+          nome: p.name || p.title || tipo,
+          status: statusPromocaoML(p.status),
+          statusExterno: p.status || null,
+          inicioEm: p.start_date ? new Date(p.start_date) : null,
+          fimEm: p.finish_date ? new Date(p.finish_date) : null,
+          itens,
+          itensTotal: itens.length || null,
+          bruto: p,
+        });
+      }
+    } catch (err) {
+      // Um tipo que a conta não tem habilitado devolve 404/403 e NÃO pode
+      // derrubar a leitura dos outros oito.
+      falhas.push(`${tipo}: ${err.message}`);
+    }
+  }
+  return { promocoes, falhas };
+}
+
+// Promoções em que UM anúncio está — usado pela tela do anúncio e pela
+// prévia, pra avisar "esse já está em outra promoção" antes de aplicar.
+async function buscarPromocoesDoAnuncioML({ accessToken, sellerId, anuncioId }) {
+  const prefixo = await prefixoPromocoes(accessToken, sellerId);
+  const data = await chamarPromocoesML(
+    `${prefixo}/items/${encodeURIComponent(anuncioId)}?user_id=${sellerId}`,
+    accessToken
+  );
+  return data.results || [];
+}
+
+// ---------------------------------------------------------------------------
+// Escrita
+// ---------------------------------------------------------------------------
+// Aplicar um anúncio numa promoção. É o mesmo POST pra todos os tipos — o que
+// muda é o corpo:
+//   · PRICE_DISCOUNT pede deal_price + janela (start_date/finish_date);
+//   · DEAL/MARKETPLACE_CAMPAIGN/SELLER_CAMPAIGN pedem promotion_id + deal_price;
+//   · LIGHTNING/DOD pedem promotion_id (o ML chama de deal_id) + deal_price.
+// `top_deal_price` é o preço pros compradores nível 3-6 do Mercado Pontos;
+// vai só quando informado, porque mandar igual ao deal_price muda o
+// comportamento da oferta.
+async function aplicarItemPromocaoML({
+  accessToken, sellerId, anuncioId, promotionId, promotionType,
+  precoPromocional, precoTopo, inicio, fim, metodo = 'POST',
+}) {
+  const prefixo = await prefixoPromocoes(accessToken, sellerId);
+  const corpo = { promotion_type: promotionType };
+  if (promotionId) corpo.promotion_id = String(promotionId);
+  if (precoPromocional != null) corpo.deal_price = Number(precoPromocional);
+  if (precoTopo != null) corpo.top_deal_price = Number(precoTopo);
+  if (inicio) corpo.start_date = new Date(inicio).toISOString().slice(0, 19);
+  if (fim) corpo.finish_date = new Date(fim).toISOString().slice(0, 19);
+  return chamarPromocoesML(
+    `${prefixo}/items/${encodeURIComponent(anuncioId)}?user_id=${sellerId}`,
+    accessToken,
+    { metodo, corpo }
+  );
+}
+
+// Editar o preço de um item que já está na promoção: mesmo corpo, PUT.
+function editarItemPromocaoML(args) {
+  return aplicarItemPromocaoML({ ...args, metodo: 'PUT' });
+}
+
+async function removerItemPromocaoML({ accessToken, sellerId, anuncioId, promotionType, promotionId }) {
+  const prefixo = await prefixoPromocoes(accessToken, sellerId);
+  const params = new URLSearchParams({ user_id: String(sellerId), promotion_type: promotionType });
+  if (promotionId) params.set('promotion_id', String(promotionId));
+  return chamarPromocoesML(
+    `${prefixo}/items/${encodeURIComponent(anuncioId)}?${params.toString()}`,
+    accessToken,
+    { metodo: 'DELETE' }
+  );
+}
+
+// Tira o anúncio de TODAS as ofertas de uma vez. O próprio ML avisa que isso
+// não vale pra DOD nem LIGHTNING — então a aba nunca oferece esse botão
+// quando a promoção é relâmpago, em vez de chamar e receber erro.
+async function removerTodasOfertasML({ accessToken, sellerId, anuncioId }) {
+  const prefixo = await prefixoPromocoes(accessToken, sellerId);
+  return chamarPromocoesML(
+    `${prefixo}/items/massive/${encodeURIComponent(anuncioId)}?user_id=${sellerId}`,
+    accessToken,
+    { metodo: 'DELETE' }
+  );
+}
+
 module.exports = {
   buildAuthorizeUrl,
   trocarCodigoPorToken,
   renovarToken,
   buscarUsuario,
   buscarAnuncios,
+  buscarPromocoes,
+  // Puras, exportadas para o teste automatizado.
+  statusPromocaoML,
+  mapearItemPromocaoML,
+  buscarPromocoesDoAnuncioML,
+  aplicarItemPromocaoML,
+  editarItemPromocaoML,
+  removerItemPromocaoML,
+  removerTodasOfertasML,
+  TIPOS_PROMOCAO_ML,
   mapearAnuncio,
   atualizarAnuncio,
   buscarStatusCampanhasPorAnuncio,

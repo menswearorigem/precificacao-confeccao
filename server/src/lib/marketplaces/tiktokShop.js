@@ -748,12 +748,289 @@ async function alterarStatusTikTok({ appKey, appSecret, accessToken, shopCipher,
   });
 }
 
+// ===========================================================================
+// PROMOÇÕES (aba Marketplace › Promoções, 06/09/2026)
+// ===========================================================================
+// A TikTok Shop chama promoção de "activity", e tudo mora em
+// /promotion/202309/activities. Os tipos que existem:
+//
+//   FIXED_PRICE      preço fixo promocional        → tipo 'desconto'
+//   DIRECT_DISCOUNT  desconto percentual direto    → tipo 'desconto'
+//   FLASHSALE        relâmpago                     → tipo 'relampago'
+//
+// `product_level` diz se o preço vale pro produto inteiro ('PRODUCT') ou por
+// variação ('VARIATION'). A casa vende cor e tamanho, então na prática é
+// sempre VARIATION — mas o campo vai explícito porque o padrão da API não é
+// esse e um produto entraria com o preço errado em todas as variações.
+const TIPO_NORMALIZADO_TIKTOK = {
+  FIXED_PRICE: 'desconto',
+  DIRECT_DISCOUNT: 'desconto',
+  FLASHSALE: 'relampago',
+};
+
+const STATUS_PROMOCAO_TIKTOK = {
+  ONGOING: 'ativa',
+  NOT_START: 'agendada',
+  UPCOMING: 'agendada',
+  EXPIRED: 'encerrada',
+  DEACTIVATED: 'inativa',
+  DELETED: 'inativa',
+};
+
+function statusPromocaoTikTok(bruto) {
+  if (!bruto) return 'desconhecido';
+  // Fora do mapa vira 'desconhecido' — nunca 'encerrada'. Uma promoção no ar
+  // marcada como encerrada é pior do que uma sem situação.
+  return STATUS_PROMOCAO_TIKTOK[String(bruto).toUpperCase()] || 'desconhecido';
+}
+
+// A TikTok manda horário em milissegundos em alguns campos e em segundos em
+// outros. Um valor de 10 dígitos é segundo; de 13, milissegundo. Sem essa
+// distinção, metade das promoções apareceria no ano 56000.
+function dataTikTok(valor) {
+  const n = Number(valor);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return new Date(n > 1e11 ? n : n * 1000);
+}
+
+function paraSegundosTikTok(valor) {
+  if (valor == null) return null;
+  const ms = (valor instanceof Date ? valor : new Date(valor)).getTime();
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : null;
+}
+
+function mapearItemPromocaoTikTok(produto) {
+  const linhas = [];
+  for (const sku of produto.skus || []) {
+    linhas.push({
+      anuncioIdExterno: String(produto.id),
+      variacaoIdExterna: String(sku.id ?? ''),
+      precoOriginal: sku.original_price?.amount != null ? Number(sku.original_price.amount) : null,
+      precoPromocional: sku.activity_price?.amount != null ? Number(sku.activity_price.amount) : null,
+      // `discount` vem como "20%" ou como número, conforme o tipo da
+      // promoção. Só vira percentual quando dá pra ler com segurança.
+      descontoPct: lerPercentualTikTok(sku.discount),
+      estoquePromocional: sku.quantity_limit != null ? Number(sku.quantity_limit) : null,
+      limitePorCompra: sku.quantity_per_user != null ? Number(sku.quantity_per_user) : null,
+      statusItem: null,
+      statusItemExterno: null,
+      motivoRecusa: null,
+    });
+  }
+  if (linhas.length === 0) {
+    linhas.push({
+      anuncioIdExterno: String(produto.id),
+      variacaoIdExterna: '',
+      precoOriginal: null,
+      precoPromocional: produto.activity_price?.amount != null ? Number(produto.activity_price.amount) : null,
+      descontoPct: lerPercentualTikTok(produto.discount),
+      estoquePromocional: produto.quantity_limit != null ? Number(produto.quantity_limit) : null,
+      limitePorCompra: produto.quantity_per_user != null ? Number(produto.quantity_per_user) : null,
+      statusItem: null,
+      statusItemExterno: null,
+      motivoRecusa: null,
+    });
+  }
+  return linhas;
+}
+
+function lerPercentualTikTok(valor) {
+  if (valor == null) return null;
+  const texto = String(valor).replace('%', '').trim();
+  const n = Number(texto);
+  if (!Number.isFinite(n)) return null;
+  // A TikTok manda "20" pra 20%. Guardamos em fração (0.2), igual ao resto
+  // do sistema, e nunca "20" solto — que a tela leria como 2000%.
+  return n / 100;
+}
+
+async function buscarPromocoes({ appKey, appSecret, accessToken, shopCipher }) {
+  const cred = { appKey, appSecret, accessToken, query: { shop_cipher: shopCipher } };
+  const promocoes = [];
+  const falhas = [];
+  let cursor = null;
+
+  for (let volta = 0; volta < 60; volta += 1) {
+    let data;
+    try {
+      data = await chamarApi('/promotion/202309/activities/search', {
+        ...cred,
+        query: { ...cred.query, page_size: '50', ...(cursor ? { page_token: cursor } : {}) },
+        method: 'POST',
+        body: {},
+      });
+    } catch (err) {
+      falhas.push(`listagem: ${err.message}`);
+      break;
+    }
+    // `chamarApi` já devolve o CONTEÚDO do envelope (return data.data), como
+    // todo o resto deste arquivo usa. Ler `data.data` aqui devolveria sempre
+    // vazio — e uma loja com 30 promoções no ar sincronizaria zero.
+    const lista = data.activities || [];
+    for (const a of lista) {
+      const activityId = String(a.id ?? a.activity_id ?? '');
+      if (!activityId) continue;
+      // A busca devolve o cabeçalho sem os produtos — o detalhe é uma
+      // chamada por promoção. Só vale a pena pras que ainda dá pra mexer.
+      const status = statusPromocaoTikTok(a.status);
+      let itens = [];
+      if (status === 'ativa' || status === 'agendada') {
+        try {
+          const detalhe = await chamarApi(`/promotion/202309/activities/${activityId}`, cred);
+          const alvo = detalhe.activity || detalhe || {};
+          for (const p of alvo.products || []) itens.push(...mapearItemPromocaoTikTok(p));
+        } catch (err) {
+          falhas.push(`itens da promoção ${activityId}: ${err.message}`);
+        }
+      }
+      promocoes.push({
+        promocaoIdExterno: activityId,
+        tipo: TIPO_NORMALIZADO_TIKTOK[String(a.activity_type || '').toUpperCase()] || 'desconto',
+        tipoExterno: a.activity_type || null,
+        nome: a.title || null,
+        status,
+        statusExterno: a.status || null,
+        inicioEm: dataTikTok(a.begin_time),
+        fimEm: dataTikTok(a.end_time),
+        itens,
+        itensTotal: itens.length || null,
+        bruto: a,
+      });
+    }
+    cursor = data.next_page_token || null;
+    if (!cursor || lista.length === 0) break;
+  }
+
+  return { promocoes, falhas };
+}
+
+// ---------------------------------------------------------------------------
+// Escrita
+// ---------------------------------------------------------------------------
+async function criarPromocaoTikTok({ appKey, appSecret, accessToken, shopCipher, titulo, tipo, inicio, fim, nivelProduto = 'VARIATION' }) {
+  const data = await chamarApi('/promotion/202309/activities', {
+    appKey, appSecret, accessToken,
+    query: { shop_cipher: shopCipher },
+    method: 'POST',
+    body: {
+      title: titulo,
+      activity_type: tipo,
+      begin_time: paraSegundosTikTok(inicio),
+      end_time: paraSegundosTikTok(fim),
+      product_level: nivelProduto,
+    },
+  });
+  const id = String(data.activity?.id ?? data.id ?? '');
+  if (!id) {
+    // Sem id a promoção FOI criada na TikTok e o Hub não saberia como
+    // encontrá-la de novo — nem pra pôr item, nem pra encerrar. Falhar aqui
+    // é melhor do que gravar um id inventado.
+    throw new Error('A TikTok Shop criou a promoção mas não devolveu o identificador dela.');
+  }
+  return id;
+}
+
+// Monta o corpo de produtos a partir das linhas achatadas da aba.
+// `activity_price_amount` é string na API da TikTok — mandar número faz a
+// chamada ser recusada com uma mensagem genérica de parâmetro inválido.
+function produtosParaCorpoTikTok(itens) {
+  const porProduto = new Map();
+  for (const l of itens) {
+    const chave = String(l.anuncioIdExterno);
+    if (!porProduto.has(chave)) porProduto.set(chave, { id: chave, skus: [] });
+    const alvo = porProduto.get(chave);
+    const sku = { id: String(l.variacaoIdExterna || '') };
+    if (l.precoPromocional != null) sku.activity_price_amount = String(l.precoPromocional);
+    if (l.descontoPct != null) sku.discount = String(Math.round(Number(l.descontoPct) * 100));
+    if (l.estoquePromocional != null) sku.quantity_limit = Number(l.estoquePromocional);
+    if (l.limitePorCompra != null) sku.quantity_per_user = Number(l.limitePorCompra);
+    if (sku.id) alvo.skus.push(sku);
+    else {
+      // Produto sem variação: os mesmos campos sobem no nível do produto.
+      if (l.precoPromocional != null) alvo.activity_price_amount = String(l.precoPromocional);
+      if (l.descontoPct != null) alvo.discount = String(Math.round(Number(l.descontoPct) * 100));
+      if (l.estoquePromocional != null) alvo.quantity_limit = Number(l.estoquePromocional);
+      if (l.limitePorCompra != null) alvo.quantity_per_user = Number(l.limitePorCompra);
+    }
+  }
+  return [...porProduto.values()].map((p) => (p.skus.length === 0 ? { ...p, skus: undefined } : p));
+}
+
+async function atualizarProdutosPromocaoTikTok({ appKey, appSecret, accessToken, shopCipher, activityId, itens }) {
+  const produtos = produtosParaCorpoTikTok(itens);
+  const falhas = [];
+  // A TikTok aceita até 50 produtos por chamada.
+  for (let i = 0; i < produtos.length; i += 50) {
+    const lote = produtos.slice(i, i + 50);
+    const data = await chamarApi(`/promotion/202309/activities/${activityId}/products`, {
+      appKey, appSecret, accessToken,
+      query: { shop_cipher: shopCipher },
+      method: 'PUT',
+      body: { activity_id: String(activityId), products: lote },
+    });
+    // Igual à Shopee: a chamada pode voltar 200 com produtos recusados
+    // dentro. Ignorar isso faria a tela mentir sobre quantos entraram.
+    for (const f of data.failed_products || data.errors || []) {
+      falhas.push({
+        anuncioIdExterno: f.id != null ? String(f.id) : null,
+        variacaoIdExterna: f.sku_id != null ? String(f.sku_id) : '',
+        erro: f.message || f.detail || 'recusado pela TikTok Shop',
+      });
+    }
+  }
+  return { falhas };
+}
+
+async function removerProdutosPromocaoTikTok({ appKey, appSecret, accessToken, shopCipher, activityId, produtoIds = [], skuIds = [] }) {
+  await chamarApi(`/promotion/202309/activities/${activityId}/products`, {
+    appKey, appSecret, accessToken,
+    query: { shop_cipher: shopCipher },
+    method: 'DELETE',
+    body: { product_ids: produtoIds.map(String), sku_ids: skuIds.map(String) },
+  });
+}
+
+async function atualizarPromocaoTikTok({ appKey, appSecret, accessToken, shopCipher, activityId, titulo, inicio, fim }) {
+  const body = {};
+  if (titulo != null) body.title = titulo;
+  if (inicio != null) body.begin_time = paraSegundosTikTok(inicio);
+  if (fim != null) body.end_time = paraSegundosTikTok(fim);
+  await chamarApi(`/promotion/202309/activities/${activityId}`, {
+    appKey, appSecret, accessToken,
+    query: { shop_cipher: shopCipher },
+    method: 'PUT',
+    body,
+  });
+}
+
+// A TikTok não apaga promoção: desativa. É por isso que a aba oferece
+// "encerrar" e não "excluir" nessa plataforma.
+async function encerrarPromocaoTikTok({ appKey, appSecret, accessToken, shopCipher, activityId }) {
+  await chamarApi(`/promotion/202309/activities/${activityId}/deactivate`, {
+    appKey, appSecret, accessToken,
+    query: { shop_cipher: shopCipher },
+    method: 'POST',
+    body: {},
+  });
+}
+
 module.exports = {
   buildAuthorizeUrl,
   trocarCodigoPorToken,
   renovarToken,
   buscarLojasAutorizadas,
   buscarAnuncios,
+  buscarPromocoes,
+  // Puras, exportadas para o teste automatizado.
+  statusPromocaoTikTok,
+  lerPercentualTikTok,
+  produtosParaCorpoTikTok,
+  dataTikTok,
+  criarPromocaoTikTok,
+  atualizarProdutosPromocaoTikTok,
+  removerProdutosPromocaoTikTok,
+  atualizarPromocaoTikTok,
+  encerrarPromocaoTikTok,
   atualizarPrecoTikTok,
   atualizarEstoqueTikTok,
   alterarStatusTikTok,
