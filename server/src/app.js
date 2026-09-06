@@ -37,6 +37,7 @@ const produtoMarketplaceRoutes = require('./routes/produtoMarketplace.routes');
 const anunciosRoutes = require('./routes/anuncios.routes');
 const promocoesRoutes = require('./routes/promocoes.routes');
 const insumosRoutes = require('./routes/insumos.routes');
+const estoqueMinimoRoutes = require('./routes/estoqueMinimo.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
 const auditoriaRoutes = require('./routes/auditoria.routes');
 const emailRoutes = require('./routes/email.routes');
@@ -140,6 +141,9 @@ function createApp() {
   // `compras` -- e' quem compra que lanca nota e cadastra materia-prima.
   // Nenhuma permissao existente muda por causa desta rota nova (REGRA 4).
   app.use('/api/insumos', requireAuth, requireModulo('compras'), insumosRoutes);
+  // Estoque minimo, cobertura e ponto de pedido (06/09/2026). Fica sob
+  // `estoque` -- e' quem cuida do saldo que precisa disto no dia a dia.
+  app.use('/api/estoque-minimo', requireAuth, requireModulo('estoque'), estoqueMinimoRoutes);
   app.use('/api/clientes', requireAuth, requireModulo('vendas'), clientesRoutes);
   app.use('/api/pedidos', requireAuth, requireModulo(['vendas', 'marketplace']), pedidosRoutes);
   app.use('/api/fornecedores', requireAuth, requireModulo('compras'), fornecedoresRoutes);
