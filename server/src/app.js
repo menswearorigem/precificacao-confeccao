@@ -36,6 +36,7 @@ const gruposRoutes = require('./routes/grupos.routes');
 const produtoMarketplaceRoutes = require('./routes/produtoMarketplace.routes');
 const anunciosRoutes = require('./routes/anuncios.routes');
 const promocoesRoutes = require('./routes/promocoes.routes');
+const insumosRoutes = require('./routes/insumos.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
 const auditoriaRoutes = require('./routes/auditoria.routes');
 const emailRoutes = require('./routes/email.routes');
@@ -135,6 +136,10 @@ function createApp() {
   // Anúncios: é a mesma pessoa que cuida de um e de outro, e nenhuma
   // permissão existente muda por causa desta rota nova (REGRA 4).
   app.use('/api/promocoes', requireAuth, requireModulo('marketplace'), promocoesRoutes);
+  // Insumos e nota fiscal de entrada (06/09/2026). Ficam sob o modulo
+  // `compras` -- e' quem compra que lanca nota e cadastra materia-prima.
+  // Nenhuma permissao existente muda por causa desta rota nova (REGRA 4).
+  app.use('/api/insumos', requireAuth, requireModulo('compras'), insumosRoutes);
   app.use('/api/clientes', requireAuth, requireModulo('vendas'), clientesRoutes);
   app.use('/api/pedidos', requireAuth, requireModulo(['vendas', 'marketplace']), pedidosRoutes);
   app.use('/api/fornecedores', requireAuth, requireModulo('compras'), fornecedoresRoutes);
