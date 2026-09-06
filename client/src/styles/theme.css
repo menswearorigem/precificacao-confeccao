@@ -133,6 +133,16 @@
   --mkt-shein-ink: #23445e;
   --mkt-shein-bg: #d9e6f0;
   --mkt-shein-edge: #3f7099;
+  /* Tinta SUAVE do cartão de anúncio (06/09/2026). A tinta cheia acima
+     continua servindo ao selo e à borda; o fundo do cartão passou a usar
+     estas, a ~35% da intensidade, porque quatro fundos pastel numa grade só
+     tiravam o ar da página e derrubavam o contraste do texto. A identidade da
+     plataforma migrou para a faixa do topo e a barra do rodapé, que ficaram
+     mais evidentes do que a tinta era. */
+  --mkt-meli-suave: #fef9ec;
+  --mkt-shopee-suave: #fef4ec;
+  --mkt-tiktok-suave: #f7f4ef;
+  --mkt-shein-suave: #f2f5f6;
 }
 
 /* ---------- tema escuro (Onda 4.10) ----------
@@ -243,6 +253,13 @@
     --mkt-shein-ink: #9dbdd6;
     --mkt-shein-bg: #1e2b3680;
     --mkt-shein-edge: #5f8fb5;
+    /* No escuro as tintas do cartão são OPACAS: as antigas tinham alfa no
+       valor (#35291180) e faziam o cartão parecer uma mancha translúcida em
+       vez de uma superfície levantada, contra a escada de superfície do tema. */
+    --mkt-meli-suave: #2f2416;
+    --mkt-shopee-suave: #302319;
+    --mkt-tiktok-suave: #2c2419;
+    --mkt-shein-suave: #26241f;
   }
 }
 :root[data-theme="dark"] {
@@ -346,6 +363,10 @@
   --mkt-shein-ink: #9dbdd6;
   --mkt-shein-bg: #1e2b3680;
   --mkt-shein-edge: #5f8fb5;
+  --mkt-meli-suave: #2f2416;
+  --mkt-shopee-suave: #302319;
+  --mkt-tiktok-suave: #2c2419;
+  --mkt-shein-suave: #26241f;
 }
 /* A impressão continua sempre clara, mesmo com tema escuro ativo — a
    ficha impressa é pra ler no papel, não na tela. */
@@ -4790,17 +4811,25 @@ table.ficha-doc-tabela {
 }
 
 /* ===========================================================================
-   Marketplace › Anúncios (04/09/2026)
-   Grade de cartões no formato que a dona já conhece do painel da Shopee:
-   foto grande, título em duas linhas, preço em destaque, estoque e as três
-   métricas embaixo. O que muda: cada cartão carrega a COR DA PLATAFORMA e o
-   nome da LOJA, porque aqui convivem quatro plataformas e duas contas em
-   cada uma — sem isso não dá pra saber de quem é o anúncio de relance.
+   Marketplace › Anúncios
+   Grade de cartões no formato que a dona já conhece do painel da Shopee, com
+   as duas coisas que aquele painel não tem: de qual LOJA é cada anúncio e se
+   ele roda Ads.
+
+   Redesenho de 06/09/2026, depois da revisão de design:
+   · o preço virou o herói do cartão, em --ink (a terracota dava 3,4:1 sobre a
+     tinta, abaixo do mínimo de 4,5:1 — e terracota significa AÇÃO no sistema,
+     não "preço");
+   · a tinta da plataforma caiu para ~35% e a identidade migrou para a faixa
+     do topo e a barra do rodapé, que ficaram mais evidentes que a tinta era;
+   · das três medalhas sobre a foto sobrou uma (a loja), e o produto voltou a
+     aparecer;
+   · a situação virou um ponto colorido, em vez de uma pastilha no meio de uma
+     frase.
    =========================================================================== */
 
-/* Selo de plataforma — duas letras na cor do canal. Usado também nas telas
-   de Pedidos, Taxas, Lucratividade e Métricas pra substituir o canal
-   genérico. */
+/* Selo de plataforma — ícone comum na cor do canal. Usado também nas telas de
+   Pedidos, Taxas, Lucratividade e Métricas pra substituir o canal genérico. */
 .selo-plataforma {
   display: inline-flex;
   align-items: center;
@@ -4824,156 +4853,190 @@ table.ficha-doc-tabela {
    ali falta vínculo, não de que a loja se chama assim. */
 .canal-marketplace-generico { color: var(--ink-faint); font-style: italic; }
 
-/* ---- grade de anúncios ---- */
+/* ---- grade ---- */
 .anuncios-grade {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
+  gap: 16px;
 }
+
+/* ---- cartão ---- */
 .anuncio-card {
   position: relative;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
-  border-left: 4px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   overflow: hidden;
-  transition: box-shadow 140ms var(--ease), transform 140ms var(--ease);
-  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+  transition: box-shadow 160ms var(--ease), transform 160ms var(--ease);
   text-align: left;
   padding: 0;
   font: inherit;
   color: inherit;
 }
 .anuncio-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
-.anuncio-card:focus-visible { outline: 2px solid var(--terracotta); outline-offset: 2px; }
-.anuncio-card.selecionado { box-shadow: 0 0 0 2px var(--terracotta); }
+.anuncio-card:focus-within { box-shadow: 0 0 0 2px var(--terracotta), var(--shadow-sm); }
+.anuncio-card.selecionado { box-shadow: 0 0 0 2px var(--terracotta), var(--shadow-sm); }
 
-/* A cor da plataforma: fundo do cartão e faixa na borda esquerda. */
-.anuncio-card.plataforma-mercado_livre { background: var(--mkt-meli-bg); border-left-color: var(--mkt-meli-edge); }
-.anuncio-card.plataforma-shopee { background: var(--mkt-shopee-bg); border-left-color: var(--mkt-shopee-edge); }
-.anuncio-card.plataforma-tiktok_shop { background: var(--mkt-tiktok-bg); border-left-color: var(--mkt-tiktok-edge); }
-.anuncio-card.plataforma-shein { background: var(--mkt-shein-bg); border-left-color: var(--mkt-shein-edge); }
+/* A tinta da plataforma, suave. */
+.anuncio-card.plataforma-mercado_livre { background: var(--mkt-meli-suave); }
+.anuncio-card.plataforma-shopee { background: var(--mkt-shopee-suave); }
+.anuncio-card.plataforma-tiktok_shop { background: var(--mkt-tiktok-suave); }
+.anuncio-card.plataforma-shein { background: var(--mkt-shein-suave); }
+
+/* A faixa do topo é a identidade forte da plataforma. */
+.anuncio-card-faixa { height: 3px; flex: 0 0 auto; background: var(--border); }
+.plataforma-mercado_livre > .anuncio-card-faixa { background: var(--mkt-meli-edge); }
+.plataforma-shopee > .anuncio-card-faixa { background: var(--mkt-shopee-edge); }
+.plataforma-tiktok_shop > .anuncio-card-faixa { background: var(--mkt-tiktok-edge); }
+.plataforma-shein > .anuncio-card-faixa { background: var(--mkt-shein-edge); }
+
+/* O cartão é um <article>; quem recebe o clique é o link esticado. Assim o
+   cartão pode ganhar botões próprios depois — dentro de um <button> não cabe
+   outro controle. */
+.anuncio-card-alvo {
+  position: absolute; inset: 0; z-index: 1;
+  border: 0; background: transparent; cursor: pointer;
+  font: inherit; color: transparent; padding: 0;
+}
+.anuncio-card-alvo:focus-visible { outline: 2px solid var(--terracotta); outline-offset: -3px; border-radius: var(--radius); }
+.anuncio-card-foto, .anuncio-card-corpo, .anuncio-card-rodape { position: relative; }
+.anuncio-card-loja, .anuncio-card-selecao, .anuncio-card-abrir { z-index: 2; }
 
 .anuncio-card-foto {
-  position: relative;
   aspect-ratio: 1 / 1;
   background: var(--surface-alt);
   overflow: hidden;
 }
 .anuncio-card-foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Sem foto: a referência grande na tinta da plataforma. Diz "não tem foto" e
+   ainda ajuda a identificar a peça — melhor que um ícone cinza. */
 .anuncio-card-foto-vazia {
   width: 100%; height: 100%;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--ink-faint);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  color: var(--ink-soft);
+  font-family: var(--font-mono); font-size: 15px; font-weight: 700; letter-spacing: .04em;
 }
-/* Selo da loja sobre a foto — o "elemento visual claro" que diz de qual
-   conta é aquele anúncio sem precisar ler nada. */
+.anuncio-card-foto-vazia small { font-family: var(--font-body); font-size: 10px; font-weight: 500; color: var(--ink-faint); letter-spacing: 0; }
+
+/* Única medalha sobre a foto: a loja — a razão de ser da tela. */
 .anuncio-card-loja {
-  position: absolute;
-  top: 6px; left: 6px;
+  position: absolute; top: 7px; left: 7px;
   display: inline-flex; align-items: center; gap: 5px;
-  padding: 3px 7px 3px 4px;
+  padding: 3px 8px 3px 4px;
   border-radius: 999px;
-  font-size: 10.5px;
-  font-weight: 600;
-  background: var(--surface);
+  font-size: 10.5px; font-weight: 600;
+  background: var(--surface); color: var(--ink);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-xs);
-  max-width: calc(100% - 12px);
+  max-width: calc(100% - 14px);
 }
 .anuncio-card-loja span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.anuncio-card-desconto {
-  position: absolute; top: 6px; right: 6px;
-  padding: 2px 6px; border-radius: var(--radius-sm);
-  background: var(--danger); color: var(--on-accent);
-  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
-}
-.anuncio-card-ads {
-  position: absolute; bottom: 6px; left: 6px;
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 2px 7px; border-radius: 999px;
-  background: var(--terracotta); color: var(--on-accent);
-  font-size: 10px; font-weight: 700;
-}
-.anuncio-card-corpo { padding: 9px 10px 10px; display: flex; flex-direction: column; gap: 5px; flex: 1; }
-.anuncio-card-titulo {
-  font-size: 12px; line-height: 1.32; margin: 0;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-  min-height: 2.64em;
-}
-.anuncio-card-preco { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 700; color: var(--terracotta); }
-.anuncio-card-preco small { font-size: 10px; color: var(--ink-faint); text-decoration: line-through; margin-left: 5px; font-weight: 400; }
-.anuncio-card-estoque { font-size: 11px; color: var(--ink-soft); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-.anuncio-card-metricas {
-  display: flex; gap: 10px; flex-wrap: wrap;
-  font-size: 10.5px; color: var(--ink-soft);
-  border-top: 1px solid var(--border-soft); padding-top: 6px; margin-top: auto;
-}
-.anuncio-card-metricas span { display: inline-flex; align-items: center; gap: 3px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-.anuncio-card-ref { font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); }
-.anuncio-card-sem-vinculo { color: var(--warning); font-weight: 600; }
 
-/* ---- painel lateral de detalhe ---- */
-.anuncio-painel {
-  position: fixed; top: 0; right: 0; bottom: 0;
-  width: min(560px, 100%);
-  background: var(--surface);
-  border-left: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
-  z-index: 60;
-  display: flex; flex-direction: column;
-  overflow-y: auto;
+.anuncio-card-selecao {
+  position: absolute; top: 7px; right: 7px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 2px; display: flex; box-shadow: var(--shadow-xs);
 }
-.anuncio-painel-topo {
-  position: sticky; top: 0; z-index: 1;
-  display: flex; align-items: flex-start; gap: 10px;
-  padding: 14px 16px; border-bottom: 1px solid var(--border);
-  background: var(--surface);
-}
-.anuncio-painel-corpo { padding: 14px 16px 40px; display: flex; flex-direction: column; gap: 16px; }
-.anuncio-painel-fundo {
-  position: fixed; inset: 0; background: var(--overlay); z-index: 59; border: 0;
-}
-.anuncio-historico-linha {
-  display: grid; grid-template-columns: 108px 1fr; gap: 8px;
-  padding: 7px 0; border-bottom: 1px solid var(--border-soft);
-  font-size: 12px;
-}
-.anuncio-historico-data { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); }
-.anuncio-historico-de-para { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-.anuncio-historico-antes { color: var(--ink-faint); text-decoration: line-through; }
-
-/* Código do anúncio no cartão — é o que diferencia dois anúncios do mesmo
-   produto na mesma loja (06/09/2026). */
-.anuncio-card-id {
-  float: right;
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  color: var(--ink-faint);
-  letter-spacing: .02em;
-}
-
-/* Contador de anúncios no cartão de grupo (modo "por referência"). */
 .anuncio-card-contador {
-  position: absolute; top: 6px; right: 6px;
+  position: absolute; bottom: 7px; right: 7px;
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 2px 7px; border-radius: 999px;
+  padding: 2px 8px; border-radius: 999px;
   background: var(--surface); border: 1px solid var(--border);
   box-shadow: var(--shadow-xs);
   font-size: 10px; font-weight: 700; color: var(--ink-soft);
 }
 
-/* Alternador "por anúncio" / "por referência". */
+.anuncio-card-corpo { padding: 11px 12px 9px; display: flex; flex-direction: column; gap: 7px; flex: 1; }
+.anuncio-card-titulo {
+  font-size: 12.5px; line-height: 1.35; margin: 0; font-weight: 500; color: var(--ink);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  min-height: 2.7em;
+}
+.anuncio-card-linha-preco { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.anuncio-card-preco {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: 18px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1;
+  color: var(--ink);
+}
+.anuncio-card-preco-de {
+  font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft);
+  text-decoration: line-through;
+}
+/* Desconto NÃO é erro: latão (atenção/destaque), nunca --danger. */
+.anuncio-card-desconto {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  padding: 1px 6px; border-radius: 4px;
+  background: var(--warning-bg); color: var(--warning); border: 1px solid var(--warning-ring);
+}
+.anuncio-card-ref {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-soft);
+  display: flex; justify-content: space-between; gap: 8px; align-items: baseline;
+}
+.anuncio-card-id { color: var(--ink-faint); font-size: 9.5px; white-space: nowrap; }
+.anuncio-card-sem-vinculo {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--font-body); font-size: 10.5px; font-weight: 600;
+  color: var(--warning); background: var(--warning-bg);
+  border: 1px solid var(--warning-ring); border-radius: 999px; padding: 1px 8px;
+  align-self: flex-start;
+}
+.anuncio-card-metricas {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  font-size: 10.5px; color: var(--ink-soft);
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+}
+.anuncio-card-metricas span { display: inline-flex; align-items: center; gap: 4px; }
+
+/* Rodapé colorido: situação à esquerda, Ads à direita. */
+.anuncio-card-rodape {
+  margin-top: auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 12px; border-top: 1px solid var(--border-soft);
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.plataforma-mercado_livre > .anuncio-card-rodape { background: color-mix(in srgb, var(--mkt-meli-edge) 9%, transparent); }
+.plataforma-shopee > .anuncio-card-rodape { background: color-mix(in srgb, var(--mkt-shopee-edge) 9%, transparent); }
+.plataforma-tiktok_shop > .anuncio-card-rodape { background: color-mix(in srgb, var(--mkt-tiktok-edge) 12%, transparent); }
+.plataforma-shein > .anuncio-card-rodape { background: color-mix(in srgb, var(--mkt-shein-edge) 9%, transparent); }
+
+.anuncio-situacao {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--font-body); font-weight: 600; font-size: 10.5px; color: var(--ink-soft);
+}
+.anuncio-ponto { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--ink-faint); }
+.anuncio-ponto.ativo { background: var(--success-ring); }
+.anuncio-ponto.pausado, .anuncio-ponto.em_analise { background: var(--warning-ring); }
+.anuncio-ponto.violacao { background: var(--danger-ring); }
+.anuncio-ponto.encerrado, .anuncio-ponto.desconhecido { background: var(--ink-faint); }
+
+/* O ROAS ganha cor de ESTADO (acima ou abaixo de 1), que é a informação que
+   interessa — não a cor de acento, que significa ação. */
+.anuncio-roas {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px;
+  border: 1px solid var(--success-ring); background: var(--success-bg); color: var(--success);
+}
+.anuncio-roas.frio { border-color: var(--danger-ring); background: var(--danger-bg); color: var(--danger); }
+.anuncio-roas.sem { border-color: var(--border); background: transparent; color: var(--ink-faint); font-weight: 500; }
+
+/* ---- barra de modo e de seleção ---- */
+.anuncios-barra {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 14px;
+}
 .modo-exibicao {
   display: inline-flex; border: 1px solid var(--border);
   border-radius: var(--radius-sm); overflow: hidden; background: var(--surface);
 }
 .modo-btn {
-  display: inline-flex; align-items: center; gap: 5px;
+  display: inline-flex; align-items: center; gap: 6px;
   font: inherit; font-size: 12px; font-weight: 600;
-  padding: 7px 11px; border: 0; background: transparent;
+  padding: 7px 12px; border: 0; background: transparent;
   color: var(--ink-soft); cursor: pointer; white-space: nowrap;
 }
 .modo-btn + .modo-btn { border-left: 1px solid var(--border); }
@@ -4981,19 +5044,116 @@ table.ficha-doc-tabela {
 .modo-btn.active { background: var(--accent-soft); color: var(--terracotta); }
 .modo-btn:focus-visible { outline: 2px solid var(--terracotta); outline-offset: -2px; }
 
-/* Faixa de "voltar" ao entrar num grupo. */
-.voltar-grupo {
+.barra-selecao {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  margin-bottom: 12px;
+  padding: 10px 14px; margin-bottom: 14px;
+  border: 1px solid var(--terracotta); border-radius: var(--radius);
+  background: var(--accent-softer);
+  font-size: 13px;
 }
+.barra-selecao strong { font-family: var(--font-mono); }
+
+.voltar-grupo { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+
+/* ---- andamento da sincronização ---- */
+.sync-andamento { display: flex; flex-direction: column; gap: 9px; }
+.sync-loja { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: center; font-size: 12.5px; }
+.sync-barra { height: 5px; border-radius: 999px; background: var(--surface-alt); overflow: hidden; }
+.sync-barra span { display: block; height: 100%; border-radius: 999px; background: var(--terracotta); width: 40%; animation: syncDesliza 1.1s ease-in-out infinite; }
+@keyframes syncDesliza { 0% { transform: translateX(-100%); } 100% { transform: translateX(320%); } }
+.sync-barra.pronta span { width: 100%; animation: none; background: var(--success-ring); }
+.sync-barra.falhou span { width: 100%; animation: none; background: var(--danger-ring); }
+
+/* ---- faixa de lojas ---- */
+.lojas-faixa { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.loja-ficha {
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 8px 10px 8px 9px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); font-size: 12px;
+}
+.loja-ficha.com-erro { border-color: var(--warning-ring); background: var(--warning-bg); }
+.loja-ficha-nome { font-weight: 600; line-height: 1.25; }
+.loja-ficha-sub { font-size: 10.5px; color: var(--ink-soft); font-family: var(--font-mono); }
+.loja-ficha.com-erro .loja-ficha-sub { color: var(--warning); font-family: var(--font-body); }
+
+/* ---- matriz produto × plataforma ---- */
+.matriz-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.matriz-anuncios { border-collapse: collapse; width: 100%; font-size: 13px; min-width: 720px; }
+.matriz-anuncios th, .matriz-anuncios td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
+.matriz-anuncios thead th {
+  font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft);
+  font-weight: 700; background: var(--surface-alt); border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.matriz-anuncios thead th span { display: inline-flex; align-items: center; gap: 7px; }
+.matriz-anuncios tbody tr:last-child td { border-bottom: 0; }
+.matriz-produto { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.matriz-produto img, .matriz-produto .sem-foto {
+  width: 36px; height: 36px; border-radius: var(--radius-sm); object-fit: cover; flex: 0 0 auto;
+  background: var(--surface-alt);
+}
+.matriz-nome { font-weight: 600; font-size: 12.5px; line-height: 1.3; }
+.matriz-ref { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-soft); }
+.matriz-cel { display: flex; flex-direction: column; gap: 3px; }
+.matriz-preco { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13px; }
+.matriz-meta { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-soft); }
+.matriz-vazio { color: var(--danger); font-size: 11px; font-weight: 700; letter-spacing: .02em; }
+.matriz-anuncios td.meli { background: color-mix(in srgb, var(--mkt-meli-edge) 6%, transparent); }
+.matriz-anuncios td.shopee { background: color-mix(in srgb, var(--mkt-shopee-edge) 6%, transparent); }
+.matriz-anuncios td.tiktok_shop { background: color-mix(in srgb, var(--mkt-tiktok-edge) 8%, transparent); }
+.matriz-anuncios td.shein { background: color-mix(in srgb, var(--mkt-shein-edge) 6%, transparent); }
+
+/* ---- painel lateral de detalhe ---- */
+.anuncio-painel {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(680px, 100%);
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  z-index: 60;
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+  animation: painelEntra 180ms var(--ease);
+}
+@keyframes painelEntra { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.anuncio-painel-topo {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 15px 18px; border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.anuncio-painel-corpo { padding: 16px 18px 44px; display: flex; flex-direction: column; gap: 18px; }
+.anuncio-painel-fundo { position: fixed; inset: 0; background: var(--overlay); z-index: 59; }
+.anuncio-historico-linha {
+  display: grid; grid-template-columns: 112px 1fr; gap: 10px;
+  padding: 9px 0; border-bottom: 1px solid var(--border-soft);
+  font-size: 12.5px;
+}
+.anuncio-historico-linha:last-child { border-bottom: 0; }
+.anuncio-historico-data { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); }
+.anuncio-historico-de-para { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.anuncio-historico-antes { color: var(--ink-faint); text-decoration: line-through; }
+/* Variação esgotada é a informação mais acionável da aba — e era a menos visível. */
+.variacao-esgotada { background: var(--warning-bg); }
+.variacao-esgotada td { color: var(--warning); font-weight: 600; }
 
 @media (prefers-reduced-motion: reduce) {
   .anuncio-card { transition: none; }
   .anuncio-card:hover { transform: none; }
+  .anuncio-painel { animation: none; }
+  .sync-barra span { animation: none; width: 100%; }
 }
 
 @media (max-width: 720px) {
-  .anuncios-grade { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  /* Uma coluna no celular: duas colunas de 150px espremiam título de duas
+     linhas + preço + estoque + métricas em cada cartão. */
+  .anuncios-grade { grid-template-columns: 1fr; gap: 12px; }
   .anuncio-painel { width: 100%; }
   .anuncio-historico-linha { grid-template-columns: 1fr; }
+}
+@media (min-width: 480px) and (max-width: 720px) {
+  .anuncios-grade { grid-template-columns: repeat(2, 1fr); }
+}
+
 }

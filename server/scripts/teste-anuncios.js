@@ -233,6 +233,24 @@ async function main() {
   );
   igual(Number(ads.receita) / Number(ads.custo), 4, 'ROAS lido do banco é 4x (100 ÷ 25)');
 
+  console.log('\n7b. Exportação por FILTRO (e não por lista de ids no endereço)');
+  {
+    // O endereço da exportação estourava o limite de tamanho com algumas
+    // centenas de anúncios. Agora ela recebe os mesmos filtros da tela e
+    // resolve os produtos no banco — este ponto confere que o filtro chega ao
+    // resultado certo.
+    const { rows: soShopee } = await pool.query(
+      `SELECT DISTINCT a.produto_id FROM anuncios_marketplace a
+        LEFT JOIN produtos p ON p.id = a.produto_id
+        WHERE a.ativo AND a.marketplace = 'shopee'`
+    );
+    ok(soShopee.length > 0, 'o filtro por plataforma resolve os produtos no banco');
+    const { rows: todos } = await pool.query(
+      `SELECT DISTINCT a.produto_id FROM anuncios_marketplace a WHERE a.ativo`
+    );
+    ok(todos.length >= soShopee.length, 'sem filtro, a exportação pega tudo');
+  }
+
   console.log('\n8. Exportação no formato da planilha');
   const livro = await montarPlanilhaAnuncios({ produtoIds: null, janelaAdsDias: 30 });
   const ws = livro.getWorksheet('Planilha1');

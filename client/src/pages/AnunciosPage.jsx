@@ -1,26 +1,37 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Store, RefreshCw, Search, X, ImageOff, Megaphone, Eye, ShoppingBag,
-  ExternalLink, History, Link2, Link2Off, PackageSearch, Download, Pencil,
-  AlertTriangle, TrendingUp, LayoutGrid, Layers, ArrowLeft, Copy,
+  RefreshCw, X, Megaphone, Eye, ShoppingBag, ExternalLink, History, Link2,
+  Link2Off, PackageSearch, Download, Pencil, AlertTriangle, TrendingUp,
+  LayoutGrid, Layers, ArrowLeft, Copy, Table2, PauseCircle, PlayCircle,
+  Store, CheckSquare,
 } from 'lucide-react';
+import {
+  AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
+} from 'recharts';
 import { api } from '../api/client';
-import { EstadoVazio, Select, Skeleton, CampoBusca, ChipsFiltros } from '../components/ui';
+import {
+  EstadoVazio, Select, Skeleton, CampoBusca, ChipsFiltros, FiltrosAvancados,
+  IndicadorDestaque, Paginacao, Checkbox,
+} from '../components/ui';
+import { confirmar } from '../components/ConfirmDialog';
+import { useTabela } from '../lib/useTabela';
 import { brl, numeroBr, formatQtd, tempoRelativo } from '../lib/format';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
-import { SeloPlataforma, nomeDaLoja, chaveDaPlataforma } from '../lib/canalMarketplace';
+import { SeloPlataforma, nomeDaLoja, chaveDaPlataforma, PREFIXO_PLATAFORMA } from '../lib/canalMarketplace';
+import { usePaletaGrafico } from '../lib/coresGrafico';
 
-// Marketplace › Anúncios (04/09/2026).
+// Marketplace › Anúncios.
 //
 // A grade imita o painel da Shopee de propósito — é o formato que a equipe já
-// lê sem precisar aprender. As duas coisas que o painel da Shopee NÃO tem, e
-// que são o motivo desta tela existir:
-//   · aqui convivem as quatro plataformas e as duas contas de cada uma, então
-//     todo cartão diz de qual loja é (cor da plataforma na borda e no fundo,
-//     selo com o nome da loja sobre a foto);
-//   · todo cartão diz se aquele anúncio roda Ads, quanto gastou e qual foi o
-//     ROAS dos últimos 30 dias — o número que hoje só existe abrindo o
-//     gerenciador de anúncios de cada plataforma, uma por uma.
+// lê sem precisar aprender. As duas coisas que aquele painel NÃO tem, e que
+// são o motivo desta tela existir: de qual LOJA é cada anúncio (aqui convivem
+// quatro plataformas e duas contas em cada uma), e se ele roda Ads.
+//
+// Três modos de ver a mesma lista:
+//   · por anúncio    — um cartão por anúncio, fiel ao painel da plataforma;
+//   · por referência — um cartão por produto em cada loja, com contador;
+//   · comparar lojas — a matriz produto × plataforma, que é a organização da
+//                      planilha da casa.
 
 const STATUS_ROTULO = {
   ativo: 'Ativo',
@@ -29,23 +40,42 @@ const STATUS_ROTULO = {
   em_analise: 'Em análise',
   violacao: 'Violação',
   // A plataforma respondeu uma situação que o sistema não conhece. NÃO é
-  // "pausado" — era esse chute que fazia anúncio ativo aparecer como pausado
-  // na tela (corrigido em 06/09/2026).
+  // "pausado" — era esse chute que fazia anúncio ativo aparecer como pausado.
   desconhecido: 'Situação não reconhecida',
 };
 
-const STATUS_TOM = {
-  ativo: 'tone-saudavel',
-  pausado: 'tone-atencao',
-  encerrado: 'tone-neutro',
-  em_analise: 'tone-atencao',
-  violacao: 'tone-prejuizo',
-  desconhecido: 'tone-neutro',
+const PLATAFORMAS_MATRIZ = ['shopee', 'mercado_livre', 'tiktok_shop', 'shein'];
+
+// Colunas ordenáveis. Sem isso a ordem era sempre plataforma → loja → título,
+// e "o mais caro primeiro" / "o de pior ROAS" — que são as perguntas que
+// levam alguém a abrir esta tela — não tinham resposta.
+const COLUNAS_ORDENAVEIS = {
+  titulo: (a) => a.titulo,
+  loja: (a) => `${a.marketplace}${a.loja_nome || ''}`,
+  preco: (a) => (a.preco != null ? Number(a.preco) : null),
+  estoque: (a) => (a.estoque != null ? Number(a.estoque) : null),
+  vendas: (a) => (a.vendas_total != null ? Number(a.vendas_total) : null),
+  visitas: (a) => (a.visitas != null ? Number(a.visitas) : null),
+  gasto: (a) => a.ads?.custo ?? null,
+  roas: (a) => a.ads?.roas ?? null,
+  situacao: (a) => STATUS_ROTULO[a.status] || a.status,
 };
 
+const ORDENS = [
+  { chave: 'titulo', rotulo: 'Título' },
+  { chave: 'loja', rotulo: 'Loja' },
+  { chave: 'preco', rotulo: 'Preço' },
+  { chave: 'estoque', rotulo: 'Estoque' },
+  { chave: 'vendas', rotulo: 'Vendas' },
+  { chave: 'visitas', rotulo: 'Visitas' },
+  { chave: 'gasto', rotulo: 'Gasto com Ads' },
+  { chave: 'roas', rotulo: 'ROAS' },
+  { chave: 'situacao', rotulo: 'Situação' },
+];
+
 // Chave de agrupamento "por referência": loja + produto do cadastro. É
-// casamento EXATO por id — anúncio sem vínculo nunca é agrupado com outro
-// por título parecido (REGRA 2), fica sozinho e a tela diz por quê.
+// casamento EXATO por id — anúncio sem vínculo nunca é agrupado com outro por
+// título parecido (REGRA 2), fica sozinho e a tela diz por quê.
 function chaveDoGrupo(a) {
   return a.produto_id ? `${a.origem_integracao_id}:${a.produto_id}` : `avulso:${a.id}`;
 }
@@ -73,14 +103,41 @@ function agruparPorReferencia(anuncios) {
       precoMax: precos.length ? Math.max(...precos) : null,
       // Estoque NÃO é somado entre anúncios: os anúncios do mesmo produto
       // costumam dividir o mesmo estoque físico, então somar inventaria peça
-      // que não existe (REGRA 2). Mostra o maior, que é o do anúncio com mais
-      // saldo publicado.
+      // que não existe (REGRA 2). Mostra o maior.
       estoqueMaior: estoques.length ? Math.max(...estoques) : null,
       ativos: itens.filter((i) => i.status === 'ativo').length,
       adsCusto: custo > 0 ? custo : null,
+      adsReceita: custo > 0 ? receita : null,
       adsRoas: custo > 0 ? receita / custo : null,
     };
   });
+}
+
+// Matriz produto × plataforma: uma linha por produto, uma coluna por
+// plataforma. É a organização da planilha da casa, na tela.
+function montarMatriz(anuncios) {
+  const porProduto = new Map();
+  for (const a of anuncios) {
+    // Sem vínculo não entra: não dá pra saber de qual produto é, e chutar pelo
+    // título seria exatamente o que a REGRA 2 proíbe.
+    if (!a.produto_id) continue;
+    if (!porProduto.has(a.produto_id)) {
+      porProduto.set(a.produto_id, {
+        produtoId: a.produto_id,
+        referencia: a.referencia,
+        descricao: a.produto_descricao || a.titulo,
+        temFoto: a.produto_tem_foto,
+        fotoAnuncio: a.foto_url,
+        plataformas: {},
+      });
+    }
+    const linha = porProduto.get(a.produto_id);
+    if (!linha.plataformas[a.marketplace]) linha.plataformas[a.marketplace] = [];
+    linha.plataformas[a.marketplace].push(a);
+  }
+  return [...porProduto.values()].sort((x, y) => (
+    String(x.referencia).localeCompare(String(y.referencia), 'pt-BR', { numeric: true })
+  ));
 }
 
 export default function AnunciosPage() {
@@ -90,6 +147,7 @@ export default function AnunciosPage() {
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
   const [sincronizando, setSincronizando] = useState(false);
+  const [andamento, setAndamento] = useState(null);
 
   const [busca, setBusca] = useState('');
   const [buscaAplicada, setBuscaAplicada] = useState('');
@@ -98,19 +156,20 @@ export default function AnunciosPage() {
   const [status, setStatus] = useState('');
   const [vinculo, setVinculo] = useState('');
   const [ads, setAds] = useState('');
+  const [dias, setDias] = useState(30);
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
 
   const [selecionado, setSelecionado] = useState(null);
-  // 'anuncio' = um cartão por anúncio (fiel ao painel da plataforma).
-  // 'referencia' = um cartão por produto em cada loja, com contador.
   const [modo, setModo] = useState('anuncio');
   const [grupoFocado, setGrupoFocado] = useState(null);
+  const [marcados, setMarcados] = useState(() => new Set());
+  const [aplicandoLote, setAplicandoLote] = useState(false);
 
   const carregarLojas = useCallback(() => {
     api.get('/anuncios/lojas').then(setLojas).catch((e) => setErro(e.message));
   }, []);
 
-  const carregar = useCallback(() => {
-    setCarregando(true);
+  const parametros = useCallback(() => {
     const p = new URLSearchParams();
     if (buscaAplicada) p.set('busca', buscaAplicada);
     if (marketplace) p.set('marketplace', marketplace);
@@ -118,18 +177,27 @@ export default function AnunciosPage() {
     if (status) p.set('status', status);
     if (vinculo) p.set('vinculo', vinculo);
     if (ads) p.set('ads', ads);
-    api.get(`/anuncios?${p.toString()}`)
-      .then(setAnuncios)
-      .catch((e) => setErro(e.message))
-      .finally(() => setCarregando(false));
-  }, [buscaAplicada, marketplace, lojaId, status, vinculo, ads]);
+    p.set('dias', String(dias));
+    return p;
+  }, [buscaAplicada, marketplace, lojaId, status, vinculo, ads, dias]);
+
+  const carregar = useCallback(() => {
+    setCarregando(true);
+    let cancelado = false;
+    api.get(`/anuncios?${parametros().toString()}`)
+      .then((dados) => { if (!cancelado) { setAnuncios(dados); setErro(''); } })
+      .catch((e) => { if (!cancelado) setErro(e.message); })
+      .finally(() => { if (!cancelado) setCarregando(false); });
+    return () => { cancelado = true; };
+  }, [parametros]);
 
   useEffect(carregarLojas, [carregarLojas]);
+  // O retorno de `carregar` é a função de limpeza: trocar de filtro depressa
+  // disparava buscas que podiam chegar fora de ordem e deixar na tela o
+  // resultado de um filtro antigo. A resposta que chega depois de o efeito ser
+  // descartado é ignorada.
   useEffect(carregar, [carregar]);
 
-  // Trocar de plataforma tem de soltar a loja escolhida — senão sobra um
-  // filtro de loja que não existe naquela plataforma e a tela volta vazia
-  // sem dizer por quê.
   function mudarPlataforma(valor) {
     setMarketplace(valor);
     if (lojaId && !lojas.some((l) => String(l.id) === String(lojaId) && (!valor || l.marketplace === valor))) {
@@ -137,36 +205,55 @@ export default function AnunciosPage() {
     }
   }
 
+  function limparTudo() {
+    setBusca(''); setBuscaAplicada(''); setMarketplace(''); setLojaId('');
+    setStatus(''); setVinculo(''); setAds('');
+  }
+
+  // ---- sincronização em segundo plano ----
   async function sincronizar(integracaoId) {
-    setSincronizando(true);
     setErro('');
     setAviso('');
     try {
-      const r = await api.post('/anuncios/sincronizar', integracaoId ? { integracaoId } : {});
-      const ok = r.lojas.filter((l) => l.ok);
-      const falhou = r.lojas.filter((l) => !l.ok);
-      setAviso([
-        ok.length ? `${ok.reduce((s, l) => s + (l.anuncios || 0), 0)} anúncio(s) lidos em ${ok.length} loja(s).` : '',
-        falhou.length ? `Não deu para ler ${falhou.map((l) => `${l.nome || l.marketplace} (${l.erro})`).join('; ')}.` : '',
-      ].filter(Boolean).join(' '));
-      carregarLojas();
-      carregar();
+      await api.post('/anuncios/sincronizar', integracaoId ? { integracaoId } : {});
+      setSincronizando(true);
     } catch (e) {
       setErro(e.message);
-    } finally {
-      setSincronizando(false);
     }
   }
 
+  useEffect(() => {
+    if (!sincronizando) return undefined;
+    let vivo = true;
+    const timer = setInterval(async () => {
+      try {
+        const r = await api.get('/anuncios/sincronizacao');
+        if (!vivo) return;
+        setAndamento(r);
+        if (!r.emAndamento) {
+          setSincronizando(false);
+          const comErro = r.lojas.filter((l) => l.ultimo_erro);
+          setAviso([
+            `${formatQtd(r.lojas.reduce((s, l) => s + (l.anuncios_lidos || 0), 0))} anúncio(s) lidos.`,
+            comErro.length
+              ? `Falharam: ${comErro.map((l) => `${nomeDaLoja(l)} (${l.ultimo_erro})`).join('; ')}.`
+              : '',
+          ].filter(Boolean).join(' '));
+          carregarLojas();
+          carregar();
+        }
+      } catch {
+        // Uma consulta de andamento que falha não derruba o acompanhamento —
+        // a próxima tenta de novo.
+      }
+    }, 2500);
+    return () => { vivo = false; clearInterval(timer); };
+  }, [sincronizando, carregar, carregarLojas]);
+
   function exportar() {
-    const p = new URLSearchParams();
-    if (marketplace) p.set('marketplace', marketplace);
-    if (lojaId) p.set('integracao_id', lojaId);
-    // A exportação sai com os produtos que estão na tela agora — o filtro
-    // que a pessoa está vendo é o mesmo que vai pra planilha.
-    const produtos = [...new Set(anuncios.map((a) => a.produto_id).filter(Boolean))];
-    if (produtos.length) p.set('produtos', produtos.join(','));
-    window.open(`/api/anuncios/exportacao/planilha?${p.toString()}`, '_blank');
+    // Manda os FILTROS, não a lista de ids: com algumas centenas de anúncios
+    // a lista estourava o tamanho do endereço e a exportação voltava erro.
+    window.open(`/api/anuncios/exportacao/planilha?${parametros().toString()}`, '_blank');
   }
 
   const lojasFiltradas = useMemo(
@@ -188,17 +275,26 @@ export default function AnunciosPage() {
     return itens;
   }, [buscaAplicada, marketplace, lojaId, status, vinculo, ads, lojas]);
 
-  const grupos = useMemo(() => agruparPorReferencia(anuncios), [anuncios]);
+  const filtrosAvancadosAtivos = [marketplace, status, vinculo, ads].filter(Boolean).length;
 
-  // Ao entrar num grupo, a grade mostra só os anúncios dele — o mesmo cartão
-  // de sempre, sem inventar uma terceira tela.
+  const grupos = useMemo(() => agruparPorReferencia(anuncios), [anuncios]);
+  const matriz = useMemo(() => montarMatriz(anuncios), [anuncios]);
+
   const anunciosVisiveis = useMemo(() => (
     grupoFocado ? (grupos.find((g) => g.chave === grupoFocado)?.itens || []) : anuncios
   ), [grupoFocado, grupos, anuncios]);
 
-  // Trocar filtro com um grupo aberto deixaria a tela mostrando um grupo que
-  // não existe mais no resultado.
-  useEffect(() => { setGrupoFocado(null); }, [buscaAplicada, marketplace, lojaId, status, vinculo, ads]);
+  useEffect(() => {
+    setGrupoFocado(null);
+    setMarcados(new Set());
+  }, [buscaAplicada, marketplace, lojaId, status, vinculo, ads, dias]);
+
+  const tabela = useTabela(anunciosVisiveis, {
+    colunas: COLUNAS_ORDENAVEIS,
+    colunaPadrao: 'titulo',
+    direcaoPadrao: 'asc',
+    tamanhoPadrao: 50,
+  });
 
   const resumo = useMemo(() => {
     const comAds = anuncios.filter((a) => a.ads?.rodaAds);
@@ -215,6 +311,49 @@ export default function AnunciosPage() {
     };
   }, [anuncios]);
 
+  function alternarMarcado(id) {
+    setMarcados((atual) => {
+      const proximo = new Set(atual);
+      if (proximo.has(id)) proximo.delete(id);
+      else proximo.add(id);
+      return proximo;
+    });
+  }
+
+  async function aplicarEmLote(situacao) {
+    const ids = [...marcados];
+    const verbo = situacao === 'ativo' ? 'ativar' : 'pausar';
+    const ok = await confirmar(
+      `${ids.length} anúncio(s) vão ser ${situacao === 'ativo' ? 'ativados' : 'pausados'} nas plataformas agora. `
+      + 'A alteração vai para o ar e fica registrada no histórico com o seu nome.',
+      { titulo: `Confirmar ${verbo} em massa`, confirmarTexto: `Sim, ${verbo}`, perigo: true }
+    );
+    if (!ok) return;
+    setAplicandoLote(true);
+    setErro('');
+    setAviso('');
+    try {
+      const r = await api.post('/anuncios/situacao-em-lote', { confirmar: true, situacao, ids });
+      setAviso(
+        r.falhas.length === 0
+          ? `${r.alterados} anúncio(s) alterados na plataforma.`
+          : `${r.alterados} de ${r.total} alterados. ${r.falhas.length} recusado(s) pela plataforma: `
+            + r.falhas.slice(0, 3).map((f) => f.erro).join('; ')
+      );
+      setMarcados(new Set());
+      carregar();
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setAplicandoLote(false);
+    }
+  }
+
+  const emGrade = modo === 'anuncio' || grupoFocado;
+  const listaNaTela = emGrade ? tabela.itensPagina : [];
+  const todosMarcados = listaNaTela.length > 0 && listaNaTela.every((a) => marcados.has(a.id));
+  const jaLeuAlguma = lojas.some((l) => l.ultima_sincronizacao);
+
   return (
     <div className="page-wide">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
@@ -223,7 +362,7 @@ export default function AnunciosPage() {
           <p className="page-sub">
             Todos os anúncios de todas as lojas conectadas, num lugar só. A cor do cartão diz a
             plataforma e o selo sobre a foto diz a loja. Preço, estoque e situação são o que está
-            no ar agora; o bloco de Ads é dos últimos 30 dias.
+            no ar agora.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -240,7 +379,9 @@ export default function AnunciosPage() {
       {erro && <div className="login-error" style={{ marginBottom: 12 }}>{erro}</div>}
       {aviso && <div className="card" style={{ marginBottom: 12 }}>{aviso}</div>}
 
-      <PainelLojas lojas={lojas} onSincronizar={sincronizar} sincronizando={sincronizando} />
+      {sincronizando && <AndamentoSync andamento={andamento} />}
+
+      <FaixaDeLojas lojas={lojas} onSincronizar={sincronizar} sincronizando={sincronizando} />
 
       {/* ---- filtros ---- */}
       <div className="card" style={{ marginBottom: 14 }}>
@@ -251,83 +392,175 @@ export default function AnunciosPage() {
             onSubmit={(valor) => setBuscaAplicada(valor === '' ? '' : busca)}
             placeholder="Título, SKU, código do anúncio ou referência"
           />
-          <Select value={marketplace} onChange={(e) => mudarPlataforma(e.target.value)} style={{ maxWidth: 170 }}>
-            <option value="">Todas as plataformas</option>
-            {Object.entries(PLATAFORMA_LABEL).map(([chave, rotulo]) => (
-              <option key={chave} value={chave}>{rotulo}</option>
-            ))}
-          </Select>
-          <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)} style={{ maxWidth: 190 }}>
+          <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)} style={{ maxWidth: 200 }}>
             <option value="">Todas as lojas</option>
             {lojasFiltradas.map((l) => <option key={l.id} value={l.id}>{nomeDaLoja(l)}</option>)}
           </Select>
-          <Select value={status} onChange={(e) => setStatus(e.target.value)} style={{ maxWidth: 150 }}>
-            <option value="">Qualquer situação</option>
-            {Object.entries(STATUS_ROTULO).map(([chave, rotulo]) => (
-              <option key={chave} value={chave}>{rotulo}</option>
-            ))}
+          <Select value={String(dias)} onChange={(e) => setDias(Number(e.target.value))} style={{ maxWidth: 200 }}>
+            <option value="7">Ads dos últimos 7 dias</option>
+            <option value="14">Ads dos últimos 14 dias</option>
+            <option value="30">Ads dos últimos 30 dias</option>
+            <option value="60">Ads dos últimos 60 dias</option>
+            <option value="90">Ads dos últimos 90 dias</option>
           </Select>
-          <Select value={ads} onChange={(e) => setAds(e.target.value)} style={{ maxWidth: 150 }}>
-            <option value="">Com e sem Ads</option>
-            <option value="sim">Rodando Ads</option>
-            <option value="nao">Sem Ads</option>
-          </Select>
-          <Select value={vinculo} onChange={(e) => setVinculo(e.target.value)} style={{ maxWidth: 170 }}>
-            <option value="">Vinculados ou não</option>
-            <option value="sem">Sem vínculo no cadastro</option>
-            <option value="com">Vinculados ao cadastro</option>
-          </Select>
-          <div className="modo-exibicao" role="group" aria-label="Como agrupar os anúncios">
-            <button
-              type="button"
-              className={'modo-btn' + (modo === 'anuncio' ? ' active' : '')}
-              onClick={() => { setModo('anuncio'); setGrupoFocado(null); }}
-            >
-              <LayoutGrid size={13} /> Por anúncio
-            </button>
-            <button
-              type="button"
-              className={'modo-btn' + (modo === 'referencia' ? ' active' : '')}
-              onClick={() => { setModo('referencia'); setGrupoFocado(null); }}
-            >
-              <Layers size={13} /> Por referência
-            </button>
-          </div>
+          <FiltrosAvancados
+            ativos={filtrosAvancadosAtivos}
+            aberto={filtrosAbertos}
+            onAlternar={() => setFiltrosAbertos((v) => !v)}
+            resumo="Plataforma, situação, publicidade e vínculo com o cadastro."
+          >
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Select value={marketplace} onChange={(e) => mudarPlataforma(e.target.value)} style={{ maxWidth: 180 }}>
+                <option value="">Todas as plataformas</option>
+                {Object.entries(PLATAFORMA_LABEL).map(([chave, rotulo]) => (
+                  <option key={chave} value={chave}>{rotulo}</option>
+                ))}
+              </Select>
+              <Select value={status} onChange={(e) => setStatus(e.target.value)} style={{ maxWidth: 200 }}>
+                <option value="">Qualquer situação</option>
+                {Object.entries(STATUS_ROTULO).map(([chave, rotulo]) => (
+                  <option key={chave} value={chave}>{rotulo}</option>
+                ))}
+              </Select>
+              <Select value={ads} onChange={(e) => setAds(e.target.value)} style={{ maxWidth: 160 }}>
+                <option value="">Com e sem Ads</option>
+                <option value="sim">Rodando Ads</option>
+                <option value="nao">Sem Ads</option>
+              </Select>
+              <Select value={vinculo} onChange={(e) => setVinculo(e.target.value)} style={{ maxWidth: 200 }}>
+                <option value="">Vinculados ou não</option>
+                <option value="sem">Sem vínculo no cadastro</option>
+                <option value="com">Vinculados ao cadastro</option>
+              </Select>
+            </div>
+          </FiltrosAvancados>
         </div>
         {chips.length > 0 && (
           <div style={{ marginTop: 10 }}>
-            <ChipsFiltros
-              itens={chips}
-              onLimparTudo={() => {
-                setBusca(''); setBuscaAplicada(''); setMarketplace(''); setLojaId(''); setStatus(''); setVinculo(''); setAds('');
-              }}
-            />
+            <ChipsFiltros itens={chips} onLimparTudo={limparTudo} />
           </div>
         )}
       </div>
 
       {/* ---- indicadores ---- */}
       {!carregando && anuncios.length > 0 && (
-        <p className="page-sub" style={{ marginTop: -4, marginBottom: 12 }}>
-          <strong>{formatQtd(resumo.total)}</strong> anúncio(s) no filtro ·{' '}
-          <strong>{formatQtd(resumo.comAds)}</strong> rodando Ads, com{' '}
-          <strong>{brl(resumo.gasto)}</strong> gastos em 30 dias
-          {resumo.roas != null && <> e ROAS consolidado de <strong>{numeroBr(resumo.roas)}x</strong></>}
-          {resumo.semVinculo > 0 && (
-            <> · <span className="anuncio-card-sem-vinculo">{formatQtd(resumo.semVinculo)} sem vínculo com o cadastro</span></>
-          )}
-          . O ROAS consolidado é a soma da receita atribuída dividida pela soma do gasto — não a
-          média dos ROAS de cada anúncio.
-        </p>
+        <div className="indicadores-faixa compacta" style={{ marginBottom: 16 }}>
+          <IndicadorDestaque
+            destaque
+            Icone={Store}
+            rotulo="Anúncios"
+            valor={formatQtd(resumo.total)}
+            explicacao="Quantos anúncios batem com os filtros que estão valendo agora."
+          />
+          <IndicadorDestaque
+            Icone={Megaphone}
+            rotulo="Rodando Ads"
+            valor={formatQtd(resumo.comAds)}
+            explicacao={`${brl(resumo.gasto)} gastos com publicidade nos últimos ${dias} dias.`}
+          />
+          <IndicadorDestaque
+            Icone={TrendingUp}
+            rotulo="ROAS do conjunto"
+            valor={resumo.roas != null ? `${numeroBr(resumo.roas)}x` : '—'}
+            explicacao="Soma da receita atribuída dividida pela soma do gasto — não a média dos ROAS de cada anúncio, que daria outro número."
+          />
+          <IndicadorDestaque
+            Icone={Link2Off}
+            tom={resumo.semVinculo > 0 ? 'atencao' : undefined}
+            rotulo="Sem vínculo"
+            valor={formatQtd(resumo.semVinculo)}
+            explicacao={resumo.semVinculo > 0
+              ? 'Anúncios cujo SKU não bate com nenhuma referência do cadastro. Eles não entram na exportação nem na comparação entre lojas.'
+              : 'Todos os anúncios do recorte estão ligados a uma referência do cadastro.'}
+          />
+        </div>
       )}
 
+      {/* ---- barra de modo, ordenação e seleção ---- */}
+      <div className="anuncios-barra">
+        <div className="modo-exibicao" role="group" aria-label="Como agrupar os anúncios">
+          <button
+            type="button"
+            className={'modo-btn' + (modo === 'anuncio' ? ' active' : '')}
+            onClick={() => { setModo('anuncio'); setGrupoFocado(null); }}
+          >
+            <LayoutGrid size={13} /> Por anúncio
+          </button>
+          <button
+            type="button"
+            className={'modo-btn' + (modo === 'referencia' ? ' active' : '')}
+            onClick={() => { setModo('referencia'); setGrupoFocado(null); }}
+          >
+            <Layers size={13} /> Por referência
+          </button>
+          <button
+            type="button"
+            className={'modo-btn' + (modo === 'matriz' ? ' active' : '')}
+            onClick={() => { setModo('matriz'); setGrupoFocado(null); }}
+          >
+            <Table2 size={13} /> Comparar lojas
+          </button>
+        </div>
+
+        {emGrade && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
+            <span className="page-sub" style={{ margin: 0 }}>Ordenar por</span>
+            <Select
+              value={tabela.coluna}
+              onChange={(e) => tabela.ordenarPor(e.target.value)}
+              style={{ maxWidth: 170 }}
+            >
+              {ORDENS.map((o) => <option key={o.chave} value={o.chave}>{o.rotulo}</option>)}
+            </Select>
+            <button
+              type="button"
+              className="btn btn-ghost sm"
+              onClick={() => tabela.ordenarPor(tabela.coluna)}
+              title={tabela.direcao === 'asc' ? 'Do menor para o maior' : 'Do maior para o menor'}
+            >
+              {tabela.direcao === 'asc' ? '↑ crescente' : '↓ decrescente'}
+            </button>
+          </span>
+        )}
+
+        {emGrade && listaNaTela.length > 0 && (
+          <button
+            type="button"
+            className="btn btn-ghost sm"
+            onClick={() => setMarcados((atual) => {
+              const proximo = new Set(atual);
+              if (todosMarcados) listaNaTela.forEach((a) => proximo.delete(a.id));
+              else listaNaTela.forEach((a) => proximo.add(a.id));
+              return proximo;
+            })}
+          >
+            <CheckSquare size={13} /> {todosMarcados ? 'Desmarcar a página' : 'Marcar a página'}
+          </button>
+        )}
+      </div>
+
+      {marcados.size > 0 && (
+        <div className="barra-selecao">
+          <strong>{marcados.size}</strong> anúncio(s) marcados
+          <button className="btn btn-ghost sm" disabled={aplicandoLote} onClick={() => aplicarEmLote('pausado')}>
+            <PauseCircle size={13} /> Pausar na plataforma
+          </button>
+          <button className="btn btn-ghost sm" disabled={aplicandoLote} onClick={() => aplicarEmLote('ativo')}>
+            <PlayCircle size={13} /> Ativar na plataforma
+          </button>
+          <button className="btn btn-ghost sm" onClick={() => setMarcados(new Set())}>Limpar seleção</button>
+        </div>
+      )}
+
+      {/* ---- conteúdo ---- */}
       {carregando ? (
         <div className="anuncios-grade">
-          {Array.from({ length: 12 }).map((_, i) => (
-            <div key={i} className="anuncio-card" style={{ cursor: 'default' }}>
-              <Skeleton height={200} radius={0} />
-              <div style={{ padding: 10 }}>
-                <Skeleton height={12} /><div style={{ height: 6 }} /><Skeleton height={12} width="60%" />
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="anuncio-card">
+              <div className="anuncio-card-faixa" />
+              <Skeleton height={210} radius={0} />
+              <div style={{ padding: 12 }}>
+                <Skeleton height={12} /><div style={{ height: 8 }} /><Skeleton height={18} width="55%" />
               </div>
             </div>
           ))}
@@ -336,15 +569,15 @@ export default function AnunciosPage() {
         <EstadoVazio
           Icone={PackageSearch}
           titulo="Nenhum anúncio por aqui"
-          descricao={
-            lojas.some((l) => l.ultima_sincronizacao)
-              ? 'Nenhum anúncio bate com esses filtros. Tente limpar a busca ou trocar a loja.'
-              : 'As lojas ainda não foram lidas. Clique em "Atualizar das lojas" para trazer os anúncios pela primeira vez.'
-          }
-          acaoLabel={lojas.some((l) => l.ultima_sincronizacao) ? undefined : 'Atualizar das lojas'}
-          onAcao={lojas.some((l) => l.ultima_sincronizacao) ? undefined : () => sincronizar(null)}
+          descricao={jaLeuAlguma
+            ? 'Nenhum anúncio bate com esses filtros. Tente limpar a busca ou trocar a loja.'
+            : 'As lojas ainda não foram lidas. Clique em "Atualizar das lojas" para trazer os anúncios pela primeira vez.'}
+          acaoLabel={jaLeuAlguma ? undefined : 'Atualizar das lojas'}
+          onAcao={jaLeuAlguma ? undefined : () => sincronizar(null)}
           IconeAcao={RefreshCw}
         />
+      ) : modo === 'matriz' ? (
+        <MatrizLojas matriz={matriz} lojas={lojas} semVinculo={resumo.semVinculo} />
       ) : modo === 'referencia' && !grupoFocado ? (
         <>
           <p className="page-sub" style={{ marginTop: -4, marginBottom: 12 }}>
@@ -378,19 +611,28 @@ export default function AnunciosPage() {
               </span>
             </div>
           )}
+          <Paginacao {...tabela} posicao="topo" />
           <div className="anuncios-grade">
-            {anunciosVisiveis.map((a) => (
-              <CartaoAnuncio key={a.id} anuncio={a} onAbrir={() => setSelecionado(a.id)} />
+            {tabela.itensPagina.map((a) => (
+              <CartaoAnuncio
+                key={a.id}
+                anuncio={a}
+                marcado={marcados.has(a.id)}
+                onMarcar={() => alternarMarcado(a.id)}
+                onAbrir={() => setSelecionado(a.id)}
+              />
             ))}
           </div>
+          <Paginacao {...tabela} posicao="rodape" />
         </>
       )}
 
       {selecionado && (
         <PainelAnuncio
           anuncioId={selecionado}
+          dias={dias}
           onFechar={() => setSelecionado(null)}
-          onAlterado={() => { carregar(); }}
+          onAlterado={carregar}
         />
       )}
     </div>
@@ -398,30 +640,59 @@ export default function AnunciosPage() {
 }
 
 // ---------------------------------------------------------------------------
-// Situação das lojas conectadas
+// Andamento da sincronização
 // ---------------------------------------------------------------------------
-function PainelLojas({ lojas, onSincronizar, sincronizando }) {
+function AndamentoSync({ andamento }) {
+  return (
+    <div className="card" style={{ marginBottom: 14 }}>
+      <h3 style={{ marginTop: 0, marginBottom: 4 }}>Lendo os anúncios das lojas</h3>
+      <p className="page-sub" style={{ marginTop: 0, fontSize: 12 }}>
+        A leitura roda no servidor e pode levar alguns minutos — a Shopee e a TikTok cobram uma
+        chamada de API por anúncio. Você pode sair desta tela; ela continua.
+      </p>
+      <div className="sync-andamento">
+        {!andamento && <Skeleton height={40} />}
+        {(andamento?.lojas || []).map((l) => (
+          <div key={l.integracao_id} className="sync-loja">
+            <SeloPlataforma chave={l.marketplace} size={20} />
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>{nomeDaLoja(l)}</div>
+              <div className={`sync-barra${l.em_andamento ? '' : (l.ultimo_erro ? ' falhou' : ' pronta')}`}>
+                <span />
+              </div>
+            </div>
+            <span className="page-sub" style={{ margin: 0, fontSize: 11, whiteSpace: 'nowrap' }}>
+              {l.em_andamento
+                ? 'lendo…'
+                : l.ultimo_erro
+                  ? 'falhou'
+                  : `${formatQtd(l.anuncios_lidos || 0)} anúncios`}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Faixa das lojas conectadas
+// ---------------------------------------------------------------------------
+function FaixaDeLojas({ lojas, onSincronizar, sincronizando }) {
   if (lojas.length === 0) return null;
   return (
-    <div className="card" style={{ marginBottom: 14, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+    <div className="lojas-faixa">
       {lojas.map((l) => (
-        <div
-          key={l.id}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '7px 10px', border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)', fontSize: 12,
-          }}
-        >
-          <SeloPlataforma chave={l.marketplace} size={18} />
+        <div key={l.id} className={`loja-ficha${l.ultimo_erro ? ' com-erro' : ''}`}>
+          <SeloPlataforma chave={l.marketplace} size={20} />
           <div>
-            <div style={{ fontWeight: 600 }}>{nomeDaLoja(l)}</div>
-            <div className="page-sub" style={{ margin: 0, fontSize: 11 }}>
+            <div className="loja-ficha-nome">{nomeDaLoja(l)}</div>
+            <div className="loja-ficha-sub">
               {l.ultimo_erro
-                ? <span style={{ color: 'var(--danger)' }}>Falhou: {l.ultimo_erro}</span>
+                ? `Falhou: ${l.ultimo_erro}`
                 : l.ultima_sincronizacao
-                  ? `${formatQtd(l.anuncios)} anúncio(s) · lido ${tempoRelativo(l.ultima_sincronizacao)}`
-                  : 'Ainda não foi lido'}
+                  ? `${formatQtd(l.anuncios)} anúncios · ${tempoRelativo(l.ultima_sincronizacao)}`
+                  : 'ainda não foi lida'}
             </div>
           </div>
           <button
@@ -441,90 +712,125 @@ function PainelLojas({ lojas, onSincronizar, sincronizando }) {
 // ---------------------------------------------------------------------------
 // Cartão
 // ---------------------------------------------------------------------------
-function CartaoAnuncio({ anuncio, onAbrir }) {
+// A foto é a DO ANÚNCIO, não a do produto no cadastro: a casa publica vários
+// anúncios do mesmo produto mudando só as fotos, e usar a foto interna deixava
+// meia dúzia de cartões idênticos. A EXPORTAÇÃO continua usando a foto do
+// cadastro — lá é uma foto por produto, e foi o que a dona escolheu.
+function fotoDoAnuncio(a) {
+  return a.foto_url || (a.produto_tem_foto ? `/api/produtos/${a.produto_id}/foto` : null);
+}
+
+// O ROAS ganha cor de ESTADO (acima ou abaixo de 1), que é a informação que
+// interessa — nunca a cor de acento, que no sistema significa ação.
+function ChipRoas({ ads }) {
+  if (!ads?.rodaAds) return <span className="anuncio-roas sem">Sem Ads</span>;
+  if (ads.roas == null) {
+    return (
+      <span className="anuncio-roas frio" title={`Gastou ${brl(ads.custo)} sem venda atribuída`}>
+        sem retorno
+      </span>
+    );
+  }
+  return (
+    <span
+      className={`anuncio-roas${ads.roas < 1 ? ' frio' : ''}`}
+      title={`Gastou ${brl(ads.custo)} e a plataforma atribuiu ${brl(ads.receita)} de venda`}
+    >
+      <Megaphone size={10} /> {numeroBr(ads.roas)}x
+    </span>
+  );
+}
+
+function FotoOuReferencia({ anuncio }) {
+  const foto = fotoDoAnuncio(anuncio);
+  if (foto) return <img src={foto} alt="" loading="lazy" />;
+  // Sem foto: a referência grande na tinta da plataforma. Diz "não tem foto" e
+  // ainda ajuda a identificar a peça — melhor que um ícone cinza.
+  return (
+    <div className="anuncio-card-foto-vazia">
+      {anuncio.referencia || anuncio.anuncio_id_externo}
+      <small>sem foto</small>
+    </div>
+  );
+}
+
+function CartaoAnuncio({ anuncio, marcado, onMarcar, onAbrir }) {
   const chave = chaveDaPlataforma(anuncio.marketplace);
   const preco = anuncio.preco != null ? Number(anuncio.preco) : null;
   const precoDe = anuncio.preco_original != null ? Number(anuncio.preco_original) : null;
   const desconto = precoDe && preco && precoDe > preco ? Math.round((1 - preco / precoDe) * 100) : null;
 
-  // A foto é a DO ANÚNCIO, não a do produto no cadastro.
-  //
-  // Corrigido em 06/09/2026: a tela usava a foto interna do produto, que é a
-  // mesma para todos os anúncios da mesma referência. Como aqui a casa publica
-  // vários anúncios do mesmo produto (todas as cores em cada um, mudando só as
-  // fotos), e título e preço também se repetem, o resultado era meia dúzia de
-  // cartões idênticos, sem nada que os distinguisse.
-  // A EXPORTAÇÃO continua usando a foto do cadastro — lá é uma foto por
-  // produto, e foi o que a dona escolheu.
-  const foto = anuncio.foto_url || (anuncio.produto_tem_foto ? `/api/produtos/${anuncio.produto_id}/foto` : null);
-
   return (
-    <button type="button" className={`anuncio-card plataforma-${chave}`} onClick={onAbrir}>
+    <article className={`anuncio-card plataforma-${chave}${marcado ? ' selecionado' : ''}`}>
+      <div className="anuncio-card-faixa" />
+      {/* Link esticado: o cartão inteiro clica, mas continua sendo um
+          <article>, então cabem controles próprios dentro dele — dentro de um
+          <button> não caberia a caixa de seleção. */}
+      <button type="button" className="anuncio-card-alvo" onClick={onAbrir}>
+        Abrir {anuncio.titulo || 'anúncio'}
+      </button>
+
       <div className="anuncio-card-foto">
-        {foto
-          ? <img src={foto} alt="" loading="lazy" />
-          : <div className="anuncio-card-foto-vazia"><ImageOff size={28} /></div>}
+        <FotoOuReferencia anuncio={anuncio} />
         <span className="anuncio-card-loja">
           <SeloPlataforma chave={chave} size={14} />
           <span>{nomeDaLoja({ marketplace: anuncio.marketplace, nome: anuncio.loja_nome })}</span>
         </span>
-        {desconto != null && <span className="anuncio-card-desconto">{desconto}% OFF</span>}
-        {anuncio.ads?.rodaAds && (
-          <span className="anuncio-card-ads" title={`Gastou ${brl(anuncio.ads.custo)} em 30 dias`}>
-            <Megaphone size={10} />
-            {anuncio.ads.roas != null ? `ROAS ${numeroBr(anuncio.ads.roas)}x` : 'Ads sem retorno'}
-          </span>
-        )}
+        <span className="anuncio-card-selecao">
+          <Checkbox checked={marcado} onChange={onMarcar} aria-label={`Marcar ${anuncio.titulo || 'anúncio'}`} />
+        </span>
       </div>
+
       <div className="anuncio-card-corpo">
         <p className="anuncio-card-titulo">{anuncio.titulo || '(sem título)'}</p>
-        <div className="anuncio-card-preco">
-          {preco != null ? brl(preco) : '—'}
-          {desconto != null && <small>{brl(precoDe)}</small>}
+        <div className="anuncio-card-linha-preco">
+          <span className="anuncio-card-preco">{preco != null ? brl(preco) : '—'}</span>
+          {desconto != null && <span className="anuncio-card-preco-de">{brl(precoDe)}</span>}
+          {desconto != null && <span className="anuncio-card-desconto">−{desconto}%</span>}
         </div>
-        <div className="anuncio-card-estoque">
-          Estoque {anuncio.estoque != null ? formatQtd(anuncio.estoque) : '—'}
-          {' · '}
-          <span
-            className={`stamp sm ${STATUS_TOM[anuncio.status] || 'tone-neutro'}`}
-            title={anuncio.status === 'desconhecido' && anuncio.status_externo
-              ? `A plataforma respondeu "${anuncio.status_externo}", que o sistema ainda não conhece.`
-              : undefined}
-          >
-            {STATUS_ROTULO[anuncio.status] || anuncio.status}
-          </span>
-        </div>
+        {!anuncio.referencia && (
+          <span className="anuncio-card-sem-vinculo"><Link2Off size={11} /> sem vínculo no cadastro</span>
+        )}
         <div className="anuncio-card-ref">
-          {anuncio.referencia
-            ? anuncio.referencia
-            : <span className="anuncio-card-sem-vinculo">sem vínculo no cadastro</span>}
+          <span>{anuncio.referencia || ''}</span>
           {/* O código do anúncio é a única coisa que diferencia dois anúncios
-              do mesmo produto na mesma loja — sem ele os cartões ficavam
-              indistinguíveis. */}
+              do mesmo produto na mesma loja. */}
           <span className="anuncio-card-id" title="Código do anúncio na plataforma">
             {anuncio.anuncio_id_externo}
           </span>
         </div>
         <div className="anuncio-card-metricas">
-          <span title="Visitas"><Eye size={11} /> {anuncio.visitas != null ? formatQtd(anuncio.visitas) : '—'}</span>
-          <span title="Vendas na plataforma"><ShoppingBag size={11} /> {anuncio.vendas_total != null ? formatQtd(anuncio.vendas_total) : '—'}</span>
-          <span title="Gasto com Ads em 30 dias">
-            <Megaphone size={11} /> {anuncio.ads?.custo != null ? brl(anuncio.ads.custo) : '—'}
+          <span title="Visitas informadas pela plataforma">
+            <Eye size={11} /> {anuncio.visitas != null ? formatQtd(anuncio.visitas) : '—'}
+          </span>
+          <span title="Vendas acumuladas na plataforma">
+            <ShoppingBag size={11} /> {anuncio.vendas_total != null ? formatQtd(anuncio.vendas_total) : '—'}
+          </span>
+          <span title="Estoque anunciado">
+            <Layers size={11} /> {anuncio.estoque != null ? formatQtd(anuncio.estoque) : '—'}
           </span>
         </div>
       </div>
-    </button>
+
+      <div className="anuncio-card-rodape">
+        <span
+          className="anuncio-situacao"
+          title={anuncio.status === 'desconhecido' && anuncio.status_externo
+            ? `A plataforma respondeu "${anuncio.status_externo}", que o sistema ainda não conhece.`
+            : undefined}
+        >
+          <span className={`anuncio-ponto ${anuncio.status}`} />
+          {STATUS_ROTULO[anuncio.status] || anuncio.status}
+        </span>
+        <ChipRoas ads={anuncio.ads} />
+      </div>
+    </article>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Cartão de grupo (modo "por referência")
-// ---------------------------------------------------------------------------
 function CartaoGrupo({ grupo, onAbrir }) {
   const { principal, quantidade } = grupo;
   const chave = chaveDaPlataforma(principal.marketplace);
-  const foto = principal.foto_url
-    || (principal.produto_tem_foto ? `/api/produtos/${principal.produto_id}/foto` : null);
   const faixa = grupo.precoMin == null
     ? '—'
     : (grupo.precoMin === grupo.precoMax
@@ -532,11 +838,13 @@ function CartaoGrupo({ grupo, onAbrir }) {
       : `${brl(grupo.precoMin)} – ${brl(grupo.precoMax)}`);
 
   return (
-    <button type="button" className={`anuncio-card plataforma-${chave}`} onClick={onAbrir}>
+    <article className={`anuncio-card plataforma-${chave}`}>
+      <div className="anuncio-card-faixa" />
+      <button type="button" className="anuncio-card-alvo" onClick={onAbrir}>
+        Abrir {principal.referencia || principal.titulo}
+      </button>
       <div className="anuncio-card-foto">
-        {foto
-          ? <img src={foto} alt="" loading="lazy" />
-          : <div className="anuncio-card-foto-vazia"><ImageOff size={28} /></div>}
+        <FotoOuReferencia anuncio={principal} />
         <span className="anuncio-card-loja">
           <SeloPlataforma chave={chave} size={14} />
           <span>{nomeDaLoja({ marketplace: principal.marketplace, nome: principal.loja_nome })}</span>
@@ -551,59 +859,191 @@ function CartaoGrupo({ grupo, onAbrir }) {
         <p className="anuncio-card-titulo">
           {principal.produto_descricao || principal.titulo || '(sem título)'}
         </p>
-        <div className="anuncio-card-preco">{faixa}</div>
-        <div className="anuncio-card-estoque">
-          {grupo.ativos} de {quantidade} ativo(s)
-          {grupo.estoqueMaior != null && ` · maior estoque ${formatQtd(grupo.estoqueMaior)}`}
+        <div className="anuncio-card-linha-preco">
+          <span className="anuncio-card-preco">{faixa}</span>
         </div>
-        <div className="anuncio-card-ref">
-          {principal.referencia
-            ? principal.referencia
-            : <span className="anuncio-card-sem-vinculo">sem vínculo no cadastro</span>}
-        </div>
+        {principal.referencia
+          ? <div className="anuncio-card-ref"><span>{principal.referencia}</span></div>
+          : <span className="anuncio-card-sem-vinculo"><Link2Off size={11} /> sem vínculo no cadastro</span>}
         <div className="anuncio-card-metricas">
-          <span title="Gasto com Ads em 30 dias, somando os anúncios do grupo">
+          <span title="Maior estoque entre os anúncios do grupo — não é a soma, porque eles costumam dividir o mesmo estoque físico">
+            <Layers size={11} /> {grupo.estoqueMaior != null ? formatQtd(grupo.estoqueMaior) : '—'}
+          </span>
+          <span title="Gasto com Ads somando os anúncios do grupo">
             <Megaphone size={11} /> {grupo.adsCusto != null ? brl(grupo.adsCusto) : '—'}
           </span>
-          {grupo.adsRoas != null && (
-            <span title="ROAS do grupo: soma da receita ÷ soma do gasto">
-              <TrendingUp size={11} /> {numeroBr(grupo.adsRoas)}x
-            </span>
-          )}
         </div>
       </div>
-    </button>
+      <div className="anuncio-card-rodape">
+        <span className="anuncio-situacao">
+          <span className={`anuncio-ponto ${grupo.ativos > 0 ? 'ativo' : 'pausado'}`} />
+          {grupo.ativos} de {quantidade} ativo(s)
+        </span>
+        <ChipRoas ads={grupo.adsCusto != null
+          ? { rodaAds: true, roas: grupo.adsRoas, custo: grupo.adsCusto, receita: grupo.adsReceita }
+          : null}
+        />
+      </div>
+    </article>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Matriz produto × plataforma ("Comparar lojas")
+// ---------------------------------------------------------------------------
+function MatrizLojas({ matriz, lojas, semVinculo }) {
+  // Só mostra a coluna de uma plataforma que exista como loja conectada, mais
+  // a Shein, que aparece sempre: ela está na planilha exportada e sumia da
+  // tela — as duas coisas juntas confundem.
+  const conectadas = new Set(lojas.map((l) => l.marketplace));
+  const colunas = PLATAFORMAS_MATRIZ.filter((p) => conectadas.has(p) || p === 'shein');
+
+  if (matriz.length === 0) {
+    return (
+      <EstadoVazio
+        Icone={Table2}
+        titulo="Nenhum anúncio vinculado a uma referência"
+        descricao="A comparação entre lojas é por produto do cadastro. Vincule os anúncios a uma referência para eles aparecerem aqui."
+      />
+    );
+  }
+
+  return (
+    <>
+      <p className="page-sub" style={{ marginTop: -4, marginBottom: 12 }}>
+        Uma linha por produto, uma coluna por plataforma — a organização da planilha da casa.
+        Preço e ROAS são os que estão no ar agora.
+        {semVinculo > 0 && ` ${formatQtd(semVinculo)} anúncio(s) sem vínculo ficaram de fora: sem referência não dá para saber de qual produto são.`}
+        {' '}O lucro e a margem por loja continuam saindo na exportação, que lê o custo pela mesma
+        conta da Ficha de Precificação.
+      </p>
+      <div className="matriz-wrap">
+        <table className="matriz-anuncios">
+          <thead>
+            <tr>
+              <th>Produto</th>
+              {colunas.map((p) => (
+                <th key={p}>
+                  <span><SeloPlataforma chave={p} size={18} /> {PLATAFORMA_LABEL[p] || PREFIXO_PLATAFORMA[p]}</span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {matriz.map((linha) => {
+              const foto = linha.fotoAnuncio
+                || (linha.temFoto ? `/api/produtos/${linha.produtoId}/foto` : null);
+              return (
+                <tr key={linha.produtoId}>
+                  <td>
+                    <div className="matriz-produto">
+                      {foto ? <img src={foto} alt="" loading="lazy" /> : <span className="sem-foto" />}
+                      <div style={{ minWidth: 0 }}>
+                        <div className="matriz-nome">{linha.descricao}</div>
+                        <div className="matriz-ref">{linha.referencia}</div>
+                      </div>
+                    </div>
+                  </td>
+                  {colunas.map((p) => {
+                    const itens = linha.plataformas[p] || [];
+                    if (itens.length === 0) {
+                      return (
+                        <td key={p} className={p}>
+                          <span className="matriz-vazio">NÃO ANUNCIADO</span>
+                        </td>
+                      );
+                    }
+                    const precos = itens
+                      .map((i) => (i.preco != null ? Number(i.preco) : null))
+                      .filter((v) => v != null);
+                    const custo = itens.reduce((s, i) => s + (i.ads?.custo || 0), 0);
+                    const receita = itens.reduce((s, i) => s + (i.ads?.receita || 0), 0);
+                    return (
+                      <td key={p} className={p}>
+                        <div className="matriz-cel">
+                          <span className="matriz-preco">
+                            {precos.length === 0
+                              ? '—'
+                              : (Math.min(...precos) === Math.max(...precos)
+                                ? brl(precos[0])
+                                : `${brl(Math.min(...precos))} – ${brl(Math.max(...precos))}`)}
+                          </span>
+                          <span className="matriz-meta">
+                            {itens.length > 1 && `${itens.length} anúncios · `}
+                            {custo > 0 ? `ROAS ${numeroBr(receita / custo)}x` : 'sem Ads'}
+                          </span>
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
 // ---------------------------------------------------------------------------
 // Painel de detalhe
 // ---------------------------------------------------------------------------
-function PainelAnuncio({ anuncioId, onFechar, onAlterado }) {
+function PainelAnuncio({ anuncioId, dias, onFechar, onAlterado }) {
   const [dado, setDado] = useState(null);
   const [historico, setHistorico] = useState(null);
   const [aba, setAba] = useState('resumo');
   const [erro, setErro] = useState('');
+  const painelRef = useRef(null);
+  const focoAnterior = useRef(null);
 
+  const recarregar = useCallback(() => {
+    api.get(`/anuncios/${anuncioId}?dias=${dias}`).then(setDado).catch((e) => setErro(e.message));
+    api.get(`/anuncios/${anuncioId}/historico`).then(setHistorico).catch(() => {});
+  }, [anuncioId, dias]);
+
+  useEffect(recarregar, [recarregar]);
+
+  // Esc fecha, o foco entra no painel e volta para onde estava ao fechar.
+  // Antes o painel abria por cima e o teclado continuava navegando atrás dele.
   useEffect(() => {
-    api.get(`/anuncios/${anuncioId}`).then(setDado).catch((e) => setErro(e.message));
-    api.get(`/anuncios/${anuncioId}/historico`).then(setHistorico).catch(() => {});
-  }, [anuncioId]);
-
-  function recarregar() {
-    api.get(`/anuncios/${anuncioId}`).then(setDado).catch((e) => setErro(e.message));
-    api.get(`/anuncios/${anuncioId}/historico`).then(setHistorico).catch(() => {});
-    onAlterado();
-  }
+    focoAnterior.current = document.activeElement;
+    painelRef.current?.focus();
+    function aoTeclar(e) {
+      if (e.key === 'Escape') { e.stopPropagation(); onFechar(); return; }
+      if (e.key !== 'Tab') return;
+      const foco = painelRef.current?.querySelectorAll(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (!foco || foco.length === 0) return;
+      const primeiro = foco[0];
+      const ultimo = foco[foco.length - 1];
+      if (e.shiftKey && document.activeElement === primeiro) { e.preventDefault(); ultimo.focus(); }
+      else if (!e.shiftKey && document.activeElement === ultimo) { e.preventDefault(); primeiro.focus(); }
+    }
+    document.addEventListener('keydown', aoTeclar);
+    const anterior = focoAnterior.current;
+    return () => {
+      document.removeEventListener('keydown', aoTeclar);
+      anterior?.focus?.();
+    };
+  }, [onFechar]);
 
   return (
     <>
-      <button type="button" className="anuncio-painel-fundo" aria-label="Fechar" onClick={onFechar} />
-      <aside className="anuncio-painel">
+      <div className="anuncio-painel-fundo" onClick={onFechar} aria-hidden="true" />
+      <aside
+        className="anuncio-painel"
+        ref={painelRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={dado?.titulo || 'Detalhe do anúncio'}
+      >
         <div className="anuncio-painel-topo">
           <SeloPlataforma chave={dado?.marketplace} size={22} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.35 }}>
+            <div style={{ fontWeight: 600, fontSize: 13.5, lineHeight: 1.35 }}>
               {dado?.titulo || <Skeleton height={13} width="70%" />}
             </div>
             <div className="page-sub" style={{ margin: '2px 0 0', fontSize: 11 }}>
@@ -615,10 +1055,10 @@ function PainelAnuncio({ anuncioId, onFechar, onAlterado }) {
               <ExternalLink size={14} />
             </a>
           )}
-          <button className="icon-btn" onClick={onFechar} title="Fechar"><X size={16} /></button>
+          <button className="icon-btn" onClick={onFechar} title="Fechar (Esc)"><X size={16} /></button>
         </div>
 
-        <div className="subtab-row" style={{ padding: '0 16px' }}>
+        <div className="subtab-row" style={{ padding: '0 18px' }}>
           {[['resumo', 'Resumo'], ['ads', 'Publicidade'], ['historico', 'Histórico'], ['editar', 'Editar']]
             .map(([chave, rotulo]) => (
               <button
@@ -639,7 +1079,7 @@ function PainelAnuncio({ anuncioId, onFechar, onAlterado }) {
               {aba === 'resumo' && <AbaResumo dado={dado} />}
               {aba === 'ads' && <AbaAds dado={dado} />}
               {aba === 'historico' && <AbaHistorico historico={historico} />}
-              {aba === 'editar' && <AbaEditar dado={dado} onGravado={recarregar} />}
+              {aba === 'editar' && <AbaEditar dado={dado} onGravado={() => { recarregar(); onAlterado(); }} />}
             </>
           )}
         </div>
@@ -649,21 +1089,39 @@ function PainelAnuncio({ anuncioId, onFechar, onAlterado }) {
 }
 
 function AbaResumo({ dado }) {
-  // Mesma regra do cartão: a foto do anúncio é a que identifica o anúncio.
-  const foto = dado.foto_url || (dado.produto_tem_foto ? `/api/produtos/${dado.produto_id}/foto` : null);
+  const foto = fotoDoAnuncio(dado);
+  const esgotadas = (dado.variacoes || []).filter((v) => v.ativo && Number(v.estoque) === 0).length;
   return (
     <>
-      <div style={{ display: 'flex', gap: 14 }}>
-        {foto && <img src={foto} alt="" style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 'var(--radius-sm)' }} />}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12 }}>
-          <div><strong style={{ fontFamily: 'var(--font-mono)', fontSize: 17, color: 'var(--terracotta)' }}>{dado.preco != null ? brl(dado.preco) : '—'}</strong></div>
+      <div style={{ display: 'flex', gap: 16 }}>
+        {foto && (
+          <img
+            src={foto}
+            alt=""
+            style={{ width: 132, height: 132, objectFit: 'cover', borderRadius: 'var(--radius-sm)', flex: '0 0 auto' }}
+          />
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5, minWidth: 0 }}>
+          <div>
+            <strong style={{ fontFamily: 'var(--font-mono)', fontSize: 20, fontWeight: 700, letterSpacing: '-.02em' }}>
+              {dado.preco != null ? brl(dado.preco) : '—'}
+            </strong>
+          </div>
           <div>Estoque anunciado: <strong>{dado.estoque != null ? formatQtd(dado.estoque) : '—'}</strong></div>
-          <div>Situação: <span className={`stamp sm ${STATUS_TOM[dado.status] || 'tone-neutro'}`}>{STATUS_ROTULO[dado.status] || dado.status}</span></div>
+          <div className="anuncio-situacao" style={{ fontSize: 12.5 }}>
+            <span className={`anuncio-ponto ${dado.status}`} />
+            {STATUS_ROTULO[dado.status] || dado.status}
+            {dado.status === 'desconhecido' && dado.status_externo && (
+              <span className="page-sub" style={{ margin: 0, fontSize: 11 }}>
+                — a plataforma respondeu &quot;{dado.status_externo}&quot;
+              </span>
+            )}
+          </div>
           <div>SKU no anúncio: <span className="mono">{dado.sku_externo || '—'}</span></div>
           <div>
             {dado.referencia
               ? <><Link2 size={12} /> Vinculado a <strong className="mono">{dado.referencia}</strong> — {dado.produto_descricao}</>
-              : <span className="anuncio-card-sem-vinculo"><Link2Off size={12} /> Sem vínculo com o cadastro</span>}
+              : <span className="anuncio-card-sem-vinculo"><Link2Off size={11} /> sem vínculo com o cadastro</span>}
           </div>
         </div>
       </div>
@@ -676,19 +1134,36 @@ function AbaResumo({ dado }) {
 
       {dado.variacoes?.length > 0 && (
         <div>
-          <h4 style={{ margin: '0 0 6px' }}>Variações ({dado.variacoes.length})</h4>
+          <h4 style={{ margin: '0 0 6px' }}>
+            Variações ({dado.variacoes.length})
+            {esgotadas > 0 && (
+              <span className="stamp sm tone-atencao" style={{ marginLeft: 8 }}>
+                {esgotadas} esgotada(s)
+              </span>
+            )}
+          </h4>
           <table className="data-table" style={{ fontSize: 12 }}>
             <thead>
-              <tr><th>Cor</th><th>Tam.</th><th>SKU</th><th style={{ textAlign: 'right' }}>Preço</th><th style={{ textAlign: 'right' }}>Estoque</th></tr>
+              <tr>
+                <th>Cor</th><th>Tam.</th><th>SKU</th>
+                <th style={{ textAlign: 'right' }}>Preço</th>
+                <th style={{ textAlign: 'right' }}>Estoque</th>
+              </tr>
             </thead>
             <tbody>
               {dado.variacoes.map((v) => (
-                <tr key={v.id} style={{ opacity: v.ativo ? 1 : 0.5 }}>
+                <tr
+                  key={v.id}
+                  style={{ opacity: v.ativo ? 1 : 0.5 }}
+                  className={v.ativo && Number(v.estoque) === 0 ? 'variacao-esgotada' : undefined}
+                >
                   <td>{v.cor || '—'}</td>
                   <td>{v.tamanho || '—'}</td>
                   <td className="mono" style={{ fontSize: 11 }}>{v.sku_externo || '—'}</td>
                   <td className="mono" style={{ textAlign: 'right' }}>{v.preco != null ? brl(v.preco) : '—'}</td>
-                  <td className="mono" style={{ textAlign: 'right' }}>{v.estoque != null ? formatQtd(v.estoque) : '—'}</td>
+                  <td className="mono" style={{ textAlign: 'right' }}>
+                    {v.estoque != null ? formatQtd(v.estoque) : '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -701,23 +1176,28 @@ function AbaResumo({ dado }) {
 
 function AbaAds({ dado }) {
   const ads = dado.ads || {};
+  const paleta = usePaletaGrafico();
   if (!ads.rodaAds) {
     return (
       <EstadoVazio
         Icone={Megaphone}
-        titulo="Este anúncio não teve gasto com Ads nos últimos 30 dias"
-        descricao={
-          ads.diasComDado > 0
-            ? 'Existe métrica registrada no período, mas sem custo — a campanha pode estar pausada.'
-            : 'Nenhuma métrica de publicidade foi registrada para este anúncio no período. Isso pode significar que ele nunca foi anunciado, ou que a leitura de Ads dessa loja ainda não rodou.'
-        }
+        titulo={`Este anúncio não teve gasto com Ads nos últimos ${ads.janelaDias || 30} dias`}
+        descricao={ads.diasComDado > 0
+          ? 'Existe métrica registrada no período, mas sem custo — a campanha pode estar pausada.'
+          : 'Nenhuma métrica de publicidade foi registrada para este anúncio no período. Isso pode significar que ele nunca foi anunciado, ou que a leitura de Ads dessa loja ainda não rodou.'}
       />
     );
   }
+  const serie = (dado.adsDiario || []).map((d) => ({
+    dia: new Date(`${String(d.data).slice(0, 10)}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+    gasto: Number(d.custo) || 0,
+    receita: Number(d.receita) || 0,
+  }));
+
   return (
     <>
       <div className="grid-3">
-        <Indicador rotulo="Gasto em 30 dias" valor={brl(ads.custo)} />
+        <Indicador rotulo={`Gasto em ${ads.janelaDias} dias`} valor={brl(ads.custo)} />
         <Indicador rotulo="Receita atribuída" valor={ads.receita != null ? brl(ads.receita) : '—'} />
         <Indicador rotulo="ROAS" valor={ads.roas != null ? `${numeroBr(ads.roas)}x` : '—'} Icone={TrendingUp} />
         <Indicador rotulo="Cliques" valor={ads.cliques != null ? formatQtd(ads.cliques) : '—'} />
@@ -727,40 +1207,51 @@ function AbaAds({ dado }) {
 
       <p className="page-sub" style={{ fontSize: 11 }}>
         ROAS é a receita que a plataforma atribuiu à campanha dividida pelo que foi gasto nela.
-        "Dias com dado" diz sobre quantos dias esse número foi somado — se for menos que {ads.janelaDias},
-        o total é de um período mais curto, não de um mês inteiro.
+        &quot;Dias com dado&quot; diz sobre quantos dias esse número foi somado — se for menos que{' '}
+        {ads.janelaDias}, o total é de um período mais curto, não do período inteiro.
       </p>
+
+      {serie.length > 0 && (
+        <div>
+          <h4 style={{ margin: '0 0 8px' }}>Gasto e receita, dia a dia</h4>
+          <div style={{ height: 190 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={serie} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid stroke={paleta.grade} strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="dia" tick={{ fontSize: 10, fill: paleta.rotulo }} stroke={paleta.eixo} />
+                <YAxis
+                  tick={{ fontSize: 10, fill: paleta.rotulo }}
+                  stroke={paleta.eixo}
+                  width={54}
+                  tickFormatter={(v) => brl(v).replace('R$', '').trim()}
+                />
+                <Tooltip formatter={(v, n) => [brl(v), n === 'gasto' ? 'Gasto' : 'Receita atribuída']} />
+                <Legend wrapperStyle={{ fontSize: 11 }} formatter={(v) => (v === 'gasto' ? 'Gasto' : 'Receita atribuída')} />
+                <Area type="monotone" dataKey="receita" stroke={paleta.positivo} fill={paleta.positivo} fillOpacity={0.18} />
+                <Area type="monotone" dataKey="gasto" stroke={paleta.series[0]} fill={paleta.series[0]} fillOpacity={0.18} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <p className="page-sub" style={{ fontSize: 11 }}>
+            Um dia sem ponto é um dia sem métrica registrada — não é um dia com gasto zero.
+          </p>
+        </div>
+      )}
 
       {ads.campanha && (
         <div className="card" style={{ margin: 0 }}>
           <h4 style={{ marginTop: 0 }}>Campanha</h4>
-          <div style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ fontSize: 12.5, display: 'flex', flexDirection: 'column', gap: 5 }}>
             <div><strong>{ads.campanha.nome || '(sem nome)'}</strong></div>
-            <div>Situação: <span className={`stamp sm ${ads.campanha.status === 'ativa' ? 'tone-saudavel' : 'tone-atencao'}`}>{ads.campanha.status}</span></div>
+            <div className="anuncio-situacao" style={{ fontSize: 12.5 }}>
+              <span className={`anuncio-ponto ${ads.campanha.status === 'ativa' ? 'ativo' : 'pausado'}`} />
+              {ads.campanha.status}
+            </div>
             {ads.campanha.tipo && <div>Tipo: {ads.campanha.tipo}</div>}
-            {ads.campanha.orcamentoDiario != null && <div>Orçamento diário: <span className="mono">{brl(ads.campanha.orcamentoDiario)}</span></div>}
+            {ads.campanha.orcamentoDiario != null && (
+              <div>Orçamento diário: <span className="mono">{brl(ads.campanha.orcamentoDiario)}</span></div>
+            )}
           </div>
-        </div>
-      )}
-
-      {dado.adsDiario?.length > 0 && (
-        <div>
-          <h4 style={{ margin: '0 0 6px' }}>Dia a dia</h4>
-          <table className="data-table" style={{ fontSize: 12 }}>
-            <thead>
-              <tr><th>Dia</th><th style={{ textAlign: 'right' }}>Gasto</th><th style={{ textAlign: 'right' }}>Receita</th><th style={{ textAlign: 'right' }}>Cliques</th></tr>
-            </thead>
-            <tbody>
-              {dado.adsDiario.map((d) => (
-                <tr key={d.data}>
-                  <td className="mono">{new Date(`${String(d.data).slice(0, 10)}T00:00:00`).toLocaleDateString('pt-BR')}</td>
-                  <td className="mono" style={{ textAlign: 'right' }}>{brl(d.custo)}</td>
-                  <td className="mono" style={{ textAlign: 'right' }}>{brl(d.receita)}</td>
-                  <td className="mono" style={{ textAlign: 'right' }}>{formatQtd(d.cliques)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       )}
     </>
@@ -769,9 +1260,11 @@ function AbaAds({ dado }) {
 
 function Indicador({ rotulo, valor, Icone }) {
   return (
-    <div className="card" style={{ margin: 0, padding: '10px 12px' }}>
+    <div className="card" style={{ margin: 0, padding: '11px 13px' }}>
       <div className="page-sub" style={{ margin: 0, fontSize: 10.5 }}>{Icone && <Icone size={11} />} {rotulo}</div>
-      <div style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', fontSize: 16, fontWeight: 700 }}>{valor}</div>
+      <div style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', fontSize: 17, fontWeight: 700 }}>
+        {valor}
+      </div>
     </div>
   );
 }
@@ -784,7 +1277,7 @@ function AbaHistorico({ historico }) {
         <History size={12} /> O histórico é gravado a partir da primeira leitura deste anúncio
         {historico.gravadoDesde && ` (${new Date(historico.gravadoDesde).toLocaleDateString('pt-BR')})`}.
         Não há reconstrução do que aconteceu antes disso — uma lista curta aqui pode significar
-        "pouco tempo de registro", não "pouca mudança".
+        &quot;pouco tempo de registro&quot;, não &quot;pouca mudança&quot;.
       </p>
       {historico.linhas.length === 0 ? (
         <EstadoVazio
@@ -825,7 +1318,6 @@ function AbaEditar({ dado, onGravado }) {
   const [estoque, setEstoque] = useState('');
   const [titulo, setTitulo] = useState('');
   const [situacao, setSituacao] = useState('');
-  const [confirmando, setConfirmando] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState('');
   const [ok, setOk] = useState('');
@@ -837,7 +1329,16 @@ function AbaEditar({ dado, onGravado }) {
     situacao !== '' && `situação para ${STATUS_ROTULO[situacao]}`,
   ].filter(Boolean);
 
+  // A confirmação virou diálogo: antes o botão era substituído por um cartão
+  // maior e o conteúdo da aba saltava.
   async function publicar() {
+    const confirmado = await confirmar(
+      `Confirma alterar ${mudancas.join(', ')} no anúncio "${dado.titulo}" da `
+      + `${nomeDaLoja({ marketplace: dado.marketplace, nome: dado.loja_nome })}? `
+      + 'A alteração vai para o ar agora.',
+      { titulo: 'Alterar na plataforma', confirmarTexto: 'Sim, alterar agora', perigo: true }
+    );
+    if (!confirmado) return;
     setEnviando(true);
     setErro('');
     setOk('');
@@ -851,7 +1352,6 @@ function AbaEditar({ dado, onGravado }) {
       });
       setOk('Alteração enviada para a plataforma e registrada no histórico.');
       setPreco(''); setEstoque(''); setTitulo(''); setSituacao('');
-      setConfirmando(false);
       onGravado();
     } catch (e) {
       setErro(e.message);
@@ -864,27 +1364,27 @@ function AbaEditar({ dado, onGravado }) {
     <>
       <div className="card" style={{ margin: 0, borderColor: 'var(--warning-ring)', background: 'var(--warning-bg)' }}>
         <strong><AlertTriangle size={13} /> Isto altera o anúncio que está no ar.</strong>
-        <p style={{ margin: '4px 0 0', fontSize: 12 }}>
-          O que você mudar aqui é enviado para a {PLATAFORMA_LABEL[dado.marketplace] || dado.marketplace} na hora,
-          e fica registrado no Histórico com o seu nome. Campo deixado em branco não é enviado.
+        <p style={{ margin: '4px 0 0', fontSize: 12.5 }}>
+          O que você mudar aqui é enviado para a {PLATAFORMA_LABEL[dado.marketplace] || dado.marketplace} na
+          hora, e fica registrado no Histórico com o seu nome. Campo deixado em branco não é enviado.
         </p>
       </div>
 
       <div className="form-grid">
         <label>
-          Preço <span className="page-sub" style={{ fontSize: 11 }}>hoje: {dado.preco != null ? brl(dado.preco) : '—'}</span>
-          <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} placeholder="deixe em branco para não mudar" />
+          <span>Preço <span className="page-sub" style={{ fontSize: 11 }}>hoje {dado.preco != null ? brl(dado.preco) : '—'}</span></span>
+          <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} placeholder="não mudar" />
         </label>
         <label>
-          Estoque <span className="page-sub" style={{ fontSize: 11 }}>hoje: {dado.estoque != null ? formatQtd(dado.estoque) : '—'}</span>
-          <input type="number" step="1" value={estoque} onChange={(e) => setEstoque(e.target.value)} placeholder="deixe em branco para não mudar" />
+          <span>Estoque <span className="page-sub" style={{ fontSize: 11 }}>hoje {dado.estoque != null ? formatQtd(dado.estoque) : '—'}</span></span>
+          <input type="number" step="1" value={estoque} onChange={(e) => setEstoque(e.target.value)} placeholder="não mudar" />
         </label>
         <label style={{ gridColumn: '1 / -1' }}>
-          Título
+          <span>Título</span>
           <input value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder={dado.titulo || ''} />
         </label>
         <label>
-          Situação
+          <span>Situação</span>
           <Select value={situacao} onChange={(e) => setSituacao(e.target.value)}>
             <option value="">não mudar</option>
             <option value="ativo">Ativo</option>
@@ -903,24 +1403,9 @@ function AbaEditar({ dado, onGravado }) {
       {erro && <div className="login-error">{erro}</div>}
       {ok && <div className="card" style={{ margin: 0, borderColor: 'var(--success-ring)' }}>{ok}</div>}
 
-      {!confirmando ? (
-        <button className="btn btn-primary" disabled={mudancas.length === 0} onClick={() => setConfirmando(true)}>
-          <Pencil size={14} /> Alterar na plataforma
-        </button>
-      ) : (
-        <div className="card" style={{ margin: 0 }}>
-          <p style={{ margin: '0 0 8px', fontSize: 12 }}>
-            Confirma alterar {mudancas.join(', ')} no anúncio <strong>{dado.titulo}</strong> da{' '}
-            <strong>{nomeDaLoja({ marketplace: dado.marketplace, nome: dado.loja_nome })}</strong>?
-          </p>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-primary" onClick={publicar} disabled={enviando}>
-              {enviando ? 'Enviando…' : 'Sim, alterar agora'}
-            </button>
-            <button className="btn btn-ghost" onClick={() => setConfirmando(false)} disabled={enviando}>Cancelar</button>
-          </div>
-        </div>
-      )}
+      <button className="btn btn-primary" disabled={mudancas.length === 0 || enviando} onClick={publicar}>
+        <Pencil size={14} /> {enviando ? 'Enviando…' : 'Alterar na plataforma'}
+      </button>
     </>
   );
 }
