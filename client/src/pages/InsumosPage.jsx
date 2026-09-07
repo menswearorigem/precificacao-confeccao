@@ -273,6 +273,156 @@ function ImportarNota({ insumos, onLancada, onFechar }) {
 // ===========================================================================
 // Fichas defasadas — o coração da tela
 // ===========================================================================
+// ===========================================================================
+// Cadastro de insumo
+// ===========================================================================
+// Faltava: dava para listar e para importar nota, mas criar um insumo novo só
+// pela API. Sem cadastro, a corrente inteira do módulo começa quebrada — não
+// há o que vincular na ficha, e a nota fiscal não tem em que insumo pousar.
+//
+// O formulário é curto de propósito. Só `nome` e `unidade` são obrigatórios;
+// o resto é o que MELHORA a conta quando existe, e o campo diz o que perde
+// quem deixa em branco — em vez de pedir tudo e ser abandonado no meio.
+function CadastroInsumo({ insumo, fornecedores, onFechar, onSalvo }) {
+  const editando = Boolean(insumo?.id);
+  const [f, setF] = useState(() => ({
+    codigo: '', nome: '', tipo: 'tecido', unidade: 'kg', unidade_consumo: '',
+    fator_conversao: '', especificacao: '', cor: '', largura_cm: '',
+    gramatura: '', fornecedor_id: '', lead_time_dias: '', lote_minimo: '',
+    multiplo_compra: '', perda_pct: '', observacoes: '', ativo: true,
+    ...(insumo || {}),
+  }));
+  const [erro, setErro] = useState('');
+  const [salvando, setSalvando] = useState(false);
+  const set = (campo) => (v) => setF((a) => ({ ...a, [campo]: v }));
+  const setEv = (campo) => (e) => setF((a) => ({ ...a, [campo]: e.target.value }));
+
+  // A perda é digitada em % (8) e guardada como fração (0,08) — que é como o
+  // motor de explosão da ficha lê. Confundir os dois multiplicaria a
+  // necessidade de material por 100.
+  const perdaPct = f.perda_pct === '' || f.perda_pct == null ? '' : Number(f.perda_pct) * 100;
+
+  async function salvar() {
+    setErro('');
+    if (!String(f.nome).trim()) { setErro('O insumo precisa de um nome.'); return; }
+    if (!String(f.unidade).trim()) { setErro('Diga em que unidade ele é comprado (kg, m, un…).'); return; }
+    setSalvando(true);
+    try {
+      const corpo = {
+        ...f,
+        fornecedor_id: f.fornecedor_id ? Number(f.fornecedor_id) : null,
+      };
+      const salvo = editando
+        ? await api.put(`/insumos/${insumo.id}`, corpo)
+        : await api.post('/insumos', corpo);
+      onSalvo(salvo);
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="anuncio-painel-fundo" role="dialog" aria-modal="true">
+      <div className="anuncio-painel">
+        <header className="anuncio-painel-topo">
+          <h2><Package size={18} /> {editando ? `Insumo: ${insumo.nome}` : 'Novo insumo'}</h2>
+          <button type="button" className="btn-icone" onClick={onFechar} aria-label="Fechar"><X size={18} /></button>
+        </header>
+
+        <div className="anuncio-painel-corpo">
+          <div className="form-linha">
+            <Field label="Nome">
+              <input className="input" value={f.nome} onChange={setEv('nome')} placeholder="Malha PV 30.1" />
+            </Field>
+            <Field label="Código" hint="Opcional. O código do fornecedor, se houver.">
+              <input className="input" value={f.codigo || ''} onChange={setEv('codigo')} />
+            </Field>
+            <Field label="Tipo">
+              <Select value={f.tipo} onChange={setEv('tipo')}>
+                {Object.entries(TIPO_INSUMO).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </Select>
+            </Field>
+          </div>
+
+          <div className="form-linha">
+            <Field label="Unidade de compra" hint="Como vem na nota: kg, m, un, rolo.">
+              <input className="input" value={f.unidade} onChange={setEv('unidade')} placeholder="kg" />
+            </Field>
+            <Field label="Unidade de consumo" hint="Como a ficha usa, quando é diferente da de compra.">
+              <input className="input" value={f.unidade_consumo || ''} onChange={setEv('unidade_consumo')} placeholder="m" />
+            </Field>
+            <Field
+              label="Fator de conversão"
+              hint="Quanto da unidade de compra tem em 1 de consumo. Malha comprada em kg e usada em metro, com 1 m pesando 0,32 kg → 0,32."
+            >
+              <NumInput step="0.0001" value={f.fator_conversao} onChange={set('fator_conversao')} />
+            </Field>
+          </div>
+
+          <div className="form-linha">
+            <Field label="Especificação"><input className="input" value={f.especificacao || ''} onChange={setEv('especificacao')} /></Field>
+            <Field label="Cor"><input className="input" value={f.cor || ''} onChange={setEv('cor')} /></Field>
+            <Field label="Largura (cm)"><NumInput step="0.1" value={f.largura_cm} onChange={set('largura_cm')} /></Field>
+            <Field label="Gramatura"><NumInput step="1" value={f.gramatura} onChange={set('gramatura')} /></Field>
+          </div>
+
+          <h3 className="card-titulo"><Truck size={16} /> Compra</h3>
+          <div className="form-linha">
+            <Field label="Fornecedor habitual">
+              <Select value={f.fornecedor_id || ''} onChange={setEv('fornecedor_id')} placeholder="Nenhum">
+                {fornecedores.map((x) => <option key={x.id} value={x.id}>{x.nome}</option>)}
+              </Select>
+            </Field>
+            <Field label="Prazo prometido (dias)" hint="O prometido. O REAL o sistema mede sozinho a cada nota lançada, e passa a valer a partir do terceiro recebimento.">
+              <NumInput step="1" value={f.lead_time_dias} onChange={set('lead_time_dias')} />
+            </Field>
+            <Field label="Lote mínimo" hint="O fornecedor não vende menos que isto. Sem ele, o sistema sugere comprar 3 kg de uma malha que só sai em peça de 25.">
+              <NumInput step="0.001" value={f.lote_minimo} onChange={set('lote_minimo')} />
+            </Field>
+            <Field label="Múltiplo de compra" hint="Só vende de tantos em tantos.">
+              <NumInput step="0.001" value={f.multiplo_compra} onChange={set('multiplo_compra')} />
+            </Field>
+          </div>
+
+          <h3 className="card-titulo"><CircleSlash size={16} /> Perda</h3>
+          <div className="form-linha">
+            <Field
+              label="Perda de corte (%)"
+              hint="O que se perde entre o que entra e o que vira peça. Deixar em branco NÃO vale zero: a necessidade sai subestimada e a ordem de produção avisa que está assim."
+            >
+              <NumInput
+                step="0.1" suffix="%" value={perdaPct}
+                onChange={(v) => setF((a) => ({ ...a, perda_pct: v === '' || v == null ? '' : v / 100 }))}
+              />
+            </Field>
+            <Field label="Observações">
+              <input className="input" value={f.observacoes || ''} onChange={setEv('observacoes')} />
+            </Field>
+          </div>
+
+          <p className="ink-soft ajuda-bloco">
+            O custo NÃO se digita aqui. Ele entra pela nota fiscal, que é o que faz o
+            custo da peça reagir ao preço do material em vez de envelhecer calado.
+            Insumo recém-criado aparece como “sem custo” até a primeira nota — e sem
+            custo é diferente de R$ 0,00.
+          </p>
+
+          {erro && <p className="erro-inline">{erro}</p>}
+        </div>
+
+        <footer className="painel-rodape">
+          <button type="button" className="btn-sec" onClick={onFechar}>Cancelar</button>
+          <button type="button" className="btn" onClick={salvar} disabled={salvando}>
+            <Check size={15} /> {editando ? 'Salvar' : 'Cadastrar insumo'}
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
 function FichasDefasadas({ onAplicou }) {
   const [dados, setDados] = useState(null);
   const [marcados, setMarcados] = useState([]);
@@ -433,6 +583,8 @@ export default function InsumosPage() {
   const [buscaAplicada, setBuscaAplicada] = useState('');
   const [filtroTipo, setFiltroTipo] = useState('');
   const [resultado, setResultado] = useState(null);
+  const [fornecedores, setFornecedores] = useState([]);
+  const [editandoInsumo, setEditandoInsumo] = useState(null);
 
   const carregar = useCallback(() => {
     setCarregando(true);
@@ -442,8 +594,9 @@ export default function InsumosPage() {
     Promise.all([
       api.get(`/insumos?${params.toString()}`),
       api.get('/insumos/notas/lista'),
+      api.get('/fornecedores').catch(() => []),
     ])
-      .then(([i, n]) => { setInsumos(i); setNotas(n); })
+      .then(([i, n, f]) => { setInsumos(i); setNotas(n); setFornecedores(f); })
       .catch((e) => setErro(e.message))
       .finally(() => setCarregando(false));
   }, [buscaAplicada, filtroTipo]);
@@ -484,6 +637,9 @@ export default function InsumosPage() {
           <button type="button" className="btn-sec" onClick={carregar} disabled={carregando}>
             <RefreshCw size={15} className={carregando ? 'girando' : ''} /> Atualizar
           </button>
+          <button type="button" className="btn-sec" onClick={() => setEditandoInsumo({})}>
+            <Plus size={15} /> Novo insumo
+          </button>
           <button type="button" className="btn" onClick={() => setImportando(true)}>
             <Upload size={15} /> Importar nota fiscal
           </button>
@@ -512,6 +668,15 @@ export default function InsumosPage() {
             Ver quais fichas ficaram desatualizadas
           </button>
         </div>
+      )}
+
+      {editandoInsumo && (
+        <CadastroInsumo
+          insumo={editandoInsumo.id ? editandoInsumo : null}
+          fornecedores={fornecedores}
+          onFechar={() => setEditandoInsumo(null)}
+          onSalvo={() => { setEditandoInsumo(null); carregar(); }}
+        />
       )}
 
       {importando && (
@@ -571,6 +736,9 @@ export default function InsumosPage() {
               Icone={Package}
               titulo="Nenhum insumo cadastrado"
               descricao="O insumo é a matéria-prima como cadastro: malha, ribana, zíper, linha, etiqueta. É ele que liga a ficha técnica à nota fiscal — sem ele, o custo da peça não reage ao preço do material."
+              acaoLabel="Cadastrar o primeiro insumo"
+              onAcao={() => setEditandoInsumo({})}
+              IconeAcao={Plus}
             />
           )}
 
@@ -591,7 +759,7 @@ export default function InsumosPage() {
                   </thead>
                   <tbody>
                     {tabela.itensPagina.map((i) => (
-                      <tr key={i.id}>
+                      <tr key={i.id} className="linha-clicavel" onClick={() => setEditandoInsumo(i)}>
                         <td>
                           <div className="insumo-item-nota">
                             <strong>{i.nome}</strong>
