@@ -5497,3 +5497,89 @@ table.ficha-doc-tabela {
   .cobertura-parametros { grid-template-columns: 1fr; }
   .cobertura-sem-valor { max-width: 120px; }
 }
+
+/* ===========================================================================
+   Compras › Insumos e Notas (06/09/2026)
+   =========================================================================== */
+
+.insumo-fluxo-topo { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.insumo-upload { margin-top: 12px; }
+
+.insumo-nota-cabecalho {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px; margin: 14px 0;
+  padding: 12px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); background: var(--surface-raised);
+}
+.insumo-nota-cabecalho > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.insumo-nota-cabecalho .ink-faint { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+.insumo-nota-cabecalho strong { font-size: 13px; color: var(--ink); }
+.insumo-nota-cabecalho .selo { align-self: flex-start; }
+
+.insumo-avisos {
+  display: flex; flex-direction: column; gap: 5px; margin: 12px 0;
+  padding: 10px 12px; border: 1px solid var(--warning-ring);
+  border-radius: var(--radius-sm); background: var(--warning-bg);
+}
+.insumo-avisos p {
+  margin: 0; display: flex; align-items: flex-start; gap: 7px;
+  font-size: 11.5px; line-height: 1.5; color: var(--warning);
+}
+.insumo-avisos p.grave { color: var(--danger); font-weight: 600; }
+.insumo-avisos p.insumo-impedida { padding-left: 20px; color: var(--ink-soft); }
+.insumo-avisos svg { flex: 0 0 auto; margin-top: 2px; }
+
+.tabela-nota { border-collapse: collapse; width: 100%; font-size: 12.5px; min-width: 820px; }
+.tabela-nota th, .tabela-nota td {
+  padding: 9px 10px; text-align: left; border-bottom: 1px solid var(--border-soft);
+  vertical-align: middle;
+}
+.tabela-nota thead th {
+  position: sticky; top: 0; z-index: 1; background: var(--surface-raised);
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--ink-soft);
+}
+.tabela-nota td.num, .tabela-nota th.num { text-align: right; }
+.tabela-nota tbody tr:hover { background: var(--row-hover); }
+/* Item sem insumo vinculado: a nota nao pode ser lancada assim, e a linha
+   precisa dizer isso de relance. */
+.tabela-nota tr.linha-pendente { background: var(--warning-bg); }
+.tabela-nota tr.linha-pendente:hover { background: var(--warning-bg); }
+.tabela-nota tr.linha-prejuizo { background: var(--danger-bg); }
+.tabela-nota tr.linha-prejuizo:hover { background: var(--danger-bg); }
+
+.insumo-item-nota { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.insumo-item-nota strong { font-size: 12.5px; color: var(--ink); }
+.insumo-item-nota small {
+  font-size: 10.5px; color: var(--ink-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px;
+}
+.insumo-composicao {
+  display: block; font-size: 10px; color: var(--ink-faint); font-style: italic;
+}
+
+.insumo-nota-rodape {
+  display: flex; align-items: flex-start; gap: 7px;
+  font-size: 11.5px; margin-top: 10px;
+}
+.insumo-nota-rodape svg { flex: 0 0 auto; margin-top: 2px; }
+
+.insumo-acoes {
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+  flex-wrap: wrap; margin-top: 14px;
+}
+.insumo-acoes-topo {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0;
+}
+.insumo-explicacao { font-size: 12.5px; margin-bottom: 12px; line-height: 1.55; }
+
+.insumo-resultado { margin-bottom: 14px; }
+.insumo-resultado ul { list-style: none; margin: 8px 0; padding: 0; font-size: 12.5px; }
+.insumo-resultado li {
+  padding: 5px 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+@media (max-width: 720px) {
+  .insumo-nota-cabecalho { grid-template-columns: 1fr 1fr; }
+}

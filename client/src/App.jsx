@@ -48,6 +48,7 @@ import RelatorioLucratividadePage from './pages/RelatorioLucratividadePage';
 import MetricasMarketplacePage from './pages/MetricasMarketplacePage';
 import AnunciosPage from './pages/AnunciosPage';
 import CoberturaEstoquePage from './pages/CoberturaEstoquePage';
+import InsumosPage from './pages/InsumosPage';
 import PromocoesPage from './pages/PromocoesPage';
 import RelatorioTaxasPage from './pages/RelatorioTaxasPage';
 import ImportarPedidosPage from './pages/ImportarPedidosPage';
@@ -137,6 +138,7 @@ function AppRoutes() {
                   <Route path="/fornecedores" element={<FornecedoresListPage />} />
                   <Route path="/fornecedores/:id" element={<FornecedorFichaPage />} />
                   <Route path="/compras/relatorio" element={<RelatorioComprasPage />} />
+                  <Route path="/compras/insumos" element={<InsumosPage />} />
                   <Route path="/compras" element={<ComprasListPage />} />
                   <Route path="/compras/:id" element={<CompraFormPage />} />
                   <Route path="/configuracoes" element={<ConfiguracoesPage />} />

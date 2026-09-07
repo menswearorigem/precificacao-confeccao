@@ -100,6 +100,9 @@ export const MODULES = [
     icon: ShoppingCart,
     color: 'var(--danger)',
     pages: [
+      // Insumos e Notas (06/09/2026): o cadastro de materia-prima e a
+      // entrada por nota fiscal que alimenta o custo da peca.
+      { to: '/compras/insumos', label: 'Insumos e Notas', icon: Package },
       { to: '/compras', label: 'Compras', icon: ShoppingCart },
       { to: '/compras/relatorio', label: 'Relatório', icon: BarChart3 },
       { to: '/fornecedores', label: 'Fornecedores', icon: Truck },
