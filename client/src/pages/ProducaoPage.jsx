@@ -1,0 +1,1109 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Factory, RefreshCw, Plus, AlertTriangle, Check, Truck, Timer,
+  Scissors, ClipboardList, X, ArrowLeftRight, Package, Info, Layers,
+} from 'lucide-react';
+import { api } from '../api/client';
+import {
+  EstadoVazio, Select, Skeleton, CampoBusca, IndicadorDestaque,
+  Paginacao, NumInput, Field, Checkbox, DateInput,
+} from '../components/ui';
+import { useTabela } from '../lib/useTabela';
+import { brl, pct, formatQtd, numeroBr, dataBr } from '../lib/format';
+
+// Estoque › Produção.
+//
+// A ordem de produção que o Hub não tinha, com as duas coisas que o Wik não
+// faz (levantamento de 06/09/2026):
+//
+//   1. CONSUMO POR TAMANHO — lá o consumo é da grade inteira, então o GG sai
+//      pelo mesmo custo do P por construção. Aqui, quando o detalhe existe,
+//      ele manda, e a tela diz de onde veio cada número.
+//   2. CUSTO REAL DA ORDEM — o que de fato foi gasto (material reservado pelo
+//      custo do dia + mão de obra apontada), COMPARADO com o custo padrão
+//      congelado na abertura.
+//
+// REGRA 1: esta tela LÊ o custo padrão do snapshot da ordem. Ela não
+// recalcula preço, margem nem markup, e o custo real não realimenta nada —
+// quem decide corrigir a ficha é uma pessoa.
+//
+// REGRA 2: o que não dá para calcular aparece escrito. Ficha sem insumo
+// vinculado, tamanho sem consumo, insumo sem custo — os três viram pendência
+// na prévia, e nenhum deles vira zero.
+
+const SITUACAO = {
+  rascunho: { rotulo: 'Rascunho', tom: 'tone-neutro' },
+  planejada: { rotulo: 'Planejada', tom: 'tone-elevada' },
+  em_producao: { rotulo: 'Em produção', tom: 'tone-atencao' },
+  concluida: { rotulo: 'Concluída', tom: 'tone-saudavel' },
+  cancelada: { rotulo: 'Cancelada', tom: 'tone-prejuizo' },
+};
+
+const ORIGEM_CONSUMO = {
+  por_tamanho: { rotulo: 'por tamanho', tom: 'tone-saudavel', ajuda: 'A necessidade deste insumo saiu do consumo cadastrado para cada tamanho. É a conta certa: o GG come mais malha que o P.' },
+  unico: { rotulo: 'valor único', tom: 'tone-atencao', ajuda: 'A necessidade saiu do consumo geral da ficha, igual para todos os tamanhos. Enquanto for assim, o P subsidia o GG e o custo por tamanho é uniforme por construção — não porque a realidade seja uniforme.' },
+};
+
+function SeloSituacao({ situacao }) {
+  const s = SITUACAO[situacao] || { rotulo: situacao, tom: 'tone-neutro' };
+  return <span className={`selo ${s.tom}`}>{s.rotulo}</span>;
+}
+
+// ---------------------------------------------------------------------------
+// Nova ordem: grade -> prévia -> abertura
+// ---------------------------------------------------------------------------
+function NovaOrdem({ produtos, fornecedores, onFechar, onCriada }) {
+  const [produtoId, setProdutoId] = useState('');
+  const [fornecedorId, setFornecedorId] = useState('');
+  const [dataPrevista, setDataPrevista] = useState('');
+  const [observacoes, setObservacoes] = useState('');
+  const [grade, setGrade] = useState([{ cor: '', tamanho: '', quantidade_planejada: '' }]);
+  const [previa, setPrevia] = useState(null);
+  const [carregandoPrevia, setCarregandoPrevia] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState('');
+  const [aceitarIncompleta, setAceitarIncompleta] = useState(false);
+
+  const linhasValidas = grade.filter((g) => Number(g.quantidade_planejada) > 0);
+
+  function alterarLinha(idx, campo, valor) {
+    setGrade((atual) => atual.map((l, i) => (i === idx ? { ...l, [campo]: valor } : l)));
+    setPrevia(null);
+  }
+
+  async function pedirPrevia() {
+    setErro('');
+    setCarregandoPrevia(true);
+    try {
+      const r = await api.post('/producao/ordens/previa', {
+        produto_id: Number(produtoId),
+        grade: linhasValidas.map((g) => ({ ...g, quantidade_planejada: Number(g.quantidade_planejada) })),
+      });
+      setPrevia(r);
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setCarregandoPrevia(false);
+    }
+  }
+
+  async function abrir(situacao) {
+    setErro('');
+    setSalvando(true);
+    try {
+      const r = await api.post('/producao/ordens', {
+        confirmar: true,
+        aceitar_ficha_incompleta: aceitarIncompleta,
+        produto_id: Number(produtoId),
+        fornecedor_id: fornecedorId ? Number(fornecedorId) : null,
+        data_prevista: dataPrevista || null,
+        observacoes: observacoes || null,
+        situacao,
+        grade: linhasValidas.map((g) => ({ ...g, quantidade_planejada: Number(g.quantidade_planejada) })),
+      });
+      onCriada(r);
+    } catch (e) {
+      setErro(e.message);
+      if (e.data?.exige === 'aceitar_ficha_incompleta') setAceitarIncompleta(false);
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  const pendenciasGraves = (previa?.pendencias || []).filter((p) => p.grave);
+
+  return (
+    <div className="anuncio-painel-fundo painel-fundo-clicavel" role="dialog" aria-modal="true">
+      <div className="anuncio-painel painel-largo">
+        <header className="anuncio-painel-topo">
+          <h2><Factory size={18} /> Nova ordem de produção</h2>
+          <button type="button" className="btn-icone" onClick={onFechar} aria-label="Fechar"><X size={18} /></button>
+        </header>
+
+        <div className="anuncio-painel-corpo">
+          <div className="form-linha">
+            <Field label="Produto">
+              <Select value={produtoId} onChange={(e) => { setProdutoId(e.target.value); setPrevia(null); }} placeholder="Escolha a referência">
+                {produtos.map((p) => (
+                  <option key={p.id} value={p.id}>{p.referencia} — {p.descricao}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Facção / oficina" hint="Opcional. Quem vai costurar, quando não é interno.">
+              <Select value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)} placeholder="Produção interna">
+                {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.nome}</option>)}
+              </Select>
+            </Field>
+            <Field label="Previsão de entrega">
+              <DateInput value={dataPrevista} onChange={(e) => setDataPrevista(e.target.value)} />
+            </Field>
+          </div>
+
+          <h3 className="card-titulo"><Layers size={16} /> Grade</h3>
+          <p className="ink-soft ajuda-bloco">
+            Cor e tamanho de cada linha. É a grade que determina o quanto de material a
+            ficha vai consumir — e é por linha da grade que a peça entra no estoque no fim.
+          </p>
+          <div className="tabela-rolagem">
+            <table className="tabela-nota">
+              <thead>
+                <tr><th>Cor</th><th>Tamanho</th><th className="num">Peças</th><th /></tr>
+              </thead>
+              <tbody>
+                {grade.map((l, idx) => (
+                  <tr key={idx}>
+                    <td><input className="input" value={l.cor} onChange={(e) => alterarLinha(idx, 'cor', e.target.value)} placeholder="Preto" /></td>
+                    <td><input className="input" value={l.tamanho} onChange={(e) => alterarLinha(idx, 'tamanho', e.target.value)} placeholder="M" /></td>
+                    <td className="num">
+                      <NumInput value={l.quantidade_planejada} step="1" onChange={(v) => alterarLinha(idx, 'quantidade_planejada', v)} />
+                    </td>
+                    <td>
+                      <button
+                        type="button" className="btn-icone" aria-label="Remover linha"
+                        onClick={() => { setGrade((a) => a.filter((_, i) => i !== idx)); setPrevia(null); }}
+                      ><X size={15} /></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <button
+            type="button" className="btn-sec"
+            onClick={() => setGrade((a) => [...a, { cor: '', tamanho: '', quantidade_planejada: '' }])}
+          ><Plus size={15} /> Mais uma linha</button>
+
+          <div className="painel-acoes-inline">
+            <button
+              type="button" className="btn-sec"
+              disabled={!produtoId || linhasValidas.length === 0 || carregandoPrevia}
+              onClick={pedirPrevia}
+            >
+              <Scissors size={15} className={carregandoPrevia ? 'girando' : ''} /> Ver o que a ficha vai consumir
+            </button>
+          </div>
+
+          {previa && (
+            <div className="previa-explosao card">
+              <h3 className="card-titulo"><Scissors size={16} /> Explosão da ficha</h3>
+
+              <div className="indicadores-linha">
+                <IndicadorDestaque rotulo="Peças" valor={formatQtd(previa.resumo.totalPecas)} />
+                <IndicadorDestaque
+                  rotulo="Material previsto"
+                  valor={previa.resumo.insumosSemCusto > 0 ? `${brl(previa.resumo.custoMaterialPrevisto)} (incompleto)` : brl(previa.resumo.custoMaterialPrevisto)}
+                  tom={previa.resumo.insumosSemCusto > 0 ? 'atencao' : undefined}
+                  explicacao={previa.resumo.insumosSemCusto > 0 ? 'Há insumo sem custo conhecido nesta ordem. O total está incompleto — não é o custo real.' : undefined}
+                />
+                <IndicadorDestaque
+                  rotulo="Por peça"
+                  valor={previa.resumo.custoMaterialPorPeca != null ? brl(previa.resumo.custoMaterialPorPeca) : '—'}
+                />
+                <IndicadorDestaque
+                  rotulo="Insumos faltando"
+                  valor={formatQtd(previa.resumo.insumosFaltando)}
+                  tom={previa.resumo.insumosFaltando > 0 ? 'prejuizo' : undefined}
+                  explicacao="Quantos insumos têm saldo próprio menor que a necessidade desta ordem."
+                />
+              </div>
+
+              {previa.avisos.map((a, i) => (
+                <p key={i} className="aviso-inline"><AlertTriangle size={14} /> {a}</p>
+              ))}
+
+              <div className="tabela-rolagem">
+                <table className="tabela-nota">
+                  <thead>
+                    <tr>
+                      <th>Insumo</th><th>Origem do consumo</th>
+                      <th className="num">Necessidade</th><th className="num">Saldo</th>
+                      <th className="num">Falta</th><th className="num">Custo previsto</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previa.insumos.map((i) => {
+                      const origem = ORIGEM_CONSUMO[i.origemConsumo];
+                      return (
+                        <tr key={`${i.insumoId}-${i.materialId}`}>
+                          <td>
+                            {i.insumoNome || i.material}
+                            {i.perdaNaoCadastrada && (
+                              <span className="selo tone-atencao" title="Sem perda de corte cadastrada: a necessidade está subestimada, e o material vai faltar na mesa.">sem perda</span>
+                            )}
+                          </td>
+                          <td>
+                            {origem
+                              ? <span className={`selo ${origem.tom}`} title={origem.ajuda}>{origem.rotulo}</span>
+                              : <span className="selo tone-neutro">—</span>}
+                          </td>
+                          <td className="num">{numeroBr(i.necessidade, 3)} {i.unidade || ''}</td>
+                          <td className="num">{numeroBr(i.saldoDisponivel, 3)}</td>
+                          <td className={`num ${i.falta > 0 ? 'ink-prejuizo' : ''}`}>
+                            {i.falta > 0 ? numeroBr(i.falta, 3) : '—'}
+                          </td>
+                          <td className="num">
+                            {i.semCusto
+                              ? <span className="selo tone-atencao" title="Nunca entrou nota deste insumo. O custo é desconhecido, e desconhecido não é zero.">sem custo</span>
+                              : brl(i.custoPrevisto)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {pendenciasGraves.length > 0 && (
+                <div className="bloco-alerta">
+                  <p><AlertTriangle size={15} /> <strong>A ficha está incompleta para esta grade.</strong></p>
+                  <ul>
+                    {pendenciasGraves.map((p, i) => (
+                      <li key={i}>{p.material || p.insumo}: {p.motivo}</li>
+                    ))}
+                  </ul>
+                  <label className="check-linha">
+                    <Checkbox checked={aceitarIncompleta} onChange={(e) => setAceitarIncompleta(e.target.checked)} />
+                    Abrir mesmo assim. Eu sei que o material desses tamanhos ficou de fora da conta.
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+
+          <Field label="Observações">
+            <textarea className="input" rows={2} value={observacoes} onChange={(e) => setObservacoes(e.target.value)} />
+          </Field>
+
+          {erro && <p className="erro-inline">{erro}</p>}
+        </div>
+
+        <footer className="painel-rodape">
+          <button type="button" className="btn-sec" onClick={onFechar}>Cancelar</button>
+          <button
+            type="button" className="btn-sec"
+            disabled={!previa || salvando || (pendenciasGraves.length > 0 && !aceitarIncompleta)}
+            onClick={() => abrir('rascunho')}
+          >Salvar como rascunho</button>
+          <button
+            type="button" className="btn"
+            disabled={!previa || salvando || (pendenciasGraves.length > 0 && !aceitarIncompleta)}
+            onClick={() => abrir('planejada')}
+          ><Check size={15} /> Abrir a ordem</button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Detalhe da ordem: insumos, apontamentos, custo real x padrão
+// ---------------------------------------------------------------------------
+function DetalheOrdem({ ordemId, fornecedores, onFechar, onMudou }) {
+  const [dados, setDados] = useState(null);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+  const [aviso, setAviso] = useState(null);
+  const [operacoes, setOperacoes] = useState([]);
+  const [apontamento, setApontamento] = useState({
+    operacao_id: '', cor: '', tamanho: '', quantidade: '', quantidade_refugo: '',
+    valor_por_peca: '', conta_como_produzida: false,
+  });
+
+  const carregar = useCallback(async () => {
+    setCarregando(true);
+    try {
+      const r = await api.get(`/producao/ordens/${ordemId}`);
+      setDados(r);
+      const ops = await api.get(`/producao/operacoes/${r.ordem.produto_id}`).catch(() => ({ operacoes: [] }));
+      setOperacoes(ops.operacoes || []);
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setCarregando(false);
+    }
+  }, [ordemId]);
+
+  useEffect(() => { carregar(); }, [carregar]);
+
+  async function acao(caminho, corpo, mensagemOk) {
+    setErro('');
+    setAviso(null);
+    try {
+      const r = await api.post(`/producao/ordens/${ordemId}/${caminho}`, { confirmar: true, ...corpo });
+      setAviso({ tipo: 'ok', texto: mensagemOk, detalhe: r });
+      await carregar();
+      onMudou();
+    } catch (e) {
+      setErro(e.message);
+    }
+  }
+
+  if (carregando) return (
+    <div className="anuncio-painel-fundo painel-fundo-clicavel"><div className="anuncio-painel painel-largo"><Skeleton height={320} /></div></div>
+  );
+  if (!dados) return (
+    <div className="anuncio-painel-fundo painel-fundo-clicavel"><div className="anuncio-painel"><p className="erro-inline">{erro}</p>
+      <button type="button" className="btn-sec" onClick={onFechar}>Fechar</button></div></div>
+  );
+
+  const { ordem, grade, insumos, apontamentos, faccao, custoReal, comparacao } = dados;
+  const podeMexer = !['concluida', 'cancelada'].includes(ordem.situacao);
+
+  return (
+    <div className="anuncio-painel-fundo painel-fundo-clicavel" role="dialog" aria-modal="true">
+      <div className="anuncio-painel painel-largo">
+        <header className="anuncio-painel-topo">
+          <h2>
+            <Factory size={18} /> OP {ordem.numero} · {ordem.referencia}
+            <SeloSituacao situacao={ordem.situacao} />
+          </h2>
+          <button type="button" className="btn-icone" onClick={onFechar} aria-label="Fechar"><X size={18} /></button>
+        </header>
+
+        <div className="anuncio-painel-corpo">
+          <p className="ink-soft">{ordem.produto_descricao}</p>
+
+          {/* ---- Custo real x padrão: o número que o Wik não dá ---- */}
+          <div className="indicadores-linha">
+            <IndicadorDestaque rotulo="Planejadas" valor={formatQtd(ordem.quantidade_planejada)} />
+            <IndicadorDestaque rotulo="Produzidas" valor={formatQtd(ordem.quantidade_produzida)} />
+            <IndicadorDestaque
+              rotulo="Custo padrão / peça"
+              valor={ordem.custo_padrao_unitario != null ? brl(ordem.custo_padrao_unitario) : '—'}
+              explicacao="Congelado na abertura da ordem, direto do motor de cálculo. Não muda depois — é o retrato contra o qual o real é comparado."
+            />
+            <IndicadorDestaque
+              rotulo="Custo real / peça"
+              valor={custoReal.custoUnitarioReal != null ? brl(custoReal.custoUnitarioReal) : 'ainda não dá'}
+              tom={comparacao?.acimaDoPadrao ? 'prejuizo' : (custoReal.completo ? 'saudavel' : 'atencao')}
+              variacao={comparacao?.diferencaPct != null ? pct(comparacao.diferencaPct, 1) : undefined}
+              explicacao={custoReal.completo
+                ? 'Material reservado pelo custo do dia da reserva, mais a mão de obra apontada.'
+                : 'Incompleto: há insumo sem custo ou operação sem valor apontado. O que falta não entrou como zero.'}
+            />
+          </div>
+
+          {comparacao?.acimaDoPadrao && (
+            <p className="aviso-inline"><AlertTriangle size={14} /> O custo real desta ordem está{' '}
+              <strong>{pct(comparacao.diferencaPct, 1)}</strong> acima do padrão da ficha. A ficha continua
+              como está: corrigir o cadastro é decisão de quem cuida do produto, não desta tela.
+            </p>
+          )}
+          {!custoReal.completo && (
+            <p className="aviso-inline"><Info size={14} /> {
+              custoReal.semCusto.length > 0
+                ? `Custo real incompleto: ${custoReal.semCusto.map((c) => `${c.nome} (${c.motivo})`).join('; ')}. O que falta ficou de FORA da soma — não entrou como zero.`
+                : 'Nenhuma peça boa apontada ainda, então não há custo por peça para mostrar.'
+            }</p>
+          )}
+
+          {erro && <p className="erro-inline">{erro}</p>}
+          {aviso?.tipo === 'ok' && <p className="sucesso-inline"><Check size={14} /> {aviso.texto}</p>}
+          {aviso?.detalhe?.parciais?.length > 0 && (
+            <div className="bloco-alerta">
+              <p><AlertTriangle size={15} /> Faltou material para reservar tudo:</p>
+              <ul>
+                {aviso.detalhe.parciais.map((p, i) => (
+                  <li key={i}>{p.insumo}: faltaram {numeroBr(p.faltando, 3)} (saldo {numeroBr(p.saldo, 3)})</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* ---- Grade ---- */}
+          <h3 className="card-titulo"><Layers size={16} /> Grade</h3>
+          <div className="tabela-rolagem">
+            <table className="tabela-nota">
+              <thead>
+                <tr><th>Cor</th><th>Tamanho</th><th className="num">Planejadas</th><th className="num">Produzidas</th><th className="num">2ª qualidade</th></tr>
+              </thead>
+              <tbody>
+                {grade.map((g) => (
+                  <tr key={g.id}>
+                    <td>{g.cor || '—'}</td><td>{g.tamanho || '—'}</td>
+                    <td className="num">{formatQtd(g.quantidade_planejada)}</td>
+                    <td className="num">{formatQtd(g.quantidade_produzida)}</td>
+                    <td className="num">{formatQtd(g.quantidade_segunda)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* ---- Insumos ---- */}
+          <h3 className="card-titulo"><Package size={16} /> Material</h3>
+          <div className="tabela-rolagem">
+            <table className="tabela-nota">
+              <thead>
+                <tr>
+                  <th>Insumo</th><th>Origem</th><th className="num">Necessário</th>
+                  <th className="num">Reservado</th><th className="num">Saldo próprio</th><th className="num">Custo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {insumos.map((i) => {
+                  const origem = ORIGEM_CONSUMO[i.origem_consumo];
+                  const falta = Number(i.quantidade_necessaria) - Number(i.quantidade_reservada);
+                  return (
+                    <tr key={i.id}>
+                      <td>{i.insumo_nome}</td>
+                      <td>{origem ? <span className={`selo ${origem.tom}`} title={origem.ajuda}>{origem.rotulo}</span> : '—'}</td>
+                      <td className="num">{numeroBr(i.quantidade_necessaria, 3)} {i.unidade}</td>
+                      <td className={`num ${falta > 0.0001 ? 'ink-atencao' : ''}`}>{numeroBr(i.quantidade_reservada, 3)}</td>
+                      <td className="num">{numeroBr(i.saldo_disponivel, 3)}</td>
+                      <td className="num">
+                        {i.custo_unitario == null
+                          ? <span className="selo tone-atencao" title="Sem custo conhecido na abertura da ordem.">sem custo</span>
+                          : brl(i.custo_unitario)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* ---- Apontamento ---- */}
+          {podeMexer && (
+            <>
+              <h3 className="card-titulo"><ClipboardList size={16} /> Apontar produção</h3>
+              <div className="form-linha">
+                <Field label="Operação">
+                  <Select
+                    value={apontamento.operacao_id}
+                    onChange={(e) => setApontamento((a) => ({ ...a, operacao_id: e.target.value }))}
+                    placeholder="Sem roteiro"
+                  >
+                    {operacoes.map((o) => <option key={o.id} value={o.id}>{o.sequencia}. {o.nome}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Cor"><input className="input" value={apontamento.cor} onChange={(e) => setApontamento((a) => ({ ...a, cor: e.target.value }))} /></Field>
+                <Field label="Tamanho"><input className="input" value={apontamento.tamanho} onChange={(e) => setApontamento((a) => ({ ...a, tamanho: e.target.value }))} /></Field>
+                <Field label="Peças"><NumInput step="1" value={apontamento.quantidade} onChange={(v) => setApontamento((a) => ({ ...a, quantidade: v }))} /></Field>
+                <Field label="2ª qualidade"><NumInput step="1" value={apontamento.quantidade_refugo} onChange={(v) => setApontamento((a) => ({ ...a, quantidade_refugo: v }))} /></Field>
+                <Field label="R$ por peça" hint="Em branco usa o valor do roteiro.">
+                  <NumInput value={apontamento.valor_por_peca} onChange={(v) => setApontamento((a) => ({ ...a, valor_por_peca: v }))} />
+                </Field>
+              </div>
+              <label className="check-linha">
+                <Checkbox
+                  checked={apontamento.conta_como_produzida}
+                  onChange={(e) => setApontamento((a) => ({ ...a, conta_como_produzida: e.target.checked }))}
+                />
+                Esta é a última operação: contar estas peças como prontas.
+              </label>
+              <p className="ink-soft ajuda-bloco">
+                Marque só na ÚLTIMA operação do roteiro. A mesma peça passa pelo corte, pela
+                costura e pelo acabamento — contar em todas somaria a peça três vezes. Quando
+                marcado, a cor e o tamanho precisam ser de uma linha da grade, senão a peça
+                subiria no total e não entraria no estoque na conclusão.
+              </p>
+              <div className="painel-acoes-inline">
+                <button
+                  type="button" className="btn-sec"
+                  disabled={!(Number(apontamento.quantidade) > 0)}
+                  onClick={async () => {
+                    setErro(''); setAviso(null);
+                    try {
+                      await api.post(`/producao/ordens/${ordemId}/apontar`, {
+                        ...apontamento,
+                        operacao_id: apontamento.operacao_id ? Number(apontamento.operacao_id) : null,
+                      });
+                      setApontamento((a) => ({ ...a, quantidade: '', quantidade_refugo: '' }));
+                      await carregar();
+                      onMudou();
+                    } catch (e) { setErro(e.message); }
+                  }}
+                ><Plus size={15} /> Lançar apontamento</button>
+              </div>
+            </>
+          )}
+
+          {apontamentos.length > 0 && (
+            <div className="tabela-rolagem">
+              <table className="tabela-nota">
+                <thead>
+                  <tr><th>Data</th><th>Operação</th><th>Cor / tamanho</th><th className="num">Peças</th><th className="num">2ª</th><th className="num">Valor</th><th>Quem</th></tr>
+                </thead>
+                <tbody>
+                  {apontamentos.map((a) => (
+                    <tr key={a.id}>
+                      <td>{dataBr(a.data_apontamento)}</td>
+                      <td>{a.operacao_nome || '—'}{a.fornecedor_nome ? ` · ${a.fornecedor_nome}` : ''}</td>
+                      <td>{[a.cor, a.tamanho].filter(Boolean).join(' / ') || '—'}</td>
+                      <td className="num">{formatQtd(a.quantidade)}</td>
+                      <td className="num">{formatQtd(a.quantidade_refugo)}</td>
+                      <td className="num">{a.valor_total != null ? brl(a.valor_total) : '—'}</td>
+                      <td>{a.usuario_nome || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {faccao.length > 0 && (
+            <>
+              <h3 className="card-titulo"><Truck size={16} /> Facção</h3>
+              <div className="tabela-rolagem">
+                <table className="tabela-nota">
+                  <thead><tr><th>Data</th><th>Facção</th><th>Tipo</th><th>O quê</th><th className="num">Qtd</th><th>Nota</th></tr></thead>
+                  <tbody>
+                    {faccao.map((m) => (
+                      <tr key={m.id}>
+                        <td>{dataBr(m.data_movimento)}</td>
+                        <td>{m.fornecedor_nome}</td>
+                        <td><span className={`selo ${m.tipo === 'remessa' ? 'tone-atencao' : 'tone-saudavel'}`}>{m.tipo}</span></td>
+                        <td>{m.insumo_nome || [m.cor, m.tamanho].filter(Boolean).join(' / ') || '—'}</td>
+                        <td className="num">{numeroBr(m.quantidade, 3)}</td>
+                        <td>{m.nota_numero || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+
+        <footer className="painel-rodape">
+          <button type="button" className="btn-sec" onClick={onFechar}>Fechar</button>
+          {podeMexer && (
+            <button
+              type="button" className="btn-sec"
+              onClick={() => acao('reservar', {}, 'Material reservado.')}
+            ><Package size={15} /> Reservar material</button>
+          )}
+          {podeMexer && (
+            <button
+              type="button" className="btn"
+              disabled={!(Number(ordem.quantidade_produzida) > 0)}
+              title={Number(ordem.quantidade_produzida) > 0 ? undefined : 'Nenhuma peça apontada como pronta ainda.'}
+              onClick={() => acao('concluir', {}, 'Peças no estoque.')}
+            ><Check size={15} /> Concluir e dar entrada no estoque</button>
+          )}
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Roteiro de operações e consumo por tamanho
+// ---------------------------------------------------------------------------
+function RoteiroEConsumo({ produtos, fornecedores }) {
+  const [produtoId, setProdutoId] = useState('');
+  const [roteiro, setRoteiro] = useState(null);
+  const [consumo, setConsumo] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState('');
+  const [salvo, setSalvo] = useState('');
+  const [nova, setNova] = useState({ nome: '', setor: '', sequencia: '', tempo_segundos: '', valor_por_peca: '', fornecedor_id: '' });
+  const [edicoes, setEdicoes] = useState({});
+
+  const carregar = useCallback(async (id) => {
+    if (!id) { setRoteiro(null); setConsumo(null); return; }
+    setCarregando(true);
+    setErro('');
+    try {
+      const [r, c] = await Promise.all([
+        api.get(`/producao/operacoes/${id}`),
+        api.get(`/producao/consumo-tamanho/${id}`),
+      ]);
+      setRoteiro(r);
+      setConsumo(c);
+      setEdicoes({});
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setCarregando(false);
+    }
+  }, []);
+
+  useEffect(() => { carregar(produtoId); }, [produtoId, carregar]);
+
+  const consumoAtual = useMemo(() => {
+    const mapa = new Map();
+    for (const c of consumo?.consumos || []) mapa.set(`${c.material_id}|${c.tamanho}`, c.consumo_por_peca);
+    return mapa;
+  }, [consumo]);
+
+  async function salvarConsumo() {
+    setErro(''); setSalvo('');
+    try {
+      const linhas = Object.entries(edicoes).map(([chave, valor]) => {
+        const [materialId, tamanho] = chave.split('|');
+        return { material_id: Number(materialId), tamanho, consumo_por_peca: valor };
+      });
+      if (linhas.length === 0) return;
+      await api.post('/producao/consumo-tamanho', { linhas });
+      setSalvo('Consumo por tamanho salvo. A partir de agora as ordens deste produto usam ele.');
+      await carregar(produtoId);
+    } catch (e) { setErro(e.message); }
+  }
+
+  return (
+    <>
+      <div className="filtros-linha">
+        <Select value={produtoId} onChange={(e) => setProdutoId(e.target.value)} placeholder="Escolha a referência">
+          {produtos.map((p) => <option key={p.id} value={p.id}>{p.referencia} — {p.descricao}</option>)}
+        </Select>
+      </div>
+
+      {!produtoId && (
+        <EstadoVazio
+          Icone={Timer}
+          titulo="Escolha uma referência"
+          descricao="O roteiro diz por quais operações a peça passa, quanto tempo leva em cada uma e quanto custa. Os dois números que saem daí — tempo padrão e mão de obra por peça — hoje não existem em lugar nenhum do sistema."
+        />
+      )}
+
+      {carregando && <Skeleton height={220} />}
+      {erro && <p className="erro-inline">{erro}</p>}
+      {salvo && <p className="sucesso-inline"><Check size={14} /> {salvo}</p>}
+
+      {!carregando && roteiro && (
+        <>
+          <div className="indicadores-linha">
+            <IndicadorDestaque
+              rotulo="Tempo padrão / peça"
+              valor={roteiro.tempoPadrao.segundos != null
+                ? `${numeroBr(roteiro.tempoPadrao.minutos, 1)} min${roteiro.tempoPadrao.incompleto ? ' (parcial)' : ''}`
+                : 'não dá para dizer'}
+              tom={roteiro.tempoPadrao.segundos == null || roteiro.tempoPadrao.incompleto ? 'atencao' : undefined}
+              explicacao={roteiro.tempoPadrao.segundos == null
+                ? roteiro.tempoPadrao.motivo + '. Sem tempo não há capacidade, e sem capacidade não há prazo confiável.'
+                : roteiro.tempoPadrao.incompleto
+                  ? `${roteiro.tempoPadrao.operacoesSemTempo} operação(ões) sem tempo cadastrado ficaram de fora desta soma. O total é um piso, não o tempo da peça.`
+                  : 'Soma do tempo das operações do roteiro.'}
+            />
+            <IndicadorDestaque
+              rotulo="Mão de obra / peça"
+              valor={roteiro.custoMaoDeObra.valor != null
+                ? `${brl(roteiro.custoMaoDeObra.valor)}${roteiro.custoMaoDeObra.incompleto ? ' (parcial)' : ''}`
+                : 'não dá para dizer'}
+              tom={roteiro.custoMaoDeObra.valor == null || roteiro.custoMaoDeObra.incompleto ? 'atencao' : undefined}
+              explicacao={roteiro.custoMaoDeObra.valor == null
+                ? roteiro.custoMaoDeObra.motivo
+                : roteiro.custoMaoDeObra.incompleto
+                  ? `${roteiro.custoMaoDeObra.operacoesSemValor} operação(ões) sem valor por peça ficaram de fora. O número é menor que a mão de obra real.`
+                  : 'Soma do valor por peça de cada operação. É o que a facção cobra, operação por operação.'}
+            />
+            <IndicadorDestaque rotulo="Operações" valor={formatQtd(roteiro.operacoes.length)} />
+          </div>
+
+          <h3 className="card-titulo"><ClipboardList size={16} /> Roteiro</h3>
+          <div className="tabela-rolagem">
+            <table className="tabela-nota">
+              <thead>
+                <tr><th className="num">#</th><th>Operação</th><th>Setor</th><th className="num">Tempo (s)</th><th className="num">R$/peça</th><th>Facção</th></tr>
+              </thead>
+              <tbody>
+                {roteiro.operacoes.map((o) => (
+                  <tr key={o.id}>
+                    <td className="num">{o.sequencia}</td>
+                    <td>{o.nome}</td>
+                    <td>{o.setor || '—'}</td>
+                    <td className="num">{o.tempo_segundos != null ? formatQtd(o.tempo_segundos) : <span className="selo tone-atencao">sem tempo</span>}</td>
+                    <td className="num">{o.valor_por_peca != null ? brl(o.valor_por_peca) : <span className="selo tone-atencao">sem valor</span>}</td>
+                    <td>{o.fornecedor_nome || (o.terceirizada ? 'terceirizada' : 'interna')}</td>
+                  </tr>
+                ))}
+                <tr className="linha-nova">
+                  <td className="num"><NumInput step="1" value={nova.sequencia} onChange={(v) => setNova((n) => ({ ...n, sequencia: v }))} /></td>
+                  <td><input className="input" placeholder="Costura" value={nova.nome} onChange={(e) => setNova((n) => ({ ...n, nome: e.target.value }))} /></td>
+                  <td><input className="input" placeholder="Setor" value={nova.setor} onChange={(e) => setNova((n) => ({ ...n, setor: e.target.value }))} /></td>
+                  <td className="num"><NumInput step="1" value={nova.tempo_segundos} onChange={(v) => setNova((n) => ({ ...n, tempo_segundos: v }))} /></td>
+                  <td className="num"><NumInput value={nova.valor_por_peca} onChange={(v) => setNova((n) => ({ ...n, valor_por_peca: v }))} /></td>
+                  <td>
+                    <Select value={nova.fornecedor_id} onChange={(e) => setNova((n) => ({ ...n, fornecedor_id: e.target.value }))} placeholder="Interna">
+                      {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                    </Select>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="painel-acoes-inline">
+            <button
+              type="button" className="btn-sec" disabled={!nova.nome.trim()}
+              onClick={async () => {
+                setErro('');
+                try {
+                  await api.post('/producao/operacoes', {
+                    produto_id: Number(produtoId),
+                    ...nova,
+                    sequencia: nova.sequencia === '' ? roteiro.operacoes.length + 1 : Number(nova.sequencia),
+                    fornecedor_id: nova.fornecedor_id ? Number(nova.fornecedor_id) : null,
+                    terceirizada: Boolean(nova.fornecedor_id),
+                  });
+                  setNova({ nome: '', setor: '', sequencia: '', tempo_segundos: '', valor_por_peca: '', fornecedor_id: '' });
+                  await carregar(produtoId);
+                } catch (e) { setErro(e.message); }
+              }}
+            ><Plus size={15} /> Adicionar operação</button>
+          </div>
+
+          {/* ---- Consumo por tamanho ---- */}
+          <h3 className="card-titulo"><Scissors size={16} /> Consumo por tamanho</h3>
+          <p className="ink-soft ajuda-bloco">{consumo?.aviso}</p>
+
+          {(consumo?.tamanhos || []).length === 0 && (
+            <p className="aviso-inline"><Info size={14} /> Esta referência não tem tamanhos cadastrados no estoque, então não há por onde detalhar o consumo.</p>
+          )}
+
+          {(consumo?.tamanhos || []).length > 0 && (
+            <>
+              <div className="tabela-rolagem">
+                <table className="tabela-nota">
+                  <thead>
+                    <tr>
+                      <th>Material</th><th className="num">Ficha (geral)</th>
+                      {consumo.tamanhos.map((t) => <th key={t} className="num">{t}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {consumo.materiais.map((m) => (
+                      <tr key={m.id}>
+                        <td>
+                          {m.material}
+                          {!m.insumo_nome && (
+                            <span className="selo tone-prejuizo" title="Esta linha da ficha não está vinculada a nenhum insumo cadastrado. Ela não vai ser reservada nem custeada em ordem nenhuma.">sem insumo</span>
+                          )}
+                        </td>
+                        <td className="num">{m.consumo_por_peca != null ? numeroBr(m.consumo_por_peca, 4) : <span className="selo tone-atencao">sem consumo</span>}</td>
+                        {consumo.tamanhos.map((t) => {
+                          const chave = `${m.id}|${t}`;
+                          const valor = edicoes[chave] !== undefined ? edicoes[chave] : (consumoAtual.get(chave) ?? '');
+                          return (
+                            <td key={t} className="num">
+                              <NumInput
+                                step="0.0001" value={valor}
+                                onChange={(v) => setEdicoes((e) => ({ ...e, [chave]: v }))}
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="painel-acoes-inline">
+                <button type="button" className="btn" disabled={Object.keys(edicoes).length === 0} onClick={salvarConsumo}>
+                  <Check size={15} /> Salvar consumo por tamanho
+                </button>
+                <span className="ink-soft">Célula vazia volta a usar o consumo geral da ficha — que é diferente de consumo zero.</span>
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Facção: saldos e movimentos
+// ---------------------------------------------------------------------------
+function Faccao({ fornecedores, insumos, onMudou }) {
+  const [saldos, setSaldos] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+  const [aviso, setAviso] = useState('');
+  const [mov, setMov] = useState({ fornecedor_id: '', insumo_id: '', tipo: 'remessa', quantidade: '', nota_numero: '' });
+
+  const carregar = useCallback(async () => {
+    setCarregando(true);
+    try { setSaldos(await api.get('/producao/faccao/saldos')); }
+    catch (e) { setErro(e.message); }
+    finally { setCarregando(false); }
+  }, []);
+  useEffect(() => { carregar(); }, [carregar]);
+
+  const total = useMemo(
+    () => saldos.reduce((s, l) => s + (l.valor != null ? Number(l.valor) : 0), 0),
+    [saldos]
+  );
+  const semCusto = saldos.filter((l) => l.valor == null).length;
+
+  return (
+    <>
+      <div className="indicadores-linha">
+        <IndicadorDestaque
+          rotulo="Material em facção"
+          valor={semCusto > 0 ? `${brl(total)} (incompleto)` : brl(total)}
+          tom={semCusto > 0 ? 'atencao' : undefined}
+          explicacao={semCusto > 0
+            ? `${semCusto} item(ns) sem custo conhecido ficaram de fora deste total. Fora não é zero.`
+            : 'Nosso material que está na mão de terceiro. Continua sendo estoque da empresa.'}
+        />
+        <IndicadorDestaque rotulo="Facções com material" valor={formatQtd(new Set(saldos.map((s) => s.fornecedor_id)).size)} />
+      </div>
+
+      <h3 className="card-titulo"><ArrowLeftRight size={16} /> Lançar movimento</h3>
+      <div className="form-linha">
+        <Field label="Facção">
+          <Select value={mov.fornecedor_id} onChange={(e) => setMov((m) => ({ ...m, fornecedor_id: e.target.value }))} placeholder="Escolha">
+            {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.nome}</option>)}
+          </Select>
+        </Field>
+        <Field label="Tipo">
+          <Select value={mov.tipo} onChange={(e) => setMov((m) => ({ ...m, tipo: e.target.value }))}>
+            <option value="remessa">Remessa (sai daqui)</option>
+            <option value="retorno">Retorno (volta pra cá)</option>
+          </Select>
+        </Field>
+        <Field label="Insumo">
+          <Select value={mov.insumo_id} onChange={(e) => setMov((m) => ({ ...m, insumo_id: e.target.value }))} placeholder="Escolha">
+            {insumos.map((i) => <option key={i.id} value={i.id}>{i.nome}</option>)}
+          </Select>
+        </Field>
+        <Field label="Quantidade"><NumInput step="0.001" value={mov.quantidade} onChange={(v) => setMov((m) => ({ ...m, quantidade: v }))} /></Field>
+        <Field label="Nota"><input className="input" value={mov.nota_numero} onChange={(e) => setMov((m) => ({ ...m, nota_numero: e.target.value }))} /></Field>
+      </div>
+      <div className="painel-acoes-inline">
+        <button
+          type="button" className="btn"
+          disabled={!mov.fornecedor_id || !mov.insumo_id || !(Number(mov.quantidade) > 0)}
+          onClick={async () => {
+            setErro(''); setAviso('');
+            try {
+              const r = await api.post('/producao/faccao/movimento', {
+                ...mov,
+                fornecedor_id: Number(mov.fornecedor_id),
+                insumo_id: Number(mov.insumo_id),
+                quantidade: Number(mov.quantidade),
+              });
+              setAviso(r.aviso || 'Movimento lançado: o material mudou de lugar, não sumiu.');
+              setMov((m) => ({ ...m, quantidade: '', nota_numero: '' }));
+              await carregar();
+              onMudou();
+            } catch (e) { setErro(e.message); }
+          }}
+        ><ArrowLeftRight size={15} /> Lançar</button>
+      </div>
+      {erro && <p className="erro-inline">{erro}</p>}
+      {aviso && <p className="sucesso-inline"><Check size={14} /> {aviso}</p>}
+
+      {carregando && <Skeleton height={180} />}
+      {!carregando && saldos.length === 0 && (
+        <EstadoVazio
+          Icone={Truck}
+          titulo="Nenhum material em facção"
+          descricao="Quando a malha sai daqui para a oficina, ela some do saldo próprio e aparece aqui — em vez de simplesmente desaparecer do estoque, que é o que acontece hoje."
+        />
+      )}
+      {!carregando && saldos.length > 0 && (
+        <div className="tabela-rolagem">
+          <table className="tabela-nota">
+            <thead><tr><th>Facção</th><th>Insumo</th><th className="num">Quantidade</th><th className="num">Valor</th></tr></thead>
+            <tbody>
+              {saldos.map((s) => (
+                <tr key={`${s.fornecedor_id}-${s.insumo_id}`}>
+                  <td>{s.fornecedor_nome}</td>
+                  <td>{s.insumo_nome}</td>
+                  <td className="num">{numeroBr(s.quantidade, 3)} {s.unidade}</td>
+                  <td className="num">{s.valor != null ? brl(s.valor) : <span className="selo tone-atencao">sem custo</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+export default function ProducaoPage() {
+  const [aba, setAba] = useState('ordens');
+  const [ordens, setOrdens] = useState([]);
+  const [produtos, setProdutos] = useState([]);
+  const [fornecedores, setFornecedores] = useState([]);
+  const [insumos, setInsumos] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+  const [busca, setBusca] = useState('');
+  const [buscaAplicada, setBuscaAplicada] = useState('');
+  const [filtroSituacao, setFiltroSituacao] = useState('');
+  const [novaOrdem, setNovaOrdem] = useState(false);
+  const [ordemAberta, setOrdemAberta] = useState(null);
+
+  const carregar = useCallback(async () => {
+    setCarregando(true);
+    setErro('');
+    try {
+      const qs = new URLSearchParams();
+      if (buscaAplicada) qs.set('busca', buscaAplicada);
+      if (filtroSituacao) qs.set('situacao', filtroSituacao);
+      const [o, p, f, i] = await Promise.all([
+        api.get(`/producao/ordens?${qs}`),
+        api.get('/produtos').catch(() => []),
+        api.get('/fornecedores').catch(() => []),
+        api.get('/insumos').catch(() => []),
+      ]);
+      setOrdens(o);
+      setProdutos(p);
+      setFornecedores(f);
+      setInsumos(Array.isArray(i) ? i : (i?.insumos || []));
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setCarregando(false);
+    }
+  }, [buscaAplicada, filtroSituacao]);
+
+  useEffect(() => { carregar(); }, [carregar]);
+
+  const totais = useMemo(() => ({
+    abertas: ordens.filter((o) => ['rascunho', 'planejada', 'em_producao'].includes(o.situacao)).length,
+    pecasEmProducao: ordens
+      .filter((o) => o.situacao === 'em_producao')
+      .reduce((s, o) => s + (Number(o.quantidade_planejada) - Number(o.quantidade_produzida)), 0),
+    semCusto: ordens.filter((o) => Number(o.insumos_sem_custo) > 0).length,
+  }), [ordens]);
+
+  const colunas = useMemo(() => ({
+    numero: (o) => Number(o.numero),
+    referencia: (o) => o.referencia,
+    situacao: (o) => o.situacao,
+    planejada: (o) => Number(o.quantidade_planejada),
+    produzida: (o) => Number(o.quantidade_produzida),
+    abertura: (o) => o.data_abertura || '',
+  }), []);
+  const tabela = useTabela(ordens, { colunas, colunaPadrao: 'numero', direcaoPadrao: 'desc', tamanhoPadrao: 50, prefixo: 'op' });
+
+  return (
+    <div className="pagina">
+      <header className="pagina-topo">
+        <div>
+          <h1><Factory size={22} /> Produção</h1>
+          <p className="ink-soft">
+            A ordem de produção com grade, material reservado e o custo REAL comparado
+            com o padrão da ficha — que é o número que ninguém tinha.
+          </p>
+        </div>
+        <div className="pagina-acoes">
+          <button type="button" className="btn-sec" onClick={carregar} disabled={carregando}>
+            <RefreshCw size={15} className={carregando ? 'girando' : ''} /> Atualizar
+          </button>
+          <button type="button" className="btn" onClick={() => setNovaOrdem(true)}>
+            <Plus size={15} /> Nova ordem
+          </button>
+        </div>
+      </header>
+
+      <div className="indicadores-linha">
+        <IndicadorDestaque rotulo="Ordens abertas" valor={formatQtd(totais.abertas)} Icone={Factory} />
+        <IndicadorDestaque
+          rotulo="Peças em produção"
+          valor={formatQtd(totais.pecasEmProducao)}
+          explicacao="Planejado menos produzido nas ordens que já começaram."
+        />
+        <IndicadorDestaque
+          rotulo="Ordens com insumo sem custo"
+          valor={formatQtd(totais.semCusto)}
+          tom={totais.semCusto > 0 ? 'atencao' : undefined}
+          explicacao="Nessas, o custo material está incompleto — e incompleto não é zero. Lance a nota do insumo para fechar a conta."
+        />
+      </div>
+
+      <div className="subtab-row">
+        <button type="button" className={`subtab-btn ${aba === 'ordens' ? 'active' : ''}`} onClick={() => setAba('ordens')}>
+          Ordens ({ordens.length})
+        </button>
+        <button type="button" className={`subtab-btn ${aba === 'roteiro' ? 'active' : ''}`} onClick={() => setAba('roteiro')}>
+          Roteiro e consumo
+        </button>
+        <button type="button" className={`subtab-btn ${aba === 'faccao' ? 'active' : ''}`} onClick={() => setAba('faccao')}>
+          Facção
+        </button>
+      </div>
+
+      {erro && <p className="erro-inline">{erro}</p>}
+
+      {aba === 'ordens' && (
+        <>
+          <div className="filtros-linha">
+            <CampoBusca valor={busca} onChange={setBusca} onSubmit={() => setBuscaAplicada(busca)} placeholder="Referência, descrição ou número da OP" />
+            <Select value={filtroSituacao} onChange={(e) => setFiltroSituacao(e.target.value)} placeholder="Todas as situações">
+              {Object.entries(SITUACAO).map(([k, v]) => <option key={k} value={k}>{v.rotulo}</option>)}
+            </Select>
+          </div>
+
+          {carregando && <Skeleton height={240} />}
+          {!carregando && ordens.length === 0 && (
+            <EstadoVazio
+              Icone={Factory}
+              titulo="Nenhuma ordem de produção"
+              descricao="A ordem é o que liga a ficha técnica ao estoque: ela explode o material que a grade vai consumir, reserva esse material, recebe o apontamento de cada operação e, no fim, dá entrada nas peças prontas — apurando quanto a peça custou de verdade."
+              acaoLabel="Abrir a primeira ordem"
+              onAcao={() => setNovaOrdem(true)}
+              IconeAcao={Plus}
+            />
+          )}
+
+          {!carregando && ordens.length > 0 && (
+            <>
+              <div className="tabela-rolagem">
+                <table className="tabela-nota">
+                  <thead>
+                    <tr>
+                      <th className="num">OP</th><th>Referência</th><th>Situação</th>
+                      <th className="num">Planejadas</th><th className="num">Produzidas</th>
+                      <th className="num">Material</th><th className="num">Mão de obra</th>
+                      <th>Facção</th><th>Abertura</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tabela.itensPagina.map((o) => (
+                      <tr key={o.id} className="linha-clicavel" onClick={() => setOrdemAberta(o.id)}>
+                        <td className="num">{o.numero}</td>
+                        <td>{o.referencia}<span className="ink-soft"> · {o.produto_descricao}</span></td>
+                        <td><SeloSituacao situacao={o.situacao} /></td>
+                        <td className="num">{formatQtd(o.quantidade_planejada)}</td>
+                        <td className="num">{formatQtd(o.quantidade_produzida)}</td>
+                        <td className="num">
+                          {brl(o.custo_material_reservado)}
+                          {Number(o.insumos_sem_custo) > 0 && (
+                            <span className="selo tone-atencao" title={`${o.insumos_sem_custo} insumo(s) sem custo conhecido ficaram de fora deste valor.`}>parcial</span>
+                          )}
+                        </td>
+                        <td className="num">{o.gasto_mao_de_obra != null ? brl(o.gasto_mao_de_obra) : '—'}</td>
+                        <td>{o.fornecedor_nome || 'interna'}</td>
+                        <td>{dataBr(o.data_abertura)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Paginacao
+                pagina={tabela.pagina} totalPaginas={tabela.totalPaginas} tamanho={tabela.tamanho}
+                totalItens={tabela.totalItens} inicio={tabela.inicio} fim={tabela.fim}
+                setPagina={tabela.setPagina} setTamanho={tabela.setTamanho}
+              />
+            </>
+          )}
+        </>
+      )}
+
+      {aba === 'roteiro' && <RoteiroEConsumo produtos={produtos} fornecedores={fornecedores} />}
+      {aba === 'faccao' && <Faccao fornecedores={fornecedores} insumos={insumos} onMudou={carregar} />}
+
+      {novaOrdem && (
+        <NovaOrdem
+          produtos={produtos} fornecedores={fornecedores}
+          onFechar={() => setNovaOrdem(false)}
+          onCriada={(r) => { setNovaOrdem(false); carregar(); setOrdemAberta(r.ordem.id); }}
+        />
+      )}
+      {ordemAberta && (
+        <DetalheOrdem
+          ordemId={ordemAberta} fornecedores={fornecedores}
+          onFechar={() => setOrdemAberta(null)} onMudou={carregar}
+        />
+      )}
+    </div>
+  );
+}

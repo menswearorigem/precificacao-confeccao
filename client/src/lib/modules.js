@@ -33,6 +33,11 @@ export const MODULES = [
       // porque e' a mesma pergunta ("como esta' meu estoque?") vista pelo
       // lado do TEMPO: quanto dura, e quanto precisa ter.
       { to: '/estoque/cobertura', label: 'Cobertura e Mínimo', icon: Timer },
+      // Produção (07/09/2026). Fica dentro de Estoque, e não num módulo
+      // proprio: toda ordem come insumo do saldo e devolve peca pro saldo, e
+      // criar chave de modulo nova mudaria quem enxerga o que — o que a
+      // REGRA 4 nao deixa fazer sem autorizacao.
+      { to: '/estoque/producao', label: 'Produção', icon: Factory },
       { to: '/estoque/ean', label: 'Importar EAN', icon: Tags },
       { to: '/estoque/ficha', label: 'Ficha de Estoque', icon: Printer },
     ],

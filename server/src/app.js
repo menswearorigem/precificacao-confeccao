@@ -38,6 +38,7 @@ const anunciosRoutes = require('./routes/anuncios.routes');
 const promocoesRoutes = require('./routes/promocoes.routes');
 const insumosRoutes = require('./routes/insumos.routes');
 const estoqueMinimoRoutes = require('./routes/estoqueMinimo.routes');
+const producaoRoutes = require('./routes/producao.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
 const auditoriaRoutes = require('./routes/auditoria.routes');
 const emailRoutes = require('./routes/email.routes');
@@ -144,6 +145,14 @@ function createApp() {
   // Estoque minimo, cobertura e ponto de pedido (06/09/2026). Fica sob
   // `estoque` -- e' quem cuida do saldo que precisa disto no dia a dia.
   app.use('/api/estoque-minimo', requireAuth, requireModulo('estoque'), estoqueMinimoRoutes);
+  // Producao: roteiro de operacoes, ordem de producao e facção (07/09/2026).
+  // Fica sob `estoque` de proposito, e NAO sob um modulo novo: uma chave de
+  // modulo nova precisaria ser registrada em cinco lugares e mudaria quem
+  // enxerga o que, e a REGRA 4 proibe mexer em regra de permissao sem
+  // autorizacao. `estoque` e' o dono natural: toda ordem de producao come
+  // insumo do saldo e devolve peca pro saldo, e o saldo em faccao e' estoque
+  // da empresa que so' esta' na mao de terceiro.
+  app.use('/api/producao', requireAuth, requireModulo('estoque'), producaoRoutes);
   app.use('/api/clientes', requireAuth, requireModulo('vendas'), clientesRoutes);
   app.use('/api/pedidos', requireAuth, requireModulo(['vendas', 'marketplace']), pedidosRoutes);
   app.use('/api/fornecedores', requireAuth, requireModulo('compras'), fornecedoresRoutes);

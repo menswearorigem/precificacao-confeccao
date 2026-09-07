@@ -5583,3 +5583,126 @@ table.ficha-doc-tabela {
 @media (max-width: 720px) {
   .insumo-nota-cabecalho { grid-template-columns: 1fr 1fr; }
 }
+
+/* ===========================================================================
+   Utilitários compartilhados das telas novas (07/09/2026)
+   ===========================================================================
+   ⚠️ Este bloco corrige um defeito REAL, não é enfeite. As telas de
+   Promoções, Cobertura e Insumos (06/09/2026) foram escritas usando nomes de
+   classe que NÃO EXISTIAM no tema — `.pagina`, `.selo`, `.btn-sec`,
+   `.erro-inline` e companhia. Classe inexistente não quebra nada em
+   JavaScript nem no build: o navegador simplesmente ignora, e a tela abre
+   torta em silêncio. Foi assim que passou.
+
+   A correção é definir essas classes AQUI, em cima do que o sistema já tem,
+   em vez de reescrever quatro telas. Cada uma é um apelido de um padrão que
+   já existe:  .pagina→.page-wide  .selo→.stamp.sm  .btn-sec→.btn-ghost
+   .btn-icone→.icon-btn  .ink-soft/.ink-faint→as cores de texto do tema.
+
+   REGRA 3: nenhuma cor solta aqui. Tudo sai de variável já existente, e por
+   isso o bloco funciona nos três temas sem precisar dos três blocos — ele
+   não INTRODUZ variável nenhuma, só consome. */
+
+.pagina { padding: 26px 30px; max-width: var(--content-wide); margin-inline: auto; display: flex; flex-direction: column; gap: 18px; }
+.pagina-acoes { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.pagina h1 { display: flex; align-items: center; gap: 9px; margin: 0; }
+
+.ink-soft { color: var(--ink-soft); }
+.ink-faint { color: var(--ink-faint); }
+.ink-prejuizo { color: var(--danger); }
+.ink-atencao { color: var(--warning); }
+
+/* Mesma linguagem do .stamp.sm (o selo de situação que o resto do sistema
+   usa em lista), para os selos novos não virarem um segundo dialeto. */
+.selo {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--font-display); font-weight: 700;
+  font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 3px 9px; border-radius: 6px; border: 1px solid;
+  white-space: nowrap; vertical-align: middle;
+}
+.selo + .selo, td .selo:not(:first-child) { margin-left: 4px; }
+
+.btn-sec {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 600; padding: 8px 15px;
+  border-radius: var(--radius-sm); cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border); color: var(--ink);
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+  white-space: nowrap;
+}
+.btn-sec:hover:not(:disabled) { background: var(--border-soft); border-color: var(--ink-faint); }
+.btn-sec:disabled, .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.btn-icone {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 5px; border-radius: var(--radius-sm); cursor: pointer;
+  background: transparent; border: 1px solid transparent; color: var(--ink-soft);
+}
+.btn-icone:hover { background: var(--border-soft); color: var(--ink); }
+
+.card-titulo {
+  display: flex; align-items: center; gap: 7px;
+  font-family: var(--font-display); font-weight: 600; font-size: 14px;
+  color: var(--ink); margin: 4px 0 0;
+}
+
+.filtros-linha { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.indicadores-linha { display: flex; gap: 12px; flex-wrap: wrap; }
+.indicadores-linha > * { flex: 1 1 190px; }
+.form-linha { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.painel-acoes-inline { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+/* A tabela larga rola DENTRO da caixa dela. Sem isso a página inteira ganha
+   barra horizontal, que no celular é o jeito mais rápido de perder a coluna
+   da esquerda de vista. */
+.tabela-rolagem { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+.erro-inline {
+  font-size: 12.5px; padding: 9px 13px; border-radius: var(--radius-sm);
+  background: var(--danger-bg); color: var(--danger); margin: 0;
+}
+.aviso-inline {
+  display: flex; align-items: flex-start; gap: 7px;
+  font-size: 12.5px; padding: 9px 13px; border-radius: var(--radius-sm);
+  background: var(--warning-bg); color: var(--warning); margin: 0;
+}
+.sucesso-inline {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12.5px; padding: 9px 13px; border-radius: var(--radius-sm);
+  background: var(--success-bg); color: var(--success); margin: 0;
+}
+.ajuda-bloco { font-size: 12px; line-height: 1.5; margin: 0; }
+
+.bloco-alerta {
+  border: 1px solid var(--danger-ring); background: var(--danger-bg);
+  color: var(--danger); border-radius: var(--radius); padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 8px; font-size: 12.5px;
+}
+.bloco-alerta p { display: flex; align-items: center; gap: 7px; margin: 0; }
+.bloco-alerta ul { margin: 0; padding-left: 20px; }
+.check-linha { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--ink); cursor: pointer; }
+
+.linha-clicavel { cursor: pointer; }
+.linha-clicavel:hover { background: var(--border-soft); }
+.linha-nova { background: color-mix(in srgb, var(--brass) 8%, transparent); }
+
+/* Rodapé fixo do painel lateral: as ações de uma ordem de produção não podem
+   depender de rolar até o fim de uma lista de apontamentos. */
+.painel-rodape {
+  position: sticky; bottom: 0; z-index: 1;
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 12px 18px; border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+@media (max-width: 900px) {
+  .pagina { padding: 20px 16px; }
+}
+
+/* Painel da ordem de produção: mais largo que o de anúncio (680px) porque
+   carrega três tabelas — grade, material e apontamentos — lado a lado com o
+   comparativo de custo. Continua virando tela cheia no celular pela regra
+   que já existe em `.anuncio-painel`. */
+.anuncio-painel.painel-largo { width: min(940px, 100%); }
+.painel-fundo-clicavel { cursor: default; }
