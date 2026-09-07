@@ -47,6 +47,7 @@ import RelatorioComprasPage from './pages/RelatorioComprasPage';
 import RelatorioLucratividadePage from './pages/RelatorioLucratividadePage';
 import MetricasMarketplacePage from './pages/MetricasMarketplacePage';
 import AnunciosPage from './pages/AnunciosPage';
+import CoberturaEstoquePage from './pages/CoberturaEstoquePage';
 import PromocoesPage from './pages/PromocoesPage';
 import RelatorioTaxasPage from './pages/RelatorioTaxasPage';
 import ImportarPedidosPage from './pages/ImportarPedidosPage';
@@ -106,6 +107,7 @@ function AppRoutes() {
                   <Route path="/estoque" element={<EstoquePage />} />
                   <Route path="/estoque/bipagem" element={<BipagemPage />} />
                   <Route path="/estoque/importacao" element={<EstoqueImportacaoPage />} />
+                  <Route path="/estoque/cobertura" element={<CoberturaEstoquePage />} />
                   <Route path="/estoque/ean" element={<EstoqueEanImportacaoPage />} />
                   <Route path="/estoque/ficha" element={<FichaEstoquePage />} />
                   <Route path="/clientes" element={<ClientesListPage />} />

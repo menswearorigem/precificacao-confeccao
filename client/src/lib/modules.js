@@ -4,7 +4,7 @@ import {
   Warehouse, Barcode, Tags, Printer, Users, ClipboardList, ShoppingCart,
   Truck, BarChart3, ShieldCheck, Plug, TrendingUp, ReceiptText, Store, Plane,
   LineChart, SearchCheck, Layers, AlertTriangle, CalendarDays, UsersRound,
-  LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag,
+  LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -29,6 +29,10 @@ export const MODULES = [
       { to: '/estoque', label: 'Estoque', icon: Warehouse },
       { to: '/estoque/bipagem', label: 'Bipagem', icon: Barcode },
       { to: '/estoque/importacao', label: 'Importar Saldo', icon: Upload },
+      // Cobertura e Estoque Minimo (06/09/2026). Fica logo depois do saldo
+      // porque e' a mesma pergunta ("como esta' meu estoque?") vista pelo
+      // lado do TEMPO: quanto dura, e quanto precisa ter.
+      { to: '/estoque/cobertura', label: 'Cobertura e Mínimo', icon: Timer },
       { to: '/estoque/ean', label: 'Importar EAN', icon: Tags },
       { to: '/estoque/ficha', label: 'Ficha de Estoque', icon: Printer },
     ],

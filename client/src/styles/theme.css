@@ -5422,3 +5422,78 @@ table.ficha-doc-tabela {
   .promocao-historico li { grid-template-columns: 1fr; gap: 2px; }
   .promocao-barra-massa { flex-direction: column; align-items: stretch; }
 }
+
+/* ===========================================================================
+   Estoque › Cobertura e Estoque Mínimo (06/09/2026)
+   ===========================================================================
+   Só tokens existentes e os selos semânticos .tone-* (REGRA 3). O que é novo
+   aqui é a forma: a faixa de parâmetros que fica à vista, o painel de "como
+   isso é calculado", e a tabela em que a AUSÊNCIA de número é tão visível
+   quanto o número. */
+
+.cobertura-parametros {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px; margin-bottom: 14px;
+}
+
+.cobertura-explicacao { margin-bottom: 14px; }
+.cobertura-explicacao-grade {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px;
+}
+.cobertura-explicacao-grade h4 {
+  font-family: var(--font-display); font-size: 13px; margin: 0 0 4px;
+  color: var(--terracotta);
+}
+.cobertura-explicacao-grade p {
+  margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-soft);
+}
+.cobertura-explicacao-grade strong { color: var(--ink); }
+
+.cobertura-avisos {
+  display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px;
+  padding: 10px 12px; border: 1px solid var(--border);
+  border-left: 3px solid var(--brass);
+  border-radius: var(--radius-sm); background: var(--surface-raised);
+}
+.cobertura-avisos p {
+  margin: 0; display: flex; align-items: flex-start; gap: 7px;
+  font-size: 11.5px; line-height: 1.5; color: var(--ink-soft);
+}
+.cobertura-avisos svg { flex: 0 0 auto; margin-top: 2px; color: var(--brass); }
+
+.tabela-cobertura { border-collapse: collapse; width: 100%; font-size: 12.5px; min-width: 940px; }
+.tabela-cobertura th, .tabela-cobertura td {
+  padding: 9px 10px; text-align: left; border-bottom: 1px solid var(--border-soft);
+  vertical-align: middle;
+}
+.tabela-cobertura thead th {
+  position: sticky; top: 0; z-index: 1; background: var(--surface-raised);
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--ink-soft);
+}
+.tabela-cobertura td.num, .tabela-cobertura th.num { text-align: right; }
+.tabela-cobertura tbody tr:hover { background: var(--row-hover); }
+.tabela-cobertura tr.linha-prejuizo { background: var(--danger-bg); }
+.tabela-cobertura tr.linha-prejuizo:hover { background: var(--danger-bg); }
+
+.cobertura-ref { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cobertura-ref strong { font-size: 12.5px; color: var(--ink); }
+.cobertura-ref small {
+  font-size: 10.5px; color: var(--ink-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px;
+}
+.cobertura-ref .selo { align-self: flex-start; margin-top: 1px; }
+
+/* A ausência de número não é um travessão mudo: é o MOTIVO, legível.
+   É o que faz a REGRA 2 aparecer na tela em vez de ficar só no código. */
+.cobertura-sem-valor {
+  display: inline-flex; align-items: center; gap: 5px; justify-content: flex-end;
+  font-size: 10.5px; font-style: italic; color: var(--ink-faint);
+  text-align: right; max-width: 190px; line-height: 1.35;
+}
+.cobertura-sem-valor svg { flex: 0 0 auto; }
+
+@media (max-width: 720px) {
+  .cobertura-parametros { grid-template-columns: 1fr; }
+  .cobertura-sem-valor { max-width: 120px; }
+}
