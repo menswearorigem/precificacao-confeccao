@@ -127,6 +127,7 @@ export default function CoberturaEstoquePage() {
     cobertura: (l) => l.cobertura?.dias ?? null,
     saldo: (l) => l.saldo,
     venda: (l) => l.venda_media_dia ?? null,
+    vendeu: (l) => l.pecas_vendidas ?? null,
     minimo: (l) => l.estoque_seguranca?.valor ?? null,
     ponto: (l) => l.ponto_de_pedido?.valor ?? null,
     situacao: (l) => SITUACAO[l.situacao]?.ordem ?? 9,
@@ -212,6 +213,15 @@ export default function CoberturaEstoquePage() {
             <div>
               <h4>Cobertura</h4>
               <p>Saldo dividido pela venda média por dia. Diz quantos dias o estoque dura se a venda continuar no ritmo da janela escolhida.</p>
+            </div>
+            <div>
+              <h4>Peças vendidas</h4>
+              <p>
+                A venda é contada em <strong>peças</strong>, e o <strong>kit entra aberto</strong>: um KIT-3 vendido uma
+                vez conta 3 peças na referência, porque são 3 peças que saem do estoque. A coluna <em>Vendeu</em> mostra
+                quantas peças a janela mediu e quantas delas saíram dentro de kit — é de lá que a venda por dia sai, e é
+                com peças que o saldo é comparado.
+              </p>
             </div>
             <div>
               <h4>Comportamento</h4>
@@ -341,6 +351,10 @@ export default function CoberturaEstoquePage() {
                   <th>Comportamento</th>
                   <th className="num">Curva</th>
                   <th className="num">Saldo</th>
+                  {/* Quantas peças a janela mediu. Fica ao lado da venda/dia
+                      porque é a conta de onde ela sai — e porque foi
+                      justamente aqui que a venda em kit sumia. */}
+                  <th className="num">Vendeu</th>
                   <th className="num">Venda/dia</th>
                   <th className="num">Dura</th>
                   <th className="num">Mínimo</th>
@@ -382,6 +396,23 @@ export default function CoberturaEstoquePage() {
                           : '—'}
                       </td>
                       <td className="num mono">{formatQtd(l.saldo)}</td>
+                      <td className="num">
+                        <span
+                          className="mono"
+                          title={
+                            l.pecas_vendidas_em_kit > 0
+                              ? `${numeroBr(l.pecas_vendidas, 0)} peças na janela, das quais ${numeroBr(l.pecas_vendidas_em_kit, 0)} saíram dentro de kit. O kit entra aberto: um KIT-3 vendido uma vez são 3 peças.`
+                              : 'Peças vendidas na janela escolhida — é o número de onde sai a venda por dia.'
+                          }
+                        >
+                          {formatQtd(l.pecas_vendidas ?? 0)}
+                        </span>
+                        {l.pecas_vendidas_em_kit > 0 && (
+                          <small className="ink-soft" style={{ display: 'block' }}>
+                            {numeroBr(l.pecas_vendidas_em_kit, 0)} em kit
+                          </small>
+                        )}
+                      </td>
                       <td className="num">
                         <ValorOuMotivo valor={l.venda_media_dia} casas={2} titulo="Média por dia na janela escolhida" />
                       </td>

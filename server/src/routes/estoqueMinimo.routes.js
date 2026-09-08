@@ -22,6 +22,12 @@ const {
   curvaAbc, quantidadeAComprar, necessidadeDeInsumo, segurancaDeInsumo,
   zParaNivel, NIVEL_POR_CURVA, POLITICA_POR_QUADRANTE, PERIODOS_MINIMOS, media,
 } = require('../lib/estoqueMinimo');
+// A venda medida em PEÇAS, com o kit explodido na composição dele. Antes de
+// 08/09/2026 a consulta desta rota era um INNER JOIN em `estoque_variantes`,
+// e como item de kit tem `variante_id` nulo, TODA venda em kit era descartada
+// em silêncio — a referência que mais vende na loja aparecia com venda quase
+// zero. O porquê está escrito em vendasEmPecas.js.
+const vendas = require('../lib/vendasEmPecas');
 
 const router = express.Router();
 
@@ -40,51 +46,10 @@ function semanas(req) {
 // ---------------------------------------------------------------------------
 // A série de vendas COM OS ZEROS
 // ---------------------------------------------------------------------------
-// Esta consulta é o coração do módulo, e o `generate_series` nela não é
-// enfeite: o banco guarda só as linhas de venda, então a semana sem venda
-// simplesmente não existe na tabela. Sem gerar os zeros explicitamente, o
-// ADI sai 1 para todo mundo e TUDO parece demanda constante — a
-// classificação inteira viraria ficção.
-async function serieSemanalPorProduto(numSemanas) {
-  const { rows } = await pool.query(
-    `WITH semanas AS (
-       SELECT generate_series(
-         date_trunc('week', CURRENT_DATE) - ($1::int - 1) * INTERVAL '1 week',
-         date_trunc('week', CURRENT_DATE),
-         INTERVAL '1 week'
-       )::date AS semana
-     ),
-     produtos_ativos AS (
-       SELECT DISTINCT p.id AS produto_id
-         FROM produtos p
-         JOIN estoque_variantes ev ON ev.produto_id = p.id AND ev.ativo
-     ),
-     vendas AS (
-       SELECT ev.produto_id,
-              date_trunc('week', pv.data_pedido)::date AS semana,
-              SUM(pi.quantidade)::numeric AS unidades
-         FROM pedido_itens pi
-         JOIN pedidos_venda pv ON pv.id = pi.pedido_id
-         JOIN estoque_variantes ev ON ev.id = pi.variante_id
-        WHERE pv.situacao <> 'cancelado'
-          AND pv.data_pedido >= date_trunc('week', CURRENT_DATE) - ($1::int - 1) * INTERVAL '1 week'
-        GROUP BY ev.produto_id, 2
-     )
-     SELECT pa.produto_id, s.semana, COALESCE(v.unidades, 0) AS unidades
-       FROM produtos_ativos pa
-       CROSS JOIN semanas s
-       LEFT JOIN vendas v ON v.produto_id = pa.produto_id AND v.semana = s.semana
-      ORDER BY pa.produto_id, s.semana`,
-    [numSemanas]
-  );
-
-  const porProduto = new Map();
-  for (const r of rows) {
-    if (!porProduto.has(r.produto_id)) porProduto.set(r.produto_id, []);
-    porProduto.get(r.produto_id).push(Number(r.unidades));
-  }
-  return porProduto;
-}
+// Mora em vendasEmPecas.js, junto com as duas correções que ela precisa ter:
+// o item de kit não pode ser descartado, e o kit vale as PEÇAS dele. Aqui
+// ficou só o nome, porque a série é usada em duas rotas.
+const serieSemanalPorProduto = (numSemanas) => vendas.serieSemanalPorProduto(pool, numSemanas);
 
 // Em quais semanas o produto ficou SEM ESTOQUE. É a censura de demanda: um
 // item zerado não "não vendeu", ele não tinha para vender. Sem isso, a média
@@ -117,7 +82,7 @@ router.get('/produtos', async (req, res, next) => {
     // não escondido.
     const leadTimeProducao = Number(req.query.lead_time_dias);
 
-    const [serie, zeradas, saldos, margens] = await Promise.all([
+    const [serie, zeradas, saldos, margemPorProduto, semReferencia, kitsSemComposicao] = await Promise.all([
       serieSemanalPorProduto(numSemanas),
       semanasZeradasPorProduto(numSemanas),
       pool.query(
@@ -130,7 +95,10 @@ router.get('/produtos', async (req, res, next) => {
           WHERE ev.ativo
           GROUP BY ev.produto_id, p.referencia, p.descricao, p.marca, p.categoria`
       ),
-      // Faturamento e quantidade vendida por produto na janela.
+      // Faturamento e PEÇAS vendidas por produto na janela — pela mesma
+      // medida da série, com o kit explodido. Antes isto contava kit como
+      // unidade (quando contava), e a curva ABC saía distorcida junto: a
+      // referência que vende em kit parecia pequena nos dois números.
       //
       // O item de pedido NAO guarda lucro — a lucratividade real mora no
       // pedido inteiro, e ratear ela por item por valor seria inventar um
@@ -138,26 +106,17 @@ router.get('/produtos', async (req, res, next) => {
       // faturamento menos o custo de producao que o MOTOR calcula, lido pelo
       // mesmo caminho da tela de Estoque. Nao inclui taxa de marketplace, e a
       // resposta diz isso por escrito.
-      pool.query(
-        `SELECT ev.produto_id,
-                SUM(pi.quantidade * COALESCE(pi.valor_unitario, 0))::numeric AS faturamento,
-                SUM(pi.quantidade)::numeric AS unidades
-           FROM pedido_itens pi
-           JOIN pedidos_venda pv ON pv.id = pi.pedido_id
-           JOIN estoque_variantes ev ON ev.id = pi.variante_id
-          WHERE pv.situacao <> 'cancelado'
-            AND pv.data_pedido >= date_trunc('week', CURRENT_DATE) - ($1::int - 1) * INTERVAL '1 week'
-          GROUP BY ev.produto_id`,
-        [numSemanas]
-      ),
+      vendas.totaisPorProduto(pool, numSemanas),
+      // O que ficou de fora: venda sem referência ligada (REGRA 2 — aparece
+      // com o motivo, em vez de virar zero calado).
+      vendas.itensSemProduto(pool, numSemanas),
+      vendas.itensDeKitSemComposicao(pool, numSemanas),
     ]);
-
-    const margemPorProduto = new Map(margens.rows.map((r) => [r.produto_id, r]));
 
     // Custo de producao por produto, LIDO do motor de calculo — a mesma
     // funcao que a Ficha de Precificacao usa (REGRA 1: nada e' recalculado
     // aqui, so' agregado).
-    const idsComVenda = margens.rows.map((r) => r.produto_id).filter(Boolean);
+    const idsComVenda = [...margemPorProduto.keys()].filter(Boolean);
     const custoPorProduto = new Map();
     if (idsComVenda.length > 0) {
       const ctx = await getCalcContext();
@@ -186,13 +145,16 @@ router.get('/produtos', async (req, res, next) => {
     const paraCurva = saldos.rows.map((s) => {
       const m = margemPorProduto.get(s.produto_id);
       const custoUnitario = custoPorProduto.get(s.produto_id);
-      const faturamento = m ? Number(m.faturamento) : 0;
-      const unidades = m ? Number(m.unidades) : 0;
+      const faturamento = m ? m.faturamento : 0;
+      // PEÇAS, não linhas de pedido: o custo do motor é por peça, então
+      // multiplicá-lo por "kits vendidos" subestimaria o custo do que vendeu
+      // em kit e inflaria a margem dele.
+      const pecas = m ? m.pecas : 0;
       // Sem custo cadastrado NAO existe margem — fica nula e a curva cai
       // para faturamento naquele item, em vez de tratar custo zero como
       // "margem = faturamento inteiro" (REGRA 2).
       const margemTotal = custoUnitario != null && custoUnitario > 0
-        ? faturamento - custoUnitario * unidades
+        ? faturamento - custoUnitario * pecas
         : null;
       return { produtoId: s.produto_id, referencia: s.referencia, faturamento, margemTotal };
     });
@@ -215,6 +177,7 @@ router.get('/produtos', async (req, res, next) => {
       const desvioDia = Number.isFinite(desvioSemana) ? desvioSemana / Math.sqrt(7) : null;
 
       const zeradasNaJanela = zeradas.get(s.produto_id) || 0;
+      const totais = margemPorProduto.get(s.produto_id) || null;
 
       const cobertura = coberturaEmDias({
         saldo: Number(s.saldo),
@@ -258,6 +221,12 @@ router.get('/produtos', async (req, res, next) => {
 
         venda_media_semana: mediaSemana,
         venda_media_dia: mediaDia,
+
+        // O que a média mediu, em peças, para a conta poder ser conferida na
+        // tela. `pecas_em_kit` é o número que denuncia o defeito antigo: era
+        // exatamente esta parcela que sumia da venda.
+        pecas_vendidas: totais ? totais.pecas : 0,
+        pecas_vendidas_em_kit: totais ? totais.pecasEmKit : 0,
         cobertura,
         estoque_seguranca: seguranca,
         ponto_de_pedido: rop,
@@ -285,6 +254,14 @@ router.get('/produtos', async (req, res, next) => {
         leadTimeDias: Number.isFinite(leadTimeProducao) ? leadTimeProducao : null,
         nivelPorCurva: NIVEL_POR_CURVA,
         criterioCurva: temMargem ? 'margem' : 'faturamento',
+        // Quanto da venda medida veio de kit. Serve para conferir a correção
+        // de 08/09/2026 e para a dona ver o peso real do kit no giro.
+        pecasNaJanela: linhas.reduce((s, l) => s + (l.pecas_vendidas || 0), 0),
+        pecasEmKitNaJanela: linhas.reduce((s, l) => s + (l.pecas_vendidas_em_kit || 0), 0),
+      },
+      pendencias: {
+        itensSemReferencia: semReferencia,
+        itensDeKitSemComposicao: kitsSemComposicao,
       },
       // Avisos de MÉTODO, mostrados uma vez no alto da tela em vez de
       // repetidos em cada linha.
@@ -294,7 +271,13 @@ router.get('/produtos', async (req, res, next) => {
           ? ['A curva ABC usa MARGEM DE CONTRIBUIÇÃO (faturamento menos o custo de produção que o motor calcula). Ela não desconta taxa de marketplace nem publicidade.']
           : ['A curva ABC está sendo feita por FATURAMENTO, porque os produtos vendidos na janela não têm custo cadastrado. Faturamento alto com margem baixa vai aparecer como classe A.']),
         'O nível de serviço é o de CICLO: a chance de não faltar em nenhum momento entre duas reposições. O percentual de pedidos atendidos costuma ser maior que ele.',
+        // A venda é contada em PEÇAS e o kit entra aberto. Dito por escrito
+        // porque o número MUDOU: quem comparar com a tela de antes de
+        // 08/09/2026 precisa saber por quê.
+        'A venda é medida em PEÇAS, com o kit aberto na composição dele: um KIT-3 vendido uma vez conta 3 peças na referência, porque são 3 peças que saem do estoque.',
         ...(linhas.some((l) => l.censura_de_demanda) ? ['Alguns itens ficaram sem estoque na janela. A venda medida deles é menor que a demanda real, e o mínimo calculado sai otimista — estão marcados na lista.'] : []),
+        ...(semReferencia.itens > 0 ? [`${semReferencia.itens} item(ns) de venda da janela (${Math.round(semReferencia.unidades)} unidade(s)) não estão ligados a nenhuma referência cadastrada e ficaram de fora de TODA a conta — normalmente SKU de anúncio que o casamento não reconheceu. Enquanto isso não for resolvido, a venda medida está incompleta.`] : []),
+        ...(kitsSemComposicao > 0 ? [`${kitsSemComposicao} item(ns) apontam um kit sem composição cadastrada. Foram contados como 1 peça por unidade, que é o número conservador — a venda real deles pode ser maior.`] : []),
       ],
     });
   } catch (err) {
