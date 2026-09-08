@@ -52,6 +52,7 @@ import ProducaoPage from './pages/ProducaoPage';
 import InsumosPage from './pages/InsumosPage';
 import PromocoesPage from './pages/PromocoesPage';
 import MixTributarioPage from './pages/MixTributarioPage';
+import SaudeIntegracaoPage from './pages/SaudeIntegracaoPage';
 import RelatorioTaxasPage from './pages/RelatorioTaxasPage';
 import ImportarPedidosPage from './pages/ImportarPedidosPage';
 import ConferenciaPedidosPage from './pages/ConferenciaPedidosPage';
@@ -132,6 +133,10 @@ function AppRoutes() {
                   <Route path="/marketplace/taxas" element={<RelatorioTaxasPage />} />
                   <Route path="/marketplace/importar-pedidos" element={<ImportarPedidosPage />} />
                   <Route path="/marketplace/conferencia" element={<ConferenciaPedidosPage />} />
+                  {/* Saúde da Sincronização (07/09/2026). Fica no módulo
+                      Marketplace — é ele que traz os pedidos cuja importação
+                      pode falhar. Nenhuma permissão existente muda. */}
+                  <Route path="/marketplace/saude" element={<SaudeIntegracaoPage />} />
                   {/* Módulo Financeiro: três rotas, um componente só — as três
                       abas leem a mesma base (o extrato do marketplace) e mudam
                       só a pergunta. Rota própria por aba pra cada uma poder ser

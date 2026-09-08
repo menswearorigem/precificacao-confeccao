@@ -40,6 +40,7 @@ const insumosRoutes = require('./routes/insumos.routes');
 const estoqueMinimoRoutes = require('./routes/estoqueMinimo.routes');
 const producaoRoutes = require('./routes/producao.routes');
 const mixTributarioRoutes = require('./routes/mixTributario.routes');
+const saudeIntegracaoRoutes = require('./routes/saudeIntegracao.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
 const auditoriaRoutes = require('./routes/auditoria.routes');
 const emailRoutes = require('./routes/email.routes');
@@ -170,6 +171,11 @@ function createApp() {
   // preço, custo nem margem de nada: quem confere caixa precisa saber o que
   // vai dentro, não quanto custou.
   app.use('/api/conferencia', requireAuth, requireModulo('marketplace'), conferenciaRoutes);
+  // Saúde da Sincronização (07/09/2026). Mesmo módulo do resto do
+  // Marketplace: é quem cuida dos pedidos que precisa saber que um deles não
+  // entrou. A rota NÃO devolve preço, custo nem margem — só identificação do
+  // pedido e o erro. Nenhuma permissão existente muda (REGRA 4).
+  app.use('/api/saude-integracao', requireAuth, requireModulo('marketplace'), saudeIntegracaoRoutes);
   app.use('/api/calendario', requireAuth, requireModulo('calendario'), calendarioRoutes);
 
   // Financeiro é o nono módulo, e é PROPOSITALMENTE separado de Marketplace:

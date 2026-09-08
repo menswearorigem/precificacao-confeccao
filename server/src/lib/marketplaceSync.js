@@ -13,6 +13,7 @@ const tiktokShop = require('./marketplaces/tiktokShop');
 const tiktokAds = require('./marketplaces/tiktokAds');
 const { recalcularTotais } = require('./pedidoRecalculo');
 const { registrarMovimento } = require('./estoqueMovimento');
+const { categorizarErro, JANELA_RESSINCRONIZACAO_DIAS } = require('./saudeIntegracao');
 
 const LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee', tiktok_shop: 'TikTok Shop' };
 
@@ -25,7 +26,12 @@ const LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee', tiktok_shop: '
 // depois que a data dele ficasse pra trás do cursor — sumiria pra sempre,
 // mesmo tendo sido pago de verdade. Reimportar pedido já existente é
 // inofensivo (importarPedido ignora o que já está no banco).
-const JANELA_RESSINCRONIZACAO_MS = 7 * 24 * 60 * 60 * 1000;
+//
+// O número dos 7 dias vem de lib/saudeIntegracao.js, e não daqui, de
+// propósito: a tela de Saúde da Sincronização usa essa mesma janela para
+// dizer se um pedido que falhou ainda vai ser procurado. Com duas constantes
+// separadas, mudar uma deixaria a outra mentindo em silêncio.
+const JANELA_RESSINCRONIZACAO_MS = JANELA_RESSINCRONIZACAO_DIAS * 24 * 60 * 60 * 1000;
 
 async function garantirTokenValido(integracao) {
   const expiraEm = integracao.token_expira_em ? new Date(integracao.token_expira_em).getTime() : 0;
@@ -1537,6 +1543,132 @@ async function sincronizarCancelamentos(integracao) {
   return afetados;
 }
 
+// ---------------------------------------------------------------------------
+// Memória das falhas de importação (07/09/2026)
+// ---------------------------------------------------------------------------
+// Antes disto, o pedido que falhava ia para `console.error` e para
+// `ultimo_erro` da integração — que guarda UM erro e é sobrescrito cinco
+// minutos depois. Quando a data do pedido passava dos 7 dias da janela, ele
+// saía da busca e ninguém nunca ficava sabendo que aquela venda não estava
+// no sistema. Ver o cabeçalho da migration 0051.
+//
+// Gravar a falha não conserta a importação — ela continua falhando pelo
+// mesmo motivo. O que muda é que agora dá para VER, e para mandar tentar de
+// novo depois de corrigir a causa.
+
+// Soma dos itens como o marketplace mandou. Sem item, devolve null — que
+// vira NULL no banco e "valor desconhecido" na tela, nunca R$ 0,00.
+function valorDosItens(pedidoGenerico) {
+  const itens = pedidoGenerico?.itens || [];
+  if (itens.length === 0) return null;
+  let total = 0;
+  for (const item of itens) {
+    const quantidade = Number(item.quantidade);
+    const unitario = Number(item.valorUnitario);
+    if (!Number.isFinite(quantidade) || !Number.isFinite(unitario)) return null;
+    total += quantidade * unitario;
+  }
+  return total;
+}
+
+async function registrarFalhaImportacao(integracao, pedidoGenerico, err) {
+  const { categoria } = categorizarErro(err?.message);
+  try {
+    await pool.query(
+      `INSERT INTO integracao_falhas_pedido
+         (integracao_id, marketplace, id_externo, data_pedido, valor_itens, cliente_nome, erro, categoria)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (integracao_id, id_externo) DO UPDATE
+          SET erro = EXCLUDED.erro,
+              categoria = EXCLUDED.categoria,
+              -- COALESCE nesta ordem: o que veio agora vale mais, mas se
+              -- vier vazio o que já estava gravado NÃO é apagado.
+              data_pedido = COALESCE(EXCLUDED.data_pedido, integracao_falhas_pedido.data_pedido),
+              valor_itens = COALESCE(EXCLUDED.valor_itens, integracao_falhas_pedido.valor_itens),
+              cliente_nome = COALESCE(EXCLUDED.cliente_nome, integracao_falhas_pedido.cliente_nome),
+              tentativas = integracao_falhas_pedido.tentativas + 1,
+              ultima_falha_em = now(),
+              -- Falhou de novo depois de ter sido dada como resolvida: volta
+              -- para a lista, em vez de continuar marcada como resolvida.
+              resolvido_em = NULL,
+              resolvido_por = NULL,
+              resolvido_como = NULL`,
+      [
+        integracao.id,
+        pedidoGenerico.marketplace || integracao.marketplace,
+        String(pedidoGenerico.idExterno),
+        pedidoGenerico.dataPedido || null,
+        valorDosItens(pedidoGenerico),
+        pedidoGenerico.clienteNome || null,
+        String(err?.message || 'Erro sem mensagem.'),
+        categoria,
+      ]
+    );
+  } catch (erroAoGravar) {
+    // Registrar a falha nunca pode derrubar a sincronização — seria trocar
+    // um pedido perdido por todos eles.
+    console.error('[marketplace-sync] não consegui registrar a falha de importação:', erroAoGravar.message);
+  }
+}
+
+async function marcarFalhaResolvida(integracaoId, idExterno, { por = null, como = 'automatico' } = {}) {
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE integracao_falhas_pedido
+          SET resolvido_em = now(), resolvido_por = $3, resolvido_como = $4
+        WHERE integracao_id = $1 AND id_externo = $2 AND resolvido_em IS NULL`,
+      [integracaoId, String(idExterno), por, como]
+    );
+    return rowCount > 0;
+  } catch (err) {
+    console.error('[marketplace-sync] não consegui marcar a falha como resolvida:', err.message);
+    return false;
+  }
+}
+
+// Busca UM pedido no marketplace pelo id externo e tenta importar de novo.
+// É o que permite recuperar um pedido que já saiu da janela de 7 dias — sem
+// isto, a única saída seria lançar o pedido à mão.
+async function reimportarPedidoFalho(falha, integracao) {
+  let bruto;
+  let generico;
+  if (integracao.marketplace === 'mercado_livre') {
+    bruto = await mercadoLivre.buscarPedidoPorId(falha.id_externo, integracao.access_token);
+    generico = mercadoLivre.mapearPedido(bruto);
+  } else if (integracao.marketplace === 'shopee') {
+    bruto = await shopee.buscarPedidoPorId({
+      partnerId: integracao.client_id,
+      partnerKey: integracao.client_secret,
+      accessToken: integracao.access_token,
+      shopId: integracao.conta_externa_id,
+    }, falha.id_externo);
+    generico = shopee.mapearPedido(bruto);
+  } else if (integracao.marketplace === 'tiktok_shop') {
+    bruto = await tiktokShop.buscarPedidoPorId({ ...credenciaisTikTok(integracao), orderId: falha.id_externo });
+    generico = tiktokShop.mapearPedido(bruto);
+  } else {
+    throw new Error(`Não sei buscar um pedido avulso em ${integracao.marketplace}.`);
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const importado = await importarPedido(client, generico, integracao);
+    await client.query('COMMIT');
+    await marcarFalhaResolvida(integracao.id, falha.id_externo, { como: 'automatico' });
+    // `importarPedido` devolve false quando o pedido JÁ estava no banco —
+    // que também é motivo para sair da lista, e a tela precisa saber a
+    // diferença entre "entrou agora" e "já estava lá".
+    return { importado, jaExistia: !importado };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    await registrarFalhaImportacao(integracao, generico, err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 async function sincronizarIntegracao(integracaoId) {
   const { rows } = await pool.query('SELECT * FROM integracoes_marketplace WHERE id = $1', [integracaoId]);
   const integracao = rows[0];
@@ -1573,9 +1705,18 @@ async function sincronizarIntegracao(integracaoId) {
         const ok = await importarPedido(client, pedidoGenerico, integracao);
         await client.query('COMMIT');
         if (ok) importados += 1;
+        // Deu certo agora: se este pedido estava na lista de falhas, sai
+        // dela. Vale também quando `ok` é false (pedido já estava no banco)
+        // — o que importa é que ele NÃO está faltando.
+        await marcarFalhaResolvida(integracaoId, pedidoGenerico.idExterno, { como: 'automatico' });
       } catch (err) {
         await client.query('ROLLBACK').catch(() => {});
         ultimoErroImportacao = `Pedido ${pedidoGenerico.idExterno}: ${err.message}`;
+        // A linha abaixo é a diferença entre "some em silêncio" e "aparece
+        // na tela de Saúde da Sincronização": `ultimo_erro` guarda um erro
+        // por ciclo e é sobrescrito em cinco minutos; esta tabela guarda um
+        // por pedido, e não esquece quando a janela de 7 dias fecha.
+        await registrarFalhaImportacao(integracao, pedidoGenerico, err);
         console.error(`[marketplace-sync] falha ao importar pedido ${pedidoGenerico.idExterno} (integração ${integracaoId}):`, err.message);
       } finally {
         client.release();
@@ -1656,6 +1797,10 @@ module.exports = {
   sincronizarTodasAtivas,
   sincronizarSeNecessario,
   importarPedido,
+  registrarFalhaImportacao,
+  marcarFalhaResolvida,
+  reimportarPedidoFalho,
+  valorDosItens,
   encontrarVariante,
   atualizarValoresRecebidos,
   atualizarValoresRecebidosShopee,

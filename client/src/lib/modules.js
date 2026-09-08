@@ -4,7 +4,7 @@ import {
   Warehouse, Barcode, Tags, Printer, Users, ClipboardList, ShoppingCart,
   Truck, BarChart3, ShieldCheck, Plug, TrendingUp, ReceiptText, Store, Plane,
   LineChart, SearchCheck, Layers, AlertTriangle, CalendarDays, UsersRound,
-  LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer,
+  LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer, Activity,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -73,6 +73,10 @@ export const MODULES = [
       { to: '/marketplace/metricas', label: 'Métricas', icon: LineChart },
       { to: '/marketplace/taxas', label: 'Taxas Cobradas', icon: ReceiptText },
       { to: '/marketplace/importar-pedidos', label: 'Importar Pedidos', icon: Upload },
+      // Saúde da Sincronização (07/09/2026). Última do módulo de propósito:
+      // é a tela que se abre quando alguma coisa parece faltar, não a de
+      // uso diário. Mesmo módulo de permissão do resto do Marketplace.
+      { to: '/marketplace/saude', label: 'Saúde da Sincronização', icon: Activity },
     ],
   },
   {

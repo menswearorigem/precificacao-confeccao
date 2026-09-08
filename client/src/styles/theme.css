@@ -5754,3 +5754,44 @@ table.ficha-doc-tabela {
 .tabela-mix-criterios th.num, .tabela-mix-criterios td.num,
 .tabela-mix-clientes th.num, .tabela-mix-clientes td.num { text-align: right; }
 .tabela-mix-criterios td:last-child { max-width: 420px; line-height: 1.5; }
+
+/* ===========================================================================
+   Marketplace › Saúde da Sincronização (07/09/2026)
+   ===========================================================================
+   Reaproveita os selos semânticos .tone-* (REGRA 3) — aqui eles significam
+   exatamente o que significam no resto do sistema: vermelho é pedido fora do
+   sistema, amarelo é pedido que ainda vai ser tentado. Nenhuma cor solta. */
+
+.saude-frase {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; border-radius: var(--radius); font-size: 13px;
+  border: 1px solid var(--border);
+}
+.saude-frase svg { flex: none; }
+.saude-frase.tone-prejuizo { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-ring); }
+.saude-frase.tone-atencao { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-ring); }
+.saude-frase.tone-saudavel { background: var(--success-bg); color: var(--success); border-color: var(--success-ring); }
+
+.tabela-saude-conexoes, .tabela-saude-falhas { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tabela-saude-conexoes th, .tabela-saude-falhas th {
+  text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-faint);
+  white-space: nowrap;
+}
+.tabela-saude-conexoes td, .tabela-saude-falhas td {
+  padding: 9px 10px; border-bottom: 1px solid var(--border-soft); vertical-align: top;
+}
+.tabela-saude-conexoes th.num, .tabela-saude-conexoes td.num,
+.tabela-saude-falhas th.num, .tabela-saude-falhas td.num { text-align: right; }
+
+/* A mensagem crua do erro fica junto da explicação em português, não no
+   lugar dela: quem lê precisa saber o que fazer, e quem for investigar
+   precisa do texto exato. */
+.saude-erro { display: flex; flex-direction: column; gap: 3px; max-width: 380px; }
+.saude-erro small { font-size: 11.5px; line-height: 1.45; }
+.saude-erro code {
+  font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint);
+  background: var(--border-soft); border-radius: var(--radius-sm);
+  padding: 3px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.saude-acoes { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
