@@ -5,7 +5,7 @@ import {
   Truck, BarChart3, ShieldCheck, Plug, TrendingUp, ReceiptText, Store, Plane,
   LineChart, SearchCheck, Layers, AlertTriangle, CalendarDays, UsersRound,
   LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer, Activity,
-  Banknote, Ruler,
+  Banknote, Ruler, MapPin,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -38,14 +38,37 @@ export const MODULES = [
       // proprio: toda ordem come insumo do saldo e devolve peca pro saldo, e
       // criar chave de modulo nova mudaria quem enxerga o que — o que a
       // REGRA 4 nao deixa fazer sem autorizacao.
-      { to: '/estoque/producao', label: 'Produção', icon: Factory },
+      // Onde Esta a Peca (08/09/2026): endereco no galpao e saldo por local.
+      // Fica junto de Cobertura porque as duas respondem sobre o MESMO saldo
+      // -- uma pelo lado do tempo, a outra pelo lado do lugar.
+      { to: '/estoque/locais', label: 'Onde Está a Peça', icon: MapPin },
       // Dinheiro parado e Curva de tamanho (08/09/2026). As duas leem saldo e
-      // historico de venda que ja' existem; nenhuma tabela nova, nenhuma
-      // chave de modulo nova (REGRA 4).
+      // historico de venda que ja' existem; nenhuma tabela nova.
       { to: '/estoque/parado', label: 'Dinheiro Parado', icon: Banknote },
       { to: '/estoque/curva-tamanho', label: 'Curva de Tamanho', icon: Ruler },
       { to: '/estoque/ean', label: 'Importar EAN', icon: Tags },
       { to: '/estoque/ficha', label: 'Ficha de Estoque', icon: Printer },
+    ],
+  },
+  {
+    // Modulo proprio da Producao (08/09/2026, autorizado pela dona).
+    //
+    // Ate aqui a Producao morava dentro de Estoque, e a REGRA 4 nao deixava
+    // criar chave nova sem ordem dela. O motivo de separar e' concreto: quem
+    // toca corte, roteiro e faccao nao precisa -- e as vezes nao deve -- ver
+    // o saldo do estoque inteiro nem a Ficha de Estoque.
+    //
+    // O backend aceita `producao` OU `estoque` na mesma rota, entao quem ja'
+    // tinha estoque continua enxergando a Producao. A chave nova ACRESCENTA
+    // um caminho de acesso; nao tira de ninguem.
+    key: 'producao',
+    label: 'Produção',
+    icon: Factory,
+    color: 'var(--leather-dark)',
+    // Quem ja' tinha `estoque` continua vendo a Producao, igual ao backend.
+    tambemPor: ['estoque'],
+    pages: [
+      { to: '/producao', label: 'Ordens de Produção', icon: Factory },
     ],
   },
   {
@@ -195,10 +218,19 @@ export const MODULES = [
   },
 ];
 
+// `tambemPor` (08/09/2026) existe por causa do modulo novo de Producao.
+//
+// O backend aceita `['producao', 'estoque']` na rota de Producao: a chave nova
+// ACRESCENTA acesso, nao substitui. O menu tinha de contar a mesma historia --
+// sem isto, quem tem `estoque` perderia a Producao do menu no primeiro deploy
+// e `canAccessPath` bloquearia /producao, mesmo com a API respondendo. Menu e
+// permissao discordando e' o tipo de defeito que ninguem reporta direito:
+// aparece como "sumiu a tela".
 export function getVisibleModules(user) {
   const isAdmin = user?.role === 'admin';
+  const tem = (chave) => user?.modulos?.includes(chave);
   return MODULES
-    .filter((mod) => isAdmin || user?.modulos?.includes(mod.key))
+    .filter((mod) => isAdmin || tem(mod.key) || (mod.tambemPor || []).some(tem))
     .map((mod) => ({ ...mod, pages: mod.pages.filter((p) => !p.adminOnly || isAdmin) }));
 }
 

@@ -53,6 +53,7 @@ import InsumosPage from './pages/InsumosPage';
 import PromocoesPage from './pages/PromocoesPage';
 import MixTributarioPage from './pages/MixTributarioPage';
 import EstoqueParadoPage from './pages/EstoqueParadoPage';
+import EstoqueLocaisPage from './pages/EstoqueLocaisPage';
 import CurvaTamanhoPage from './pages/CurvaTamanhoPage';
 import PrecoPorCanalPage from './pages/PrecoPorCanalPage';
 import SaudeIntegracaoPage from './pages/SaudeIntegracaoPage';
@@ -122,7 +123,14 @@ function AppRoutes() {
                   <Route path="/estoque/bipagem" element={<BipagemPage />} />
                   <Route path="/estoque/importacao" element={<EstoqueImportacaoPage />} />
                   <Route path="/estoque/cobertura" element={<CoberturaEstoquePage />} />
-                  <Route path="/estoque/producao" element={<ProducaoPage />} />
+                  {/* Produção ganhou módulo próprio em 08/09/2026 e saiu de
+                      baixo de /estoque. O caminho antigo continua respondendo,
+                      redirecionando: link salvo, favorito e aba aberta de quem
+                      já usava a tela não podem quebrar por causa de uma
+                      reorganização de menu. */}
+                  <Route path="/producao" element={<ProducaoPage />} />
+                  <Route path="/estoque/producao" element={<Navigate to="/producao" replace />} />
+                  <Route path="/estoque/locais" element={<EstoqueLocaisPage />} />
                   <Route path="/estoque/ean" element={<EstoqueEanImportacaoPage />} />
                   <Route path="/estoque/ficha" element={<FichaEstoquePage />} />
                   <Route path="/clientes" element={<ClientesListPage />} />

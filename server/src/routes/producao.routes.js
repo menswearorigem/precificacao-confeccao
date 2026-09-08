@@ -21,6 +21,7 @@ const {
   explodirFicha, custoRealDaOrdem, compararComPadrao,
   tempoPadraoDaPeca, custoMaoDeObraPadrao, wipPorEtapa,
 } = require('../lib/producao');
+const locais = require('../lib/estoqueLocais');
 
 const router = express.Router();
 
@@ -170,6 +171,37 @@ router.post('/consumo-tamanho', async (req, res, next) => {
     next(err);
   } finally {
     client.release();
+  }
+});
+
+// ===========================================================================
+// Listas de apoio da tela de Produção
+// ===========================================================================
+// GET /api/producao/apoio
+//
+// Existe por causa do módulo próprio criado em 08/09/2026. Antes, a tela de
+// Produção montava seus seletores com `/produtos`, `/fornecedores` e
+// `/insumos` — três rotas de OUTROS módulos. Quem recebesse só `producao`
+// tomaria 403 nas três e abriria a tela com todos os seletores vazios, sem
+// erro visível: o pior tipo de defeito de permissão.
+//
+// ⚠️ E não bastava liberar `/produtos` para `producao`: essa rota devolve
+// custo, preço e margem da referência. Quem cuida do corte precisa saber QUAL
+// referência, não quanto ela custa a vender. Aqui vai só o que a tela usa —
+// identificação da referência, nome da facção, nome do insumo.
+router.get('/apoio', async (req, res, next) => {
+  try {
+    const [{ rows: referencias }, { rows: fornecedores }, { rows: insumos }] = await Promise.all([
+      pool.query(
+        `SELECT p.id, p.referencia, p.descricao, p.categoria, p.marca
+           FROM produtos p ORDER BY p.referencia`
+      ),
+      pool.query('SELECT id, nome FROM fornecedores ORDER BY nome'),
+      pool.query('SELECT id, nome, unidade FROM insumos WHERE ativo ORDER BY nome'),
+    ]);
+    res.json({ referencias, fornecedores, insumos });
+  } catch (err) {
+    next(err);
   }
 });
 
@@ -823,6 +855,13 @@ router.post('/ordens/:id/concluir', async (req, res, next) => {
          VALUES ($1, 'entrada', $2, $3, $4)`,
         [varianteId, qtd, saldoRows[0].quantidade, `Produção — OP ${ordem.numero}`]
       );
+      // A peça que acaba de ser produzida entra ENDEREÇADA no galpão. É o que
+      // faz o estoque novo já nascer sabendo onde está, em vez de engrossar a
+      // pilha de "não endereçado" que a migration 0052 deixou de propósito
+      // para o saldo antigo.
+      await locais.ajustarLocal(client, {
+        varianteId, local: 'proprio', fornecedorId: null, delta: qtd,
+      });
       entradas.push({ cor: g.cor, tamanho: g.tamanho, quantidade: qtd });
     }
 
@@ -925,20 +964,50 @@ router.post('/faccao/movimento', async (req, res, next) => {
         ]
       );
     }
+    // Peça pronta: até 07/09 o saldo NÃO era movido, porque não existia para
+    // onde mover — `estoque_variantes` guardava uma quantidade só, sem lugar.
+    // Baixar o saldo faria a peça sumir do estoque; não baixar faz ela
+    // aparecer como disponível estando na lavanderia. A migration 0052 criou
+    // o terceiro caminho, que é o certo: a peça MUDA DE LUGAR e o total não
+    // muda. Autorizado pela dona em 08/09/2026 (REGRA 4).
+    let avisoPeca = null;
+    if (varianteId) {
+      const localOrigem = body.tipo === 'remessa' ? 'proprio' : 'faccao';
+      const localDestino = body.tipo === 'remessa' ? 'faccao' : 'proprio';
+      const fornOrigem = body.tipo === 'remessa' ? null : fornecedorId;
+      const fornDestino = body.tipo === 'remessa' ? fornecedorId : null;
+
+      const saldoOrigem = await locais.saldoNoLocal(client, {
+        varianteId, local: localOrigem, fornecedorId: fornOrigem,
+      });
+      const validacao = locais.validarMovimento({
+        quantidade, localOrigem, fornecedorOrigemId: fornOrigem,
+        localDestino, fornecedorDestinoId: fornDestino, saldoNaOrigem: saldoOrigem,
+      });
+      if (!validacao.ok) {
+        // Recusa ANTES do commit: um retorno de 50 peças de uma facção que só
+        // tem 30 registradas é erro de lançamento, e gravar assim criaria
+        // saldo negativo que contamina toda a conferência do período.
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: validacao.erro });
+      }
+      await locais.aplicarMovimento(client, {
+        varianteId, quantidade, localOrigem, fornecedorOrigemId: fornOrigem,
+        localDestino, fornecedorDestinoId: fornDestino,
+        motivo: `${body.tipo === 'remessa' ? 'Remessa para' : 'Retorno de'} facção`,
+        usuarioId: req.user?.id || null,
+        faccaoMovimentoId: rows[0].id,
+        ordemId: inteiroPositivo(body.ordem_id),
+      });
+      avisoPeca = validacao.avisoOrigemNaoEnderecada || null;
+    }
+
     await client.query('COMMIT');
 
-    // Peça pronta não tem "local" no estoque: `estoque_variantes` guarda UMA
-    // quantidade por variante, sem coluna de onde ela está. Baixar o saldo na
-    // remessa faria a peça sumir do estoque sem ter para onde ir; não baixar
-    // faz ela aparecer como disponível estando na lavanderia. Nenhum dos dois
-    // é certo, então o movimento fica registrado e a tela avisa — em vez de
-    // escolher em silêncio. Resolver de verdade pede coluna nova em
-    // `estoque_variantes`, e isso a REGRA 4 não deixa fazer sem autorização.
     res.status(201).json({
       ...rows[0],
-      saldoMovido: Boolean(insumoId),
-      aviso: insumoId ? null
-        : 'Movimento registrado. O saldo da peça NÃO foi movido: o estoque de peça pronta ainda não separa o que está aqui do que está na facção.',
+      saldoMovido: true,
+      aviso: avisoPeca,
     });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});

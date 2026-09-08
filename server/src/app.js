@@ -41,6 +41,7 @@ const estoqueMinimoRoutes = require('./routes/estoqueMinimo.routes');
 const producaoRoutes = require('./routes/producao.routes');
 const mixTributarioRoutes = require('./routes/mixTributario.routes');
 const analisesEstoqueRoutes = require('./routes/analisesEstoque.routes');
+const estoqueLocaisRoutes = require('./routes/estoqueLocais.routes');
 const precoPorCanalRoutes = require('./routes/precoPorCanal.routes');
 const saudeIntegracaoRoutes = require('./routes/saudeIntegracao.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
@@ -165,7 +166,20 @@ function createApp() {
   // autorizacao. `estoque` e' o dono natural: toda ordem de producao come
   // insumo do saldo e devolve peca pro saldo, e o saldo em faccao e' estoque
   // da empresa que so' esta' na mao de terceiro.
-  app.use('/api/producao', requireAuth, requireModulo('estoque'), producaoRoutes);
+  // Produção ganhou MÓDULO PRÓPRIO em 08/09/2026 (autorizado pela dona).
+  //
+  // O aceite continua sendo `['producao', 'estoque']`, e não só `producao`,
+  // de propósito: quem hoje tem `estoque` já usa a Produção, e trocar a chave
+  // de uma vez tiraria a tela dessas pessoas no primeiro deploy. Assim a
+  // chave nova ACRESCENTA um caminho de acesso em vez de substituir o antigo
+  // — ninguém perde nada, e agora dá para dar Produção a quem não deve ver o
+  // saldo do estoque, que era o ponto.
+  app.use('/api/producao', requireAuth, requireModulo(['producao', 'estoque']), producaoRoutes);
+  // Onde a peça está (08/09/2026): endereço no galpão e saldo por local.
+  // Fica em `estoque` — é saldo de peça pronta — e aceita `producao` porque a
+  // remessa para facção sai da tela de Produção e precisa ler o saldo por
+  // local para não mandar peça que não está aqui.
+  app.use('/api/estoque-locais', requireAuth, requireModulo(['estoque', 'producao']), estoqueLocaisRoutes);
   // Estoque parado em R$ e curva de tamanho (08/09/2026). Sob `estoque` pelo
   // mesmo motivo do estoque minimo: as duas leem saldo e historico de venda,
   // e nenhuma tabela nova foi criada (REGRA 4).

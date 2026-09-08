@@ -14,6 +14,9 @@ import { confirmar } from '../components/ConfirmDialog';
 const MODULOS = [
   { key: 'produto', label: 'Produto' },
   { key: 'estoque', label: 'Estoque' },
+  // Módulo próprio da Produção (08/09/2026): dá para deixar alguém tocar
+  // ordem de produção e facção sem abrir o saldo de estoque.
+  { key: 'producao', label: 'Produção' },
   { key: 'vendas', label: 'Vendas' },
   { key: 'marketplace', label: 'Marketplace' },
   { key: 'financeiro', label: 'Financeiro' },

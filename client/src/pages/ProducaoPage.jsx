@@ -811,12 +811,29 @@ function Faccao({ fornecedores, insumos, onMudou }) {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
-  const [mov, setMov] = useState({ fornecedor_id: '', insumo_id: '', tipo: 'remessa', quantidade: '', nota_numero: '' });
+  const [mov, setMov] = useState({
+    fornecedor_id: '', item: 'insumo', insumo_id: '', variante_id: '',
+    buscaPeca: '', tipo: 'remessa', quantidade: '', nota_numero: '',
+  });
+  const [variantes, setVariantes] = useState([]);
+
+  // Peça PRONTA que está na facção. Até 07/09 este número não existia: a
+  // remessa de peça pronta era registrada mas não movia saldo nenhum, porque
+  // o estoque não tinha lugar. A migration 0052 (08/09) deu o lugar, e agora
+  // a mesma tela responde pelas duas coisas que saem daqui — o material e a
+  // peça.
+  const [pecas, setPecas] = useState(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
-    try { setSaldos(await api.get('/producao/faccao/saldos')); }
-    catch (e) { setErro(e.message); }
+    try {
+      const [s, p] = await Promise.all([
+        api.get('/producao/faccao/saldos'),
+        api.get('/estoque-locais/faccao').catch(() => null),
+      ]);
+      setSaldos(s);
+      setPecas(p);
+    } catch (e) { setErro(e.message); }
     finally { setCarregando(false); }
   }, []);
   useEffect(() => { carregar(); }, [carregar]);
@@ -838,6 +855,14 @@ function Faccao({ fornecedores, insumos, onMudou }) {
             ? `${semCusto} item(ns) sem custo conhecido ficaram de fora deste total. Fora não é zero.`
             : 'Nosso material que está na mão de terceiro. Continua sendo estoque da empresa.'}
         />
+        <IndicadorDestaque
+          rotulo="Peça pronta em facção"
+          valor={pecas ? `${formatQtd(pecas.resumo.pecas)} peça(s)` : '—'}
+          tom={pecas && pecas.resumo.pecas > 0 ? 'atencao' : undefined}
+          Icone={Truck}
+          explicacao="Peça acabada que saiu daqui e continua sendo nossa. Conta no total do estoque e NÃO conta no disponível para venda."
+
+        />
         <IndicadorDestaque rotulo="Facções com material" valor={formatQtd(new Set(saldos.map((s) => s.fornecedor_id)).size)} />
       </div>
 
@@ -854,28 +879,76 @@ function Faccao({ fornecedores, insumos, onMudou }) {
             <option value="retorno">Retorno (volta pra cá)</option>
           </Select>
         </Field>
-        <Field label="Insumo">
-          <Select value={mov.insumo_id} onChange={(e) => setMov((m) => ({ ...m, insumo_id: e.target.value }))} placeholder="Escolha">
-            {insumos.map((i) => <option key={i.id} value={i.id}>{i.nome}</option>)}
+        <Field label="O que está indo">
+          <Select
+            value={mov.item}
+            onChange={(e) => setMov((m) => ({ ...m, item: e.target.value, insumo_id: '', variante_id: '' }))}
+          >
+            <option value="insumo">Material (malha, aviamento)</option>
+            <option value="peca">Peça pronta</option>
           </Select>
         </Field>
-        <Field label="Quantidade"><NumInput step="0.001" value={mov.quantidade} onChange={(v) => setMov((m) => ({ ...m, quantidade: v }))} /></Field>
+        {mov.item === 'insumo' ? (
+          <Field label="Insumo">
+            <Select value={mov.insumo_id} onChange={(e) => setMov((m) => ({ ...m, insumo_id: e.target.value }))} placeholder="Escolha">
+              {insumos.map((i) => <option key={i.id} value={i.id}>{i.nome}</option>)}
+            </Select>
+          </Field>
+        ) : (
+          <Field label="Peça" hint="Digite a referência e escolha a cor/tamanho">
+            <input
+              className="input"
+              value={mov.buscaPeca}
+              onChange={(e) => setMov((m) => ({ ...m, buscaPeca: e.target.value }))}
+              onKeyDown={async (e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                try {
+                  const r = await api.get(`/estoque-locais?busca=${encodeURIComponent(mov.buscaPeca)}`);
+                  setVariantes(r.itens.slice(0, 200));
+                } catch (err) { setErro(err.message); }
+              }}
+              placeholder="Referência e Enter"
+            />
+          </Field>
+        )}
+        {mov.item === 'peca' && variantes.length > 0 && (
+          <Field label="Cor e tamanho">
+            <Select value={mov.variante_id} onChange={(e) => setMov((m) => ({ ...m, variante_id: e.target.value }))} placeholder="Escolha">
+              {variantes.map((v) => (
+                <option key={v.varianteId} value={v.varianteId}>
+                  {v.referencia} · {v.cor} · {v.tamanho} — {formatQtd(v.disponivel)} aqui
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
+        <Field label="Quantidade"><NumInput step={mov.item === 'peca' ? '1' : '0.001'} value={mov.quantidade} onChange={(v) => setMov((m) => ({ ...m, quantidade: v }))} /></Field>
         <Field label="Nota"><input className="input" value={mov.nota_numero} onChange={(e) => setMov((m) => ({ ...m, nota_numero: e.target.value }))} /></Field>
       </div>
       <div className="painel-acoes-inline">
         <button
           type="button" className="btn"
-          disabled={!mov.fornecedor_id || !mov.insumo_id || !(Number(mov.quantidade) > 0)}
+          disabled={!mov.fornecedor_id
+            || !(mov.item === 'insumo' ? mov.insumo_id : mov.variante_id)
+            || !(Number(mov.quantidade) > 0)}
           onClick={async () => {
             setErro(''); setAviso('');
             try {
+              // O backend recusa insumo E variante juntos de propósito: um
+              // movimento é de material OU de peça, nunca dos dois, e mandar
+              // os dois faria o saldo mexer em dois lugares por um evento só.
               const r = await api.post('/producao/faccao/movimento', {
-                ...mov,
                 fornecedor_id: Number(mov.fornecedor_id),
-                insumo_id: Number(mov.insumo_id),
+                tipo: mov.tipo,
+                nota_numero: mov.nota_numero,
+                insumo_id: mov.item === 'insumo' ? Number(mov.insumo_id) : null,
+                variante_id: mov.item === 'peca' ? Number(mov.variante_id) : null,
                 quantidade: Number(mov.quantidade),
               });
-              setAviso(r.aviso || 'Movimento lançado: o material mudou de lugar, não sumiu.');
+              setAviso(r.aviso || (mov.item === 'peca'
+                ? 'Movimento lançado: a peça mudou de lugar. Ela continua no total do estoque e saiu do disponível para venda.'
+                : 'Movimento lançado: o material mudou de lugar, não sumiu.'));
               setMov((m) => ({ ...m, quantidade: '', nota_numero: '' }));
               await carregar();
               onMudou();
@@ -1113,16 +1186,19 @@ export default function ProducaoPage() {
       const qs = new URLSearchParams();
       if (buscaAplicada) qs.set('busca', buscaAplicada);
       if (filtroSituacao) qs.set('situacao', filtroSituacao);
-      const [o, p, f, i] = await Promise.all([
+      // As listas de apoio vêm de UMA rota do próprio módulo Produção
+      // (08/09/2026). Antes vinham de /produtos, /fornecedores e /insumos,
+      // que são de outros módulos: quem recebesse só a chave `producao`
+      // tomaria 403 nas três e abriria esta tela com todos os seletores
+      // vazios, sem mensagem de erro nenhuma.
+      const [o, apoio] = await Promise.all([
         api.get(`/producao/ordens?${qs}`),
-        api.get('/produtos').catch(() => []),
-        api.get('/fornecedores').catch(() => []),
-        api.get('/insumos').catch(() => []),
+        api.get('/producao/apoio').catch(() => ({ referencias: [], fornecedores: [], insumos: [] })),
       ]);
       setOrdens(o);
-      setProdutos(p);
-      setFornecedores(f);
-      setInsumos(Array.isArray(i) ? i : (i?.insumos || []));
+      setProdutos(apoio.referencias || []);
+      setFornecedores(apoio.fornecedores || []);
+      setInsumos(apoio.insumos || []);
     } catch (e) {
       setErro(e.message);
     } finally {

@@ -7,7 +7,17 @@ const { registrar, diferenca } = require('../lib/auditoria');
 
 const router = express.Router();
 
-const MODULOS_VALIDOS = new Set(['produto', 'estoque', 'vendas', 'marketplace', 'viagens', 'compras', 'analises', 'configuracoes', 'calendario', 'financeiro']);
+// ⚠️ Esta lista é a fonte da verdade das chaves de módulo. Quem for
+// acrescentar uma tem de mexer em quatro lugares, e esquecer qualquer um deles
+// dá um erro silencioso diferente:
+//   1. aqui (senão a chave é recusada ao salvar o usuário);
+//   2. `client/src/pages/UsuariosPage.jsx` (senão ninguém consegue conceder);
+//   3. `client/src/lib/modules.js` (senão o menu não mostra a tela);
+//   4. o `requireModulo` da rota em `app.js` (senão a API continua fechada).
+//
+// `producao` entrou em 08/09/2026, autorizado pela dona: dá para deixar
+// alguém tocar ordem de produção e facção SEM abrir o saldo de estoque.
+const MODULOS_VALIDOS = new Set(['produto', 'estoque', 'producao', 'vendas', 'marketplace', 'viagens', 'compras', 'analises', 'configuracoes', 'calendario', 'financeiro']);
 
 router.use(requireAdmin);
 
