@@ -51,6 +51,7 @@ import CoberturaEstoquePage from './pages/CoberturaEstoquePage';
 import ProducaoPage from './pages/ProducaoPage';
 import InsumosPage from './pages/InsumosPage';
 import PromocoesPage from './pages/PromocoesPage';
+import MixTributarioPage from './pages/MixTributarioPage';
 import RelatorioTaxasPage from './pages/RelatorioTaxasPage';
 import ImportarPedidosPage from './pages/ImportarPedidosPage';
 import ConferenciaPedidosPage from './pages/ConferenciaPedidosPage';
@@ -104,6 +105,10 @@ function AppRoutes() {
                   <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/ficha-precificacao" element={<FichaPrecificacaoPage />} />
                   <Route path="/alertas" element={<AlertasPage />} />
+                  {/* Mix B2B × B2C (07/09/2026). Fica em Análises porque é
+                      leitura sobre o faturamento que já existe — não cria
+                      módulo novo nem mexe em permissão (REGRA 4). */}
+                  <Route path="/analises/mix-tributario" element={<MixTributarioPage />} />
                   <Route path="/kits" element={<KitsPage />} />
                   <Route path="/ficha-tecnica" element={<FichaTecnicaPage />} />
                   <Route path="/estoque" element={<EstoquePage />} />

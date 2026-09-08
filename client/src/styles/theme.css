@@ -5706,3 +5706,51 @@ table.ficha-doc-tabela {
    que já existe em `.anuncio-painel`. */
 .anuncio-painel.painel-largo { width: min(940px, 100%); }
 .painel-fundo-clicavel { cursor: default; }
+
+/* ===========================================================================
+   Análises › Mix B2B × B2C (07/09/2026)
+   ===========================================================================
+   Só variáveis e selos que já existem (REGRA 3). O que é novo aqui é a
+   forma: a faixa do prazo no alto, os parâmetros à vista, e duas tabelas de
+   apoio que explicam de onde veio cada real em vez de pedir confiança. */
+
+.mix-prazo {
+  display: flex; align-items: flex-start; gap: 10px;
+  border: 1px solid var(--warning-ring); background: var(--warning-bg);
+  color: var(--warning); border-radius: var(--radius); padding: 12px 14px;
+}
+.mix-prazo svg { flex: none; margin-top: 1px; }
+.mix-prazo strong { display: block; font-size: 13px; }
+.mix-prazo p { margin: 3px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--ink); }
+
+.mix-parametros {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.mix-explicacao-grade {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px; margin-top: 10px;
+}
+.mix-explicacao-grade h4 { margin: 0 0 4px; font-size: 12.5px; }
+.mix-explicacao-grade p { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-soft); }
+
+.mix-avisos { display: flex; flex-direction: column; gap: 6px; }
+.mix-avisos p {
+  display: flex; align-items: flex-start; gap: 7px; margin: 0;
+  font-size: 12.5px; line-height: 1.5; color: var(--ink-soft);
+}
+.mix-avisos svg { flex: none; margin-top: 3px; }
+
+.tabela-mix-criterios, .tabela-mix-clientes { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tabela-mix-criterios th, .tabela-mix-clientes th {
+  text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-faint);
+  white-space: nowrap;
+}
+.tabela-mix-criterios td, .tabela-mix-clientes td {
+  padding: 9px 10px; border-bottom: 1px solid var(--border-soft); vertical-align: top;
+}
+.tabela-mix-criterios th.num, .tabela-mix-criterios td.num,
+.tabela-mix-clientes th.num, .tabela-mix-clientes td.num { text-align: right; }
+.tabela-mix-criterios td:last-child { max-width: 420px; line-height: 1.5; }

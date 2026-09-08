@@ -39,6 +39,7 @@ const promocoesRoutes = require('./routes/promocoes.routes');
 const insumosRoutes = require('./routes/insumos.routes');
 const estoqueMinimoRoutes = require('./routes/estoqueMinimo.routes');
 const producaoRoutes = require('./routes/producao.routes');
+const mixTributarioRoutes = require('./routes/mixTributario.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
 const auditoriaRoutes = require('./routes/auditoria.routes');
 const emailRoutes = require('./routes/email.routes');
@@ -116,6 +117,11 @@ function createApp() {
   app.use('/api/kits', requireAuth, requireModulo('produto'), kitsRoutes);
   app.use('/api/ficha-tecnica', requireAuth, requireModulo(['produto', 'vendas']), fichaTecnicaRoutes);
   app.use('/api/simulacao', requireAuth, requireModulo('analises'), simulacaoRoutes);
+  // Mix B2B × B2C (07/09/2026). Leitura pura sobre pedido já gravado, para a
+  // decisão da opção do Simples pelo regime regular de IBS/CBS. Fica sob
+  // `analises`, o módulo que já tem as telas de leitura consolidada —
+  // nenhuma permissão existente muda por causa desta rota nova (REGRA 4).
+  app.use('/api/mix-tributario', requireAuth, requireModulo('analises'), mixTributarioRoutes);
 
   app.use('/api/estoque', requireAuth, requireModulo('estoque'), estoqueRoutes);
 

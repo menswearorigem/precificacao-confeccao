@@ -122,6 +122,12 @@ export const MODULES = [
       { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { to: '/ficha-precificacao', label: 'Ficha de Precificação', icon: FileText },
       { to: '/alertas', label: 'Central de Alertas', icon: AlertTriangle },
+      // Mix B2B × B2C (07/09/2026). O número que embasa a decisão da opção
+      // do Simples pelo regime regular de IBS/CBS — prazo em 30/09/2026.
+      // Entra em Análises (leitura sobre faturamento já gravado) e não num
+      // módulo novo: chave de módulo nova muda quem enxerga o quê, e a
+      // REGRA 4 não deixa mexer nisso sem autorização.
+      { to: '/analises/mix-tributario', label: 'Mix B2B × B2C', icon: Scale },
       { to: '/simulador', label: 'Simulador', icon: FlaskConical },
     ],
   },
