@@ -5795,3 +5795,24 @@ table.ficha-doc-tabela {
   padding: 3px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .saude-acoes { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+
+/* ===========================================================================
+   Curva de tamanho (08/09/2026)
+   ===========================================================================
+   Uma barra por tamanho. Ela existe porque a curva de tamanho é um SINO: só
+   dá para ver que está torta olhando o formato, e uma coluna de porcentagens
+   não mostra formato nenhum.
+
+   REGRA 3: sem cor solta. A barra normal usa terracota (a cor de ação/dado
+   ativo do sistema) e a do tamanho que esgotou usa o âmbar de atenção — que é
+   exatamente o que ela significa: essa participação está subestimada. */
+.curva-barra-trilho {
+  height: 10px; border-radius: 5px; background: var(--border-soft);
+  overflow: hidden; min-width: 90px;
+}
+.curva-barra-preenchida {
+  height: 100%; border-radius: 5px; background: var(--terracotta);
+  transition: width 0.25s var(--ease);
+}
+.curva-barra-censurada { background: var(--warning); }
+@media (prefers-reduced-motion: reduce) { .curva-barra-preenchida { transition: none; } }

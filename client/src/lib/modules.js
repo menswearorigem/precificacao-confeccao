@@ -5,6 +5,7 @@ import {
   Truck, BarChart3, ShieldCheck, Plug, TrendingUp, ReceiptText, Store, Plane,
   LineChart, SearchCheck, Layers, AlertTriangle, CalendarDays, UsersRound,
   LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer, Activity,
+  Banknote, Ruler,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -38,6 +39,11 @@ export const MODULES = [
       // criar chave de modulo nova mudaria quem enxerga o que — o que a
       // REGRA 4 nao deixa fazer sem autorizacao.
       { to: '/estoque/producao', label: 'Produção', icon: Factory },
+      // Dinheiro parado e Curva de tamanho (08/09/2026). As duas leem saldo e
+      // historico de venda que ja' existem; nenhuma tabela nova, nenhuma
+      // chave de modulo nova (REGRA 4).
+      { to: '/estoque/parado', label: 'Dinheiro Parado', icon: Banknote },
+      { to: '/estoque/curva-tamanho', label: 'Curva de Tamanho', icon: Ruler },
       { to: '/estoque/ean', label: 'Importar EAN', icon: Tags },
       { to: '/estoque/ficha', label: 'Ficha de Estoque', icon: Printer },
     ],
@@ -132,6 +138,10 @@ export const MODULES = [
       // módulo novo: chave de módulo nova muda quem enxerga o quê, e a
       // REGRA 4 não deixa mexer nisso sem autorização.
       { to: '/analises/mix-tributario', label: 'Mix B2B × B2C', icon: Scale },
+      // Preco por canal (08/09/2026): o preco que entrega a margem em cada
+      // marketplace, com a taxa real de cada um. So' leitura -- nao grava
+      // preco nenhum (REGRA 1).
+      { to: '/analises/preco-por-canal', label: 'Preço por Canal', icon: Tags },
       { to: '/simulador', label: 'Simulador', icon: FlaskConical },
     ],
   },

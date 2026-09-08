@@ -19,7 +19,7 @@ const produtosRoutes = require('./produtos.routes');
 const { getCalcContext } = require('../lib/calcContext');
 const {
   explodirFicha, custoRealDaOrdem, compararComPadrao,
-  tempoPadraoDaPeca, custoMaoDeObraPadrao,
+  tempoPadraoDaPeca, custoMaoDeObraPadrao, wipPorEtapa,
 } = require('../lib/producao');
 
 const router = express.Router();
@@ -170,6 +170,115 @@ router.post('/consumo-tamanho', async (req, res, next) => {
     next(err);
   } finally {
     client.release();
+  }
+});
+
+// ===========================================================================
+// WIP — onde a produção está agora
+// ===========================================================================
+// GET /api/producao/wip
+//
+// Lê o apontamento que já existe como FLUXO: quantas peças pararam em cada
+// etapa de cada ordem aberta. É a pergunta que hoje não tem resposta em
+// lugar nenhum — a ordem aparece como "em produção" e ninguém sabe se ela
+// está no corte ou esperando o acabamento há três semanas.
+//
+// ⚠️ Só ordens ABERTAS. Ordem concluída não é WIP: as peças dela já entraram
+// no estoque, e somá-las inflaria o "em processo" com peça que está na
+// prateleira.
+router.get('/wip', async (req, res, next) => {
+  try {
+    const { rows: ordens } = await pool.query(
+      `SELECT o.id, o.numero, o.situacao, o.produto_id, o.quantidade_planejada,
+              o.quantidade_produzida, o.data_abertura, o.data_prevista,
+              p.referencia, p.descricao, f.nome AS faccao
+         FROM ordens_producao o
+         JOIN produtos p ON p.id = o.produto_id
+         LEFT JOIN fornecedores f ON f.id = o.fornecedor_id
+        WHERE o.situacao IN ('planejada', 'em_producao')
+        ORDER BY o.data_abertura`
+    );
+
+    if (ordens.length === 0) {
+      return res.json({
+        ordens: [], etapas: [], resumo: { ordens: 0, emProcesso: 0 },
+        explicacao: 'Nenhuma ordem de produção aberta no momento.',
+      });
+    }
+
+    const ids = ordens.map((o) => o.id);
+    const produtoIds = [...new Set(ordens.map((o) => o.produto_id))];
+    const [{ rows: roteiros }, { rows: apontamentos }] = await Promise.all([
+      pool.query('SELECT * FROM producao_operacoes WHERE produto_id = ANY($1) AND ativo ORDER BY produto_id, sequencia', [produtoIds]),
+      pool.query('SELECT * FROM ordem_producao_apontamentos WHERE ordem_id = ANY($1)', [ids]),
+    ]);
+
+    const porOrdem = ordens.map((o) => {
+      const wip = wipPorEtapa({
+        roteiro: roteiros.filter((r) => r.produto_id === o.produto_id),
+        apontamentos: apontamentos.filter((a) => a.ordem_id === o.id),
+        quantidadePlanejada: o.quantidade_planejada,
+      });
+      // Onde a ordem ESTÁ: a etapa mais avançada que ainda tem peça esperando.
+      //
+      // ⚠️ A ÚLTIMA etapa fica de fora. O que está parado nela já é peça
+      // pronta esperando lançamento no estoque — dizer que a ordem "está no
+      // acabamento" quando o acabamento já terminou mandaria alguém cobrar a
+      // facção em vez de lançar a entrada.
+      const etapaAtual = [...wip.etapas].reverse().find((e) => !e.ehUltima && e.emEspera > 0) || null;
+      return {
+        ordem: {
+          id: o.id, numero: o.numero, situacao: o.situacao,
+          referencia: o.referencia, descricao: o.descricao, faccao: o.faccao,
+          dataAbertura: o.data_abertura, dataPrevista: o.data_prevista,
+          quantidadePlanejada: Number(o.quantidade_planejada),
+        },
+        ...wip,
+        etapaAtual: etapaAtual ? { nome: etapaAtual.nome, pecas: etapaAtual.emEspera, paradoHaDias: etapaAtual.paradoHaDias } : null,
+        // Ordem que passou da data prevista e ainda tem peça no meio do
+        // caminho é a que precisa de decisão hoje.
+        atrasada: !!o.data_prevista && new Date(o.data_prevista) < new Date() && wip.totalEmProcesso > 0,
+      };
+    });
+
+    // Consolidado por etapa, somando todas as ordens. É a visão de fábrica:
+    // "tenho 1.200 peças esperando costura".
+    //
+    // ⚠️ Agrupado por NOME da etapa, e não por sequência: a sequência 2 de
+    // uma referência pode ser costura e de outra pode ser bordado. Somar por
+    // número juntaria coisas diferentes.
+    const consolidado = new Map();
+    for (const o of porOrdem) {
+      for (const e of o.etapas) {
+        if (e.ehUltima) continue; // a última é peça esperando entrar no estoque, não WIP
+        if (!consolidado.has(e.nome)) consolidado.set(e.nome, { nome: e.nome, setores: e.setores, pecas: 0, ordens: 0, maisParadoDias: null });
+        const c = consolidado.get(e.nome);
+        if (e.emEspera > 0) { c.pecas += e.emEspera; c.ordens += 1; }
+        if (e.paradoHaDias != null && (c.maisParadoDias == null || e.paradoHaDias > c.maisParadoDias)) {
+          c.maisParadoDias = e.paradoHaDias;
+        }
+      }
+    }
+
+    res.json({
+      ordens: porOrdem,
+      etapas: [...consolidado.values()].filter((e) => e.pecas > 0).sort((a, b) => b.pecas - a.pecas),
+      resumo: {
+        ordens: porOrdem.length,
+        emProcesso: porOrdem.reduce((s, o) => s + o.totalEmProcesso, 0),
+        aguardandoEntrada: porOrdem.reduce((s, o) => s + o.aguardandoEntrada, 0),
+        naoIniciado: porOrdem.reduce((s, o) => s + (o.naoIniciado || 0), 0),
+        atrasadas: porOrdem.filter((o) => o.atrasada).length,
+        // Enquanto isto não for zero, os números acima são um retrato
+        // incompleto — e a tela precisa dizer, não esconder.
+        comApontamentoSolto: porOrdem.filter((o) => o.foraDoRoteiro.length > 0).length,
+        comInconsistencia: porOrdem.filter((o) => o.inconsistencias.length > 0).length,
+        semRoteiro: porOrdem.filter((o) => o.etapas.length === 0).length,
+      },
+      explicacao: 'As peças em espera numa etapa são as que passaram por ela e ainda não foram apontadas na etapa seguinte, descontado o refugo. "Aguardando entrada" é o que já passou pela última etapa e ainda não foi lançado no estoque — é ele que costuma explicar estoque que "sumiu".',
+    });
+  } catch (err) {
+    next(err);
   }
 });
 

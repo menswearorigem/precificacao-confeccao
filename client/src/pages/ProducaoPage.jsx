@@ -916,6 +916,182 @@ function Faccao({ fornecedores, insumos, onMudou }) {
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Onde está a produção — WIP por etapa
+// ---------------------------------------------------------------------------
+// O apontamento já existia; o que faltava era lê-lo como FLUXO. As peças
+// "em espera" numa etapa são as que passaram por ela e ainda não foram
+// apontadas na seguinte, descontado o refugo.
+//
+// Duas coisas ficam à vista porque são elas que fazem o número valer:
+//   · apontamento que não casa com o roteiro NÃO some da conta — ele aparece
+//     numa lista, e o resultado é marcado como não confiável enquanto existir;
+//   · costurar mais peças do que se cortou é impossível, então o negativo
+//     vira aviso, não vira zero calado.
+function Wip() {
+  const [dados, setDados] = useState(null);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+  const [abertas, setAbertas] = useState({});
+
+  const carregar = useCallback(async () => {
+    setCarregando(true);
+    setErro('');
+    try { setDados(await api.get('/producao/wip')); }
+    catch (e) { setErro(e.message); }
+    finally { setCarregando(false); }
+  }, []);
+
+  useEffect(() => { carregar(); }, [carregar]);
+
+  if (carregando) return <Skeleton height={260} />;
+  if (erro) return <p className="erro-inline">{erro}</p>;
+  if (!dados) return null;
+
+  const r = dados.resumo;
+
+  return (
+    <>
+      <p className="ink-soft ajuda-bloco"><Info size={14} /> {dados.explicacao}</p>
+
+      <div className="indicadores-linha">
+        <IndicadorDestaque
+          rotulo="Peças dentro da fábrica"
+          valor={formatQtd(r.emProcesso)}
+          Icone={Factory}
+          explicacao="Já começaram e ainda não terminaram. Não inclui o que nem foi cortado nem o que já está pronto esperando entrada."
+        />
+        <IndicadorDestaque
+          rotulo="Prontas aguardando entrada"
+          valor={formatQtd(r.aguardandoEntrada)}
+          tom={r.aguardandoEntrada > 0 ? 'atencao' : undefined}
+          explicacao="Passaram pela última etapa e ainda não foram lançadas no estoque. É isto que costuma explicar peça que 'sumiu'."
+        />
+        <IndicadorDestaque rotulo="Ainda não começaram" valor={formatQtd(r.naoIniciado)} />
+        <IndicadorDestaque
+          rotulo="Ordens atrasadas"
+          valor={formatQtd(r.atrasadas)}
+          tom={r.atrasadas > 0 ? 'prejuizo' : undefined}
+          explicacao="Passaram da data prevista e ainda têm peça no meio do caminho."
+        />
+      </div>
+
+      {(r.comApontamentoSolto > 0 || r.comInconsistencia > 0 || r.semRoteiro > 0) && (
+        <p className="aviso-inline">
+          <AlertTriangle size={14} />
+          Os números acima estão incompletos:
+          {r.semRoteiro > 0 && ` ${r.semRoteiro} ordem(ns) sem roteiro cadastrado (não há sequência para medir);`}
+          {r.comApontamentoSolto > 0 && ` ${r.comApontamentoSolto} com apontamento fora do roteiro;`}
+          {r.comInconsistencia > 0 && ` ${r.comInconsistencia} com apontamento que não fecha entre etapas.`}
+        </p>
+      )}
+
+      {dados.etapas.length > 0 && (
+        <div className="card">
+          <h2 className="card-titulo"><Layers size={16} /> Fila por etapa, somando todas as ordens</h2>
+          <div className="tabela-rolagem">
+            <table className="tabela-nota">
+              <thead>
+                <tr><th>Etapa</th><th>Setor</th><th className="num">Peças esperando</th><th className="num">Ordens</th><th className="num">Sem apontamento há</th></tr>
+              </thead>
+              <tbody>
+                {dados.etapas.map((e) => (
+                  <tr key={e.nome}>
+                    <td><strong>{e.nome}</strong></td>
+                    <td className="ink-soft">{e.setores.join(', ')}</td>
+                    <td className="num">{formatQtd(e.pecas)}</td>
+                    <td className="num">{formatQtd(e.ordens)}</td>
+                    <td className={`num ${e.maisParadoDias > 14 ? 'ink-prejuizo' : ''}`}>
+                      {e.maisParadoDias == null ? '—' : `${formatQtd(e.maisParadoDias)} dias`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {dados.ordens.length === 0 && (
+        <EstadoVazio Icone={Factory} titulo="Nenhuma ordem aberta" descricao="Sem ordem planejada ou em produção não há nada em processo." />
+      )}
+
+      {dados.ordens.map((o) => (
+        <div className="card" key={o.ordem.id}>
+          <div className="pagina-topo">
+            <h2 className="card-titulo">
+              OP {o.ordem.numero} · {o.ordem.referencia}
+              {o.atrasada && <span className="selo tone-prejuizo">atrasada</span>}
+              {!o.confiavel && <span className="selo tone-atencao">apontamento incompleto</span>}
+            </h2>
+            <span className="ink-soft">
+              {o.etapaAtual
+                ? `Parada em ${o.etapaAtual.nome} — ${formatQtd(o.etapaAtual.pecas)} peça(s)${o.etapaAtual.paradoHaDias != null ? `, sem apontamento há ${o.etapaAtual.paradoHaDias} dia(s)` : ''}`
+                : 'Sem peça em espera no meio do roteiro'}
+            </span>
+          </div>
+
+          {o.motivo && <p className="aviso-inline"><AlertTriangle size={14} /> {o.motivo}</p>}
+
+          {o.etapas.length > 0 && (
+            <div className="tabela-rolagem">
+              <table className="tabela-nota">
+                <thead>
+                  <tr>
+                    <th>#</th><th>Etapa</th><th className="num">Passaram</th><th className="num">Refugo</th>
+                    <th className="num">Em espera</th><th className="num">Último apontamento</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {o.etapas.map((e) => (
+                    <tr key={e.sequencia} className={e.saldoNegativo > 0 ? 'linha-pendente' : undefined}>
+                      <td className="num">{e.sequencia}</td>
+                      <td>
+                        <strong>{e.nome}</strong>
+                        {e.ehUltima && <span className="selo tone-neutro" title="O que está parado aqui é peça pronta esperando lançamento no estoque">última</span>}
+                      </td>
+                      <td className="num">{formatQtd(e.passaram)}</td>
+                      <td className={`num ${e.refugo > 0 ? 'ink-atencao' : ''}`}>{formatQtd(e.refugo)}</td>
+                      <td className="num"><strong>{formatQtd(e.emEspera)}</strong></td>
+                      <td className="num ink-soft">
+                        {e.paradoHaDias == null ? 'nunca' : `há ${formatQtd(e.paradoHaDias)} dia(s)`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {o.inconsistencias.length > 0 && (
+            <div className="bloco-alerta">
+              <p><AlertTriangle size={14} /> Apontamento que não fecha entre etapas</p>
+              <ul>{o.inconsistencias.map((i) => <li key={`${i.de}-${i.para}`}>{i.texto}</li>)}</ul>
+            </div>
+          )}
+
+          {o.foraDoRoteiro.length > 0 && (
+            <>
+              <button type="button" className="btn-sec" onClick={() => setAbertas((a) => ({ ...a, [o.ordem.id]: !a[o.ordem.id] }))}>
+                <ClipboardList size={14} /> {o.foraDoRoteiro.length} apontamento(s) fora do roteiro
+              </button>
+              {abertas[o.ordem.id] && (
+                <ul className="ink-soft ajuda-bloco">
+                  {o.foraDoRoteiro.map((f, n) => (
+                    <li key={`${f.operacao}-${n}`}>
+                      {f.operacao}{f.quantidade != null ? ` — ${formatQtd(f.quantidade)} peça(s)` : ''}: {f.motivo}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </div>
+      ))}
+    </>
+  );
+}
+
 export default function ProducaoPage() {
   const [aba, setAba] = useState('ordens');
   const [ordens, setOrdens] = useState([]);
@@ -1016,6 +1192,9 @@ export default function ProducaoPage() {
         <button type="button" className={`subtab-btn ${aba === 'roteiro' ? 'active' : ''}`} onClick={() => setAba('roteiro')}>
           Roteiro e consumo
         </button>
+        <button type="button" className={`subtab-btn ${aba === 'wip' ? 'active' : ''}`} onClick={() => setAba('wip')}>
+          Onde está a produção
+        </button>
         <button type="button" className={`subtab-btn ${aba === 'faccao' ? 'active' : ''}`} onClick={() => setAba('faccao')}>
           Facção
         </button>
@@ -1088,6 +1267,7 @@ export default function ProducaoPage() {
         </>
       )}
 
+      {aba === 'wip' && <Wip />}
       {aba === 'roteiro' && <RoteiroEConsumo produtos={produtos} fornecedores={fornecedores} />}
       {aba === 'faccao' && <Faccao fornecedores={fornecedores} insumos={insumos} onMudou={carregar} />}
 

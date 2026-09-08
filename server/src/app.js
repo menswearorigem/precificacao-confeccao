@@ -40,6 +40,8 @@ const insumosRoutes = require('./routes/insumos.routes');
 const estoqueMinimoRoutes = require('./routes/estoqueMinimo.routes');
 const producaoRoutes = require('./routes/producao.routes');
 const mixTributarioRoutes = require('./routes/mixTributario.routes');
+const analisesEstoqueRoutes = require('./routes/analisesEstoque.routes');
+const precoPorCanalRoutes = require('./routes/precoPorCanal.routes');
 const saudeIntegracaoRoutes = require('./routes/saudeIntegracao.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
 const auditoriaRoutes = require('./routes/auditoria.routes');
@@ -123,6 +125,10 @@ function createApp() {
   // `analises`, o módulo que já tem as telas de leitura consolidada —
   // nenhuma permissão existente muda por causa desta rota nova (REGRA 4).
   app.use('/api/mix-tributario', requireAuth, requireModulo('analises'), mixTributarioRoutes);
+  // Preco por canal (08/09/2026). Le o custo e o imposto do MOTOR e forma o
+  // preco com a taxa real de cada marketplace. Fica junto de produto/analises
+  // porque e' leitura de precificacao -- nao grava preco nenhum (REGRA 1).
+  app.use('/api/preco-por-canal', requireAuth, requireModulo(['produto', 'analises']), precoPorCanalRoutes);
 
   app.use('/api/estoque', requireAuth, requireModulo('estoque'), estoqueRoutes);
 
@@ -160,6 +166,10 @@ function createApp() {
   // insumo do saldo e devolve peca pro saldo, e o saldo em faccao e' estoque
   // da empresa que so' esta' na mao de terceiro.
   app.use('/api/producao', requireAuth, requireModulo('estoque'), producaoRoutes);
+  // Estoque parado em R$ e curva de tamanho (08/09/2026). Sob `estoque` pelo
+  // mesmo motivo do estoque minimo: as duas leem saldo e historico de venda,
+  // e nenhuma tabela nova foi criada (REGRA 4).
+  app.use('/api/analises-estoque', requireAuth, requireModulo('estoque'), analisesEstoqueRoutes);
   app.use('/api/clientes', requireAuth, requireModulo('vendas'), clientesRoutes);
   app.use('/api/pedidos', requireAuth, requireModulo(['vendas', 'marketplace']), pedidosRoutes);
   app.use('/api/fornecedores', requireAuth, requireModulo('compras'), fornecedoresRoutes);

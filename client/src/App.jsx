@@ -52,6 +52,9 @@ import ProducaoPage from './pages/ProducaoPage';
 import InsumosPage from './pages/InsumosPage';
 import PromocoesPage from './pages/PromocoesPage';
 import MixTributarioPage from './pages/MixTributarioPage';
+import EstoqueParadoPage from './pages/EstoqueParadoPage';
+import CurvaTamanhoPage from './pages/CurvaTamanhoPage';
+import PrecoPorCanalPage from './pages/PrecoPorCanalPage';
 import SaudeIntegracaoPage from './pages/SaudeIntegracaoPage';
 import RelatorioTaxasPage from './pages/RelatorioTaxasPage';
 import ImportarPedidosPage from './pages/ImportarPedidosPage';
@@ -110,6 +113,9 @@ function AppRoutes() {
                       leitura sobre o faturamento que já existe — não cria
                       módulo novo nem mexe em permissão (REGRA 4). */}
                   <Route path="/analises/mix-tributario" element={<MixTributarioPage />} />
+                  <Route path="/analises/preco-por-canal" element={<PrecoPorCanalPage />} />
+                  <Route path="/estoque/parado" element={<EstoqueParadoPage />} />
+                  <Route path="/estoque/curva-tamanho" element={<CurvaTamanhoPage />} />
                   <Route path="/kits" element={<KitsPage />} />
                   <Route path="/ficha-tecnica" element={<FichaTecnicaPage />} />
                   <Route path="/estoque" element={<EstoquePage />} />

@@ -275,6 +275,183 @@ function custoMaoDeObraPadrao(operacoes) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// WIP por etapa — "onde está a produção agora?"
+// ---------------------------------------------------------------------------
+// A pergunta que hoje não tem resposta em lugar nenhum: a ordem está aberta,
+// mas parada em qual etapa? O apontamento já guarda quantas peças passaram
+// por cada operação; o que faltava era ler isso como FLUXO.
+//
+// A conta é uma subtração entre etapas vizinhas:
+//
+//   em espera na etapa k = (passaram por k − refugo em k) − passaram por k+1
+//
+// Três armadilhas que essa subtração esconde, e que esta função devolve em
+// vez de disfarçar:
+//
+//   1. SALDO NEGATIVO. Se a etapa seguinte registrou MAIS peças que a
+//      anterior, o apontamento está errado — alguém apontou a costura sem
+//      apontar o corte. Zerar calado faria a tela mostrar "0 em espera" numa
+//      etapa que na verdade tem apontamento faltando. Aqui o negativo vira
+//      zero na conta E vira uma inconsistência nomeada, com o par de etapas.
+//
+//   2. APONTAMENTO FORA DO ROTEIRO. Operação apagada, ou apontamento com
+//      nome livre. Ele não tem lugar na sequência, então não pode entrar na
+//      subtração — mas some da soma se for ignorado. Vai para uma lista
+//      própria, com as peças que ele carrega.
+//
+//   3. REFUGO. Peça refugada saiu do fluxo: ela não vai chegar na etapa
+//      seguinte, e sem descontar ela ficaria "em espera" para sempre.
+//
+// ⚠️ Operações com a MESMA `sequencia` são a mesma etapa (roteiro com
+// operações paralelas). Tratá-las como etapas em fila daria uma subtração
+// entre coisas que acontecem ao mesmo tempo.
+function wipPorEtapa({ roteiro, apontamentos, quantidadePlanejada }) {
+  // Agrupa o roteiro por sequência: cada sequência é UMA etapa.
+  const etapasPorSeq = new Map();
+  for (const o of roteiro || []) {
+    const seq = Number(o.sequencia) || 0;
+    if (!etapasPorSeq.has(seq)) {
+      etapasPorSeq.set(seq, { sequencia: seq, operacaoIds: new Set(), nomes: [], setores: new Set() });
+    }
+    const e = etapasPorSeq.get(seq);
+    e.operacaoIds.add(o.id);
+    if (o.nome) e.nomes.push(o.nome);
+    if (o.setor) e.setores.add(o.setor);
+  }
+  const etapas = [...etapasPorSeq.values()].sort((a, b) => a.sequencia - b.sequencia);
+
+  if (etapas.length === 0) {
+    return {
+      etapas: [],
+      // Sem roteiro não existe "etapa seguinte", e portanto não existe WIP por
+      // etapa. Devolver uma lista vazia sem dizer por quê faria a tela parecer
+      // que a produção está toda parada no lugar nenhum.
+      motivo: 'esta referência não tem roteiro de operações cadastrado, então não há sequência para medir o fluxo',
+      foraDoRoteiro: [],
+      inconsistencias: [],
+    };
+  }
+
+  // Onde cada operação cai na sequência.
+  const seqDaOperacao = new Map();
+  for (const e of etapas) for (const id of e.operacaoIds) seqDaOperacao.set(id, e.sequencia);
+
+  const porEtapa = new Map(etapas.map((e) => [e.sequencia, {
+    ...e,
+    nomes: [...new Set(e.nomes)],
+    setores: [...e.setores],
+    operacaoIds: [...e.operacaoIds],
+    passaram: 0,
+    refugo: 0,
+    apontamentos: 0,
+    ultimoApontamento: null,
+  }]));
+
+  const foraDoRoteiro = [];
+  for (const a of apontamentos || []) {
+    const seq = a.operacao_id != null ? seqDaOperacao.get(a.operacao_id) : undefined;
+    const qtd = temNumero(a.quantidade) ? Number(a.quantidade) : null;
+    // Apontamento sem quantidade não é apontamento de zero peça: é registro
+    // quebrado. Ele não entra na soma e aparece nomeado.
+    if (qtd == null) {
+      foraDoRoteiro.push({
+        operacao: a.operacao_nome || '(sem nome)',
+        motivo: 'apontamento sem quantidade',
+        quantidade: null,
+        data: a.data_apontamento || null,
+      });
+      continue;
+    }
+    if (seq === undefined) {
+      foraDoRoteiro.push({
+        operacao: a.operacao_nome || '(sem nome)',
+        motivo: a.operacao_id == null
+          ? 'apontamento sem operação vinculada ao roteiro'
+          : 'a operação deste apontamento não está mais no roteiro da referência',
+        quantidade: qtd,
+        data: a.data_apontamento || null,
+      });
+      continue;
+    }
+    const e = porEtapa.get(seq);
+    e.passaram += qtd;
+    e.refugo += temNumero(a.quantidade_refugo) ? Number(a.quantidade_refugo) : 0;
+    e.apontamentos += 1;
+    const d = a.data_apontamento || a.criado_em || null;
+    if (d && (!e.ultimoApontamento || new Date(d) > new Date(e.ultimoApontamento))) {
+      e.ultimoApontamento = d;
+    }
+  }
+
+  const lista = etapas.map((e) => porEtapa.get(e.sequencia));
+  const inconsistencias = [];
+  const hoje = Date.now();
+
+  const resultado = lista.map((e, i) => {
+    const seguinte = lista[i + 1] || null;
+    const saiuDaEtapa = e.passaram - e.refugo;
+    const chegouNaSeguinte = seguinte ? seguinte.passaram : 0;
+    const bruto = saiuDaEtapa - chegouNaSeguinte;
+
+    if (seguinte && bruto < 0) {
+      inconsistencias.push({
+        de: e.nomes.join(' + ') || `etapa ${e.sequencia}`,
+        para: seguinte.nomes.join(' + ') || `etapa ${seguinte.sequencia}`,
+        diferenca: -bruto,
+        // Dito na linguagem de quem vai resolver, não em linguagem de banco.
+        texto: `${-bruto} peça(s) foram apontadas em "${seguinte.nomes.join(' + ')}" sem ter passado por "${e.nomes.join(' + ')}". Ou faltou apontar a etapa anterior, ou a quantidade de uma das duas está errada.`,
+      });
+    }
+
+    const paradoHaDias = e.ultimoApontamento
+      ? Math.floor((hoje - new Date(e.ultimoApontamento).getTime()) / 86400000)
+      : null;
+
+    return {
+      sequencia: e.sequencia,
+      nome: e.nomes.join(' + ') || `Etapa ${e.sequencia}`,
+      setores: e.setores,
+      passaram: e.passaram,
+      refugo: e.refugo,
+      // A última etapa não tem "seguinte": o que saiu dela é peça pronta, e o
+      // que está em espera nela é o que ainda não foi para o estoque.
+      ehUltima: !seguinte,
+      emEspera: Math.max(0, bruto),
+      // Guardado separado do `emEspera` para a tela poder mostrar o alerta
+      // sem que o número negativo contamine o total.
+      saldoNegativo: bruto < 0 ? -bruto : 0,
+      apontamentos: e.apontamentos,
+      ultimoApontamento: e.ultimoApontamento,
+      paradoHaDias,
+    };
+  });
+
+  const planejada = temNumero(quantidadePlanejada) ? Number(quantidadePlanejada) : null;
+  const primeira = resultado[0];
+  // O que ainda nem começou. Sem a planejada não dá para saber — e chutar
+  // zero diria "já começou tudo" numa ordem que talvez nem cortou.
+  const naoIniciado = planejada != null && primeira
+    ? Math.max(0, planejada - primeira.passaram)
+    : null;
+
+  return {
+    etapas: resultado,
+    naoIniciado,
+    naoIniciadoMotivo: planejada == null ? 'a ordem não tem quantidade planejada registrada' : null,
+    // Total de peças dentro da fábrica: a soma do que espera em cada etapa.
+    // NÃO inclui o que não começou (ainda é papel) nem o que já virou estoque.
+    totalEmProcesso: resultado.reduce((s, e) => s + (e.ehUltima ? 0 : e.emEspera), 0),
+    aguardandoEntrada: resultado.length > 0 ? resultado[resultado.length - 1].emEspera : 0,
+    refugoTotal: resultado.reduce((s, e) => s + e.refugo, 0),
+    foraDoRoteiro,
+    inconsistencias,
+    // A tela precisa saber, antes de mostrar o número como se fosse a verdade,
+    // que existe apontamento que não entrou na conta.
+    confiavel: foraDoRoteiro.length === 0 && inconsistencias.length === 0,
+  };
+}
+
 module.exports = {
   temNumero,
   explodirFicha,
@@ -282,4 +459,5 @@ module.exports = {
   compararComPadrao,
   tempoPadraoDaPeca,
   custoMaoDeObraPadrao,
+  wipPorEtapa,
 };
