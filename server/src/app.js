@@ -39,12 +39,14 @@ const promocoesRoutes = require('./routes/promocoes.routes');
 const insumosRoutes = require('./routes/insumos.routes');
 const estoqueMinimoRoutes = require('./routes/estoqueMinimo.routes');
 const producaoRoutes = require('./routes/producao.routes');
+const producaoMovimentacaoRoutes = require('./routes/producaoMovimentacao.routes');
 const mixTributarioRoutes = require('./routes/mixTributario.routes');
 const analisesEstoqueRoutes = require('./routes/analisesEstoque.routes');
 const estoqueLocaisRoutes = require('./routes/estoqueLocais.routes');
 const precoPorCanalRoutes = require('./routes/precoPorCanal.routes');
 const saudeIntegracaoRoutes = require('./routes/saudeIntegracao.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
+const financeiroNucleoRoutes = require('./routes/financeiroNucleo.routes');
 const auditoriaRoutes = require('./routes/auditoria.routes');
 const emailRoutes = require('./routes/email.routes');
 
@@ -83,6 +85,7 @@ function createApp() {
   app.use('/api/pedidos', jsonGrande);
   app.use('/api/produtos', jsonGrande);
   app.use('/api/financeiro', jsonGrande);
+  app.use('/api/financeiro-nucleo', jsonGrande);
   app.use(express.json({ limit: '1mb' }));
 
   app.use(conferirOrigem);
@@ -175,6 +178,10 @@ function createApp() {
   // — ninguém perde nada, e agora dá para dar Produção a quem não deve ver o
   // saldo do estoque, que era o ponto.
   app.use('/api/producao', requireAuth, requireModulo(['producao', 'estoque']), producaoRoutes);
+  // Movimentacao de producao, O.S. de faccao, preco de servico e carga
+  // (09/09/2026). Mesma chave de modulo da producao -- nenhuma permissao
+  // existente muda (REGRA 4).
+  app.use('/api/producao-movimentacao', requireAuth, requireModulo(['producao', 'estoque']), producaoMovimentacaoRoutes);
   // Onde a peça está (08/09/2026): endereço no galpão e saldo por local.
   // Fica em `estoque` — é saldo de peça pronta — e aceita `producao` porque a
   // remessa para facção sai da tela de Produção e precisa ler o saldo por
@@ -209,6 +216,11 @@ function createApp() {
   // ao módulo Marketplace pra alguém do financeiro abriria junto a
   // Lucratividade e o custo de cada peça.
   app.use('/api/financeiro', requireAuth, requireModulo('financeiro'), financeiroRoutes);
+  // Financeiro nucleo (09/09/2026): plano financeiro, centro de custo,
+  // contas, titulos a pagar/receber, baixa, extrato OFX, conciliacao,
+  // fluxo de caixa e DRE. Mesma chave de modulo `financeiro` -- nenhuma
+  // permissao existente muda (REGRA 4). Nao emite documento fiscal.
+  app.use('/api/financeiro-nucleo', requireAuth, requireModulo('financeiro'), financeiroNucleoRoutes);
 
   // Callbacks OAuth são chamados pelo redirect do próprio marketplace — sem
   // sessão nossa nesse momento, então ficam fora do requireAuth. A validação

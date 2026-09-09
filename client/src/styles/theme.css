@@ -5816,3 +5816,41 @@ table.ficha-doc-tabela {
 }
 .curva-barra-censurada { background: var(--warning); }
 @media (prefers-reduced-motion: reduce) { .curva-barra-preenchida { transition: none; } }
+
+/* ===========================================================================
+   Movimentação de produção (09/09/2026)
+   ===========================================================================
+   Duas coisas que a tela de Gerar Movimentação precisa e que o tema ainda não
+   tinha nome para:
+
+   1. A COLUNA DE DESTINOS. Uma operação pode ter vários destinos empilhados
+      (metade para uma facção, metade para outra), e cada um é um cartão
+      dentro do cartão. Sem uma pilha declarada aqui, isso viraria
+      `flexDirection` em style inline — que vence media query e não responde
+      no celular.
+
+   2. O MOVIMENTO ESTORNADO. Ele NÃO some do extrato: some seria apagar
+      histórico. Ele fica riscado e apagado, do jeito que um lançamento
+      cancelado aparece num extrato bancário. O selo que diz "estornado"
+      continua legível de propósito — riscar o próprio aviso seria esconder
+      justamente o que a linha tem de importante.
+
+   REGRA 3: nenhuma cor solta. Tudo sai de variável que já existe. */
+.mov-coluna { display: flex; flex-direction: column; gap: 14px; }
+.mov-destino { gap: 12px; }
+
+.tabela-nota tr.linha-estornada td {
+  color: var(--ink-faint);
+  text-decoration: line-through;
+}
+.tabela-nota tr.linha-estornada .selo,
+.tabela-nota tr.linha-estornada button {
+  text-decoration: none;
+}
+
+/* `tom="prejuizo"` e `tom="saudavel"` no IndicadorDestaque já eram usados pelas
+   telas de Produção, mas o tema só tinha as variantes `negativo`/`positivo` —
+   a faixa colorida simplesmente não aparecia, em silêncio. São apelidos das
+   duas que já existem, com as mesmas variáveis (REGRA 3). */
+.indicador-prejuizo::before { background: var(--danger-ring); opacity: 1; }
+.indicador-saudavel::before { background: var(--success-ring); opacity: 1; }

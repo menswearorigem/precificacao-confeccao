@@ -49,6 +49,9 @@ import MetricasMarketplacePage from './pages/MetricasMarketplacePage';
 import AnunciosPage from './pages/AnunciosPage';
 import CoberturaEstoquePage from './pages/CoberturaEstoquePage';
 import ProducaoPage from './pages/ProducaoPage';
+import MovimentacaoProducaoPage from './pages/MovimentacaoProducaoPage';
+import OrdensServicoPage from './pages/OrdensServicoPage';
+import CargaProducaoPage from './pages/CargaProducaoPage';
 import InsumosPage from './pages/InsumosPage';
 import PromocoesPage from './pages/PromocoesPage';
 import MixTributarioPage from './pages/MixTributarioPage';
@@ -61,6 +64,10 @@ import RelatorioTaxasPage from './pages/RelatorioTaxasPage';
 import ImportarPedidosPage from './pages/ImportarPedidosPage';
 import ConferenciaPedidosPage from './pages/ConferenciaPedidosPage';
 import FinanceiroPage from './pages/FinanceiroPage';
+import TitulosPage from './pages/TitulosPage';
+import ConciliacaoBancariaPage from './pages/ConciliacaoBancariaPage';
+import FluxoCaixaPage from './pages/FluxoCaixaPage';
+import DrePage from './pages/DrePage';
 import ViagensListPage from './pages/ViagensListPage';
 import ViagemDetailPage from './pages/ViagemDetailPage';
 import AjudaPage from './pages/AjudaPage';
@@ -130,6 +137,13 @@ function AppRoutes() {
                       reorganização de menu. */}
                   <Route path="/producao" element={<ProducaoPage />} />
                   <Route path="/estoque/producao" element={<Navigate to="/producao" replace />} />
+                  {/* Movimentação de produção (09/09/2026): a peça andando
+                      entre etapas, a O.S. de facção que nasce disso e a carga
+                      por etapa. Mesmo módulo `producao` das ordens — nenhuma
+                      permissão nova. */}
+                  <Route path="/producao/movimentacao" element={<MovimentacaoProducaoPage />} />
+                  <Route path="/producao/ordens-servico" element={<OrdensServicoPage />} />
+                  <Route path="/producao/carga" element={<CargaProducaoPage />} />
                   <Route path="/estoque/locais" element={<EstoqueLocaisPage />} />
                   <Route path="/estoque/ean" element={<EstoqueEanImportacaoPage />} />
                   <Route path="/estoque/ficha" element={<FichaEstoquePage />} />
@@ -159,6 +173,15 @@ function AppRoutes() {
                   <Route path="/financeiro/movimentacao" element={<FinanceiroPage aba="movimentacao" />} />
                   <Route path="/financeiro/repasses" element={<FinanceiroPage aba="repasses" />} />
                   <Route path="/financeiro/conferencia" element={<FinanceiroPage aba="conferencia" />} />
+                  {/* Núcleo financeiro (09/09/2026). Contas a pagar e a receber
+                      são a MESMA tela: a mecânica é idêntica e o que muda é a
+                      natureza, lida da própria rota — duas telas iguais
+                      divergem no primeiro ajuste feito em só uma delas. */}
+                  <Route path="/financeiro/pagar" element={<TitulosPage />} />
+                  <Route path="/financeiro/receber" element={<TitulosPage />} />
+                  <Route path="/financeiro/conciliacao-bancaria" element={<ConciliacaoBancariaPage />} />
+                  <Route path="/financeiro/fluxo-caixa" element={<FluxoCaixaPage />} />
+                  <Route path="/financeiro/dre" element={<DrePage />} />
                   <Route path="/viagens" element={<ViagensListPage />} />
                   <Route path="/viagens/:id" element={<ViagemDetailPage />} />
                   <Route path="/fornecedores" element={<FornecedoresListPage />} />

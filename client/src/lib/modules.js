@@ -5,7 +5,7 @@ import {
   Truck, BarChart3, ShieldCheck, Plug, TrendingUp, ReceiptText, Store, Plane,
   LineChart, SearchCheck, Layers, AlertTriangle, CalendarDays, UsersRound,
   LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer, Activity,
-  Banknote, Ruler, MapPin,
+  Banknote, Ruler, MapPin, Gauge,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -69,6 +69,13 @@ export const MODULES = [
     tambemPor: ['estoque'],
     pages: [
       { to: '/producao', label: 'Ordens de Produção', icon: Factory },
+      // Movimentacao, O.S. de faccao e carga (09/09/2026). As tres entram no
+      // modulo `producao` que ja' existe -- nenhuma chave de permissao nova
+      // (REGRA 4). A ordem e' a da vida real: a peca anda, a faccao devolve, e
+      // o gargalo aparece.
+      { to: '/producao/movimentacao', label: 'Gerar Movimentação', icon: ArrowLeftRight },
+      { to: '/producao/ordens-servico', label: 'Ordens de Serviço', icon: ClipboardList },
+      { to: '/producao/carga', label: 'Carga e Gargalo', icon: Gauge },
     ],
   },
   {
@@ -121,6 +128,16 @@ export const MODULES = [
       { to: '/financeiro/movimentacao', label: 'Movimentação', icon: Wallet },
       { to: '/financeiro/repasses', label: 'Repasses', icon: ArrowLeftRight },
       { to: '/financeiro/conferencia', label: 'Conferência', icon: Scale },
+      // Núcleo financeiro (09/09/2026): contas a pagar e a receber, extrato
+      // bancário, fluxo de caixa e DRE. Entram no módulo `financeiro` que já
+      // existe — nenhuma chave de permissão nova (REGRA 4). As três abas de
+      // cima continuam sendo a conciliação do repasse de marketplace; estas
+      // cinco são o financeiro da empresa inteira.
+      { to: '/financeiro/pagar', label: 'Contas a Pagar', icon: ReceiptText },
+      { to: '/financeiro/receber', label: 'Contas a Receber', icon: Banknote },
+      { to: '/financeiro/conciliacao-bancaria', label: 'Conciliação Bancária', icon: Landmark },
+      { to: '/financeiro/fluxo-caixa', label: 'Fluxo de Caixa', icon: LineChart },
+      { to: '/financeiro/dre', label: 'DRE Gerencial', icon: BarChart3 },
     ],
   },
   {
