@@ -12,6 +12,7 @@
     "dev:client": "npm run dev --workspace client",
     "build:client": "npm run build --workspace client",
     "start": "npm run start --workspace server",
-    "migrate": "npm run migrate --workspace server"
+    "migrate": "npm run migrate --workspace server",
+    "test": "node server/scripts/rodar-testes.js"
   }
 }
