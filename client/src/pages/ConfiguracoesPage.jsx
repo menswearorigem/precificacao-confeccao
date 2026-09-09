@@ -195,7 +195,7 @@ export default function ConfiguracoesPage() {
 
   return (
     <div className="page-wide">
-      <h2>Parâmetros</h2>
+      <h1>Parâmetros</h1>
       <p className="page-sub">
         As metas que o sistema usa para sugerir preço e julgar margem. Mudar qualquer coisa aqui muda o preço de todas as peças.
       </p>

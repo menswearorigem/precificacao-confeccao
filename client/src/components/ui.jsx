@@ -612,7 +612,7 @@ export function CampoBusca({
         aria-label={placeholder}
       />
       {valor && (
-        <button type="button" className="busca-composta-limpar" onClick={() => { onChange(''); onSubmit?.(''); }} title="Limpar busca">
+        <button type="button" className="busca-composta-limpar" onClick={() => { onChange(''); onSubmit?.(''); }} title="Limpar busca" aria-label="Limpar busca">
           <X size={14} />
         </button>
       )}
@@ -640,7 +640,14 @@ export function ChipsFiltros({ itens, onLimparTudo }) {
           <span className="chip-filtro-campo">{f.rotulo}</span>
           <span className="chip-filtro-valor">{f.valor}</span>
           {f.onRemover && (
-            <button type="button" onClick={f.onRemover} title={`Remover o filtro ${f.rotulo}`}><X size={12} /></button>
+            <button
+              type="button"
+              onClick={f.onRemover}
+              title={`Remover o filtro ${f.rotulo}`}
+              aria-label={`Remover o filtro ${f.rotulo}`}
+            >
+              <X size={12} />
+            </button>
           )}
         </span>
       ))}

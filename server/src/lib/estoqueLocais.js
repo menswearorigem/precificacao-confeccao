@@ -117,7 +117,13 @@ function conciliar(total, porLocal) {
     // prometer prazo para peça que talvez esteja na lavanderia — e quem
     // descobre é o cliente. Tratar como "está fora" só deixa de vender uma
     // peça que estava aqui, e isso aparece na tela para alguém corrigir.
-    if (!def || !def.disponivelParaVenda) emTerceiro += q;
+    // `q > 0` (09/09/2026): o comentário acima descreve a regra certa, mas o
+    // código somava também os NEGATIVOS. Um −5 na facção REDUZIA "fora daqui"
+    // e portanto AUMENTAVA em 5 o "disponível para vender" — cinco peças que
+    // não existem, no número que sustenta o prazo prometido ao cliente.
+    // Saldo negativo num local é pendência de lançamento, e já é reportado
+    // como tal em `negativos` logo acima; não é crédito.
+    if (q > 0 && (!def || !def.disponivelParaVenda)) emTerceiro += q;
     linhas.push({
       local: l.local,
       rotulo: def?.rotulo || l.local,

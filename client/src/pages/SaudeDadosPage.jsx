@@ -8,7 +8,7 @@ import ConferenciaDadosPage from './ConferenciaDadosPage';
 export default function SaudeDadosPage() {
   return (
     <div className="page-wide">
-      <h2>Saúde dos Dados</h2>
+      <h1>Saúde dos Dados</h1>
       <p className="page-sub">
         Um raio-x do que está incompleto ou com cara de dado de teste — nenhuma das duas seções abaixo
         corrige ou apaga nada sozinha.

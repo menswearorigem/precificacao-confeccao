@@ -6,7 +6,7 @@ import { api } from '../api/client';
 import {
   EstadoVazio, Skeleton, Select, Field, NumInput, IndicadorDestaque,
 } from '../components/ui';
-import { pct, formatQtd } from '../lib/format';
+import { pct, formatQtd, numeroBr } from '../lib/format';
 
 // Estoque › Curva de tamanho.
 //
@@ -51,9 +51,16 @@ export default function CurvaTamanhoPage() {
   const [erro, setErro] = useState('');
 
   useEffect(() => {
-    api.get('/produtos')
+    // `/estoque/produtos-referencia` e NÃO `/produtos` (09/09/2026):
+    // `/produtos` exige o módulo `produto` ou `analises`, e o público desta
+    // tela é o módulo ESTOQUE. Quem só tinha estoque levava 403, o
+    // `.catch` engolia, e o seletor "Referência" ficava permanentemente
+    // vazio — sem mensagem, sem pista. A rota usada agora existe
+    // exatamente para isso, e ainda evita trafegar custo e margem para
+    // dentro do Estoque.
+    api.get('/estoque/produtos-referencia')
       .then((r) => setProdutos(Array.isArray(r) ? r : (r?.itens || [])))
-      .catch(() => setProdutos([]));
+      .catch((e) => setErro(e.message));
   }, []);
 
   const carregar = useCallback(async () => {
@@ -222,7 +229,9 @@ export default function CurvaTamanhoPage() {
                         <td><strong>{l.tamanho}</strong></td>
                         <td className="num"><strong>{formatQtd(l.quantidade)}</strong></td>
                         <td className="num">{pct(l.participacao, 1)}</td>
-                        <td className="num ink-faint">{l.exato.toFixed(2)}</td>
+                        {/* numeroBr: `toFixed` imprimia "12.50" com ponto,
+                            num sistema inteiro em português. */}
+                        <td className="num ink-faint">{numeroBr(l.exato, 2)}</td>
                       </tr>
                     ))}
                   </tbody>

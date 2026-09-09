@@ -181,7 +181,7 @@ export default function RelatorioComprasPage() {
 
         <div className="pagina-topo">
           <div>
-            <h2>Relatório de Compras</h2>
+            <h1>Relatório de Compras</h1>
             <p className="page-sub">
               Escolha o período e, se quiser, filtre. Tudo abaixo — números, gráficos e tabelas — responde
               exatamente ao recorte escolhido.

@@ -189,7 +189,7 @@ export default function TemplatesCalendarioPage() {
     <div className="page-wide">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
-          <h2>Modelos do Calendário</h2>
+          <h1>Modelos do Calendário</h1>
           <p className="page-sub">
             Modelos customizam quais campos extras aparecem ao criar um evento — além dos dois modelos fixos
             (Corte e Meta), crie outros do seu jeito.

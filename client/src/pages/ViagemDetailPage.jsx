@@ -188,7 +188,7 @@ export default function ViagemDetailPage() {
       <div className="viagem-header">
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <h2 style={{ margin: 0 }}>{viagem.nome}</h2>
+            <h1 style={{ margin: 0 }}>{viagem.nome}</h1>
             <span className={'stamp sm ' + SITUACAO_TONE[viagem.situacao]}>{SITUACAO_LABEL[viagem.situacao]}</span>
           </div>
           <div className="viagem-card-meta" style={{ marginTop: 8 }}>
@@ -371,10 +371,10 @@ function ProdutoCard({ produto, limiteEstoqueBaixo, emCarrinhoPorVariante, podeV
           </div>
         </div>
         <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-          <button className="icon-btn" title="Dar entrada de estoque" onClick={() => setEntradaAberta((v) => !v)}>
+          <button className="icon-btn" title="Dar entrada de estoque" aria-label="Dar entrada de estoque" onClick={() => setEntradaAberta((v) => !v)}>
             <PackagePlus size={15} />
           </button>
-          <button className="icon-btn" title="Tirar da viagem" onClick={onRemover}><Trash2 size={13} /></button>
+          <button className="icon-btn" title="Tirar da viagem" aria-label="Tirar da viagem" onClick={onRemover}><Trash2 size={13} /></button>
         </div>
       </div>
 

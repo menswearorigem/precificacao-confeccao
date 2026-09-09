@@ -43,7 +43,7 @@ function SincronizarReferenciasModal({ onClose, onSincronizado }) {
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
       <div className="card" style={{ maxWidth: 480, width: '92%' }}>
         <div className="card-head-linha">
           <div className="card-head">Sincronizar referências específicas agora</div>

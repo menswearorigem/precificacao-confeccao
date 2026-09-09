@@ -313,7 +313,7 @@ export default function ComprasListPage() {
     <div className="page-wide">
       <div className="pagina-topo no-print">
         <div>
-          <h2>Compras</h2>
+          <h1>Compras</h1>
           <p className="page-sub">
             Tudo que a empresa compra — de tecido a material de escritório. Os números abaixo são deste
             recorte: mude o período ou os filtros e eles acompanham.

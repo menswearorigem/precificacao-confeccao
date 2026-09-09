@@ -6012,3 +6012,36 @@ td.num .selo, td.num small, td.num .ink-faint { font-family: var(--font-body); l
   .bipagem-foco { min-height: 52px; font-size: 14px; }
   .bipagem-form > * { flex: 1 1 100%; }
 }
+
+/* Campo que substitui os window.prompt da Conferência (09/09/2026). */
+.conferencia-campo-linha {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  margin: 10px 0 0; padding: 10px 12px;
+  border: 1px solid var(--warning-ring); background: var(--warning-bg);
+  border-radius: var(--radius);
+}
+.conferencia-campo-linha input {
+  flex: 1 1 240px; min-width: 0;
+  font-family: var(--font-mono); font-size: 15px;
+}
+@media (max-width: 860px) {
+  .conferencia-campo-linha input { font-size: 16px; min-height: 44px; }
+}
+
+
+/* ---- título de página: um tamanho só ------------------------------------
+   Até 09/09/2026 o sistema tinha DOIS tamanhos de título e duas hierarquias:
+   as dez telas novas usavam <h1> dentro de `.pagina` (32px, o padrão do
+   navegador) e as outras 44 usavam <h2> em `.page-wide` (24px). Além do
+   desencontro visual, 58 das 68 telas não tinham nenhum <h1> — um leitor de
+   tela navegando por cabeçalhos entrava na tela e o primeiro nível era 2,
+   sem nível 1 acima.
+   Agora todo título de página é <h1> e todos valem 24px, que é o tamanho que
+   83% das telas já tinham (a migração não mexeu na aparência de quase
+   nenhuma). Se preferir os títulos maiores, é esta linha que muda. */
+.page h1, .page-wide h1, .pagina h1, .login-card h1 { font-size: 24px; }
+.page h1, .page-wide h1 { margin: 0; }
+
+@media (max-width: 860px) {
+  .page h1, .page-wide h1, .pagina h1 { font-size: 21px; }
+}

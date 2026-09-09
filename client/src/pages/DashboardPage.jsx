@@ -11,10 +11,13 @@ import { StatCard, Select } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import SeloDeConfianca from '../components/SeloDeConfianca';
 import { PRESETS_PERIODO } from '../lib/periodos';
+import { usePaletaGrafico, corPorIndice } from '../lib/coresGrafico';
 
-const COR_RECEITA = '#d17a2a';
-const COR_LUCRO = '#33512f';
-const FONTE_GRAFICO = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+// Cores lidas do TEMA (REGRA 3): escritas à mão aqui, elas ficavam com a
+// paleta do modo claro depois de alternar para o escuro.
+const FONTE_GRAFICO = 'var(--font-body)';
+const corReceita = (paleta) => corPorIndice(paleta, 0);
+const corLucro = (paleta) => paleta?.positivo || corPorIndice(paleta, 1);
 
 // Mesma guarda de variação percentual da Onda 3 (Marketplace > Métricas):
 // base do período anterior perto de zero vira "novo" em vez de um
@@ -51,6 +54,7 @@ function TooltipEvolucao({ active, payload, label }) {
 }
 
 function GraficoEvolucao({ serie }) {
+  const paleta = usePaletaGrafico();
   const dados = serie.map((d) => ({ ...d, dataLabel: dataBr(d.data) }));
   const tickStyle = { fontSize: 11.5, fontFamily: FONTE_GRAFICO, fill: 'var(--ink-soft)' };
   return (
@@ -58,20 +62,20 @@ function GraficoEvolucao({ serie }) {
       <AreaChart data={dados} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="corReceita" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={COR_RECEITA} stopOpacity={0.22} />
-            <stop offset="95%" stopColor={COR_RECEITA} stopOpacity={0.01} />
+            <stop offset="5%" stopColor={corReceita(paleta)} stopOpacity={0.22} />
+            <stop offset="95%" stopColor={corReceita(paleta)} stopOpacity={0.01} />
           </linearGradient>
           <linearGradient id="corLucro" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={COR_LUCRO} stopOpacity={0.22} />
-            <stop offset="95%" stopColor={COR_LUCRO} stopOpacity={0.01} />
+            <stop offset="5%" stopColor={corLucro(paleta)} stopOpacity={0.22} />
+            <stop offset="95%" stopColor={corLucro(paleta)} stopOpacity={0.01} />
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
         <XAxis dataKey="dataLabel" tick={tickStyle} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
         <YAxis tick={tickStyle} tickFormatter={(v) => brl(v)} width={92} axisLine={false} tickLine={false} />
         <Tooltip content={<TooltipEvolucao />} />
-        <Area type="monotone" dataKey="receita" name="Faturamento" stroke={COR_RECEITA} fill="url(#corReceita)" strokeWidth={2.25} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
-        <Area type="monotone" dataKey="lucro" name="Lucro" stroke={COR_LUCRO} fill="url(#corLucro)" strokeWidth={2.25} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+        <Area type="monotone" dataKey="receita" name="Faturamento" stroke={corReceita(paleta)} fill="url(#corReceita)" strokeWidth={2.25} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+        <Area type="monotone" dataKey="lucro" name="Lucro" stroke={corLucro(paleta)} fill="url(#corLucro)" strokeWidth={2.25} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -116,7 +120,7 @@ export default function DashboardPage() {
     <div className="page-wide">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
         <div>
-          <h2>Dashboard Executivo</h2>
+          <h1>Dashboard Executivo</h1>
           <p className="page-sub">Faturamento, lucro e margem consolidados de toda a operação — todos os canais de venda juntos.</p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>

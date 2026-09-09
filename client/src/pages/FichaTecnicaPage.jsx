@@ -43,7 +43,7 @@ export default function FichaTecnicaPage() {
   return (
     <div className="page-wide">
       <div className="no-print">
-        <h2>Ficha Técnica</h2>
+        <h1>Ficha Técnica</h1>
         <p className="page-sub">
           Busque e selecione até {MAX_REFERENCIAS} referências para gerar fichas de custo prontas
           para impressão/exportação em PDF (uma por página). Só o custo de produção aparece aqui —
@@ -68,7 +68,7 @@ export default function FichaTecnicaPage() {
                     <td className="mono">{p.referencia}</td>
                     <td>{p.descricao}</td>
                     <td style={{ textAlign: 'right' }}>
-                      <button className="btn btn-dashed" onClick={() => adicionar(p)}>Adicionar</button>
+                      <button type="button" className="btn btn-dashed" onClick={() => adicionar(p)}>Adicionar</button>
                     </td>
                   </tr>
                 ))}
@@ -87,11 +87,11 @@ export default function FichaTecnicaPage() {
 
           {erro && <div className="login-error" style={{ marginBottom: 10 }}>{erro}</div>}
 
-          <button className="btn btn-primary" onClick={gerarFichas} disabled={selecionadas.length === 0}>
+          <button type="button" className="btn btn-primary" onClick={gerarFichas} disabled={selecionadas.length === 0}>
             Gerar fichas ({selecionadas.length})
           </button>
           {fichas.length > 0 && (
-            <button className="btn btn-ghost" style={{ marginLeft: 8 }} onClick={() => window.print()}>
+            <button type="button" className="btn btn-ghost" style={{ marginLeft: 8 }} onClick={() => window.print()}>
               <Printer size={14} /> Imprimir / Exportar PDF
             </button>
           )}

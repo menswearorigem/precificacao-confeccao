@@ -163,16 +163,16 @@ export default function CompraFormPage() {
 
   return (
     <div className="page-wide">
-      <button className="btn btn-ghost" style={{ marginBottom: 14 }} onClick={() => navigate('/compras')}>
+      <button type="button" className="btn btn-ghost" style={{ marginBottom: 14 }} onClick={() => navigate('/compras')}>
         <ArrowLeft size={14} /> Voltar para compras
       </button>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <h2>Compra #{compra.numero}</h2>
+          <h1>Compra #{compra.numero}</h1>
           <span className={'stamp sm ' + (SITUACAO_TONE[compra.situacao] || 'tone-neutro')}>{SITUACAO_LABEL[compra.situacao] || compra.situacao}</span>
         </div>
-        <button className="btn btn-ghost" onClick={excluirCompra} style={{ color: 'var(--danger)' }}>
+        <button type="button" className="btn btn-ghost" onClick={excluirCompra} style={{ color: 'var(--danger)' }}>
           <Trash2 size={14} /> Excluir
         </button>
       </div>
@@ -188,7 +188,7 @@ export default function CompraFormPage() {
               {compra.fornecedor_cpf_cnpj && <span className="mono" style={{ marginLeft: 10, color: 'var(--ink-soft)' }}>{compra.fornecedor_cpf_cnpj}</span>}
               {compra.fornecedor_telefone && <span className="mono" style={{ marginLeft: 10, color: 'var(--ink-soft)' }}>{compra.fornecedor_telefone}</span>}
             </div>
-            <button className="btn btn-ghost" onClick={() => setHeader({ fornecedor_id: null, fornecedor_nome: '', fornecedor_cpf_cnpj: '', fornecedor_telefone: '' })}>
+            <button type="button" className="btn btn-ghost" onClick={() => setHeader({ fornecedor_id: null, fornecedor_nome: '', fornecedor_cpf_cnpj: '', fornecedor_telefone: '' })}>
               Trocar fornecedor
             </button>
           </div>
@@ -214,7 +214,7 @@ export default function CompraFormPage() {
                       <td className="mono">{f.cpf_cnpj}</td>
                       <td className="mono">{f.telefone}</td>
                       <td style={{ textAlign: 'right' }}>
-                        <button className="btn btn-dashed" onClick={() => selecionarFornecedor(f)}>Selecionar</button>
+                        <button type="button" className="btn btn-dashed" onClick={() => selecionarFornecedor(f)}>Selecionar</button>
                       </td>
                     </tr>
                   ))}
@@ -342,7 +342,7 @@ export default function CompraFormPage() {
                     onBlur={(e) => atualizarItem(it.id, { valor_unitario: e.target.value })} />
                 </td>
                 <td className="mono" style={{ fontWeight: 700 }}>{brl(it.total)}</td>
-                <td><button className="icon-btn" onClick={() => removerItem(it.id)}><Trash2 size={13} /></button></td>
+                <td><button type="button" className="icon-btn" onClick={() => removerItem(it.id)}><Trash2 size={13} /></button></td>
               </tr>
             ))}
             {itens.length === 0 && (

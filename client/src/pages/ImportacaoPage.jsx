@@ -72,7 +72,7 @@ export default function ImportacaoPage() {
 
   return (
     <div className="page-wide">
-      <h2>Importação em Massa</h2>
+      <h1>Importação em Massa</h1>
       <p className="page-sub">
         Envie um .xlsx com as abas <strong>Cadastro_Produto</strong>, <strong>Materiais</strong> e/ou{' '}
         <strong>Custos_Industriais</strong> (mesmo formato da planilha original), um .csv com uma
@@ -193,7 +193,7 @@ export default function ImportacaoPage() {
             </div>
           )}
 
-          <button className="btn btn-primary" onClick={handleConfirmar} disabled={loading}>
+          <button type="button" className="btn btn-primary" onClick={handleConfirmar} disabled={loading}>
             {loading ? 'Gravando…' : 'Confirmar importação'}
           </button>
         </>

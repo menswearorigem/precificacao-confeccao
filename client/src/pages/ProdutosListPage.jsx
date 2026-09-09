@@ -125,7 +125,7 @@ export default function ProdutosListPage() {
     <div className="page-wide">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
         <div>
-          <h2>Produtos / Referências</h2>
+          <h1>Produtos / Referências</h1>
           <p className="page-sub">Cadastro, custo e formação de preço de cada referência.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -176,13 +176,13 @@ export default function ProdutosListPage() {
       {selecionados.size > 0 && (
         <div className="card" style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <strong>{selecionados.size} selecionado(s)</strong>
-          <button className="btn btn-primary sm" disabled={aplicando} onClick={() => aplicarMarketplace(true)}>
+          <button type="button" className="btn btn-primary sm" disabled={aplicando} onClick={() => aplicarMarketplace(true)}>
             <Store size={13} /> Marcar como marketplace
           </button>
-          <button className="btn btn-ghost sm" disabled={aplicando} onClick={() => aplicarMarketplace(false)}>
+          <button type="button" className="btn btn-ghost sm" disabled={aplicando} onClick={() => aplicarMarketplace(false)}>
             Tirar do marketplace
           </button>
-          <button className="btn btn-ghost sm" disabled={aplicando} onClick={() => setSelecionados(new Set())}>
+          <button type="button" className="btn btn-ghost sm" disabled={aplicando} onClick={() => setSelecionados(new Set())}>
             Limpar seleção
           </button>
         </div>

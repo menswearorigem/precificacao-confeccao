@@ -363,7 +363,7 @@ export default function AnunciosPage() {
     <div className="page-wide">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
         <div>
-          <h2>Anúncios</h2>
+          <h1>Anúncios</h1>
           <p className="page-sub">
             Todos os anúncios de todas as lojas conectadas, num lugar só. A cor do cartão diz a
             plataforma e o selo sobre a foto diz a loja. Preço, estoque e situação são o que está
@@ -701,8 +701,10 @@ function FaixaDeLojas({ lojas, onSincronizar, sincronizando }) {
             </div>
           </div>
           <button
+            type="button"
             className="icon-btn"
             title={`Atualizar só a ${nomeDaLoja(l)}`}
+            aria-label={`Atualizar só a ${nomeDaLoja(l)}`}
             onClick={() => onSincronizar(l.id)}
             disabled={sincronizando || !l.conectada}
           >
@@ -1060,7 +1062,7 @@ function PainelAnuncio({ anuncioId, dias, onFechar, onAlterado }) {
               <ExternalLink size={14} />
             </a>
           )}
-          <button className="icon-btn" onClick={onFechar} title="Fechar (Esc)"><X size={16} /></button>
+          <button className="icon-btn" onClick={onFechar} title="Fechar (Esc)" aria-label="Fechar (Esc)"><X size={16} /></button>
         </div>
 
         <div className="subtab-row" style={{ padding: '0 18px' }}>

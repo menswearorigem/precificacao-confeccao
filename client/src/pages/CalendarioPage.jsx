@@ -253,7 +253,7 @@ export default function CalendarioPage() {
           INTEIRA na exportação, antes de o calendário sequer começar. O que
           eles dizem volta, em uma linha, dentro do cabeçalho impresso. */}
       <div className="no-print">
-        <h2>Calendário</h2>
+        <h1>Calendário</h1>
         <p className="page-sub">Prazos e compromissos do dia a dia — chegada de corte, metas e outros eventos com data.</p>
       </div>
 

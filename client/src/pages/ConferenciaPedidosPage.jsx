@@ -63,10 +63,15 @@ function TituloPedido({ pedido }) {
 // ---------------------------------------------------------------------------
 // Aba 1 — Bipagem
 // ---------------------------------------------------------------------------
-function AbaBipagem({ aoConcluirPedido }) {
+function AbaBipagem({ aoConcluirPedido, pedidoParaAbrir, aoAbrirPedido }) {
   const [sessao, setSessao] = useState(null); // { pedido, conferencia, itens, ... }
   const [codigo, setCodigo] = useState('');
   const [ocupado, setOcupado] = useState(false);
+  // Campos que substituem os dois window.prompt desta tela.
+  const [pedindoEtiqueta, setPedindoEtiqueta] = useState(false);
+  const [pedindoMotivo, setPedindoMotivo] = useState(false);
+  const [etiquetaDigitada, setEtiquetaDigitada] = useState('');
+  const [motivoDigitado, setMotivoDigitado] = useState('');
   const [erro, setErro] = useState('');
   const [ultima, setUltima] = useState(null); // { resultado, mensagem }
   const [overlay, setOverlay] = useState(null); // { titulo, subtitulo }
@@ -91,6 +96,16 @@ function AbaBipagem({ aoConcluirPedido }) {
     setCodigo('');
     focar();
   }
+
+  // Quando a pessoa clica numa linha da Fila, a conferência daquele pedido
+  // abre aqui direto. Antes era preciso decorar o número, voltar para esta
+  // aba e digitar — três ações e uma digitação, muitas vezes por dia.
+  useEffect(() => {
+    if (!pedidoParaAbrir || sessao) return;
+    abrirPedido(pedidoParaAbrir);
+    aoAbrirPedido?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pedidoParaAbrir]);
 
   async function abrirPedido(valor) {
     setErro('');
@@ -163,33 +178,44 @@ function AbaBipagem({ aoConcluirPedido }) {
   }
 
   async function desfazer() {
+    // `ocupado` também aqui: sem a trava, dois toques rápidos desfaziam DUAS
+    // leituras, e a segunda passava despercebida. Era a única ação da tela
+    // sem retorno sonoro — quem confere está de costas para o monitor.
+    if (ocupado) return;
+    setOcupado(true);
     try {
       const r = await api.post(`/conferencia/${sessao.conferencia.id}/desfazer`, {});
       setSessao(r);
       setUltima(r.leitura);
-    } catch (err) { setErro(err.message); } finally { focar(); }
+      somAcerto();
+    } catch (err) { somErro(); setErro(err.message); } finally { setOcupado(false); focar(); }
   }
 
-  async function vincularEtiqueta() {
-    const valor = window.prompt('Bipe ou digite o código da etiqueta de envio desta caixa:');
+  // O diálogo nativo do navegador era o pior lugar possível para este campo:
+  // é onde a pessoa BIPA a etiqueta, e no Android o prompt do sistema rouba o
+  // foco do leitor e abre o teclado por cima. Agora é um campo da própria
+  // tela, que aceita a bipagem direto.
+  async function vincularEtiqueta(valor) {
     if (!valor || !valor.trim()) return;
     try {
       const r = await api.post(`/conferencia/pedidos/${sessao.pedido.id}/vincular-rastreio`, { codigo: valor.trim() });
       setSessao((s) => ({ ...s, pedido: { ...s.pedido, codigos_rastreio: r.codigos_rastreio } }));
       setAbertoPorNumero(false);
+      setPedindoEtiqueta(false);
       somAcerto();
     } catch (err) { somErro(); setErro(err.message); } finally { focar(); }
   }
 
-  async function concluir() {
+  async function concluir(motivoInformado) {
     const incompleto = !sessao.completo;
     let observacao = null;
     if (incompleto) {
-      observacao = window.prompt(
-        `Faltam ${sessao.esperadoTotal - sessao.conferidoTotal} peça(s). Pra fechar assim mesmo, escreva o motivo (fica no relatório):`
-      );
-      if (!observacao || !observacao.trim()) return;
+      observacao = motivoInformado;
+      // Sem motivo escrito, abre o campo na tela em vez do prompt nativo.
+      if (!observacao || !observacao.trim()) { setPedindoMotivo(true); return; }
     }
+    if (ocupado) return;
+    setOcupado(true);
     try {
       const r = await api.post(`/conferencia/${sessao.conferencia.id}/concluir`, {
         forcar: incompleto,
@@ -202,8 +228,9 @@ function AbaBipagem({ aoConcluirPedido }) {
         alerta: r.houveDivergencia,
       });
       limparSessao();
+      setPedindoMotivo(false);
       aoConcluirPedido?.();
-    } catch (err) { somErro(); setErro(err.message); }
+    } catch (err) { somErro(); setErro(err.message); } finally { setOcupado(false); }
   }
 
   async function abandonar() {
@@ -297,8 +324,34 @@ function AbaBipagem({ aoConcluirPedido }) {
             <div className="conferencia-aviso aviso">
               <Tag size={18} />
               <span>Este pedido ainda não tem etiqueta cadastrada — foi aberto pelo número.</span>
-              <button type="button" className="btn btn-ghost" onClick={vincularEtiqueta}>Vincular esta etiqueta</button>
+              {!pedindoEtiqueta && (
+                <button type="button" className="btn btn-ghost" onClick={() => setPedindoEtiqueta(true)}>
+                  Vincular esta etiqueta
+                </button>
+              )}
             </div>
+          )}
+
+          {/* O campo mora AQUI, na tela, e não num window.prompt: é onde a
+              pessoa bipa a etiqueta, e o diálogo nativo do navegador rouba o
+              foco do leitor e, no celular, abre o teclado por cima. */}
+          {abertoPorNumero && pedindoEtiqueta && (
+            <form
+              className="conferencia-campo-linha"
+              onSubmit={(ev) => { ev.preventDefault(); vincularEtiqueta(etiquetaDigitada); }}
+            >
+              <input
+                autoFocus
+                value={etiquetaDigitada}
+                onChange={(ev) => setEtiquetaDigitada(ev.target.value)}
+                placeholder="bipe ou digite o código da etiqueta de envio…"
+                autoComplete="off"
+              />
+              <button type="submit" className="btn btn-primary" disabled={!etiquetaDigitada.trim()}>Vincular</button>
+              <button type="button" className="btn btn-ghost" onClick={() => { setPedindoEtiqueta(false); setEtiquetaDigitada(''); focar(); }}>
+                Cancelar
+              </button>
+            </form>
           )}
 
           <div className="card">
@@ -335,9 +388,33 @@ function AbaBipagem({ aoConcluirPedido }) {
               })}
             </div>
 
+            {/* Motivo do fechamento incompleto, também na tela em vez do
+                prompt nativo — o texto vai para o relatório e merece um
+                campo de verdade, com espaço para escrever. */}
+            {pedindoMotivo && (
+              <form
+                className="conferencia-campo-linha"
+                onSubmit={(ev) => { ev.preventDefault(); concluir(motivoDigitado); }}
+              >
+                <input
+                  autoFocus
+                  value={motivoDigitado}
+                  onChange={(ev) => setMotivoDigitado(ev.target.value)}
+                  placeholder={`Faltam ${sessao.esperadoTotal - sessao.conferidoTotal} peça(s) — escreva o motivo (fica no relatório)`}
+                  autoComplete="off"
+                />
+                <button type="submit" className="btn btn-primary" disabled={!motivoDigitado.trim() || ocupado}>
+                  Fechar assim mesmo
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={() => { setPedindoMotivo(false); setMotivoDigitado(''); focar(); }}>
+                  Cancelar
+                </button>
+              </form>
+            )}
+
             <div className="conferencia-acoes">
-              <button type="button" className="btn btn-ghost" onClick={desfazer}><Undo2 size={14} /> Desfazer última</button>
-              <button type="button" className="btn btn-ghost" onClick={abandonar}><LogOut size={14} /> Largar</button>
+              <button type="button" className="btn btn-ghost" onClick={desfazer} disabled={ocupado}><Undo2 size={14} /> Desfazer última</button>
+              <button type="button" className="btn btn-ghost" onClick={abandonar} disabled={ocupado}><LogOut size={14} /> Largar</button>
               {/* Antes de bipar a primeira peça o botão fica DESLIGADO. Com
                   0 de 3 conferidas, oferecer "fechar mesmo faltando" como a
                   ação mais destacada da tela é convidar ao erro que a
@@ -345,8 +422,8 @@ function AbaBipagem({ aoConcluirPedido }) {
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={concluir}
-                disabled={sessao.conferidoTotal === 0}
+                onClick={() => concluir()}
+                disabled={sessao.conferidoTotal === 0 || ocupado}
                 title={sessao.conferidoTotal === 0 ? 'Bipe pelo menos uma peça antes de fechar a caixa.' : undefined}
                 style={sessao.completo || sessao.conferidoTotal === 0 ? undefined : { background: 'var(--warning)', borderColor: 'var(--warning-ring)' }}
               >
@@ -380,14 +457,20 @@ function AbaBipagem({ aoConcluirPedido }) {
 // ---------------------------------------------------------------------------
 // Aba 2 — Fila do dia
 // ---------------------------------------------------------------------------
-function AbaFila({ recarregarChave }) {
+function AbaFila({ recarregarChave, aoEscolherPedido }) {
   const [de, setDe] = useState(hojeIso());
   const [ate, setAte] = useState(hojeIso());
   const [dados, setDados] = useState(null);
+  const [erroFila, setErroFila] = useState('');
   const [filtro, setFiltro] = useState('');
 
   useEffect(() => {
-    api.get(`/conferencia/fila?de=${de}&ate=${ate}`).then(setDados).catch(() => setDados(null));
+    setErroFila('');
+    api.get(`/conferencia/fila?de=${de}&ate=${ate}`)
+      .then(setDados)
+      // Antes: `.catch(() => setDados(null))` — erro de rede ficava IDÊNTICO a
+      // "nenhum pedido hoje", e a bancada concluía que não havia o que expedir.
+      .catch((e) => { setDados(null); setErroFila(e.message); });
   }, [de, ate, recarregarChave]);
 
   const pedidos = useMemo(() => {
@@ -423,6 +506,8 @@ function AbaFila({ recarregarChave }) {
         </Select>
       </div>
 
+      {erroFila && <p className="login-error">{erroFila}</p>}
+
       <div className="stat-strip">
         <StatCard label="Pedidos no período" value={totais.total} Icone={Package} />
         <StatCard label="Já conferidos" value={totais.conferidos} variant="success" Icone={CheckCircle2} />
@@ -447,7 +532,14 @@ function AbaFila({ recarregarChave }) {
             </thead>
             <tbody>
               {pedidos.map((p) => (
-                <tr key={p.id}>
+                <tr
+                  key={p.id}
+                  className="linha-clicavel"
+                  title="Abrir a conferência deste pedido"
+                  onClick={() => aoEscolherPedido?.(
+                    (p.codigos_rastreio || [])[0] || p.origem_pedido_id || String(p.numero)
+                  )}
+                >
                   <td><TituloPedido pedido={p} /></td>
                   <td>{dataBr(String(p.data_pedido).slice(0, 10))}</td>
                   <td className="mono">{(p.codigos_rastreio || []).join(', ') || <span style={{ color: 'var(--warning)' }}>sem etiqueta</span>}</td>
@@ -606,11 +698,13 @@ function AbaRelatorio({ recarregarChave }) {
 
 export default function ConferenciaPedidosPage() {
   const [aba, setAba] = useState('bipagem');
+  // Pedido escolhido na Fila para abrir direto na aba de bipagem.
+  const [pedidoParaAbrir, setPedidoParaAbrir] = useState(null);
   const [recarregarChave, setRecarregarChave] = useState(0);
 
   return (
     <div className="page-wide">
-      <h2><ScanLine size={22} style={{ verticalAlign: -3, marginRight: 8 }} />Conferência de Pedidos</h2>
+      <h1><ScanLine size={22} style={{ verticalAlign: -3, marginRight: 8 }} />Conferência de Pedidos</h1>
       <p className="page-sub">
         Antes de fechar a caixa: bipe a etiqueta de envio pra abrir o pedido e depois bipe cada peça.
         O sistema confere contra o que foi vendido e avisa na hora se a peça não é daquele pedido.
@@ -624,8 +718,22 @@ export default function ConferenciaPedidosPage() {
         ))}
       </div>
 
-      {aba === 'bipagem' && <AbaBipagem aoConcluirPedido={() => setRecarregarChave((n) => n + 1)} />}
-      {aba === 'fila' && <AbaFila recarregarChave={recarregarChave} />}
+      {/* A bipagem fica MONTADA e apenas escondida: renderizada por
+          condicional, trocar para a Fila desmontava a sessão, e quem estava no
+          meio de uma caixa tinha de bipar a etiqueta de novo para voltar. */}
+      <div hidden={aba !== 'bipagem'}>
+        <AbaBipagem
+          aoConcluirPedido={() => setRecarregarChave((n) => n + 1)}
+          pedidoParaAbrir={pedidoParaAbrir}
+          aoAbrirPedido={() => setPedidoParaAbrir(null)}
+        />
+      </div>
+      {aba === 'fila' && (
+        <AbaFila
+          recarregarChave={recarregarChave}
+          aoEscolherPedido={(codigo) => { setPedidoParaAbrir(codigo); setAba('bipagem'); }}
+        />
+      )}
       {aba === 'relatorio' && <AbaRelatorio recarregarChave={recarregarChave} />}
     </div>
   );

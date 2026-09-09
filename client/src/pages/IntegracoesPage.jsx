@@ -88,7 +88,7 @@ function NomeLojaEditavel({ nome, onSalvar }) {
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
       {nome}
       <button
-        type="button" className="icon-btn" title="Alterar nome da loja"
+        type="button" className="icon-btn" title="Alterar nome da loja" aria-label="Alterar nome da loja"
         onClick={() => setEditando(true)} style={{ padding: 3 }}
       >
         <Pencil size={12} />
@@ -256,7 +256,7 @@ export default function IntegracoesPage() {
     <div className="page-wide">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
         <div>
-          <h2>Integrações com Marketplaces</h2>
+          <h1>Integrações com Marketplaces</h1>
           <p className="page-sub">
             Conecte o Mercado Livre, a Shopee e a TikTok Shop pra puxar os pedidos pagos automaticamente pra dentro
             do sistema (a cada 5 minutos), como pedidos de venda em aberto, prontos pra revisar e faturar.
@@ -304,13 +304,13 @@ export default function IntegracoesPage() {
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-head-linha">
           <div className="card-head"><MarketplaceLogo marketplace={subTab} /></div>
-          <button className="btn btn-primary" onClick={abrirNova}>
+          <button type="button" className="btn btn-primary" onClick={abrirNova}>
             <Plus size={14} /> Conectar loja
           </button>
         </div>
 
         {mostrarNova && (
-          <div className="card" style={{ margin: '0 0 16px', background: 'var(--surface-soft, rgba(0,0,0,0.02))' }}>
+          <div className="card" style={{ margin: '0 0 16px', background: 'var(--surface-alt)' }}>
             <div className="card-head">Nova conexão — {infoAtual.label}</div>
             <form onSubmit={criar}>
               <div className="form-grid">
@@ -419,12 +419,12 @@ export default function IntegracoesPage() {
                         <td>
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                             {!item.conectado && (
-                              <button className="btn btn-ghost" onClick={() => conectar(item.id)}>
+                              <button type="button" className="btn btn-ghost" onClick={() => conectar(item.id)}>
                                 <Plug size={13} /> Conectar
                               </button>
                             )}
                             {item.conectado && (
-                              <button className="btn btn-ghost" onClick={() => sincronizar(item.id)} disabled={sincronizandoId === item.id}>
+                              <button type="button" className="btn btn-ghost" onClick={() => sincronizar(item.id)} disabled={sincronizandoId === item.id}>
                                 <RefreshCw size={13} /> {sincronizandoId === item.id ? 'Sincronizando…' : 'Sincronizar agora'}
                               </button>
                             )}
@@ -434,13 +434,13 @@ export default function IntegracoesPage() {
                             >
                               Mais {expandido ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                             </button>
-                            <button className="icon-btn" onClick={() => remover(item.id)} title="Remover conexão"><Trash2 size={14} /></button>
+                            <button type="button" className="icon-btn" onClick={() => remover(item.id)} title="Remover conexão" aria-label="Remover conexão"><Trash2 size={14} /></button>
                           </div>
                         </td>
                       </tr>
                       {expandido && (
                         <tr>
-                          <td colSpan={6} style={{ background: 'var(--surface-soft, rgba(0,0,0,0.02))' }}>
+                          <td colSpan={6} style={{ background: 'var(--surface-alt)' }}>
                             <div className="form-grid" style={{ margin: '8px 0' }}>
                               <Field label={infoAtual.campoId}>
                                 <input value={item.clientId || ''} disabled style={{ opacity: 0.7 }} />
@@ -478,7 +478,7 @@ export default function IntegracoesPage() {
                                 <div style={{ marginBottom: 6 }}>Não consegui confirmar o valor recebido de algum pedido:</div>
                                 <pre style={{
                                   whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 320, overflowY: 'auto',
-                                  background: 'rgba(0,0,0,0.05)', padding: 8, borderRadius: 4, fontSize: 12, margin: 0,
+                                  background: 'var(--surface-alt)', padding: 8, borderRadius: 4, fontSize: 12, margin: 0,
                                 }}>{item.ultimoErroFaturamento}</pre>
                               </div>
                             )}
@@ -517,7 +517,7 @@ export default function IntegracoesPage() {
                                   </Field>
                                 </div>
                                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-                                  <button
+                                  <button type="button"
                                     className="btn btn-ghost"
                                     onClick={() => conectarAds(item.id)}
                                     disabled={!item.adsAppId || !item.temAdsAppSecret}

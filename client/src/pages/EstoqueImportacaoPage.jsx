@@ -58,11 +58,11 @@ export default function EstoqueImportacaoPage() {
 
   return (
     <div className="page-wide">
-      <button className="btn btn-ghost" style={{ marginBottom: 14 }} onClick={() => navigate('/estoque')}>
+      <button type="button" className="btn btn-ghost" style={{ marginBottom: 14 }} onClick={() => navigate('/estoque')}>
         <ArrowLeft size={14} /> Voltar para estoque
       </button>
 
-      <h2>Importar Saldo de Estoque</h2>
+      <h1>Importar Saldo de Estoque</h1>
       <p className="page-sub">
         Envie o relatório de saldo de estoque do Wiki Sistemas — o CSV "relEst" (uma linha por
         referência + cor + tamanho) ou o PDF "Relatório - Saldo de estoque" (em grade, cor x
@@ -141,7 +141,7 @@ export default function EstoqueImportacaoPage() {
             </div>
           )}
 
-          <button className="btn btn-primary" onClick={handleConfirmar} disabled={loading}>
+          <button type="button" className="btn btn-primary" onClick={handleConfirmar} disabled={loading}>
             {loading ? 'Gravando…' : 'Confirmar importação'}
           </button>
         </>

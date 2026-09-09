@@ -333,7 +333,7 @@ export default function FornecedorFichaPage() {
 
       <div className="pagina-topo">
         <div>
-          <h2>{isNew ? 'Novo Fornecedor' : fornecedor.nome}</h2>
+          <h1>{isNew ? 'Novo Fornecedor' : fornecedor.nome}</h1>
           <p className="page-sub">
             {isNew
               ? 'Cadastro completo de fornecedor para uso nos lançamentos de compra.'
@@ -473,7 +473,7 @@ export default function FornecedorFichaPage() {
               <Field label="CEP">
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input className="mono" value={fornecedor.cep || ''} onChange={(e) => set({ cep: e.target.value })} style={{ flex: 1 }} />
-                  <button type="button" className="btn btn-ghost" onClick={buscarCep} disabled={buscandoCep} title="Buscar endereço pelo CEP">
+                  <button type="button" className="btn btn-ghost" onClick={buscarCep} disabled={buscandoCep} title="Buscar endereço pelo CEP" aria-label="Buscar endereço pelo CEP">
                     <MapPinCheck size={14} />
                   </button>
                 </div>

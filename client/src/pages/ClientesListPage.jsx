@@ -57,7 +57,7 @@ export default function ClientesListPage() {
     <div className="page-wide">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
         <div>
-          <h2>Clientes</h2>
+          <h1>Clientes</h1>
           <p className="page-sub">Cadastro de clientes usado nos pedidos de venda.</p>
         </div>
 

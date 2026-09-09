@@ -202,16 +202,16 @@ export default function WikIntegracaoCard() {
         </Field>
       </form>
       <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-        <button className="btn btn-primary" onClick={salvarCredencial} disabled={salvando || !email}>
+        <button type="button" className="btn btn-primary" onClick={salvarCredencial} disabled={salvando || !email}>
           <Save size={13} /> {salvando ? 'Salvando…' : 'Salvar credencial'}
         </button>
         {integracao && (
-          <button className="btn btn-ghost" onClick={testarConexao} disabled={testando}>
+          <button type="button" className="btn btn-ghost" onClick={testarConexao} disabled={testando}>
             <RefreshCw size={13} /> {testando ? 'Testando…' : 'Testar conexão'}
           </button>
         )}
         {integracao && (
-          <button className="btn btn-ghost" onClick={testarConexaoCompleta} disabled={testandoCompleto}>
+          <button type="button" className="btn btn-ghost" onClick={testarConexaoCompleta} disabled={testandoCompleto}>
             <RefreshCw size={13} /> {testandoCompleto ? 'Testando…' : 'Testar conexão completa'}
           </button>
         )}
@@ -326,10 +326,10 @@ export default function WikIntegracaoCard() {
       </table>
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
-        <button className="btn btn-primary" onClick={sincronizarAgora} disabled={sincronizandoAgora || previewLoading || !integracao}>
+        <button type="button" className="btn btn-primary" onClick={sincronizarAgora} disabled={sincronizandoAgora || previewLoading || !integracao}>
           <RefreshCw size={13} /> {sincronizandoAgora ? 'Sincronizando…' : 'Sincronizar agora'}
         </button>
-        <button className="btn btn-ghost" onClick={previsualizarEstoque} disabled={previewLoading || sincronizandoAgora || !integracao}>
+        <button type="button" className="btn btn-ghost" onClick={previsualizarEstoque} disabled={previewLoading || sincronizandoAgora || !integracao}>
           <RefreshCw size={13} /> {previewLoading ? 'Buscando no Wik…' : 'Só conferir (sem aplicar)'}
         </button>
         {(previewLoading || sincronizandoAgora) && (
@@ -402,7 +402,7 @@ export default function WikIntegracaoCard() {
             </div>
           )}
 
-          <button className="btn btn-primary" onClick={confirmarSincronizacao} disabled={confirmando}>
+          <button type="button" className="btn btn-primary" onClick={confirmarSincronizacao} disabled={confirmando}>
             {confirmando ? 'Gravando…' : 'Confirmar sincronização'}
           </button>
         </>

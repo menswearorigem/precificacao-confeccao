@@ -64,7 +64,7 @@ function PainelMover({ item, locais, fornecedores, onFechar, onPronto }) {
       <div className="anuncio-painel" onClick={(e) => e.stopPropagation()} role="presentation">
         <div className="anuncio-painel-topo">
           <strong>{item.referencia} · {item.cor} · {item.tamanho}</strong>
-          <button type="button" className="btn-icone" onClick={onFechar} title="Fechar"><X size={16} /></button>
+          <button type="button" className="btn-icone" onClick={onFechar} title="Fechar" aria-label="Fechar"><X size={16} /></button>
         </div>
         <div className="anuncio-painel-corpo">
           <p className="ink-soft ajuda-bloco">
@@ -177,8 +177,12 @@ export default function EstoqueLocaisPage() {
     const texto = 'Isto declara que TODO o saldo ainda sem lugar está no galpão.\n\n'
       + 'Se alguma dessas peças estiver numa facção agora, lance a remessa dela ANTES — '
       + 'senão o saldo dela vai passar a constar aqui dentro.\n\nConfirma?';
-    // eslint-disable-next-line no-alert
-    if (!window.confirm(texto)) return;
+    // `confirmar()` do sistema em vez do window.confirm nativo: é o padrão do
+    // projeto (components/ConfirmDialog) e o nativo chega a ser BLOQUEADO em
+    // alguns navegadores quando a tela roda como aplicativo instalado.
+    const ok = await confirmar(texto, { titulo: 'Endereçar tudo no galpão', confirmarTexto: 'Endereçar', perigo: true });
+    if (!ok) return;
+    setErro('');
     try {
       const r = await api.post('/estoque-locais/enderecar-lote', { confirmar: true });
       setAviso(`${r.variantes} variante(s) endereçadas no galpão. ${r.aviso}`);
@@ -320,8 +324,8 @@ export default function EstoqueLocaisPage() {
                             placeholder="Ex.: rua B / prat. 3"
                             style={{ maxWidth: 140 }}
                           />
-                          <button type="button" className="btn-icone" onClick={() => salvarEndereco(i)} title="Salvar"><Check size={15} /></button>
-                          <button type="button" className="btn-icone" onClick={() => setEditandoEndereco(null)} title="Cancelar"><X size={15} /></button>
+                          <button type="button" className="btn-icone" onClick={() => salvarEndereco(i)} title="Salvar" aria-label="Salvar"><Check size={15} /></button>
+                          <button type="button" className="btn-icone" onClick={() => setEditandoEndereco(null)} title="Cancelar" aria-label="Cancelar"><X size={15} /></button>
                         </span>
                       ) : (
                         <button

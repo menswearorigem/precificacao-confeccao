@@ -156,7 +156,7 @@ export default function CustosIndiretosPage() {
 
   return (
     <div className="page-wide">
-      <h2>Custos Indiretos</h2>
+      <h1>Custos Indiretos</h1>
       <p className="page-sub">O custo fixo que não é de nenhuma peça em particular, rateado por toda a produção do mês.</p>
 
       <div className="card cfg-simulador" style={{ marginBottom: 16 }}>

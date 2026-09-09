@@ -661,14 +661,14 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
 
   if (carregando) {
     return (
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
         <div className="card" style={{ maxWidth: 560, width: '92%' }}><p className="page-sub">Carregando…</p></div>
       </div>
     );
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onMouseDown={(e) => { if (e.target === e.currentTarget) tentarFechar(); }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onMouseDown={(e) => { if (e.target === e.currentTarget) tentarFechar(); }}>
       <div className="card" style={{ maxWidth: 640, width: '94%', maxHeight: '88vh', overflowY: 'auto' }}>
         <div className="card-head-linha">
           <div className="card-head">{eventoId ? 'Editar evento' : 'Novo evento'}</div>

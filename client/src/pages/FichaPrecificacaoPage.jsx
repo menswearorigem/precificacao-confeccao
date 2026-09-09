@@ -4,17 +4,30 @@ import { Field, Select, EstadoVazio, lerRecentes } from '../components/ui';
 import { api } from '../api/client';
 import { brl, pct, numeroBr } from '../lib/format';
 import { statusToneClass } from '../lib/statusTone';
+import { usePaletaGrafico, corPorIndice } from '../lib/coresGrafico';
 
-const DONUT_CORES = {
-  materiais: '#6b4423',
-  industrial: '#b5651d',
-  indireto: '#c9a876',
-  impostos: '#a93f2b',
-  taxas: '#3e6e90',
-  lucro: '#5b7553',
-};
+// Cores da rosca lidas do TEMA (REGRA 3). Escritas à mão, quatro delas eram
+// literalmente o valor de uma variável existente copiado, e no modo escuro a
+// rosca inteira ficava com a paleta clara sobre o fundo marrom.
+function donutCores(paleta) {
+  return {
+    materiais: corPorIndice(paleta, 7),
+    industrial: corPorIndice(paleta, 0),
+    indireto: corPorIndice(paleta, 3),
+    impostos: paleta?.negativo || corPorIndice(paleta, 6),
+    taxas: corPorIndice(paleta, 2),
+    lucro: paleta?.positivo || corPorIndice(paleta, 1),
+  };
+}
 
 function Donut({ fatias }) {
+  const paleta = usePaletaGrafico();
+  // ⚠️ O `Math.max(f.valor, 0)` zerava o LUCRO NEGATIVO. Num produto vendido
+  // com prejuízo, a fatia sumia, o miolo passava a mostrar um "preço" maior
+  // que o preço real, e o desenho não dava sinal nenhum de que havia
+  // prejuízo — justamente o caso em que este gráfico mais serve. Agora o
+  // prejuízo é dito, em vez de somado como zero.
+  const prejuizo = fatias.filter((f) => f.valor < 0).reduce((soma, f) => soma + f.valor, 0);
   const total = fatias.reduce((s, f) => s + Math.max(f.valor, 0), 0);
   let acc = 0;
   const stops = fatias.map((f) => {
@@ -24,7 +37,7 @@ function Donut({ fatias }) {
     const end = total === 0 ? 0 : (acc / total) * 360;
     return `${f.cor} ${start}deg ${end}deg`;
   });
-  const gradient = total === 0 ? '#eae1cc 0deg 360deg' : stops.join(', ');
+  const gradient = total === 0 ? 'var(--bg-deep) 0deg 360deg' : stops.join(', ');
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
@@ -42,11 +55,19 @@ function Donut({ fatias }) {
           position: 'absolute', inset: 22, borderRadius: '50%', background: 'var(--surface)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column',
         }}>
-          <span className="mono" style={{ fontSize: 11, color: 'var(--ink-soft)' }}>preço</span>
+          <span className="mono" style={{ fontSize: 11, color: 'var(--ink-soft)' }}>
+            {prejuizo < 0 ? 'custo' : 'preço'}
+          </span>
           <span className="mono" style={{ fontSize: 15, fontWeight: 700 }}>{brl(total)}</span>
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {prejuizo < 0 && (
+          <p className="aviso-inline" style={{ marginBottom: 4 }}>
+            Esta referência está sendo vendida com <strong>prejuízo de {brl(Math.abs(prejuizo))}</strong> por peça.
+            A rosca abaixo mostra só os custos — eles somam mais que o preço praticado.
+          </p>
+        )}
         {fatias.map((f) => (
           <div key={f.label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
             <span style={{ width: 10, height: 10, borderRadius: 3, background: f.cor, display: 'inline-block' }} />
@@ -108,6 +129,8 @@ function FaixaPreco({ minimo, ideal, premium, ativo }) {
 }
 
 export default function FichaPrecificacaoPage() {
+  const paletaGrafico = usePaletaGrafico();
+  const cores = donutCores(paletaGrafico);
   const [produtos, setProdutos] = useState([]);
   const [produtoId, setProdutoId] = useState('');
   const [detalhe, setDetalhe] = useState(null);
@@ -135,7 +158,7 @@ export default function FichaPrecificacaoPage() {
 
   return (
     <div className="page-wide">
-      <h2>Ficha de Precificação</h2>
+      <h1>Ficha de Precificação</h1>
       <p className="page-sub">Composição de preço, custo e margem de uma referência — a ficha original, preservada como estava.</p>
 
       <div className="card" style={{ marginBottom: 16 }}>
@@ -165,6 +188,10 @@ export default function FichaPrecificacaoPage() {
             <KpiCard label="% Mão de Obra Industrial" value={pct(c.custoTotal.pctIndustrial)} />
             <KpiCard label="% Despesas Indiretas" value={pct(c.custoTotal.pctIndireto)} />
             <KpiCard label="% Impostos" value={pct(c.custoTotal.pctImpostosDoCusto)} />
+            {/* A quinta fatia faltava: sem ela, as quatro anteriores pareciam
+                somar 100% do custo e não somavam, e quem lia concluía que
+                sobrava margem onde na verdade falta a fatia de taxas. */}
+            <KpiCard label="% Taxas de Venda" value={pct(c.custoTotal.pctTaxasDoCusto)} />
           </div>
 
           <div className="grid-2">
@@ -172,12 +199,12 @@ export default function FichaPrecificacaoPage() {
               <div className="card-head">Composição do Preço de Venda</div>
               <Donut
                 fatias={[
-                  { label: 'Materiais', valor: c.custoTotal.totalMateriais, cor: DONUT_CORES.materiais },
-                  { label: 'Industrial', valor: c.custoTotal.totalIndustrial, cor: DONUT_CORES.industrial },
-                  { label: 'Indireto', valor: c.custoTotal.custoIndireto, cor: DONUT_CORES.indireto },
-                  { label: 'Impostos', valor: c.custoTotal.impostosRS, cor: DONUT_CORES.impostos },
-                  { label: 'Taxas', valor: c.custoTotal.taxasRS, cor: DONUT_CORES.taxas },
-                  { label: 'Lucro', valor: c.formacaoPreco.lucroRS, cor: DONUT_CORES.lucro },
+                  { label: 'Materiais', valor: c.custoTotal.totalMateriais, cor: cores.materiais },
+                  { label: 'Industrial', valor: c.custoTotal.totalIndustrial, cor: cores.industrial },
+                  { label: 'Indireto', valor: c.custoTotal.custoIndireto, cor: cores.indireto },
+                  { label: 'Impostos', valor: c.custoTotal.impostosRS, cor: cores.impostos },
+                  { label: 'Taxas', valor: c.custoTotal.taxasRS, cor: cores.taxas },
+                  { label: 'Lucro', valor: c.formacaoPreco.lucroRS, cor: cores.lucro },
                 ]}
               />
             </div>

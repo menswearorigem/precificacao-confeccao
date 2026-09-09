@@ -114,7 +114,7 @@ export default function FichaEstoquePage() {
   return (
     <div className="page-wide">
       <div className="no-print">
-        <h2>Ficha de Estoque</h2>
+        <h1>Ficha de Estoque</h1>
         <p className="page-sub">
           Busque e selecione as referências para gerar fichas de conferência de estoque prontas
           para impressão (uma referência por folha, variantes organizadas em tabelas por cor).
@@ -122,11 +122,11 @@ export default function FichaEstoquePage() {
 
         <div className="card" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-            <button className="btn btn-dashed" onClick={carregarMarketplace} disabled={carregando}>
+            <button type="button" className="btn btn-dashed" onClick={carregarMarketplace} disabled={carregando}>
               <Store size={14} /> {carregando ? 'Carregando…' : 'Carregar todos do Marketplace'}
             </button>
             {selecionadas.length > 0 && (
-              <button className="btn btn-ghost" onClick={limpar}>
+              <button type="button" className="btn btn-ghost" onClick={limpar}>
                 <Trash2 size={14} /> Limpar seleção
               </button>
             )}
@@ -150,7 +150,7 @@ export default function FichaEstoquePage() {
                     <td>{p.descricao}</td>
                     <td>{p.marketplace && <span className="stamp sm tone-neutro">marketplace</span>}</td>
                     <td style={{ textAlign: 'right' }}>
-                      <button className="btn btn-dashed" onClick={() => adicionar(p)}>Adicionar</button>
+                      <button type="button" className="btn btn-dashed" onClick={() => adicionar(p)}>Adicionar</button>
                     </td>
                   </tr>
                 ))}
@@ -181,11 +181,11 @@ export default function FichaEstoquePage() {
             </p>
           )}
 
-          <button className="btn btn-primary" onClick={gerarFichas} disabled={selecionadas.length === 0 || gerando}>
+          <button type="button" className="btn btn-primary" onClick={gerarFichas} disabled={selecionadas.length === 0 || gerando}>
             {gerando ? 'Gerando…' : `Gerar fichas (${selecionadas.length})`}
           </button>
           {fichas.length > 0 && (
-            <button className="btn btn-ghost" style={{ marginLeft: 8 }} onClick={() => window.print()}>
+            <button type="button" className="btn btn-ghost" style={{ marginLeft: 8 }} onClick={() => window.print()}>
               <Printer size={14} /> Imprimir / Exportar PDF
             </button>
           )}

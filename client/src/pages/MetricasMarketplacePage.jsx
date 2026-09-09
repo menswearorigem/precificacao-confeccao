@@ -16,17 +16,24 @@ import {
 } from '../lib/canalMarketplace';
 import FotoProduto from '../components/FotoProduto';
 import DataTable from '../components/DataTable';
+import { usePaletaGrafico, corPorIndice } from '../lib/coresGrafico';
 
-const COR_PRINCIPAL = '#d17a2a';
-const COR_ANTERIOR = '#9c7a3c';
-const COR_SECUNDARIA = '#0d9488';
-const FONTE_GRAFICO = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+// As cores dos gráficos vêm do TEMA (lib/coresGrafico), não escritas aqui.
+// Antes eram quatro hexadecimais soltos — contra a REGRA 3 — e o efeito
+// concreto era que esta tela ficava com a paleta do modo claro depois de
+// alternar para o escuro, enquanto os outros gráficos do sistema trocavam.
+// `usePaletaGrafico` relê o tema quando ele muda, sem recarregar a página.
+const FONTE_GRAFICO = 'var(--font-body)';
 
-// Paleta validada pro gráfico empilhado "Por Loja" (terracota, verde-azulado,
-// ameixa, azul) — passou em contraste, distinção entre daltonismo e leitura
-// normal (validador dataviz, modo claro). Repete em ciclo se houver mais de
-// 4 lojas.
-const PALETA_LOJAS = ['#d17a2a', '#0d9488', '#7c4577', '#3a6fb5'];
+// Papéis das séries desta tela, apontando para as variáveis --gr-* do tema.
+const corPrincipal = (paleta) => corPorIndice(paleta, 0);   // período atual
+const corAnterior = (paleta) => corPorIndice(paleta, 3);    // período anterior
+const corSecundaria = (paleta) => corPorIndice(paleta, 5);  // série de apoio
+
+// Paleta do gráfico empilhado "Por Loja": as oito séries do tema, na ordem.
+// Elas já passaram em contraste e em distinção para daltonismo nos dois
+// modos, e trocam junto com o tema. Repete em ciclo se houver mais lojas.
+const paletaLojas = (paleta) => (paleta?.series?.length ? paleta.series : []);
 
 // Botão que parece um link de texto (breadcrumb de categoria) — sem classe
 // própria no CSS do app, então só um estilo inline reutilizado.
@@ -135,6 +142,7 @@ function TooltipVendas({ active, payload, label }) {
 // (linha tracejada) — alinhadas por ÍNDICE do dia (dia 1 sobre dia 1), não
 // pela data real, pra dar pra comparar visualmente o formato da curva.
 function GraficoComparativo({ serie, serieAnterior }) {
+  const paleta = usePaletaGrafico();
   const dados = serie.map((d, i) => ({
     dataLabel: dataBr(d.data),
     valorVendas: d.valorVendasValidas,
@@ -146,8 +154,8 @@ function GraficoComparativo({ serie, serieAnterior }) {
       <AreaChart data={dados} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="corVendas" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={COR_PRINCIPAL} stopOpacity={0.22} />
-            <stop offset="95%" stopColor={COR_PRINCIPAL} stopOpacity={0.01} />
+            <stop offset="5%" stopColor={corPrincipal(paleta)} stopOpacity={0.22} />
+            <stop offset="95%" stopColor={corPrincipal(paleta)} stopOpacity={0.01} />
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
@@ -156,15 +164,17 @@ function GraficoComparativo({ serie, serieAnterior }) {
         <Tooltip content={<TooltipVendas />} />
         <Legend wrapperStyle={{ fontFamily: FONTE_GRAFICO, fontSize: 12.5, color: 'var(--ink-soft)', paddingTop: 8 }} iconType="plainline" />
         {serieAnterior && (
-          <Area type="monotone" dataKey="valorVendasAnterior" name="Período Anterior" stroke={COR_ANTERIOR} strokeDasharray="5 4" fill="none" strokeWidth={1.75} dot={false} />
+          <Area type="monotone" dataKey="valorVendasAnterior" name="Período Anterior" stroke={corAnterior(paleta)} strokeDasharray="5 4" fill="none" strokeWidth={1.75} dot={false} />
         )}
-        <Area type="monotone" dataKey="valorVendas" name="Vendas Válidas" stroke={COR_PRINCIPAL} fill="url(#corVendas)" strokeWidth={2.25} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+        <Area type="monotone" dataKey="valorVendas" name="Vendas Válidas" stroke={corPrincipal(paleta)} fill="url(#corVendas)" strokeWidth={2.25} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
       </AreaChart>
     </ResponsiveContainer>
   );
 }
 
-function GraficoSimples({ serie, dataKey = 'valorVendasValidas', nome = 'Vendas Válidas', cor = COR_PRINCIPAL }) {
+function GraficoSimples({ serie, dataKey = 'valorVendasValidas', nome = 'Vendas Válidas', cor }) {
+  const paleta = usePaletaGrafico();
+  const corSerie = cor || corPrincipal(paleta);
   const dados = serie.map((d) => ({ ...d, dataLabel: dataBr(d.data) }));
   const tickStyle = { fontSize: 11.5, fontFamily: FONTE_GRAFICO, fill: 'var(--ink-soft)' };
   return (
@@ -172,15 +182,15 @@ function GraficoSimples({ serie, dataKey = 'valorVendasValidas', nome = 'Vendas 
       <AreaChart data={dados} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="corVendasSimples" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={cor} stopOpacity={0.22} />
-            <stop offset="95%" stopColor={cor} stopOpacity={0.01} />
+            <stop offset="5%" stopColor={corSerie} stopOpacity={0.22} />
+            <stop offset="95%" stopColor={corSerie} stopOpacity={0.01} />
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
         <XAxis dataKey="dataLabel" tick={tickStyle} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
         <YAxis tick={tickStyle} tickFormatter={(v) => brl(v)} width={92} axisLine={false} tickLine={false} />
         <Tooltip content={<TooltipVendas />} />
-        <Area type="monotone" dataKey={dataKey} name={nome} stroke={cor} fill="url(#corVendasSimples)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+        <Area type="monotone" dataKey={dataKey} name={nome} stroke={corSerie} fill="url(#corVendasSimples)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -279,6 +289,8 @@ function VisaoGeralTab({ filtros }) {
 // Gráfico empilhado de vendas válidas por dia, uma área por loja — cada
 // loja pega uma cor da paleta validada (cicla se houver mais de 4).
 function GraficoPorLoja({ serieDiaria, lojas }) {
+  const paleta = usePaletaGrafico();
+  const cores = paletaLojas(paleta);
   const dados = useMemo(() => serieDiaria.map((d) => {
     const linha = { data: d.data, dataLabel: dataBr(d.data) };
     for (const l of lojas) linha[l.nome] = d[l.nome] || 0;
@@ -301,8 +313,8 @@ function GraficoPorLoja({ serieDiaria, lojas }) {
             dataKey={l.nome}
             name={l.nome}
             stackId="1"
-            stroke={PALETA_LOJAS[i % PALETA_LOJAS.length]}
-            fill={PALETA_LOJAS[i % PALETA_LOJAS.length]}
+            stroke={cores[i % cores.length]}
+            fill={cores[i % cores.length]}
             fillOpacity={0.55}
             strokeWidth={1.5}
           />
@@ -554,6 +566,7 @@ function AnaliseABCTab({ filtros, busca }) {
 }
 
 function EntradaSaidaTab({ filtros }) {
+  const paleta = usePaletaGrafico();
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState('');
 
@@ -594,7 +607,7 @@ function EntradaSaidaTab({ filtros }) {
               <XAxis dataKey="dataLabel" tick={tickStyle} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
               <YAxis tick={tickStyle} width={40} axisLine={false} tickLine={false} allowDecimals={false} />
               <Tooltip content={<TooltipVendas />} />
-              <Bar dataKey="unidades" name="Unidades" fill={COR_SECUNDARIA} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="unidades" name="Unidades" fill={corSecundaria(paleta)} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         ) : <p className="page-sub">Sem movimento no período.</p>}
@@ -758,7 +771,7 @@ function OpinioesTab({ integracoes }) {
                     <td colSpan="7" className="login-error" style={{ margin: 0 }}>{o.erro}</td>
                   ) : (
                     <>
-                      <td className="mono"><Star size={11} style={{ marginRight: 3, verticalAlign: -1, color: '#c9962c' }} />{numeroBr(o.notaMedia, 1)}</td>
+                      <td className="mono"><Star size={11} style={{ marginRight: 3, verticalAlign: -1, color: 'var(--brass-bright)' }} />{numeroBr(o.notaMedia, 1)}</td>
                       <td className="mono">{o.totalAvaliacoes}</td>
                       <td className="mono">{o.estrelas[5]}</td>
                       <td className="mono">{o.estrelas[4]}</td>
@@ -1051,6 +1064,7 @@ function PublicidadeTab({ integracoes }) {
 // distribuição (Distribuição de Anúncios) quanto pra ESCOLHER uma
 // categoria específica (Tendência), via `modoSelecao`/`onSelecionar`.
 function CategoriaBrowser({ integracaoId, modoSelecao, onSelecionar }) {
+  const paleta = usePaletaGrafico();
   const [pilha, setPilha] = useState([]);
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
@@ -1104,7 +1118,7 @@ function CategoriaBrowser({ integracaoId, modoSelecao, onSelecionar }) {
                 <span className="mono">{pct(c.pct)} · {c.totalAnuncios.toLocaleString('pt-BR')} anúncios</span>
               </div>
               <div style={{ background: 'var(--surface-alt)', borderRadius: 4, height: 8, overflow: 'hidden' }}>
-                <div style={{ width: `${Math.max(c.pct * 100, 1)}%`, height: '100%', background: COR_PRINCIPAL, borderRadius: 4 }} />
+                <div style={{ width: `${Math.max(c.pct * 100, 1)}%`, height: '100%', background: corPrincipal(paleta), borderRadius: 4 }} />
               </div>
             </div>
           ))}
@@ -1497,7 +1511,7 @@ export default function MetricasMarketplacePage() {
 
   return (
     <div className="page-wide">
-      <h2>Métricas de Marketplace</h2>
+      <h1>Métricas de Marketplace</h1>
       <p className="page-sub">
         Painel de acompanhamento de vendas — volume, pedidos, clientes, produtos e estoque — separado da
         Lucratividade (que foca em custo/imposto/lucro por pedido).

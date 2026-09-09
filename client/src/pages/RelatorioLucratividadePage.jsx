@@ -5,6 +5,7 @@ import {
   Percent, Printer, RefreshCw, Search, ShoppingBag, Tag, TrendingUp, X,
 } from 'lucide-react';
 import { api } from '../api/client';
+import { usePaletaGrafico, corPorIndice } from '../lib/coresGrafico';
 import { brl, pct, formatQtd } from '../lib/format';
 import { Select, StatCard, ThOrdenavel, ThGrupoOrdenavel, Paginacao, BotaoExportar } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
@@ -47,9 +48,11 @@ const COLUNAS_PEDIDOS_EXPORTACAO = [
 // verde-azulado e ameixa — as mesmas famílias de cor já usadas em
 // --terracotta-bright / --teal-bright / --plum-bright), validada pra
 // contraste e distinção entre daltonismo antes de virar cor de gráfico.
-const COR_FATURAMENTO = '#d17a2a';
-const COR_LIQUIDO = '#0d9488';
-const COR_LUCRO = '#7c4577';
+// Cores do tema (REGRA 3). Escritas à mão, ficavam com a paleta clara no
+// modo escuro — e o `#0d9488` sequer pertencia à família de cores da casa.
+const corFaturamento = (paleta) => corPorIndice(paleta, 0);
+const corLiquido = (paleta) => corPorIndice(paleta, 5);
+const corLucroGrafico = (paleta) => corPorIndice(paleta, 4);
 const FONTE_GRAFICO = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
 function dataBr(iso) {
@@ -113,7 +116,7 @@ function VincularItensModal({ pedido, onClose, onVinculado }) {
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
       <div className="card" style={{ maxWidth: 680, width: '92%', maxHeight: '82vh', overflowY: 'auto' }}>
         <div className="card-head-linha">
           <div className="card-head">
@@ -205,6 +208,7 @@ function TooltipGrafico({ active, payload, label }) {
 }
 
 function GraficoLucratividade({ serie }) {
+  const paleta = usePaletaGrafico();
   const dados = serie.map((d) => ({ ...d, dataLabel: dataBr(d.data) }));
   const tickStyle = { fontSize: 11.5, fontFamily: FONTE_GRAFICO, fill: 'var(--ink-soft)' };
   return (
@@ -212,16 +216,16 @@ function GraficoLucratividade({ serie }) {
       <AreaChart data={dados} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="corFaturamento" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={COR_FATURAMENTO} stopOpacity={0.22} />
-            <stop offset="95%" stopColor={COR_FATURAMENTO} stopOpacity={0.01} />
+            <stop offset="5%" stopColor={corFaturamento(paleta)} stopOpacity={0.22} />
+            <stop offset="95%" stopColor={corFaturamento(paleta)} stopOpacity={0.01} />
           </linearGradient>
           <linearGradient id="corLiquido" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={COR_LIQUIDO} stopOpacity={0.22} />
-            <stop offset="95%" stopColor={COR_LIQUIDO} stopOpacity={0.01} />
+            <stop offset="5%" stopColor={corLiquido(paleta)} stopOpacity={0.22} />
+            <stop offset="95%" stopColor={corLiquido(paleta)} stopOpacity={0.01} />
           </linearGradient>
           <linearGradient id="corLucro" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={COR_LUCRO} stopOpacity={0.24} />
-            <stop offset="95%" stopColor={COR_LUCRO} stopOpacity={0.01} />
+            <stop offset="5%" stopColor={corLucroGrafico(paleta)} stopOpacity={0.24} />
+            <stop offset="95%" stopColor={corLucroGrafico(paleta)} stopOpacity={0.01} />
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
@@ -233,9 +237,9 @@ function GraficoLucratividade({ serie }) {
           iconType="circle"
           iconSize={8}
         />
-        <Area type="monotone" dataKey="faturamento" name="Faturamento" stroke={COR_FATURAMENTO} fill="url(#corFaturamento)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
-        <Area type="monotone" dataKey="liquidoMarketplace" name="Líq. do Marketplace" stroke={COR_LIQUIDO} fill="url(#corLiquido)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
-        <Area type="monotone" dataKey="lucro" name="Lucro Bruto" stroke={COR_LUCRO} fill="url(#corLucro)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+        <Area type="monotone" dataKey="faturamento" name="Faturamento" stroke={corFaturamento(paleta)} fill="url(#corFaturamento)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+        <Area type="monotone" dataKey="liquidoMarketplace" name="Líq. do Marketplace" stroke={corLiquido(paleta)} fill="url(#corLiquido)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+        <Area type="monotone" dataKey="lucro" name="Lucro Bruto" stroke={corLucroGrafico(paleta)} fill="url(#corLucro)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -382,7 +386,7 @@ function DiagnosticoPagamento({ pedidoId, canal }) {
       <div style={{ marginTop: 10, border: '1px dashed var(--border)', borderRadius: 8, padding: 12 }}>
         <div className="row-line"><span>valor recebido gravado hoje</span><span className="mono">{diagnostico.valorRecebidoGravadoAtualmente != null ? brl(Number(diagnostico.valorRecebidoGravadoAtualmente)) : '—'}</span></div>
         <div className="row-line"><span>situação desse valor aqui</span><span className="mono">{diagnostico.statusValorRecebidoGravado || '—'}</span></div>
-        <div className="row-line" style={{ background: 'var(--tone-atencao-bg, #fff3cd)' }}>
+        <div className="row-line" style={{ background: 'var(--warning-bg)' }}>
           <span>escrow_amount agora na Shopee (o que ela paga de verdade)</span>
           <span className="mono">{diagnostico.escrowAmountAgora != null ? brl(Number(diagnostico.escrowAmountAgora)) : '—'}</span>
         </div>
@@ -413,7 +417,7 @@ function DiagnosticoPagamento({ pedidoId, canal }) {
           <div className="row-line"><span>valor recebido gravado hoje</span><span className="mono">{diagnostico.valorRecebidoGravadoAtualmente != null ? brl(Number(diagnostico.valorRecebidoGravadoAtualmente)) : '—'}</span></div>
           <div className="row-line"><span>id(s) que o critério atual escolheria</span><span className="mono">{diagnostico.idsQueOCriterioAtualEscolheria.join(', ') || '—'}</span></div>
           <div className="row-line"><span>pack_id (pedido combinado)</span><span className="mono">{diagnostico.packId || 'não é pack'}</span></div>
-          <div className="row-line" style={{ background: 'var(--tone-atencao-bg, #fff3cd)' }}>
+          <div className="row-line" style={{ background: 'var(--warning-bg)' }}>
             <span>ID do envio (compare com o número que aparece no painel do ML)</span>
             <span className="mono">{diagnostico.shippingId || '—'}</span>
           </div>
@@ -977,7 +981,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
   return (
     <div className="page-wide">
       <div className="no-print">
-        <h2>{titulo}</h2>
+        <h1>{titulo}</h1>
         <p className="page-sub">
           {isMarketplace
             ? 'Lucro real de cada pedido vindo de marketplace: valor de verdade recebido do marketplace — o pagamento no Mercado Livre, a conciliação (escrow) na Shopee — menos o custo de produção, embalagem e imposto (quando esse valor já está confirmado). Pedidos ainda sem confirmação usam uma estimativa (marcada como "estimativa") baseada no preço de venda.'
@@ -1110,12 +1114,12 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
         <>
           <div className="print-only" style={{ marginBottom: 12 }}>
             <h2 style={{ margin: 0 }}>{titulo}</h2>
-            <p style={{ margin: '4px 0 0', color: '#555' }}>
+            <p style={{ margin: '4px 0 0', color: 'var(--ink-soft)' }}>
               Período: {dataBr(dataInicio)} a {dataBr(dataFim)}
               {canalVenda ? ` · Canal: ${canalVenda}` : ''}
             </p>
             {relatorio.calculadoEm && (
-              <p style={{ margin: '2px 0 0', color: '#777', fontSize: 12 }}>
+              <p style={{ margin: '2px 0 0', color: 'var(--ink-faint)', fontSize: 12 }}>
                 Calculado em {new Date(relatorio.calculadoEm).toLocaleString('pt-BR')} — o rateio de Ads por pedido
                 pode mudar se recalculado depois (venda cancelada altera o divisor do dia).
               </p>

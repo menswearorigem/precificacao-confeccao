@@ -213,7 +213,7 @@ export default function FinanceiroPage({ aba = 'movimentacao' }) {
   return (
     <div className="page-wide">
       <div className="no-print">
-        <h2>Financeiro</h2>
+        <h1>Financeiro</h1>
         <p className="page-sub">
           Movimentação bancária dos marketplaces: quanto cada plataforma liberou (e descontou) na conta, por
           data. É lido do extrato da própria plataforma — inclui o que não pertence a venda nenhuma, como

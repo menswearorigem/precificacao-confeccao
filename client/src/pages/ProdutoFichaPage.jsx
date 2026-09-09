@@ -249,9 +249,34 @@ export default function ProdutoFichaPage() {
 
   return (
     <div className="page-wide">
-      <button className="btn btn-ghost" style={{ marginBottom: 14 }} onClick={() => navigate('/produtos')}>
-        <ArrowLeft size={14} /> Voltar para produtos
+      <button className="btn btn-ghost" type="button" style={{ marginBottom: 14 }} onClick={() => navigate(-1)}>
+        {/* navigate(-1) e não '/produtos': o filtro, a ordenação e a página da
+            lista moram na URL, e voltar por caminho fixo derrubava tudo —
+            quem confere 200 referências uma a uma recomeçava da página 1 a
+            cada volta. */}
+        <ArrowLeft size={14} /> Voltar
       </button>
+
+      {/* A tela mais usada do sistema não tinha título nenhum: a referência
+          só aparecia dentro de um campo de formulário, e não havia <h1> para
+          leitor de tela nem para a aba do navegador. */}
+      <div className="pagina-topo" style={{ marginBottom: 14 }}>
+        <div>
+          <h1>
+            {isNew ? 'Nova referência' : (produto.referencia || 'Referência sem código')}
+          </h1>
+          <p className="page-sub" style={{ marginBottom: 0 }}>
+            {isNew
+              ? 'Cadastro, materiais, custos industriais e formação de preço.'
+              : (produto.descricao || 'Sem descrição cadastrada.')}
+          </p>
+        </div>
+        {c && (
+          <span className={'stamp ' + toneClass}>
+            <StatusIcon size={13} /> {c.formacaoPreco.status}
+          </span>
+        )}
+      </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
@@ -277,7 +302,7 @@ export default function ProdutoFichaPage() {
                   {produto.temFoto ? 'Trocar' : 'Enviar'}
                 </button>
                 {produto.temFoto && (
-                  <button type="button" className="icon-btn" title="Remover foto" onClick={handleRemoverFoto}><Trash2 size={13} /></button>
+                  <button type="button" className="icon-btn" title="Remover foto" aria-label="Remover foto" onClick={handleRemoverFoto}><Trash2 size={13} /></button>
                 )}
               </div>
             )}

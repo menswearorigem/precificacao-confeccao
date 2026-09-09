@@ -57,11 +57,11 @@ export default function EstoqueEanImportacaoPage() {
 
   return (
     <div className="page-wide">
-      <button className="btn btn-ghost" style={{ marginBottom: 14 }} onClick={() => navigate('/estoque')}>
+      <button type="button" className="btn btn-ghost" style={{ marginBottom: 14 }} onClick={() => navigate('/estoque')}>
         <ArrowLeft size={14} /> Voltar para estoque
       </button>
 
-      <h2>Importar EAN do Sistema Real</h2>
+      <h1>Importar EAN do Sistema Real</h1>
       <p className="page-sub">
         Envie um ou mais arquivos "relListaProd" do Wiki Sistemas (colunas REF, COR, TAM, EAN
         EXTERNO). Se a variante já existe aqui, o EAN dela é atualizado na hora. Se ainda não
@@ -149,7 +149,7 @@ export default function EstoqueEanImportacaoPage() {
             </div>
           )}
 
-          <button className="btn btn-primary" onClick={handleConfirmar} disabled={loading}>
+          <button type="button" className="btn btn-primary" onClick={handleConfirmar} disabled={loading}>
             {loading ? 'Gravando…' : 'Confirmar importação'}
           </button>
         </>

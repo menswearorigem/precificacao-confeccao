@@ -336,7 +336,7 @@ export default function FornecedoresListPage() {
     <div className="page-wide">
       <div className="pagina-topo no-print">
         <div>
-          <h2>Fornecedores</h2>
+          <h1>Fornecedores</h1>
           <p className="page-sub">
             Quem a empresa compra, quanto já foi comprado de cada um e como cada um costuma ser pago.
           </p>

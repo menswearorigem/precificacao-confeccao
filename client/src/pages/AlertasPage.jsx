@@ -64,7 +64,7 @@ export default function AlertasPage() {
     <div className="page-wide">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
         <div>
-          <h2><AlertTriangle size={20} style={{ verticalAlign: -3, marginRight: 6 }} />Central de Alertas</h2>
+          <h1><AlertTriangle size={20} style={{ verticalAlign: -3, marginRight: 6 }} />Central de Alertas</h1>
           <p className="page-sub">Quais referências estão fora de cada limite configurado em Parâmetros, agora.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>

@@ -252,7 +252,7 @@ export default function UsuariosPage() {
             <Search size={14} />
             <input placeholder="Buscar por nome ou e-mail…" value={busca} onChange={(e) => setBusca(e.target.value)} />
           </div>
-          <button className="btn btn-primary" onClick={() => setMostrarNovo((v) => !v)}>
+          <button type="button" className="btn btn-primary" onClick={() => setMostrarNovo((v) => !v)}>
             <Plus size={14} /> Novo usuário
           </button>
         </div>
@@ -330,14 +330,14 @@ export default function UsuariosPage() {
               {!u.ativo && <span className="stamp sm tone-prejuizo">Inativo</span>}
             </span>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-ghost" onClick={() => (editandoId === u.id ? setEditandoId(null) : comecarEdicao(u))}>
+              <button type="button" className="btn btn-ghost" onClick={() => (editandoId === u.id ? setEditandoId(null) : comecarEdicao(u))}>
                 <Pencil size={13} /> {editandoId === u.id ? 'Cancelar edição' : 'Editar dados'}
               </button>
-              <button className="btn btn-ghost" onClick={() => { setResetandoId(resetandoId === u.id ? null : u.id); setNovaSenha(''); }}>
+              <button type="button" className="btn btn-ghost" onClick={() => { setResetandoId(resetandoId === u.id ? null : u.id); setNovaSenha(''); }}>
                 <KeyRound size={13} /> Resetar senha
               </button>
               {u.id !== usuarioAtual.id && (
-                <button className="icon-btn" onClick={() => removerUsuario(u.id)}><Trash2 size={14} /></button>
+                <button type="button" className="icon-btn" onClick={() => removerUsuario(u.id)}><Trash2 size={14} /></button>
               )}
             </div>
           </div>
@@ -362,8 +362,8 @@ export default function UsuariosPage() {
                 </Field>
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                <button className="btn btn-primary" onClick={() => salvarEdicao(u)}>Salvar dados</button>
-                <button className="btn btn-ghost" onClick={() => setEditandoId(null)}>Cancelar</button>
+                <button type="button" className="btn btn-primary" onClick={() => salvarEdicao(u)}>Salvar dados</button>
+                <button type="button" className="btn btn-ghost" onClick={() => setEditandoId(null)}>Cancelar</button>
               </div>
               <p className="page-sub" style={{ marginBottom: 0 }}>
                 Trocar a senha continua sendo pelo botão “Resetar senha” — e isso encerra as sessões abertas da pessoa.
@@ -421,7 +421,7 @@ export default function UsuariosPage() {
               <Field label="Nova senha">
                 <input type="password" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} style={{ width: 200 }} />
               </Field>
-              <button className="btn btn-primary" onClick={() => resetarSenha(u.id)}>Salvar nova senha</button>
+              <button type="button" className="btn btn-primary" onClick={() => resetarSenha(u.id)}>Salvar nova senha</button>
             </div>
           )}
         </div>

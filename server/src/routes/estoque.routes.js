@@ -108,7 +108,7 @@ router.post('/variantes', async (req, res, next) => {
     await client.query('BEGIN');
     const { rows: produtoRows } = await client.query('SELECT referencia FROM produtos WHERE id = $1', [body.produto_id]);
     if (produtoRows.length === 0) {
-      await client.query('ROLLBACK');
+      await client.query('ROLLBACK').catch(() => {});
       return res.status(404).json({ error: 'Produto não encontrado.' });
     }
     const ean = await resolverEan(client, produtoRows[0].referencia, body.cor || '', body.tamanho || '', body.ean);
@@ -128,7 +128,7 @@ router.post('/variantes', async (req, res, next) => {
     const { rows: full } = await variantesQuery('WHERE v.id = $1', [rows[0].id]);
     res.status(201).json(full[0]);
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     if (err.code === '23505') {
       return res.status(409).json({ error: 'Já existe uma variante com essa combinação de cor/tamanho (ou esse EAN já está em uso).' });
     }
@@ -203,7 +203,7 @@ router.post('/variantes/:id/movimento', async (req, res, next) => {
     const { rows } = await variantesQuery('WHERE v.id = $1', [req.params.id]);
     res.json(rows[0]);
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
   } finally {
@@ -240,7 +240,7 @@ router.post('/bipar', async (req, res, next) => {
     await client.query('BEGIN');
     const { rows: varRows } = await client.query('SELECT id FROM estoque_variantes WHERE ean = $1', [body.ean]);
     if (varRows.length === 0) {
-      await client.query('ROLLBACK');
+      await client.query('ROLLBACK').catch(() => {});
       return res.status(404).json({ error: `Nenhuma variante encontrada com o EAN "${body.ean}".` });
     }
     const varianteId = varRows[0].id;
@@ -256,7 +256,7 @@ router.post('/bipar', async (req, res, next) => {
     const { rows: full } = await variantesQuery('WHERE v.id = $1', [varianteId]);
     res.json({ ...full[0], estoqueNegativo: novaQuantidade < 0 });
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     next(err);
   } finally {
     client.release();
@@ -314,6 +314,19 @@ router.post('/importacao/preview', upload.single('file'), async (req, res, next)
     for (const linha of linhas) {
       if (!produtoIdPorReferencia.has(linha.referencia)) {
         erros.push({ linha: linha.linha, motivo: `Referência "${linha.referencia}" não está cadastrada em Produtos — cadastre-a antes de importar o estoque.`, dados: linha });
+        continue;
+      }
+      // Quantidade ilegível vira ERRO VISÍVEL, e não zero silencioso
+      // (REGRA 2). Antes, a célula que o leitor não conseguia interpretar
+      // seguia como NaN, aparecia na prévia como "0" — com toda a cara de
+      // saldo zerado conferido — e derrubava a importação inteira no
+      // INSERT, com um 500 genérico que não dizia qual linha.
+      if (linha.quantidade === null || linha.quantidade === undefined || !Number.isFinite(Number(linha.quantidade))) {
+        erros.push({
+          linha: linha.linha,
+          motivo: `Não consegui ler a quantidade de "${linha.referencia} · ${linha.cor} · ${linha.tamanho}". Não dá para saber se é zero ou se é dado faltando — confira essa célula no arquivo.`,
+          dados: linha,
+        });
         continue;
       }
       const chave = `${linha.referencia}::${linha.cor}::${linha.tamanho}`;
@@ -413,7 +426,7 @@ router.post('/importacao/confirmar', async (req, res, next) => {
     await client.query('COMMIT');
     res.json({ criados, atualizados });
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     next(err);
   } finally {
     client.release();
@@ -539,7 +552,7 @@ router.post('/ean-mapeamento/confirmar', async (req, res, next) => {
     await client.query('COMMIT');
     res.json({ aplicados, guardados });
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     if (err.code === '23505') {
       return res.status(409).json({ error: 'Um dos EANs já está em uso por outra variante ou mapeamento.' });
     }
@@ -851,7 +864,12 @@ router.get('/indicadores', async (req, res, next) => {
 // tenta de novo, sem precisar esperar o próximo ciclo automático.
 router.get('/wik-status', async (req, res, next) => {
   try {
-    sincronizarEstoqueSeNecessario();
+    // `.catch` obrigatório: sem ele, uma rejeição aqui virava
+    // `unhandledRejection` no processo — e TODA abertura da tela de Estoque
+    // passa por esta linha.
+    Promise.resolve(sincronizarEstoqueSeNecessario()).catch((err) => {
+      console.error('[wik-status] falha na sincronização oportunista:', err.message);
+    });
     const integracao = await buscarIntegracaoWik();
     if (!integracao) return res.json({ configurado: false });
     await corrigirJobsPresos(integracao);

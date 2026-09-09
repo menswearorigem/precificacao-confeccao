@@ -115,7 +115,7 @@ export default function ProdutosMarketplacePage() {
     <div className="page-wide">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
         <div>
-          <h2>Produtos de Marketplace</h2>
+          <h1>Produtos de Marketplace</h1>
           <p className="page-sub">
             As referências anunciadas nos marketplaces. Serve para filtrar Produtos e Estoque e para
             puxar todas as fichas de estoque de uma vez só, prontas para imprimir.
@@ -149,7 +149,7 @@ export default function ProdutosMarketplacePage() {
         {candidatos && candidatos.length > 0 && (
           <>
             <div style={{ marginBottom: 8 }}>
-              <button className="btn btn-dashed sm" onClick={() => adicionar(candidatos.map((c) => c.id))}>
+              <button type="button" className="btn btn-dashed sm" onClick={() => adicionar(candidatos.map((c) => c.id))}>
                 <Plus size={13} /> Adicionar os {candidatos.length} resultados
               </button>
             </div>
@@ -162,7 +162,7 @@ export default function ProdutosMarketplacePage() {
                       <td>{c.descricao}</td>
                       <td>{c.marca}</td>
                       <td style={{ textAlign: 'right' }}>
-                        <button className="btn btn-dashed sm" onClick={() => adicionar([c.id])}>
+                        <button type="button" className="btn btn-dashed sm" onClick={() => adicionar([c.id])}>
                           <Plus size={13} /> Adicionar
                         </button>
                       </td>
@@ -191,11 +191,11 @@ export default function ProdutosMarketplacePage() {
           style={{ width: '100%', fontFamily: 'var(--font-mono)' }}
         />
         <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-          <button className="btn btn-ghost" onClick={conferirColagem} disabled={conferindo || referenciasColadas().length === 0}>
+          <button type="button" className="btn btn-ghost" onClick={conferirColagem} disabled={conferindo || referenciasColadas().length === 0}>
             {conferindo ? 'Conferindo…' : `Conferir ${referenciasColadas().length} referência(s)`}
           </button>
           {previa && previa.aMarcar.length > 0 && (
-            <button className="btn btn-primary" onClick={confirmarColagem} disabled={gravando}>
+            <button type="button" className="btn btn-primary" onClick={confirmarColagem} disabled={gravando}>
               <Store size={14} /> {gravando ? 'Gravando…' : `Adicionar ${previa.aMarcar.length} à seleção`}
             </button>
           )}
@@ -262,7 +262,7 @@ export default function ProdutosMarketplacePage() {
                     <td>{p.categoria}</td>
                     <td>{p.colecao}</td>
                     <td style={{ textAlign: 'right' }}>
-                      <button className="icon-btn" title="Tirar da seleção" onClick={() => remover(p.id)}>
+                      <button type="button" className="icon-btn" title="Tirar da seleção" aria-label="Tirar da seleção" onClick={() => remover(p.id)}>
                         <X size={14} />
                       </button>
                     </td>

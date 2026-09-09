@@ -123,7 +123,7 @@ export default function RelatorioTaxasPage() {
   return (
     <div className="page-wide">
       <div className="no-print">
-        <h2>Taxas de Marketplace</h2>
+        <h1>Taxas de Marketplace</h1>
         <p className="page-sub">
           Compara a taxa que o Mercado Livre/Shopee/TikTok Shop realmente cobrou em cada pedido importado com o
           esperado pelas tabelas de comissão + frete cadastradas em Configurações → Taxas de

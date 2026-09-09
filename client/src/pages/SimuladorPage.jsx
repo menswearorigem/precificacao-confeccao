@@ -69,7 +69,7 @@ export default function SimuladorPage() {
 
   return (
     <div className="page-wide">
-      <h2>Simulador de Cenários</h2>
+      <h1>Simulador de Cenários</h1>
       <p className="page-sub">
         Teste ajustes hipotéticos de custo, frete e impostos sem alterar os dados reais do produto.
       </p>

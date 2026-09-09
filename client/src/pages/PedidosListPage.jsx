@@ -121,7 +121,7 @@ export default function PedidosListPage({ origemFiltro }) {
     <div className="page-wide">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
         <div>
-          <h2>{origemFiltro === 'marketplace' ? 'Pedidos de Marketplace' : 'Pedidos de Venda'}</h2>
+          <h1>{origemFiltro === 'marketplace' ? 'Pedidos de Marketplace' : 'Pedidos de Venda'}</h1>
           <p className="page-sub">
             {origemFiltro === 'marketplace'
               ? 'Pedidos importados do Mercado Livre, Shopee, TikTok Shop e demais marketplaces (sincronização automática ou planilha).'

@@ -96,7 +96,7 @@ function KitManualCard({ kit, onRemovido }) {
     <div className="card" style={{ marginBottom: 16 }}>
       <div className="card-head-linha">
         <div className="card-head">{kit.nome}</div>
-        <button className="icon-btn" onClick={handleRemover}><Trash2 size={14} /></button>
+        <button type="button" className="icon-btn" onClick={handleRemover}><Trash2 size={14} /></button>
       </div>
       <table className="data-table">
         <thead><tr><th>Referência</th><th>Qtd</th><th>Custo unit.</th><th>Preço unit.</th></tr></thead>
@@ -147,7 +147,7 @@ export default function KitsPage() {
 
   return (
     <div className="page-wide">
-      <h2>Kits para Marketplace</h2>
+      <h1>Kits para Marketplace</h1>
       {erroCarga && <p className="login-error">{erroCarga}</p>}
       <p className="page-sub">
         Kits automáticos (2 a 8 peças da mesma referência) para Camiseta Dryfit, Camiseta Polo e

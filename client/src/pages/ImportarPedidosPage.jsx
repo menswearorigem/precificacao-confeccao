@@ -72,7 +72,7 @@ export default function ImportarPedidosPage() {
 
   return (
     <div className="page-wide">
-      <h2>Importar Pedidos de Marketplace</h2>
+      <h1>Importar Pedidos de Marketplace</h1>
       <p className="page-sub">
         Envie a planilha exportada do Mercado Livre, da Shopee ou do UpSeller (que também traz TikTok
         Shop e Shein, sem precisar de API). Nada é gravado até você conferir e confirmar — cada pedido
@@ -151,7 +151,7 @@ export default function ImportarPedidosPage() {
               ))}
             </tbody>
           </table>
-          <button className="btn btn-primary" style={{ marginTop: 14 }} onClick={handleConfirmar} disabled={loading || selecionados.size === 0}>
+          <button type="button" className="btn btn-primary" style={{ marginTop: 14 }} onClick={handleConfirmar} disabled={loading || selecionados.size === 0}>
             {loading ? 'Gravando…' : `Importar ${selecionados.size} pedido(s) selecionado(s)`}
           </button>
         </div>

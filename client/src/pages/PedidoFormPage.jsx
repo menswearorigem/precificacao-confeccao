@@ -4,6 +4,7 @@ import {
   ArrowLeft, Barcode, Search, Trash2, UserPlus, CheckCircle2, XCircle,
 } from 'lucide-react';
 import { api } from '../api/client';
+import { somAcerto, somErro } from '../lib/somConferencia';
 import { Field, NumInput, Select, DateInput } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import { brl, pct, formatQtd } from '../lib/format';
@@ -66,9 +67,12 @@ export default function PedidoFormPage() {
 
   useEffect(load, [id]);
 
+  // Também depois de escolher o cliente: selecionar o cliente refaz o pedido
+  // inteiro e o cursor ficava em lugar nenhum, obrigando a um clique extra
+  // antes de voltar a bipar — em todo pedido.
   useEffect(() => {
     eanRef.current?.focus();
-  }, [pedido?.situacao]);
+  }, [pedido?.situacao, pedido?.cliente_id]);
 
   useEffect(() => {
     if (buscaClienteTimer.current) clearTimeout(buscaClienteTimer.current);
@@ -129,14 +133,22 @@ export default function PedidoFormPage() {
   async function lancarPorEan(e) {
     e.preventDefault();
     const codigo = ean.trim();
-    if (!codigo) return;
-    setEan('');
+    if (!codigo) { eanRef.current?.focus(); return; }
     setError('');
     try {
       const data = await api.post(`/pedidos/${id}/itens`, { ean: codigo, quantidade: Number(qtdEan) || 1 });
       aplicarResposta(data);
+      // Só limpa DEPOIS de dar certo. Antes o código sumia da tela junto com
+      // a chance de conferir o que foi lido quando o EAN não existia.
+      setEan('');
+      // E a quantidade volta para 1. Quem digitava 5 numa peça e bipava a
+      // próxima lançava 5 unidades da segunda sem perceber — é o erro de
+      // estoque mais caro e mais provável desta tela.
+      setQtdEan(1);
+      somAcerto();
     } catch (err) {
       setError(err.message);
+      somErro();
     } finally {
       eanRef.current?.focus();
     }
@@ -208,28 +220,28 @@ export default function PedidoFormPage() {
 
   return (
     <div className="page-wide">
-      <button className="btn btn-ghost" style={{ marginBottom: 14 }} onClick={() => navigate(voltarPara)}>
+      <button type="button" className="btn btn-ghost" style={{ marginBottom: 14 }} onClick={() => navigate(voltarPara)}>
         <ArrowLeft size={14} /> Voltar para pedidos
       </button>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <h2>Pedido #{pedido.numero}</h2>
+          <h1>Pedido #{pedido.numero}</h1>
           <span className={'stamp sm ' + (SITUACAO_TONE[pedido.situacao] || 'tone-neutro')}>{SITUACAO_LABEL[pedido.situacao] || pedido.situacao}</span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {aberto && (
-            <button className="btn btn-ghost" onClick={excluirPedido} style={{ color: 'var(--danger)' }}>
+            <button type="button" className="btn btn-ghost" onClick={excluirPedido} style={{ color: 'var(--danger)' }}>
               <Trash2 size={14} /> Excluir
             </button>
           )}
           {pedido.situacao !== 'cancelado' && (
-            <button className="btn btn-ghost" onClick={cancelarPedido}>
+            <button type="button" className="btn btn-ghost" onClick={cancelarPedido}>
               <XCircle size={14} /> Cancelar Pedido
             </button>
           )}
           {aberto && (
-            <button className="btn btn-primary" onClick={faturarPedido} disabled={itens.length === 0}>
+            <button type="button" className="btn btn-primary" onClick={faturarPedido} disabled={itens.length === 0}>
               <CheckCircle2 size={14} /> Faturar Pedido
             </button>
           )}
@@ -248,7 +260,7 @@ export default function PedidoFormPage() {
               {pedido.cliente_telefone && <span className="mono" style={{ marginLeft: 10, color: 'var(--ink-soft)' }}>{pedido.cliente_telefone}</span>}
             </div>
             {aberto && (
-              <button className="btn btn-ghost" onClick={() => setHeader({ cliente_id: null, cliente_nome: '', cliente_cpf_cnpj: '', cliente_telefone: '' })}>
+              <button type="button" className="btn btn-ghost" onClick={() => setHeader({ cliente_id: null, cliente_nome: '', cliente_cpf_cnpj: '', cliente_telefone: '' })}>
                 Trocar cliente
               </button>
             )}
@@ -275,7 +287,7 @@ export default function PedidoFormPage() {
                       <td className="mono">{c.cpf_cnpj}</td>
                       <td className="mono">{c.telefone}</td>
                       <td style={{ textAlign: 'right' }}>
-                        <button className="btn btn-dashed" onClick={() => selecionarCliente(c)}>Selecionar</button>
+                        <button type="button" className="btn btn-dashed" onClick={() => selecionarCliente(c)}>Selecionar</button>
                       </td>
                     </tr>
                   ))}
@@ -401,7 +413,7 @@ export default function PedidoFormPage() {
                     <td>{v.tamanho}</td>
                     <td className="mono">{formatQtd(v.quantidade)}</td>
                     <td style={{ textAlign: 'right' }}>
-                      <button className="btn btn-dashed" onClick={() => adicionarVariante(v)}>Adicionar</button>
+                      <button type="button" className="btn btn-dashed" onClick={() => adicionarVariante(v)}>Adicionar</button>
                     </td>
                   </tr>
                 ))}
@@ -451,7 +463,7 @@ export default function PedidoFormPage() {
                 <td className="mono" style={{ fontWeight: 700 }}>{brl(it.total)}</td>
                 <td>
                   {aberto && (
-                    <button className="icon-btn" onClick={() => removerItem(it.id)}><Trash2 size={13} /></button>
+                    <button type="button" className="icon-btn" onClick={() => removerItem(it.id)}><Trash2 size={13} /></button>
                   )}
                 </td>
               </tr>

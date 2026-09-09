@@ -26,7 +26,7 @@ export default function TaxasPage() {
 
   return (
     <div className="page-wide">
-      <h2>Taxas</h2>
+      <h1>Taxas</h1>
       <div className="subtab-row">
         {SUBABAS.map((s) => (
           <button

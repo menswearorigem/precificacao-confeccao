@@ -12,9 +12,18 @@ export default function IndicadoresEstoque() {
   const [dados, setDados] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const [erro, setErro] = useState('');
+
   useEffect(() => {
     setLoading(true);
-    api.get('/estoque/indicadores').then(setDados).finally(() => setLoading(false));
+    setErro('');
+    api.get('/estoque/indicadores')
+      .then(setDados)
+      // Sem catch, uma falha deixava `dados` nulo e o componente devolvia
+      // null: a tela de Estoque simplesmente NÃO tinha indicadores, sem
+      // esqueleto, sem erro e sem pista nenhuma de que faltava algo.
+      .catch((e) => setErro(e.message))
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) {
@@ -25,6 +34,15 @@ export default function IndicadoresEstoque() {
       </div>
     );
   }
+  if (erro) {
+    return (
+      <div className="card" style={{ marginBottom: 16 }}>
+        <p className="login-error" style={{ margin: 0 }}>
+          Não consegui carregar os indicadores de estoque: {erro}
+        </p>
+      </div>
+    );
+  }
   if (!dados) return null;
 
   const { indicadores: i } = dados;
@@ -32,7 +50,10 @@ export default function IndicadoresEstoque() {
 
   return (
     <>
-      <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(6, 1fr)', marginBottom: 16 }}>
+      {/* `repeat(6, 1fr)` fixo espremia os seis cartões em ~200px cada num
+          notebook de 1366px, e o valor em R$ quebrava em duas linhas. Com
+          auto-fit eles quebram para duas fileiras quando não cabem. */}
+      <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', marginBottom: 16 }}>
         <StatCard label={<><Boxes size={11} style={{ marginRight: 4, verticalAlign: -2 }} />Peças em estoque</>} value={formatQtd(i.pecasEmEstoque)} />
         <StatCard label={<><PackageCheck size={11} style={{ marginRight: 4, verticalAlign: -2 }} />Variantes ativas</>} value={formatQtd(i.variantesComSaldo)} />
         <StatCard label={<><PackageX size={11} style={{ marginRight: 4, verticalAlign: -2 }} />Variantes zeradas</>} value={formatQtd(i.variantesZeradas)} />

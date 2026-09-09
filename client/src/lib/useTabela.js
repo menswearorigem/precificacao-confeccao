@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 export const TAMANHOS_PAGINA = [25, 50, 100];
@@ -51,6 +51,22 @@ export function useTabela(lista, { colunas, colunaPadrao, direcaoPadrao = 'asc',
   const inicio = totalItens === 0 ? 0 : (pagina - 1) * tamanho;
   const fim = Math.min(totalItens, inicio + tamanho);
   const itensPagina = useMemo(() => ordenada.slice(inicio, fim), [ordenada, inicio, fim]);
+
+  // Quando um filtro encurta a lista, a página guardada na URL pode passar do
+  // fim. O cálculo acima já grampeia o valor usado, mas a URL continuava
+  // dizendo "página 3" — e a pessoa caía na ÚLTIMA página do resultado
+  // filtrado, não na primeira, sem entender por quê. Aqui a URL passa a
+  // contar a mesma história que a tela.
+  useEffect(() => {
+    if (paginaUrl !== pagina) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.set(chave('pagina'), String(pagina));
+        return next;
+      }, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paginaUrl, pagina]);
 
   function atualizarParams(patch) {
     setSearchParams((prev) => {

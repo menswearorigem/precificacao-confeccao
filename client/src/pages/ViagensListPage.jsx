@@ -60,13 +60,13 @@ export default function ViagensListPage() {
     <div className="page-wide">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
         <div>
-          <h2>Viagens</h2>
+          <h1>Viagens</h1>
           <p className="page-sub">
             Planeje o que levar, veja o que pode vender sem medo, e feche vendas na hora com o estoque
             baixando em tempo real.
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setMostrarNova((v) => !v)}>
+        <button type="button" className="btn btn-primary" onClick={() => setMostrarNova((v) => !v)}>
           <Plus size={14} /> Nova viagem
         </button>
       </div>
@@ -139,7 +139,7 @@ function ViagemGrupo({ titulo, viagens, onAbrir }) {
       <div className="viagem-grupo-titulo">{titulo}</div>
       <div className="viagem-grid">
         {viagens.map((v) => (
-          <button key={v.id} className="viagem-card" onClick={() => onAbrir(v.id)}>
+          <button type="button" key={v.id} className="viagem-card" onClick={() => onAbrir(v.id)}>
             <div className="viagem-card-top">
               <span className={'stamp sm ' + SITUACAO_TONE[v.situacao]}>{SITUACAO_LABEL[v.situacao] || v.situacao}</span>
             </div>

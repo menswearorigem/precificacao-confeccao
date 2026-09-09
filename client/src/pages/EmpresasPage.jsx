@@ -87,7 +87,7 @@ export default function EmpresasPage() {
 
   return (
     <div className="page-wide">
-      <h2>Empresas / Pessoas Jurídicas</h2>
+      <h1>Empresas / Pessoas Jurídicas</h1>
       <p className="page-sub">
         Cada empresa tem seu próprio regime tributário e alíquotas. Cada produto será associado
         a uma delas para saber qual conjunto de impostos usar na formação de preço.

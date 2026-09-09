@@ -44,7 +44,7 @@ export default function WikFichaCustoDiagnosticoCard() {
       {resultado && (
         <pre style={{
           marginTop: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 500, overflowY: 'auto',
-          background: 'rgba(0,0,0,0.05)', padding: 10, borderRadius: 6, fontSize: 12,
+          background: 'var(--surface-alt)', padding: 10, borderRadius: 6, fontSize: 12,
         }}>{JSON.stringify(resultado, null, 2)}</pre>
       )}
     </div>

@@ -44,7 +44,7 @@ export default function FichaVendaPage() {
   return (
     <div className="page-wide">
       <div className="no-print">
-        <h2>Ficha de Venda</h2>
+        <h1>Ficha de Venda</h1>
         <p className="page-sub">
           Busque e selecione até {MAX_REFERENCIAS} referências para gerar fichas completas —
           custo de produção e formação de preço de venda, prontas para impressão/PDF.
@@ -68,7 +68,7 @@ export default function FichaVendaPage() {
                     <td className="mono">{p.referencia}</td>
                     <td>{p.descricao}</td>
                     <td style={{ textAlign: 'right' }}>
-                      <button className="btn btn-dashed" onClick={() => adicionar(p)}>Adicionar</button>
+                      <button type="button" className="btn btn-dashed" onClick={() => adicionar(p)}>Adicionar</button>
                     </td>
                   </tr>
                 ))}
@@ -87,11 +87,11 @@ export default function FichaVendaPage() {
 
           {erro && <div className="login-error" style={{ marginBottom: 10 }}>{erro}</div>}
 
-          <button className="btn btn-primary" onClick={gerarFichas} disabled={selecionadas.length === 0}>
+          <button type="button" className="btn btn-primary" onClick={gerarFichas} disabled={selecionadas.length === 0}>
             Gerar fichas ({selecionadas.length})
           </button>
           {fichas.length > 0 && (
-            <button className="btn btn-ghost" style={{ marginLeft: 8 }} onClick={() => window.print()}>
+            <button type="button" className="btn btn-ghost" style={{ marginLeft: 8 }} onClick={() => window.print()}>
               <Printer size={14} /> Imprimir / Exportar PDF
             </button>
           )}

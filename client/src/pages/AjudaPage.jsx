@@ -93,7 +93,7 @@ export default function AjudaPage() {
           onError={(e) => { e.currentTarget.style.display = 'none'; }}
         />
         <div>
-          <h2>Ajuda</h2>
+          <h1>Ajuda</h1>
           <p className="page-sub">Pergunta pra Manu ou navegue pelos módulos.</p>
         </div>
       </div>

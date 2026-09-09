@@ -70,11 +70,11 @@ export default function BipagemPage() {
 
   return (
     <div className="page-wide">
-      <button className="btn btn-ghost" style={{ marginBottom: 14 }} onClick={() => navigate('/estoque')}>
+      <button type="button" className="btn btn-ghost" style={{ marginBottom: 14 }} onClick={() => navigate('/estoque')}>
         <ArrowLeft size={14} /> Voltar para estoque
       </button>
 
-      <h2><Barcode size={22} style={{ verticalAlign: -3, marginRight: 8 }} />Bipagem</h2>
+      <h1><Barcode size={22} style={{ verticalAlign: -3, marginRight: 8 }} />Bipagem</h1>
       <p className="page-sub">
         Escolha se a leitura é entrada ou saída, depois aponte o leitor de código de barras para
         a etiqueta (EAN). Cada leitura já ajusta o estoque daquela variação na hora.

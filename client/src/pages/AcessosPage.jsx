@@ -47,7 +47,7 @@ export default function AcessosPage() {
 
   return (
     <div className="page-wide">
-      <h2>Acessos</h2>
+      <h1>Acessos</h1>
       {subabas.length > 1 && (
         <div className="subtab-row">
           {subabas.map((s) => (

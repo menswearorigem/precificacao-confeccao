@@ -149,7 +149,7 @@ export default function ClienteFichaPage() {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div>
-          <h2>{isNew ? 'Novo Cliente' : cliente.nome}</h2>
+          <h1>{isNew ? 'Novo Cliente' : cliente.nome}</h1>
           <p className="page-sub">Cadastro completo de cliente para uso nos pedidos de venda.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -224,7 +224,7 @@ export default function ClienteFichaPage() {
           <Field label="CEP">
             <div style={{ display: 'flex', gap: 8 }}>
               <input className="mono" value={cliente.cep || ''} onChange={(e) => set({ cep: e.target.value })} style={{ flex: 1 }} />
-              <button type="button" className="btn btn-ghost" onClick={buscarCep} disabled={buscandoCep} title="Buscar endereço pelo CEP">
+              <button type="button" className="btn btn-ghost" onClick={buscarCep} disabled={buscandoCep} title="Buscar endereço pelo CEP" aria-label="Buscar endereço pelo CEP">
                 <MapPinCheck size={14} />
               </button>
             </div>

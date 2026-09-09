@@ -158,14 +158,25 @@ async function parseEstoquePdf(buffer) {
       for (const coluna of blocoAtual.colunas) {
         if (coluna.label === '__total__') continue;
         if (coluna.label === 'cor') continue;
-        const valor = parseNumeroBR((porColuna[coluna.label] || []).join(' '));
+        const texto = (porColuna[coluna.label] || []).join(' ').trim();
+        // ⚠️ CÉLULA EM BRANCO NÃO É ZERO. Toda grade cor × tamanho tem
+        // buracos (cor que não existe naquele tamanho), e a célula vazia
+        // virava `parseNumeroBR('')` = NaN. O NaN seguia adiante: a tela
+        // mostrava "0" na pré-visualização com toda a confiança, e ao
+        // confirmar o INSERT em `estoque_variantes.quantidade` (NOT NULL)
+        // estourava e derrubava a importação INTEIRA com um 500 genérico,
+        // sem dizer qual linha. Agora a célula sem texto simplesmente não
+        // vira linha, e a que tem texto ilegível vira linha com quantidade
+        // nula, para a validação recusar dizendo o motivo (REGRA 2).
+        if (!texto) continue;
+        const valor = parseNumeroBR(texto);
         rows.push({
           linha: null,
           referencia: blocoAtual.referencia,
           descricao: blocoAtual.descricao,
           cor,
           tamanho: coluna.label,
-          quantidade: valor,
+          quantidade: Number.isFinite(valor) ? valor : null,
           colecao: blocoAtual.colecao,
         });
       }

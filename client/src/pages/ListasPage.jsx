@@ -116,7 +116,7 @@ export default function ListasPage() {
 
   return (
     <div className="page-wide">
-      <h2>Listas</h2>
+      <h1>Listas</h1>
       <p className="page-sub">
         Valores usados nos menus suspensos em todo o sistema. Você pode desativar um valor sem
         perder o histórico dos produtos que já o usam, ou reordenar como aparece nos menus.
@@ -156,8 +156,8 @@ export default function ListasPage() {
                 <tr key={item.id} className="cfg-linha-hover">
                   <td style={{ width: 40 }}>
                     <div className="cfg-listas-alca">
-                      <button type="button" className="icon-btn" onClick={() => mover(item, -1)} title="Mover pra cima"><ChevronUp size={13} /></button>
-                      <button type="button" className="icon-btn" onClick={() => mover(item, 1)} title="Mover pra baixo"><ChevronDown size={13} /></button>
+                      <button type="button" className="icon-btn" onClick={() => mover(item, -1)} title="Mover pra cima" aria-label="Mover pra cima"><ChevronUp size={13} /></button>
+                      <button type="button" className="icon-btn" onClick={() => mover(item, 1)} title="Mover pra baixo" aria-label="Mover pra baixo"><ChevronDown size={13} /></button>
                     </div>
                   </td>
                   <td>
@@ -174,7 +174,7 @@ export default function ListasPage() {
                       {item.ativo ? 'Sim' : 'Não'}
                     </label>
                   </td>
-                  <td><button className="icon-btn cfg-lixeira" onClick={() => remover(item)}><Trash2 size={13} /></button></td>
+                  <td><button type="button" className="icon-btn cfg-lixeira" onClick={() => remover(item)}><Trash2 size={13} /></button></td>
                 </tr>
               ))}
               {itensExibidos.length === 0 && (

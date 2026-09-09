@@ -39,7 +39,7 @@ function EanEditavel({ variante, onFeito }) {
     return (
       <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span className="mono">{variante.ean}</span>
-        <button className="icon-btn" title="Substituir EAN" onClick={iniciar}><Pencil size={12} /></button>
+        <button type="button" className="icon-btn" title="Substituir EAN" aria-label="Substituir EAN" onClick={iniciar}><Pencil size={12} /></button>
       </span>
     );
   }
@@ -53,8 +53,8 @@ function EanEditavel({ variante, onFeito }) {
         onChange={(e) => setValor(e.target.value)}
         style={{ width: 130 }}
       />
-      <button className="icon-btn" title="Salvar" disabled={salvando} onClick={salvar} style={{ color: 'var(--success)' }}><Check size={13} /></button>
-      <button className="icon-btn" title="Cancelar" disabled={salvando} onClick={() => setEditando(false)}><X size={13} /></button>
+      <button type="button" className="icon-btn" title="Salvar" aria-label="Salvar" disabled={salvando} onClick={salvar} style={{ color: 'var(--success)' }}><Check size={13} /></button>
+      <button type="button" className="icon-btn" title="Cancelar" aria-label="Cancelar" disabled={salvando} onClick={() => setEditando(false)}><X size={13} /></button>
       {erro && <span className="login-error" style={{ marginLeft: 4 }}>{erro}</span>}
     </span>
   );
@@ -96,38 +96,65 @@ function MovimentoInline({ variante, onFeito }) {
   const [motivo, setMotivo] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const [erroMov, setErroMov] = useState('');
+
   async function mover(tipo) {
     setLoading(true);
+    setErroMov('');
     try {
       await api.post(`/estoque/variantes/${variante.id}/movimento`, { tipo, quantidade: Number(quantidade) || 0, motivo });
       setMotivo('');
       onFeito();
+    } catch (err) {
+      // Havia `try/finally` SEM catch: toda falha (quantidade zerada → 400,
+      // variante removida → 404, rede) virava promessa rejeitada e o botão
+      // de entrada/saída simplesmente não fazia nada, sem mensagem nenhuma.
+      setErroMov(err.message);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-      <input
-        type="number"
-        min="0"
-        value={quantidade}
-        onChange={(e) => setQuantidade(e.target.value)}
-        style={{ width: 64 }}
-      />
-      <input
-        placeholder="motivo (opcional)"
-        value={motivo}
-        onChange={(e) => setMotivo(e.target.value)}
-        style={{ width: 140 }}
-      />
-      <button className="icon-btn" title="Entrada" disabled={loading} onClick={() => mover('entrada')} style={{ color: 'var(--success)' }}>
-        <ArrowUpCircle size={18} />
-      </button>
-      <button className="icon-btn" title="Saída" disabled={loading} onClick={() => mover('saida')} style={{ color: 'var(--danger)' }}>
-        <ArrowDownCircle size={18} />
-      </button>
+    <div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <input
+          type="number"
+          min="0"
+          value={quantidade}
+          onChange={(e) => setQuantidade(e.target.value)}
+          style={{ width: 64 }}
+        />
+        <input
+          placeholder="motivo (opcional)"
+          value={motivo}
+          onChange={(e) => setMotivo(e.target.value)}
+          style={{ width: 140 }}
+        />
+        <button
+          type="button"
+          className="icon-btn"
+          title="Dar entrada desta quantidade"
+          aria-label="Dar entrada desta quantidade"
+          disabled={loading}
+          onClick={() => mover('entrada')}
+          style={{ color: 'var(--success)' }}
+        >
+          <ArrowUpCircle size={18} />
+        </button>
+        <button
+          type="button"
+          className="icon-btn"
+          title="Dar saída desta quantidade"
+          aria-label="Dar saída desta quantidade"
+          disabled={loading}
+          onClick={() => mover('saida')}
+          style={{ color: 'var(--danger)' }}
+        >
+          <ArrowDownCircle size={18} />
+        </button>
+      </div>
+      {erroMov && <p className="login-error" style={{ marginTop: 6 }}>{erroMov}</p>}
     </div>
   );
 }
@@ -222,7 +249,7 @@ function CorrigirEmMassa() {
                 <Field label="Novo valor">
                   <input value={valorNovo} onChange={(e) => setValorNovo(e.target.value)} style={{ width: 160 }} />
                 </Field>
-                <button className="btn btn-primary" onClick={aplicar} disabled={aplicando || !valorNovo.trim()}>
+                <button type="button" className="btn btn-primary" onClick={aplicar} disabled={aplicando || !valorNovo.trim()}>
                   {aplicando ? 'Aplicando…' : `Aplicar em ${encontradas.length} variante(s)`}
                 </button>
               </div>
@@ -345,27 +372,39 @@ export default function EstoquePage() {
     setAplicandoEmMassa(true);
     let excluidas = 0;
     const bloqueadas = [];
+    const falharam = [];
     for (const id of selecionadas) {
       try {
         await api.del(`/estoque/variantes/${id}`);
         excluidas += 1;
       } catch (err) {
         const v = variantes.find((x) => x.id === id);
-        bloqueadas.push(`${v?.cor} / ${v?.tamanho}`);
+        // A causa não pode ser inventada: só o 409 significa "tem venda
+        // registrada". Antes, qualquer erro — rede, 500, tempo esgotado —
+        // era relatado como venda registrada, e a pessoa ia procurar uma
+        // venda que não existia.
+        const rotulo = `${v?.cor} / ${v?.tamanho}`;
+        if (err.status === 409) bloqueadas.push(rotulo);
+        else falharam.push(`${rotulo} (${err.message})`);
       }
     }
     setAplicandoEmMassa(false);
     loadVariantes(produtoId);
+    const partes = [`${excluidas} excluída(s).`];
     if (bloqueadas.length > 0) {
-      setErro(`${excluidas} excluída(s). ${bloqueadas.length} bloqueada(s) por já terem venda registrada: ${bloqueadas.join(', ')}.`);
+      partes.push(`${bloqueadas.length} bloqueada(s) por já terem venda registrada: ${bloqueadas.join(', ')}.`);
     }
+    if (falharam.length > 0) {
+      partes.push(`${falharam.length} falhou/falharam por outro motivo: ${falharam.join('; ')}.`);
+    }
+    if (bloqueadas.length > 0 || falharam.length > 0) setErro(partes.join(' '));
   }
 
   return (
     <div className="page-wide">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
-          <h2>Estoque</h2>
+          <h1>Estoque</h1>
           <p className="page-sub">Controle de estoque por variante (referência + cor + tamanho), com EAN próprio para bipagem.</p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -431,9 +470,9 @@ export default function EstoquePage() {
             {selecionadas.size > 0 && (
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12, padding: '8px 12px', background: 'var(--surface-alt)', borderRadius: 8 }}>
                 <strong>{selecionadas.size} selecionada(s)</strong>
-                <button className="btn btn-ghost sm" disabled={aplicandoEmMassa} onClick={() => ativarDesativarSelecionadas(true)}>Ativar selecionadas</button>
-                <button className="btn btn-ghost sm" disabled={aplicandoEmMassa} onClick={() => ativarDesativarSelecionadas(false)}>Desativar selecionadas</button>
-                <button className="btn btn-ghost sm" disabled={aplicandoEmMassa} onClick={excluirSelecionadas} style={{ color: 'var(--danger)' }}>
+                <button type="button" className="btn btn-ghost sm" disabled={aplicandoEmMassa} onClick={() => ativarDesativarSelecionadas(true)}>Ativar selecionadas</button>
+                <button type="button" className="btn btn-ghost sm" disabled={aplicandoEmMassa} onClick={() => ativarDesativarSelecionadas(false)}>Desativar selecionadas</button>
+                <button type="button" className="btn btn-ghost sm" disabled={aplicandoEmMassa} onClick={excluirSelecionadas} style={{ color: 'var(--danger)' }}>
                   <Trash2 size={12} /> Excluir selecionadas
                 </button>
               </div>
@@ -460,7 +499,7 @@ export default function EstoquePage() {
                         {v.ativo ? 'Sim' : 'Não'}
                       </label>
                     </td>
-                    <td><button className="icon-btn" title="Excluir (só se nunca vendida)" onClick={() => removerVariante(v.id)}><Trash2 size={13} /></button></td>
+                    <td><button type="button" className="icon-btn" title="Excluir (só se nunca vendida)" aria-label="Excluir (só se nunca vendida)" onClick={() => removerVariante(v.id)}><Trash2 size={13} /></button></td>
                   </tr>
                 ))}
                 {variantes.length === 0 && (
