@@ -241,11 +241,14 @@ function panorama(conciliacoes) {
 
 async function saldosDaVariante(db, varianteId) {
   const { rows } = await db.query(
-    `SELECT s.local, s.fornecedor_id, f.nome AS fornecedor_nome, s.quantidade
+    `SELECT s.local, s.fornecedor_id, f.nome AS fornecedor_nome,
+            s.deposito_id, d.nome AS deposito_nome, d.codigo AS deposito_codigo,
+            s.quantidade
        FROM estoque_variante_saldos s
        LEFT JOIN fornecedores f ON f.id = s.fornecedor_id
+       LEFT JOIN depositos d ON d.id = s.deposito_id
       WHERE s.variante_id = $1
-      ORDER BY s.local, f.nome`,
+      ORDER BY s.local, d.nome NULLS FIRST, f.nome`,
     [varianteId]
   );
   return rows;
@@ -254,14 +257,33 @@ async function saldosDaVariante(db, varianteId) {
 // Soma (ou subtrai) num local. O ON CONFLICT casa pelo índice de expressão,
 // que é o que faz o saldo próprio (com `fornecedor_id` nulo) atualizar a linha
 // existente em vez de criar uma nova a cada movimento.
-async function ajustarLocal(db, { varianteId, local, fornecedorId, delta }) {
+//
+// `depositoId` é opcional (09/09/2026, migration 0057). Nulo continua
+// significando o que sempre significou: está nesta natureza de lugar, e
+// ninguém disse em qual depósito. Quem não passa depósito escreve na mesma
+// linha de antes.
+async function ajustarLocal(db, { varianteId, local, fornecedorId, depositoId = null, delta }) {
   await db.query(
-    `INSERT INTO estoque_variante_saldos (variante_id, local, fornecedor_id, quantidade)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (variante_id, local, COALESCE(fornecedor_id, 0))
+    `INSERT INTO estoque_variante_saldos (variante_id, local, fornecedor_id, deposito_id, quantidade)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (variante_id, local, COALESCE(fornecedor_id, 0), COALESCE(deposito_id, 0))
        DO UPDATE SET quantidade = estoque_variante_saldos.quantidade + EXCLUDED.quantidade,
                      atualizado_em = now()`,
-    [varianteId, local, fornecedorId || null, delta]
+    [varianteId, local, fornecedorId || null, depositoId || null, delta]
+  );
+}
+
+// O mesmo para insumo. Existe aqui, e não solto dentro de uma rota, porque a
+// transferência move tecido e peça pronta no mesmo documento — e ter dois
+// jeitos de somar saldo é como se cria a divergência entre os dois.
+async function ajustarLocalInsumo(db, { insumoId, local, fornecedorId, depositoId = null, delta }) {
+  await db.query(
+    `INSERT INTO insumo_saldos (insumo_id, local, fornecedor_id, deposito_id, quantidade)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (insumo_id, local, COALESCE(fornecedor_id, 0), COALESCE(deposito_id, 0))
+       DO UPDATE SET quantidade = insumo_saldos.quantidade + EXCLUDED.quantidade,
+                     atualizado_em = now()`,
+    [insumoId, local, fornecedorId || null, depositoId || null, delta]
   );
 }
 
@@ -278,18 +300,27 @@ async function aplicarMovimento(db, {
   varianteId, quantidade, localOrigem, fornecedorOrigemId,
   localDestino, fornecedorDestinoId, motivo, usuarioId,
   faccaoMovimentoId = null, ordemId = null,
+  depositoOrigemId = null, depositoDestinoId = null,
 }) {
   const q = Number(quantidade);
-  await ajustarLocal(db, { varianteId, local: localOrigem, fornecedorId: fornecedorOrigemId, delta: -q });
-  await ajustarLocal(db, { varianteId, local: localDestino, fornecedorId: fornecedorDestinoId, delta: q });
+  await ajustarLocal(db, {
+    varianteId, local: localOrigem, fornecedorId: fornecedorOrigemId,
+    depositoId: depositoOrigemId, delta: -q,
+  });
+  await ajustarLocal(db, {
+    varianteId, local: localDestino, fornecedorId: fornecedorDestinoId,
+    depositoId: depositoDestinoId, delta: q,
+  });
   const { rows } = await db.query(
     `INSERT INTO estoque_local_movimentos
        (variante_id, local_origem, fornecedor_origem_id, local_destino, fornecedor_destino_id,
-        quantidade, faccao_movimento_id, ordem_id, motivo, usuario_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+        quantidade, faccao_movimento_id, ordem_id, motivo, usuario_id,
+        deposito_origem_id, deposito_destino_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
     [
       varianteId, localOrigem, fornecedorOrigemId || null, localDestino, fornecedorDestinoId || null,
       q, faccaoMovimentoId, ordemId, motivo || null, usuarioId || null,
+      depositoOrigemId || null, depositoDestinoId || null,
     ]
   );
   return rows[0];
@@ -298,11 +329,24 @@ async function aplicarMovimento(db, {
 // Quanto há num local específico. Devolve NULO quando não existe linha —
 // diferente de zero, e a diferença importa: "nunca foi endereçado" não é a
 // mesma coisa que "acabou". `validarMovimento` trata os dois casos separados.
-async function saldoNoLocal(db, { varianteId, local, fornecedorId }) {
+async function saldoNoLocal(db, { varianteId, local, fornecedorId, depositoId = null }) {
   const { rows } = await db.query(
     `SELECT quantidade FROM estoque_variante_saldos
-      WHERE variante_id = $1 AND local = $2 AND COALESCE(fornecedor_id, 0) = COALESCE($3, 0)`,
-    [varianteId, local, fornecedorId || null]
+      WHERE variante_id = $1 AND local = $2 AND COALESCE(fornecedor_id, 0) = COALESCE($3, 0)
+        AND COALESCE(deposito_id, 0) = COALESCE($4, 0)`,
+    [varianteId, local, fornecedorId || null, depositoId || null]
+  );
+  return rows.length === 0 ? null : Number(rows[0].quantidade);
+}
+
+// O mesmo para insumo, com a mesma distinção entre nulo e zero: "nunca foi
+// endereçado" não é "acabou".
+async function saldoInsumoNoLocal(db, { insumoId, local, fornecedorId, depositoId = null }) {
+  const { rows } = await db.query(
+    `SELECT quantidade FROM insumo_saldos
+      WHERE insumo_id = $1 AND local = $2 AND COALESCE(fornecedor_id, 0) = COALESCE($3, 0)
+        AND COALESCE(deposito_id, 0) = COALESCE($4, 0)`,
+    [insumoId, local, fornecedorId || null, depositoId || null]
   );
   return rows.length === 0 ? null : Number(rows[0].quantidade);
 }
@@ -317,6 +361,8 @@ module.exports = {
   panorama,
   saldosDaVariante,
   saldoNoLocal,
+  saldoInsumoNoLocal,
   ajustarLocal,
+  ajustarLocalInsumo,
   aplicarMovimento,
 };

@@ -558,7 +558,7 @@ router.post('/notas', async (req, res, next) => {
          -- Casa pelo indice de expressao uq_insumo_saldos: sem o COALESCE, o
          -- NULL de fornecedor_id faria o ON CONFLICT nunca casar e cada nota
          -- criaria uma linha de saldo nova (ver a migration 0048).
-         ON CONFLICT (insumo_id, local, COALESCE(fornecedor_id, 0)) DO UPDATE
+         ON CONFLICT (insumo_id, local, COALESCE(fornecedor_id, 0), COALESCE(deposito_id, 0)) DO UPDATE
            SET quantidade = insumo_saldos.quantidade + EXCLUDED.quantidade,
                atualizado_em = now()
          RETURNING quantidade`,

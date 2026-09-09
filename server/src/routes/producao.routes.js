@@ -936,7 +936,7 @@ router.post('/faccao/movimento', async (req, res, next) => {
       await client.query(
         `INSERT INTO insumo_saldos (insumo_id, local, quantidade)
          VALUES ($1, 'proprio', $2)
-         ON CONFLICT (insumo_id, local, COALESCE(fornecedor_id, 0))
+         ON CONFLICT (insumo_id, local, COALESCE(fornecedor_id, 0), COALESCE(deposito_id, 0))
            DO UPDATE SET quantidade = insumo_saldos.quantidade + EXCLUDED.quantidade,
                          atualizado_em = now()`,
         [insumoId, sinal * quantidade]
@@ -944,7 +944,7 @@ router.post('/faccao/movimento', async (req, res, next) => {
       await client.query(
         `INSERT INTO insumo_saldos (insumo_id, local, fornecedor_id, quantidade)
          VALUES ($1, 'faccao', $2, $3)
-         ON CONFLICT (insumo_id, local, COALESCE(fornecedor_id, 0))
+         ON CONFLICT (insumo_id, local, COALESCE(fornecedor_id, 0), COALESCE(deposito_id, 0))
            DO UPDATE SET quantidade = insumo_saldos.quantidade + EXCLUDED.quantidade,
                          atualizado_em = now()`,
         [insumoId, fornecedorId, -sinal * quantidade]

@@ -37,6 +37,14 @@ export const MODULES = [
       { to: '/estoque/bipagem', label: 'Bipagem', icon: Barcode, grupo: 'Dia a dia' },
       // Onde Esta a Peca (08/09/2026): endereco no galpao e saldo por local.
       { to: '/estoque/locais', label: 'Onde Está a Peça', icon: MapPin, grupo: 'Dia a dia' },
+      // Depositos e transferencia com aceite (09/09/2026). Fecha a trinca:
+      // Cobertura olha o saldo pelo TEMPO, Onde Esta a Peca pela NATUREZA do
+      // lugar, Reserva pelo que ainda PODE SER VENDIDO -- e esta, pelo LUGAR
+      // com nome, que e' o que faltava para responder "quanto tem na
+      // Expedicao?". Mesma chave `estoque` (o backend aceita `estoque` ou
+      // `producao` em /api/depositos, como ja' faz em estoque-locais);
+      // nenhuma permissao nova (REGRA 4).
+      { to: '/estoque/depositos', label: 'Depósitos', icon: ArrowLeftRight, grupo: 'Dia a dia' },
       // Cobertura e Estoque Minimo (06/09/2026), Dinheiro Parado e Curva de
       // Tamanho (08/09/2026): as tres respondem sobre o MESMO saldo, mas pelo
       // lado da DECISAO -- quanto dura, quanto esta' preso, o que falta de

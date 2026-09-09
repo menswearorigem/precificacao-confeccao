@@ -61,6 +61,7 @@ import MixTributarioPage from './pages/MixTributarioPage';
 import EstoqueParadoPage from './pages/EstoqueParadoPage';
 import EstoqueLocaisPage from './pages/EstoqueLocaisPage';
 import ReservaEstoquePage from './pages/ReservaEstoquePage';
+import DepositosPage from './pages/DepositosPage';
 import CurvaTamanhoPage from './pages/CurvaTamanhoPage';
 import PrecoPorCanalPage from './pages/PrecoPorCanalPage';
 import SaudeIntegracaoPage from './pages/SaudeIntegracaoPage';
@@ -154,6 +155,7 @@ function AppRoutes() {
                       Mesmo módulo `estoque` das demais telas de saldo —
                       nenhuma permissão nova (REGRA 4). */}
                   <Route path="/estoque/reserva" element={<ReservaEstoquePage />} />
+                  <Route path="/estoque/depositos" element={<DepositosPage />} />
                   <Route path="/estoque/ean" element={<EstoqueEanImportacaoPage />} />
                   <Route path="/estoque/ficha" element={<FichaEstoquePage />} />
                   <Route path="/clientes" element={<ClientesListPage />} />

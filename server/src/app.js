@@ -48,6 +48,7 @@ const mixTributarioRoutes = require('./routes/mixTributario.routes');
 const analisesEstoqueRoutes = require('./routes/analisesEstoque.routes');
 const estoqueLocaisRoutes = require('./routes/estoqueLocais.routes');
 const estoqueReservaRoutes = require('./routes/estoqueReserva.routes');
+const depositosRoutes = require('./routes/depositos.routes');
 const precoPorCanalRoutes = require('./routes/precoPorCanal.routes');
 const saudeIntegracaoRoutes = require('./routes/saudeIntegracao.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
@@ -205,6 +206,9 @@ function createApp() {
   // Reserva de estoque (09/09/2026): separa o que existe do que ainda pode
   // ser vendido. Mesma chave de modulo `estoque` -- nenhuma permissao muda.
   app.use('/api/estoque-reserva', requireAuth, requireModulo('estoque'), estoqueReservaRoutes);
+  // Depósito é assunto de estoque, mas quem move tecido para a facção é a
+  // Produção — as duas chaves enxergam, como já acontece em estoque-locais.
+  app.use('/api/depositos', requireAuth, requireModulo(['estoque', 'producao']), depositosRoutes);
   // Estoque parado em R$ e curva de tamanho (08/09/2026). Sob `estoque` pelo
   // mesmo motivo do estoque minimo: as duas leem saldo e historico de venda,
   // e nenhuma tabela nova foi criada (REGRA 4).

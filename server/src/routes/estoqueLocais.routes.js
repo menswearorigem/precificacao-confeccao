@@ -344,7 +344,7 @@ router.post('/enderecar-lote', async (req, res, next) => {
        )
        INSERT INTO estoque_variante_saldos (variante_id, local, fornecedor_id, quantidade)
        SELECT variante_id, 'proprio', NULL, falta FROM pendente
-       ON CONFLICT (variante_id, local, COALESCE(fornecedor_id, 0))
+       ON CONFLICT (variante_id, local, COALESCE(fornecedor_id, 0), COALESCE(deposito_id, 0))
          DO UPDATE SET quantidade = estoque_variante_saldos.quantidade + EXCLUDED.quantidade,
                        atualizado_em = now()
        RETURNING variante_id, quantidade`

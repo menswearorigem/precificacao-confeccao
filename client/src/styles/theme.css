@@ -6150,3 +6150,37 @@ td.num .selo, td.num small, td.num .ink-faint { font-family: var(--font-body); l
   margin-left: 0;
   border-left: 0;
 }
+
+/* ---------------------------------------------------------------------------
+   Conferência de chegada da transferência (09/09/2026).
+
+   Nasceu de um defeito achado no navegador, não no teste: como TABELA de
+   quatro colunas, a coluna "Diferença" — que é o motivo do painel existir —
+   ficava fora da borda direita do painel de 680px, e no celular nem a coluna
+   "Chegou" cabia. Empilhado, o mesmo conteúdo serve os dois tamanhos.
+
+   REGRA 3: nenhuma cor solta. Só variáveis que já existem. */
+.aceite-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.aceite-item:last-child { border-bottom: none; }
+.aceite-item-conta { display: flex; align-items: center; gap: 14px; }
+.aceite-item-campo { width: 110px; }
+.aceite-item-dif { min-width: 74px; text-align: right; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 620px) {
+  .aceite-item { grid-template-columns: 1fr; }
+  .aceite-item-conta { justify-content: space-between; }
+}
+
+/* `.tabela-nota` nasce com min-width de 820px, que é o certo para tabela larga
+   no corpo da página. Dentro do painel lateral (680px) isso faz QUALQUER
+   tabela nascer rolando de lado — e numa lista de duas colunas o preço disso é
+   o nome do item sair da tela justamente quando a pessoa clica nele. Este
+   modificador é para tabela estreita dentro de painel. */
+.tabela-nota.tabela-estreita { min-width: 0; }

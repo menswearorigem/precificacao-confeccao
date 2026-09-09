@@ -257,7 +257,7 @@ async function testarBanco() {
     await pool.query(
       `INSERT INTO insumo_saldos (insumo_id, local, quantidade)
        VALUES ($1, 'proprio', $2)
-       ON CONFLICT (insumo_id, local, COALESCE(fornecedor_id, 0))
+       ON CONFLICT (insumo_id, local, COALESCE(fornecedor_id, 0), COALESCE(deposito_id, 0))
          DO UPDATE SET quantidade = insumo_saldos.quantidade + EXCLUDED.quantidade`,
       [insumo.id, qtd]
     );
