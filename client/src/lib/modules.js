@@ -125,6 +125,11 @@ export const MODULES = [
       // a lista de separação, depois bipa a caixa. Mesmo módulo `marketplace`
       // que o backend já exige em /api/etiquetas; nenhuma chave nova (REGRA 4).
       { to: '/marketplace/etiquetas', label: 'Etiquetas', icon: Printer, grupo: 'Dia a dia' },
+      // Romaneio (09/09/2026). Vem logo depois de Etiquetas porque e' o passo
+      // seguinte dela: imprimiu a etiqueta, monta a remessa, fecha o papel e
+      // o motorista assina. Mesmas chaves de /api/etiquetas; nenhuma
+      // permissao nova (REGRA 4).
+      { to: '/marketplace/romaneio', label: 'Romaneio', icon: ClipboardList, grupo: 'Dia a dia' },
       { to: '/marketplace/pedidos', label: 'Pedidos', icon: ClipboardList, grupo: 'Dia a dia' },
       { to: '/marketplace/anuncios', label: 'Anúncios', icon: Store, grupo: 'Catálogo' },
       // Promoções (06/09/2026): a mesma pergunta dos Anúncios ("como está o

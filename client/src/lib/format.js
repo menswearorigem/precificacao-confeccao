@@ -49,16 +49,26 @@ export const dataBr = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateSt
 // Tempo relativo ("agora mesmo", "há 2 h", "há 3 d") pra campos de
 // sincronização — cai pra data completa em pt-BR quando mais antigo que uma
 // semana, onde "há N semanas/meses" fica vago de mais pra ser útil.
+// ⚠️ Trata FUTURO também (09/09/2026).
+//
+// Até aqui a função só sabia olhar para trás: uma data no futuro dava diferença
+// negativa, caía no `< 1` e virava "agora mesmo". Passou despercebido enquanto
+// só havia carimbo de coisa que já aconteceu — e apareceu na primeira coluna de
+// PRAZO ("coletar até"), onde todo pedido dentro do prazo dizia "agora mesmo",
+// que é exatamente o contrário do que ele queria dizer.
 export function tempoRelativo(valor) {
   if (!valor) return '—';
   const data = new Date(valor);
   if (Number.isNaN(data.getTime())) return '—';
-  const diffMin = Math.round((Date.now() - data.getTime()) / 60000);
+  const diffMs = Date.now() - data.getTime();
+  const futuro = diffMs < 0;
+  const diffMin = Math.round(Math.abs(diffMs) / 60000);
+  const prefixo = (texto) => (futuro ? `em ${texto}` : `há ${texto}`);
   if (diffMin < 1) return 'agora mesmo';
-  if (diffMin < 60) return `há ${diffMin} min`;
+  if (diffMin < 60) return prefixo(`${diffMin} min`);
   const diffHoras = Math.round(diffMin / 60);
-  if (diffHoras < 24) return `há ${diffHoras} h`;
+  if (diffHoras < 24) return prefixo(`${diffHoras} h`);
   const diffDias = Math.round(diffHoras / 24);
-  if (diffDias < 7) return `há ${diffDias} d`;
+  if (diffDias < 7) return prefixo(`${diffDias} d`);
   return data.toLocaleDateString('pt-BR');
 }

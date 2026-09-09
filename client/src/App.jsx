@@ -70,6 +70,7 @@ import RelatorioTaxasPage from './pages/RelatorioTaxasPage';
 import ImportarPedidosPage from './pages/ImportarPedidosPage';
 import ConferenciaPedidosPage from './pages/ConferenciaPedidosPage';
 import EtiquetasPage from './pages/EtiquetasPage';
+import RomaneioPage from './pages/RomaneioPage';
 import FinanceiroPage from './pages/FinanceiroPage';
 import TitulosPage from './pages/TitulosPage';
 import ConciliacaoBancariaPage from './pages/ConciliacaoBancariaPage';
@@ -177,6 +178,8 @@ function AppRoutes() {
                   {/* Etiquetas (09/09/2026): ZPL -> PDF, lote da expedição e
                       lista de separação. Módulo Marketplace, igual ao backend. */}
                   <Route path="/marketplace/etiquetas" element={<EtiquetasPage />} />
+                  {/* Romaneio (09/09/2026): o passo seguinte à etiqueta. */}
+                  <Route path="/marketplace/romaneio" element={<RomaneioPage />} />
                   {/* Saúde da Sincronização (07/09/2026). Fica no módulo
                       Marketplace — é ele que traz os pedidos cuja importação
                       pode falhar. Nenhuma permissão existente muda. */}
