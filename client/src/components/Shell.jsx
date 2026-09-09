@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { LogOut, Menu, X, ChevronsLeft, ChevronsRight, Sun, Moon, Rows3, AlignJustify, HelpCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -151,19 +151,36 @@ export default function Shell({ children }) {
         <div className="shell-content">
           {activeModule ? (
             <>
+              {/* Grupos dentro do submenu (09/09/2026).
+                  Módulos como Estoque (10 abas) e Marketplace (9) eram uma
+                  fileira lisa de links: nada dizia que "Bipagem" é tela de
+                  todo dia e "Importar EAN" é tela de uma vez por mês, então
+                  achar a certa custava ler a linha inteira. O rótulo de grupo
+                  aparece só quando o módulo declara `grupo` nas páginas — e
+                  fecha a limitação que o redesenho de Configurações registrou
+                  em modules.js: os quatro grupos existiam no comentário e não
+                  na tela. Nada aqui muda rota nem permissão (REGRA 4): é a
+                  MESMA lista de páginas, na mesma ordem em que o módulo a
+                  declara. */}
               {activeModule.pages.length > 1 && (
               <div className="shell-submenu">
-                {activeModule.pages.map(({ to, label, icon: Icon }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    end={to === '/estoque' || to === '/compras'}
-                    className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}
-                  >
-                    <Icon size={15} />
-                    {label}
-                  </NavLink>
-                ))}
+                {activeModule.pages.map(({ to, label, icon: Icon, grupo }, indice) => {
+                  const grupoAnterior = indice > 0 ? activeModule.pages[indice - 1].grupo : null;
+                  const abreGrupo = grupo && grupo !== grupoAnterior;
+                  return (
+                    <Fragment key={to}>
+                      {abreGrupo && <span className="submenu-grupo">{grupo}</span>}
+                      <NavLink
+                        to={to}
+                        end={to === '/estoque' || to === '/compras'}
+                        className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}
+                      >
+                        <Icon size={15} />
+                        {label}
+                      </NavLink>
+                    </Fragment>
+                  );
+                })}
               </div>
               )}
 

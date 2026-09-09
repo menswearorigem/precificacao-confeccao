@@ -26,35 +26,33 @@ export const MODULES = [
     label: 'Estoque',
     icon: Warehouse,
     color: 'var(--brass)',
+    // Grupos (09/09/2026). Eram 10 abas numa fileira lisa: nada distinguia a
+    // tela aberta todo dia da tela aberta uma vez por mes. A ordem tambem
+    // mudou -- Bipagem e "Onde Esta a Peca" sobem porque sao usadas EM PE, no
+    // galpao, e estavam depois de duas telas de importacao. Nenhuma rota,
+    // nenhum nome e nenhuma permissao mudou (REGRA 4): so' a ordem e o
+    // rotulo do grupo.
     pages: [
-      { to: '/estoque', label: 'Estoque', icon: Warehouse },
-      { to: '/estoque/bipagem', label: 'Bipagem', icon: Barcode },
-      { to: '/estoque/importacao', label: 'Importar Saldo', icon: Upload },
-      // Cobertura e Estoque Minimo (06/09/2026). Fica logo depois do saldo
-      // porque e' a mesma pergunta ("como esta' meu estoque?") vista pelo
-      // lado do TEMPO: quanto dura, e quanto precisa ter.
-      { to: '/estoque/cobertura', label: 'Cobertura e Mínimo', icon: Timer },
-      // Produção (07/09/2026). Fica dentro de Estoque, e não num módulo
-      // proprio: toda ordem come insumo do saldo e devolve peca pro saldo, e
-      // criar chave de modulo nova mudaria quem enxerga o que — o que a
-      // REGRA 4 nao deixa fazer sem autorizacao.
+      { to: '/estoque', label: 'Estoque', icon: Warehouse, grupo: 'Dia a dia' },
+      { to: '/estoque/bipagem', label: 'Bipagem', icon: Barcode, grupo: 'Dia a dia' },
       // Onde Esta a Peca (08/09/2026): endereco no galpao e saldo por local.
-      // Fica junto de Cobertura porque as duas respondem sobre o MESMO saldo
-      // -- uma pelo lado do tempo, a outra pelo lado do lugar.
-      { to: '/estoque/locais', label: 'Onde Está a Peça', icon: MapPin },
-      // Reserva de estoque (09/09/2026). Fica junto de Cobertura e Onde Está
-      // a Peça porque as tres olham o MESMO saldo por angulos diferentes --
-      // esta pelo lado do que ainda PODE SER VENDIDO: saldo menos o que ja'
-      // esta' reservado para pedido pago e nao separado. Mesmo modulo
-      // `estoque` que o backend exige em /api/estoque-reserva; nenhuma chave
-      // de permissao nova (REGRA 4).
-      { to: '/estoque/reserva', label: 'Reserva de Estoque', icon: Bookmark },
-      // Dinheiro parado e Curva de tamanho (08/09/2026). As duas leem saldo e
-      // historico de venda que ja' existem; nenhuma tabela nova.
-      { to: '/estoque/parado', label: 'Dinheiro Parado', icon: Banknote },
-      { to: '/estoque/curva-tamanho', label: 'Curva de Tamanho', icon: Ruler },
-      { to: '/estoque/ean', label: 'Importar EAN', icon: Tags },
-      { to: '/estoque/ficha', label: 'Ficha de Estoque', icon: Printer },
+      { to: '/estoque/locais', label: 'Onde Está a Peça', icon: MapPin, grupo: 'Dia a dia' },
+      // Cobertura e Estoque Minimo (06/09/2026), Dinheiro Parado e Curva de
+      // Tamanho (08/09/2026): as tres respondem sobre o MESMO saldo, mas pelo
+      // lado da DECISAO -- quanto dura, quanto esta' preso, o que falta de
+      // tamanho. Nenhuma delas se abre no meio de uma conferencia.
+      { to: '/estoque/cobertura', label: 'Cobertura e Mínimo', icon: Timer, grupo: 'Para decidir' },
+      { to: '/estoque/parado', label: 'Dinheiro Parado', icon: Banknote, grupo: 'Para decidir' },
+      { to: '/estoque/curva-tamanho', label: 'Curva de Tamanho', icon: Ruler, grupo: 'Para decidir' },
+      // Reserva de estoque (09/09/2026). Olha o MESMO saldo por mais um
+      // angulo -- o que ainda PODE SER VENDIDO: saldo menos o que ja' esta'
+      // reservado para pedido pago e nao separado. Mesmo modulo `estoque`
+      // que o backend exige em /api/estoque-reserva; nenhuma chave de
+      // permissao nova (REGRA 4).
+      { to: '/estoque/reserva', label: 'Reserva de Estoque', icon: Bookmark, grupo: 'Para decidir' },
+      { to: '/estoque/importacao', label: 'Importar Saldo', icon: Upload, grupo: 'Entradas e papel' },
+      { to: '/estoque/ean', label: 'Importar EAN', icon: Tags, grupo: 'Entradas e papel' },
+      { to: '/estoque/ficha', label: 'Ficha de Estoque', icon: Printer, grupo: 'Entradas e papel' },
     ],
   },
   {
@@ -102,29 +100,30 @@ export const MODULES = [
     label: 'Marketplace',
     icon: Store,
     color: 'var(--plum)',
+    // Grupos e ordem (09/09/2026). Conferencia e Pedidos sobem para o
+    // comeco: sao as duas telas abertas TODO dia, e a Conferencia e' feita em
+    // pe, no galpao. Anuncios e Promocoes formam o catalogo; Lucratividade,
+    // Metricas e Taxas formam o resultado; Importar e Saude sao as telas que
+    // so' se abrem quando alguma coisa parece faltar. Nenhuma rota mudou.
     pages: [
-      { to: '/marketplace/anuncios', label: 'Anúncios', icon: Store },
-      // Aba de Promoções (06/09/2026). Fica logo depois de Anúncios porque é
-      // a mesma pergunta ("como está o meu catálogo na loja?") vista pelo
-      // lado do preço promocional.
-      { to: '/marketplace/promocoes', label: 'Promoções', icon: Tag },
-      { to: '/marketplace/pedidos', label: 'Pedidos', icon: ClipboardList },
-      // Conferência de expedição — primeira depois de Pedidos porque é a
-      // única tela deste módulo usada TODO dia, em pé, no galpão.
-      { to: '/marketplace/conferencia', label: 'Conferência', icon: ScanLine },
+      { to: '/marketplace/conferencia', label: 'Conferência', icon: ScanLine, grupo: 'Dia a dia' },
       // Etiquetas (09/09/2026). Fica colada na Conferência de propósito: são
       // as duas telas da MESMA meia hora da expedição — imprime a etiqueta e
       // a lista de separação, depois bipa a caixa. Mesmo módulo `marketplace`
       // que o backend já exige em /api/etiquetas; nenhuma chave nova (REGRA 4).
-      { to: '/marketplace/etiquetas', label: 'Etiquetas', icon: Printer },
-      { to: '/marketplace/lucratividade', label: 'Lucratividade', icon: TrendingUp },
-      { to: '/marketplace/metricas', label: 'Métricas', icon: LineChart },
-      { to: '/marketplace/taxas', label: 'Taxas Cobradas', icon: ReceiptText },
-      { to: '/marketplace/importar-pedidos', label: 'Importar Pedidos', icon: Upload },
-      // Saúde da Sincronização (07/09/2026). Última do módulo de propósito:
-      // é a tela que se abre quando alguma coisa parece faltar, não a de
-      // uso diário. Mesmo módulo de permissão do resto do Marketplace.
-      { to: '/marketplace/saude', label: 'Saúde da Sincronização', icon: Activity },
+      { to: '/marketplace/etiquetas', label: 'Etiquetas', icon: Printer, grupo: 'Dia a dia' },
+      { to: '/marketplace/pedidos', label: 'Pedidos', icon: ClipboardList, grupo: 'Dia a dia' },
+      { to: '/marketplace/anuncios', label: 'Anúncios', icon: Store, grupo: 'Catálogo' },
+      // Promoções (06/09/2026): a mesma pergunta dos Anúncios ("como está o
+      // meu catálogo na loja?") vista pelo lado do preço promocional.
+      { to: '/marketplace/promocoes', label: 'Promoções', icon: Tag, grupo: 'Catálogo' },
+      { to: '/marketplace/lucratividade', label: 'Lucratividade', icon: TrendingUp, grupo: 'Resultado' },
+      { to: '/marketplace/metricas', label: 'Métricas', icon: LineChart, grupo: 'Resultado' },
+      { to: '/marketplace/taxas', label: 'Taxas Cobradas', icon: ReceiptText, grupo: 'Resultado' },
+      { to: '/marketplace/importar-pedidos', label: 'Importar Pedidos', icon: Upload, grupo: 'Quando falta algo' },
+      // Saúde da Sincronização (07/09/2026): a tela que se abre quando alguma
+      // coisa parece faltar, não a de uso diária.
+      { to: '/marketplace/saude', label: 'Saúde da Sincronização', icon: Activity, grupo: 'Quando falta algo' },
     ],
   },
   {
@@ -188,20 +187,20 @@ export const MODULES = [
     icon: LayoutDashboard,
     color: 'var(--success)',
     pages: [
-      { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-      { to: '/ficha-precificacao', label: 'Ficha de Precificação', icon: FileText },
-      { to: '/alertas', label: 'Central de Alertas', icon: AlertTriangle },
+      { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, grupo: 'Panorama' },
+      { to: '/alertas', label: 'Central de Alertas', icon: AlertTriangle, grupo: 'Panorama' },
+      { to: '/ficha-precificacao', label: 'Ficha de Precificação', icon: FileText, grupo: 'Preço' },
+      // Preco por canal (08/09/2026): o preco que entrega a margem em cada
+      // marketplace, com a taxa real de cada um. So' leitura -- nao grava
+      // preco nenhum (REGRA 1).
+      { to: '/analises/preco-por-canal', label: 'Preço por Canal', icon: Tags, grupo: 'Preço' },
+      { to: '/simulador', label: 'Simulador', icon: FlaskConical, grupo: 'Preço' },
       // Mix B2B × B2C (07/09/2026). O número que embasa a decisão da opção
       // do Simples pelo regime regular de IBS/CBS — prazo em 30/09/2026.
       // Entra em Análises (leitura sobre faturamento já gravado) e não num
       // módulo novo: chave de módulo nova muda quem enxerga o quê, e a
       // REGRA 4 não deixa mexer nisso sem autorização.
-      { to: '/analises/mix-tributario', label: 'Mix B2B × B2C', icon: Scale },
-      // Preco por canal (08/09/2026): o preco que entrega a margem em cada
-      // marketplace, com a taxa real de cada um. So' leitura -- nao grava
-      // preco nenhum (REGRA 1).
-      { to: '/analises/preco-por-canal', label: 'Preço por Canal', icon: Tags },
-      { to: '/simulador', label: 'Simulador', icon: FlaskConical },
+      { to: '/analises/mix-tributario', label: 'Mix B2B × B2C', icon: Scale, grupo: 'Tributário' },
     ],
   },
   {
@@ -235,21 +234,26 @@ export const MODULES = [
     //   Cadastros: Listas
     //   Acesso e dados: Acessos (sub-abas Usuários/Grupos) · Integrações ·
     //          Saúde dos Dados (funde /conferencia-dados + /qualidade-dados)
+    //
+    // 09/09/2026: os quatro grupos abaixo existiam SÓ neste comentário — o
+    // Shell renderizava a lista lisa. Agora cada página declara o seu grupo e
+    // o submenu mostra o rótulo. Nenhuma rota, nenhum nome e nenhuma flag
+    // adminOnly mudou.
     pages: [
-      { to: '/configuracoes', label: 'Parâmetros', icon: Settings },
-      { to: '/empresas', label: 'Empresas', icon: Landmark },
-      { to: '/custos-indiretos', label: 'Custos Indiretos', icon: Factory },
-      { to: '/taxas', label: 'Taxas', icon: Percent },
-      { to: '/listas', label: 'Listas', icon: ListIcon },
-      { to: '/configuracoes/marketplace', label: 'Produtos de Marketplace', icon: Store },
+      { to: '/configuracoes', label: 'Parâmetros', icon: Settings, grupo: 'Cálculo' },
+      { to: '/empresas', label: 'Empresas', icon: Landmark, grupo: 'Cálculo' },
+      { to: '/custos-indiretos', label: 'Custos Indiretos', icon: Factory, grupo: 'Cálculo' },
+      { to: '/taxas', label: 'Taxas', icon: Percent, grupo: 'Taxas' },
+      { to: '/listas', label: 'Listas', icon: ListIcon, grupo: 'Cadastros' },
+      { to: '/configuracoes/marketplace', label: 'Produtos de Marketplace', icon: Store, grupo: 'Cadastros' },
       // NÃO é adminOnly (diferente da extinta aba "Usuários", que era):
       // Grupos nunca precisou de admin (backend exige só o módulo
       // "configuracoes"), e a fusão não pode tirar esse acesso de quem não
       // é admin — a sub-aba Usuários fica escondida pra quem não é admin
       // dentro do próprio AcessosPage.jsx, não aqui.
-      { to: '/acessos', label: 'Acessos', icon: ShieldCheck },
-      { to: '/integracoes', label: 'Integrações', icon: Plug, adminOnly: true },
-      { to: '/saude-dados', label: 'Saúde dos Dados', icon: Layers, adminOnly: true },
+      { to: '/acessos', label: 'Acessos', icon: ShieldCheck, grupo: 'Acesso e dados' },
+      { to: '/integracoes', label: 'Integrações', icon: Plug, adminOnly: true, grupo: 'Acesso e dados' },
+      { to: '/saude-dados', label: 'Saúde dos Dados', icon: Layers, adminOnly: true, grupo: 'Acesso e dados' },
     ],
   },
 ];
