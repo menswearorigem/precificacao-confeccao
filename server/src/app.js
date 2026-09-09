@@ -51,6 +51,7 @@ const estoqueLocaisRoutes = require('./routes/estoqueLocais.routes');
 const estoqueReservaRoutes = require('./routes/estoqueReserva.routes');
 const depositosRoutes = require('./routes/depositos.routes');
 const romaneiosRoutes = require('./routes/romaneios.routes');
+const devolucoesRoutes = require('./routes/devolucoes.routes');
 const precoPorCanalRoutes = require('./routes/precoPorCanal.routes');
 const saudeIntegracaoRoutes = require('./routes/saudeIntegracao.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
@@ -220,6 +221,9 @@ function createApp() {
   // /api/etiquetas: quem imprime a etiqueta é quem monta a remessa. Nenhuma
   // chave de permissão nova (REGRA 4).
   app.use('/api/romaneios', requireAuth, requireModulo(['marketplace', 'estoque']), romaneiosRoutes);
+  // Devolução mexe em estoque e nasce de venda de marketplace: as mesmas
+  // chaves do romaneio. Nenhuma permissão nova (REGRA 4).
+  app.use('/api/devolucoes', requireAuth, requireModulo(['marketplace', 'estoque']), devolucoesRoutes);
   // Estoque parado em R$ e curva de tamanho (08/09/2026). Sob `estoque` pelo
   // mesmo motivo do estoque minimo: as duas leem saldo e historico de venda,
   // e nenhuma tabela nova foi criada (REGRA 4).
