@@ -47,6 +47,8 @@ export default function ViagemDetailPage() {
 
   const [carrinho, setCarrinho] = useState([]); // [{varianteId, referencia, descricao, cor, tamanho, precoIdeal, precoMinimo, quantidade, valorUnitario, descontoPct}]
   const [checkoutAberto, setCheckoutAberto] = useState(false);
+  // Muda a cada venda confirmada, para a lista de vendas se recarregar.
+  const [vendasChave, setVendasChave] = useState(0);
 
   function carregarCatalogo() {
     return api.get(`/viagens/${id}/produtos`).then((data) => {
@@ -172,6 +174,7 @@ export default function ViagemDetailPage() {
     });
     setCarrinho([]);
     setCheckoutAberto(false);
+    setVendasChave((n) => n + 1);
     await Promise.all([carregarCatalogo(), carregarResumo()]);
   }
 
@@ -236,6 +239,12 @@ export default function ViagemDetailPage() {
       )}
 
       {erro && <div className="login-error" style={{ marginBottom: 14 }}>{erro}</div>}
+
+      {/* Vendas da viagem. O endpoint `GET /viagens/:id/vendas` estava pronto
+          e completo, e NENHUMA tela o chamava: não havia jeito de conferir o
+          que foi vendido na feira, nem de achar uma venda lançada errada, sem
+          sair para o módulo de Pedidos e caçar pelo canal "Viagem". */}
+      <VendasDaViagem viagemId={id} recarregar={vendasChave} />
 
       <div className="card" style={{ marginBottom: 18 }}>
         <div className="card-head">Adicionar Produto à Viagem</div>
@@ -566,6 +575,111 @@ function CheckoutModal({ itens, total, onAtualizarItem, onRemoverItem, onClose, 
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Vendas já fechadas nesta viagem.
+//
+// POR QUE ESTA SEÇÃO EXISTE: `GET /viagens/:id/vendas` estava implementado,
+// devolvia as vendas com os itens, e NENHUMA tela chamava. Na prática, depois
+// de fechar uma venda na feira não havia como conferir o que foi vendido, nem
+// achar uma venda lançada errada, sem sair para o módulo de Pedidos e
+// procurar pelo canal "Viagem". A tela também não mostrava o número do pedido
+// que o servidor devolve na confirmação — ele era descartado.
+function VendasDaViagem({ viagemId, recarregar }) {
+  const [vendas, setVendas] = useState(null);
+  const [erro, setErro] = useState('');
+  const [aberta, setAberta] = useState(null);
+
+  useEffect(() => {
+    setErro('');
+    api.get(`/viagens/${viagemId}/vendas`)
+      .then(setVendas)
+      .catch((e) => setErro(e.message));
+  }, [viagemId, recarregar]);
+
+  const ativas = (vendas || []).filter((v) => v.situacao !== 'cancelado');
+  const canceladas = (vendas || []).filter((v) => v.situacao === 'cancelado');
+
+  return (
+    <div className="card" style={{ marginBottom: 18 }}>
+      <div className="card-head">
+        <ShoppingBag size={14} style={{ verticalAlign: -2, marginRight: 5 }} />
+        Vendas desta viagem
+        {vendas && <span className="ink-faint" style={{ fontWeight: 400 }}> · {formatQtd(ativas.length)} venda(s)</span>}
+      </div>
+
+      {erro && <p className="login-error">{erro}</p>}
+      {!vendas && !erro && <p className="ink-soft">Carregando as vendas…</p>}
+
+      {vendas && ativas.length === 0 && (
+        <p className="ink-soft" style={{ margin: 0 }}>
+          Nenhuma venda fechada nesta viagem ainda. Monte o carrinho no catálogo abaixo e
+          confirme — a venda aparece aqui na hora.
+        </p>
+      )}
+
+      {ativas.length > 0 && (
+        <div className="tabela-rolagem">
+          <table className="tabela-vendas-viagem">
+            <thead>
+              <tr>
+                <th>Pedido</th>
+                <th>Cliente</th>
+                <th>Pagamento</th>
+                <th className="num">Peças</th>
+                <th className="num">Total</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {ativas.map((v) => (
+                <tr key={v.id}>
+                  <td className="mono">#{v.numero}</td>
+                  <td>{v.cliente_nome || <span className="ink-faint">sem cliente</span>}</td>
+                  <td className="ink-soft">{v.forma_pagamento || '—'}</td>
+                  <td className="num">{formatQtd(v.quantidade_pecas)}</td>
+                  <td className="num">{brl(v.total_liquido)}</td>
+                  <td className="num">
+                    <button
+                      type="button"
+                      className="btn-sec"
+                      onClick={() => setAberta(aberta === v.id ? null : v.id)}
+                    >
+                      {aberta === v.id ? 'Fechar' : 'Ver itens'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {aberta && (
+        <div className="viagem-venda-itens">
+          <strong>Itens do pedido #{ativas.find((v) => v.id === aberta)?.numero}</strong>
+          <ul>
+            {(ativas.find((v) => v.id === aberta)?.itens || []).map((it) => (
+              <li key={it.id}>
+                <span className="mono">{it.referencia}</span> · {it.cor} {it.tamanho} ·{' '}
+                <span className="mono">{formatQtd(it.quantidade)}×</span>{' '}
+                <span className="mono">{brl(it.valor_unitario)}</span> ={' '}
+                <span className="mono">{brl(it.total)}</span>
+              </li>
+            ))}
+          </ul>
+          <a className="btn-sec" href={`/pedidos/${aberta}`}>Abrir o pedido completo</a>
+        </div>
+      )}
+
+      {canceladas.length > 0 && (
+        <p className="ink-soft ajuda-bloco" style={{ marginTop: 10 }}>
+          {formatQtd(canceladas.length)} venda(s) desta viagem foram canceladas e não entram nos
+          totais acima. Elas continuam no módulo de Pedidos, para o histórico.
+        </p>
+      )}
     </div>
   );
 }

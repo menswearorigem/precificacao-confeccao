@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Save, Trash2, MapPinCheck } from 'lucide-react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Save, Trash2, MapPinCheck, ShoppingBag, CalendarDays } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, NumInput, Select, Checkbox, Toggle, Skeleton } from '../components/ui';
+import { Field, NumInput, Select, Checkbox, Toggle, Skeleton, IndicadorDestaque } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
+import { brl, formatQtd, dataBr } from '../lib/format';
 
 function emptyCliente() {
   return {
@@ -276,6 +277,137 @@ export default function ClienteFichaPage() {
           <textarea rows={3} value={cliente.observacoes || ''} onChange={(e) => set({ observacoes: e.target.value })} />
         </Field>
       </div>
+
+      {/* O que este cliente já comprou. Era a pergunta que fazia alguém abrir
+          esta ficha, e a única coisa que ela NÃO respondia. */}
+      {!isNew && <HistoricoDoCliente clienteId={id} />}
+    </div>
+  );
+}
+
+function HistoricoDoCliente({ clienteId }) {
+  const [dados, setDados] = useState(null);
+  const [erro, setErro] = useState('');
+
+  useEffect(() => {
+    setErro('');
+    api.get(`/clientes/${clienteId}/historico`)
+      .then(setDados)
+      .catch((e) => setErro(e.message));
+  }, [clienteId]);
+
+  if (erro) {
+    return (
+      <div className="card">
+        <div className="card-head">Histórico de compras</div>
+        <p className="login-error" style={{ margin: 0 }}>{erro}</p>
+      </div>
+    );
+  }
+  if (!dados) {
+    return (
+      <div className="card">
+        <div className="card-head">Histórico de compras</div>
+        <Skeleton height={120} />
+      </div>
+    );
+  }
+
+  const r = dados.resumo;
+
+  if (r.totalPedidos === 0) {
+    return (
+      <div className="card">
+        <div className="card-head">Histórico de compras</div>
+        <p className="ink-soft" style={{ margin: 0 }}>
+          Este cliente ainda não tem nenhum pedido no sistema
+          {r.canceladosQuantidade > 0 && ` (há ${formatQtd(r.canceladosQuantidade)} pedido(s) cancelado(s), que não entram na conta)`}.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card">
+      <div className="card-head">Histórico de compras</div>
+
+      <div className="indicadores-linha" style={{ marginBottom: 14 }}>
+        <IndicadorDestaque rotulo="Total comprado" valor={brl(r.totalComprado)} Icone={ShoppingBag} />
+        <IndicadorDestaque rotulo="Pedidos" valor={formatQtd(r.totalPedidos)} />
+        <IndicadorDestaque
+          rotulo="Ticket médio"
+          valor={r.ticketMedio != null ? brl(r.ticketMedio) : '—'}
+          explicacao="Soma do que foi comprado dividida pelo número de pedidos — não é média de médias."
+        />
+        <IndicadorDestaque rotulo="Peças" valor={formatQtd(r.pecas)} />
+        <IndicadorDestaque
+          rotulo="Última compra"
+          valor={r.ultimaCompra ? dataBr(String(r.ultimaCompra).slice(0, 10)) : '—'}
+          Icone={CalendarDays}
+        />
+      </div>
+
+      {r.canceladosQuantidade > 0 && (
+        <p className="ink-soft ajuda-bloco">
+          {formatQtd(r.canceladosQuantidade)} pedido(s) cancelado(s) ficaram FORA de todos os
+          números acima — somar cancelado com faturado inflaria o total deste cliente.
+        </p>
+      )}
+
+      {dados.maisComprados.length > 0 && (
+        <>
+          <div className="card-head" style={{ marginTop: 6, marginBottom: 6 }}>O que ele mais leva</div>
+          <div className="tabela-rolagem">
+            <table className="tabela-extrato-estoque">
+              <thead>
+                <tr><th>Referência</th><th>Descrição</th><th className="num">Peças</th><th className="num">Valor</th></tr>
+              </thead>
+              <tbody>
+                {dados.maisComprados.map((i, idx) => (
+                  <tr key={i.produtoId ?? `sem-${idx}`}>
+                    <td className="mono">{i.referencia || '—'}</td>
+                    <td className="ink-soft">{i.descricao || '—'}</td>
+                    <td className="num">{formatQtd(i.pecas)}</td>
+                    <td className="num">{brl(i.valor)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      <div className="card-head" style={{ marginTop: 16, marginBottom: 6 }}>Pedidos</div>
+      <div className="tabela-rolagem">
+        <table className="tabela-extrato-estoque">
+          <thead>
+            <tr><th>Data</th><th>Pedido</th><th>Canal</th><th>Situação</th><th className="num">Peças</th><th className="num">Total</th></tr>
+          </thead>
+          <tbody>
+            {dados.pedidos.map((p) => (
+              <tr key={p.id} style={p.situacao === 'cancelado' ? { opacity: 0.55 } : undefined}>
+                <td className="mono">{dataBr(String(p.data_pedido).slice(0, 10))}</td>
+                <td className="mono">
+                  <Link to={`/pedidos/${p.id}`}>{p.origem_pedido_id || `#${p.numero}`}</Link>
+                </td>
+                <td>{p.viagem_nome ? `Viagem · ${p.viagem_nome}` : (p.canal_venda || '—')}</td>
+                <td>
+                  <span className={'selo ' + (p.situacao === 'cancelado' ? 'tone-prejuizo' : p.situacao === 'faturado' ? 'tone-saudavel' : 'tone-neutro')}>
+                    {p.situacao}
+                  </span>
+                </td>
+                <td className="num">{formatQtd(p.quantidade_pecas)}</td>
+                <td className="num">{brl(p.total_liquido)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {r.cortado && (
+        <p className="aviso-inline" style={{ marginTop: 10 }}>
+          Esta lista para nos 200 pedidos mais recentes — pode haver mais histórico antes disso.
+        </p>
+      )}
     </div>
   );
 }

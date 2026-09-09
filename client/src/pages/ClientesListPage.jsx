@@ -5,13 +5,23 @@ import { api } from '../api/client';
 import DataTable from '../components/DataTable';
 import { SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazio } from '../components/ui';
 import { useTabela } from '../lib/useTabela';
+import { brl } from '../lib/format';
 
+// Data do pedido (coluna DATE) formatada como o resto do sistema formata.
+const dataPedidoBr = (v) => (v ? new Date(v).toLocaleDateString('pt-BR') : '');
+
+// Ordenação: cliente sem compra tem que ir para o fim das duas ordens, não
+// competir com quem comprou R$ 0,00. -Infinity/Infinity conforme a direção não
+// dá pra fazer aqui, então o "nunca comprou" vira -1 (abaixo de qualquer
+// total, que nunca é negativo) e época 0 (antes de qualquer data real).
 const COLUNAS_ORDENAVEIS = {
   nome: (c) => c.nome,
   cpf_cnpj: (c) => c.cpf_cnpj,
   telefone: (c) => c.telefone,
   cidade: (c) => c.cidade,
   vendedor: (c) => c.vendedor,
+  total_comprado: (c) => (c.total_comprado === null || c.total_comprado === undefined ? -1 : Number(c.total_comprado)),
+  ultima_compra: (c) => (c.ultima_compra ? new Date(c.ultima_compra).getTime() : 0),
   ativo: (c) => (c.ativo ? 1 : 0),
 };
 
@@ -21,6 +31,10 @@ const COLUNAS_EXPORTACAO = [
   { rotulo: 'Telefone', valor: (c) => c.telefone },
   { rotulo: 'Cidade/UF', valor: (c) => [c.cidade, c.uf].filter(Boolean).join('/') },
   { rotulo: 'Vendedor', valor: (c) => c.vendedor },
+  { rotulo: 'Pedidos', valor: (c) => c.total_pedidos ?? 0 },
+  { rotulo: 'Total comprado', valor: (c) => (c.total_comprado === null || c.total_comprado === undefined ? '' : c.total_comprado) },
+  { rotulo: 'Ticket médio', valor: (c) => (c.ticket_medio === null || c.ticket_medio === undefined ? '' : c.ticket_medio) },
+  { rotulo: 'Última compra', valor: (c) => dataPedidoBr(c.ultima_compra) },
   { rotulo: 'Ativo?', valor: (c) => (c.ativo ? 'Sim' : 'Não') },
 ];
 
@@ -93,12 +107,14 @@ export default function ClientesListPage() {
               <ThOrdenavel coluna="telefone" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Telefone</ThOrdenavel>
               <ThOrdenavel coluna="cidade" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Cidade/UF</ThOrdenavel>
               <ThOrdenavel coluna="vendedor" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Vendedor</ThOrdenavel>
+              <ThOrdenavel coluna="total_comprado" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor} className="num">Total comprado</ThOrdenavel>
+              <ThOrdenavel coluna="ultima_compra" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor} className="num">Última compra</ThOrdenavel>
               <ThOrdenavel coluna="ativo" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Ativo?</ThOrdenavel>
               <th />
             </tr>
           </thead>
           <tbody>
-            {loading && clientes.length === 0 && <SkeletonLinhasTabela colunas={7} />}
+            {loading && clientes.length === 0 && <SkeletonLinhasTabela colunas={9} />}
             {tabela.itensPagina.map((c) => (
               <tr key={c.id} className="clickable-row" onClick={() => navigate(`/clientes/${c.id}`)}>
                 <td>{c.nome}</td>
@@ -106,6 +122,19 @@ export default function ClientesListPage() {
                 <td className="mono">{c.telefone}</td>
                 <td>{[c.cidade, c.uf].filter(Boolean).join('/')}</td>
                 <td>{c.vendedor}</td>
+                <td className="num">
+                  {c.total_comprado === null || c.total_comprado === undefined
+                    ? <span style={{ color: 'var(--ink-faint)' }}>nunca comprou</span>
+                    : (
+                      <>
+                        {brl(c.total_comprado)}
+                        <span style={{ display: 'block', fontSize: 11, color: 'var(--ink-soft)' }}>
+                          {c.total_pedidos} ped. · {brl(c.ticket_medio)} méd.
+                        </span>
+                      </>
+                    )}
+                </td>
+                <td className="num">{dataPedidoBr(c.ultima_compra) || <span style={{ color: 'var(--ink-faint)' }}>—</span>}</td>
                 <td>{c.ativo ? 'Sim' : 'Não'}</td>
                 <td>
                   <Link to={`/clientes/${c.id}`} className="icon-btn" style={{ color: 'var(--ink-soft)' }} onClick={(e) => e.stopPropagation()}>

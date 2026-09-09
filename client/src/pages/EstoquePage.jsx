@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Search, Barcode, Upload, Pencil, Check, X, Tags, Printer, Wand2, Store } from 'lucide-react';
+import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Search, Barcode, Upload, Pencil, Check, X, Tags, Printer, Wand2, Store, History } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import { Field, Select, Checkbox, Toggle } from '../components/ui';
+import { Field, Select, Checkbox, Toggle, Skeleton } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import DataTable from '../components/DataTable';
 import IndicadoresEstoque from '../components/IndicadoresEstoque';
@@ -291,6 +291,8 @@ export default function EstoquePage() {
   // Quando ligado, o seletor de referência e a busca no estoque só enxergam
   // as referências da seleção de marketplace.
   const [somenteMarketplace, setSomenteMarketplace] = useState(false);
+  // Variante cujo extrato de movimentos está aberto no painel lateral.
+  const [extratoDe, setExtratoDe] = useState(null);
 
   useEffect(() => {
     const qs = somenteMarketplace ? '?marketplace=1' : '';
@@ -482,7 +484,7 @@ export default function EstoquePage() {
               <thead>
                 <tr>
                   <th><Checkbox checked={variantes.length > 0 && selecionadas.size === variantes.length} onChange={alternarSelecionarTodas} /></th>
-                  <th>Cor</th><th>Tamanho</th><th>EAN</th><th>Qtd. atual</th><th>Movimentar</th><th>Ativa?</th><th /></tr>
+                  <th>Cor</th><th>Tamanho</th><th>EAN</th><th className="num">Qtd. atual</th><th>Movimentar</th><th>Ativa?</th><th /><th /></tr>
               </thead>
               <tbody>
                 {variantes.map((v) => (
@@ -491,7 +493,9 @@ export default function EstoquePage() {
                     <td>{v.cor}</td>
                     <td>{v.tamanho}</td>
                     <td><EanEditavel variante={v} onFeito={() => loadVariantes(produtoId)} /></td>
-                    <td className="mono" style={{ fontWeight: 700 }}>{formatQtd(v.quantidade)}</td>
+                    <td className="num" style={{ fontWeight: 700, color: Number(v.quantidade) < 0 ? 'var(--danger)' : undefined }}>
+                      {formatQtd(v.quantidade)}
+                    </td>
                     <td><MovimentoInline variante={v} onFeito={() => loadVariantes(produtoId)} /></td>
                     <td>
                       <label className="toggle">
@@ -499,11 +503,26 @@ export default function EstoquePage() {
                         {v.ativo ? 'Sim' : 'Não'}
                       </label>
                     </td>
+                    <td>
+                      {/* O extrato existia no servidor desde sempre
+                          (`GET /estoque/movimentos`) e não tinha tela nenhuma.
+                          É a ferramenta que fecha qualquer divergência de
+                          conferência: quem mexeu, quando, quanto e por quê. */}
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        title="Ver o extrato de movimentos desta variante"
+                        aria-label="Ver o extrato de movimentos desta variante"
+                        onClick={() => setExtratoDe(v)}
+                      >
+                        <History size={13} />
+                      </button>
+                    </td>
                     <td><button type="button" className="icon-btn" title="Excluir (só se nunca vendida)" aria-label="Excluir (só se nunca vendida)" onClick={() => removerVariante(v.id)}><Trash2 size={13} /></button></td>
                   </tr>
                 ))}
                 {variantes.length === 0 && (
-                  <tr><td colSpan="8" style={{ color: 'var(--ink-soft)' }}>Nenhuma variante cadastrada ainda para esta referência.</td></tr>
+                  <tr><td colSpan="9" style={{ color: 'var(--ink-soft)' }}>Nenhuma variante cadastrada ainda para esta referência.</td></tr>
                 )}
               </tbody>
             </table>
@@ -512,6 +531,113 @@ export default function EstoquePage() {
           </>
         )}
       </div>
+
+      {extratoDe && <ExtratoVariante variante={extratoDe} onFechar={() => setExtratoDe(null)} />}
     </div>
+  );
+}
+
+// Extrato de movimentos de uma variante.
+//
+// POR QUE ESTA TELA EXISTE: o endpoint `GET /estoque/movimentos` estava
+// pronto no servidor e NENHUMA tela o consumia. É a ferramenta que fecha
+// qualquer divergência de conferência — "o sistema diz 12 e na prateleira
+// tem 9, o que aconteceu?" — e até agora a resposta só existia no banco.
+function ExtratoVariante({ variante, onFechar }) {
+  const [linhas, setLinhas] = useState(null);
+  const [erro, setErro] = useState('');
+
+  useEffect(() => {
+    setLinhas(null);
+    setErro('');
+    api.get(`/estoque/movimentos?variante_id=${variante.id}`)
+      .then(setLinhas)
+      .catch((e) => setErro(e.message));
+  }, [variante.id]);
+
+  useEffect(() => {
+    function aoTeclar(e) { if (e.key === 'Escape') onFechar(); }
+    document.addEventListener('keydown', aoTeclar);
+    return () => document.removeEventListener('keydown', aoTeclar);
+  }, [onFechar]);
+
+  return (
+    <>
+      <div className="anuncio-painel-fundo painel-fundo-clicavel" onClick={onFechar} role="presentation" />
+      <aside className="anuncio-painel" role="dialog" aria-modal="true" aria-label="Extrato de movimentos da variante">
+        <header className="anuncio-painel-topo">
+          <div>
+            <h2 style={{ margin: 0, fontSize: 17 }}>Extrato de movimentos</h2>
+            <p className="ink-soft" style={{ margin: '4px 0 0', fontSize: 12.5 }}>
+              <span className="mono">{variante.referencia}</span> · {variante.cor} {variante.tamanho}
+              {variante.ean && <> · EAN <span className="mono">{variante.ean}</span></>}
+            </p>
+          </div>
+          <button type="button" className="btn-icone" onClick={onFechar} title="Fechar" aria-label="Fechar">
+            <X size={16} />
+          </button>
+        </header>
+
+        <div className="anuncio-painel-corpo">
+          {erro && <p className="login-error">{erro}</p>}
+          {!linhas && !erro && <Skeleton height={220} />}
+
+          {linhas && linhas.length === 0 && (
+            <p className="ink-soft">
+              Nenhum movimento registrado para esta variante. O saldo atual veio do cadastro
+              ou de uma importação anterior ao registro de movimentos.
+            </p>
+          )}
+
+          {linhas && linhas.length > 0 && (
+            <>
+              <p className="ink-soft ajuda-bloco">
+                Os 200 movimentos mais recentes, do mais novo para o mais antigo. “Resultante” é
+                o saldo que ficou logo depois daquele movimento — é por ela que se descobre onde
+                a conta começou a divergir.
+              </p>
+              <div className="tabela-rolagem">
+                <table className="tabela-extrato-estoque">
+                  <thead>
+                    <tr>
+                      <th>Quando</th>
+                      <th>Tipo</th>
+                      <th className="num">Quantidade</th>
+                      <th className="num">Resultante</th>
+                      <th>Motivo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {linhas.map((m) => {
+                      const q = Number(m.quantidade);
+                      return (
+                        <tr key={m.id}>
+                          <td className="mono">
+                            {new Date(m.criado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                          </td>
+                          <td><span className="selo tone-neutro">{m.tipo}</span></td>
+                          <td className="num" style={{ color: q < 0 ? 'var(--danger)' : 'var(--success)' }}>
+                            {q > 0 ? '+' : ''}{formatQtd(q)}
+                          </td>
+                          <td className="num" style={{ color: Number(m.quantidade_resultante) < 0 ? 'var(--danger)' : undefined }}>
+                            {formatQtd(m.quantidade_resultante)}
+                          </td>
+                          <td className="ink-soft">{m.motivo || m.origem || '—'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {linhas.length >= 200 && (
+                <p className="aviso-inline" style={{ marginTop: 10 }}>
+                  Esta lista para nos 200 movimentos mais recentes — pode haver mais histórico antes disso.
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      </aside>
+    </>
   );
 }

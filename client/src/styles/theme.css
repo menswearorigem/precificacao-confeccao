@@ -6045,3 +6045,28 @@ td.num .selo, td.num small, td.num .ink-faint { font-family: var(--font-body); l
 @media (max-width: 860px) {
   .page h1, .page-wide h1, .pagina h1 { font-size: 21px; }
 }
+
+/* Extrato de movimentos da variante (09/09/2026) — a tela que faltava para o
+   endpoint que já existia. */
+.tabela-extrato-estoque { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 620px; }
+.tabela-extrato-estoque th {
+  text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-faint);
+  white-space: nowrap;
+}
+.tabela-extrato-estoque td { padding: 8px 10px; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+
+/* Vendas da viagem (09/09/2026). */
+.tabela-vendas-viagem { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 620px; }
+.tabela-vendas-viagem th {
+  text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-faint);
+  white-space: nowrap;
+}
+.tabela-vendas-viagem td { padding: 8px 10px; border-bottom: 1px solid var(--border-soft); }
+.viagem-venda-itens {
+  margin-top: 12px; padding: 12px 14px;
+  background: var(--surface-alt); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-size: 12.5px;
+}
+.viagem-venda-itens ul { margin: 8px 0 10px; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
