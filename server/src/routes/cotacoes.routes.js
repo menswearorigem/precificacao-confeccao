@@ -111,7 +111,7 @@ router.post('/', async (req, res, next) => {
     const { rows } = await client.query(
       `INSERT INTO cotacoes (descricao, empresa_id, prazo_resposta, observacao, criado_por)
        VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [descricao || null, empresa_id || null, prazo_resposta || null, observacao || null, req.usuario?.id || null]
+      [descricao || null, empresa_id || null, prazo_resposta || null, observacao || null, req.user?.id || null]
     );
     const cotacao = rows[0];
 
@@ -310,7 +310,7 @@ router.post('/:id/gerar-pedidos', async (req, res, next) => {
         `INSERT INTO pedidos_compra
            (empresa_id, fornecedor_id, cotacao_id, situacao, total_bruto, total_liquido, criado_por)
          VALUES ($1,$2,$3,'rascunho',$4,$4,$5) RETURNING *`,
-        [empresaId, fornecedorId, req.params.id, totalBruto, req.usuario?.id || null]
+        [empresaId, fornecedorId, req.params.id, totalBruto, req.user?.id || null]
       );
       for (const [idx, it] of itens.entries()) {
         await client.query(

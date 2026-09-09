@@ -13,6 +13,7 @@
 
 const express = require('express');
 const pool = require('../db/pool');
+const ponte = require('../lib/financeiroPonte');
 const { recalcularSituacao } = require('./pedidosCompra.routes');
 
 const router = express.Router();
@@ -131,7 +132,7 @@ router.post('/', async (req, res, next) => {
          (pedido_compra_id, fornecedor_id, empresa_id, data_recebimento, localizacao, observacao, criado_por)
        VALUES ($1,$2,$3,COALESCE($4, CURRENT_DATE),$5,$6,$7) RETURNING *`,
       [pedido_compra_id || null, fornecedorFinal, empresaFinal, data_recebimento || null,
-       localizacao || null, observacao || null, req.usuario?.id || null]
+       localizacao || null, observacao || null, req.user?.id || null]
     );
     const recebimentoId = rec[0].id;
 
@@ -270,13 +271,44 @@ router.post('/:id/conferir', async (req, res, next) => {
           SET situacao = 'conferido', divergencia = $1, divergencia_motivo = $2,
               conferido_por = $3, conferido_em = now(), atualizado_em = now()
         WHERE id = $4`,
-      [temDivergencia, temDivergencia ? motivo : null, req.usuario?.id || null, req.params.id]
+      [temDivergencia, temDivergencia ? motivo : null, req.user?.id || null, req.params.id]
     );
 
     if (rec.pedido_compra_id) await recalcularSituacao(client, rec.pedido_compra_id);
 
+    // A PONTE FINANCEIRA. A previsão criada na aprovação do pedido é
+    // corrigida pelo que REALMENTE chegou — o confronto comprado × recebido
+    // já está calculado na `vw_pedido_compra_confronto`, e era o único lugar
+    // do sistema que sabia o valor verdadeiro da compra.
+    //
+    // Enquanto o pedido não está totalmente recebido, a previsão continua
+    // previsão: promover no parcial travaria o valor no que chegou primeiro.
+    let financeiro = null;
+    if (rec.pedido_compra_id) {
+      const { rows: pc } = await client.query(
+        'SELECT situacao, numero FROM pedidos_compra WHERE id = $1', [rec.pedido_compra_id]
+      );
+      if (pc[0]?.situacao === 'recebido') {
+        const { rows: conf } = await client.query(
+          `SELECT SUM(valor_recebido) AS valor FROM vw_pedido_compra_confronto
+            WHERE pedido_compra_id = $1`,
+          [rec.pedido_compra_id]
+        );
+        const valor = Number(conf[0]?.valor || 0);
+        if (valor > 0) {
+          financeiro = await ponte.promover(client, {
+            origem_codigo: 'pedido_compra',
+            origem_id: rec.pedido_compra_id,
+            valor_real: valor,
+            detalhe: { base: 'confronto comprado × recebido', valor_recebido: valor },
+            usuarioId: req.user?.id || null,
+          });
+        }
+      }
+    }
+
     await client.query('COMMIT');
-    res.json(await fetchRecebimentoCompleto(req.params.id));
+    res.json({ ...(await fetchRecebimentoCompleto(req.params.id)), financeiro });
   } catch (err) {
     await client.query('ROLLBACK');
     next(err);

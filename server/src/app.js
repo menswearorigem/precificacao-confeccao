@@ -56,6 +56,7 @@ const precoPorCanalRoutes = require('./routes/precoPorCanal.routes');
 const saudeIntegracaoRoutes = require('./routes/saudeIntegracao.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
 const financeiroNucleoRoutes = require('./routes/financeiroNucleo.routes');
+const financeiroPonteRoutes = require('./routes/financeiroPonte.routes');
 const auditoriaRoutes = require('./routes/auditoria.routes');
 const emailRoutes = require('./routes/email.routes');
 
@@ -258,6 +259,24 @@ function createApp() {
   // fluxo de caixa e DRE. Mesma chave de modulo `financeiro` -- nenhuma
   // permissao existente muda (REGRA 4). Nao emite documento fiscal.
   app.use('/api/financeiro-nucleo', requireAuth, requireModulo('financeiro'), financeiroNucleoRoutes);
+  // Ponte financeira (09/09/2026): a Caixa de Entrada (o que a operacao
+  // comprometeu e o financeiro ainda nao registrou), a Cobertura (o que moveu
+  // dinheiro e nao chegou ao financeiro por caminho nenhum) e o catalogo de
+  // origens. Mesma chave `financeiro` -- nenhuma permissao nova (REGRA 4).
+  //
+  // As rotas de LEITURA do selo de um documento sao usadas pelas telas dos
+  // modulos (O.S., pedido de compra, devolucao), que nem sempre sao de quem
+  // tem o modulo financeiro -- por isso `/documento` e `/documentos` ficam
+  // abertas a quem tem QUALQUER um dos modulos que geram custo. Elas nao
+  // devolvem valor de titulo alheio: so o estado do documento que a pessoa ja
+  // enxerga na propria tela.
+  app.use('/api/financeiro-ponte/documento', requireAuth,
+    requireModulo(['financeiro', 'producao', 'compras', 'vendas', 'marketplace', 'estoque']),
+    financeiroPonteRoutes);
+  app.use('/api/financeiro-ponte/documentos', requireAuth,
+    requireModulo(['financeiro', 'producao', 'compras', 'vendas', 'marketplace', 'estoque']),
+    financeiroPonteRoutes);
+  app.use('/api/financeiro-ponte', requireAuth, requireModulo('financeiro'), financeiroPonteRoutes);
 
   // Callbacks OAuth são chamados pelo redirect do próprio marketplace — sem
   // sessão nossa nesse momento, então ficam fora do requireAuth. A validação

@@ -179,7 +179,7 @@ router.post('/titulos', async (req, res, next) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const titulo = await criarTitulo(client, { ...req.body, usuarioId: req.usuario?.id || null });
+    const titulo = await criarTitulo(client, { ...req.body, usuarioId: req.user?.id || null });
     await client.query('COMMIT');
     res.status(201).json(titulo);
   } catch (err) {
@@ -212,7 +212,7 @@ router.post('/titulos/parcelado', async (req, res, next) => {
         valor_bruto: valor / 100,
         data_vencimento: venc.toISOString().slice(0, 10),
         parcela: `${i + 1}/${n}`,
-        usuarioId: req.usuario?.id || null,
+        usuarioId: req.user?.id || null,
       }));
     }
     await client.query('COMMIT');
@@ -260,7 +260,7 @@ router.post('/titulos/:id/baixar', async (req, res, next) => {
   try {
     await client.query('BEGIN');
     const r = await baixar(client, {
-      tituloId: req.params.id, ...req.body, usuarioId: req.usuario?.id || null,
+      tituloId: req.params.id, ...req.body, usuarioId: req.user?.id || null,
     });
     await client.query('COMMIT');
     res.status(201).json(r);
@@ -276,7 +276,7 @@ router.post('/baixas/:id/estornar', async (req, res, next) => {
   try {
     await client.query('BEGIN');
     const r = await estornarBaixa(client, {
-      baixaId: req.params.id, motivo: req.body?.motivo, usuarioId: req.usuario?.id || null,
+      baixaId: req.params.id, motivo: req.body?.motivo, usuarioId: req.user?.id || null,
     });
     await client.query('COMMIT');
     res.status(201).json(r);
@@ -416,24 +416,24 @@ router.post('/extrato/:id/conciliar', async (req, res, next) => {
         data_baixa: lanc.data_lancamento,
         principal: Math.abs(Number(lanc.valor)),
         observacao: `Conciliado com o extrato: ${lanc.historico || ''}`.trim(),
-        usuarioId: req.usuario?.id || null,
+        usuarioId: req.user?.id || null,
       });
       await client.query(
         `UPDATE fin_extrato_bancario SET baixa_id = $1, conciliado_em = now(), conciliado_por = $2
           WHERE id = $3`,
-        [r.baixa.id, req.usuario?.id || null, req.params.id]
+        [r.baixa.id, req.user?.id || null, req.params.id]
       );
     } else if (plano_id) {
       await client.query(
         `UPDATE fin_extrato_bancario SET plano_id = $1, conciliado_em = now(), conciliado_por = $2
           WHERE id = $3`,
-        [plano_id, req.usuario?.id || null, req.params.id]
+        [plano_id, req.user?.id || null, req.params.id]
       );
     } else if (transferencia_par_id) {
       await client.query(
         `UPDATE fin_extrato_bancario SET transferencia_par_id = $1, conciliado_em = now(), conciliado_por = $2
           WHERE id = $3`,
-        [transferencia_par_id, req.usuario?.id || null, req.params.id]
+        [transferencia_par_id, req.user?.id || null, req.params.id]
       );
       await client.query(
         `UPDATE fin_extrato_bancario SET transferencia_par_id = $1, conciliado_em = now()
@@ -670,7 +670,7 @@ router.post('/recorrencias/gerar', async (req, res, next) => {
         descricao: r.descricao, plano_id: r.plano_id, centro_custo_id: r.centro_custo_id,
         data_competencia: `${competencia}-01`, data_vencimento: venc,
         valor_bruto: r.valor, origem_tipo: 'recorrente', origem_id: r.id,
-        usuarioId: req.usuario?.id || null,
+        usuarioId: req.user?.id || null,
       });
       criados.push(titulo);
       await client.query('UPDATE fin_recorrencias SET ultima_geracao = $1 WHERE id = $2', [venc, r.id]);

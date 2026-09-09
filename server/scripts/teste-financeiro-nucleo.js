@@ -11,7 +11,9 @@ const { distribuir, calcularEncargos } = require('../src/lib/financeiroTitulos')
 
 const app = express();
 app.use(express.json({ limit: '15mb' }));
-app.use((req, _res, next) => { req.usuario = { id: null }; next(); });
+// O middleware de autenticação real grava em `req.user` — `req.usuario`
+// nunca existiu, e era por isso que `criado_por` saía nulo em produção.
+app.use((req, _res, next) => { req.user = { id: null }; next(); });
 app.use('/api/fin', rotas);
 app.use((err, req, res, _next) => { console.error('ERRO:', err.message); res.status(500).json({ error: err.message }); });
 

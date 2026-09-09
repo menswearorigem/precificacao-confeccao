@@ -123,7 +123,7 @@ router.post('/reservas', async (req, res, next) => {
       origemTipo: req.body?.origem_tipo,
       origemId: req.body?.origem_id,
       motivo: req.body?.motivo,
-      usuarioId: req.usuario?.id || null,
+      usuarioId: req.user?.id || null,
     });
     await client.query('COMMIT');
     res.status(201).json(r);
@@ -139,7 +139,7 @@ router.post('/reservas/:id/liberar', async (req, res, next) => {
   try {
     await client.query('BEGIN');
     const r = await liberar(client, {
-      reservaId: req.params.id, motivo: req.body?.motivo, usuarioId: req.usuario?.id || null,
+      reservaId: req.params.id, motivo: req.body?.motivo, usuarioId: req.user?.id || null,
     });
     await client.query('COMMIT');
     res.json(r);
@@ -155,7 +155,7 @@ router.post('/reservas/:id/consumir', async (req, res, next) => {
   try {
     await client.query('BEGIN');
     const r = await consumir(client, {
-      reservaId: req.params.id, motivo: req.body?.motivo, usuarioId: req.usuario?.id || null,
+      reservaId: req.params.id, motivo: req.body?.motivo, usuarioId: req.user?.id || null,
     });
     await client.query('COMMIT');
     res.json(r);
@@ -172,7 +172,7 @@ router.post('/pedidos/:id/reservar', async (req, res, next) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const r = await reservarPedido(client, { pedidoId: req.params.id, usuarioId: req.usuario?.id || null });
+    const r = await reservarPedido(client, { pedidoId: req.params.id, usuarioId: req.user?.id || null });
     await client.query('COMMIT');
     res.status(201).json(r);
   } catch (err) {
@@ -194,7 +194,7 @@ router.post('/pedidos/:id/resolver', async (req, res, next) => {
     }
     await client.query('BEGIN');
     const r = await resolverPedido(client, {
-      pedidoId: req.params.id, acao, motivo: req.body?.motivo, usuarioId: req.usuario?.id || null,
+      pedidoId: req.params.id, acao, motivo: req.body?.motivo, usuarioId: req.user?.id || null,
     });
     await client.query('COMMIT');
     res.json({ resolvidas: r.length, reservas: r });

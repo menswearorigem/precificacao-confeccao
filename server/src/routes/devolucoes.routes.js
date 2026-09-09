@@ -6,6 +6,8 @@ const {
   MOTIVOS, DESTINOS, lerDevolucao, itensDa, abrir, receber, avaliar, cancelar,
 } = require('../lib/devolucao');
 
+const ponte = require('../lib/financeiroPonte');
+
 const router = express.Router();
 const httpErr = (res, err) => (err && err.status ? res.status(err.status).json({ error: err.message }) : null);
 
@@ -124,13 +126,68 @@ for (const [caminho, fn] of [['receber', receber], ['avaliar', avaliar], ['cance
         itens: req.body?.itens,
         motivo: req.body?.motivo,
       });
+
+      // A PONTE FINANCEIRA. O cabeçalho da migration 0060 registrava por
+      // escrito que o dinheiro da devolução era "gravado, e ainda NÃO ligado
+      // ao financeiro". É aqui que aquela ressalva deixa de valer.
+      //
+      // Duas necessidades separadas, e não uma soma: reembolso ao comprador e
+      // frete reverso são linhas de DRE diferentes, e podem ser cobrados por
+      // caminhos diferentes. Somá-los pouparia uma linha e custaria a
+      // resposta de "quanto o frete de devolução me custou este mês".
+      //
+      // NÃO trava a avaliação: a peça já voltou fisicamente, e travar a
+      // avaliação pararia o galpão por uma decisão contábil. A garantia aqui
+      // é a Caixa de Entrada e a varredura de cobertura.
+      let financeiro = null;
+      if (caminho === 'receber' || caminho === 'avaliar') {
+        const dev = await lerDevolucao(client, Number(req.params.id));
+        financeiro = [];
+        const partes = [
+          { chave: 'reembolso', valor: dev?.valor_reembolsado, rotulo: 'Reembolso ao comprador' },
+          { chave: 'frete_reverso', valor: dev?.valor_frete_reverso, rotulo: 'Frete reverso' },
+        ];
+        for (const parte of partes) {
+          if (!(Number(parte.valor) > 0)) continue;
+          const r = await ponte.registrar(client, {
+            origem_codigo: 'devolucao',
+            origem_id: Number(req.params.id),
+            chave: parte.chave,
+            descricao: `${parte.rotulo} — DEV ${dev.numero}`,
+            documento: `DEV ${dev.numero}`,
+            contraparte_nome: dev.canal || 'Devolução',
+            valor_estimado: Number(parte.valor),
+            // A normalização de data é da ponte — ver `dataIso` lá: `pg` devolve
+            // DATE como objeto Date, e cortar a string dele daria "Sat Aug 15".
+            data_competencia: dev.recebida_em || dev.criado_em || new Date(),
+            detalhe: { base: parte.rotulo, motivo: dev.motivo, canal: dev.canal, pedido_canal_id: dev.pedido_canal_id },
+            usuarioId: req.user?.id || null,
+            // Em marketplace este dinheiro quase sempre JÁ veio descontado do
+            // repasse. Gerar título automático aqui contaria o mesmo dinheiro
+            // duas vezes — por isso a pendência espera a decisão de quem
+            // olha: virar título (venda própria) ou ser dispensada apontando
+            // o repasse que já a cobriu.
+            autoTitulo: false,
+          });
+          financeiro.push({ chave: parte.chave, pendencia_id: r.pendencia?.id || null });
+        }
+      }
+      if (caminho === 'cancelar') {
+        financeiro = await ponte.cancelar(client, {
+          origem_codigo: 'devolucao',
+          origem_id: Number(req.params.id),
+          motivo: req.body?.motivo,
+          usuarioId: req.user?.id || null,
+        });
+      }
+
       await client.query('COMMIT');
       // As três funções devolvem formas diferentes (`receber` devolve a linha;
       // `avaliar` e `cancelar` devolvem um objeto com mais coisas). A rota
       // normaliza para UMA forma só — a tela não deveria ter que saber qual
       // ação devolve o quê.
       const corpo = out && out.devolucao ? out : { devolucao: out };
-      res.json({ ...corpo, itens: await itensDa(pool, Number(req.params.id)) });
+      res.json({ ...corpo, financeiro, itens: await itensDa(pool, Number(req.params.id)) });
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
       if (httpErr(res, err)) return;

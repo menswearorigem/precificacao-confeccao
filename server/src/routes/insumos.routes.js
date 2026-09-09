@@ -18,6 +18,7 @@
 const express = require('express');
 const multer = require('multer');
 const pool = require('../db/pool');
+const ponte = require('../lib/financeiroPonte');
 const { hojeEmBrasilia } = require('../lib/dataBrasil');
 const { registrar } = require('../lib/auditoria');
 const { lerNotaFiscal } = require('../lib/nfeParser');
@@ -643,6 +644,145 @@ router.post('/notas', async (req, res, next) => {
       }
     }
 
+    // ------------------------------------------------------------------
+    // A PONTE FINANCEIRA — a nota vira contas a pagar com o prazo REAL
+    // ------------------------------------------------------------------
+    // O bloco <cobr><dup> do XML traz o parcelamento que o fornecedor
+    // concedeu de verdade: número, vencimento e valor de cada duplicata. O
+    // sistema já lia isso (nfeParser) e já guardava o XML inteiro — e jogava
+    // fora justamente a parte que o financeiro precisa.
+    //
+    // Sem isto, alguém digita "30 dias" no chute e o fluxo de caixa projetado
+    // nasce errado. Com isto, o prazo é o que está na nota — inclusive quando
+    // o fornecedor deu 28/42/56 dias.
+    //
+    // As duplicatas são relidas do XML aqui no servidor, nunca aceitas
+    // prontas do cliente: elas viram dívida, e dívida não se aceita da tela.
+    let duplicatas = [];
+    const avisosFinanceiro = [];
+    if (notaRows[0].xml_bruto) {
+      try {
+        const relida = lerNotaFiscal(notaRows[0].xml_bruto);
+        duplicatas = relida.duplicatas || [];
+      } catch (e) {
+        avisosFinanceiro.push(
+          'Não foi possível reler as duplicatas do XML desta nota. O contas a pagar dela precisa ser lançado à mão.'
+        );
+      }
+    } else if (Array.isArray(body.duplicatas)) {
+      // Nota digitada (sem XML): as parcelas vêm da tela, porque não há de
+      // onde mais tirá-las.
+      duplicatas = body.duplicatas
+        .map((d) => ({ numero: d.numero || null, vencimento: d.vencimento || null, valor: Number(d.valor) }))
+        .filter((d) => d.valor > 0);
+    }
+
+    const totalNota = Number(notaRows[0].valor_total) || null;
+    const somaDup = duplicatas.reduce((acc, d) => acc + (Number(d.valor) || 0), 0);
+    // A soma das duplicatas tem que fechar com o total da nota. Quando não
+    // fecha, o aviso é escrito — e as duplicatas continuam valendo, porque
+    // elas são o que o fornecedor vai cobrar. O que não pode é ninguém saber.
+    if (duplicatas.length > 0 && totalNota != null && Math.abs(somaDup - totalNota) > 0.02) {
+      avisosFinanceiro.push(
+        `A soma das duplicatas (${somaDup.toFixed(2)}) não fecha com o total da nota `
+        + `(${totalNota.toFixed(2)}). As parcelas foram lançadas como estão na nota; confira antes de pagar.`
+      );
+    }
+
+    const financeiro = { titulos: [], pendencia: null };
+    if (duplicatas.length > 0) {
+      // Parcelamento gera N TÍTULOS IRMÃOS, com a MESMA competência. Propagar
+      // a competência junto com o vencimento transformaria o DRE por
+      // competência num fluxo de caixa disfarçado — é o erro nº 1 de quem
+      // implementa parcelamento.
+      const r = await ponte.registrar(client, {
+        origem_codigo: 'nota_entrada',
+        origem_id: notaId,
+        empresa_id: empresaId,
+        descricao: `NF ${notaRows[0].numero || notaId} — ${notaRows[0].emitente_nome || 'fornecedor'}`,
+        documento: `NF ${notaRows[0].numero || notaId}`,
+        fornecedor_id: inteiroPositivo(nota.fornecedor_id),
+        contraparte_nome: notaRows[0].emitente_nome || null,
+        valor_estimado: totalNota,
+        data_competencia: notaRows[0].data_entrada || notaRows[0].data_emissao,
+        data_vencimento: duplicatas[0].vencimento,
+        detalhe: { base: 'duplicatas do XML (bloco cobr/dup)', duplicatas, total_nota: totalNota },
+        usuarioId: req.user?.id || null,
+        // A ponte não gera o título sozinha aqui: quem manda são as
+        // duplicatas, e elas são N.
+        autoTitulo: false,
+      });
+      financeiro.pendencia = r.pendencia;
+
+      if (r.pendencia && r.pendencia.situacao === 'aberta' && empresaId && r.pendencia.plano_id) {
+        const { criarTitulo } = require('../lib/financeiroTitulos');
+        for (const [i, d] of duplicatas.entries()) {
+          if (!(Number(d.valor) > 0) || !d.vencimento) continue;
+          const titulo = await criarTitulo(client, {
+            empresa_id: empresaId,
+            natureza: 'pagar',
+            fornecedor_id: inteiroPositivo(nota.fornecedor_id),
+            contraparte_nome: notaRows[0].emitente_nome || null,
+            descricao: `NF ${notaRows[0].numero || notaId} — parcela ${i + 1}/${duplicatas.length}`,
+            documento: `NF ${notaRows[0].numero || notaId}`,
+            parcela: `${i + 1}/${duplicatas.length}`,
+            plano_id: r.pendencia.plano_id,
+            centro_custo_id: r.pendencia.centro_custo_id,
+            // MESMA competência em todas as parcelas. Ver o comentário acima.
+            data_competencia: r.pendencia.data_competencia,
+            data_vencimento: d.vencimento,
+            valor_bruto: Number(d.valor),
+            situacao: 'aberto',
+            origem_tipo: 'nota_entrada',
+            origem_id: notaId,
+            observacao: d.numero ? `Duplicata ${d.numero} da nota.` : null,
+            usuarioId: req.user?.id || null,
+          });
+          await client.query(
+            'INSERT INTO fin_pendencia_titulos (pendencia_id, titulo_id) VALUES ($1,$2)',
+            [r.pendencia.id, titulo.id]
+          );
+          financeiro.titulos.push(titulo);
+        }
+        if (financeiro.titulos.length > 0) {
+          await client.query(
+            `UPDATE fin_pendencias SET situacao = 'atendida', atendida_em = now(), atendida_por = $2,
+                    atualizado_em = now() WHERE id = $1`,
+            [r.pendencia.id, req.user?.id || null]
+          );
+        }
+      }
+      if (financeiro.titulos.length === 0) {
+        avisosFinanceiro.push(
+          'A nota foi lançada e o compromisso com o fornecedor está na Caixa de Entrada do Financeiro '
+          + '— falta a empresa (CNPJ) ou a categoria do DRE para virar contas a pagar.'
+        );
+      }
+    } else {
+      // Sem duplicata no XML não se inventa prazo. A necessidade vai para a
+      // fila SEM vencimento, e a tela diz por quê — um "30 dias" chutado aqui
+      // envenenaria o fluxo de caixa sem ninguém perceber.
+      const r = await ponte.registrar(client, {
+        origem_codigo: 'nota_entrada',
+        origem_id: notaId,
+        empresa_id: empresaId,
+        descricao: `NF ${notaRows[0].numero || notaId} — ${notaRows[0].emitente_nome || 'fornecedor'}`,
+        documento: `NF ${notaRows[0].numero || notaId}`,
+        fornecedor_id: inteiroPositivo(nota.fornecedor_id),
+        contraparte_nome: notaRows[0].emitente_nome || null,
+        valor_estimado: totalNota,
+        data_competencia: notaRows[0].data_entrada || notaRows[0].data_emissao,
+        detalhe: { base: 'total da nota (o XML não trouxe duplicatas)', total_nota: totalNota },
+        usuarioId: req.user?.id || null,
+        autoTitulo: false,
+      });
+      financeiro.pendencia = r.pendencia;
+      avisosFinanceiro.push(
+        'Esta nota não trouxe duplicatas no XML, então o sistema não inventou prazo. '
+        + 'O vencimento precisa ser informado em Financeiro › Caixa de Entrada.'
+      );
+    }
+
     await client.query('COMMIT');
 
     await registrar(req, {
@@ -651,7 +791,11 @@ router.post('/notas', async (req, res, next) => {
       sucesso: true,
     });
 
-    res.status(201).json({ nota: notaRows[0], custosAtualizados: resultado, resumo: custo.resumo, avisos: custo.avisos });
+    res.status(201).json({
+      nota: notaRows[0], custosAtualizados: resultado, resumo: custo.resumo,
+      avisos: [...custo.avisos, ...avisosFinanceiro],
+      financeiro,
+    });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     if (err.code === '23505') {

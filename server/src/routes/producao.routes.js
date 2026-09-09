@@ -823,6 +823,29 @@ router.post('/ordens/:id/concluir', async (req, res, next) => {
       return res.status(400).json({ error: 'Esta ordem já foi concluída — concluir de novo dobraria o estoque.' });
     }
 
+    // A TRAVA FINANCEIRA (decisão de 09/09/2026: trava a conclusão, não o
+    // registro). A mercadoria pôde sair para a facção às 22h sem ninguém
+    // saber o preço; o que não pode é a ordem FECHAR com a casa devendo a um
+    // costureiro e o financeiro sem saber. Aqui é o ato administrativo — o
+    // retorno físico da peça continua livre.
+    const { rows: presas } = await pool.query(
+      `SELECT p.id, p.descricao, p.valor_estimado, p.origem_id
+         FROM fin_pendencias p
+         JOIN ordens_servico os ON os.id = p.origem_id
+        WHERE p.origem_codigo = 'ordem_servico' AND p.situacao = 'aberta' AND p.bloqueia
+          AND os.ordem_id = $1`,
+      [id]
+    );
+    if (presas.length > 0) {
+      const lista = presas.map((p) => p.descricao).join(', ');
+      return res.status(409).json({
+        error: `Esta ordem tem ${presas.length} compromisso${presas.length > 1 ? 's' : ''} de facção `
+          + `que o financeiro ainda não registrou: ${lista}. Resolva em Financeiro › Caixa de Entrada `
+          + `(ou dispense escrevendo o motivo) antes de concluir a ordem.`,
+        pendencias: presas,
+      });
+    }
+
     const { rows: grade } = await pool.query(
       'SELECT * FROM ordem_producao_grade WHERE ordem_id = $1', [id]
     );

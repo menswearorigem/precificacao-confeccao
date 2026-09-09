@@ -10,6 +10,7 @@ const pool = require('../db/pool');
 const {
   movimentar, estornar, registrarRetorno, precoVigente,
 } = require('../lib/producaoMovimentacao');
+const ponte = require('../lib/financeiroPonte');
 
 const router = express.Router();
 
@@ -144,10 +145,62 @@ router.post('/movimentos', async (req, res, next) => {
       fornecedorOrigemId: fornecedor_origem_id || null,
       destinos,
       data,
-      usuarioId: req.usuario?.id || null,
+      usuarioId: req.user?.id || null,
     });
+    // A PONTE FINANCEIRA. Remeter mercadoria para a facção é assumir uma
+    // dívida — e era exatamente aqui que ela sumia: a O.S. nascia, a peça
+    // saía, e o financeiro só ficava sabendo se alguém lembrasse de clicar
+    // "gerar título" semanas depois.
+    //
+    // O valor é o PREVISTO da remessa (preço congelado × o que foi remetido),
+    // não o final: o final é o que voltar bom, e isso `promover()` acerta no
+    // retorno. Previsão é melhor que silêncio — o fluxo de caixa precisa
+    // saber que esse dinheiro vai sair.
+    const financeiro = [];
+    for (const os of resultado.ordensServico || []) {
+      const { rows: soma } = await client.query(
+        'SELECT SUM(quantidade_remetida) AS remetido FROM ordem_servico_itens WHERE ordem_servico_id = $1',
+        [os.id]
+      );
+      const remetido = Number(soma[0]?.remetido || 0);
+      // Sem preço cadastrado o valor fica NULO, nunca zero: "não sei quanto
+      // vai custar" e "vai custar nada" são coisas diferentes (REGRA 2), e a
+      // Caixa de Entrada mostra "—" e cobra o cadastro do preço.
+      const valor = os.valor_por_peca != null && remetido > 0
+        ? Number((remetido * Number(os.valor_por_peca)).toFixed(2))
+        : null;
+      const { rows: forn } = await client.query(
+        'SELECT nome FROM fornecedores WHERE id = $1', [os.fornecedor_id]
+      );
+      const r = await ponte.registrar(client, {
+        origem_codigo: 'ordem_servico',
+        origem_id: os.id,
+        empresa_id: os.empresa_id,
+        descricao: `Serviço de facção — O.S. ${os.numero}`,
+        documento: `O.S. ${os.numero}`,
+        fornecedor_id: os.fornecedor_id,
+        contraparte_nome: forn[0]?.nome || null,
+        valor_estimado: valor,
+        data_competencia: os.data_remessa,
+        detalhe: {
+          base: 'remessa',
+          pecas_remetidas: remetido,
+          valor_por_peca: os.valor_por_peca,
+          previsao_retorno: os.previsao_retorno,
+        },
+        usuarioId: req.user?.id || null,
+      });
+      financeiro.push({ ordem_servico_id: os.id, ...r });
+      if (!r.gerouTitulo && r.faltando?.length) {
+        resultado.avisos.push(
+          `O.S. ${os.numero}: o compromisso com a facção foi para a Caixa de Entrada do Financeiro `
+          + `— falta ${r.faltando.join(', ')}. A ordem de produção não fecha enquanto isso não for resolvido.`
+        );
+      }
+    }
+
     await client.query('COMMIT');
-    res.status(201).json(resultado);
+    res.status(201).json({ ...resultado, financeiro });
   } catch (err) {
     await client.query('ROLLBACK');
     if (erroHttp(res, err)) return;
@@ -161,7 +214,7 @@ router.post('/movimentos/:id/estornar', async (req, res, next) => {
     await client.query('BEGIN');
     const mov = await estornar(client, {
       movimentoId: req.params.id,
-      usuarioId: req.usuario?.id || null,
+      usuarioId: req.user?.id || null,
       motivo: req.body?.motivo,
     });
     await client.query('COMMIT');
@@ -251,10 +304,35 @@ router.post('/ordens-servico/:id/retorno', async (req, res, next) => {
       etapaDestinoId: etapa_destino_id || null,
       data,
       observacao,
-      usuarioId: req.usuario?.id || null,
+      usuarioId: req.user?.id || null,
     });
+
+    // A previsão vira fato. Paga-se pelo que voltou BOM: segunda qualidade e
+    // quebra não são serviço prestado, e somá-las esconderia exatamente o
+    // número que se quer cobrar da facção.
+    const { rows: q } = await client.query(
+      'SELECT * FROM vw_faccao_quebra WHERE ordem_servico_id = $1', [req.params.id]
+    );
+    let financeiro = null;
+    if (q.length > 0 && q[0].valor_servico != null) {
+      financeiro = await ponte.promover(client, {
+        origem_codigo: 'ordem_servico',
+        origem_id: Number(req.params.id),
+        valor_real: Number(q[0].valor_servico),
+        data_competencia: q[0].data_retorno || data || null,
+        detalhe: {
+          base: 'retorno',
+          pecas_boas: q[0].retornado_bom,
+          segunda: q[0].retornado_segunda,
+          quebra: q[0].quebra,
+          valor_por_peca: q[0].valor_por_peca,
+        },
+        usuarioId: req.user?.id || null,
+      });
+    }
+
     await client.query('COMMIT');
-    res.status(201).json(r);
+    res.status(201).json({ ...r, financeiro });
   } catch (err) {
     await client.query('ROLLBACK');
     if (erroHttp(res, err)) return;
@@ -263,19 +341,38 @@ router.post('/ordens-servico/:id/retorno', async (req, res, next) => {
 });
 
 router.post('/ordens-servico/:id/cancelar', async (req, res, next) => {
+  const client = await pool.connect();
   try {
     const motivo = String(req.body?.motivo || '').trim();
     if (!motivo) return res.status(400).json({ error: 'Escreva o motivo do cancelamento.' });
-    const { rows } = await pool.query(
+    await client.query('BEGIN');
+    const { rows } = await client.query(
       `UPDATE ordens_servico
           SET situacao = 'cancelada',
               observacao = COALESCE(observacao,'') || $1, atualizado_em = now()
         WHERE id = $2 AND situacao <> 'cancelada' RETURNING id`,
       [`\n[cancelada] ${motivo}`, req.params.id]
     );
-    if (rows.length === 0) return res.status(400).json({ error: 'O.S. não encontrada ou já cancelada.' });
-    res.json({ ok: true });
-  } catch (err) { next(err); }
+    if (rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'O.S. não encontrada ou já cancelada.' });
+    }
+    // Cancela a necessidade e a PREVISÃO junto. Título já firme não se
+    // cancela sozinho — a dívida pode existir mesmo com a O.S. cancelada, e
+    // essa decisão é do financeiro. Quando sobra algum, a resposta diz.
+    const financeiro = await ponte.cancelar(client, {
+      origem_codigo: 'ordem_servico',
+      origem_id: Number(req.params.id),
+      motivo,
+      usuarioId: req.user?.id || null,
+    });
+    await client.query('COMMIT');
+    res.json({ ok: true, financeiro });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (erroHttp(res, err)) return;
+    next(err);
+  } finally { client.release(); }
 });
 
 // Fecha a corrente: O.S. → título a pagar da facção.
@@ -349,8 +446,26 @@ router.post('/ordens-servico/:id/gerar-titulo', async (req, res, next) => {
         || `${os.retornado_bom} peças boas × ${Number(os.valor_por_peca).toFixed(4)}.`
            + (Number(os.quebra) > 0 ? ` Quebra de ${os.quebra} peças não entrou no valor.` : ''),
       retencoes: reter_inss ? [{ tributo: 'inss', aliquota: aliquota_inss }] : [],
-      usuarioId: req.usuario?.id || null,
+      usuarioId: req.user?.id || null,
     });
+
+    // Fecha a necessidade que nasceu na remessa. Sem isto o título existiria
+    // e a pendência continuaria na fila — a Caixa de Entrada mostraria
+    // trabalho que já foi feito, que é a forma mais rápida de uma fila
+    // perder a credibilidade.
+    const { rows: pend } = await client.query(
+      `UPDATE fin_pendencias SET situacao = 'atendida', atendida_em = now(), atendida_por = $2,
+              atualizado_em = now()
+        WHERE origem_codigo = 'ordem_servico' AND origem_id = $1 AND situacao = 'aberta'
+        RETURNING id`,
+      [Number(req.params.id), req.user?.id || null]
+    );
+    for (const p of pend) {
+      await client.query(
+        'INSERT INTO fin_pendencia_titulos (pendencia_id, titulo_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+        [p.id, titulo.id]
+      );
+    }
 
     await client.query('COMMIT');
     res.status(201).json({ titulo, base: {
@@ -392,7 +507,7 @@ router.post('/faccao-precos', async (req, res, next) => {
          (fornecedor_id, etapa_id, produto_id, valor_por_peca, vigencia_inicio, vigencia_fim, observacao, criado_por)
        VALUES ($1,$2,$3,$4,COALESCE($5, CURRENT_DATE),$6,$7,$8) RETURNING *`,
       [fornecedor_id, etapa_id, produto_id || null, valor_por_peca,
-       vigencia_inicio || null, vigencia_fim || null, observacao || null, req.usuario?.id || null]
+       vigencia_inicio || null, vigencia_fim || null, observacao || null, req.user?.id || null]
     );
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }

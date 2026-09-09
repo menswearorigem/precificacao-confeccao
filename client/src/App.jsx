@@ -76,6 +76,8 @@ import TitulosPage from './pages/TitulosPage';
 import ConciliacaoBancariaPage from './pages/ConciliacaoBancariaPage';
 import FluxoCaixaPage from './pages/FluxoCaixaPage';
 import DrePage from './pages/DrePage';
+import CaixaEntradaFinanceiroPage from './pages/CaixaEntradaFinanceiroPage';
+import CoberturaFinanceiraPage from './pages/CoberturaFinanceiraPage';
 import ViagensListPage from './pages/ViagensListPage';
 import ViagemDetailPage from './pages/ViagemDetailPage';
 import AjudaPage from './pages/AjudaPage';
@@ -201,6 +203,12 @@ function AppRoutes() {
                   <Route path="/financeiro/conciliacao-bancaria" element={<ConciliacaoBancariaPage />} />
                   <Route path="/financeiro/fluxo-caixa" element={<FluxoCaixaPage />} />
                   <Route path="/financeiro/dre" element={<DrePage />} />
+                  {/* A ponte com os módulos (09/09/2026). A Caixa de Entrada é
+                      o que a operação comprometeu e o financeiro ainda não
+                      registrou; a Cobertura é a varredura que prova que nada
+                      passou por fora. Mesma chave `financeiro`. */}
+                  <Route path="/financeiro/entradas" element={<CaixaEntradaFinanceiroPage />} />
+                  <Route path="/financeiro/cobertura" element={<CoberturaFinanceiraPage />} />
                   <Route path="/viagens" element={<ViagensListPage />} />
                   <Route path="/viagens/:id" element={<ViagemDetailPage />} />
                   <Route path="/fornecedores" element={<FornecedoresListPage />} />

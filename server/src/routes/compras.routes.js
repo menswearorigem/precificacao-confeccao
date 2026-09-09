@@ -1,5 +1,6 @@
 const express = require('express');
 const pool = require('../db/pool');
+const ponte = require('../lib/financeiroPonte');
 
 const router = express.Router();
 
@@ -354,6 +355,45 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
+// Liga uma compra avulsa ao financeiro. Fica isolada porque é chamada da
+// atualização do cabeçalho e da mexida nos itens — o valor da compra muda nos
+// dois lugares, e uma necessidade com valor velho é pior que nenhuma.
+async function ligarCompraAoFinanceiro(client, compraId, usuarioId) {
+  const { rows } = await client.query(
+    `SELECT c.*, f.nome AS fornecedor_nome FROM compras c
+       LEFT JOIN fornecedores f ON f.id = c.fornecedor_id WHERE c.id = $1`,
+    [compraId]
+  );
+  if (rows.length === 0) return null;
+  const c = rows[0];
+
+  if (c.situacao === 'cancelado') {
+    return ponte.cancelar(client, {
+      origem_codigo: 'compra', origem_id: Number(compraId),
+      motivo: 'Compra cancelada.', usuarioId,
+    });
+  }
+  if (!(Number(c.total_liquido) > 0)) return null;
+
+  return ponte.registrar(client, {
+    origem_codigo: 'compra',
+    origem_id: Number(compraId),
+    descricao: `Compra ${c.numero} — ${c.fornecedor_nome || c.categoria || 'sem fornecedor'}`,
+    documento: c.numero_documento || `Compra ${c.numero}`,
+    fornecedor_id: c.fornecedor_id,
+    contraparte_nome: c.fornecedor_nome || null,
+    valor_estimado: Number(c.total_liquido),
+    data_competencia: c.data_compra,
+    detalhe: {
+      base: 'total líquido da compra',
+      categoria: c.categoria,
+      forma_pagamento: c.forma_pagamento,
+      condicao_pagamento: c.condicao_pagamento,
+    },
+    usuarioId,
+  });
+}
+
 router.post('/', async (req, res, next) => {
   try {
     const body = req.body || {};
@@ -398,10 +438,22 @@ router.put('/:id', async (req, res, next) => {
       }
     }
     await recalcularTotais(client, req.params.id);
+
+    // A PONTE FINANCEIRA. O módulo de compras avulsas é o mais antigo do
+    // sistema (migration 0006) e nunca teve elo nenhum com o financeiro: a
+    // compra era gravada com o gasto já consumado e o dinheiro simplesmente
+    // não existia do outro lado.
+    //
+    // A necessidade é registrada quando a compra deixa de ser 'pendente'.
+    // Como `compras` não carrega CNPJ, ela quase sempre cai na Caixa de
+    // Entrada — o que é o comportamento certo: escolher a empresa de uma
+    // despesa é decisão do financeiro, não adivinhação do sistema.
+    const financeiro = await ligarCompraAoFinanceiro(client, req.params.id, req.user?.id || null);
+
     await client.query('COMMIT');
 
     const data = await fetchCompraCompleta(req.params.id);
-    res.json(data);
+    res.json({ ...data, financeiro });
   } catch (err) {
     await client.query('ROLLBACK');
     next(err);
@@ -446,6 +498,10 @@ router.post('/:id/itens', async (req, res, next) => {
       [req.params.id, body.descricao.trim(), body.unidade || '', calc.quantidade, calc.valor_unitario, calc.total, ordem]
     );
     await recalcularTotais(client, req.params.id);
+    // O valor da compra mudou: a necessidade financeira acompanha. Sem
+    // isto, acrescentar um item depois deixaria o financeiro com o valor
+    // antigo — e um número desatualizado é pior que nenhum.
+    await ligarCompraAoFinanceiro(client, req.params.id, req.user?.id || null);
     await client.query('COMMIT');
 
     const data = await fetchCompraCompleta(req.params.id);
@@ -479,10 +535,14 @@ router.put('/:id/itens/:itemId', async (req, res, next) => {
       [descricao, unidade, calc.quantidade, calc.valor_unitario, calc.total, req.params.itemId]
     );
     await recalcularTotais(client, req.params.id);
+
+    // A ponte financeira: o valor mudou, a necessidade acompanha.
+    const financeiro = await ligarCompraAoFinanceiro(client, req.params.id, req.user?.id || null);
+
     await client.query('COMMIT');
 
     const data = await fetchCompraCompleta(req.params.id);
-    res.json(data);
+    res.json({ ...data, financeiro });
   } catch (err) {
     await client.query('ROLLBACK');
     next(err);
@@ -501,10 +561,14 @@ router.delete('/:id/itens/:itemId', async (req, res, next) => {
       return res.status(404).json({ error: 'Item não encontrado.' });
     }
     await recalcularTotais(client, req.params.id);
+
+    // A ponte financeira: o valor mudou, a necessidade acompanha.
+    const financeiro = await ligarCompraAoFinanceiro(client, req.params.id, req.user?.id || null);
+
     await client.query('COMMIT');
 
     const data = await fetchCompraCompleta(req.params.id);
-    res.json(data);
+    res.json({ ...data, financeiro });
   } catch (err) {
     await client.query('ROLLBACK');
     next(err);

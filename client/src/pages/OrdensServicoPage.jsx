@@ -9,6 +9,7 @@ import {
   Paginacao, NumInput, Field, Checkbox, DateInput,
 } from '../components/ui';
 import { useTabela } from '../lib/useTabela';
+import SeloFinanceiro, { useSelosFinanceiros } from '../components/SeloFinanceiro';
 import { brl, pct, formatQtd, dataBr } from '../lib/format';
 
 // Produção › Ordens de Serviço de facção.
@@ -508,6 +509,12 @@ export default function OrdensServicoPage() {
     valor: (o) => Number(o.valor_servico || 0),
     atraso: (o) => Number(o.dias_atraso || 0),
   }), []);
+  // Uma chamada só para as O.S. da página — nunca uma por linha.
+  const selos = useSelosFinanceiros(
+    'ordem_servico',
+    (filtradas || []).map((o) => o.ordem_servico_id).filter(Boolean)
+  );
+
   const tabela = useTabela(filtradas, {
     colunas, colunaPadrao: 'quebra', direcaoPadrao: 'desc', tamanhoPadrao: 50, prefixo: 'os',
   });
@@ -624,7 +631,7 @@ export default function OrdensServicoPage() {
                   <th className="num">Segunda</th><th className="num">Perda</th>
                   <th className="num">Quebra</th><th className="num">% quebra</th>
                   <th className="num">Valor do serviço</th><th className="num">Atraso</th>
-                  <th>Situação</th>
+                  <th>Situação</th><th>Financeiro</th>
                 </tr>
               </thead>
               <tbody>
@@ -661,6 +668,12 @@ export default function OrdensServicoPage() {
                         {atraso == null ? 'sem prazo' : (atraso > 0 ? `${formatQtd(atraso)} d` : '—')}
                       </td>
                       <td><SeloSituacao situacao={o.situacao} /></td>
+                      {/* A ligação vista do lado de quem opera: dá para ver,
+                          na própria lista, se o compromisso com a facção
+                          chegou ao financeiro. Sem isto a ponte existiria só
+                          para o financeiro, e quem cria o custo continuaria
+                          sem saber se ele virou alguma coisa. */}
+                      <td><SeloFinanceiro info={selos[o.ordem_servico_id]} /></td>
                     </tr>
                   );
                 })}

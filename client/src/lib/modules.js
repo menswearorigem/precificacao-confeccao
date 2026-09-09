@@ -6,6 +6,7 @@ import {
   LineChart, SearchCheck, Layers, AlertTriangle, CalendarDays, UsersRound,
   LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer, Activity,
   Banknote, Ruler, MapPin, Gauge, Bookmark, PackageCheck, FileSpreadsheet,
+  Inbox, Radar,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -167,6 +168,12 @@ export const MODULES = [
       { to: '/financeiro/conciliacao-bancaria', label: 'Conciliação Bancária', icon: Landmark },
       { to: '/financeiro/fluxo-caixa', label: 'Fluxo de Caixa', icon: LineChart },
       { to: '/financeiro/dre', label: 'DRE Gerencial', icon: BarChart3 },
+      // A ponte com os módulos (09/09/2026). Ficam por último de propósito:
+      // são as telas de CONTROLE do módulo, não as de trabalho diário — mas
+      // a Caixa de Entrada é a primeira que alguém abre quando o número não
+      // bate, e por isso ela vem antes da Cobertura.
+      { to: '/financeiro/entradas', label: 'Caixa de Entrada', icon: Inbox },
+      { to: '/financeiro/cobertura', label: 'Cobertura', icon: Radar },
     ],
   },
   {

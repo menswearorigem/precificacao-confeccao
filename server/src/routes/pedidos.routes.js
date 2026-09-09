@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const pool = require('../db/pool');
+const ponte = require('../lib/financeiroPonte');
 const { registrarMovimento } = require('../lib/estoqueMovimento');
 const { getCalcContext } = require('../lib/calcContext');
 const { pctImpostosEmpresa } = require('../lib/calc');
@@ -2350,10 +2351,61 @@ router.post('/:id/faturar', async (req, res, next) => {
     }
 
     await client.query(`UPDATE pedidos_venda SET situacao = 'faturado', faturado_em = now(), updated_at = now() WHERE id = $1`, [req.params.id]);
+
+    // A PONTE FINANCEIRA. Faturar é o ato administrativo que transforma um
+    // pedido em direito de receber — é o ponto exato em que a receita nasce,
+    // e é uma TRAVA de verdade: aqui não há mercadoria parada no galpão
+    // esperando uma decisão contábil.
+    //
+    // Só venda PRÓPRIA. Venda de marketplace (origem_marketplace preenchido)
+    // fica de fora de propósito: lá o dinheiro entra por repasse, e um título
+    // por pedido criaria milhares de títulos que ninguém baixa — e contaria a
+    // mesma receita duas vezes quando o repasse chegasse.
+    const pedido = pedidoRows[0];
+    let financeiro = null;
+    if (!pedido.origem_marketplace) {
+      const { rows: cli } = await client.query(
+        'SELECT nome FROM clientes WHERE id = $1', [pedido.cliente_id]
+      );
+      financeiro = await ponte.registrar(client, {
+        origem_codigo: 'pedido_venda',
+        origem_id: Number(req.params.id),
+        empresa_id: req.body?.empresa_id || pedido.empresa_id,
+        descricao: `Venda ${pedido.numero} — ${cli[0]?.nome || 'cliente'}`,
+        documento: `Pedido ${pedido.numero}`,
+        cliente_id: pedido.cliente_id,
+        contraparte_nome: cli[0]?.nome || null,
+        valor_estimado: Number(pedido.total_liquido) > 0 ? Number(pedido.total_liquido) : null,
+        data_competencia: pedido.data_pedido,
+        data_vencimento: req.body?.data_vencimento || null,
+        plano_id: req.body?.plano_id || null,
+        detalhe: {
+          base: 'faturamento do pedido',
+          total_liquido: pedido.total_liquido,
+          condicao_pagamento: pedido.condicao_pagamento,
+          canal: pedido.canal_venda,
+        },
+        usuarioId: req.user?.id || null,
+      });
+
+      if (!financeiro.gerouTitulo && financeiro.faltando?.length) {
+        // Trava. A mensagem diz exatamente o que falta e onde resolver —
+        // bloqueio que não ensina a sair dele é o que faz as pessoas
+        // faturarem por fora do sistema.
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: `Não dá para faturar sem o contas a receber: falta ${financeiro.faltando.join(', ')}. `
+            + `Informe no faturamento, ou resolva em Financeiro › Caixa de Entrada.`,
+          faltando: financeiro.faltando,
+          pendencia_id: financeiro.pendencia?.id || null,
+        });
+      }
+    }
+
     await client.query('COMMIT');
 
     const data = await fetchPedidoCompleto(req.params.id);
-    res.json(data);
+    res.json({ ...data, financeiro });
   } catch (err) {
     await client.query('ROLLBACK');
     next(err);

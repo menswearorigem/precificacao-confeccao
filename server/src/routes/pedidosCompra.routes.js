@@ -12,6 +12,7 @@
 
 const express = require('express');
 const pool = require('../db/pool');
+const ponte = require('../lib/financeiroPonte');
 
 const router = express.Router();
 
@@ -167,7 +168,7 @@ router.post('/', async (req, res, next) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
       [fornecedor_id, empresa_id || null, previsao_entrega || null, condicao_pagamento || null,
        forma_pagamento || null, desconto_valor, valor_frete, observacao || null,
-       totalBruto, totalLiquido, req.usuario?.id || null]
+       totalBruto, totalLiquido, req.user?.id || null]
     );
 
     for (const [idx, it] of itens.entries()) {
@@ -235,10 +236,58 @@ router.post('/:id/aprovar', async (req, res, next) => {
           SET situacao = 'aprovado', previsao_entrega = $1,
               aprovado_por = $2, aprovado_em = now(), atualizado_em = now()
         WHERE id = $3`,
-      [previsao, req.usuario?.id || null, req.params.id]
+      [previsao, req.user?.id || null, req.params.id]
     );
+
+    // A PONTE FINANCEIRA. Aprovar é o ato em que a casa se compromete com o
+    // gasto — o cabeçalho deste arquivo já dizia isso sobre a aprovação
+    // ("não é enfeite: é o que separa 'alguém digitou' de 'a casa se
+    // comprometeu'"). Faltava a outra metade: o compromisso chegar ao
+    // financeiro.
+    //
+    // Nasce PREVISTO, com vencimento na previsão de entrega mais o prazo
+    // padrão da origem. É substituído pelo valor real quando a nota fiscal
+    // chegar — a nota traz o parcelamento que o fornecedor concedeu de
+    // verdade, e nenhuma estimativa ganha da nota.
+    const { rows: forn } = await client.query(
+      'SELECT nome FROM fornecedores WHERE id = $1', [pedido.fornecedor_id]
+    );
+    // A aprovação aceita completar o que falta ao financeiro sem precisar
+    // editar o pedido: empresa, categoria e vencimento. Quem aprova é quem
+    // sabe. O que não vier aqui vai para a Caixa de Entrada — a compra nunca
+    // trava por falta de dado contábil, porque travar a compra é o caminho
+    // mais curto para alguém comprar por fora do sistema.
+    const financeiro = await ponte.registrar(client, {
+      origem_codigo: 'pedido_compra',
+      origem_id: Number(req.params.id),
+      empresa_id: req.body?.empresa_id || pedido.empresa_id,
+      plano_id: req.body?.plano_id || null,
+      centro_custo_id: req.body?.centro_custo_id || null,
+      data_vencimento: req.body?.data_vencimento || null,
+      descricao: `Pedido de compra ${pedido.numero} — ${forn[0]?.nome || 'fornecedor'}`,
+      documento: `PC ${pedido.numero}`,
+      fornecedor_id: pedido.fornecedor_id,
+      contraparte_nome: forn[0]?.nome || null,
+      valor_estimado: Number(pedido.total_liquido) > 0 ? Number(pedido.total_liquido) : null,
+      data_competencia: previsao,
+      detalhe: {
+        base: 'aprovação do pedido',
+        total_liquido: pedido.total_liquido,
+        condicao_pagamento: pedido.condicao_pagamento,
+        previsao_entrega: previsao,
+      },
+      usuarioId: req.user?.id || null,
+    });
+
     await client.query('COMMIT');
-    res.json(await fetchPedidoCompleto(req.params.id));
+    const pedidoCompleto = await fetchPedidoCompleto(req.params.id);
+    res.json({
+      ...pedidoCompleto,
+      financeiro,
+      aviso_financeiro: !financeiro.gerouTitulo && financeiro.faltando?.length
+        ? `O compromisso foi para a Caixa de Entrada do Financeiro — falta ${financeiro.faltando.join(', ')}.`
+        : null,
+    });
   } catch (err) {
     await client.query('ROLLBACK');
     next(err);
@@ -246,19 +295,37 @@ router.post('/:id/aprovar', async (req, res, next) => {
 });
 
 router.post('/:id/cancelar', async (req, res, next) => {
+  const client = await pool.connect();
   try {
     const motivo = String(req.body?.motivo || '').trim();
     if (!motivo) return res.status(400).json({ error: 'Escreva o motivo do cancelamento.' });
 
-    const { rows } = await pool.query(
+    await client.query('BEGIN');
+    const { rows } = await client.query(
       `UPDATE pedidos_compra
           SET situacao = 'cancelado', cancelado_em = now(), cancelado_motivo = $1, atualizado_em = now()
         WHERE id = $2 AND situacao <> 'cancelado' RETURNING id`,
       [motivo, req.params.id]
     );
-    if (rows.length === 0) return res.status(400).json({ error: 'Pedido não encontrado ou já cancelado.' });
-    res.json(await fetchPedidoCompleto(req.params.id));
-  } catch (err) { next(err); }
+    if (rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Pedido não encontrado ou já cancelado.' });
+    }
+    // A previsão sai do fluxo de caixa junto com o pedido. Previsão de
+    // documento cancelado é dinheiro fantasma na projeção.
+    const financeiro = await ponte.cancelar(client, {
+      origem_codigo: 'pedido_compra',
+      origem_id: Number(req.params.id),
+      motivo,
+      usuarioId: req.user?.id || null,
+    });
+    await client.query('COMMIT');
+    res.json({ ...(await fetchPedidoCompleto(req.params.id)), financeiro });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  } finally { client.release(); }
 });
 
 // ---------- o confronto, isolado ----------
