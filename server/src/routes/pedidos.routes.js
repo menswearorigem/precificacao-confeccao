@@ -2028,6 +2028,107 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+// Duplicar um pedido (09/09/2026).
+//
+// POR QUE ESTA ROTA EXISTE: o cliente de atacado repete o mesmo mix quase
+// igual todo mês, e a viagem sai com o mesmo sortimento em cada cidade.
+// Refazer o pedido significava relançar peça por peça — no melhor caso
+// minutos de bipagem, no pior um item esquecido que ninguém percebe.
+//
+// REGRA 1 — E ESTA É A PARTE IMPORTANTE: nada aqui é recalculado. Os
+// valores unitários, descontos e totais são COPIADOS do pedido de origem
+// exatamente como estão gravados. Duplicar não é "refazer o preço": se o
+// preço mudou, quem decide é a pessoa, editando o pedido novo. Um
+// recálculo silencioso aqui mudaria o preço de uma venda sem ninguém pedir.
+//
+// A cópia nasce sempre 'aberto' e com a data de hoje, mesmo que a origem
+// esteja faturada ou cancelada — e sem faturado_em/cancelado_em, que são
+// fatos da venda antiga.
+router.post('/:id/duplicar', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const { rows: origemRows } = await client.query('SELECT * FROM pedidos_venda WHERE id = $1', [req.params.id]);
+    if (origemRows.length === 0) return res.status(404).json({ error: 'Pedido não encontrado.' });
+    const origem = origemRows[0];
+
+    const { rows: itens } = await client.query(
+      'SELECT * FROM pedido_itens WHERE pedido_id = $1 ORDER BY ordem, id',
+      [req.params.id]
+    );
+    if (itens.length === 0) {
+      return res.status(409).json({ error: 'Este pedido não tem itens para duplicar.' });
+    }
+
+    // REGRA 2 — pedido de marketplace NÃO é duplicável. A cópia seria um
+    // pedido feito à mão carregando `canal_venda = 'Mercado Livre'` sem
+    // nenhum vínculo com a plataforma: entraria nos relatórios de
+    // marketplace como se fosse venda de lá, sem taxa, sem repasse e sem
+    // pedido do outro lado. Misturar isso com o faturamento confirmado da
+    // plataforma é exatamente o que a regra proíbe.
+    if (origem.origem_marketplace || origem.origem_pedido_id) {
+      return res.status(409).json({
+        error: 'Pedido importado de marketplace não pode ser duplicado — a cópia entraria nos '
+          + 'relatórios como venda da plataforma sem existir lá. Para repetir esse mix, crie um '
+          + 'pedido novo pelo canal certo.',
+      });
+    }
+
+    // Viagem é a mesma história em menor escala: o pedido novo não pertence
+    // à viagem antiga, então a cópia nasce sem ela.
+
+    // O corpo pode trocar o cliente (mesmo mix, outro comprador) e a data.
+    // Qualquer outro campo do cabeçalho vem da origem.
+    const body = req.body || {};
+    const clienteId = body.cliente_id !== undefined && body.cliente_id !== ''
+      ? Number(body.cliente_id)
+      : origem.cliente_id;
+
+    await client.query('BEGIN');
+
+    const { rows: novoRows } = await client.query(
+      `INSERT INTO pedidos_venda
+         (data_pedido, cliente_id, empresa_id, vendedor, operacao, canal_venda,
+          condicao_pagamento, forma_pagamento, desconto_pct, desconto_valor,
+          acrescimo, valor_frete, observacao, situacao)
+       VALUES (CURRENT_DATE, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'aberto')
+       RETURNING *`,
+      [
+        clienteId, origem.empresa_id, origem.vendedor, origem.operacao, origem.canal_venda,
+        origem.condicao_pagamento, origem.forma_pagamento, origem.desconto_pct, origem.desconto_valor,
+        origem.acrescimo, origem.valor_frete, origem.observacao,
+      ]
+    );
+    const novo = novoRows[0];
+
+    for (const item of itens) {
+      await client.query(
+        `INSERT INTO pedido_itens
+           (pedido_id, variante_id, produto_id, referencia, descricao, cor, tamanho,
+            quantidade, valor_unitario, desconto_pct, desconto_valor, total, ordem)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        [
+          novo.id, item.variante_id, item.produto_id, item.referencia, item.descricao,
+          item.cor, item.tamanho, item.quantidade, item.valor_unitario,
+          item.desconto_pct, item.desconto_valor, item.total, item.ordem,
+        ]
+      );
+    }
+
+    // Os totais do cabeçalho são refeitos a partir das linhas copiadas —
+    // é a MESMA função que o resto do módulo usa, não uma soma nova aqui.
+    await recalcularTotais(client, novo.id);
+    await client.query('COMMIT');
+
+    const data = await fetchPedidoCompleto(novo.id);
+    res.status(201).json({ ...data, origem: { id: origem.id, numero: origem.numero } });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
 router.put('/:id', async (req, res, next) => {
   const client = await pool.connect();
   try {

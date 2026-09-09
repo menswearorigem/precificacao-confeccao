@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft, Barcode, Search, Trash2, UserPlus, CheckCircle2, XCircle,
+  ArrowLeft, Barcode, Search, Trash2, UserPlus, CheckCircle2, XCircle, Copy,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { somAcerto, somErro } from '../lib/somConferencia';
@@ -27,6 +27,7 @@ export default function PedidoFormPage() {
   const [empresas, setEmpresas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [duplicando, setDuplicando] = useState(false);
   const [salvandoHeader, setSalvandoHeader] = useState(false);
 
   const [buscaCliente, setBuscaCliente] = useState('');
@@ -210,6 +211,26 @@ export default function PedidoFormPage() {
     }
   }
 
+  // Duplicar: mesmo mix, pedido novo. Os valores são COPIADOS pelo servidor,
+  // não recalculados — se o preço mudou, quem decide é quem está vendendo.
+  async function duplicarPedido() {
+    if (!(await confirmar(
+      `Criar um pedido novo com os mesmos ${itens.length} ${itens.length === 1 ? 'item' : 'itens'} deste? `
+      + 'Os preços vêm copiados exatamente como estão aqui — se algum mudou, ajuste no pedido novo.',
+      { confirmarTexto: 'Duplicar', perigo: false }
+    ))) return;
+    setError('');
+    setDuplicando(true);
+    try {
+      const data = await api.post(`/pedidos/${id}/duplicar`, {});
+      navigate(`/pedidos/${data.pedido.id}`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDuplicando(false);
+    }
+  }
+
   async function excluirPedido() {
     if (!(await confirmar('Excluir este pedido em aberto? Essa ação não pode ser desfeita.'))) return;
     await api.del(`/pedidos/${id}`);
@@ -230,6 +251,22 @@ export default function PedidoFormPage() {
           <span className={'stamp sm ' + (SITUACAO_TONE[pedido.situacao] || 'tone-neutro')}>{SITUACAO_LABEL[pedido.situacao] || pedido.situacao}</span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          {/* Duplicar vale para pedido em qualquer situação: o caso mais
+              comum é justamente repetir um pedido JÁ FATURADO do mês
+              passado. Só não faz sentido sem item nenhum. */}
+          {/* Pedido de marketplace não entra: a cópia seria uma venda
+              manual carregando o canal da plataforma, sem existir lá. */}
+          {!pedido.origem_marketplace && !pedido.origem_pedido_id && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={duplicarPedido}
+              disabled={itens.length === 0 || duplicando}
+              title={itens.length === 0 ? 'Um pedido sem itens não tem o que duplicar.' : 'Cria um pedido novo com os mesmos itens e preços.'}
+            >
+              <Copy size={14} /> {duplicando ? 'Duplicando…' : 'Duplicar'}
+            </button>
+          )}
           {aberto && (
             <button type="button" className="btn btn-ghost" onClick={excluirPedido} style={{ color: 'var(--danger)' }}>
               <Trash2 size={14} /> Excluir
