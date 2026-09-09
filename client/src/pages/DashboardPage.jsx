@@ -6,7 +6,7 @@ import {
   Package, Receipt, ChevronRight, X,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, pct, formatQtd, dataBr } from '../lib/format';
+import { brl, pct, formatQtd, dataBr, numeroBr } from '../lib/format';
 import { StatCard, Select } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import SeloDeConfianca from '../components/SeloDeConfianca';
@@ -228,7 +228,10 @@ export default function DashboardPage() {
 function numeroBrDeltaPP(atual, anterior) {
   const deltaPontos = (atual - anterior) * 100;
   const sinal = deltaPontos >= 0 ? '+' : '';
-  return `${sinal}${deltaPontos.toFixed(1).replace('.', ',')} p.p.`;
+  // `numeroBr` (Intl pt-BR) em vez de toFixed().replace('.', ','): é o mesmo
+  // formatador do resto do sistema, e o replace manual não põe separador de
+  // milhar — uma variação grande saía como "1234,5 p.p.".
+  return `${sinal}${numeroBr(deltaPontos, 1)} p.p.`;
 }
 
 function TabelaProdutos({ produtos, limite = 10 }) {

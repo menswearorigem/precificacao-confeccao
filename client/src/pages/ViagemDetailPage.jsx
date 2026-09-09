@@ -75,7 +75,9 @@ export default function ViagemDetailPage() {
   useEffect(() => {
     if (!buscaProduto.trim()) { setResultadosProduto([]); return; }
     const timer = setTimeout(() => {
-      api.get(`/viagens/${id}/buscar-produtos?busca=${encodeURIComponent(buscaProduto)}`).then(setResultadosProduto);
+      api.get(`/viagens/${id}/buscar-produtos?busca=${encodeURIComponent(buscaProduto)}`)
+      .then(setResultadosProduto)
+      .catch(() => setResultadosProduto([]));
     }, 280);
     return () => clearTimeout(timer);
   }, [buscaProduto, id]);

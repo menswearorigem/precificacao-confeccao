@@ -123,7 +123,9 @@ export default function ClienteFichaPage() {
       await api.del(`/clientes/${id}`);
       navigate('/clientes');
     } catch (err) {
-      alert(err.message);
+      // `alert()` nativo mostra o domínio no topo, ignora o tema e trava a
+      // página até alguém clicar em OK. A mensagem agora fica na tela.
+      setError(err.message);
     }
   }
 

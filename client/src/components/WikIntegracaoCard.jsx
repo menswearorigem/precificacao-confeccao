@@ -31,16 +31,21 @@ export default function WikIntegracaoCard() {
 
   function load() {
     setLoading(true);
-    Promise.all([api.get('/wik'), api.get('/listas/marca')]).then(([wikData, marcasData]) => {
-      setIntegracao(wikData);
-      setEmail(wikData?.email || '');
-      setMarcas(marcasData);
-      setLoading(false);
-      if (wikData?.previewStatus === 'rodando') {
-        setPreviewLoading(true);
-        esperarPreview();
-      }
-    });
+    // Sem catch, uma falha (sessão caída, Wik fora) deixava o cartão girando
+    // para sempre — e "carregando" é indistinguível de "conectando".
+    setErro('');
+    Promise.all([api.get('/wik'), api.get('/listas/marca')])
+      .then(([wikData, marcasData]) => {
+        setIntegracao(wikData);
+        setEmail(wikData?.email || '');
+        setMarcas(marcasData);
+        if (wikData?.previewStatus === 'rodando') {
+          setPreviewLoading(true);
+          esperarPreview();
+        }
+      })
+      .catch((e) => setErro(e.message))
+      .finally(() => setLoading(false));
   }
 
   useEffect(load, []);

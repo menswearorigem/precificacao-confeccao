@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { somAcerto, somErro } from '../lib/somConferencia';
-import { Field, NumInput, Select, DateInput } from '../components/ui';
+import { Field, NumInput, Select, DateInput, Skeleton } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import { brl, pct, formatQtd } from '../lib/format';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
@@ -53,17 +53,23 @@ export default function PedidoFormPage() {
 
   function load() {
     setLoading(true);
-    api.get(`/pedidos/${id}`).then((data) => {
-      aplicarResposta(data);
-      setLoading(false);
-    });
+    setError('');
+    api.get(`/pedidos/${id}`)
+      .then(aplicarResposta)
+      // Sem catch, um pedido que não carrega (excluído, sem permissão, sessão
+      // caída) deixava a tela presa em `loading` — que aqui é uma tela
+      // totalmente branca, porque o componente retorna null enquanto carrega.
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
   }
 
   useEffect(() => {
-    Promise.all([api.get('/listas'), api.get('/empresas')]).then(([l, e]) => {
-      setListas(l);
-      setEmpresas(e);
-    });
+    Promise.all([api.get('/listas'), api.get('/empresas')])
+      .then(([l, e]) => { setListas(l); setEmpresas(e); })
+      // Listas e empresas alimentam os seletores do cabeçalho. Falhando em
+      // silêncio, os campos ficavam vazios e pareciam não ter opção nenhuma
+      // cadastrada.
+      .catch((e) => setError(e.message));
   }, []);
 
   useEffect(load, [id]);
@@ -79,7 +85,9 @@ export default function PedidoFormPage() {
     if (buscaClienteTimer.current) clearTimeout(buscaClienteTimer.current);
     if (!buscaCliente.trim()) { setResultadosCliente([]); return; }
     buscaClienteTimer.current = setTimeout(() => {
-      api.get(`/clientes?busca=${encodeURIComponent(buscaCliente)}`).then(setResultadosCliente);
+      api.get(`/clientes?busca=${encodeURIComponent(buscaCliente)}`)
+      .then(setResultadosCliente)
+      .catch(() => setResultadosCliente([]));
     }, 300);
   }, [buscaCliente]);
 
@@ -237,7 +245,20 @@ export default function PedidoFormPage() {
     navigate(voltarPara);
   }
 
-  if (loading || !pedido) return null;
+  // Antes: `if (loading || !pedido) return null;` — com a carga falhando, o
+  // pedido nunca chegava e a tela ficava branca, sem nada escrito.
+  if (!pedido) {
+    return (
+      <div className="page-wide">
+        <button type="button" className="btn btn-ghost" style={{ marginBottom: 14 }} onClick={() => navigate(voltarPara)}>
+          <ArrowLeft size={14} /> Voltar para pedidos
+        </button>
+        {error
+          ? <div className="login-error" role="alert">Não deu para abrir este pedido: {error}</div>
+          : <Skeleton height={200} />}
+      </div>
+    );
+  }
 
   return (
     <div className="page-wide">

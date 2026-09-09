@@ -65,7 +65,11 @@ export default function CompraFormPage() {
     if (buscaTimer.current) clearTimeout(buscaTimer.current);
     if (!buscaFornecedor.trim()) { setResultadosFornecedor([]); return; }
     buscaTimer.current = setTimeout(() => {
-      api.get(`/fornecedores?busca=${encodeURIComponent(buscaFornecedor)}`).then(setResultadosFornecedor);
+      api.get(`/fornecedores?busca=${encodeURIComponent(buscaFornecedor)}`)
+      .then(setResultadosFornecedor)
+      // Sem catch, uma busca que falha deixava na tela o resultado da busca
+      // anterior, como se fosse o desta.
+      .catch(() => setResultadosFornecedor([]));
     }, 300);
   }, [buscaFornecedor]);
 

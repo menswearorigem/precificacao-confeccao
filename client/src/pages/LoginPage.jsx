@@ -10,7 +10,12 @@ export default function LoginPage({ onLoggedIn }) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    api.get('/auth/status').then((data) => setSetupNeeded(data.setupNeeded));
+    api.get('/auth/status')
+      .then((data) => setSetupNeeded(data.setupNeeded))
+      // Servidor fora no primeiro carregamento: cair no formulário de login
+      // normal é melhor do que ficar num "carregando" eterno — a tentativa de
+      // entrar mostra o erro de verdade.
+      .catch(() => setSetupNeeded(false));
   }, []);
 
   async function handleSuccess() {

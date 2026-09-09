@@ -557,7 +557,12 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
   }
 
   async function excluir() {
-    if (!window.confirm('Excluir este evento? Essa ação não pode ser desfeita.')) return;
+    // `confirmar()` do sistema, não o window.confirm nativo: o nativo mostra
+    // o domínio do site no topo, não respeita o tema e era o último lugar do
+    // sistema onde uma confirmação ainda parecia um alerta de navegador.
+    if (!(await confirmar('Excluir este evento? Essa ação não pode ser desfeita.', {
+      titulo: 'Excluir evento', confirmarTexto: 'Excluir', perigo: true,
+    }))) return;
     try {
       await api.del(`/calendario/eventos/${eventoId}`);
       onSalvo();

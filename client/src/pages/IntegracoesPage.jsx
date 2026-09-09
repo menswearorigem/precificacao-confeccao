@@ -112,14 +112,17 @@ export default function IntegracoesPage() {
 
   function load() {
     setLoading(true);
-    api.get('/integracoes').then((data) => {
-      setIntegracoes(data);
-      setLoading(false);
-    });
+    // Sem catch, uma falha deixava a tela em "Carregando…" para sempre — e
+    // nesta tela isso é grave: parece que nenhuma loja está conectada.
+    setErro('');
+    api.get('/integracoes')
+      .then(setIntegracoes)
+      .catch((e) => setErro(e.message))
+      .finally(() => setLoading(false));
   }
 
   useEffect(load, []);
-  useEffect(() => { api.get('/empresas').then(setEmpresas); }, []);
+  useEffect(() => { api.get('/empresas').then(setEmpresas).catch(() => setEmpresas([])); }, []);
 
   useEffect(() => {
     const conectado = searchParams.get('conectado');

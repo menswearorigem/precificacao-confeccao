@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, Search } from 'lucide-react';
 import { api } from '../api/client';
-import { NumInput, Select } from '../components/ui';
+import { AvisoDeFalha, NumInput, Select } from '../components/ui';
 import BarraAlteracoes from '../components/BarraAlteracoes';
 import { brl } from '../lib/format';
 import logoMercadoLivre from '../assets/logos/mercado-livre.svg';
@@ -77,14 +77,21 @@ export default function MarketplaceTaxasPage() {
   const [valorSim, setValorSim] = useState(150);
   const [pesoSim, setPesoSim] = useState(1);
   const [tipoAnuncioSim, setTipoAnuncioSim] = useState('classico');
+  const [erroCarga, setErroCarga] = useState('');
 
   function load() {
-    api.get('/marketplace-taxas').then((data) => {
-      setServidorComissao(data.comissaoFaixas);
-      setServidorFrete(data.freteFaixas);
-      setComissaoFaixas(data.comissaoFaixas);
-      setFreteFaixas(data.freteFaixas);
-    });
+  // Sem catch, uma falha aqui (sessão expirada, servidor fora, 403) deixava a
+  // tela em branco ou no estado inicial vazio — indistinguível de "não há
+  // nada cadastrado".
+    setErroCarga('');
+    api.get('/marketplace-taxas')
+      .then((data) => {
+        setServidorComissao(data.comissaoFaixas);
+        setServidorFrete(data.freteFaixas);
+        setComissaoFaixas(data.comissaoFaixas);
+        setFreteFaixas(data.freteFaixas);
+      })
+      .catch((e) => setErroCarga(e.message));
   }
 
   useEffect(load, []);
@@ -209,6 +216,7 @@ export default function MarketplaceTaxasPage() {
 
   return (
     <div>
+      <AvisoDeFalha mensagem={erroCarga} aoTentarDeNovo={load} />
       <p className="page-sub" style={{ marginTop: 0 }}>
         Tabelas de comissão e frete que o Mercado Livre e a Shopee cobram dos vendedores — usadas na
         aba Vendas → Taxas de Marketplace pra conferir se a cobrança real bate com o esperado. Ajuste

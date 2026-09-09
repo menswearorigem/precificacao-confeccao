@@ -13,12 +13,14 @@ export default function WikImportarFichaCustoCard() {
   const [sincronizandoAgora, setSincronizandoAgora] = useState(false);
 
   useEffect(() => {
-    api.get('/wik').then((data) => {
-      if (data?.fichaCustoImportStatus === 'rodando') {
-        setLoading(true);
-        esperar();
-      }
-    });
+    api.get('/wik')
+      .then((data) => {
+        if (data?.fichaCustoImportStatus === 'rodando') {
+          setLoading(true);
+          esperar();
+        }
+      })
+      .catch((e) => setErro(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

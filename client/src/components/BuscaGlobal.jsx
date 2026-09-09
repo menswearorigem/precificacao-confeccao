@@ -88,7 +88,11 @@ export default function BuscaGlobal() {
     clearTimeout(debounceRef.current);
     if (termo.trim().length < 2) { setResultados(null); return; }
     debounceRef.current = setTimeout(() => {
-      api.get(`/busca?q=${encodeURIComponent(termo.trim())}`).then(setResultados);
+      // Busca que falha não pode ficar mostrando o resultado ANTERIOR: o termo
+    // novo estaria na caixa e a lista embaixo seria de outra pesquisa.
+    api.get(`/busca?q=${encodeURIComponent(termo.trim())}`)
+      .then(setResultados)
+      .catch(() => setResultados([]));
     }, 200);
     return () => clearTimeout(debounceRef.current);
   }, [termo, aberto]);

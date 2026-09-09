@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, Search, ChevronUp, ChevronDown } from 'lucide-react';
 import { api } from '../api/client';
-import { Toggle } from '../components/ui';
+import { AvisoDeFalha, Toggle } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 
 const TIPOS = [
@@ -29,11 +29,19 @@ export default function ListasPage() {
   const [listasPorTipo, setListasPorTipo] = useState({});
   const [novoValor, setNovoValor] = useState('');
   const [busca, setBusca] = useState('');
+  const [erroCarga, setErroCarga] = useState('');
 
-  useEffect(() => {
+  const carregar = useCallback(() => {
+  // Sem catch, uma falha aqui (sessão expirada, servidor fora, 403) deixava a
+  // tela em branco ou no estado inicial vazio — indistinguível de "não há
+  // nada cadastrado".
+    setErroCarga('');
     Promise.all(TIPOS.map(({ tipo }) => api.get(`/listas/${tipo}`).then((itens) => [tipo, itens])))
-      .then((pares) => setListasPorTipo(Object.fromEntries(pares)));
+      .then((pares) => setListasPorTipo(Object.fromEntries(pares)))
+      .catch((e) => setErroCarga(e.message));
   }, []);
+
+  useEffect(carregar, [carregar]);
 
   function itensDoTipo(tipo) {
     return listasPorTipo[tipo] || [];
@@ -117,6 +125,7 @@ export default function ListasPage() {
   return (
     <div className="page-wide">
       <h1>Listas</h1>
+      <AvisoDeFalha mensagem={erroCarga} aoTentarDeNovo={carregar} />
       <p className="page-sub">
         Valores usados nos menus suspensos em todo o sistema. Você pode desativar um valor sem
         perder o histórico dos produtos que já o usam, ou reordenar como aparece nos menus.

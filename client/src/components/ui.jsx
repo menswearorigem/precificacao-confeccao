@@ -299,6 +299,30 @@ export function EstadoVazio({ Icone, titulo, descricao, acaoLabel, href, onAcao,
 // Bloco cinza com brilho suave pra ocupar o lugar de algo que ainda está
 // carregando, em vez da tela piscar vazia por um instante. Respeita
 // prefers-reduced-motion via CSS (a animação vira um tom fixo).
+// Aviso de carga que falhou (09/09/2026).
+//
+// POR QUE EXISTE: nove telas — Parâmetros, Empresas, Custos Indiretos, Taxas,
+// Listas, Central de Alertas, Ficha de Precificação, Simulador e o painel de
+// taxas de marketplace — chamavam a API sem NENHUM tratamento de falha.
+// Sessão expirada, servidor fora, 403 de permissão: a tela ficava em branco
+// ou mostrando o estado inicial vazio, indistinguível de "não há nada
+// cadastrado". Quem via isso concluía que os dados tinham sumido.
+//
+// Um componente só, para todas dizerem a mesma coisa do mesmo jeito.
+export function AvisoDeFalha({ mensagem, aoTentarDeNovo }) {
+  if (!mensagem) return null;
+  return (
+    <div className="login-error" role="alert" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <span>Não deu para carregar: {mensagem}</span>
+      {aoTentarDeNovo && (
+        <button type="button" className="btn btn-ghost" onClick={aoTentarDeNovo}>
+          Tentar de novo
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function Skeleton({ width, height = 14, radius, className = '', style }) {
   return (
     <span

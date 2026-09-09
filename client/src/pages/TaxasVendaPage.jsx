@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, ChevronDown, ChevronRight, Search } from 'lucide-react';
 import { api } from '../api/client';
-import { NumInput, Toggle } from '../components/ui';
+import { AvisoDeFalha, NumInput, Toggle } from '../components/ui';
 import BarraAlteracoes from '../components/BarraAlteracoes';
 import { brl, pct } from '../lib/format';
 
@@ -76,9 +76,16 @@ export default function TaxasVendaPage() {
   const [mostrarInativas, setMostrarInativas] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [mensagemSalvo, setMensagemSalvo] = useState('');
+  const [erroCarga, setErroCarga] = useState('');
 
   function load() {
-    api.get('/taxas-venda').then((data) => { setServidor(data.taxas); setRascunho(data.taxas); });
+  // Sem catch, uma falha aqui (sessão expirada, servidor fora, 403) deixava a
+  // tela em branco ou no estado inicial vazio — indistinguível de "não há
+  // nada cadastrado".
+    setErroCarga('');
+    api.get('/taxas-venda')
+      .then((data) => { setServidor(data.taxas); setRascunho(data.taxas); })
+      .catch((e) => setErroCarga(e.message));
   }
 
   useEffect(load, []);
@@ -145,6 +152,7 @@ export default function TaxasVendaPage() {
 
   return (
     <div>
+      <AvisoDeFalha mensagem={erroCarga} aoTentarDeNovo={load} />
       <div className="cfg-page-head">
         <p className="page-sub" style={{ marginTop: 0 }}>
           Tudo que é descontado do preço antes do dinheiro chegar. Cada taxa pode ser percentual, valor fixo, ou os dois.

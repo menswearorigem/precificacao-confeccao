@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import { Field, NumInput } from '../components/ui';
+import { AvisoDeFalha, Field, NumInput } from '../components/ui';
 import BarraAlteracoes from '../components/BarraAlteracoes';
 import { brl } from '../lib/format';
 
@@ -158,9 +158,16 @@ export default function ConfiguracoesPage() {
   const [rascunho, setRascunho] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [mensagemSalvo, setMensagemSalvo] = useState('');
+  const [erroCarga, setErroCarga] = useState('');
 
   function load() {
-    api.get('/configuracoes').then((c) => { setServidor(c); setRascunho(c); });
+  // Sem catch, uma falha aqui (sessão expirada, servidor fora, 403) deixava a
+  // tela em branco ou no estado inicial vazio — indistinguível de "não há
+  // nada cadastrado".
+    setErroCarga('');
+    api.get('/configuracoes')
+      .then((c) => { setServidor(c); setRascunho(c); })
+      .catch((e) => setErroCarga(e.message));
   }
 
   useEffect(load, []);
@@ -196,6 +203,7 @@ export default function ConfiguracoesPage() {
   return (
     <div className="page-wide">
       <h1>Parâmetros</h1>
+      <AvisoDeFalha mensagem={erroCarga} aoTentarDeNovo={load} />
       <p className="page-sub">
         As metas que o sistema usa para sugerir preço e julgar margem. Mudar qualquer coisa aqui muda o preço de todas as peças.
       </p>

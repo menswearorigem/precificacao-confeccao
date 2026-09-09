@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlaskConical, History } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, NumInput, Row, Select, EstadoVazio, lerRecentes } from '../components/ui';
+import { AvisoDeFalha, Field, NumInput, Row, Select, EstadoVazio, lerRecentes } from '../components/ui';
 import { brl, pct } from '../lib/format';
 import { statusToneClass } from '../lib/statusTone';
 
@@ -21,10 +21,18 @@ export default function SimuladorPage() {
   const [ajustes, setAjustes] = useState(AJUSTES_INICIAIS);
   const [resultado, setResultado] = useState(null);
   const timer = useRef(null);
+  // Sem catch, a lista de produtos vazia parecia "nenhum produto cadastrado" e
+  // a simulação que falhava apenas não atualizava o resultado — o painel
+  // continuava mostrando o cenário ANTERIOR como se fosse o novo, que é pior
+  // do que não mostrar nada.
+  const [erroCarga, setErroCarga] = useState('');
 
-  useEffect(() => {
-    api.get('/produtos').then(setProdutos);
+  const carregarProdutos = useCallback(() => {
+    setErroCarga('');
+    api.get('/produtos').then(setProdutos).catch((e) => setErroCarga(e.message));
   }, []);
+
+  useEffect(carregarProdutos, [carregarProdutos]);
 
   function rodarSimulacao(id, novosAjustes) {
     if (!id) {
@@ -44,7 +52,10 @@ export default function SimuladorPage() {
         freteExtra: Number(novosAjustes.freteExtra) || 0,
       },
     };
-    api.post('/simulacao', body).then(setResultado);
+    setErroCarga('');
+    api.post('/simulacao', body)
+      .then(setResultado)
+      .catch((e) => { setResultado(null); setErroCarga(e.message); });
   }
 
   function handleProdutoChange(id) {
@@ -70,6 +81,7 @@ export default function SimuladorPage() {
   return (
     <div className="page-wide">
       <h1>Simulador de Cenários</h1>
+      <AvisoDeFalha mensagem={erroCarga} aoTentarDeNovo={carregarProdutos} />
       <p className="page-sub">
         Teste ajustes hipotéticos de custo, frete e impostos sem alterar os dados reais do produto.
       </p>

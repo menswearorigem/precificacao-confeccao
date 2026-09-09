@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Search, Barcode, Upload, Pencil, Check, X, Tags, Printer, Wand2, Store, History } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import { Field, Select, Checkbox, Toggle, Skeleton } from '../components/ui';
+import { AvisoDeFalha, Field, Select, Checkbox, Toggle, Skeleton } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import DataTable from '../components/DataTable';
 import IndicadoresEstoque from '../components/IndicadoresEstoque';
@@ -294,20 +294,33 @@ export default function EstoquePage() {
   // Variante cujo extrato de movimentos está aberto no painel lateral.
   const [extratoDe, setExtratoDe] = useState(null);
 
-  useEffect(() => {
+  const [erroReferencias, setErroReferencias] = useState('');
+
+  const carregarReferencias = useCallback(() => {
     const qs = somenteMarketplace ? '?marketplace=1' : '';
-    api.get(`/estoque/produtos-referencia${qs}`).then((data) => {
-      setProdutos(data);
-      // Se a referência aberta saiu do filtro, fecha a tabela dela em vez de
-      // deixar na tela um dado que não bate mais com o filtro escolhido.
-      setProdutoId((atual) => (atual && !data.some((p) => String(p.id) === String(atual)) ? '' : atual));
-    });
+    setErroReferencias('');
+    api.get(`/estoque/produtos-referencia${qs}`)
+      .then((data) => {
+        setProdutos(data);
+        // Se a referência aberta saiu do filtro, fecha a tabela dela em vez de
+        // deixar na tela um dado que não bate mais com o filtro escolhido.
+        setProdutoId((atual) => (atual && !data.some((p) => String(p.id) === String(atual)) ? '' : atual));
+      })
+      // Sem catch, a falha deixava o seletor de referência vazio — igualzinho
+      // a "nenhuma referência cadastrada".
+      .catch((e) => setErroReferencias(e.message));
   }, [somenteMarketplace]);
+
+  useEffect(carregarReferencias, [carregarReferencias]);
 
   function loadVariantes(id) {
     setSelecionadas(new Set());
     if (!id) { setVariantes([]); return; }
-    api.get(`/estoque/variantes?produto_id=${id}`).then(setVariantes);
+    api.get(`/estoque/variantes?produto_id=${id}`)
+      .then(setVariantes)
+      // Sem catch, abrir uma referência cuja carga falha mantinha na tela as
+      // variantes da referência ANTERIOR, com o título da nova em cima.
+      .catch(() => setVariantes([]));
   }
 
   useEffect(() => loadVariantes(produtoId), [produtoId]);
@@ -407,6 +420,7 @@ export default function EstoquePage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <h1>Estoque</h1>
+          <AvisoDeFalha mensagem={erroReferencias} aoTentarDeNovo={carregarReferencias} />
           <p className="page-sub">Controle de estoque por variante (referência + cor + tamanho), com EAN próprio para bipagem.</p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

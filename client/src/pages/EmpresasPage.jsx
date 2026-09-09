@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, NumInput, Select, Toggle } from '../components/ui';
+import { AvisoDeFalha, Field, NumInput, Select, Toggle } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import BarraAlteracoes from '../components/BarraAlteracoes';
 
@@ -17,9 +17,16 @@ export default function EmpresasPage() {
   const [rascunho, setRascunho] = useState([]);
   const [salvando, setSalvando] = useState(false);
   const [mensagemSalvo, setMensagemSalvo] = useState('');
+  const [erroCarga, setErroCarga] = useState('');
 
   function load() {
-    api.get('/empresas').then((data) => { setServidor(data); setRascunho(data); });
+  // Sem catch, uma falha aqui (sessão expirada, servidor fora, 403) deixava a
+  // tela em branco ou no estado inicial vazio — indistinguível de "não há
+  // nada cadastrado".
+    setErroCarga('');
+    api.get('/empresas')
+      .then((data) => { setServidor(data); setRascunho(data); })
+      .catch((e) => setErroCarga(e.message));
   }
 
   useEffect(load, []);
@@ -45,7 +52,9 @@ export default function EmpresasPage() {
       setServidor((list) => list.filter((e) => e.id !== id));
       setRascunho((list) => list.filter((e) => e.id !== id));
     } catch (e) {
-      alert(e.message);
+      // `alert()` nativo mostra o domínio no topo, ignora o tema e trava a
+      // página até alguém clicar em OK. A mensagem agora fica na tela.
+      setErroCarga(e.message);
     }
   }
 
@@ -88,6 +97,7 @@ export default function EmpresasPage() {
   return (
     <div className="page-wide">
       <h1>Empresas / Pessoas Jurídicas</h1>
+      <AvisoDeFalha mensagem={erroCarga} aoTentarDeNovo={load} />
       <p className="page-sub">
         Cada empresa tem seu próprio regime tributário e alíquotas. Cada produto será associado
         a uma delas para saber qual conjunto de impostos usar na formação de preço.

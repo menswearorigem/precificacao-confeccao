@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, ChevronDown, ChevronRight, Home, Monitor, Briefcase, Truck, Layers } from 'lucide-react';
 import { api } from '../api/client';
-import { NumInput } from '../components/ui';
+import { AvisoDeFalha, NumInput } from '../components/ui';
 import BarraAlteracoes from '../components/BarraAlteracoes';
 import { brl, pct } from '../lib/format';
 
@@ -39,13 +39,20 @@ export default function CustosIndiretosPage() {
   const [gruposAbertos, setGruposAbertos] = useState(() => new Set());
   const [salvando, setSalvando] = useState(false);
   const [mensagemSalvo, setMensagemSalvo] = useState('');
+  const [erroCarga, setErroCarga] = useState('');
 
   function load() {
-    api.get('/custos-indiretos').then((r) => {
-      setServidor(r);
-      setItensRascunho(r.itens);
-      setProducaoRascunho(r.producaoMensal);
-    });
+  // Sem catch, uma falha aqui (sessão expirada, servidor fora, 403) deixava a
+  // tela em branco ou no estado inicial vazio — indistinguível de "não há
+  // nada cadastrado".
+    setErroCarga('');
+    api.get('/custos-indiretos')
+      .then((r) => {
+        setServidor(r);
+        setItensRascunho(r.itens);
+        setProducaoRascunho(r.producaoMensal);
+      })
+      .catch((e) => setErroCarga(e.message));
   }
 
   useEffect(load, []);
@@ -157,6 +164,7 @@ export default function CustosIndiretosPage() {
   return (
     <div className="page-wide">
       <h1>Custos Indiretos</h1>
+      <AvisoDeFalha mensagem={erroCarga} aoTentarDeNovo={load} />
       <p className="page-sub">O custo fixo que não é de nenhuma peça em particular, rateado por toda a produção do mês.</p>
 
       <div className="card cfg-simulador" style={{ marginBottom: 16 }}>

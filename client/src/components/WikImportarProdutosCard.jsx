@@ -13,13 +13,17 @@ export default function WikImportarProdutosCard() {
   const [sincronizandoAgora, setSincronizandoAgora] = useState(false);
 
   useEffect(() => {
-    api.get('/wik').then((data) => {
-      setIntegracao(data);
-      if (data?.produtosImportStatus === 'rodando') {
-        setLoading(true);
-        esperar();
-      }
-    });
+    api.get('/wik')
+      .then((data) => {
+        setIntegracao(data);
+        if (data?.produtosImportStatus === 'rodando') {
+          setLoading(true);
+          esperar();
+        }
+      })
+      // Sem catch, uma falha aqui deixava o cartão sem saber se a integração
+      // existe — e ele se comportava como se não existisse.
+      .catch((e) => setErro(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { LayoutDashboard, History } from 'lucide-react';
-import { Field, Select, EstadoVazio, lerRecentes } from '../components/ui';
+import { AvisoDeFalha, Field, Select, EstadoVazio, lerRecentes } from '../components/ui';
 import { api } from '../api/client';
 import { brl, pct, numeroBr } from '../lib/format';
 import { statusToneClass } from '../lib/statusTone';
@@ -134,14 +134,24 @@ export default function FichaPrecificacaoPage() {
   const [produtos, setProdutos] = useState([]);
   const [produtoId, setProdutoId] = useState('');
   const [detalhe, setDetalhe] = useState(null);
+  // Sem catch, a lista vazia parecia "nenhum produto cadastrado", e uma falha
+  // ao abrir a referência deixava a ficha ANTERIOR na tela como se fosse a
+  // nova — o pior dos dois mundos numa tela de preço.
+  const [erroCarga, setErroCarga] = useState('');
 
-  useEffect(() => {
-    api.get('/produtos').then(setProdutos);
+  const carregarProdutos = useCallback(() => {
+    setErroCarga('');
+    api.get('/produtos').then(setProdutos).catch((e) => setErroCarga(e.message));
   }, []);
+
+  useEffect(carregarProdutos, [carregarProdutos]);
 
   useEffect(() => {
     if (!produtoId) { setDetalhe(null); return; }
-    api.get(`/produtos/${produtoId}`).then(setDetalhe);
+    setErroCarga('');
+    api.get(`/produtos/${produtoId}`)
+      .then(setDetalhe)
+      .catch((e) => { setDetalhe(null); setErroCarga(e.message); });
   }, [produtoId]);
 
   const c = detalhe?.calculo;
@@ -159,6 +169,7 @@ export default function FichaPrecificacaoPage() {
   return (
     <div className="page-wide">
       <h1>Ficha de Precificação</h1>
+      <AvisoDeFalha mensagem={erroCarga} aoTentarDeNovo={carregarProdutos} />
       <p className="page-sub">Composição de preço, custo e margem de uma referência — a ficha original, preservada como estava.</p>
 
       <div className="card" style={{ marginBottom: 16 }}>

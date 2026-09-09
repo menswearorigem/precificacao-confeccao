@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, ChevronRight, ShieldQuestion } from 'lucide-react';
 import { api } from '../api/client';
 import { pct, formatQtd } from '../lib/format';
-import { Select, Skeleton } from '../components/ui';
+import { AvisoDeFalha, Select, Skeleton } from '../components/ui';
 import SeloDeConfianca from '../components/SeloDeConfianca';
 
 function GrupoAlerta({ grupo }) {
@@ -41,12 +41,19 @@ export default function AlertasPage() {
   const [marca, setMarca] = useState('');
   const [categoria, setCategoria] = useState('');
 
-  useEffect(() => {
-    Promise.all([api.get('/empresas'), api.get('/listas')]).then(([e, l]) => {
-      setEmpresas(e);
-      setListas(l);
-    });
+  // Sem catch nas duas chamadas, uma falha deixava os filtros vazios (parecia
+  // "nenhuma empresa cadastrada") e a lista de alertas em carregamento
+  // permanente — a tela mais parecida com "está tudo certo" que existe.
+  const [erroCarga, setErroCarga] = useState('');
+
+  const carregarFiltros = useCallback(() => {
+    setErroCarga('');
+    Promise.all([api.get('/empresas'), api.get('/listas')])
+      .then(([e, l]) => { setEmpresas(e); setListas(l); })
+      .catch((err) => setErroCarga(err.message));
   }, []);
+
+  useEffect(carregarFiltros, [carregarFiltros]);
 
   useEffect(() => {
     setLoading(true);
@@ -54,7 +61,10 @@ export default function AlertasPage() {
     if (empresaId) params.set('empresa_id', empresaId);
     if (marca) params.set('marca', marca);
     if (categoria) params.set('categoria', categoria);
-    api.get(`/alertas?${params.toString()}`).then(setDados).finally(() => setLoading(false));
+    api.get(`/alertas?${params.toString()}`)
+      .then((d) => { setDados(d); setErroCarga(''); })
+      .catch((e) => { setDados(null); setErroCarga(e.message); })
+      .finally(() => setLoading(false));
   }, [empresaId, marca, categoria]);
 
   const grupos = useMemo(() => (dados ? Object.values(dados.grupos) : []), [dados]);
@@ -66,6 +76,7 @@ export default function AlertasPage() {
         <div>
           <h1><AlertTriangle size={20} style={{ verticalAlign: -3, marginRight: 6 }} />Central de Alertas</h1>
           <p className="page-sub">Quais referências estão fora de cada limite configurado em Parâmetros, agora.</p>
+          <AvisoDeFalha mensagem={erroCarga} aoTentarDeNovo={carregarFiltros} />
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <Select value={empresaId} onChange={(e) => setEmpresaId(e.target.value)} style={{ minWidth: 150 }}>
