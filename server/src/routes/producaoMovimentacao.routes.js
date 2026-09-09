@@ -8,14 +8,19 @@
 const express = require('express');
 const pool = require('../db/pool');
 const {
-  movimentar, estornar, registrarRetorno, precoVigente,
+  movimentar, estornar, registrarRetorno, precoVigente, encerrarComQuebra,
 } = require('../lib/producaoMovimentacao');
 const ponte = require('../lib/financeiroPonte');
 
 const router = express.Router();
 
 function erroHttp(res, err) {
-  if (err && err.status) return res.status(err.status).json({ error: err.message });
+  // `exige` viaja junto: é ele que diz à tela QUAL campo faltou (ou qual
+  // confirmação falta), em vez de deixar o operador reler a frase para
+  // descobrir onde clicar.
+  if (err && err.status) {
+    return res.status(err.status).json({ error: err.message, exige: err.exige });
+  }
   return null;
 }
 
@@ -23,10 +28,20 @@ function erroHttp(res, err) {
 
 router.get('/etapas', async (req, res, next) => {
   try {
+    // ⚠️ Corrigido em 09/09/2026: aqui havia uma subconsulta CORRELACIONADA
+    // (`SELECT COUNT(*) FROM vw_producao_wip WHERE etapa_id = e.id`), executada
+    // uma vez por etapa. `vw_producao_wip` é um UNION ALL + GROUP BY sobre o
+    // livro-razão inteiro, e o `HAVING SUM(...) <> 0` impede o filtro de descer
+    // — então eram onze agregações completas de `producao_movimentos` a cada
+    // carregamento das três telas de produção. Agora é uma agregação só.
     const { rows } = await pool.query(
-      `SELECT e.*,
-              (SELECT COUNT(*) FROM vw_producao_wip w WHERE w.etapa_id = e.id AND w.quantidade > 0) AS ordens_na_etapa
+      `WITH carga AS (
+         SELECT etapa_id, COUNT(*)::int AS n FROM vw_producao_wip
+          WHERE quantidade > 0 GROUP BY etapa_id
+       )
+       SELECT e.*, COALESCE(c.n, 0) AS ordens_na_etapa
          FROM producao_etapas e
+         LEFT JOIN carga c ON c.etapa_id = e.id
         ${req.query.todas === 'true' ? '' : 'WHERE e.ativo'}
         ORDER BY e.sequencia, e.nome`
     );
@@ -293,7 +308,7 @@ router.get('/ordens-servico/:id', async (req, res, next) => {
 router.post('/ordens-servico/:id/retorno', async (req, res, next) => {
   const client = await pool.connect();
   try {
-    const { itens, etapa_destino_id, data, observacao } = req.body || {};
+    const { itens, etapa_destino_id, data, observacao, sair_do_fluxo } = req.body || {};
     if (!Array.isArray(itens) || itens.length === 0) {
       return res.status(400).json({ error: 'Informe o que voltou.' });
     }
@@ -302,6 +317,7 @@ router.post('/ordens-servico/:id/retorno', async (req, res, next) => {
       ordemServicoId: req.params.id,
       itens,
       etapaDestinoId: etapa_destino_id || null,
+      sairDoFluxo: sair_do_fluxo === true,
       data,
       observacao,
       usuarioId: req.user?.id || null,
@@ -333,6 +349,35 @@ router.post('/ordens-servico/:id/retorno', async (req, res, next) => {
 
     await client.query('COMMIT');
     res.status(201).json({ ...r, financeiro });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (erroHttp(res, err)) return;
+    next(err);
+  } finally { client.release(); }
+});
+
+// Encerrar assumindo a quebra.
+//
+// Sem esta saída, a O.S. de uma facção que perdeu peça ficava PARCIAL para
+// sempre e a ordem de produção nunca fechava — a única alternativa era
+// "dispensar" a pendência no financeiro, que é registrar uma mentira. A quebra
+// continua medida e continua no ranking da facção: encerrar reconhece que a
+// peça não volta, não apaga o fato de que ela sumiu.
+router.post('/ordens-servico/:id/encerrar-quebra', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const r = await encerrarComQuebra(client, {
+      ordemServicoId: req.params.id,
+      motivo: req.body?.motivo,
+      usuarioId: req.user?.id || null,
+    });
+    await client.query('COMMIT');
+    res.json({
+      ...r,
+      aviso: `A O.S. foi encerrada com ${r.quebra} peça(s) de quebra. Ela continua contando no `
+        + 'indicador de quebra e no ranking da facção — encerrar não apaga o que sumiu.',
+    });
   } catch (err) {
     await client.query('ROLLBACK');
     if (erroHttp(res, err)) return;
@@ -430,13 +475,23 @@ router.post('/ordens-servico/:id/gerar-titulo', async (req, res, next) => {
       return res.status(400).json({ error: `Esta O.S. já gerou o título ${jaTem[0].id}.` });
     }
 
+    // O plano de contas vem do catálogo da ponte quando a tela não manda um.
+    //
+    // ⚠️ Corrigido em 09/09/2026: esta rota chamava `criarTitulo` direto com
+    // `plano_id: plano_id || null`, e a tela nunca manda plano — então TODO
+    // custo de facção nascia sem classificação no DRE, exatamente a "linha sem
+    // categoria" que a ponte se recusa a produzir quando é ela quem cria o
+    // título. O default de `fin_origens` ('3.2') só era aplicado pelo caminho
+    // da ponte, que este não usa.
+    const catalogo = await ponte.carregarOrigem(client, 'ordem_servico').catch(() => null);
+
     const titulo = await criarTitulo(client, {
       empresa_id: os.empresa_id,
       natureza: 'pagar',
       fornecedor_id: os.fornecedor_id,
       descricao: `Serviço de facção — O.S. ${os.numero}`,
-      plano_id: plano_id || null,
-      centro_custo_id: centro_custo_id || null,
+      plano_id: plano_id || catalogo?.plano_id || null,
+      centro_custo_id: centro_custo_id || catalogo?.centro_custo_id || null,
       data_competencia: os.data_retorno || os.data_remessa,
       data_vencimento,
       valor_bruto: Number(os.valor_servico),

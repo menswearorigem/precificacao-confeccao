@@ -22,6 +22,8 @@ const {
   tempoPadraoDaPeca, custoMaoDeObraPadrao, wipPorEtapa,
 } = require('../lib/producao');
 const locais = require('../lib/estoqueLocais');
+const produtoGrade = require('../lib/produtoGrade');
+const calendarioProducao = require('../lib/producaoCalendario');
 
 const router = express.Router();
 
@@ -191,15 +193,67 @@ router.post('/consumo-tamanho', async (req, res, next) => {
 // identificação da referência, nome da facção, nome do insumo.
 router.get('/apoio', async (req, res, next) => {
   try {
-    const [{ rows: referencias }, { rows: fornecedores }, { rows: insumos }] = await Promise.all([
+    const [
+      { rows: referencias }, { rows: fornecedores }, { rows: insumos },
+      { rows: faccoes }, { rows: categoriasFaccao }, { rows: etapas }, { rows: kits },
+    ] = await Promise.all([
       pool.query(
         `SELECT p.id, p.referencia, p.descricao, p.categoria, p.marca
            FROM produtos p ORDER BY p.referencia`
       ),
-      pool.query('SELECT id, nome FROM fornecedores ORDER BY nome'),
-      pool.query('SELECT id, nome, unidade FROM insumos WHERE ativo ORDER BY nome'),
+      pool.query('SELECT id, nome FROM fornecedores WHERE ativo ORDER BY nome'),
+      pool.query('SELECT id, nome, unidade, custo_atual FROM insumos WHERE ativo ORDER BY nome'),
+      // A lista de FACÇÃO passa a ser separada da de fornecedor (0063). Antes,
+      // o combo "Escolha a facção" listava o fornecedor de embalagem junto com
+      // a costureira, e escolher errado só aparecia na hora de pagar.
+      pool.query(
+        `SELECT f.id, f.nome, f.faccao_categoria_id, c.nome AS categoria_nome,
+                c.etapa_id AS categoria_etapa_id
+           FROM fornecedores f
+           LEFT JOIN faccao_categorias c ON c.id = f.faccao_categoria_id
+          WHERE f.eh_faccao AND f.ativo ORDER BY f.nome`
+      ),
+      pool.query('SELECT id, nome, etapa_id, ordem FROM faccao_categorias WHERE ativo ORDER BY ordem, nome'),
+      pool.query('SELECT id, nome, sequencia, natureza FROM producao_etapas WHERE ativo ORDER BY sequencia, nome'),
+      pool.query(
+        `SELECT k.id, k.nome,
+                COALESCE(json_agg(json_build_object(
+                  'produto_id', i.produto_id, 'quantidade', i.quantidade,
+                  'referencia', p.referencia, 'descricao', p.descricao
+                ) ORDER BY i.ordem, i.id) FILTER (WHERE i.id IS NOT NULL), '[]') AS itens
+           FROM kits_manuais k
+           LEFT JOIN kits_manuais_itens i ON i.kit_id = k.id
+           LEFT JOIN produtos p ON p.id = i.produto_id
+          GROUP BY k.id ORDER BY k.nome`
+      ),
     ]);
-    res.json({ referencias, fornecedores, insumos });
+    res.json({ referencias, fornecedores, insumos, faccoes, categoriasFaccao, etapas, kits });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// A grade cadastrada da referência — o que a Nova Ordem desenha
+// ---------------------------------------------------------------------------
+// GET /api/producao/produto-grade/:produtoId
+//
+// Existe aqui, e não só em /api/produto-grade, pelo mesmo motivo de /apoio:
+// quem tem só a chave `producao` tomaria 403 na rota do módulo Produto e a
+// Nova Ordem abriria com a grade vazia, sem erro visível. Esta devolve apenas
+// cor, tamanho, variante e saldo — nunca custo, preço ou margem.
+router.get('/produto-grade/:produtoId', async (req, res, next) => {
+  try {
+    const produtoId = inteiroPositivo(req.params.produtoId);
+    if (!produtoId) return res.status(400).json({ error: 'Produto inválido.' });
+    const grade = await produtoGrade.gradeDoProduto(pool, produtoId);
+    res.json({
+      cores: grade.cores,
+      tamanhos: grade.tamanhos,
+      origem: grade.origem,
+      avisos: grade.avisos,
+      matriz: produtoGrade.montarMatriz(grade),
+    });
   } catch (err) {
     next(err);
   }
@@ -326,15 +380,23 @@ router.get('/ordens', async (req, res, next) => {
     if (req.query.fornecedor_id) { vals.push(req.query.fornecedor_id); cond.push(`op.fornecedor_id = $${vals.length}`); }
     if (req.query.busca) {
       vals.push(`%${req.query.busca}%`);
-      cond.push(`(p.referencia ILIKE $${vals.length} OR p.descricao ILIKE $${vals.length} OR op.numero::text ILIKE $${vals.length})`);
+      cond.push(`(p.referencia ILIKE $${vals.length} OR p.descricao ILIKE $${vals.length} OR op.numero::text ILIKE $${vals.length} OR op.nome ILIKE $${vals.length})`);
     }
+    // A FILHA DE UM KIT NÃO APARECE NA LISTA por padrão. Um kit de três
+    // referências viraria quatro linhas na tela — a do kit e as três dela —, e
+    // a soma de "peças em produção" contaria as mesmas peças duas vezes. Quem
+    // quiser ver as filhas abre a ordem do kit, ou pede `incluir_filhas=true`.
+    if (req.query.incluir_filhas !== 'true') cond.push('op.op_pai_id IS NULL');
+    if (req.query.tipo) { vals.push(req.query.tipo); cond.push(`op.tipo = $${vals.length}`); }
     const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
 
     const { rows } = await pool.query(
       `SELECT op.*, p.referencia, p.descricao AS produto_descricao,
               f.nome AS fornecedor_nome, e.nome AS empresa_nome,
               a.gasto_mao_de_obra, a.apontamentos,
-              i.custo_material_reservado, i.insumos_sem_custo
+              i.custo_material_reservado, i.insumos_sem_custo,
+              fl.referencias_do_kit, fl.filhas,
+              ev.id AS evento_calendario_id
          FROM ordens_producao op
          JOIN produtos p ON p.id = op.produto_id
          LEFT JOIN fornecedores f ON f.id = op.fornecedor_id
@@ -349,6 +411,15 @@ router.get('/ordens', async (req, res, next) => {
                   COUNT(*) FILTER (WHERE custo_unitario IS NULL) AS insumos_sem_custo
              FROM ordem_producao_insumos WHERE ordem_id = op.id
          ) i ON TRUE
+         LEFT JOIN LATERAL (
+           SELECT COUNT(*)::int AS filhas,
+                  string_agg(DISTINCT pf.referencia, ', ' ORDER BY pf.referencia) AS referencias_do_kit
+             FROM ordens_producao of2 JOIN produtos pf ON pf.id = of2.produto_id
+            WHERE of2.op_pai_id = op.id
+         ) fl ON TRUE
+         LEFT JOIN LATERAL (
+           SELECT id FROM calendario_eventos WHERE ordem_producao_id = op.id LIMIT 1
+         ) ev ON TRUE
          ${where}
          ORDER BY
            CASE op.situacao WHEN 'em_producao' THEN 0 WHEN 'planejada' THEN 1
@@ -370,16 +441,28 @@ router.get('/ordens/:id', async (req, res, next) => {
 
     const { rows } = await pool.query(
       `SELECT op.*, p.referencia, p.descricao AS produto_descricao,
-              f.nome AS fornecedor_nome, e.nome AS empresa_nome, u.nome AS criada_por_nome
+              f.nome AS fornecedor_nome, e.nome AS empresa_nome, u.nome AS criada_por_nome,
+              k.nome AS kit_nome,
+              (SELECT id FROM calendario_eventos WHERE ordem_producao_id = op.id LIMIT 1) AS evento_calendario_id
          FROM ordens_producao op
          JOIN produtos p ON p.id = op.produto_id
          LEFT JOIN fornecedores f ON f.id = op.fornecedor_id
          LEFT JOIN empresas e ON e.id = op.empresa_id
          LEFT JOIN usuarios u ON u.id = op.criada_por
+         LEFT JOIN kits_manuais k ON k.id = op.kit_id
         WHERE op.id = $1`, [id]
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Ordem não encontrada.' });
     const ordem = rows[0];
+
+    // As referências de uma O.P. de kit. Cada uma É uma ordem de produção
+    // completa; esta lista é só o índice delas.
+    const { rows: filhas } = await pool.query(
+      `SELECT o.id, o.numero, o.situacao, o.quantidade_planejada, o.quantidade_produzida,
+              o.quantidade_segunda, p.referencia, p.descricao AS produto_descricao
+         FROM ordens_producao o JOIN produtos p ON p.id = o.produto_id
+        WHERE o.op_pai_id = $1 ORDER BY o.id`, [id]
+    );
 
     const [{ rows: grade }, { rows: insumos }, { rows: apontamentos }, { rows: faccao }] =
       await Promise.all([
@@ -420,7 +503,18 @@ router.get('/ordens/:id', async (req, res, next) => {
     });
     const comparacao = compararComPadrao({ real, custoPadraoUnitario: ordem.custo_padrao_unitario });
 
-    res.json({ ordem, grade, insumos, apontamentos, faccao, custoReal: real, comparacao });
+    // A grade cadastrada da referência, para o detalhe conseguir acrescentar
+    // uma cor que ficou de fora sem obrigar a fechar a ordem e abrir outra.
+    const gradeCadastro = await produtoGrade.gradeDoProduto(pool, ordem.produto_id)
+      .catch(() => null);
+
+    res.json({
+      ordem, grade, insumos, apontamentos, faccao, filhas,
+      custoReal: real, comparacao,
+      gradeCadastro: gradeCadastro
+        ? { cores: gradeCadastro.cores, tamanhos: gradeCadastro.tamanhos, origem: gradeCadastro.origem }
+        : null,
+    });
   } catch (err) {
     next(err);
   }
@@ -448,6 +542,70 @@ async function montarExplosao(produtoId, grade) {
   return explodirFicha({ grade, materiais, consumoPorTamanho: consumos });
 }
 
+// Insumo lançado à mão entra na MESMA lista da explosão, e não numa lista
+// paralela: a pergunta "quanto de material esta ordem precisa" tem uma resposta
+// só. O que muda é `origemLancamento`, que a tela mostra — porque um custo real
+// acima do padrão significa coisas diferentes conforme a diferença tenha vindo
+// da ficha ou de um insumo que alguém acrescentou.
+async function juntarInsumosManuais(insumos, extras) {
+  const lista = (extras || [])
+    .map((e) => ({
+      insumoId: inteiroPositivo(e.insumo_id),
+      quantidade: numeroOuNulo(e.quantidade),
+      custoInformado: numeroOuNulo(e.custo_unitario),
+      observacao: e.observacao || null,
+    }))
+    .filter((e) => e.insumoId && e.quantidade != null && e.quantidade > 0);
+  if (lista.length === 0) return insumos;
+
+  const { rows } = await pool.query(
+    'SELECT id, nome, unidade, custo_atual FROM insumos WHERE id = ANY($1)',
+    [lista.map((e) => e.insumoId)]
+  );
+  const porId = new Map(rows.map((r) => [r.id, r]));
+
+  const resultado = [...insumos];
+  for (const e of lista) {
+    const info = porId.get(e.insumoId);
+    if (!info) continue;
+    const custo = e.custoInformado != null
+      ? e.custoInformado
+      : (info.custo_atual != null ? Number(info.custo_atual) : null);
+    // Insumo que a ficha JÁ previu e alguém corrigiu à mão: a linha da ficha é
+    // atualizada, não duplicada. Duplicar somaria o material duas vezes e
+    // faria a ordem reservar o dobro.
+    const existente = resultado.find((i) => i.insumoId === e.insumoId);
+    if (existente) {
+      existente.necessidadeFicha = existente.necessidade;
+      existente.necessidade = e.quantidade;
+      existente.quantidadeInformada = e.quantidade;
+      existente.custoInformado = e.custoInformado;
+      if (custo != null) { existente.custoUnitario = custo; existente.semCusto = false; }
+      existente.origemLancamento = 'manual';
+      existente.observacao = e.observacao;
+    } else {
+      resultado.push({
+        insumoId: e.insumoId,
+        materialId: null,
+        insumoNome: info.nome,
+        unidade: info.unidade,
+        necessidadeSemPerda: e.quantidade,
+        necessidade: e.quantidade,
+        quantidadeInformada: e.quantidade,
+        custoInformado: e.custoInformado,
+        perdaAplicada: null,
+        perdaNaoCadastrada: false,
+        origemConsumo: 'manual',
+        origemLancamento: 'manual',
+        custoUnitario: custo,
+        semCusto: custo == null,
+        observacao: e.observacao,
+      });
+    }
+  }
+  return resultado;
+}
+
 router.post('/ordens/previa', async (req, res, next) => {
   try {
     const produtoId = inteiroPositivo(req.body?.produto_id);
@@ -455,7 +613,12 @@ router.post('/ordens/previa', async (req, res, next) => {
     if (!produtoId) return res.status(400).json({ error: 'Escolha o produto.' });
     if (grade.length === 0) return res.status(400).json({ error: 'A grade está vazia.' });
 
-    const { insumos, pendencias } = await montarExplosao(produtoId, grade);
+    const explosao = await montarExplosao(produtoId, grade);
+    const pendencias = explosao.pendencias;
+    const insumos = await juntarInsumosManuais(
+      explosao.insumos.map((i) => ({ ...i, origemLancamento: 'ficha' })),
+      req.body?.insumos_extra
+    );
 
     // Saldo disponível de cada insumo, para a prévia já dizer o que falta.
     const ids = insumos.map((i) => i.insumoId);
@@ -481,16 +644,49 @@ router.post('/ordens/previa', async (req, res, next) => {
     const totalPecas = grade.reduce((s, g) => s + (Number(g.quantidade_planejada) || 0), 0);
     const custoMaterial = comSaldo.reduce((s, i) => s + (i.custoPrevisto || 0), 0);
 
+    // A lista do que NÃO dá para produzir com o que existe hoje. É ela que a
+    // tela transforma no aviso de "insumo insuficiente" — pedido da dona:
+    // "se os insumos forem suficientes para a produção ok, se não for
+    // suficiente crie um pop-up avisando que os insumos estão insuficientes,
+    // apenas aviso".
+    //
+    // ⚠️ AVISO, não trava. A casa produz com material chegando no mesmo dia, e
+    // recusar a ordem obrigaria a mentir a quantidade para conseguir abrir —
+    // que é pior que abrir sabendo.
+    const faltas = comSaldo
+      .filter((i) => i.falta > 0)
+      .map((i) => ({
+        insumoId: i.insumoId,
+        insumo: i.insumoNome || i.material,
+        unidade: i.unidade || '',
+        necessidade: i.necessidade,
+        saldo: i.saldoDisponivel,
+        falta: i.falta,
+        // Quantas peças dariam para fazer com o que existe. É o número que
+        // decide se vale abrir a ordem menor ou esperar o material.
+        pecasPossiveis: i.necessidade > 0
+          ? Math.floor((i.saldoDisponivel / i.necessidade) * totalPecas)
+          : null,
+      }))
+      .sort((a, b) => (a.pecasPossiveis ?? 0) - (b.pecasPossiveis ?? 0));
+
     res.json({
       insumos: comSaldo,
       pendencias,
+      faltas,
+      materialSuficiente: faltas.length === 0,
       resumo: {
         totalPecas,
         custoMaterialPrevisto: custoMaterial,
         custoMaterialPorPeca: totalPecas > 0 ? custoMaterial / totalPecas : null,
         insumosSemCusto: comSaldo.filter((i) => i.semCusto).length,
-        insumosFaltando: comSaldo.filter((i) => i.falta > 0).length,
+        insumosFaltando: faltas.length,
+        insumosManuais: comSaldo.filter((i) => i.origemLancamento === 'manual').length,
         usouConsumoPorTamanho: comSaldo.some((i) => i.origemConsumo === 'por_tamanho'),
+        // Com o material que há hoje, a ordem inteira sai? E se não sair, até
+        // quantas peças sai? O menor limite entre os insumos manda.
+        pecasPossiveis: faltas.length === 0 ? totalPecas
+          : Math.max(0, Math.min(...faltas.map((f) => f.pecasPossiveis ?? 0))),
       },
       avisos: [
         ...(pendencias.some((p) => p.grave) ? ['Há tamanhos sem consumo cadastrado: a necessidade deles ficou de fora e o material vai faltar no corte.'] : []),
@@ -509,6 +705,115 @@ router.post('/ordens/previa', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // Criar a ordem
 // ---------------------------------------------------------------------------
+// Uma função só grava a ordem, e ela é usada pelos dois caminhos: a ordem de um
+// produto e cada referência de uma ordem de KIT. É o que garante o pedido da
+// dona ao pé da letra — "dentro do Kit quero ter todas as funções da OP
+// convencional": a filha de um kit não é uma ordem reduzida, é exatamente a
+// mesma ordem, com roteiro, reserva, movimentação, O.S. e entrada no estoque.
+async function gravarOrdem(client, req, {
+  produtoId, grade, insumos, cabecalho, opPaiId = null,
+}) {
+  // CUSTO PADRÃO congelado na abertura, vindo do motor — é contra ele que o
+  // custo real vai ser comparado depois (REGRA 1: lido, não recalculado).
+  const ctx = await getCalcContext();
+  const [{ rows: prodRows }, { rows: mats }, { rows: inds }] = await Promise.all([
+    client.query(
+      `SELECT p.*, e.regime_tributario, e.icms, e.pis, e.cofins, e.ipi, e.iss,
+              e.simples_aliquota, e.outros_impostos, e.usa_aliquota_media, e.aliquota_media_pct
+         FROM produtos p LEFT JOIN empresas e ON e.id = p.empresa_id WHERE p.id = $1`, [produtoId]
+    ),
+    client.query('SELECT * FROM materiais WHERE produto_id = $1', [produtoId]),
+    client.query('SELECT * FROM custos_industriais WHERE produto_id = $1', [produtoId]),
+  ]);
+  if (prodRows.length === 0) {
+    throw Object.assign(new Error('Produto não encontrado.'), { status: 404 });
+  }
+  const calculo = produtosRoutes.buildCalculo(prodRows[0], mats, inds, ctx);
+  const totalPecas = grade.reduce((s, g) => s + Number(g.quantidade_planejada), 0);
+
+  const { rows: ordemRows } = await client.query(
+    `INSERT INTO ordens_producao
+       (produto_id, empresa_id, situacao, tipo, nome, kit_id, op_pai_id, quantidade_kits,
+        data_inicio, data_prevista, quantidade_planejada,
+        fornecedor_id, custo_padrao_unitario, custo_padrao_snapshot, observacoes, criada_por)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+    [
+      produtoId, cabecalho.empresaId ?? prodRows[0].empresa_id,
+      cabecalho.situacao, cabecalho.tipo || 'produto', cabecalho.nome || null,
+      cabecalho.kitId || null, opPaiId, cabecalho.quantidadeKits || null,
+      cabecalho.dataInicio || null, cabecalho.dataPrevista || null, totalPecas,
+      cabecalho.fornecedorId || null,
+      Number(calculo.custoTotal.subtotalProducao) || null,
+      JSON.stringify(calculo),
+      cabecalho.observacoes || null, req.user?.id || null,
+    ]
+  );
+  const ordem = ordemRows[0];
+
+  for (const g of grade) {
+    await client.query(
+      `INSERT INTO ordem_producao_grade (ordem_id, cor, tamanho, variante_id, quantidade_planejada)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (ordem_id, cor, tamanho) DO UPDATE
+         SET quantidade_planejada = EXCLUDED.quantidade_planejada`,
+      [ordem.id, g.cor || '', g.tamanho || '', inteiroPositivo(g.variante_id), Number(g.quantidade_planejada)]
+    );
+  }
+
+  for (const i of insumos) {
+    await client.query(
+      `INSERT INTO ordem_producao_insumos
+         (ordem_id, insumo_id, material_id, quantidade_necessaria, origem_consumo,
+          perda_aplicada, custo_unitario, origem_lancamento, quantidade_informada,
+          custo_informado, observacao)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (ordem_id, insumo_id, COALESCE(material_id, 0)) DO UPDATE
+         SET quantidade_necessaria = EXCLUDED.quantidade_necessaria,
+             origem_consumo = EXCLUDED.origem_consumo,
+             perda_aplicada = EXCLUDED.perda_aplicada,
+             custo_unitario = EXCLUDED.custo_unitario,
+             origem_lancamento = EXCLUDED.origem_lancamento,
+             quantidade_informada = EXCLUDED.quantidade_informada,
+             custo_informado = EXCLUDED.custo_informado,
+             observacao = EXCLUDED.observacao`,
+      [
+        ordem.id, i.insumoId, i.materialId, i.necessidade, i.origemConsumo,
+        i.perdaAplicada, i.custoUnitario, i.origemLancamento || 'ficha',
+        i.quantidadeInformada ?? null, i.custoInformado ?? null, i.observacao || null,
+      ]
+    );
+  }
+
+  return { ordem, referencia: prodRows[0].referencia, totalPecas };
+}
+
+// Prepara a explosão de uma referência: valida a grade, explode a ficha e junta
+// o que foi lançado à mão. Devolve tudo junto para quem grava não precisar
+// repetir a checagem em dois lugares e deixar as duas versões divergirem.
+async function prepararReferencia({ produtoId, grade, insumosExtra, aceitarFichaIncompleta }) {
+  const linhas = (Array.isArray(grade) ? grade : [])
+    .filter((g) => Number(g.quantidade_planejada) > 0);
+  if (!produtoId) throw Object.assign(new Error('Escolha o produto.'), { status: 400 });
+  if (linhas.length === 0) {
+    throw Object.assign(new Error('A grade está vazia: nenhuma cor e tamanho com quantidade.'), { status: 400 });
+  }
+
+  const explosao = await montarExplosao(produtoId, linhas);
+  const graves = explosao.pendencias.filter((p) => p.grave);
+  if (graves.length > 0 && aceitarFichaIncompleta !== true) {
+    throw Object.assign(
+      new Error('A ficha está incompleta para esta grade: há tamanho sem consumo cadastrado. Abrir assim faria o material faltar no corte.'),
+      { status: 400, pendencias: graves, exige: 'aceitar_ficha_incompleta' }
+    );
+  }
+
+  const insumos = await juntarInsumosManuais(
+    explosao.insumos.map((i) => ({ ...i, origemLancamento: 'ficha' })),
+    insumosExtra
+  );
+  return { linhas, insumos, pendencias: explosao.pendencias };
+}
+
 router.post('/ordens', async (req, res, next) => {
   const client = await pool.connect();
   try {
@@ -516,93 +821,562 @@ router.post('/ordens', async (req, res, next) => {
     if (body.confirmar !== true) {
       return res.status(400).json({ error: 'É preciso confirmar antes de abrir a ordem.' });
     }
-    const produtoId = inteiroPositivo(body.produto_id);
-    const grade = (Array.isArray(body.grade) ? body.grade : [])
-      .filter((g) => Number(g.quantidade_planejada) > 0);
-    if (!produtoId) return res.status(400).json({ error: 'Escolha o produto.' });
-    if (grade.length === 0) return res.status(400).json({ error: 'A grade está vazia.' });
 
-    const { insumos, pendencias } = await montarExplosao(produtoId, grade);
-    const graves = pendencias.filter((p) => p.grave);
-    if (graves.length > 0 && body.aceitar_ficha_incompleta !== true) {
-      return res.status(400).json({
-        error: 'A ficha está incompleta para esta grade: há tamanho sem consumo cadastrado. Abrir assim faria o material faltar no corte.',
-        pendencias: graves,
-        exige: 'aceitar_ficha_incompleta',
+    const ehKit = body.tipo === 'kit';
+    const situacao = body.situacao === 'planejada' ? 'planejada' : 'rascunho';
+
+    // -----------------------------------------------------------------------
+    // ORDEM DE KIT
+    // -----------------------------------------------------------------------
+    // Uma ordem MÃE, e uma ordem FILHA por referência. A ordem de
+    // preenchimento é a que a dona descreveu: primeiro a referência, depois as
+    // cores DENTRO daquela referência, depois as quantidades.
+    //
+    // Modelar como uma ordem só, com várias referências dentro, obrigaria a
+    // acrescentar `produto_id` à grade, ao movimento e ao WIP, e a mexer nas
+    // views que a movimentação e a O.S. acabaram de estabilizar. O ganho seria
+    // nenhum: a peça do kit é cortada e costurada como qualquer outra peça.
+    if (ehKit) {
+      const componentes = Array.isArray(body.componentes) ? body.componentes : [];
+      if (componentes.length === 0) {
+        return res.status(400).json({ error: 'Um kit precisa de pelo menos uma referência.' });
+      }
+      const repetida = componentes
+        .map((c) => inteiroPositivo(c.produto_id))
+        .filter((id, i, arr) => id && arr.indexOf(id) !== i);
+      if (repetida.length > 0) {
+        return res.status(400).json({
+          error: 'A mesma referência aparece duas vezes no kit. Junte as cores dela numa linha só — '
+            + 'duas ordens da mesma referência dariam duas entradas separadas no estoque.',
+        });
+      }
+
+      const preparados = [];
+      for (const c of componentes) {
+        preparados.push({
+          produtoId: inteiroPositivo(c.produto_id),
+          ...(await prepararReferencia({
+            produtoId: inteiroPositivo(c.produto_id),
+            grade: c.grade,
+            insumosExtra: c.insumos_extra,
+            aceitarFichaIncompleta: body.aceitar_ficha_incompleta,
+          })),
+        });
+      }
+
+      const cabecalhoBase = {
+        empresaId: inteiroPositivo(body.empresa_id),
+        situacao,
+        dataInicio: body.data_inicio || null,
+        dataPrevista: body.data_prevista || null,
+        fornecedorId: inteiroPositivo(body.fornecedor_id),
+        observacoes: body.observacoes || null,
+      };
+
+      await client.query('BEGIN');
+      // A mãe nasce com a grade CONSOLIDADA das filhas (a soma por cor e
+      // tamanho) e com a primeira referência como `produto_id`, que é NOT NULL
+      // desde a 0049. A grade da mãe é o retrato do kit; quem produz é a filha.
+      const gradeConsolidada = new Map();
+      for (const p of preparados) {
+        for (const l of p.linhas) {
+          const chave = `${l.cor || ''}|${l.tamanho || ''}`;
+          const atual = gradeConsolidada.get(chave) || { cor: l.cor || '', tamanho: l.tamanho || '', quantidade_planejada: 0, variante_id: null };
+          atual.quantidade_planejada += Number(l.quantidade_planejada);
+          gradeConsolidada.set(chave, atual);
+        }
+      }
+
+      const mae = await gravarOrdem(client, req, {
+        produtoId: preparados[0].produtoId,
+        grade: [...gradeConsolidada.values()],
+        insumos: [],
+        cabecalho: {
+          ...cabecalhoBase,
+          tipo: 'kit',
+          nome: body.nome || null,
+          kitId: inteiroPositivo(body.kit_id),
+          quantidadeKits: numeroOuNulo(body.quantidade_kits),
+        },
+      });
+
+      const filhas = [];
+      for (const p of preparados) {
+        const filha = await gravarOrdem(client, req, {
+          produtoId: p.produtoId,
+          grade: p.linhas,
+          insumos: p.insumos,
+          cabecalho: { ...cabecalhoBase, tipo: 'produto', kitId: inteiroPositivo(body.kit_id) },
+          opPaiId: mae.ordem.id,
+        });
+        filhas.push(filha);
+      }
+
+      const calendario = await calendarioProducao.sincronizarEvento(client, {
+        ordemId: mae.ordem.id, usuarioId: req.user?.id || null,
+      });
+      await client.query('COMMIT');
+
+      await registrar(req, {
+        acao: 'criar', entidade: 'ordem_producao', entidadeId: mae.ordem.id,
+        descricao: `Abriu a OP de kit ${mae.ordem.numero}: ${filhas.length} referência(s), `
+          + `${filhas.reduce((s, f) => s + f.totalPecas, 0)} peças`,
+        sucesso: true,
+      });
+
+      return res.status(201).json({
+        ordem: mae.ordem,
+        filhas: filhas.map((f) => ({ ...f.ordem, referencia: f.referencia })),
+        calendario,
+        pendencias: preparados.flatMap((p) => p.pendencias),
       });
     }
 
-    // CUSTO PADRÃO congelado na abertura, vindo do motor — é contra ele que o
-    // custo real vai ser comparado depois (REGRA 1: lido, não recalculado).
-    const ctx = await getCalcContext();
-    const [{ rows: prodRows }, { rows: mats }, { rows: inds }] = await Promise.all([
-      pool.query(
-        `SELECT p.*, e.regime_tributario, e.icms, e.pis, e.cofins, e.ipi, e.iss,
-                e.simples_aliquota, e.outros_impostos, e.usa_aliquota_media, e.aliquota_media_pct
-           FROM produtos p LEFT JOIN empresas e ON e.id = p.empresa_id WHERE p.id = $1`, [produtoId]
-      ),
-      pool.query('SELECT * FROM materiais WHERE produto_id = $1', [produtoId]),
-      pool.query('SELECT * FROM custos_industriais WHERE produto_id = $1', [produtoId]),
-    ]);
-    if (prodRows.length === 0) return res.status(404).json({ error: 'Produto não encontrado.' });
-    const calculo = produtosRoutes.buildCalculo(prodRows[0], mats, inds, ctx);
-
-    const totalPecas = grade.reduce((s, g) => s + Number(g.quantidade_planejada), 0);
+    // -----------------------------------------------------------------------
+    // ORDEM DE UM PRODUTO
+    // -----------------------------------------------------------------------
+    const produtoId = inteiroPositivo(body.produto_id);
+    const preparado = await prepararReferencia({
+      produtoId,
+      grade: body.grade,
+      insumosExtra: body.insumos_extra,
+      aceitarFichaIncompleta: body.aceitar_ficha_incompleta,
+    });
 
     await client.query('BEGIN');
-    const { rows: ordemRows } = await client.query(
-      `INSERT INTO ordens_producao
-         (produto_id, empresa_id, situacao, data_prevista, quantidade_planejada,
-          fornecedor_id, custo_padrao_unitario, custo_padrao_snapshot, observacoes, criada_por)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [
-        produtoId, inteiroPositivo(body.empresa_id) ?? prodRows[0].empresa_id,
-        body.situacao === 'planejada' ? 'planejada' : 'rascunho',
-        body.data_prevista || null, totalPecas,
-        inteiroPositivo(body.fornecedor_id),
-        Number(calculo.custoTotal.subtotalProducao) || null,
-        JSON.stringify(calculo),
-        body.observacoes || null, req.user?.id || null,
-      ]
-    );
-    const ordem = ordemRows[0];
+    const { ordem, referencia, totalPecas } = await gravarOrdem(client, req, {
+      produtoId,
+      grade: preparado.linhas,
+      insumos: preparado.insumos,
+      cabecalho: {
+        empresaId: inteiroPositivo(body.empresa_id),
+        situacao,
+        tipo: 'produto',
+        dataInicio: body.data_inicio || null,
+        dataPrevista: body.data_prevista || null,
+        fornecedorId: inteiroPositivo(body.fornecedor_id),
+        observacoes: body.observacoes || null,
+      },
+    });
 
-    for (const g of grade) {
-      await client.query(
-        `INSERT INTO ordem_producao_grade (ordem_id, cor, tamanho, variante_id, quantidade_planejada)
-         VALUES ($1,$2,$3,$4,$5)
-         ON CONFLICT (ordem_id, cor, tamanho) DO UPDATE
-           SET quantidade_planejada = EXCLUDED.quantidade_planejada`,
-        [ordem.id, g.cor || '', g.tamanho || '', inteiroPositivo(g.variante_id), Number(g.quantidade_planejada)]
-      );
-    }
-
-    for (const i of insumos) {
-      await client.query(
-        `INSERT INTO ordem_producao_insumos
-           (ordem_id, insumo_id, material_id, quantidade_necessaria, origem_consumo,
-            perda_aplicada, custo_unitario)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
-         ON CONFLICT (ordem_id, insumo_id, material_id) DO UPDATE
-           SET quantidade_necessaria = EXCLUDED.quantidade_necessaria,
-               origem_consumo = EXCLUDED.origem_consumo,
-               perda_aplicada = EXCLUDED.perda_aplicada,
-               custo_unitario = EXCLUDED.custo_unitario`,
-        [
-          ordem.id, i.insumoId, i.materialId, i.necessidade, i.origemConsumo,
-          i.perdaAplicada, i.custoUnitario,
-        ]
-      );
-    }
+    // O EVENTO DO CALENDÁRIO. Dentro da mesma transação de propósito: uma ordem
+    // que existe e um evento que não existe, porque a segunda chamada falhou,
+    // é o tipo de divergência que ninguém descobre — descobre-se em dezembro,
+    // quando a produção não aparece no calendário de novembro.
+    const calendario = await calendarioProducao.sincronizarEvento(client, {
+      ordemId: ordem.id, usuarioId: req.user?.id || null,
+    });
     await client.query('COMMIT');
 
     await registrar(req, {
       acao: 'criar', entidade: 'ordem_producao', entidadeId: ordem.id,
-      descricao: `Abriu a OP ${ordem.numero} de ${prodRows[0].referencia}: ${totalPecas} peças, ${insumos.length} insumo(s)`,
+      descricao: `Abriu a OP ${ordem.numero} de ${referencia}: ${totalPecas} peças, ${preparado.insumos.length} insumo(s)`,
       sucesso: true,
     });
 
-    res.status(201).json({ ordem, insumos, pendencias });
+    res.status(201).json({
+      ordem, insumos: preparado.insumos, pendencias: preparado.pendencias, calendario,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (err.status) {
+      return res.status(err.status).json({
+        error: err.message, pendencias: err.pendencias, exige: err.exige,
+      });
+    }
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Alterar a ordem: datas, facção, observação — e o calendário acompanha
+// ---------------------------------------------------------------------------
+// Sem esta rota, uma data prevista errada só se conserta cancelando a ordem. E
+// o calendário continuaria prometendo a data velha.
+router.put('/ordens/:id', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const id = inteiroPositivo(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Ordem inválida.' });
+    const b = req.body || {};
+
+    const colunas = [];
+    const vals = [id];
+    const set = (col, valor) => { vals.push(valor); colunas.push(`${col} = $${vals.length}`); };
+    if (b.data_inicio !== undefined) set('data_inicio', b.data_inicio || null);
+    if (b.data_prevista !== undefined) set('data_prevista', b.data_prevista || null);
+    if (b.fornecedor_id !== undefined) set('fornecedor_id', inteiroPositivo(b.fornecedor_id));
+    if (b.observacoes !== undefined) set('observacoes', b.observacoes || null);
+    if (b.nome !== undefined) set('nome', b.nome || null);
+    if (colunas.length === 0) return res.status(400).json({ error: 'Nada para alterar.' });
+
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `UPDATE ordens_producao SET ${colunas.join(', ')}, atualizado_em = now()
+        WHERE id = $1 RETURNING *`,
+      vals
+    );
+    if (rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Ordem não encontrada.' });
+    }
+
+    // As filhas de um kit herdam as datas da mãe: elas são um documento só do
+    // ponto de vista de quem planeja, e datas diferentes fariam a mesma
+    // produção aparecer em três semanas diferentes na carga da fábrica.
+    if (rows[0].tipo === 'kit' && (b.data_inicio !== undefined || b.data_prevista !== undefined)) {
+      await client.query(
+        `UPDATE ordens_producao SET data_inicio = $2, data_prevista = $3, atualizado_em = now()
+          WHERE op_pai_id = $1`,
+        [id, rows[0].data_inicio, rows[0].data_prevista]
+      );
+    }
+
+    const calendario = await calendarioProducao.sincronizarEvento(client, {
+      ordemId: rows[0].op_pai_id || id, usuarioId: req.user?.id || null,
+    });
+    await client.query('COMMIT');
+
+    res.json({ ordem: rows[0], calendario });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Mudar a situação — é o que o quadro (kanban) usa ao soltar o cartão
+// ---------------------------------------------------------------------------
+// ⚠️ Esta rota NÃO conclui e NÃO cancela por atalho.
+//
+// Concluir dá entrada das peças no estoque e passa pela trava financeira; fazer
+// isso com um arrastar de cartão seria a maneira mais fácil já inventada de
+// duplicar estoque. Arrastar para "Concluída" devolve 409 com a instrução, e a
+// tela abre a ordem no botão certo — que confirma, mostra o que vai entrar e
+// cobra as pendências do financeiro.
+const TRANSICOES = {
+  rascunho: ['planejada', 'cancelada'],
+  planejada: ['rascunho', 'em_producao', 'cancelada'],
+  em_producao: ['planejada', 'cancelada'],
+  concluida: [],
+  cancelada: ['rascunho'],
+};
+
+router.post('/ordens/:id/situacao', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const id = inteiroPositivo(req.params.id);
+    const destino = String(req.body?.situacao || '');
+    if (!id) return res.status(400).json({ error: 'Ordem inválida.' });
+
+    const { rows } = await pool.query(
+      `SELECT o.*, p.referencia FROM ordens_producao o
+         JOIN produtos p ON p.id = o.produto_id WHERE o.id = $1`, [id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Ordem não encontrada.' });
+    const ordem = rows[0];
+    if (ordem.situacao === destino) return res.json({ ordem, mudou: false });
+
+    if (destino === 'concluida') {
+      return res.status(409).json({
+        error: 'Concluir uma ordem dá entrada das peças no estoque e passa pela conferência do financeiro — '
+          + 'não é uma mudança de coluna. Abra a ordem e use "Concluir e dar entrada no estoque".',
+        exige: 'abrir_ordem',
+      });
+    }
+    const permitidas = TRANSICOES[ordem.situacao] || [];
+    if (!permitidas.includes(destino)) {
+      return res.status(400).json({
+        error: ordem.situacao === 'concluida'
+          ? 'Ordem concluída não volta atrás: as peças já entraram no estoque. Para corrigir, lance o movimento de estoque.'
+          : `Uma ordem ${ordem.situacao} não pode ir direto para ${destino}.`,
+      });
+    }
+
+    // Cancelar com material reservado devolveria a impressão de que o material
+    // voltou para o estoque — e ele não volta sozinho. Melhor avisar antes.
+    let aviso = null;
+    if (destino === 'cancelada') {
+      const { rows: reservado } = await pool.query(
+        `SELECT COUNT(*)::int AS n FROM ordem_producao_insumos
+          WHERE ordem_id = $1 AND quantidade_reservada > 0`, [id]
+      );
+      if (reservado[0].n > 0 && req.body?.confirmar !== true) {
+        return res.status(409).json({
+          error: `Esta ordem tem ${reservado[0].n} insumo(s) com material já reservado. `
+            + 'Cancelar não devolve o material ao estoque sozinho — confirme se é isso mesmo, '
+            + 'e lance a devolução do material depois.',
+          exige: 'confirmar',
+        });
+      }
+      if (reservado[0].n > 0) {
+        aviso = `${reservado[0].n} insumo(s) continuam com material reservado nesta ordem. Lance a devolução no estoque.`;
+      }
+    }
+
+    await client.query('BEGIN');
+    const { rows: atualizada } = await client.query(
+      `UPDATE ordens_producao SET situacao = $2, atualizado_em = now() WHERE id = $1 RETURNING *`,
+      [id, destino]
+    );
+    // A situação de uma O.P. de kit vale para as filhas: o kit não fica
+    // "em produção" com metade das referências ainda em rascunho.
+    if (atualizada[0].tipo === 'kit') {
+      await client.query(
+        `UPDATE ordens_producao SET situacao = $2, atualizado_em = now()
+          WHERE op_pai_id = $1 AND situacao <> 'concluida'`,
+        [id, destino]
+      );
+    }
+    const calendario = await calendarioProducao.sincronizarEvento(client, {
+      ordemId: atualizada[0].op_pai_id || id, usuarioId: req.user?.id || null,
+    });
+    await client.query('COMMIT');
+
+    await registrar(req, {
+      acao: 'alterar', entidade: 'ordem_producao', entidadeId: id,
+      descricao: `OP ${ordem.numero} (${ordem.referencia}): ${ordem.situacao} → ${destino}`,
+      sucesso: true,
+    });
+
+    res.json({ ordem: atualizada[0], mudou: true, aviso, calendario });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Insumo gasto na ordem: acrescentar, corrigir quantidade, corrigir custo
+// ---------------------------------------------------------------------------
+// Pedido da dona: "acrescentar os insumos que foram gastos na produção, tendo o
+// valor mudado deve alterar o valor do custo do produto".
+//
+// A primeira metade é esta rota. A segunda — mexer no custo do produto — é a
+// rota `aplicar-custo-na-ficha` logo abaixo, e ela é um ATO SEPARADO de
+// propósito (REGRA 1): o custo real de uma ordem é o custo daquela ordem, e
+// uma ordem ruim (facção que quebrou, malha que chegou cara) não pode
+// reescrever sozinha o preço de venda de toda a referência. O que a tela faz é
+// mostrar a diferença e oferecer o botão.
+//
+// ⚠️ Mexer na quantidade NÃO mexe no que já foi reservado. Reserva é movimento
+// de estoque e se desfaz por movimento de estoque, nunca por edição de número.
+router.post('/ordens/:id/insumos', async (req, res, next) => {
+  try {
+    const id = inteiroPositivo(req.params.id);
+    const insumoId = inteiroPositivo(req.body?.insumo_id);
+    const quantidade = numeroOuNulo(req.body?.quantidade);
+    const custo = numeroOuNulo(req.body?.custo_unitario);
+    if (!id) return res.status(400).json({ error: 'Ordem inválida.' });
+    if (!insumoId) return res.status(400).json({ error: 'Escolha o insumo.' });
+    if (quantidade == null || quantidade <= 0) {
+      return res.status(400).json({ error: 'Informe a quantidade gasta.' });
+    }
+
+    const { rows: ordemRows } = await pool.query('SELECT * FROM ordens_producao WHERE id = $1', [id]);
+    if (ordemRows.length === 0) return res.status(404).json({ error: 'Ordem não encontrada.' });
+    if (ordemRows[0].situacao === 'concluida') {
+      return res.status(400).json({
+        error: 'Esta ordem já foi concluída: o custo dela está fechado. Acrescentar insumo agora '
+          + 'mudaria um número que já foi comparado com o padrão e já virou histórico.',
+      });
+    }
+
+    const { rows: insumoRows } = await pool.query(
+      'SELECT id, nome, unidade, custo_atual FROM insumos WHERE id = $1', [insumoId]
+    );
+    if (insumoRows.length === 0) return res.status(404).json({ error: 'Insumo não encontrado.' });
+    const insumo = insumoRows[0];
+
+    const materialId = inteiroPositivo(req.body?.material_id);
+    const custoFinal = custo != null
+      ? custo
+      : (insumo.custo_atual != null ? Number(insumo.custo_atual) : null);
+
+    const { rows } = await pool.query(
+      `INSERT INTO ordem_producao_insumos
+         (ordem_id, insumo_id, material_id, quantidade_necessaria, origem_consumo,
+          custo_unitario, origem_lancamento, quantidade_informada, custo_informado, observacao)
+       VALUES ($1,$2,$3,$4,'manual',$5,'manual',$4,$6,$7)
+       ON CONFLICT (ordem_id, insumo_id, COALESCE(material_id, 0)) DO UPDATE
+         SET quantidade_necessaria = EXCLUDED.quantidade_necessaria,
+             quantidade_informada = EXCLUDED.quantidade_informada,
+             custo_unitario = COALESCE(EXCLUDED.custo_unitario, ordem_producao_insumos.custo_unitario),
+             custo_informado = EXCLUDED.custo_informado,
+             origem_lancamento = 'manual',
+             observacao = EXCLUDED.observacao
+       RETURNING *`,
+      [id, insumoId, materialId, quantidade, custoFinal, custo, req.body?.observacao || null]
+    );
+
+    await registrar(req, {
+      acao: 'alterar', entidade: 'ordem_producao', entidadeId: id,
+      descricao: `OP ${ordemRows[0].numero}: lançou ${quantidade} ${insumo.unidade || ''} de ${insumo.nome} à mão`,
+      sucesso: true,
+    });
+
+    res.status(201).json({
+      insumo: rows[0],
+      aviso: custoFinal == null
+        ? `${insumo.nome} não tem custo conhecido. A quantidade entrou, e o custo desta ordem continua incompleto — não virou zero.`
+        : null,
+    });
+  } catch (err) { next(err); }
+});
+
+// Tirar da ordem um insumo que não foi gasto. Só o que nunca foi reservado:
+// com reserva, tirar a linha esconderia material que saiu do estoque.
+router.delete('/ordens/:id/insumos/:itemId', async (req, res, next) => {
+  try {
+    const id = inteiroPositivo(req.params.id);
+    const itemId = inteiroPositivo(req.params.itemId);
+    if (!id || !itemId) return res.status(400).json({ error: 'Ordem ou item inválido.' });
+
+    const { rows } = await pool.query(
+      `SELECT oi.*, i.nome AS insumo_nome FROM ordem_producao_insumos oi
+         JOIN insumos i ON i.id = oi.insumo_id
+        WHERE oi.id = $1 AND oi.ordem_id = $2`, [itemId, id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Insumo não está nesta ordem.' });
+    if (Number(rows[0].quantidade_reservada) > 0 || Number(rows[0].quantidade_consumida) > 0) {
+      return res.status(400).json({
+        error: `${rows[0].insumo_nome} já teve material reservado ou consumido nesta ordem. `
+          + 'Tirar a linha faria sumir material que saiu do estoque de verdade — devolva o material primeiro.',
+      });
+    }
+    await pool.query('DELETE FROM ordem_producao_insumos WHERE id = $1', [itemId]);
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+// ---------------------------------------------------------------------------
+// Levar o custo apurado para a ficha do produto
+// ---------------------------------------------------------------------------
+// O ato humano que a REGRA 1 exige. O custo real da ordem nunca realimenta o
+// motor sozinho; aqui uma pessoa olha a diferença e decide.
+//
+// O que é gravado: `materiais.valor_unitario` (que é o campo que o motor lê) e,
+// quando a quantidade da ordem difere da ficha, `materiais.quantidade` e
+// `materiais.consumo_por_peca`. Cada alteração vira uma linha em
+// `producao_custo_aplicado` — sem ela, "por que o custo desta referência mudou
+// em 12/09?" não teria resposta.
+router.post('/ordens/:id/aplicar-custo-na-ficha', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const id = inteiroPositivo(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Ordem inválida.' });
+    if (req.body?.confirmar !== true) {
+      return res.status(400).json({
+        error: 'É preciso confirmar: isto altera a ficha técnica da referência e, por consequência, '
+          + 'o custo e o preço sugerido de toda venda futura dela.',
+      });
+    }
+
+    const { rows: ordemRows } = await pool.query(
+      `SELECT o.*, p.referencia FROM ordens_producao o
+         JOIN produtos p ON p.id = o.produto_id WHERE o.id = $1`, [id]
+    );
+    if (ordemRows.length === 0) return res.status(404).json({ error: 'Ordem não encontrada.' });
+    const ordem = ordemRows[0];
+
+    const totalPecas = Number(ordem.quantidade_produzida) > 0
+      ? Number(ordem.quantidade_produzida)
+      : Number(ordem.quantidade_planejada);
+    if (!(totalPecas > 0)) {
+      return res.status(400).json({ error: 'A ordem não tem peças: não há por onde dividir o custo.' });
+    }
+
+    const { rows: itens } = await pool.query(
+      `SELECT oi.*, i.nome AS insumo_nome, i.unidade
+         FROM ordem_producao_insumos oi JOIN insumos i ON i.id = oi.insumo_id
+        WHERE oi.ordem_id = $1`, [id]
+    );
+    // Só as linhas escolhidas, quando a tela manda uma escolha. Aplicar tudo de
+    // uma vez é o caminho fácil e o errado: quase sempre uma ou duas linhas
+    // explicam a diferença, e as outras variaram por acaso.
+    const escolhidos = Array.isArray(req.body?.itens) && req.body.itens.length > 0
+      ? new Set(req.body.itens.map((n) => Number(n)))
+      : null;
+
+    await client.query('BEGIN');
+    const aplicadas = [];
+    const ignoradas = [];
+
+    for (const item of itens) {
+      if (escolhidos && !escolhidos.has(item.id)) continue;
+      if (!item.material_id) {
+        // Insumo lançado à mão não tem linha na ficha para atualizar. Criar a
+        // linha aqui seria decidir sozinho que aquele insumo passa a fazer
+        // parte da referência para sempre — decisão de quem cuida do produto.
+        ignoradas.push({
+          insumo: item.insumo_nome,
+          motivo: 'foi lançado à mão nesta ordem e não existe na ficha. Acrescente-o na ficha da referência se ele passou a fazer parte do produto.',
+        });
+        continue;
+      }
+      const { rows: matRows } = await client.query(
+        'SELECT * FROM materiais WHERE id = $1 AND produto_id = $2', [item.material_id, ordem.produto_id]
+      );
+      if (matRows.length === 0) continue;
+      const material = matRows[0];
+
+      const consumido = Number(item.quantidade_consumida) > 0
+        ? Number(item.quantidade_consumida) : Number(item.quantidade_reservada);
+      const base = consumido > 0 ? consumido : Number(item.quantidade_necessaria);
+      const consumoPorPeca = base / totalPecas;
+      const custoUnitario = item.custo_unitario != null ? Number(item.custo_unitario) : null;
+
+      if (custoUnitario == null) {
+        ignoradas.push({ insumo: item.insumo_nome, motivo: 'não tem custo conhecido nesta ordem; aplicar colocaria zero na ficha.' });
+        continue;
+      }
+
+      const mudancas = [
+        ['valor_unitario', material.valor_unitario, custoUnitario],
+        ['quantidade', material.quantidade, consumoPorPeca],
+        ['consumo_por_peca', material.consumo_por_peca, consumoPorPeca],
+      ];
+      for (const [campo, anterior, novo] of mudancas) {
+        const a = anterior == null ? null : Number(anterior);
+        if (a != null && Math.abs(a - novo) < 1e-9) continue;
+        await client.query(
+          `INSERT INTO producao_custo_aplicado
+             (ordem_id, produto_id, material_id, insumo_id, campo, valor_anterior, valor_novo, usuario_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [id, ordem.produto_id, material.id, item.insumo_id, campo, a, novo, req.user?.id || null]
+        );
+      }
+      await client.query(
+        `UPDATE materiais SET valor_unitario = $2, quantidade = $3, consumo_por_peca = $3 WHERE id = $1`,
+        [material.id, custoUnitario, consumoPorPeca]
+      );
+      aplicadas.push({
+        insumo: item.insumo_nome,
+        material_id: material.id,
+        valor_unitario: { de: material.valor_unitario == null ? null : Number(material.valor_unitario), para: custoUnitario },
+        consumo_por_peca: { de: material.consumo_por_peca == null ? null : Number(material.consumo_por_peca), para: consumoPorPeca },
+      });
+    }
+    await client.query('COMMIT');
+
+    await registrar(req, {
+      acao: 'alterar', entidade: 'produto', entidadeId: ordem.produto_id,
+      descricao: `Aplicou o custo real da OP ${ordem.numero} na ficha de ${ordem.referencia}: `
+        + `${aplicadas.length} linha(s) atualizada(s)`,
+      sucesso: true,
+    });
+
+    res.json({
+      aplicadas, ignoradas,
+      aviso: 'A ficha da referência mudou. O preço sugerido e a margem de toda venda futura passam a sair '
+        + 'deste custo — as vendas já feitas continuam com o custo que tinham.',
+    });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     next(err);
@@ -804,6 +1578,105 @@ router.post('/ordens/:id/apontar', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // Concluir: as peças entram no estoque
 // ---------------------------------------------------------------------------
+// A TRAVA FINANCEIRA (decisão de 09/09/2026: trava a conclusão, não o
+// registro). A mercadoria pôde sair para a facção às 22h sem ninguém saber o
+// preço; o que não pode é a ordem FECHAR com a casa devendo a um costureiro e o
+// financeiro sem saber. Aqui é o ato administrativo — o retorno físico da peça
+// continua livre.
+//
+// A consulta cobre a ordem E as filhas dela: um kit cujo bordado não foi
+// registrado no financeiro não pode fechar por ser o kit.
+async function pendenciasQueTravam(ordemId) {
+  const { rows } = await pool.query(
+    `SELECT p.id, p.descricao, p.valor_estimado, p.origem_id, os.ordem_id
+       FROM fin_pendencias p
+       JOIN ordens_servico os ON os.id = p.origem_id
+       JOIN ordens_producao o ON o.id = os.ordem_id
+      WHERE p.origem_codigo = 'ordem_servico' AND p.situacao = 'aberta' AND p.bloqueia
+        AND (o.id = $1 OR o.op_pai_id = $1)`,
+    [ordemId]
+  );
+  return rows;
+}
+
+// Dá entrada das peças de UMA ordem no estoque. Não abre transação: quem chama
+// já está numa, porque a O.P. de kit conclui várias ordens no mesmo ato — meia
+// conclusão deixaria peça no estoque de uma referência e não da outra.
+async function darEntradaDaOrdem(client, ordem) {
+  const { rows: grade } = await client.query(
+    'SELECT * FROM ordem_producao_grade WHERE ordem_id = $1', [ordem.id]
+  );
+
+  const entradas = [];
+  for (const g of grade) {
+    const qtd = Number(g.quantidade_produzida);
+    if (qtd <= 0) continue;
+
+    let varianteId = g.variante_id;
+    if (!varianteId) {
+      // Cor nova que ainda não existia no cadastro: cria a variante em vez
+      // de descartar a produção.
+      const { rows } = await client.query(
+        `INSERT INTO estoque_variantes (produto_id, cor, tamanho, quantidade)
+         VALUES ($1,$2,$3,0)
+         ON CONFLICT (produto_id, cor, tamanho) DO UPDATE SET updated_at = now()
+         RETURNING id`,
+        [ordem.produto_id, g.cor, g.tamanho]
+      );
+      varianteId = rows[0].id;
+      await client.query('UPDATE ordem_producao_grade SET variante_id = $2 WHERE id = $1', [g.id, varianteId]);
+      // A cor produzida entra no CADASTRO da referência também. Sem isto, a cor
+      // nova continuaria invisível na ficha do produto — que é exatamente a
+      // queixa que originou o cadastro de grade.
+      if (g.cor) {
+        await client.query(
+          `INSERT INTO produto_cores (produto_id, cor, ordem) VALUES ($1,$2,999)
+           ON CONFLICT (produto_id, cor) DO NOTHING`, [ordem.produto_id, g.cor]
+        );
+      }
+      if (g.tamanho) {
+        await client.query(
+          `INSERT INTO produto_tamanhos (produto_id, tamanho, ordem) VALUES ($1,$2,$3)
+           ON CONFLICT (produto_id, tamanho) DO NOTHING`,
+          [ordem.produto_id, g.tamanho, produtoGrade.pesoTamanho(g.tamanho)]
+        );
+      }
+    }
+
+    const { rows: saldoRows } = await client.query(
+      'UPDATE estoque_variantes SET quantidade = quantidade + $2, updated_at = now() WHERE id = $1 RETURNING quantidade',
+      [varianteId, qtd]
+    );
+    await client.query(
+      `INSERT INTO estoque_movimentos (variante_id, tipo, quantidade, quantidade_resultante, motivo)
+       VALUES ($1, 'entrada', $2, $3, $4)`,
+      [varianteId, qtd, saldoRows[0].quantidade, `Produção — OP ${ordem.numero}`]
+    );
+    // A peça que acaba de ser produzida entra ENDEREÇADA no galpão. É o que
+    // faz o estoque novo já nascer sabendo onde está, em vez de engrossar a
+    // pilha de "não endereçado" que a migration 0052 deixou de propósito
+    // para o saldo antigo.
+    await locais.ajustarLocal(client, {
+      varianteId, local: 'proprio', fornecedorId: null, delta: qtd,
+    });
+    entradas.push({ ordem_id: ordem.id, cor: g.cor, tamanho: g.tamanho, quantidade: qtd });
+  }
+
+  // O reservado que sobrou vira consumido: é o que de fato foi usado.
+  await client.query(
+    `UPDATE ordem_producao_insumos
+        SET quantidade_consumida = GREATEST(quantidade_consumida, quantidade_reservada)
+      WHERE ordem_id = $1`, [ordem.id]
+  );
+  await client.query(
+    `UPDATE ordens_producao
+        SET situacao = 'concluida', data_conclusao = CURRENT_DATE, atualizado_em = now()
+      WHERE id = $1`, [ordem.id]
+  );
+
+  return entradas;
+}
+
 router.post('/ordens/:id/concluir', async (req, res, next) => {
   const client = await pool.connect();
   try {
@@ -823,19 +1696,7 @@ router.post('/ordens/:id/concluir', async (req, res, next) => {
       return res.status(400).json({ error: 'Esta ordem já foi concluída — concluir de novo dobraria o estoque.' });
     }
 
-    // A TRAVA FINANCEIRA (decisão de 09/09/2026: trava a conclusão, não o
-    // registro). A mercadoria pôde sair para a facção às 22h sem ninguém
-    // saber o preço; o que não pode é a ordem FECHAR com a casa devendo a um
-    // costureiro e o financeiro sem saber. Aqui é o ato administrativo — o
-    // retorno físico da peça continua livre.
-    const { rows: presas } = await pool.query(
-      `SELECT p.id, p.descricao, p.valor_estimado, p.origem_id
-         FROM fin_pendencias p
-         JOIN ordens_servico os ON os.id = p.origem_id
-        WHERE p.origem_codigo = 'ordem_servico' AND p.situacao = 'aberta' AND p.bloqueia
-          AND os.ordem_id = $1`,
-      [id]
-    );
+    const presas = await pendenciasQueTravam(id);
     if (presas.length > 0) {
       const lista = presas.map((p) => p.descricao).join(', ');
       return res.status(409).json({
@@ -846,60 +1707,47 @@ router.post('/ordens/:id/concluir', async (req, res, next) => {
       });
     }
 
-    const { rows: grade } = await pool.query(
-      'SELECT * FROM ordem_producao_grade WHERE ordem_id = $1', [id]
-    );
-
     await client.query('BEGIN');
-    const entradas = [];
-    for (const g of grade) {
-      const qtd = Number(g.quantidade_produzida);
-      if (qtd <= 0) continue;
+    let entradas = [];
 
-      let varianteId = g.variante_id;
-      if (!varianteId) {
-        // Cor nova que ainda não existia no cadastro: cria a variante em vez
-        // de descartar a produção.
-        const { rows } = await client.query(
-          `INSERT INTO estoque_variantes (produto_id, cor, tamanho, quantidade)
-           VALUES ($1,$2,$3,0) RETURNING id`,
-          [ordem.produto_id, g.cor, g.tamanho]
-        );
-        varianteId = rows[0].id;
-        await client.query('UPDATE ordem_producao_grade SET variante_id = $2 WHERE id = $1', [g.id, varianteId]);
+    if (ordem.tipo === 'kit') {
+      // ⚠️ A ordem MÃE de um kit NÃO dá entrada no estoque. A grade dela é a
+      // soma das filhas, e dar entrada nas duas colocaria cada peça duas vezes
+      // no saldo. Quem entra no estoque é sempre a referência.
+      const { rows: filhas } = await client.query(
+        `SELECT o.*, p.referencia FROM ordens_producao o JOIN produtos p ON p.id = o.produto_id
+          WHERE o.op_pai_id = $1 AND o.situacao <> 'cancelada' ORDER BY o.id`, [id]
+      );
+      const semProducao = filhas.filter((f) => !(Number(f.quantidade_produzida) > 0));
+      if (semProducao.length > 0 && req.body?.aceitar_kit_incompleto !== true) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: `${semProducao.length} referência(s) deste kit não têm nenhuma peça apontada como pronta `
+            + `(${semProducao.map((f) => f.referencia).join(', ')}). Concluir agora fecharia o kit com o kit `
+            + 'incompleto — confirme se é isso mesmo.',
+          exige: 'aceitar_kit_incompleto',
+          referencias: semProducao.map((f) => ({ id: f.id, numero: f.numero, referencia: f.referencia })),
+        });
       }
-
-      const { rows: saldoRows } = await client.query(
-        'UPDATE estoque_variantes SET quantidade = quantidade + $2, updated_at = now() WHERE id = $1 RETURNING quantidade',
-        [varianteId, qtd]
-      );
+      for (const filha of filhas) {
+        if (filha.situacao === 'concluida') continue;
+        entradas = entradas.concat(await darEntradaDaOrdem(client, filha));
+      }
       await client.query(
-        `INSERT INTO estoque_movimentos (variante_id, tipo, quantidade, quantidade_resultante, motivo)
-         VALUES ($1, 'entrada', $2, $3, $4)`,
-        [varianteId, qtd, saldoRows[0].quantidade, `Produção — OP ${ordem.numero}`]
+        `UPDATE ordens_producao
+            SET situacao = 'concluida', data_conclusao = CURRENT_DATE,
+                quantidade_produzida = COALESCE((SELECT SUM(quantidade_produzida)
+                                                   FROM ordens_producao WHERE op_pai_id = $1), 0),
+                atualizado_em = now()
+          WHERE id = $1`, [id]
       );
-      // A peça que acaba de ser produzida entra ENDEREÇADA no galpão. É o que
-      // faz o estoque novo já nascer sabendo onde está, em vez de engrossar a
-      // pilha de "não endereçado" que a migration 0052 deixou de propósito
-      // para o saldo antigo.
-      await locais.ajustarLocal(client, {
-        varianteId, local: 'proprio', fornecedorId: null, delta: qtd,
-      });
-      entradas.push({ cor: g.cor, tamanho: g.tamanho, quantidade: qtd });
+    } else {
+      entradas = await darEntradaDaOrdem(client, ordem);
     }
 
-    // O reservado que sobrou vira consumido: é o que de fato foi usado.
-    await client.query(
-      `UPDATE ordem_producao_insumos
-          SET quantidade_consumida = GREATEST(quantidade_consumida, quantidade_reservada)
-        WHERE ordem_id = $1`, [id]
-    );
-
-    await client.query(
-      `UPDATE ordens_producao
-          SET situacao = 'concluida', data_conclusao = CURRENT_DATE, atualizado_em = now()
-        WHERE id = $1`, [id]
-    );
+    const calendario = await calendarioProducao.sincronizarEvento(client, {
+      ordemId: ordem.op_pai_id || id, usuarioId: req.user?.id || null,
+    });
     await client.query('COMMIT');
 
     await registrar(req, {
@@ -908,7 +1756,7 @@ router.post('/ordens/:id/concluir', async (req, res, next) => {
       sucesso: true,
     });
 
-    res.json({ entradas });
+    res.json({ entradas, calendario });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     next(err);

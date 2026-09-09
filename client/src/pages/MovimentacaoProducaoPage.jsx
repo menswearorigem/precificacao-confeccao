@@ -7,6 +7,7 @@ import { api } from '../api/client';
 import {
   EstadoVazio, Select, Skeleton, IndicadorDestaque, NumInput, Field, DateInput,
 } from '../components/ui';
+import NovaFaccaoModal from '../components/NovaFaccaoModal';
 import { brl, formatQtd, dataBr, numeroBr, uid } from '../lib/format';
 
 // Produção › Gerar Movimentação.
@@ -98,7 +99,7 @@ function destinoVazio() {
 // ---------------------------------------------------------------------------
 function CartaoDestino({
   destino, indice, total, etapas, fornecedores, motivos, linhasGrade,
-  produtoId, data, onAlterar, onRemover, onPreco,
+  produtoId, data, onAlterar, onRemover, onPreco, onNovaFaccao,
 }) {
   const [preco, setPreco] = useState(null);
   const [precoCarregando, setPrecoCarregando] = useState(false);
@@ -187,13 +188,29 @@ function CartaoDestino({
             existe. */}
         {externa && (
           <Field label="Facção que vai receber" hint="Obrigatória: a etapa é externa.">
-            <Select
-              value={destino.fornecedor_destino_id}
-              placeholder="Escolha a facção"
-              onChange={(e) => onAlterar({ fornecedor_destino_id: e.target.value })}
-            >
-              {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.nome}</option>)}
-            </Select>
+            <div className="campo-com-acao">
+              <Select
+                value={destino.fornecedor_destino_id}
+                placeholder="Escolha a facção"
+                onChange={(e) => onAlterar({ fornecedor_destino_id: e.target.value })}
+              >
+                {fornecedores.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.nome}{f.categoria_nome ? ` · ${f.categoria_nome}` : ''}
+                  </option>
+                ))}
+              </Select>
+              {/* Cadastrar a facção SEM SAIR DAQUI. Pedido da dona: a facção
+                  nova aparece na hora de mandar a peça, e obrigar a abrir outra
+                  tela, cadastrar e voltar faz perder o que já foi digitado no
+                  formulário de movimentação. */}
+              {onNovaFaccao && (
+                <button
+                  type="button" className="btn-sec btn-mini" onClick={onNovaFaccao}
+                  title="Cadastrar uma facção nova sem sair desta tela."
+                ><Plus size={14} /> Nova</button>
+              )}
+            </div>
           </Field>
         )}
 
@@ -453,6 +470,7 @@ export default function MovimentacaoProducaoPage() {
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
   const [resultado, setResultado] = useState(null);
+  const [novaFaccao, setNovaFaccao] = useState(false);
 
   const carregarApoio = useCallback(async () => {
     setCarregando(true);
@@ -466,7 +484,12 @@ export default function MovimentacaoProducaoPage() {
       ]);
       setOrdens(o.filter((r) => !['cancelada', 'concluida'].includes(r.situacao)));
       setEtapas(et);
-      setFornecedores(apoio.fornecedores || []);
+      // A lista do combo passa a ser a de FACÇÕES (0063), não a de
+      // fornecedores em geral: mandar 800 peças para o fornecedor de embalagem
+      // é um erro que só aparecia na hora de pagar. Se ainda não houver
+      // nenhuma facção marcada, cai para a lista antiga — a tela não pode
+      // ficar sem opção nenhuma no primeiro deploy.
+      setFornecedores((apoio.faccoes || []).length > 0 ? apoio.faccoes : (apoio.fornecedores || []));
       setMotivos(mot);
     } catch (e) {
       setErro(e.message);
@@ -888,6 +911,7 @@ export default function MovimentacaoProducaoPage() {
                   produtoId={ordemEscolhida?.produto_id}
                   data={data}
                   onPreco={registrarPreco}
+                  onNovaFaccao={() => setNovaFaccao(true)}
                   onAlterar={(mudanca) => alterarDestino(d.uid, mudanca)}
                   onRemover={() => setDestinos((atual) => atual.filter((x) => x.uid !== d.uid))}
                 />
@@ -981,6 +1005,24 @@ export default function MovimentacaoProducaoPage() {
             </div>
           )}
         </>
+      )}
+
+      {novaFaccao && (
+        <NovaFaccaoModal
+          compacto
+          onFechar={() => setNovaFaccao(false)}
+          onSalva={(f) => {
+            setNovaFaccao(false);
+            // Entra na lista na hora e já fica escolhida no destino que está
+            // sem facção — que é o motivo de ter aberto o cadastro.
+            setFornecedores((atual) => [...atual, f].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')));
+            setDestinos((atual) => {
+              const alvo = atual.find((d) => !d.fornecedor_destino_id);
+              if (!alvo) return atual;
+              return atual.map((d) => (d.uid === alvo.uid ? { ...d, fornecedor_destino_id: String(f.id) } : d));
+            });
+          }}
+        />
       )}
     </div>
   );

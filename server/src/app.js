@@ -45,6 +45,8 @@ const insumosRoutes = require('./routes/insumos.routes');
 const estoqueMinimoRoutes = require('./routes/estoqueMinimo.routes');
 const producaoRoutes = require('./routes/producao.routes');
 const producaoMovimentacaoRoutes = require('./routes/producaoMovimentacao.routes');
+const faccoesRoutes = require('./routes/faccoes.routes');
+const produtoGradeRoutes = require('./routes/produtoGrade.routes');
 const mixTributarioRoutes = require('./routes/mixTributario.routes');
 const analisesEstoqueRoutes = require('./routes/analisesEstoque.routes');
 const estoqueLocaisRoutes = require('./routes/estoqueLocais.routes');
@@ -212,6 +214,20 @@ function createApp() {
   // (09/09/2026). Mesma chave de modulo da producao -- nenhuma permissao
   // existente muda (REGRA 4).
   app.use('/api/producao-movimentacao', requireAuth, requireModulo(['producao', 'estoque']), producaoMovimentacaoRoutes);
+  // Cadastro de FACÇÃO e das categorias dela (09/09/2026). Mesma chave da
+  // Produção: quem movimenta peça para a facção é quem sabe quem ela é, e a
+  // dona pediu explicitamente para poder criar a facção NA HORA de gerar a
+  // movimentação. Nenhuma permissão existente muda (REGRA 4).
+  //
+  // ⚠️ Facção é um fornecedor marcado (`eh_faccao`), então esta rota grava em
+  // `fornecedores`. Ela aceita só os campos de cadastro — nunca compra, nunca
+  // título, nunca preço de produto.
+  app.use('/api/faccoes', requireAuth, requireModulo(['producao', 'estoque']), faccoesRoutes);
+  // Cores e grade de tamanho do produto (09/09/2026). Fica sob `produto`
+  // porque é cadastro de produto, e aceita `estoque` porque é quem cria
+  // variante hoje. A Produção LÊ a mesma grade por /api/producao/produto-grade,
+  // que devolve só cor, tamanho e saldo — nunca custo nem preço.
+  app.use('/api/produto-grade', requireAuth, requireModulo(['produto', 'estoque']), produtoGradeRoutes);
   // Onde a peça está (08/09/2026): endereço no galpão e saldo por local.
   // Fica em `estoque` — é saldo de peça pronta — e aceita `producao` porque a
   // remessa para facção sai da tela de Produção e precisa ler o saldo por

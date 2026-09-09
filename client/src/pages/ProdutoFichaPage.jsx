@@ -11,6 +11,7 @@ import { statusToneClass } from '../lib/statusTone';
 import { brl, pct, uid, numeroBr } from '../lib/format';
 import Lightbox from '../components/Lightbox';
 import HistoricoPrecoCard from '../components/HistoricoPrecoCard';
+import GradeProdutoCard from '../components/GradeProdutoCard';
 
 const UNIDADES_FALLBACK = ['un', 'm', 'cm', 'kg', 'g', 'par', 'cj', 'rolo', 'pct'];
 
@@ -530,6 +531,11 @@ export default function ProdutoFichaPage() {
           </div>
         </div>
       )}
+
+      {/* Cores e grade só existem depois que a referência existe: sem `id` não
+          há a que pendurar a cor, e o cadastro ficaria órfão se o salvamento
+          falhasse. Em referência nova, o cartão aparece no primeiro salvamento. */}
+      {!isNew && <GradeProdutoCard produtoId={id} referencia={produto.referencia} />}
 
       <HistoricoPrecoCard produtoId={id} />
     </div>

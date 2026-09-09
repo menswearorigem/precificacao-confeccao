@@ -2,12 +2,18 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Factory, RefreshCw, Plus, AlertTriangle, Check, Truck, Timer,
   Scissors, ClipboardList, X, ArrowLeftRight, Package, Info, Layers,
+  Building2, LayoutGrid, List, CalendarDays, Wallet,
 } from 'lucide-react';
 import { api } from '../api/client';
 import {
   EstadoVazio, Select, Skeleton, CampoBusca, IndicadorDestaque,
   Paginacao, NumInput, Field, Checkbox, DateInput,
 } from '../components/ui';
+import { confirmar } from '../components/ConfirmDialog';
+import NovaOrdemProducao from '../components/NovaOrdemProducao';
+import ProducaoKanban from '../components/ProducaoKanban';
+import FaccoesAba from '../components/FaccoesAba';
+import NovaFaccaoModal from '../components/NovaFaccaoModal';
 import { useTabela } from '../lib/useTabela';
 import { brl, pct, formatQtd, numeroBr, dataBr } from '../lib/format';
 
@@ -49,261 +55,18 @@ function SeloSituacao({ situacao }) {
   return <span className={`selo ${s.tom}`}>{s.rotulo}</span>;
 }
 
-// ---------------------------------------------------------------------------
-// Nova ordem: grade -> prévia -> abertura
-// ---------------------------------------------------------------------------
-function NovaOrdem({ produtos, fornecedores, onFechar, onCriada }) {
-  const [produtoId, setProdutoId] = useState('');
-  const [fornecedorId, setFornecedorId] = useState('');
-  const [dataPrevista, setDataPrevista] = useState('');
-  const [observacoes, setObservacoes] = useState('');
-  const [grade, setGrade] = useState([{ cor: '', tamanho: '', quantidade_planejada: '' }]);
-  const [previa, setPrevia] = useState(null);
-  const [carregandoPrevia, setCarregandoPrevia] = useState(false);
-  const [salvando, setSalvando] = useState(false);
-  const [erro, setErro] = useState('');
-  const [aceitarIncompleta, setAceitarIncompleta] = useState(false);
-
-  const linhasValidas = grade.filter((g) => Number(g.quantidade_planejada) > 0);
-
-  function alterarLinha(idx, campo, valor) {
-    setGrade((atual) => atual.map((l, i) => (i === idx ? { ...l, [campo]: valor } : l)));
-    setPrevia(null);
-  }
-
-  async function pedirPrevia() {
-    setErro('');
-    setCarregandoPrevia(true);
-    try {
-      const r = await api.post('/producao/ordens/previa', {
-        produto_id: Number(produtoId),
-        grade: linhasValidas.map((g) => ({ ...g, quantidade_planejada: Number(g.quantidade_planejada) })),
-      });
-      setPrevia(r);
-    } catch (e) {
-      setErro(e.message);
-    } finally {
-      setCarregandoPrevia(false);
-    }
-  }
-
-  async function abrir(situacao) {
-    setErro('');
-    setSalvando(true);
-    try {
-      const r = await api.post('/producao/ordens', {
-        confirmar: true,
-        aceitar_ficha_incompleta: aceitarIncompleta,
-        produto_id: Number(produtoId),
-        fornecedor_id: fornecedorId ? Number(fornecedorId) : null,
-        data_prevista: dataPrevista || null,
-        observacoes: observacoes || null,
-        situacao,
-        grade: linhasValidas.map((g) => ({ ...g, quantidade_planejada: Number(g.quantidade_planejada) })),
-      });
-      onCriada(r);
-    } catch (e) {
-      setErro(e.message);
-      if (e.data?.exige === 'aceitar_ficha_incompleta') setAceitarIncompleta(false);
-    } finally {
-      setSalvando(false);
-    }
-  }
-
-  const pendenciasGraves = (previa?.pendencias || []).filter((p) => p.grave);
-
-  return (
-    <div className="anuncio-painel-fundo painel-fundo-clicavel" role="dialog" aria-modal="true">
-      <div className="anuncio-painel painel-largo">
-        <header className="anuncio-painel-topo">
-          <h2><Factory size={18} /> Nova ordem de produção</h2>
-          <button type="button" className="btn-icone" onClick={onFechar} aria-label="Fechar"><X size={18} /></button>
-        </header>
-
-        <div className="anuncio-painel-corpo">
-          <div className="form-linha">
-            <Field label="Produto">
-              <Select value={produtoId} onChange={(e) => { setProdutoId(e.target.value); setPrevia(null); }} placeholder="Escolha a referência">
-                {produtos.map((p) => (
-                  <option key={p.id} value={p.id}>{p.referencia} — {p.descricao}</option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Facção / oficina" hint="Opcional. Quem vai costurar, quando não é interno.">
-              <Select value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)} placeholder="Produção interna">
-                {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.nome}</option>)}
-              </Select>
-            </Field>
-            <Field label="Previsão de entrega">
-              <DateInput value={dataPrevista} onChange={(e) => setDataPrevista(e.target.value)} />
-            </Field>
-          </div>
-
-          <h3 className="card-titulo"><Layers size={16} /> Grade</h3>
-          <p className="ink-soft ajuda-bloco">
-            Cor e tamanho de cada linha. É a grade que determina o quanto de material a
-            ficha vai consumir — e é por linha da grade que a peça entra no estoque no fim.
-          </p>
-          <div className="tabela-rolagem">
-            <table className="tabela-nota">
-              <thead>
-                <tr><th>Cor</th><th>Tamanho</th><th className="num">Peças</th><th /></tr>
-              </thead>
-              <tbody>
-                {grade.map((l, idx) => (
-                  <tr key={idx}>
-                    <td><input className="input" value={l.cor} onChange={(e) => alterarLinha(idx, 'cor', e.target.value)} placeholder="Preto" /></td>
-                    <td><input className="input" value={l.tamanho} onChange={(e) => alterarLinha(idx, 'tamanho', e.target.value)} placeholder="M" /></td>
-                    <td className="num">
-                      <NumInput value={l.quantidade_planejada} step="1" onChange={(v) => alterarLinha(idx, 'quantidade_planejada', v)} />
-                    </td>
-                    <td>
-                      <button
-                        type="button" className="btn-icone" aria-label="Remover linha"
-                        onClick={() => { setGrade((a) => a.filter((_, i) => i !== idx)); setPrevia(null); }}
-                      ><X size={15} /></button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <button
-            type="button" className="btn-sec"
-            onClick={() => setGrade((a) => [...a, { cor: '', tamanho: '', quantidade_planejada: '' }])}
-          ><Plus size={15} /> Mais uma linha</button>
-
-          <div className="painel-acoes-inline">
-            <button
-              type="button" className="btn-sec"
-              disabled={!produtoId || linhasValidas.length === 0 || carregandoPrevia}
-              onClick={pedirPrevia}
-            >
-              <Scissors size={15} className={carregandoPrevia ? 'girando' : ''} /> Ver o que a ficha vai consumir
-            </button>
-          </div>
-
-          {previa && (
-            <div className="previa-explosao card">
-              <h3 className="card-titulo"><Scissors size={16} /> Explosão da ficha</h3>
-
-              <div className="indicadores-linha">
-                <IndicadorDestaque rotulo="Peças" valor={formatQtd(previa.resumo.totalPecas)} />
-                <IndicadorDestaque
-                  rotulo="Material previsto"
-                  valor={previa.resumo.insumosSemCusto > 0 ? `${brl(previa.resumo.custoMaterialPrevisto)} (incompleto)` : brl(previa.resumo.custoMaterialPrevisto)}
-                  tom={previa.resumo.insumosSemCusto > 0 ? 'atencao' : undefined}
-                  explicacao={previa.resumo.insumosSemCusto > 0 ? 'Há insumo sem custo conhecido nesta ordem. O total está incompleto — não é o custo real.' : undefined}
-                />
-                <IndicadorDestaque
-                  rotulo="Por peça"
-                  valor={previa.resumo.custoMaterialPorPeca != null ? brl(previa.resumo.custoMaterialPorPeca) : '—'}
-                />
-                <IndicadorDestaque
-                  rotulo="Insumos faltando"
-                  valor={formatQtd(previa.resumo.insumosFaltando)}
-                  tom={previa.resumo.insumosFaltando > 0 ? 'prejuizo' : undefined}
-                  explicacao="Quantos insumos têm saldo próprio menor que a necessidade desta ordem."
-                />
-              </div>
-
-              {previa.avisos.map((a, i) => (
-                <p key={i} className="aviso-inline"><AlertTriangle size={14} /> {a}</p>
-              ))}
-
-              <div className="tabela-rolagem">
-                <table className="tabela-nota">
-                  <thead>
-                    <tr>
-                      <th>Insumo</th><th>Origem do consumo</th>
-                      <th className="num">Necessidade</th><th className="num">Saldo</th>
-                      <th className="num">Falta</th><th className="num">Custo previsto</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previa.insumos.map((i) => {
-                      const origem = ORIGEM_CONSUMO[i.origemConsumo];
-                      return (
-                        <tr key={`${i.insumoId}-${i.materialId}`}>
-                          <td>
-                            {i.insumoNome || i.material}
-                            {i.perdaNaoCadastrada && (
-                              <span className="selo tone-atencao" title="Sem perda de corte cadastrada: a necessidade está subestimada, e o material vai faltar na mesa.">sem perda</span>
-                            )}
-                          </td>
-                          <td>
-                            {origem
-                              ? <span className={`selo ${origem.tom}`} title={origem.ajuda}>{origem.rotulo}</span>
-                              : <span className="selo tone-neutro">—</span>}
-                          </td>
-                          <td className="num">{numeroBr(i.necessidade, 3)} {i.unidade || ''}</td>
-                          <td className="num">{numeroBr(i.saldoDisponivel, 3)}</td>
-                          <td className={`num ${i.falta > 0 ? 'ink-prejuizo' : ''}`}>
-                            {i.falta > 0 ? numeroBr(i.falta, 3) : '—'}
-                          </td>
-                          <td className="num">
-                            {i.semCusto
-                              ? <span className="selo tone-atencao" title="Nunca entrou nota deste insumo. O custo é desconhecido, e desconhecido não é zero.">sem custo</span>
-                              : brl(i.custoPrevisto)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {pendenciasGraves.length > 0 && (
-                <div className="bloco-alerta">
-                  <p><AlertTriangle size={15} /> <strong>A ficha está incompleta para esta grade.</strong></p>
-                  <ul>
-                    {pendenciasGraves.map((p, i) => (
-                      <li key={i}>{p.material || p.insumo}: {p.motivo}</li>
-                    ))}
-                  </ul>
-                  <label className="check-linha">
-                    <Checkbox checked={aceitarIncompleta} onChange={(e) => setAceitarIncompleta(e.target.checked)} />
-                    Abrir mesmo assim. Eu sei que o material desses tamanhos ficou de fora da conta.
-                  </label>
-                </div>
-              )}
-            </div>
-          )}
-
-          <Field label="Observações">
-            <textarea className="input" rows={2} value={observacoes} onChange={(e) => setObservacoes(e.target.value)} />
-          </Field>
-
-          {erro && <p className="erro-inline">{erro}</p>}
-        </div>
-
-        <footer className="painel-rodape">
-          <button type="button" className="btn-sec" onClick={onFechar}>Cancelar</button>
-          <button
-            type="button" className="btn-sec"
-            disabled={!previa || salvando || (pendenciasGraves.length > 0 && !aceitarIncompleta)}
-            onClick={() => abrir('rascunho')}
-          >Salvar como rascunho</button>
-          <button
-            type="button" className="btn"
-            disabled={!previa || salvando || (pendenciasGraves.length > 0 && !aceitarIncompleta)}
-            onClick={() => abrir('planejada')}
-          ><Check size={15} /> Abrir a ordem</button>
-        </footer>
-      </div>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Detalhe da ordem: insumos, apontamentos, custo real x padrão
 // ---------------------------------------------------------------------------
-function DetalheOrdem({ ordemId, fornecedores, onFechar, onMudou }) {
+function DetalheOrdem({ ordemId, fornecedores, insumos: catalogoInsumos = [], onFechar, onAbrirOutra, onMudou }) {
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState(null);
   const [operacoes, setOperacoes] = useState([]);
+  const [datas, setDatas] = useState({ data_inicio: '', data_prevista: '' });
+  const [novoInsumo, setNovoInsumo] = useState({ insumo_id: '', quantidade: '', custo_unitario: '' });
   const [apontamento, setApontamento] = useState({
     operacao_id: '', cor: '', tamanho: '', quantidade: '', quantidade_refugo: '',
     valor_por_peca: '', conta_como_produzida: false,
@@ -314,6 +77,10 @@ function DetalheOrdem({ ordemId, fornecedores, onFechar, onMudou }) {
     try {
       const r = await api.get(`/producao/ordens/${ordemId}`);
       setDados(r);
+      setDatas({
+        data_inicio: (r.ordem.data_inicio || '').slice(0, 10),
+        data_prevista: (r.ordem.data_prevista || '').slice(0, 10),
+      });
       const ops = await api.get(`/producao/operacoes/${r.ordem.produto_id}`).catch(() => ({ operacoes: [] }));
       setOperacoes(ops.operacoes || []);
     } catch (e) {
@@ -346,22 +113,93 @@ function DetalheOrdem({ ordemId, fornecedores, onFechar, onMudou }) {
       <button type="button" className="btn-sec" onClick={onFechar}>Fechar</button></div></div>
   );
 
-  const { ordem, grade, insumos, apontamentos, faccao, custoReal, comparacao } = dados;
+  const { ordem, grade, insumos, apontamentos, faccao, custoReal, comparacao, filhas = [] } = dados;
   const podeMexer = !['concluida', 'cancelada'].includes(ordem.situacao);
+  const ehKit = ordem.tipo === 'kit';
+
+  async function salvarDatas() {
+    setErro(''); setAviso(null);
+    try {
+      const r = await api.put(`/producao/ordens/${ordemId}`, datas);
+      setAviso({
+        tipo: 'ok',
+        texto: r.calendario?.acao === 'criado' ? 'Datas salvas e ordem colocada no calendário.'
+          : r.calendario?.acao === 'atualizado' ? 'Datas salvas — o calendário acompanhou.'
+            : `Datas salvas. ${r.calendario?.motivo || ''}`,
+      });
+      await carregar();
+      onMudou();
+    } catch (e) { setErro(e.message); }
+  }
 
   return (
     <div className="anuncio-painel-fundo painel-fundo-clicavel" role="dialog" aria-modal="true">
       <div className="anuncio-painel painel-largo">
         <header className="anuncio-painel-topo">
           <h2>
-            <Factory size={18} /> OP {ordem.numero} · {ordem.referencia}
+            {ehKit ? <Layers size={18} /> : <Factory size={18} />}
+            OP {ordem.numero} · {ehKit ? (ordem.nome || ordem.kit_nome || 'Kit') : ordem.referencia}
             <SeloSituacao situacao={ordem.situacao} />
+            {ordem.evento_calendario_id && (
+              <span className="selo tone-neutro" title="Esta ordem tem evento no calendário, com a data de início e a de chegada.">
+                <CalendarDays size={12} /> no calendário
+              </span>
+            )}
           </h2>
           <button type="button" className="btn-icone" onClick={onFechar} aria-label="Fechar"><X size={18} /></button>
         </header>
 
         <div className="anuncio-painel-corpo">
-          <p className="ink-soft">{ordem.produto_descricao}</p>
+          <p className="ink-soft">{ehKit ? `${filhas.length} referência(s)` : ordem.produto_descricao}</p>
+
+          {/* ---- Datas: são elas que colocam a ordem no calendário ---- */}
+          <div className="form-linha">
+            <Field label="Início">
+              <DateInput value={datas.data_inicio} onChange={(e) => setDatas((d) => ({ ...d, data_inicio: e.target.value }))} />
+            </Field>
+            <Field label="Chegada prevista" hint="Sem ela a ordem não entra no calendário e não tem como atrasar.">
+              <DateInput value={datas.data_prevista} onChange={(e) => setDatas((d) => ({ ...d, data_prevista: e.target.value }))} />
+            </Field>
+            <Field label=" ">
+              <button
+                type="button" className="btn-sec"
+                disabled={datas.data_inicio === (ordem.data_inicio || '').slice(0, 10)
+                  && datas.data_prevista === (ordem.data_prevista || '').slice(0, 10)}
+                onClick={salvarDatas}
+              ><CalendarDays size={15} /> Salvar datas</button>
+            </Field>
+          </div>
+
+          {/* ---- As referências de um kit ---- */}
+          {ehKit && (
+            <>
+              <h3 className="card-titulo"><Layers size={16} /> Referências deste kit</h3>
+              <p className="ink-soft ajuda-bloco">
+                Cada uma é uma ordem de produção completa — com roteiro, material, movimentação e
+                ordem de serviço. Esta ordem existe para responder se o kit está pronto; quem entra
+                no estoque é sempre a referência.
+              </p>
+              <div className="tabela-rolagem">
+                <table className="tabela-nota">
+                  <thead>
+                    <tr><th className="num">OP</th><th>Referência</th><th>Situação</th><th className="num">Planejadas</th><th className="num">Produzidas</th><th className="num">2ª</th></tr>
+                  </thead>
+                  <tbody>
+                    {filhas.map((f) => (
+                      <tr key={f.id} className="linha-clicavel" onClick={() => onAbrirOutra?.(f.id)}>
+                        <td className="num">{f.numero}</td>
+                        <td>{f.referencia}<span className="ink-soft"> · {f.produto_descricao}</span></td>
+                        <td><SeloSituacao situacao={f.situacao} /></td>
+                        <td className="num">{formatQtd(f.quantidade_planejada)}</td>
+                        <td className="num">{formatQtd(f.quantidade_produzida)}</td>
+                        <td className="num">{formatQtd(f.quantidade_segunda)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
 
           {/* ---- Custo real x padrão: o número que o Wik não dá ---- */}
           <div className="indicadores-linha">
@@ -437,16 +275,20 @@ function DetalheOrdem({ ordemId, fornecedores, onFechar, onMudou }) {
               <thead>
                 <tr>
                   <th>Insumo</th><th>Origem</th><th className="num">Necessário</th>
-                  <th className="num">Reservado</th><th className="num">Saldo próprio</th><th className="num">Custo</th>
+                  <th className="num">Reservado</th><th className="num">Saldo próprio</th><th className="num">Custo</th><th />
                 </tr>
               </thead>
               <tbody>
                 {insumos.map((i) => {
                   const origem = ORIGEM_CONSUMO[i.origem_consumo];
                   const falta = Number(i.quantidade_necessaria) - Number(i.quantidade_reservada);
+                  const manual = i.origem_lancamento === 'manual';
                   return (
                     <tr key={i.id}>
-                      <td>{i.insumo_nome}</td>
+                      <td>
+                        {i.insumo_nome}
+                        {manual && <span className="selo tone-elevada" title="Lançado à mão nesta ordem: não veio da ficha técnica.">à mão</span>}
+                      </td>
                       <td>{origem ? <span className={`selo ${origem.tom}`} title={origem.ajuda}>{origem.rotulo}</span> : '—'}</td>
                       <td className="num">{numeroBr(i.quantidade_necessaria, 3)} {i.unidade}</td>
                       <td className={`num ${falta > 0.0001 ? 'ink-atencao' : ''}`}>{numeroBr(i.quantidade_reservada, 3)}</td>
@@ -456,12 +298,106 @@ function DetalheOrdem({ ordemId, fornecedores, onFechar, onMudou }) {
                           ? <span className="selo tone-atencao" title="Sem custo conhecido na abertura da ordem.">sem custo</span>
                           : brl(i.custo_unitario)}
                       </td>
+                      <td>
+                        {podeMexer && Number(i.quantidade_reservada) === 0 && Number(i.quantidade_consumida) === 0 && (
+                          <button
+                            type="button" className="btn-icone" aria-label={`Tirar ${i.insumo_nome} da ordem`}
+                            title="Tira o insumo desta ordem. Só é possível enquanto nada foi reservado."
+                            onClick={async () => {
+                              setErro(''); setAviso(null);
+                              try {
+                                await api.del(`/producao/ordens/${ordemId}/insumos/${i.id}`);
+                                await carregar(); onMudou();
+                              } catch (e) { setErro(e.message); }
+                            }}
+                          ><X size={15} /></button>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
+
+          {/* ---- Lançar o material que foi de fato gasto ---- */}
+          {podeMexer && (
+            <>
+              <div className="form-linha">
+                <Field label="Acrescentar ou corrigir insumo gasto" hint="Insumo que a ficha já previa tem a quantidade substituída, não somada.">
+                  <Select
+                    value={novoInsumo.insumo_id}
+                    placeholder="Escolha o insumo"
+                    onChange={(e) => setNovoInsumo((n) => ({ ...n, insumo_id: e.target.value }))}
+                  >
+                    {catalogoInsumos.map((i) => <option key={i.id} value={i.id}>{i.nome}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Quantidade">
+                  <NumInput step="0.001" value={novoInsumo.quantidade} onChange={(v) => setNovoInsumo((n) => ({ ...n, quantidade: v }))} />
+                </Field>
+                <Field label="Custo unitário" hint="Em branco usa o custo cadastrado do insumo.">
+                  <NumInput value={novoInsumo.custo_unitario} onChange={(v) => setNovoInsumo((n) => ({ ...n, custo_unitario: v }))} />
+                </Field>
+              </div>
+              <div className="painel-acoes-inline">
+                <button
+                  type="button" className="btn-sec"
+                  disabled={!novoInsumo.insumo_id || !(Number(novoInsumo.quantidade) > 0)}
+                  onClick={async () => {
+                    setErro(''); setAviso(null);
+                    try {
+                      const r = await api.post(`/producao/ordens/${ordemId}/insumos`, {
+                        insumo_id: Number(novoInsumo.insumo_id),
+                        quantidade: Number(novoInsumo.quantidade),
+                        custo_unitario: novoInsumo.custo_unitario === '' ? null : Number(novoInsumo.custo_unitario),
+                      });
+                      setNovoInsumo({ insumo_id: '', quantidade: '', custo_unitario: '' });
+                      if (r.aviso) setAviso({ tipo: 'ok', texto: r.aviso });
+                      await carregar(); onMudou();
+                    } catch (e) { setErro(e.message); }
+                  }}
+                ><Plus size={15} /> Lançar material gasto</button>
+                <span className="ink-soft">
+                  Corrigir a quantidade aqui muda o custo real da ordem e <strong>não</strong> mexe no que
+                  já foi reservado — reserva é movimento de estoque.
+                </span>
+              </div>
+            </>
+          )}
+
+          {/* ---- O ato humano que a REGRA 1 exige ---- */}
+          {comparacao?.diferencaPct != null && (
+            <div className="painel-acoes-inline">
+              <button
+                type="button" className="btn-sec"
+                title="Copia o custo apurado nesta ordem para a ficha técnica da referência. Altera o custo e o preço sugerido de toda venda futura dela."
+                onClick={async () => {
+                  if (!(await confirmar(
+                    `Levar o custo apurado nesta ordem para a ficha de ${ordem.referencia}?\n\n`
+                    + 'Isto altera a ficha técnica: o custo e o preço sugerido de toda venda futura desta '
+                    + 'referência passam a sair daqui. As vendas já feitas continuam com o custo que tinham, '
+                    + 'e cada alteração fica registrada com quem fez e quando.',
+                    { titulo: 'Atualizar a ficha do produto', confirmarTexto: 'Atualizar a ficha' }
+                  ))) return;
+                  setErro(''); setAviso(null);
+                  try {
+                    const r = await api.post(`/producao/ordens/${ordemId}/aplicar-custo-na-ficha`, { confirmar: true });
+                    setAviso({
+                      tipo: 'ok',
+                      texto: `${r.aplicadas.length} linha(s) da ficha atualizada(s).`
+                        + (r.ignoradas.length ? ` ${r.ignoradas.length} ficaram de fora: ${r.ignoradas.map((x) => `${x.insumo} — ${x.motivo}`).join('; ')}` : ''),
+                    });
+                    await carregar(); onMudou();
+                  } catch (e) { setErro(e.message); }
+                }}
+              ><Wallet size={15} /> Levar este custo para a ficha do produto</button>
+              <span className="ink-soft">
+                O custo real não realimenta o cadastro sozinho: uma ordem ruim não pode reescrever o
+                preço da referência inteira. Quem decide é você, e fica registrado.
+              </span>
+            </div>
+          )}
 
           {/* ---- Apontamento ---- */}
           {podeMexer && (
@@ -1178,6 +1114,20 @@ export default function ProducaoPage() {
   const [filtroSituacao, setFiltroSituacao] = useState('');
   const [novaOrdem, setNovaOrdem] = useState(false);
   const [ordemAberta, setOrdemAberta] = useState(null);
+  const [faccoes, setFaccoes] = useState([]);
+  const [etapas, setEtapas] = useState([]);
+  const [kits, setKits] = useState([]);
+  const [faccaoRapida, setFaccaoRapida] = useState(false);
+  const [avisoQuadro, setAvisoQuadro] = useState('');
+  // Lista ou quadro. A escolha fica no navegador de quem usa: quem toca o chão
+  // de fábrica vive no quadro, quem confere números vive na lista, e obrigar os
+  // dois a reescolher a cada visita é atrito puro.
+  const [visao, setVisao] = useState(() => {
+    try { return localStorage.getItem('hbn:producao:visao') || 'lista'; } catch { return 'lista'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('hbn:producao:visao', visao); } catch { /* navegador sem storage */ }
+  }, [visao]);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -1199,12 +1149,45 @@ export default function ProducaoPage() {
       setProdutos(apoio.referencias || []);
       setFornecedores(apoio.fornecedores || []);
       setInsumos(apoio.insumos || []);
+      setFaccoes(apoio.faccoes || []);
+      setEtapas(apoio.etapas || []);
+      setKits(apoio.kits || []);
     } catch (e) {
       setErro(e.message);
     } finally {
       setCarregando(false);
     }
   }, [buscaAplicada, filtroSituacao]);
+
+  // Arrastar o cartão no quadro. Atualiza a tela na hora e desfaz se o servidor
+  // recusar — sem isso, a ordem "pula de volta" só depois da ida e volta da
+  // rede, e quem arrastou acha que não funcionou e arrasta de novo.
+  async function mudarSituacao(ordem, destino, confirmarPerda = false) {
+    const anterior = ordens;
+    setAvisoQuadro('');
+    setOrdens((atual) => atual.map((o) => (o.id === ordem.id ? { ...o, situacao: destino } : o)));
+    try {
+      const r = await api.post(`/producao/ordens/${ordem.id}/situacao`, {
+        situacao: destino, confirmar: confirmarPerda,
+      });
+      if (r.aviso) setAvisoQuadro(r.aviso);
+      await carregar();
+    } catch (e) {
+      setOrdens(anterior);
+      if (e.data?.exige === 'abrir_ordem') {
+        setAvisoQuadro(e.message);
+        setOrdemAberta(ordem.id);
+        return;
+      }
+      if (e.data?.exige === 'confirmar') {
+        if (await confirmar(e.message, { titulo: 'Cancelar a ordem', confirmarTexto: 'Cancelar assim mesmo', perigo: true })) {
+          await mudarSituacao(ordem, destino, true);
+        }
+        return;
+      }
+      setErro(e.message);
+    }
+  }
 
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -1272,7 +1255,10 @@ export default function ProducaoPage() {
           Onde está a produção
         </button>
         <button type="button" className={`subtab-btn ${aba === 'faccao' ? 'active' : ''}`} onClick={() => setAba('faccao')}>
-          Facção
+          Material em facção
+        </button>
+        <button type="button" className={`subtab-btn ${aba === 'faccoes' ? 'active' : ''}`} onClick={() => setAba('faccoes')}>
+          Cadastro de facção
         </button>
       </div>
 
@@ -1285,7 +1271,19 @@ export default function ProducaoPage() {
             <Select value={filtroSituacao} onChange={(e) => setFiltroSituacao(e.target.value)} placeholder="Todas as situações">
               {Object.entries(SITUACAO).map(([k, v]) => <option key={k} value={k}>{v.rotulo}</option>)}
             </Select>
+            <div className="view-toggle">
+              <button
+                type="button" className={visao === 'lista' ? 'active' : ''}
+                onClick={() => setVisao('lista')}
+              ><List size={14} /> Lista</button>
+              <button
+                type="button" className={visao === 'quadro' ? 'active' : ''}
+                onClick={() => setVisao('quadro')}
+              ><LayoutGrid size={14} /> Quadro</button>
+            </div>
           </div>
+
+          {avisoQuadro && <p className="aviso-inline"><AlertTriangle size={14} /> {avisoQuadro}</p>}
 
           {carregando && <Skeleton height={240} />}
           {!carregando && ordens.length === 0 && (
@@ -1299,7 +1297,22 @@ export default function ProducaoPage() {
             />
           )}
 
-          {!carregando && ordens.length > 0 && (
+          {!carregando && ordens.length > 0 && visao === 'quadro' && (
+            <>
+              <p className="ink-soft ajuda-bloco">
+                <Info size={14} /> Arraste o cartão para mudar a situação da ordem. Clique nele para
+                abrir. <strong>Concluir não é arrastar</strong>: dar entrada das peças no estoque passa
+                pela conferência do financeiro e tem confirmação própria, dentro da ordem.
+              </p>
+              <ProducaoKanban
+                ordens={ordens}
+                onMudarSituacao={mudarSituacao}
+                onClickCartao={(id) => setOrdemAberta(id)}
+              />
+            </>
+          )}
+
+          {!carregando && ordens.length > 0 && visao === 'lista' && (
             <>
               <div className="tabela-rolagem">
                 <table className="tabela-nota">
@@ -1308,14 +1321,24 @@ export default function ProducaoPage() {
                       <th className="num">OP</th><th>Referência</th><th>Situação</th>
                       <th className="num">Planejadas</th><th className="num">Produzidas</th>
                       <th className="num">Material</th><th className="num">Mão de obra</th>
-                      <th>Facção</th><th>Abertura</th>
+                      <th>Facção</th><th>Início</th><th>Chegada</th>
                     </tr>
                   </thead>
                   <tbody>
                     {tabela.itensPagina.map((o) => (
                       <tr key={o.id} className="linha-clicavel" onClick={() => setOrdemAberta(o.id)}>
                         <td className="num">{o.numero}</td>
-                        <td>{o.referencia}<span className="ink-soft"> · {o.produto_descricao}</span></td>
+                        <td>
+                          {o.tipo === 'kit'
+                            ? (
+                              <>
+                                <span className="selo tone-elevada"><Layers size={11} /> kit</span>
+                                {' '}{o.nome || 'Kit'}
+                                <span className="ink-soft"> · {o.referencias_do_kit || 'sem referência'}</span>
+                              </>
+                            )
+                            : <>{o.referencia}<span className="ink-soft"> · {o.produto_descricao}</span></>}
+                        </td>
                         <td><SeloSituacao situacao={o.situacao} /></td>
                         <td className="num">{formatQtd(o.quantidade_planejada)}</td>
                         <td className="num">{formatQtd(o.quantidade_produzida)}</td>
@@ -1327,7 +1350,19 @@ export default function ProducaoPage() {
                         </td>
                         <td className="num">{o.gasto_mao_de_obra != null ? brl(o.gasto_mao_de_obra) : '—'}</td>
                         <td>{o.fornecedor_nome || 'interna'}</td>
-                        <td>{dataBr(o.data_abertura)}</td>
+                        <td>{dataBr(o.data_inicio || o.data_abertura)}</td>
+                        <td>
+                          {o.data_prevista
+                            ? (
+                              <>
+                                {dataBr(o.data_prevista)}
+                                {o.evento_calendario_id && (
+                                  <span className="selo tone-neutro" title="Esta ordem está no calendário."><CalendarDays size={11} /></span>
+                                )}
+                              </>
+                            )
+                            : <span className="selo tone-atencao" title="Sem chegada prevista, a ordem não entra no calendário e não tem como atrasar.">sem prazo</span>}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1345,19 +1380,35 @@ export default function ProducaoPage() {
 
       {aba === 'wip' && <Wip />}
       {aba === 'roteiro' && <RoteiroEConsumo produtos={produtos} fornecedores={fornecedores} />}
-      {aba === 'faccao' && <Faccao fornecedores={fornecedores} insumos={insumos} onMudou={carregar} />}
+      {aba === 'faccao' && <Faccao fornecedores={faccoes.length > 0 ? faccoes : fornecedores} insumos={insumos} onMudou={carregar} />}
+      {aba === 'faccoes' && <FaccoesAba etapas={etapas} produtos={produtos} onMudou={carregar} />}
 
       {novaOrdem && (
-        <NovaOrdem
-          produtos={produtos} fornecedores={fornecedores}
+        <NovaOrdemProducao
+          produtos={produtos}
+          faccoes={faccoes.length > 0 ? faccoes : fornecedores}
+          insumos={insumos}
+          kits={kits}
           onFechar={() => setNovaOrdem(false)}
+          onNovaFaccao={() => setFaccaoRapida(true)}
           onCriada={(r) => { setNovaOrdem(false); carregar(); setOrdemAberta(r.ordem.id); }}
+        />
+      )}
+      {faccaoRapida && (
+        <NovaFaccaoModal
+          compacto
+          onFechar={() => setFaccaoRapida(false)}
+          onSalva={() => { setFaccaoRapida(false); carregar(); }}
         />
       )}
       {ordemAberta && (
         <DetalheOrdem
-          ordemId={ordemAberta} fornecedores={fornecedores}
-          onFechar={() => setOrdemAberta(null)} onMudou={carregar}
+          ordemId={ordemAberta}
+          fornecedores={faccoes.length > 0 ? faccoes : fornecedores}
+          insumos={insumos}
+          onFechar={() => setOrdemAberta(null)}
+          onAbrirOutra={(id) => setOrdemAberta(id)}
+          onMudou={carregar}
         />
       )}
     </div>

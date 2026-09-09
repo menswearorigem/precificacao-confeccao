@@ -235,24 +235,74 @@ async function estornar(client, { movimentoId, usuarioId, motivo }) {
 
   await client.query('UPDATE producao_movimentos SET estornado_em = now() WHERE id = $1', [movimentoId]);
 
-  // Se o movimento tinha remetido para uma O.S., desfaz a remessa também —
-  // senão a quebra daquela O.S. passaria a acusar peça sumida que nunca saiu.
-  if (m.ordem_servico_id && m.etapa_destino_id) {
+  // Se o movimento tocou uma O.S., a coluna que volta atrás depende do TIPO do
+  // movimento.
+  //
+  // ⚠️ Defeito corrigido em 09/09/2026: a condição era `if (m.ordem_servico_id
+  // && m.etapa_destino_id)` e subtraía SEMPRE de `quantidade_remetida`. Um
+  // movimento de RETORNO também tem `ordem_servico_id` e `etapa_destino_id`
+  // (quando o operador escolheu a etapa que recebe), então estornar um retorno
+  // lançado errado baixava o REMETIDO: numa O.S. de 160 com 90 de retorno
+  // estornado, o remetido virava 70 contra 90 retornados, a quebra ficava
+  // NEGATIVA em 20, a O.S. continuava "concluída" para sempre e o ranking da
+  // facção invertia. Segunda e perda (destino nulo) nem entravam na condição, e
+  // o estorno devolvia as peças ao WIP deixando os contadores inflados.
+  const COLUNA_POR_TIPO = {
+    normal: 'quantidade_remetida',
+    reprocesso: 'quantidade_remetida',
+    retorno: 'quantidade_retornada',
+    segunda: 'quantidade_segunda',
+    perda: 'quantidade_perdida',
+  };
+  const coluna = m.ordem_servico_id ? COLUNA_POR_TIPO[m.tipo] : null;
+  if (coluna) {
     await client.query(
       `UPDATE ordem_servico_itens
-          SET quantidade_remetida = GREATEST(0, quantidade_remetida - $1)
+          SET ${coluna} = GREATEST(0, ${coluna} - $1)
         WHERE ordem_servico_id = $2 AND cor = $3 AND tamanho = $4`,
       [m.quantidade, m.ordem_servico_id, m.cor, m.tamanho]
     );
+    // A situação da O.S. tem de ser recalculada: um retorno estornado pode
+    // fazer uma O.S. concluída voltar a ser parcial, e sem isto ela ficaria
+    // marcada como fechada com peça ainda na facção.
+    await recalcularSituacaoOS(client, m.ordem_servico_id);
   }
 
   return novo[0];
 }
 
+// Recalcula situação e data de retorno de uma O.S. a partir dos itens.
+// Extraída do retorno em 09/09/2026 porque o estorno precisa da mesma conta —
+// e duas cópias da mesma regra divergem na primeira correção.
+async function recalcularSituacaoOS(client, ordemServicoId, dataMov = null) {
+  const { rows: soma } = await client.query(
+    `SELECT SUM(quantidade_remetida) AS remetido,
+            SUM(quantidade_retornada + quantidade_segunda + quantidade_perdida) AS voltou
+       FROM ordem_servico_itens WHERE ordem_servico_id = $1`,
+    [ordemServicoId]
+  );
+  const remetido = Number(soma[0].remetido || 0);
+  const voltou = Number(soma[0].voltou || 0);
+  const situacao = voltou <= 0 ? 'remetida' : (voltou >= remetido ? 'concluida' : 'parcial');
+  await client.query(
+    // $1 aparece duas vezes e o Postgres não consegue deduzir o tipo sozinho
+    // ("inconsistent types deduced for parameter $1") — daí o cast explícito.
+    `UPDATE ordens_servico
+        SET situacao = CASE WHEN situacao = 'cancelada' THEN situacao ELSE $1::varchar END,
+            data_retorno = CASE WHEN $1::varchar = 'concluida'
+                                THEN COALESCE(data_retorno, $2::date, CURRENT_DATE)
+                                ELSE NULL END,
+            atualizado_em = now()
+      WHERE id = $3`,
+    [situacao, dataMov, ordemServicoId]
+  );
+  return situacao;
+}
+
 // Retorno de facção: o que voltou bom, o que voltou como segunda e o que se
 // perdeu. O que não voltou de jeito nenhum é QUEBRA, e é calculada — nunca
 // digitada.
-async function registrarRetorno(client, { ordemServicoId, itens, etapaDestinoId, data, usuarioId, observacao }) {
+async function registrarRetorno(client, { ordemServicoId, itens, etapaDestinoId, data, usuarioId, observacao, sairDoFluxo }) {
   const { rows: osRows } = await client.query(
     'SELECT * FROM ordens_servico WHERE id = $1 FOR UPDATE', [ordemServicoId]
   );
@@ -264,6 +314,47 @@ async function registrarRetorno(client, { ordemServicoId, itens, etapaDestinoId,
 
   const dataMov = data || new Date().toISOString().slice(0, 10);
   const movimentos = [];
+
+  // ⚠️ Defeito corrigido em 09/09/2026: a etapa que recebe a peça boa era
+  // opcional, e o combo da tela abria vazio. O caminho de menor esforço era
+  // digitar "90 boas" e clicar em Registrar — as 90 peças saíam do WIP da
+  // facção e não entravam em lugar nenhum. A O.S. fechava, o título era gerado,
+  // a facção era paga, e as peças sumiam do sistema em silêncio.
+  //
+  // Agora a etapa é obrigatória quando volta peça boa, e sair do fluxo é uma
+  // escolha explícita (`sair_do_fluxo`) — que é coisa rara e nunca deveria ser
+  // o padrão.
+  const totalBoas = (itens || []).reduce((s, it) => s + (Number(it.quantidade_retornada) || 0), 0);
+  if (totalBoas > 0 && !etapaDestinoId && sairDoFluxo !== true) {
+    throw Object.assign(
+      new Error(
+        'Diga para qual etapa as peças boas voltam. Sem etapa de destino elas saem da facção e não '
+        + 'entram em lugar nenhum: somem do sistema, e a O.S. fecha como se tudo estivesse certo.'
+      ),
+      { status: 400, exige: 'etapa_destino_id' }
+    );
+  }
+
+  // Devolver peça boa para uma etapa EXTERNA por aqui contornaria todas as
+  // regras da movimentação: as peças ficariam numa facção sem O.S., sem preço
+  // congelado, sem previsão de retorno e sem compromisso no financeiro.
+  if (etapaDestinoId) {
+    const { rows: etapaRows } = await client.query(
+      'SELECT nome, natureza FROM producao_etapas WHERE id = $1', [etapaDestinoId]
+    );
+    if (etapaRows.length === 0) {
+      throw Object.assign(new Error('Etapa de destino não encontrada.'), { status: 400 });
+    }
+    if (etapaRows[0].natureza === 'externa') {
+      throw Object.assign(
+        new Error(
+          `${etapaRows[0].nome} é uma etapa externa: mandar a peça para lá é uma remessa nova, com facção, `
+          + 'prazo e preço. Devolva primeiro para uma etapa interna e faça a remessa em Gerar Movimentação.'
+        ),
+        { status: 400 }
+      );
+    }
+  }
 
   for (const it of itens || []) {
     const boa = Number(it.quantidade_retornada) || 0;
@@ -335,29 +426,46 @@ async function registrarRetorno(client, { ordemServicoId, itens, etapaDestinoId,
   }
 
   // Situação da O.S.: concluída quando nada mais pode voltar.
-  const { rows: soma } = await client.query(
-    `SELECT SUM(quantidade_remetida) AS remetido,
-            SUM(quantidade_retornada + quantidade_segunda + quantidade_perdida) AS voltou
-       FROM ordem_servico_itens WHERE ordem_servico_id = $1`,
-    [ordemServicoId]
-  );
-  const remetido = Number(soma[0].remetido || 0);
-  const voltou = Number(soma[0].voltou || 0);
-  const situacao = voltou <= 0 ? 'remetida' : (voltou >= remetido ? 'concluida' : 'parcial');
-  await client.query(
-    // $1 aparece duas vezes e o Postgres não consegue deduzir o tipo sozinho
-    // ("inconsistent types deduced for parameter $1") — daí o cast explícito.
-    `UPDATE ordens_servico
-        SET situacao = $1::varchar,
-            data_retorno = CASE WHEN $1::varchar = 'concluida'
-                                THEN COALESCE(data_retorno, $2::date)
-                                ELSE data_retorno END,
-            atualizado_em = now()
-      WHERE id = $3`,
-    [situacao, dataMov, ordemServicoId]
-  );
+  const situacao = await recalcularSituacaoOS(client, ordemServicoId, dataMov);
 
   return { movimentos, situacao };
+}
+
+// Encerra uma O.S. assumindo a quebra.
+//
+// Sem esta saída, uma O.S. com peça sumida ficava PARCIAL para sempre: `voltou`
+// nunca alcança `remetido`, `data_retorno` nunca é gravada, o atraso cresce
+// indefinidamente e a pendência bloqueante do financeiro nunca fecha — o que
+// travava a conclusão da ordem de produção permanentemente. A única saída era
+// "dispensar" a pendência na Caixa de Entrada, que é registrar uma mentira.
+//
+// A quebra continua medida e continua aparecendo: encerrar não a apaga, só
+// reconhece que ela não vai voltar.
+async function encerrarComQuebra(client, { ordemServicoId, motivo, usuarioId }) {
+  if (!String(motivo || '').trim()) {
+    throw Object.assign(new Error('Escreva o que aconteceu com as peças que não voltaram.'), { status: 400 });
+  }
+  const { rows } = await client.query(
+    'SELECT * FROM ordens_servico WHERE id = $1 FOR UPDATE', [ordemServicoId]
+  );
+  if (rows.length === 0) throw Object.assign(new Error('Ordem de serviço não encontrada.'), { status: 404 });
+  if (rows[0].situacao === 'cancelada') {
+    throw Object.assign(new Error('Ordem de serviço cancelada não se encerra.'), { status: 400 });
+  }
+
+  const { rows: quebra } = await client.query(
+    'SELECT quebra FROM vw_faccao_quebra WHERE ordem_servico_id = $1', [ordemServicoId]
+  );
+  const pecas = Number(quebra[0]?.quebra || 0);
+
+  await client.query(
+    `UPDATE ordens_servico
+        SET situacao = 'concluida', data_retorno = COALESCE(data_retorno, CURRENT_DATE),
+            observacao = COALESCE(observacao,'') || $2, atualizado_em = now()
+      WHERE id = $1`,
+    [ordemServicoId, `\n[encerrada com quebra de ${pecas} peça(s)] ${motivo}`]
+  );
+  return { quebra: pecas };
 }
 
 module.exports = {
@@ -367,4 +475,6 @@ module.exports = {
   movimentar,
   estornar,
   registrarRetorno,
+  recalcularSituacaoOS,
+  encerrarComQuebra,
 };

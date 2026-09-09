@@ -6773,3 +6773,140 @@ table.data-table tbody tr.linha-pendente:hover { background: color-mix(in srgb, 
      com o celular na mão e o cliente esperando. */
   .venda-qtd button { width: 42px; height: 42px; }
 }
+
+/* ===========================================================================
+   Produção: quadro de ordens, grade cor × tamanho e ficha de facção
+   09/09/2026
+   ===========================================================================
+   REGRA 3: nada de cor solta. Tudo aqui sai de variável do tema e dos selos
+   `.tone-*` que já existem, e o quadro reaproveita as classes do Kanban do
+   Calendário (`.kanban-coluna`, `.kanban-cartao`) em vez de criar um segundo
+   conjunto — dois quadros com estilos próprios divergem na primeira correção. */
+
+/* ---------- Quadro das ordens de produção ---------- */
+/* Cinco colunas (as cinco situações da O.P.), contra as quatro do calendário. */
+.producao-kanban {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(210px, 1fr));
+  gap: 12px;
+  overflow-x: auto;
+}
+.producao-kanban .kanban-coluna { background: var(--surface-alt); }
+/* A coluna "Concluída" existe para a produção do mês não sumir da vista, mas
+   NÃO aceita cartão: concluir dá entrada no estoque e passa pela conferência do
+   financeiro. O tracejado diz isso antes de alguém tentar. */
+.kanban-coluna-fechada {
+  border: 1px dashed var(--border);
+  background: var(--border-soft);
+}
+.kanban-coluna-sub {
+  font-size: 11px;
+  margin: -4px 0 8px;
+}
+.op-cartao {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-xs);
+}
+.op-cartao .kanban-cartao-titulo {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.op-cartao-linha {
+  font-size: 11px;
+  margin-bottom: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.op-cartao .kanban-cartao-meta { color: var(--ink-soft); }
+.op-cartao-selos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.op-cartao-selos .selo { font-size: 10px; }
+/* Atrasada ganha uma faixa à esquerda em vez de fundo tintado: o cartão já tem
+   selos coloridos, e um fundo vermelho por baixo deles apaga os dois. */
+.op-cartao-atrasada { border-left: 3px solid var(--danger-ring); }
+
+@media (max-width: 860px) {
+  .producao-kanban {
+    grid-template-columns: repeat(5, 84vw);
+    scroll-snap-type: x mandatory;
+  }
+  .producao-kanban .kanban-coluna { scroll-snap-align: center; }
+}
+
+/* ---------- Grade cor × tamanho ---------- */
+.grade-bolinha {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  margin-right: 6px;
+  vertical-align: -1px;
+  flex-shrink: 0;
+}
+.grade-cor-input {
+  padding: 0;
+  width: 38px;
+  height: 26px;
+  min-height: 26px;
+  cursor: pointer;
+}
+/* A primeira coluna é a cor e fica fixa: numa grade de oito tamanhos, rolar
+   para a direita sem ela deixa a pessoa digitando quantidade sem saber em qual
+   cor está. */
+.grade-matriz th:first-child,
+.grade-matriz td:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  z-index: 1;
+  white-space: nowrap;
+}
+.grade-matriz tbody tr:nth-child(even) td:first-child { background: var(--surface-alt); }
+/* A tabela encolhe até o conteúdo em vez de esticar para 100%: com três
+   tamanhos, esticar deixava a coluna da cor com 600px e as quantidades
+   espalhadas na borda direita da tela, longe do nome da cor a que pertencem. */
+table.grade-matriz { width: auto; min-width: 0; }
+.grade-matriz th:first-child, .grade-matriz td:first-child { white-space: nowrap; min-width: 130px; }
+.grade-matriz th.num, .grade-matriz td.num { min-width: 84px; }
+.grade-matriz tfoot td {
+  border-top: 1px solid var(--border);
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.grade-matriz input { min-width: 62px; }
+
+/* ---------- Miudezas reaproveitáveis ---------- */
+/* Botão que cabe dentro de uma célula ou ao lado de um campo. */
+.btn-mini {
+  padding: 4px 8px;
+  font-size: 11px;
+  min-height: 28px;
+}
+/* Um link dentro de uma frase de aviso, sem virar botão visual. */
+.botao-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--terracotta);
+  text-decoration: underline;
+  cursor: pointer;
+}
+/* Campo com uma ação colada nele — "escolha a facção" + "nova". */
+.campo-com-acao {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.campo-com-acao > *:first-child { flex: 1; min-width: 0; }
+/* Bloco de leitura da ficha da facção: rótulo pequeno em cima, valor embaixo. */
+.ficha-bloco { min-width: 180px; }
+.ficha-bloco p { margin: 2px 0 0; font-size: 12.5px; }

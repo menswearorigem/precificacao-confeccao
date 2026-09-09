@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ClipboardList, RefreshCw, AlertTriangle, Check, X, Truck,
   ReceiptText, PackageCheck, Info,
@@ -176,6 +177,25 @@ function DetalheOS({ ordemServicoId, etapas, onFechar, onMudou }) {
   }, [ordemServicoId]);
 
   useEffect(() => { carregar(); }, [carregar]);
+
+  // Só etapa INTERNA recebe retorno. Empurrar a peça para uma etapa externa por
+  // aqui contornaria todas as regras da movimentação: ela ficaria numa facção
+  // sem O.S., sem preço congelado, sem previsão de retorno e sem compromisso
+  // no financeiro.
+  const etapasInternas = useMemo(
+    () => (etapas || []).filter((e) => e.natureza !== 'externa'),
+    [etapas]
+  );
+
+  // Pré-escolhe a próxima etapa interna depois da etapa desta O.S. — é o
+  // destino certo em quase todo retorno, e deixar em branco foi o que fazia a
+  // peça sumir.
+  useEffect(() => {
+    if (etapaDestino || !dados || etapasInternas.length === 0) return;
+    const atual = (etapas || []).find((e) => e.id === dados.ordem_servico.etapa_id);
+    const proxima = etapasInternas.find((e) => e.sequencia > (atual?.sequencia ?? -1));
+    setEtapaDestino(String((proxima || etapasInternas[0]).id));
+  }, [dados, etapas, etapasInternas, etapaDestino]);
 
   function alterar(id, campo, valor) {
     setRetorno((atual) => ({ ...atual, [id]: { ...atual[id], [campo]: valor } }));
@@ -369,9 +389,18 @@ function DetalheOS({ ordemServicoId, etapas, onFechar, onMudou }) {
           {podeReceber && (
             <>
               <div className="form-linha">
-                <Field label="Etapa que recebe a peça boa" hint="Para onde ela vai depois de voltar.">
-                  <Select value={etapaDestino} placeholder="Fora do fluxo" onChange={(e) => setEtapaDestino(e.target.value)}>
-                    {etapas.map((e) => <option key={e.id} value={e.id}>{e.sequencia}. {e.nome}</option>)}
+                {/* ⚠️ Corrigido em 09/09/2026. Este campo era opcional e abria
+                    VAZIO, com o rótulo "Fora do fluxo". O caminho de menor
+                    esforço — digitar o que voltou e clicar em Registrar — tirava
+                    as peças boas da facção sem colocá-las em lugar nenhum: elas
+                    sumiam do sistema, a O.S. fechava, o título era gerado e a
+                    facção era paga. Agora a etapa é obrigatória, vem
+                    pré-escolhida na próxima etapa interna, e as externas ficam
+                    de fora da lista (mandar para uma etapa externa é uma remessa
+                    nova, com facção, prazo e preço — não um retorno). */}
+                <Field label="Etapa que recebe a peça boa" hint="Obrigatória quando volta peça boa: sem ela a peça sai da facção e não entra em lugar nenhum.">
+                  <Select value={etapaDestino} placeholder="Escolha a etapa" onChange={(e) => setEtapaDestino(e.target.value)}>
+                    {etapasInternas.map((e) => <option key={e.id} value={e.id}>{e.sequencia}. {e.nome}</option>)}
                   </Select>
                 </Field>
                 <Field label="Data do retorno">
@@ -396,13 +425,16 @@ function DetalheOS({ ordemServicoId, etapas, onFechar, onMudou }) {
               <div className="painel-acoes-inline">
                 <button
                   type="button" className="btn"
-                  disabled={linhasRetorno.length === 0 || excedidas.length > 0 || salvando}
+                  disabled={linhasRetorno.length === 0 || excedidas.length > 0 || salvando
+                    || (linhasRetorno.some((l) => l.boa > 0) && !etapaDestino)}
                   onClick={registrarRetorno}
                 ><PackageCheck size={15} /> Registrar retorno</button>
                 <span className="ink-soft">
                   {linhasRetorno.length === 0
                     ? 'Digite o que voltou em pelo menos uma linha.'
-                    : `${formatQtd(linhasRetorno.reduce((s, l) => s + l.boa + l.segunda + l.perdida, 0))} peça(s) neste retorno.`}
+                    : (linhasRetorno.some((l) => l.boa > 0) && !etapaDestino)
+                      ? 'Escolha a etapa que recebe a peça boa.'
+                      : `${formatQtd(linhasRetorno.reduce((s, l) => s + l.boa + l.segunda + l.perdida, 0))} peça(s) neste retorno.`}
                 </span>
               </div>
             </>
@@ -432,6 +464,58 @@ function DetalheOS({ ordemServicoId, etapas, onFechar, onMudou }) {
 
         <footer className="painel-rodape">
           <button type="button" className="btn-sec" onClick={onFechar}>Fechar</button>
+
+          {/* ENCERRAR ASSUMINDO A QUEBRA (09/09/2026).
+              Sem esta saída, uma O.S. com peça sumida ficava PARCIAL para
+              sempre: o que voltou nunca alcança o remetido, a data de retorno
+              nunca é gravada, o atraso cresce sem fim e a pendência do
+              financeiro nunca fecha — o que travava a conclusão da ordem de
+              produção permanentemente. A única alternativa era "dispensar" a
+              pendência na Caixa de Entrada, que é registrar uma mentira. */}
+          {podeReceber && quebra > 0 && (
+            <button
+              type="button" className="btn-sec"
+              onClick={async () => {
+                const motivo = window.prompt(
+                  `Encerrar a O.S. ${os.numero} assumindo a quebra de ${formatQtd(quebra)} peça(s).\n\n`
+                  + 'A quebra continua medida e continua no ranking desta facção — encerrar reconhece '
+                  + 'que a peça não volta, não apaga o fato de que ela sumiu.\n\n'
+                  + 'O que aconteceu com essas peças?'
+                );
+                if (!motivo || !motivo.trim()) return;
+                setErro(''); setAviso('');
+                try {
+                  const r = await api.post(`${ROTA}/ordens-servico/${ordemServicoId}/encerrar-quebra`, { motivo });
+                  setAviso(r.aviso);
+                  await carregar();
+                  onMudou();
+                } catch (e) { setErro(e.message); }
+              }}
+            ><AlertTriangle size={15} /> Encerrar assumindo a quebra</button>
+          )}
+
+          {/* CANCELAR. O endpoint existia desde a 0054 e não tinha botão em
+              tela nenhuma: uma O.S. lançada errada não tinha saída. */}
+          {os.situacao !== 'cancelada' && (
+            <button
+              type="button" className="btn-sec"
+              onClick={async () => {
+                const motivo = window.prompt(
+                  `Cancelar a O.S. ${os.numero}?\n\n`
+                  + 'A O.S. não é apagada: ela fica marcada como cancelada, com o motivo. '
+                  + 'O compromisso previsto com a facção é cancelado junto; título já firme, não — '
+                  + 'essa decisão é do financeiro.\n\nPor que está cancelando?'
+                );
+                if (!motivo || !motivo.trim()) return;
+                setErro(''); setAviso('');
+                try {
+                  await api.post(`${ROTA}/ordens-servico/${ordemServicoId}/cancelar`, { motivo });
+                  onMudou();
+                  onFechar();
+                } catch (e) { setErro(e.message); }
+              }}
+            ><X size={15} /> Cancelar O.S.</button>
+          )}
         </footer>
       </div>
     </div>
@@ -450,6 +534,23 @@ export default function OrdensServicoPage() {
   const [busca, setBusca] = useState('');
   const [buscaAplicada, setBuscaAplicada] = useState('');
   const [aberta, setAberta] = useState(null);
+
+  // Link direto para uma O.S. — `/producao/ordens-servico?os=123`.
+  //
+  // O catálogo do financeiro (migration 0061) já apontava para este endereço
+  // desde que a ponte foi criada, e a tela ignorava o parâmetro: clicar na
+  // Caixa de Entrada abria a lista genérica e a pessoa tinha de procurar a O.S.
+  // à mão, justamente no momento em que ela já sabia qual era.
+  const [params, setParams] = useSearchParams();
+  useEffect(() => {
+    const alvo = params.get('os');
+    if (alvo) {
+      setAberta(Number(alvo));
+      const restante = new URLSearchParams(params);
+      restante.delete('os');
+      setParams(restante, { replace: true });
+    }
+  }, [params, setParams]);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
