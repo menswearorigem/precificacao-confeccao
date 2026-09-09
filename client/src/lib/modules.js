@@ -112,6 +112,11 @@ export const MODULES = [
       // Conferência de expedição — primeira depois de Pedidos porque é a
       // única tela deste módulo usada TODO dia, em pé, no galpão.
       { to: '/marketplace/conferencia', label: 'Conferência', icon: ScanLine },
+      // Etiquetas (09/09/2026). Fica colada na Conferência de propósito: são
+      // as duas telas da MESMA meia hora da expedição — imprime a etiqueta e
+      // a lista de separação, depois bipa a caixa. Mesmo módulo `marketplace`
+      // que o backend já exige em /api/etiquetas; nenhuma chave nova (REGRA 4).
+      { to: '/marketplace/etiquetas', label: 'Etiquetas', icon: Printer },
       { to: '/marketplace/lucratividade', label: 'Lucratividade', icon: TrendingUp },
       { to: '/marketplace/metricas', label: 'Métricas', icon: LineChart },
       { to: '/marketplace/taxas', label: 'Taxas Cobradas', icon: ReceiptText },
