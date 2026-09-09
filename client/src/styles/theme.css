@@ -6070,3 +6070,59 @@ td.num .selo, td.num small, td.num .ink-faint { font-family: var(--font-body); l
   font-size: 12.5px;
 }
 .viagem-venda-itens ul { margin: 8px 0 10px; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+
+/* Campo de busca com a lupa dentro (09/09/2026). Antes cada tela resolvia
+   isso do seu jeito — ou com um botão-lupa que não fazia nada, ou sem
+   nenhum sinal visual de que o campo filtra. */
+.campo-com-icone {
+  position: relative;
+  display: block;
+}
+.campo-com-icone > svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-soft);
+  pointer-events: none;
+}
+.campo-com-icone > input {
+  width: 100%;
+  padding-left: 32px;
+}
+
+/* Edição de nome e janela de uma promoção, dentro do painel (09/09/2026). */
+.promocao-form-edicao {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-alt);
+}
+.promocao-form-edicao-acoes {
+  display: flex;
+  gap: 8px;
+  grid-column: 1 / -1;
+}
+
+/* "N pendências resolvidas" — cabeçalho que abre e fecha a lista (09/09/2026). */
+.saude-resolvidas-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: left;
+}
+.saude-resolvidas-toggle:hover { color: var(--terracotta); }

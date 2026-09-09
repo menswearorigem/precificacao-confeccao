@@ -155,7 +155,7 @@ router.post('/manuais', async (req, res, next) => {
     const detalhado = await calcularKitManual(pool, kit, ctx);
     res.status(201).json(detalhado);
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     next(err);
   } finally {
     client.release();
@@ -166,6 +166,14 @@ router.put('/manuais/:id', async (req, res, next) => {
   const client = await pool.connect();
   try {
     const body = req.body || {};
+
+    // O POST exige ao menos uma referência; o PUT não exigia. Mandar
+    // itens: [] apagava todas as peças e deixava um kit vazio — que a tela
+    // mostra como um kit de R$ 0,00, sem dizer que ele ficou oco.
+    if (body.itens !== undefined && (!Array.isArray(body.itens) || body.itens.length === 0)) {
+      return res.status(400).json({ error: 'inclua ao menos uma referência no kit.' });
+    }
+
     await client.query('BEGIN');
 
     const updates = [];
@@ -178,7 +186,7 @@ router.put('/manuais/:id', async (req, res, next) => {
       values.push(req.params.id);
       const { rowCount } = await client.query(`UPDATE kits_manuais SET ${updates.join(', ')} WHERE id = $${i}`, values);
       if (rowCount === 0) {
-        await client.query('ROLLBACK');
+        await client.query('ROLLBACK').catch(() => {});
         return res.status(404).json({ error: 'Kit não encontrado.' });
       }
     }
@@ -197,7 +205,7 @@ router.put('/manuais/:id', async (req, res, next) => {
 
     const { rows } = await client.query('SELECT * FROM kits_manuais WHERE id = $1', [req.params.id]);
     if (rows.length === 0) {
-      await client.query('ROLLBACK');
+      await client.query('ROLLBACK').catch(() => {});
       return res.status(404).json({ error: 'Kit não encontrado.' });
     }
     await client.query('COMMIT');
@@ -206,7 +214,7 @@ router.put('/manuais/:id', async (req, res, next) => {
     const detalhado = await calcularKitManual(pool, rows[0], ctx);
     res.json(detalhado);
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     next(err);
   } finally {
     client.release();

@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Package, FileText, Upload, Plus, RefreshCw, AlertTriangle, Check, X,
   Link2, Link2Off, TrendingUp, CircleSlash, Truck, Info, History, Boxes,
+  Pencil, ExternalLink,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import {
   EstadoVazio, Select, Skeleton, CampoBusca, IndicadorDestaque, Field,
@@ -27,6 +29,322 @@ const TIPO_INSUMO = {
   tecido: 'Tecido', aviamento: 'Aviamento', embalagem: 'Embalagem',
   etiqueta: 'Etiqueta', servico: 'Serviço', outro: 'Outro',
 };
+
+// O tipo do movimento é gravado como chave ('consumo_producao'). Mostrar a
+// chave crua na tela obriga quem lê a traduzir de cabeça.
+const TIPO_MOVIMENTO_INSUMO = {
+  entrada_nota: 'Entrada por nota',
+  consumo_producao: 'Consumo na produção',
+  ajuste: 'Ajuste',
+  remessa_faccao: 'Remessa para facção',
+  retorno_faccao: 'Retorno de facção',
+  perda: 'Perda',
+  inventario: 'Inventário',
+};
+
+// ===========================================================================
+// Ficha do insumo
+// ===========================================================================
+// POR QUE ESTA TELA EXISTE (09/09/2026): GET /insumos/:id devolve saldos por
+// local, movimentos, histórico de custo, prazos medidos e — o mais
+// importante — QUAIS FICHAS USAM ESTE INSUMO, e por qual valor cada uma está.
+// Nenhuma tela chamava. Clicar num insumo abria direto o formulário de
+// cadastro: dava para mudar o insumo sem nunca ver o que ele já tinha feito,
+// nem quantas referências dependem dele.
+//
+// REGRA 1: nada aqui recalcula custo, margem ou preço. A ficha mostra os
+// valores como estão gravados; quem decide aplicar um custo novo continua
+// sendo a aba "Fichas defasadas", com confirmação.
+function FichaInsumo({ insumoId, onFechar, onEditar }) {
+  const [dados, setDados] = useState(null);
+  const [erro, setErro] = useState('');
+  const [aba, setAba] = useState('fichas');
+
+  useEffect(() => {
+    setDados(null);
+    setErro('');
+    api.get(`/insumos/${insumoId}`).then(setDados).catch((e) => setErro(e.message));
+  }, [insumoId]);
+
+  useEffect(() => {
+    function aoTeclar(e) { if (e.key === 'Escape') onFechar(); }
+    document.addEventListener('keydown', aoTeclar);
+    return () => document.removeEventListener('keydown', aoTeclar);
+  }, [onFechar]);
+
+  const insumo = dados?.insumo;
+  const fichas = dados?.fichas || [];
+  const movimentos = dados?.movimentos || [];
+  const historico = dados?.historicoCusto || [];
+  const leadTimes = dados?.leadTimes || [];
+  const saldos = dados?.saldos || [];
+
+  const saldoTotal = saldos.reduce((soma, s) => soma + Number(s.quantidade || 0), 0);
+
+  return (
+    <>
+      <div className="anuncio-painel-fundo painel-fundo-clicavel" onClick={onFechar} role="presentation" />
+      <aside className="anuncio-painel" role="dialog" aria-modal="true" aria-label="Ficha do insumo">
+        <header className="anuncio-painel-topo">
+          <div>
+            <h2 style={{ margin: 0, fontSize: 17 }}>{insumo ? insumo.nome : 'Ficha do insumo'}</h2>
+            {insumo && (
+              <p className="ink-soft" style={{ margin: '4px 0 0', fontSize: 12.5 }}>
+                {[insumo.codigo, TIPO_INSUMO[insumo.tipo] || insumo.tipo, insumo.cor, insumo.especificacao]
+                  .filter(Boolean).join(' · ')}
+              </p>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {insumo && (
+              <button type="button" className="btn-icone" title="Editar cadastro" aria-label="Editar cadastro do insumo" onClick={() => onEditar(insumo)}>
+                <Pencil size={16} />
+              </button>
+            )}
+            <button type="button" className="btn-icone" onClick={onFechar} title="Fechar" aria-label="Fechar">
+              <X size={16} />
+            </button>
+          </div>
+        </header>
+
+        <div className="anuncio-painel-corpo">
+          {erro && <p className="login-error">{erro}</p>}
+          {!dados && !erro && <Skeleton height={280} />}
+
+          {dados && (
+            <>
+              <div className="promocao-painel-indicadores">
+                <IndicadorDestaque
+                  rotulo="Saldo"
+                  valor={`${numeroBr(saldoTotal, 2)} ${insumo.unidade || ''}`}
+                  explicacao={saldos.length > 1 ? `Somado de ${saldos.length} lotes/fornecedores.` : undefined}
+                />
+                <IndicadorDestaque
+                  rotulo="Custo atual"
+                  valor={insumo.custo_atual != null ? `${brl(insumo.custo_atual)}/${insumo.unidade}` : '—'}
+                  explicacao={insumo.custo_atual == null ? 'Nenhuma nota deste insumo foi lançada ainda.' : undefined}
+                />
+                <IndicadorDestaque rotulo="Fichas que usam" valor={formatQtd(fichas.length)} />
+                {/* O prazo MEDIDO tem uma fórmula só, e ela é do servidor
+                    (a lista já traz `lead_time_real_medio`). Recalcular a
+                    média aqui criaria um segundo número com o mesmo nome e
+                    valores diferentes conforme a tela — exatamente o tipo de
+                    divergência que a REGRA 2 existe para impedir. Aqui fica o
+                    prometido, com a contagem dos recebimentos. */}
+                <IndicadorDestaque
+                  rotulo="Prazo prometido"
+                  valor={insumo.lead_time_dias != null ? `${insumo.lead_time_dias} d` : '—'}
+                  explicacao={leadTimes.length > 0
+                    ? `${leadTimes.length} ${leadTimes.length === 1 ? 'recebimento cronometrado' : 'recebimentos cronometrados'} — veja a aba Prazos.`
+                    : 'Nenhum recebimento cronometrado ainda.'}
+                />
+              </div>
+
+              <div className="subtab-row">
+                <button type="button" className={`subtab-btn ${aba === 'fichas' ? 'active' : ''}`} onClick={() => setAba('fichas')}>
+                  Fichas ({fichas.length})
+                </button>
+                <button type="button" className={`subtab-btn ${aba === 'custo' ? 'active' : ''}`} onClick={() => setAba('custo')}>
+                  Custo ({historico.length})
+                </button>
+                <button type="button" className={`subtab-btn ${aba === 'movimentos' ? 'active' : ''}`} onClick={() => setAba('movimentos')}>
+                  Movimentos ({movimentos.length})
+                </button>
+                <button type="button" className={`subtab-btn ${aba === 'prazos' ? 'active' : ''}`} onClick={() => setAba('prazos')}>
+                  Prazos ({leadTimes.length})
+                </button>
+              </div>
+
+              {aba === 'fichas' && (
+                <>
+                  <p className="grafico-explicacao">
+                    Quem fica caro se este insumo subir. “Na ficha” é o valor gravado na ficha da
+                    referência — quando ele estiver diferente do custo atual, a aba “Fichas
+                    defasadas” mostra de quanto para quanto e deixa aplicar.
+                  </p>
+                  {fichas.length === 0 && (
+                    <p className="ink-soft">
+                      Nenhuma ficha técnica usa este insumo ainda. Vincule-o em Produto › Ficha de
+                      custo para que o preço da nota chegue ao custo da peça.
+                    </p>
+                  )}
+                  {fichas.length > 0 && (
+                    <div className="tabela-rolagem">
+                      <table className="tabela-nota">
+                        <thead>
+                          <tr>
+                            <th>Referência</th>
+                            <th className="num">Consumo por peça</th>
+                            <th className="num">Na ficha</th>
+                            <th />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {fichas.map((f) => (
+                            <tr key={f.material_id}>
+                              <td>
+                                <div className="insumo-item-nota">
+                                  <strong className="mono">{f.referencia}</strong>
+                                  <small>{f.descricao}</small>
+                                </div>
+                              </td>
+                              <td className="num mono">
+                                {f.consumo_por_peca != null
+                                  ? `${numeroBr(f.consumo_por_peca, 4)} ${insumo.unidade_consumo || insumo.unidade || ''}`
+                                  : <span className="ink-faint">—</span>}
+                              </td>
+                              <td className="num mono">
+                                {f.valor_unitario != null ? brl(f.valor_unitario) : <span className="ink-faint">—</span>}
+                              </td>
+                              <td className="num">
+                                <Link to={`/produtos/${f.produto_id}`} className="btn-icone" title="Abrir a ficha da referência" aria-label={`Abrir a ficha de ${f.referencia}`}>
+                                  <ExternalLink size={14} />
+                                </Link>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {aba === 'custo' && (
+                <>
+                  <p className="grafico-explicacao">
+                    Cada vez que este insumo mudou de preço, e de onde veio o valor. É a resposta
+                    para “desde quando essa malha está nesse preço”.
+                  </p>
+                  {historico.length === 0 && <p className="ink-soft">Nenhuma mudança de custo registrada ainda.</p>}
+                  {historico.length > 0 && (
+                    <div className="tabela-rolagem">
+                      <table className="tabela-nota">
+                        <thead>
+                          <tr>
+                            <th>Quando</th>
+                            <th className="num">De</th>
+                            <th className="num">Para</th>
+                            <th>Fornecedor</th>
+                            <th>Origem</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {historico.map((h) => (
+                            <tr key={h.id}>
+                              <td className="mono" title={new Date(h.registrado_em).toLocaleString('pt-BR')}>
+                                {tempoRelativo(h.registrado_em)}
+                              </td>
+                              {/* "de" vazio é a PRIMEIRA nota do insumo, não
+                                  custo zero — por isso travessão, nunca R$ 0,00. */}
+                              <td className="num mono">
+                                {h.custo_anterior != null ? brl(h.custo_anterior) : <span className="ink-faint">primeira</span>}
+                              </td>
+                              <td className="num mono">{brl(h.custo_novo)}</td>
+                              <td>{h.fornecedor_nome || <span className="ink-faint">—</span>}</td>
+                              <td>
+                                {h.nota_numero
+                                  ? <span className="selo tone-neutro">NF {h.nota_numero}</span>
+                                  : <span className="selo tone-neutro">{h.origem === 'manual' && h.usuario_nome ? `à mão · ${h.usuario_nome}` : (h.origem || 'à mão')}</span>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {aba === 'movimentos' && (
+                <>
+                  <p className="grafico-explicacao">
+                    Entradas e saídas deste insumo, do mais novo para o mais antigo (200 últimos).
+                  </p>
+                  {movimentos.length === 0 && <p className="ink-soft">Nenhum movimento registrado ainda.</p>}
+                  {movimentos.length > 0 && (
+                    <div className="tabela-rolagem">
+                      <table className="tabela-nota">
+                        <thead>
+                          <tr>
+                            <th>Quando</th>
+                            <th>Tipo</th>
+                            <th className="num">Quantidade</th>
+                            <th className="num">Resultante</th>
+                            <th>Origem</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {movimentos.map((m) => {
+                            const q = Number(m.quantidade);
+                            return (
+                              <tr key={m.id}>
+                                <td className="mono" title={new Date(m.criado_em).toLocaleString('pt-BR')}>
+                                  {tempoRelativo(m.criado_em)}
+                                </td>
+                                <td><span className="selo tone-neutro">{TIPO_MOVIMENTO_INSUMO[m.tipo] || m.tipo}</span></td>
+                                <td className="num mono" style={{ color: q < 0 ? 'var(--danger)' : 'var(--success)' }}>
+                                  {q > 0 ? '+' : ''}{numeroBr(q, 2)} {insumo.unidade}
+                                </td>
+                                <td className="num mono">{m.quantidade_resultante != null ? numeroBr(m.quantidade_resultante, 2) : <span className="ink-faint">—</span>}</td>
+                                <td>
+                                  {m.nota_numero
+                                    ? <span className="selo tone-neutro">NF {m.nota_numero}</span>
+                                    : (m.motivo || m.usuario_nome || <span className="ink-faint">—</span>)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {aba === 'prazos' && (
+                <>
+                  <p className="grafico-explicacao">
+                    Quanto tempo cada recebimento levou de verdade. Com três ou mais, o prazo medido
+                    passa a valer no lugar do prometido no cadastro.
+                  </p>
+                  {leadTimes.length === 0 && (
+                    <p className="ink-soft">
+                      Nenhum recebimento cronometrado ainda. O prazo em uso é o prometido pelo
+                      fornecedor{insumo.lead_time_dias != null ? ` (${insumo.lead_time_dias} dias)` : ''}.
+                    </p>
+                  )}
+                  {leadTimes.length > 0 && (
+                    <div className="tabela-rolagem">
+                      <table className="tabela-nota">
+                        <thead>
+                          <tr>
+                            <th>Recebido em</th>
+                            <th>Fornecedor</th>
+                            <th className="num">Dias</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {leadTimes.map((l) => (
+                            <tr key={l.id}>
+                              <td className="mono">{l.data_recebimento ? new Date(l.data_recebimento).toLocaleDateString('pt-BR') : '—'}</td>
+                              <td>{l.fornecedor_nome || <span className="ink-faint">—</span>}</td>
+                              <td className="num mono">{l.dias != null ? formatQtd(l.dias) : <span className="ink-faint">—</span>}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </aside>
+    </>
+  );
+}
 
 // ===========================================================================
 // Importar nota fiscal
@@ -585,6 +903,10 @@ export default function InsumosPage() {
   const [resultado, setResultado] = useState(null);
   const [fornecedores, setFornecedores] = useState([]);
   const [editandoInsumo, setEditandoInsumo] = useState(null);
+  // Clicar num insumo abria direto o formulário de cadastro. Agora abre a
+  // ficha — o que ele já fez, quem depende dele — e o cadastro fica a um
+  // clique dali.
+  const [fichaDe, setFichaDe] = useState(null);
 
   const carregar = useCallback(() => {
     setCarregando(true);
@@ -670,12 +992,20 @@ export default function InsumosPage() {
         </div>
       )}
 
+      {fichaDe && !editandoInsumo && (
+        <FichaInsumo
+          insumoId={fichaDe}
+          onFechar={() => setFichaDe(null)}
+          onEditar={(i) => setEditandoInsumo(i)}
+        />
+      )}
+
       {editandoInsumo && (
         <CadastroInsumo
           insumo={editandoInsumo.id ? editandoInsumo : null}
           fornecedores={fornecedores}
           onFechar={() => setEditandoInsumo(null)}
-          onSalvo={() => { setEditandoInsumo(null); carregar(); }}
+          onSalvo={() => { setEditandoInsumo(null); setFichaDe(null); carregar(); }}
         />
       )}
 
@@ -759,7 +1089,7 @@ export default function InsumosPage() {
                   </thead>
                   <tbody>
                     {tabela.itensPagina.map((i) => (
-                      <tr key={i.id} className="linha-clicavel" onClick={() => setEditandoInsumo(i)}>
+                      <tr key={i.id} className="linha-clicavel" onClick={() => setFichaDe(i.id)}>
                         <td>
                           <div className="insumo-item-nota">
                             <strong>{i.nome}</strong>

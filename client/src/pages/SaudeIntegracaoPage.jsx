@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity, RefreshCw, AlertTriangle, PlugZap, PackageX, CheckCircle2,
-  RotateCw, Archive, Info, Clock,
+  RotateCw, Archive, Info, Clock, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { EstadoVazio, Select, Skeleton, IndicadorDestaque } from '../components/ui';
@@ -36,6 +36,11 @@ function SeloSituacao({ situacao }) {
 }
 
 export default function SaudeIntegracaoPage() {
+  // O placar já dizia "N resolvidas" e não havia como ver QUAIS — a lista era
+  // carregada do banco (30 dias) e descartada. Conferir se o pedido de ontem
+  // voltou mesmo é justamente o que faz alguém abrir esta tela no dia
+  // seguinte.
+  const [verResolvidas, setVerResolvidas] = useState(false);
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
@@ -284,6 +289,75 @@ export default function SaudeIntegracaoPage() {
                 <Info size={13} /> A janela de {dados.janela_dias} dias conta a partir da <strong>data do pedido</strong>,
                 não da data da falha — um pedido antigo que só falhou hoje já está fora dela.
               </p>
+            </section>
+          )}
+
+          {resumo.resolvidas > 0 && (
+            <section className="card">
+              <button
+                type="button"
+                className="saude-resolvidas-toggle"
+                aria-expanded={verResolvidas}
+                onClick={() => setVerResolvidas((v) => !v)}
+              >
+                {verResolvidas ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                <CheckCircle2 size={16} />
+                <span>
+                  {formatQtd(resumo.resolvidas)} {resumo.resolvidas === 1 ? 'pendência resolvida' : 'pendências resolvidas'}
+                  {' '}nos últimos {dados.dias_de_historico} dias
+                </span>
+              </button>
+
+              {verResolvidas && (
+                <>
+                  <p className="grafico-explicacao">
+                    Nada aqui está em aberto. A lista existe para conferir o que voltou — e como voltou:
+                    “importado” quer dizer que o pedido entrou; “encerrado por uma pessoa” quer dizer que
+                    alguém decidiu que ele não devia entrar.
+                  </p>
+                  <div className="tabela-rolagem">
+                    <table className="tabela-saude-falhas">
+                      <thead>
+                        <tr>
+                          <th>Pedido</th>
+                          <th>Loja</th>
+                          <th>Data</th>
+                          <th className="num">Valor dos itens</th>
+                          <th>Como saiu</th>
+                          <th>Quando</th>
+                          <th className="num">Tentativas</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(resumo.listaResolvidas || []).map((f) => (
+                          <tr key={f.id}>
+                            <td className="mono">{f.id_externo}</td>
+                            <td>
+                              {f.integracao_nome}
+                              <small className="ink-faint"> · {rotuloPlataforma(f.marketplace)}</small>
+                            </td>
+                            <td className="mono">{f.data_pedido ? dataBr(String(f.data_pedido).slice(0, 10)) : <span className="ink-faint">sem data</span>}</td>
+                            <td className="num mono">
+                              {f.valor_itens != null ? brl(f.valor_itens) : <span className="ink-faint">desconhecido</span>}
+                            </td>
+                            <td>
+                              <span className="selo tone-elevada">
+                                {f.resolvido_como === 'manual' ? 'encerrado por uma pessoa' : 'importado'}
+                              </span>
+                            </td>
+                            <td>
+                              <span title={f.resolvido_em ? new Date(f.resolvido_em).toLocaleString('pt-BR') : undefined}>
+                                {tempoRelativo(f.resolvido_em)}
+                              </span>
+                            </td>
+                            <td className="num mono">{formatQtd(f.tentativas)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
             </section>
           )}
         </>

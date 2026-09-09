@@ -1,15 +1,33 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, Boxes } from 'lucide-react';
+import { Plus, Trash2, Boxes, Pencil, X } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct, uid, formatQtd } from '../lib/format';
 import { Select } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 
-function NovoKitForm({ produtos, onCriado }) {
-  const [nome, setNome] = useState('');
-  const [itens, setItens] = useState([{ _key: uid(), produtoId: '', quantidade: 1 }]);
-  const [descontoOverride, setDescontoOverride] = useState('');
+// Formulário de kit manual — cria e edita (09/09/2026).
+//
+// POR QUE: a rota PUT /kits/manuais/:id existia e nenhuma tela chamava. Errar
+// uma referência ou a quantidade de um kit obrigava a apagar o kit e montar
+// tudo de novo. O mesmo formulário agora serve para os dois casos: sem `kit`
+// ele cria, com `kit` ele edita.
+function KitManualForm({ produtos, kit, onPronto, onCancelar }) {
+  const editando = Boolean(kit);
+  const [nome, setNome] = useState(kit ? kit.nome : '');
+  const [itens, setItens] = useState(() => (
+    kit && kit.itens && kit.itens.length > 0
+      ? kit.itens.map((i) => ({ _key: uid(), produtoId: String(i.produtoId ?? i.produto_id ?? ''), quantidade: i.quantidade }))
+      : [{ _key: uid(), produtoId: '', quantidade: 1 }]
+  ));
+  // O desconto guardado é fração (0,12) e o campo é percentual (12). Sem essa
+  // conversão na abertura, editar um kit reescrevia 0,12 como 0,0012.
+  const [descontoOverride, setDescontoOverride] = useState(
+    kit && kit.descontoPctOverride !== null && kit.descontoPctOverride !== undefined
+      ? String(Number(kit.descontoPctOverride) * 100)
+      : ''
+  );
   const [erro, setErro] = useState('');
+  const [salvando, setSalvando] = useState(false);
 
   function updateItem(key, patch) {
     setItens((list) => list.map((i) => (i._key === key ? { ...i, ...patch } : i)));
@@ -27,24 +45,31 @@ function NovoKitForm({ produtos, onCriado }) {
     const itensValidos = itens.filter((i) => i.produtoId);
     if (!nome.trim()) return setErro('Dê um nome ao kit.');
     if (itensValidos.length === 0) return setErro('Inclua ao menos uma referência.');
+    const corpo = {
+      nome,
+      desconto_pct_override: descontoOverride === '' ? null : Number(descontoOverride) / 100,
+      itens: itensValidos.map((i) => ({ produtoId: Number(i.produtoId), quantidade: Number(i.quantidade) || 1 })),
+    };
+    setSalvando(true);
     try {
-      await api.post('/kits/manuais', {
-        nome,
-        desconto_pct_override: descontoOverride === '' ? null : Number(descontoOverride) / 100,
-        itens: itensValidos.map((i) => ({ produtoId: Number(i.produtoId), quantidade: Number(i.quantidade) || 1 })),
-      });
-      setNome('');
-      setItens([{ _key: uid(), produtoId: '', quantidade: 1 }]);
-      setDescontoOverride('');
-      onCriado();
+      if (editando) await api.put(`/kits/manuais/${kit.id}`, corpo);
+      else await api.post('/kits/manuais', corpo);
+      if (!editando) {
+        setNome('');
+        setItens([{ _key: uid(), produtoId: '', quantidade: 1 }]);
+        setDescontoOverride('');
+      }
+      onPronto();
     } catch (err) {
       setErro(err.message);
+    } finally {
+      setSalvando(false);
     }
   }
 
   return (
     <form className="card" onSubmit={handleSubmit} style={{ marginBottom: 16 }}>
-      <div className="card-head">Novo kit manual</div>
+      <div className="card-head">{editando ? `Editando "${kit.nome}"` : 'Novo kit manual'}</div>
       <div className="form-grid" style={{ marginBottom: 12 }}>
         <div className="field">
           <span className="field-label">Nome do Kit</span>
@@ -78,26 +103,58 @@ function NovoKitForm({ produtos, onCriado }) {
       </button>
 
       {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
-      <div style={{ marginTop: 12 }}>
-        <button className="btn btn-primary" type="submit">Criar kit</button>
+      <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+        <button className="btn btn-primary" type="submit" disabled={salvando}>
+          {salvando ? 'Salvando…' : (editando ? 'Salvar alterações' : 'Criar kit')}
+        </button>
+        {editando && (
+          <button type="button" className="btn btn-ghost" onClick={onCancelar} disabled={salvando}>
+            <X size={13} /> Cancelar
+          </button>
+        )}
       </div>
     </form>
   );
 }
 
-function KitManualCard({ kit, onRemovido }) {
+function KitManualCard({ kit, produtos, onRemovido, onAlterado }) {
+  const [editando, setEditando] = useState(false);
+  // A remoção não tinha catch: falhando (kit em uso, sessão caída), o botão
+  // simplesmente não fazia nada e o kit continuava na tela sem explicação.
+  const [erro, setErro] = useState('');
+
   async function handleRemover() {
     if (!(await confirmar(`Remover o kit "${kit.nome}"?`))) return;
-    await api.del(`/kits/manuais/${kit.id}`);
-    onRemovido();
+    setErro('');
+    try {
+      await api.del(`/kits/manuais/${kit.id}`);
+      onRemovido();
+    } catch (e) {
+      setErro(e.message);
+    }
+  }
+
+  if (editando) {
+    return (
+      <KitManualForm
+        produtos={produtos}
+        kit={kit}
+        onPronto={() => { setEditando(false); onAlterado(); }}
+        onCancelar={() => setEditando(false)}
+      />
+    );
   }
 
   return (
     <div className="card" style={{ marginBottom: 16 }}>
       <div className="card-head-linha">
         <div className="card-head">{kit.nome}</div>
-        <button type="button" className="icon-btn" onClick={handleRemover}><Trash2 size={14} /></button>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button type="button" className="icon-btn" title="Editar kit" aria-label={`Editar o kit ${kit.nome}`} onClick={() => setEditando(true)}><Pencil size={14} /></button>
+          <button type="button" className="icon-btn" title="Remover kit" aria-label={`Remover o kit ${kit.nome}`} onClick={handleRemover}><Trash2 size={14} /></button>
+        </div>
       </div>
+      {erro && <div className="login-error" style={{ marginBottom: 10 }}>{erro}</div>}
       <table className="data-table">
         <thead><tr><th>Referência</th><th>Qtd</th><th>Custo unit.</th><th>Preço unit.</th></tr></thead>
         <tbody>
@@ -182,9 +239,12 @@ export default function KitsPage() {
       ))}
 
       <h3>Kits Manuais</h3>
-      <NovoKitForm produtos={produtos} onCriado={loadManuais} />
+      <KitManualForm produtos={produtos} onPronto={loadManuais} />
+      {manuais.length === 0 && (
+        <p className="page-sub">Nenhum kit manual montado ainda. Use o formulário acima para combinar referências diferentes num kit.</p>
+      )}
       {manuais.map((kit) => (
-        <KitManualCard key={kit.id} kit={kit} onRemovido={loadManuais} />
+        <KitManualCard key={kit.id} kit={kit} produtos={produtos} onRemovido={loadManuais} onAlterado={loadManuais} />
       ))}
     </div>
   );

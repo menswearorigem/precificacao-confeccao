@@ -184,6 +184,11 @@ function valorDaFalha(falha = {}) {
 // "R$ 430,00 parados" pareceria o total quando pode ser metade.
 function resumo(falhas = [], agora = new Date()) {
   const abertas = [];
+  // As já resolvidas eram contadas e as linhas jogadas fora. A tela dizia
+  // "3 resolvidas" e não tinha como mostrar QUAIS — quem quisesse conferir o
+  // que tinha entrado de volta ontem não tinha onde olhar. A lista sai aqui
+  // separada; nada dela entra em nenhum dos totais das abertas.
+  const listaResolvidas = [];
   let resolvidas = 0;
   let emFila = 0;
   let abandonadas = 0;
@@ -197,6 +202,7 @@ function resumo(falhas = [], agora = new Date()) {
     const situacao = situacaoDaFalha(falha, agora);
     if (situacao.situacao === 'resolvida') {
       resolvidas += 1;
+      listaResolvidas.push({ ...falha, situacao });
       continue;
     }
     abertas.push({ ...falha, situacao });
@@ -227,6 +233,11 @@ function resumo(falhas = [], agora = new Date()) {
     porCategoria,
     maisAntiga,
     lista: abertas,
+    // Mais recente primeiro: quem abre "o que já foi resolvido" quer ver o
+    // de hoje, não o de 30 dias atrás.
+    listaResolvidas: listaResolvidas.sort(
+      (a, b) => new Date(b.resolvido_em).getTime() - new Date(a.resolvido_em).getTime()
+    ),
   };
 }
 

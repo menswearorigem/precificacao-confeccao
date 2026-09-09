@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   RefreshCw, X, Tag, Zap, Ticket, Package, Layers, Plus, Trash2,
   AlertTriangle, TrendingDown, History, ExternalLink, Search, Check,
-  CircleSlash, Calendar, Store, ArrowLeft, ListChecks,
+  CircleSlash, Calendar, Store, ArrowLeft, ListChecks, Pencil,
 } from 'lucide-react';
 import { api } from '../api/client';
 import {
@@ -117,6 +117,18 @@ function horaLocalParaIso(valor) {
   const d = new Date(valor);
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString();
+}
+
+// Caminho inverso de horaLocalParaIso: o timestamp que veio do servidor volta
+// para o texto "2026-09-10T14:00" que o <input type="datetime-local"> entende,
+// já na hora de parede do navegador. Sem isso, abrir o formulário de edição
+// mostrava o campo vazio e salvar apagaria a data.
+function isoParaHoraLocal(valor) {
+  if (!valor) return '';
+  const d = new Date(valor);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 function chaveDaLinha(l) {
@@ -595,6 +607,16 @@ function SeletorAnuncios({ integracaoId, selecionados, onAlternar, onSelecionarT
 // ===========================================================================
 function CriarPromocao({ lojas, onFechar, onCriada }) {
   const [integracaoId, setIntegracaoId] = useState('');
+  // Destino do lote: promoção nova ou promoção que já existe (09/09/2026).
+  //
+  // POR QUE: POST /promocoes/:id/itens existia e nenhuma tela chamava. Quem
+  // esquecia uma referência tinha que criar OUTRA promoção com o mesmo nome —
+  // duas promoções concorrendo pela mesma peça na plataforma. Todo o resto do
+  // fluxo (selecionar anúncios, regra de preço, prévia com margem, aviso de
+  // prejuízo) é o mesmo; só muda para onde o lote vai no fim.
+  const [destino, setDestino] = useState('nova');
+  const [promocaoDestinoId, setPromocaoDestinoId] = useState('');
+  const [promocoesDaLoja, setPromocoesDaLoja] = useState([]);
   const [tipo, setTipo] = useState('desconto');
   const [nome, setNome] = useState('');
   const [inicio, setInicio] = useState('');
@@ -620,7 +642,28 @@ function CriarPromocao({ lojas, onFechar, onCriada }) {
     setPrevia(null);
     setTimeslotId('');
     setHorarios(null);
+    setPromocaoDestinoId('');
   }, [integracaoId]);
+
+  // Só promoções que ainda dá para alimentar: no ar ou agendadas. Oferecer uma
+  // encerrada como destino seria oferecer um envio que a plataforma recusa.
+  useEffect(() => {
+    if (!integracaoId) { setPromocoesDaLoja([]); return; }
+    api.get(`/promocoes?integracao_id=${integracaoId}`)
+      .then((lista) => setPromocoesDaLoja(lista.filter((p) => p.status === 'ativa' || p.status === 'agendada')))
+      .catch(() => setPromocoesDaLoja([]));
+  }, [integracaoId]);
+
+  const promocaoDestino = promocoesDaLoja.find((p) => String(p.id) === String(promocaoDestinoId));
+
+  // A prévia julga cada item pelas regras do TIPO da promoção (a relâmpago da
+  // Shopee, por exemplo, exige estoque reservado e faixa de desconto). Ao
+  // acrescentar itens, o tipo que vale é o da promoção de destino — não o que
+  // ficou no seletor. Sem isso, a prévia aprovaria um item que a plataforma
+  // recusaria no envio.
+  useEffect(() => {
+    if (destino === 'existente' && promocaoDestino?.tipo) setTipo(promocaoDestino.tipo);
+  }, [destino, promocaoDestino?.tipo]);
 
   // ⚠️ A dependência é o CONTEÚDO da seleção, não o tamanho dela. Com
   // `selecionados.length`, desmarcar um anúncio e marcar outro (tamanho
@@ -692,14 +735,49 @@ function CriarPromocao({ lojas, onFechar, onCriada }) {
       return;
     }
 
-    const texto = comPrejuizo > 0
-      ? `Vai criar a promoção com ${aplicaveis.length} ${aplicaveis.length === 1 ? 'item' : 'itens'} — e ${comPrejuizo} ${comPrejuizo === 1 ? 'entra' : 'entram'} COM PREJUÍZO. Isso altera a loja de verdade.`
-      : `Vai criar a promoção com ${aplicaveis.length} ${aplicaveis.length === 1 ? 'item' : 'itens'} na ${nomeDaLoja(loja)}. Isso altera a loja de verdade.`;
-    if (!await confirmar(texto, { titulo: 'Criar promoção na plataforma', confirmarTexto: 'Criar', perigo: comPrejuizo > 0 })) return;
+    const quantos = `${aplicaveis.length} ${aplicaveis.length === 1 ? 'item' : 'itens'}`;
+    const ressalvaPrejuizo = comPrejuizo > 0
+      ? ` — e ${comPrejuizo} ${comPrejuizo === 1 ? 'entra' : 'entram'} COM PREJUÍZO`
+      : '';
+    const acrescentando = destino === 'existente';
+    const texto = acrescentando
+      ? `Vai acrescentar ${quantos} à promoção "${promocaoDestino?.nome || promocaoDestino?.tipo}"${ressalvaPrejuizo}. Isso altera a loja de verdade.`
+      : `Vai criar a promoção com ${quantos} na ${nomeDaLoja(loja)}${ressalvaPrejuizo}. Isso altera a loja de verdade.`;
+    if (!await confirmar(texto, {
+      titulo: acrescentando ? 'Acrescentar itens à promoção' : 'Criar promoção na plataforma',
+      confirmarTexto: acrescentando ? 'Acrescentar' : 'Criar',
+      perigo: comPrejuizo > 0,
+    })) return;
 
     setEnviando(true);
     setErro(null);
     try {
+      if (acrescentando) {
+        const r = await api.post(`/promocoes/${promocaoDestinoId}/itens`, {
+          confirmar: true,
+          itens: aplicaveis.map((l) => ({
+            anuncio_id: l.anuncio_id,
+            produto_id: l.produto_id,
+            anuncio_id_externo: l.anuncio_id_externo,
+            variacao_id_externa: l.variacao_id_externa,
+            preco_atual: l.preco_atual,
+            preco_promocional: l.preco_promocional,
+            estoque_promocional: l.estoque_promocional,
+            limite_por_compra: l.limite_por_compra,
+          })),
+        });
+        // A rota devolve total/aplicados/falhas. Item recusado pela plataforma
+        // não pode virar silêncio: quem mandou 30 e teve 4 recusados precisa
+        // saber disso agora, não na próxima sincronização.
+        if (r.falhas && r.falhas.length > 0) {
+          setErro(`${r.aplicados} de ${r.total} entraram. Recusados: ${r.falhas
+            .map((f) => `${f.anuncioIdExterno || f.anuncio_id_externo || 'item'} (${f.motivo || f.erro || 'sem motivo informado'})`)
+            .join('; ')}`);
+        } else {
+          onCriada({ id: Number(promocaoDestinoId) });
+        }
+        return;
+      }
       const r = await api.post('/promocoes', {
         confirmar: true,
         aceitar_prejuizo: comPrejuizo > 0,
@@ -737,7 +815,7 @@ function CriarPromocao({ lojas, onFechar, onCriada }) {
     <div className="promocao-fluxo">
       <div className="promocao-fluxo-topo">
         <button type="button" className="btn-icone" onClick={onFechar} aria-label="Voltar"><ArrowLeft size={16} /></button>
-        <h2>Nova promoção</h2>
+        <h2>{destino === 'existente' ? 'Acrescentar itens a uma promoção' : 'Nova promoção'}</h2>
       </div>
 
       <section className="card">
@@ -752,6 +830,38 @@ function CriarPromocao({ lojas, onFechar, onCriada }) {
           </Field>
 
           <Field
+            label="Destino"
+            hint={destino === 'existente'
+              ? 'O preço e a prévia funcionam igual; no fim os itens entram na promoção escolhida em vez de numa nova.'
+              : undefined}
+          >
+            <Select value={destino} onChange={(e) => setDestino(e.target.value)} disabled={!integracaoId}>
+              <option value="nova">Criar uma promoção nova</option>
+              <option value="existente" disabled={promocoesDaLoja.length === 0}>
+                {promocoesDaLoja.length === 0
+                  ? 'Acrescentar a uma existente (nenhuma no ar ou agendada)'
+                  : `Acrescentar a uma existente (${promocoesDaLoja.length})`}
+              </option>
+            </Select>
+          </Field>
+
+          {destino === 'existente' && (
+            <Field label="Promoção" hint="Só aparecem as que estão no ar ou agendadas.">
+              <Select
+                value={promocaoDestinoId}
+                onChange={(e) => setPromocaoDestinoId(e.target.value)}
+                placeholder="Escolha a promoção"
+              >
+                {promocoesDaLoja.map((pr) => (
+                  <option key={pr.id} value={pr.id}>
+                    {(pr.nome || `Promoção ${pr.promocao_id_externo}`)} · {TIPO_ROTULO[pr.tipo] || pr.tipo} · {STATUS_ROTULO[pr.status] || pr.status}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
+
+          {destino === 'nova' && <Field
             label="Tipo"
             hint={loja && criaveis.length === 0
               ? 'Essa plataforma ainda não deixa criar promoção pela API — só ler o que existe.'
@@ -760,9 +870,9 @@ function CriarPromocao({ lojas, onFechar, onCriada }) {
             <Select value={tipo} onChange={(e) => setTipo(e.target.value)} disabled={!loja}>
               {criaveis.map((t) => <option key={t} value={t}>{TIPO_ROTULO[t]}</option>)}
             </Select>
-          </Field>
+          </Field>}
 
-          {tipo !== 'relampago' && (
+          {destino === 'nova' && tipo !== 'relampago' && (
             <>
               <Field label="Nome da promoção">
                 <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Setembro Dry Fit" />
@@ -776,7 +886,7 @@ function CriarPromocao({ lojas, onFechar, onCriada }) {
             </>
           )}
 
-          {tipo === 'relampago' && (
+          {destino === 'nova' && tipo === 'relampago' && (
             <Field
               label="Horário"
               hint="A relâmpago só existe em faixas fixas de horário definidas pela plataforma — não dá pra escolher um horário qualquer."
@@ -796,7 +906,7 @@ function CriarPromocao({ lojas, onFechar, onCriada }) {
           )}
         </div>
 
-        {horarios?.criterios && tipo === 'relampago' && (
+        {destino === 'nova' && horarios?.criterios && tipo === 'relampago' && (
           <p className="promocao-criterios">
             <AlertTriangle size={13} />
             A Shopee exige, para a relâmpago: desconto entre {horarios.criterios.min_discount ?? '—'}% e {horarios.criterios.max_discount ?? '—'}%
@@ -849,8 +959,15 @@ function CriarPromocao({ lojas, onFechar, onCriada }) {
           {erro && <p className="erro-inline">{erro}</p>}
           <div className="promocao-acoes">
             <button type="button" className="btn-sec" onClick={onFechar}>Cancelar</button>
-            <button type="button" className="btn" onClick={aplicar} disabled={enviando}>
-              {enviando ? 'Criando na plataforma…' : 'Criar promoção'}
+            <button
+              type="button"
+              className="btn"
+              onClick={aplicar}
+              disabled={enviando || (destino === 'existente' && !promocaoDestinoId)}
+            >
+              {enviando
+                ? 'Enviando para a plataforma…'
+                : (destino === 'existente' ? 'Acrescentar à promoção' : 'Criar promoção')}
             </button>
           </div>
         </section>
@@ -1106,6 +1223,13 @@ function PainelPromocao({ promocaoId, onFechar, onMudou }) {
   const [regra, setRegra] = useState({ tipo: 'desconto_pct', valor: '', valorBruto: '' });
   const [erro, setErro] = useState(null);
   const [salvando, setSalvando] = useState(false);
+  // Editar nome/janela e excluir uma promoção que ainda não começou: as duas
+  // rotas (PUT /promocoes/:id e POST /promocoes/:id/excluir) existiam e
+  // nenhuma tela chamava. Sem elas, corrigir o nome de uma promoção ou
+  // desfazer uma agendada por engano só dava para fazer no painel da
+  // plataforma — fora do Hub, sem histórico aqui.
+  const [editando, setEditando] = useState(false);
+  const [formPromo, setFormPromo] = useState({ nome: '', inicio: '', fim: '' });
 
   const recarregar = useCallback(() => {
     setCarregando(true);
@@ -1275,6 +1399,60 @@ function PainelPromocao({ promocaoId, onFechar, onMudou }) {
     }
   }
 
+  function abrirEdicao() {
+    setErro(null);
+    setFormPromo({
+      nome: promocao.nome || '',
+      inicio: isoParaHoraLocal(promocao.inicio_em),
+      fim: isoParaHoraLocal(promocao.fim_em),
+    });
+    setEditando(true);
+  }
+
+  async function salvarPromocao(e) {
+    e.preventDefault();
+    if (!await confirmar(
+      `Vai alterar "${promocao.nome || promocao.tipo}" na ${promocao.loja_nome}. A mudança vai para a plataforma.`,
+      { titulo: 'Salvar alterações da promoção', confirmarTexto: 'Salvar' }
+    )) return;
+    setSalvando(true);
+    setErro(null);
+    try {
+      await api.put(`/promocoes/${promocaoId}`, {
+        confirmar: true,
+        nome: formPromo.nome.trim() || null,
+        inicio: horaLocalParaIso(formPromo.inicio),
+        fim: horaLocalParaIso(formPromo.fim),
+      });
+      setEditando(false);
+      recarregar();
+      onMudou();
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function excluir() {
+    if (!await confirmar(
+      `Vai excluir "${promocao.nome || promocao.tipo}" na ${promocao.loja_nome}. Só funciona em promoção que ainda não começou.`,
+      { titulo: 'Excluir promoção', confirmarTexto: 'Excluir', perigo: true }
+    )) return;
+    setSalvando(true);
+    setErro(null);
+    try {
+      const r = await api.post(`/promocoes/${promocaoId}/excluir`, { confirmar: true });
+      onMudou();
+      if (r?.observacao) setErro(r.observacao);
+      else onFechar();
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setSalvando(false);
+    }
+  }
+
   // Margem recalculada para as linhas cujo preço foi mexido — mesma razão da
   // prévia: a margem que veio do servidor é a do preço anterior.
   const { margens: margensVivas, recalculando: recalculandoMargem } = useMargensAoVivo(
@@ -1290,6 +1468,17 @@ function PainelPromocao({ promocaoId, onFechar, onMudou }) {
     if (viva) return { margem: viva.margem, indisponivel: viva.margem_indisponivel, recalculando: false };
     return { margem: null, indisponivel: null, recalculando: recalculandoMargem };
   }
+
+  // O que cada plataforma deixa mexer, dito uma vez só:
+  //  · Mercado Livre — a janela vive em cada item, não na promoção.
+  //  · Shopee relâmpago — o horário é fixo, escolhido na criação.
+  //  · Excluir — só antes de começar; depois de no ar, o caminho é encerrar.
+  const podeEditarJanela = Boolean(promocao)
+    && promocao.loja_marketplace !== 'mercado_livre'
+    && !(promocao.loja_marketplace === 'shopee' && promocao.tipo === 'relampago');
+  const podeExcluir = Boolean(promocao)
+    && promocao.status !== 'ativa'
+    && promocao.loja_marketplace !== 'mercado_livre';
 
   // Mesma razão do resumo da prévia: os totais têm que refletir os preços que
   // estão nos campos agora, não os que vieram do servidor.
@@ -1342,6 +1531,31 @@ function PainelPromocao({ promocaoId, onFechar, onMudou }) {
 
           {aba === 'itens' && (
             <>
+              {editando && promocao && (
+                <form className="promocao-form-edicao" onSubmit={salvarPromocao}>
+                  <div className="field">
+                    <span className="field-label">Nome da promoção</span>
+                    <input value={formPromo.nome} onChange={(e) => setFormPromo((f) => ({ ...f, nome: e.target.value }))} />
+                  </div>
+                  <div className="field">
+                    <span className="field-label">Início</span>
+                    <input type="datetime-local" value={formPromo.inicio} onChange={(e) => setFormPromo((f) => ({ ...f, inicio: e.target.value }))} />
+                  </div>
+                  <div className="field">
+                    <span className="field-label">Fim</span>
+                    <input type="datetime-local" value={formPromo.fim} onChange={(e) => setFormPromo((f) => ({ ...f, fim: e.target.value }))} />
+                  </div>
+                  <div className="promocao-form-edicao-acoes">
+                    <button type="submit" className="btn" disabled={salvando}>
+                      {salvando ? 'Enviando…' : 'Salvar na plataforma'}
+                    </button>
+                    <button type="button" className="btn-sec" onClick={() => setEditando(false)} disabled={salvando}>
+                      Cancelar
+                    </button>
+                  </div>
+                </form>
+              )}
+
               <div className="promocao-painel-indicadores">
                 <IndicadorDestaque rotulo="Itens" valor={formatQtd(totais.itens)} />
                 <IndicadorDestaque
@@ -1470,9 +1684,23 @@ function PainelPromocao({ promocaoId, onFechar, onMudou }) {
               {erro && <p className="erro-inline">{erro}</p>}
 
               <div className="promocao-acoes">
+                {/* Editar e excluir só aparecem onde a plataforma aceita.
+                    Mostrar um botão que sempre devolve erro 400 é pior do que
+                    não mostrar botão nenhum: aqui o motivo fica no title e o
+                    botão some, em vez de a pessoa descobrir depois de clicar. */}
+                {promocao && podeEditarJanela && (
+                  <button type="button" className="btn-sec" onClick={abrirEdicao} disabled={salvando || editando}>
+                    <Pencil size={14} /> Editar nome e datas
+                  </button>
+                )}
                 <button type="button" className="btn-sec perigo" onClick={encerrar} disabled={salvando || !promocao}>
                   Encerrar promoção
                 </button>
+                {promocao && podeExcluir && (
+                  <button type="button" className="btn-sec perigo" onClick={excluir} disabled={salvando}>
+                    <Trash2 size={14} /> Excluir
+                  </button>
+                )}
                 {/* O botão olha a MESMA lista que salvarPrecos usa. Com
                     `Object.keys(edicoes)`, apagar o campo de preço de um item
                     registrava `edicoes[id] = null`: o botão acendia e o clique

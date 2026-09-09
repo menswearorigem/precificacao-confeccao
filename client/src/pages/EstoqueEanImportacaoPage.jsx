@@ -1,8 +1,141 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, CheckCircle2, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { Upload, CheckCircle2, AlertTriangle, ArrowLeft, Trash2, Search, Barcode } from 'lucide-react';
 import { api } from '../api/client';
 import FileDropzone from '../components/FileDropzone';
+import DataTable from '../components/DataTable';
+import { ThOrdenavel, Paginacao, SkeletonLinhasTabela, EstadoVazio } from '../components/ui';
+import { useTabela } from '../lib/useTabela';
+import { confirmar } from '../components/ConfirmDialog';
+
+const COLUNAS_GUARDADOS = {
+  referencia: (m) => m.referencia,
+  cor: (m) => m.cor,
+  tamanho: (m) => m.tamanho,
+  ean: (m) => m.ean,
+};
+
+// EANs guardados, com busca e remoção (09/09/2026).
+//
+// POR QUE: GET e DELETE /estoque/ean-mapeamento existiam desde a migration
+// 0004 e nenhuma tela chamava. Depois de importar, o que ficou "guardado para
+// quando a variante existir" sumia de vista: não dava para conferir se um EAN
+// foi mesmo gravado, nem para tirar um que veio errado do arquivo do Wik —
+// e como a coluna `ean` é UNIQUE, um EAN errado guardado bloqueia o EAN certo
+// numa importação seguinte, sem que ninguém veja o porquê.
+function EansGuardados({ chave }) {
+  const [itens, setItens] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+  const [busca, setBusca] = useState('');
+  const [removendo, setRemovendo] = useState(null);
+
+  function carregar() {
+    setCarregando(true);
+    setErro('');
+    api.get('/estoque/ean-mapeamento')
+      .then(setItens)
+      .catch((e) => setErro(e.message))
+      .finally(() => setCarregando(false));
+  }
+
+  useEffect(carregar, [chave]);
+
+  const termo = busca.trim().toLowerCase();
+  const filtrados = termo
+    ? itens.filter((m) => [m.referencia, m.cor, m.tamanho, m.ean]
+        .some((v) => String(v || '').toLowerCase().includes(termo)))
+    : itens;
+
+  const tabela = useTabela(filtrados, { colunas: COLUNAS_GUARDADOS, colunaPadrao: 'referencia', prefixo: 'ean' });
+
+  async function remover(m) {
+    const onde = [m.referencia, m.cor, m.tamanho].filter(Boolean).join(' · ');
+    if (!(await confirmar(`Apagar o EAN ${m.ean} guardado para ${onde}?`))) return;
+    setErro('');
+    setRemovendo(m.id);
+    try {
+      await api.del(`/estoque/ean-mapeamento/${m.id}`);
+      setItens((lista) => lista.filter((x) => x.id !== m.id));
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setRemovendo(null);
+    }
+  }
+
+  return (
+    <div className="card" style={{ marginTop: 24 }}>
+      <div className="card-head"><Barcode size={14} /> EANs já importados ({itens.length.toLocaleString('pt-BR')})</div>
+      <p className="page-sub" style={{ marginTop: 0 }}>
+        Tudo que veio dos arquivos do Wik. Cada linha é aplicada na variante correspondente
+        assim que ela existir. Apagar uma linha aqui não mexe no estoque nem no EAN de uma
+        variante que já foi criada — só tira o mapeamento guardado.
+      </p>
+
+      <div className="campo-com-icone" style={{ marginBottom: 12, maxWidth: 420 }}>
+        <Search size={14} aria-hidden="true" />
+        <input
+          placeholder="Buscar por referência, cor, tamanho ou EAN"
+          aria-label="Buscar nos EANs importados"
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+        />
+      </div>
+
+      {erro && <div className="login-error" style={{ marginBottom: 10 }}>{erro}</div>}
+
+      <Paginacao {...tabela} posicao="topo" />
+      <DataTable>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <ThOrdenavel coluna="referencia" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Referência</ThOrdenavel>
+              <ThOrdenavel coluna="cor" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Cor</ThOrdenavel>
+              <ThOrdenavel coluna="tamanho" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Tamanho</ThOrdenavel>
+              <ThOrdenavel coluna="ean" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>EAN</ThOrdenavel>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {carregando && itens.length === 0 && <SkeletonLinhasTabela colunas={5} />}
+            {tabela.itensPagina.map((m) => (
+              <tr key={m.id}>
+                <td className="mono">{m.referencia}</td>
+                <td>{m.cor || <span style={{ color: 'var(--ink-faint)' }}>—</span>}</td>
+                <td>{m.tamanho || <span style={{ color: 'var(--ink-faint)' }}>—</span>}</td>
+                <td className="mono">{m.ean}</td>
+                <td>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title="Apagar este mapeamento"
+                    aria-label={`Apagar o EAN ${m.ean}`}
+                    disabled={removendo === m.id}
+                    onClick={() => remover(m)}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </DataTable>
+      {!carregando && itens.length === 0 && (
+        <EstadoVazio
+          Icone={Barcode}
+          titulo="Nenhum EAN importado ainda"
+          descricao="Envie os arquivos do Wik acima para que a bipagem passe a usar o EAN verdadeiro da etiqueta."
+        />
+      )}
+      {!carregando && itens.length > 0 && filtrados.length === 0 && (
+        <p className="page-sub">Nenhum EAN encontrado para "{busca}".</p>
+      )}
+      <Paginacao {...tabela} />
+    </div>
+  );
+}
 
 export default function EstoqueEanImportacaoPage() {
   const navigate = useNavigate();
@@ -154,6 +287,8 @@ export default function EstoqueEanImportacaoPage() {
           </button>
         </>
       )}
+
+      <EansGuardados chave={resultado ? resultado.aplicados + resultado.guardados : 0} />
     </div>
   );
 }
