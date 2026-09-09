@@ -16,6 +16,7 @@ const produtosRoutes = require('./routes/produtos.routes');
 const alertasRoutes = require('./routes/alertas.routes');
 const buscaRoutes = require('./routes/busca.routes');
 const importacaoRoutes = require('./routes/importacao.routes');
+const importacaoMassaRoutes = require('./routes/importacaoMassa.routes');
 const simulacaoRoutes = require('./routes/simulacao.routes');
 const kitsRoutes = require('./routes/kits.routes');
 const fichaTecnicaRoutes = require('./routes/fichaTecnica.routes');
@@ -87,6 +88,7 @@ function createApp() {
   // limite grande.
   const jsonGrande = express.json({ limit: '15mb' });
   app.use('/api/importacao', jsonGrande);
+  app.use('/api/importacao-massa', jsonGrande);
   app.use('/api/estoque', jsonGrande);
   app.use('/api/pedidos', jsonGrande);
   app.use('/api/produtos', jsonGrande);
@@ -127,6 +129,10 @@ function createApp() {
   app.use('/api/alertas', requireAuth, requireModulo(['produto', 'analises']), alertasRoutes);
   app.use('/api/busca', requireAuth, buscaRoutes);
   app.use('/api/importacao', requireAuth, requireModulo('produto'), importacaoRoutes);
+  // Importação em massa: grade, cadastro e variante. Mesma chave `produto` da
+  // importação que já existia — quem podia criar produto por planilha continua
+  // podendo, e ninguém ganhou acesso novo (REGRA 4).
+  app.use('/api/importacao-massa', requireAuth, requireModulo('produto'), importacaoMassaRoutes);
   app.use('/api/kits', requireAuth, requireModulo('produto'), kitsRoutes);
   app.use('/api/ficha-tecnica', requireAuth, requireModulo(['produto', 'vendas']), fichaTecnicaRoutes);
   app.use('/api/simulacao', requireAuth, requireModulo('analises'), simulacaoRoutes);

@@ -5,7 +5,7 @@ import {
   Truck, BarChart3, ShieldCheck, Plug, TrendingUp, ReceiptText, Store, Plane,
   LineChart, SearchCheck, Layers, AlertTriangle, CalendarDays, UsersRound,
   LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer, Activity,
-  Banknote, Ruler, MapPin, Gauge, Bookmark, PackageCheck,
+  Banknote, Ruler, MapPin, Gauge, Bookmark, PackageCheck, FileSpreadsheet,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -19,6 +19,11 @@ export const MODULES = [
       { to: '/ficha-tecnica', label: 'Ficha Técnica', icon: FileText },
       { to: '/kits', label: 'Kits', icon: Boxes },
       { to: '/importacao', label: 'Importar Produtos', icon: Upload },
+      // Importacao em massa (09/09/2026). Fica ao lado da importacao de ficha
+      // de custo que ja' existia porque as duas respondem "trazer de fora" --
+      // mas esta CRIA GRADE e ATUALIZA, que a outra nunca fez. Mesma chave
+      // `produto`; nenhuma permissao nova (REGRA 4).
+      { to: '/importacao-massa', label: 'Importar em Massa', icon: FileSpreadsheet },
     ],
   },
   {

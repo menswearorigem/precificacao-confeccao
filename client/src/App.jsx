@@ -23,6 +23,7 @@ import EventoImpressaoPage from './pages/EventoImpressaoPage';
 import ProdutosListPage from './pages/ProdutosListPage';
 import ProdutoFichaPage from './pages/ProdutoFichaPage';
 import ImportacaoPage from './pages/ImportacaoPage';
+import ImportacaoMassaPage from './pages/ImportacaoMassaPage';
 import SimuladorPage from './pages/SimuladorPage';
 import DashboardPage from './pages/DashboardPage';
 import FichaPrecificacaoPage from './pages/FichaPrecificacaoPage';
@@ -119,6 +120,7 @@ function AppRoutes() {
                   <Route path="/produtos" element={<ProdutosListPage />} />
                   <Route path="/produtos/:id" element={<ProdutoFichaPage />} />
                   <Route path="/importacao" element={<ImportacaoPage />} />
+                  <Route path="/importacao-massa" element={<ImportacaoMassaPage />} />
                   <Route path="/simulador" element={<SimuladorPage />} />
                   <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/ficha-precificacao" element={<FichaPrecificacaoPage />} />
