@@ -77,12 +77,17 @@ export default function FornecedorFichaPage() {
   const [saving, setSaving] = useState(false);
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [error, setError] = useState('');
+  // Falha que impede a tela de existir (não achou o registro, rede caiu).
+  // É separada de `error` porque o objeto do formulário nasce preenchido
+  // com um vazio válido — sem esta marca, a tela mostraria um formulário
+  // em branco como se fosse um cadastro novo.
+  const [erroFatal, setErroFatal] = useState('');
 
   const refMeses = useRefGrafico();
   const refCategorias = useRefGrafico();
 
   useEffect(() => {
-    api.get('/listas').then(setListas);
+    api.get('/listas').then(setListas).catch((e) => setError(e.message));
   }, []);
 
   useEffect(() => {
@@ -92,7 +97,11 @@ export default function FornecedorFichaPage() {
       return;
     }
     setLoading(true);
-    api.get(`/fornecedores/${id}`).then((data) => {
+    api.get(`/fornecedores/${id}`)
+      // Sem catch, fornecedor inexistente deixava a tela BRANCA.
+      .catch((e) => { setErroFatal(e.message); setLoading(false); })
+      .then((data) => {
+      if (!data) return;
       setFornecedor(data);
       setLoading(false);
     });
@@ -303,7 +312,18 @@ export default function FornecedorFichaPage() {
     };
   }
 
-  if (loading) return null;
+  if (loading) return <div className="page-wide">Carregando…</div>;
+
+  if (erroFatal) {
+    return (
+      <div className="page-wide">
+        <button className="btn btn-ghost" type="button" style={{ marginBottom: 14 }} onClick={() => navigate('/fornecedores')}>
+          <ArrowLeft size={14} /> Voltar para fornecedores
+        </button>
+        <p className="login-error">{erroFatal || 'Não foi possível carregar este fornecedor.'}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="page-wide">

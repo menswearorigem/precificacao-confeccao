@@ -59,6 +59,7 @@ export default function PedidosListPage({ origemFiltro }) {
   const [{ inicio: dataInicio, fim: dataFim }, setPeriodo] = useState(periodoDeHoje());
   const [integracoes, setIntegracoes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [erroCarga, setErroCarga] = useState('');
   const [criando, setCriando] = useState(false);
 
   useEffect(() => { if (isMarketplace) api.get(CAMINHO_LOJAS).then(setIntegracoes).catch(() => {}); }, [isMarketplace]);
@@ -87,10 +88,13 @@ export default function PedidosListPage({ origemFiltro }) {
     if (isMarketplace && lojaId) params.set('origem_integracao_id', lojaId);
     if (isMarketplace && dataInicio) params.set('data_inicio', dataInicio);
     if (isMarketplace && dataFim) params.set('data_fim', dataFim);
-    api.get(`/pedidos?${params.toString()}`).then((data) => {
-      setPedidos(data);
-      setLoading(false);
-    });
+    setErroCarga('');
+    api.get(`/pedidos?${params.toString()}`)
+      .then((data) => { setPedidos(data); })
+      // Sem catch, uma falha (sessão expirada, servidor fora) deixava a tela
+      // no esqueleto para sempre, sem nenhuma mensagem.
+      .catch((e) => setErroCarga(e.message))
+      .finally(() => setLoading(false));
   }
 
   // Busca por texto entra na hora (sem precisar apertar Enter/clicar em
@@ -124,6 +128,8 @@ export default function PedidosListPage({ origemFiltro }) {
               : 'Pedidos lançados manualmente (loja física, WhatsApp etc). Versão de teste — ainda não emite nota fiscal.'}
           </p>
         </div>
+
+      {erroCarga && <p className="login-error">{erroCarga}</p>}
         <div style={{ display: 'flex', gap: 8 }}>
           <BotaoExportar nomeBase={isMarketplace ? 'pedidos-marketplace' : 'pedidos'} colunas={COLUNAS_EXPORTACAO} itens={tabela.itensOrdenados} disabled={tabela.totalItens === 0} />
           {origemFiltro !== 'marketplace' && (

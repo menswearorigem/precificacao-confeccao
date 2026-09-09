@@ -1153,11 +1153,22 @@ router.post('/:id/itens/remover', async (req, res, next) => {
         }
       }
     } else if (integracao.marketplace === 'tiktok_shop') {
-      await tiktokShop.removerProdutosPromocaoTikTok({
+      // O retorno era DESCARTADO: se a TikTok recusasse parte dos itens,
+      // nenhuma falha entrava em `falhas` e o laço abaixo desativava todos
+      // localmente. O Hub passava a mostrar como "fora da promoção" itens que
+      // continuavam no ar, com o preço promocional valendo.
+      const resultadoTikTok = await tiktokShop.removerProdutosPromocaoTikTok({
         ...cred, activityId: promocao.promocao_id_externo,
         produtoIds: [...new Set(itens.map((i) => i.anuncioIdExterno))],
         skuIds: itens.map((i) => i.variacaoIdExterna).filter(Boolean),
       });
+      for (const f of (resultadoTikTok?.falhas || [])) {
+        falhas.push({
+          anuncioIdExterno: f.anuncioIdExterno ?? f.product_id ?? null,
+          variacaoIdExterna: f.variacaoIdExterna ?? f.sku_id ?? null,
+          erro: f.erro || f.message || 'A TikTok recusou a remoção deste item.',
+        });
+      }
     } else if (integracao.marketplace === 'mercado_livre') {
       for (const item of itens) {
         try {
@@ -1301,6 +1312,9 @@ router.post('/:id/encerrar', async (req, res, next) => {
     const promocao = rows[0];
     const integracao = await carregarIntegracao(promocao.origem_integracao_id);
     const cred = credenciaisDe(integracao);
+    // O que a plataforma recusou item a item. Vai junto na resposta: encerrar
+    // "quase tudo" e dizer "ok" é pior que não encerrar.
+    const falhasEncerramento = [];
 
     if (integracao.marketplace === 'shopee') {
       if (promocao.tipo === 'relampago') {
@@ -1322,12 +1336,21 @@ router.post('/:id/encerrar', async (req, res, next) => {
       const { rows: itens } = await pool.query(
         'SELECT DISTINCT anuncio_id_externo FROM promocao_itens WHERE promocao_id = $1 AND ativo', [id]
       );
+      // Cada item na SUA tentativa. Antes o laço não tinha try/catch: o
+      // primeiro anúncio recusado pelo Mercado Livre lançava, a rota caía no
+      // catch geral e devolvia 500 — e nada era gravado localmente. Metade dos
+      // itens já tinha saído da promoção no ML e o Hub continuava mostrando a
+      // promoção inteira como ativa, sem nenhuma pista de onde parou.
       for (const item of itens) {
-        await mercadoLivre.removerItemPromocaoML({
-          ...cred, anuncioId: item.anuncio_id_externo,
-          promotionType: promocao.tipo_externo || 'PRICE_DISCOUNT',
-          promotionId: idPromocaoRealML(promocao),
-        });
+        try {
+          await mercadoLivre.removerItemPromocaoML({
+            ...cred, anuncioId: item.anuncio_id_externo,
+            promotionType: promocao.tipo_externo || 'PRICE_DISCOUNT',
+            promotionId: idPromocaoRealML(promocao),
+          });
+        } catch (err) {
+          falhasEncerramento.push({ anuncioIdExterno: item.anuncio_id_externo, erro: err.message });
+        }
       }
     } else {
       return res.status(400).json({ error: `Ainda não dá para encerrar promoção de "${integracao.marketplace}" por aqui.` });
@@ -1356,10 +1379,17 @@ router.post('/:id/encerrar', async (req, res, next) => {
 
     await registrar(req, {
       acao: 'alterar', entidade: 'promocao_marketplace', entidadeId: id,
-      descricao: `Encerrou a promoção "${promocao.nome || promocao.tipo}" na ${integracao.marketplace}`,
-      sucesso: true,
+      descricao: `Encerrou a promoção "${promocao.nome || promocao.tipo}" na ${integracao.marketplace}`
+        + (falhasEncerramento.length ? ` — ${falhasEncerramento.length} anúncio(s) a plataforma recusou` : ''),
+      sucesso: falhasEncerramento.length === 0,
     });
-    res.json({ ok: true });
+    res.json({
+      ok: true,
+      falhas: falhasEncerramento,
+      aviso: falhasEncerramento.length
+        ? `${falhasEncerramento.length} anúncio(s) a plataforma recusou tirar da promoção. Eles podem continuar no ar com o preço promocional — confira na loja.`
+        : null,
+    });
   } catch (err) {
     next(err);
   }

@@ -131,20 +131,24 @@ export default function KitsPage() {
   const [automaticos, setAutomaticos] = useState([]);
   const [manuais, setManuais] = useState([]);
   const [produtos, setProdutos] = useState([]);
+  // Nenhuma das quatro chamadas tinha catch: falhando, a tela ficava em branco
+  // e parecia que não havia kit nenhum cadastrado.
+  const [erroCarga, setErroCarga] = useState('');
 
   function loadManuais() {
-    api.get('/kits/manuais').then(setManuais);
+    api.get('/kits/manuais').then(setManuais).catch((e) => setErroCarga(e.message));
   }
 
   useEffect(() => {
-    api.get('/kits/automaticos').then(setAutomaticos);
+    api.get('/kits/automaticos').then(setAutomaticos).catch((e) => setErroCarga(e.message));
     loadManuais();
-    api.get('/produtos').then(setProdutos);
+    api.get('/produtos').then(setProdutos).catch((e) => setErroCarga(e.message));
   }, []);
 
   return (
     <div className="page-wide">
       <h2>Kits para Marketplace</h2>
+      {erroCarga && <p className="login-error">{erroCarga}</p>}
       <p className="page-sub">
         Kits automáticos (2 a 8 peças da mesma referência) para Camiseta Dryfit, Camiseta Polo e
         Bermuda, e kits manuais combinando referências diferentes.

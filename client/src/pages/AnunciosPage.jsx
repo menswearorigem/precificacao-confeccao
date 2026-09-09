@@ -284,10 +284,15 @@ export default function AnunciosPage() {
     grupoFocado ? (grupos.find((g) => g.chave === grupoFocado)?.itens || []) : anuncios
   ), [grupoFocado, grupos, anuncios]);
 
+  // `modo` entra nas dependências (09/09/2026): a barra de ação em massa
+  // aparece sempre que há algo marcado, INCLUSIVE nos modos "Por referência" e
+  // "Comparar lojas", onde as caixas de seleção nem são exibidas. Marcar 30
+  // anúncios na grade, trocar para a matriz e clicar em "Pausar na plataforma"
+  // pausava 30 anúncios que a pessoa não estava vendo.
   useEffect(() => {
     setGrupoFocado(null);
     setMarcados(new Set());
-  }, [buscaAplicada, marketplace, lojaId, status, vinculo, ads, dias]);
+  }, [buscaAplicada, marketplace, lojaId, status, vinculo, ads, dias, modo]);
 
   const tabela = useTabela(anunciosVisiveis, {
     colunas: COLUNAS_ORDENAVEIS,

@@ -28,7 +28,11 @@ export default function ViagensListPage() {
 
   function load() {
     setLoading(true);
-    api.get('/viagens').then((data) => { setViagens(data); setLoading(false); });
+    api.get('/viagens')
+      .then((data) => { setViagens(data); })
+      // Sem catch, uma falha deixava os três esqueletos girando para sempre.
+      .catch((e) => setErro(e.message))
+      .finally(() => setLoading(false));
   }
 
   useEffect(load, []);

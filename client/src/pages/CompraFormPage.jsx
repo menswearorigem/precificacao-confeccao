@@ -44,14 +44,19 @@ export default function CompraFormPage() {
 
   function load() {
     setLoading(true);
-    api.get(`/compras/${id}`).then((data) => {
+    api.get(`/compras/${id}`)
+      // Sem catch, compra inexistente ou excluída em outra aba deixava
+      // `loading` em true para sempre e a tela ficava BRANCA.
+      .catch((e) => { setError(e.message); setLoading(false); })
+      .then((data) => {
+      if (!data) return;
       aplicarResposta(data);
       setLoading(false);
     });
   }
 
   useEffect(() => {
-    api.get('/listas').then(setListas);
+    api.get('/listas').then(setListas).catch((e) => setError(e.message));
   }, []);
 
   useEffect(load, [id]);
@@ -143,7 +148,18 @@ export default function CompraFormPage() {
     navigate('/compras');
   }
 
-  if (loading || !compra) return null;
+  if (loading) return <div className="page-wide">Carregando…</div>;
+
+  if (!compra) {
+    return (
+      <div className="page-wide">
+        <button className="btn btn-ghost" type="button" style={{ marginBottom: 14 }} onClick={() => navigate('/compras')}>
+          <ArrowLeft size={14} /> Voltar para compras
+        </button>
+        <p className="login-error">{error || 'Não foi possível carregar esta compra.'}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="page-wide">

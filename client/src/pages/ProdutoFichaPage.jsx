@@ -53,6 +53,11 @@ export default function ProdutoFichaPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // Falha que impede a tela de existir (não achou o registro, rede caiu).
+  // É separada de `error` porque o objeto do formulário nasce preenchido
+  // com um vazio válido — sem esta marca, a tela mostraria um formulário
+  // em branco como se fosse um cadastro novo.
+  const [erroFatal, setErroFatal] = useState('');
   const calcTimer = useRef(null);
   const fotoInputRef = useRef(null);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
@@ -61,7 +66,10 @@ export default function ProdutoFichaPage() {
   const fotoUrl = `/api/produtos/${id}/foto?v=${fotoVersion}`;
 
   useEffect(() => {
-    Promise.all([api.get('/listas'), api.get('/empresas')]).then(([l, e]) => {
+    Promise.all([api.get('/listas'), api.get('/empresas')])
+      .catch((e) => { setErroFatal(e.message); setLoading(false); return []; })
+      .then(([l, e]) => {
+      if (!l) return;
       setListas(l);
       setEmpresas(e);
     });
@@ -77,7 +85,12 @@ export default function ProdutoFichaPage() {
       return;
     }
     setLoading(true);
-    api.get(`/produtos/${id}`).then((data) => {
+    api.get(`/produtos/${id}`)
+      // Sem catch, produto inexistente (link antigo, referência excluída por
+      // outra pessoa) deixava a tela em "Carregando…" PARA SEMPRE.
+      .catch((e) => { setErroFatal(e.message); setLoading(false); })
+      .then((data) => {
+      if (!data) return;
       setProduto({
         ...data.produto,
         preco_informado: data.produto.preco_informado ?? '',
@@ -215,7 +228,20 @@ export default function ProdutoFichaPage() {
     [custosIndustriais]
   );
 
-  if (loading || !listas) return <div className="page">Carregando…</div>;
+  if (loading) return <div className="page">Carregando…</div>;
+
+  // Erro antes de ter ficha na mão: dizer o que houve e deixar voltar, em vez
+  // de ficar em "Carregando…" para sempre.
+  if (erroFatal || !listas) {
+    return (
+      <div className="page">
+        <button className="btn btn-ghost" type="button" style={{ marginBottom: 14 }} onClick={() => navigate('/produtos')}>
+          <ArrowLeft size={14} /> Voltar para produtos
+        </button>
+        <p className="login-error">{erroFatal || 'Não foi possível carregar esta referência.'}</p>
+      </div>
+    );
+  }
 
   const c = calculo;
   const StatusIcon = c ? STATUS_ICON[c.formacaoPreco.status] || Package : Package;

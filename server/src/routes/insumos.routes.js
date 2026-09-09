@@ -18,6 +18,7 @@
 const express = require('express');
 const multer = require('multer');
 const pool = require('../db/pool');
+const { hojeEmBrasilia } = require('../lib/dataBrasil');
 const { registrar } = require('../lib/auditoria');
 const { lerNotaFiscal } = require('../lib/nfeParser');
 const { calcularCustoDaNota, custoDoInsumo } = require('../lib/notaFiscalCusto');
@@ -503,7 +504,7 @@ router.post('/notas', async (req, res, next) => {
         nota.emitenteNome || nota.emitente_nome || null,
         empresaId, nota.destinatarioCnpj || nota.destinatario_cnpj || null,
         nota.dataEmissao || nota.data_emissao || null,
-        nota.data_entrada || new Date().toISOString().slice(0, 10),
+        nota.data_entrada || hojeEmBrasilia(),
         numeroOuNulo(nota.valorProdutos ?? nota.valor_produtos),
         numeroOuNulo(nota.valorFrete ?? nota.valor_frete),
         numeroOuNulo(nota.valorSeguro ?? nota.valor_seguro),
@@ -635,7 +636,7 @@ router.post('/notas', async (req, res, next) => {
              VALUES ($1,$2,$3,$4,$5,$6,$7)`,
             [
               insumoId, inteiroPositivo(nota.fornecedor_id), notaId, inteiroPositivo(nota.compra_id),
-              nota.data_pedido, nota.data_entrada || new Date().toISOString().slice(0, 10), dias,
+              nota.data_pedido, nota.data_entrada || hojeEmBrasilia(), dias,
             ]
           );
         }

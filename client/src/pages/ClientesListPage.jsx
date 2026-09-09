@@ -29,15 +29,19 @@ export default function ClientesListPage() {
   const [clientes, setClientes] = useState([]);
   const [busca, setBusca] = useState('');
   const [loading, setLoading] = useState(true);
+  const [erroCarga, setErroCarga] = useState('');
 
   function load() {
     setLoading(true);
     const params = new URLSearchParams();
     if (busca) params.set('busca', busca);
-    api.get(`/clientes?${params.toString()}`).then((data) => {
-      setClientes(data);
-      setLoading(false);
-    });
+    setErroCarga('');
+    api.get(`/clientes?${params.toString()}`)
+      .then((data) => { setClientes(data); })
+      // Sem catch, uma falha (sessão expirada, servidor fora) deixava a tela
+      // no esqueleto para sempre, sem nenhuma mensagem.
+      .catch((e) => setErroCarga(e.message))
+      .finally(() => setLoading(false));
   }
 
   useEffect(load, []);
@@ -56,6 +60,8 @@ export default function ClientesListPage() {
           <h2>Clientes</h2>
           <p className="page-sub">Cadastro de clientes usado nos pedidos de venda.</p>
         </div>
+
+      {erroCarga && <p className="login-error">{erroCarga}</p>}
         <div style={{ display: 'flex', gap: 8 }}>
           <BotaoExportar nomeBase="clientes" colunas={COLUNAS_EXPORTACAO} itens={tabela.itensOrdenados} disabled={tabela.totalItens === 0} />
           <Link to="/clientes/novo" className="btn btn-primary">

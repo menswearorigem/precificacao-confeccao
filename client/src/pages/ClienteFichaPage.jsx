@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Save, Trash2, MapPinCheck } from 'lucide-react';
 import { api } from '../api/client';
-import { Field, NumInput, Select, Checkbox, Toggle } from '../components/ui';
+import { Field, NumInput, Select, Checkbox, Toggle, Skeleton } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 
 function emptyCliente() {
@@ -43,7 +43,7 @@ export default function ClienteFichaPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    api.get('/listas').then(setListas);
+    api.get('/listas').then(setListas).catch((e) => setError(e.message));
   }, []);
 
   useEffect(() => {
@@ -53,10 +53,13 @@ export default function ClienteFichaPage() {
       return;
     }
     setLoading(true);
-    api.get(`/clientes/${id}`).then((data) => {
-      setCliente({ ...data, limite_credito: data.limite_credito ?? 0 });
-      setLoading(false);
-    });
+    api.get(`/clientes/${id}`)
+      .then((data) => { setCliente({ ...data, limite_credito: data.limite_credito ?? 0 }); })
+      // Sem catch, cliente inexistente ou erro de rede deixava `loading` em
+      // true para sempre e a rota renderizava null: TELA BRANCA, sem
+      // mensagem e sem caminho de volta.
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
   }, [id, isNew]);
 
   function set(patch) {
@@ -123,7 +126,20 @@ export default function ClienteFichaPage() {
     }
   }
 
-  if (loading) return null;
+  if (loading) return <div className="page-wide"><Skeleton height={280} /></div>;
+
+  // Erro antes de ter cliente nenhum na mão: a tela precisa dizer o que
+  // houve e deixar voltar, em vez de ficar em branco.
+  if (!cliente) {
+    return (
+      <div className="page-wide">
+        <button className="btn btn-ghost" style={{ marginBottom: 14 }} onClick={() => navigate('/clientes')}>
+          <ArrowLeft size={14} /> Voltar para clientes
+        </button>
+        <p className="login-error">{error || 'Não foi possível carregar este cliente.'}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="page-wide">

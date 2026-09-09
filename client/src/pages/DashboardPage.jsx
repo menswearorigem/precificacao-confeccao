@@ -87,7 +87,7 @@ export default function DashboardPage() {
   const [erro, setErro] = useState('');
 
   useEffect(() => {
-    api.get('/empresas').then(setEmpresas);
+    api.get('/empresas').then(setEmpresas).catch((e) => setErro(e.message));
   }, []);
 
   useEffect(() => {

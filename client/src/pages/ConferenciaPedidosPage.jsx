@@ -7,7 +7,7 @@ import { api } from '../api/client';
 import { StatCard, Select, DateInput } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import FotoProduto from '../components/FotoProduto';
-import { dataBr } from '../lib/format';
+import { dataBr, hojeIso } from '../lib/format';
 import { somAcerto, somErro, somPedidoCompleto } from '../lib/somConferencia';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 
@@ -35,9 +35,7 @@ const ROTULO_RESULTADO = {
   quantidade_excedida: 'Já estava completa',
 };
 
-function hojeIso() {
-  return new Date().toISOString().slice(0, 10);
-}
+
 
 // Identificação do pedido em uma linha, do jeito que a pessoa reconhece a
 // caixa: a loja, o número da plataforma e o cliente.

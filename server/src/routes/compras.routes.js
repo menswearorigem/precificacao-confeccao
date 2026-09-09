@@ -196,7 +196,9 @@ function periodoAnterior(dataInicio, dataFim) {
   const dias = Math.round((fim - inicio) / 86400000) + 1;
   const fimAnterior = new Date(inicio.getTime() - 86400000);
   const inicioAnterior = new Date(fimAnterior.getTime() - (dias - 1) * 86400000);
-  const iso = (d) => d.toISOString().slice(0, 10);
+  // Reaproveita o isoData deste arquivo em vez de toISOString, que converte
+  // para UTC e desloca o período anterior em um dia.
+  const iso = (d) => isoData(d);
   return { inicio: iso(inicioAnterior), fim: iso(fimAnterior), dias };
 }
 

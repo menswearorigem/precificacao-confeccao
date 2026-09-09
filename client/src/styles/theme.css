@@ -5,7 +5,13 @@
   --surface-alt: #ece2cc;
   --ink: #2a1d10;
   --ink-soft: #6b5d4d;
-  --ink-faint: #96897a;
+  /* Subido de #96897a para #756a5d na varredura de 09/09/2026: o valor antigo
+     dava 2,92:1 de contraste sobre --bg e 3,36:1 sobre --surface, abaixo do
+     mínimo legível (4,5:1). É o token dos rótulos, datas e contagens — texto
+     pequeno, justamente onde o contraste importa mais. O novo dá 4,53:1 e
+     5,20:1, e continua sendo o mesmo cinza quente da paleta.
+     No tema escuro o token já passava (4,83:1) e não mudou. */
+  --ink-faint: #756a5d;
   --leather: #6b4423;
   --leather-dark: #422a15;
   --leather-deep: #2f1c0d;
@@ -374,7 +380,7 @@
   :root, :root[data-theme="dark"] {
     --bg: #f3ede0; --bg-deep: #eae1cd; --surface: #fffdf9; --surface-alt: #ece2cc;
     --surface-raised: #fffdf9;
-    --ink: #2a1d10; --ink-soft: #6b5d4d; --ink-faint: #96897a;
+    --ink: #2a1d10; --ink-soft: #6b5d4d; --ink-faint: #756a5d;
     --border: #ddd0b4; --border-soft: #ebe2cd;
     /* Antes só os neutros voltavam ao claro: quem imprimisse no tema escuro
        levava para o papel o verde/vermelho/terracota CLAROS (pensados pra
@@ -5854,3 +5860,155 @@ table.ficha-doc-tabela {
    duas que já existem, com as mesmas variáveis (REGRA 3). */
 .indicador-prejuizo::before { background: var(--danger-ring); opacity: 1; }
 .indicador-saudavel::before { background: var(--success-ring); opacity: 1; }
+
+/* ===========================================================================
+   Varredura de 09/09/2026 — o alicerce que faltava
+   ===========================================================================
+   Esta seção não inventa estilo novo: ela DEFINE classes que as telas já
+   usavam e que não existiam em lugar nenhum do tema, e fecha buracos de
+   legibilidade e de toque. Classe inexistente não quebra nada em JavaScript
+   nem no build — o navegador ignora e a tela abre torta em silêncio. Foi
+   assim que passou, do mesmo jeito documentado no bloco de 07/09/2026 mais
+   acima; a diferença é o tamanho: `.login-error` sozinha aparece 77 vezes em
+   36 arquivos.
+   ------------------------------------------------------------------------ */
+
+/* ---- .login-error: a mensagem de erro de TODO o sistema --------------------
+   O nome enganou: apesar do prefixo, esta é a classe que quase toda tela usa
+   para mostrar o erro que voltou da API — de "Erro ao salvar o pedido" a
+   "Falha ao sincronizar". O tema só tinha `.login-alert`, usada na tela de
+   login. Sem regra, o erro saía como texto preto solto, colado no elemento
+   de cima, indistinguível de um parágrafo de ajuda: a pessoa não sabia se
+   tinha dado erro. É o mesmo desenho de `.erro-inline`, que já existe. */
+.login-error {
+  display: flex; align-items: flex-start; gap: 7px;
+  margin: 0 0 12px;
+  padding: 9px 13px;
+  font-size: 12.5px; line-height: 1.5;
+  color: var(--danger); background: var(--danger-bg);
+  border: 1px solid color-mix(in srgb, var(--danger-ring) 35%, var(--danger-bg));
+  border-radius: var(--radius-sm);
+}
+.login-error:empty { display: none; }
+
+/* ---- .input: usada em Produção e Insumos, nunca definida -------------------
+   Salvava-se por acidente pelo seletor de elemento `input, select, textarea`.
+   Definida aqui para valer também no <textarea> que a usa e para deixar de
+   ser uma classe morta que dá falsa sensação de padronização. */
+.input {
+  width: 100%;
+  font-family: var(--font-body);
+  font-size: 13px;
+}
+
+/* ---- td.num: número de tabela em fonte monoespaçada ------------------------
+   REGRA 3 pede fonte mono com tabular-nums em TODO valor em R$, percentual,
+   SKU, EAN e código. As dez telas novas marcam a célula com `.num`, mas as
+   cinco regras que existiam só faziam `text-align: right` — 153 células de
+   dinheiro renderizavam em Inter, com largura de dígito variável, e as
+   colunas de valor não alinhavam na vertical (que é exatamente o problema
+   que `tabular-nums` resolve).
+   O cabeçalho continua em fonte de texto: `th` é rótulo, não número. */
+th.num { text-align: right; }
+td.num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+/* Selo e legenda dentro de uma célula numérica continuam sendo texto. */
+td.num .selo, td.num small, td.num .ink-faint { font-family: var(--font-body); letter-spacing: normal; }
+
+/* ---- referência de produto em fonte mono ----------------------------------
+   A referência é o identificador que se lê em voz alta para o galpão. Em
+   Inter, 0/O e 1/l/I se confundem. */
+.cobertura-ref strong, .mono-ref { font-family: var(--font-mono); }
+
+/* ---- classes que as telas usam e o tema não tinha -------------------------
+   Cada uma abaixo estava sendo aplicada em pelo menos uma tela e não existia.
+   Nenhuma cria linguagem nova: todas reaproveitam padrão já presente. */
+.login-card-setup { max-width: 420px; }
+.logout-btn-icone { display: inline-flex; align-items: center; justify-content: center; }
+.manu-grupo { margin-bottom: 14px; }
+.manu-grupo:last-child { margin-bottom: 0; }
+.ajuda-modulo { margin-bottom: 22px; }
+.ajuda-modulo:last-child { margin-bottom: 0; }
+.ajuda-sem-resposta { margin-top: 18px; }
+.mix-explicacao { margin-bottom: 14px; }
+.grid-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.previa-explosao { margin-top: 12px; }
+.viagem-detail { display: flex; flex-direction: column; gap: 16px; }
+/* Sem hover não dava para ver qual linha do resultado estava sob o cursor. */
+.busca-assincrona-item { cursor: pointer; padding: 7px 10px; border-radius: var(--radius-sm); }
+.busca-assincrona-item:hover, .busca-assincrona-item:focus-visible { background: var(--border-soft); }
+/* Definida desde sempre e nunca aplicada: os três blocos colapsáveis de
+   Configurações abrem com o conteúdo colado no cabeçalho. */
+.cfg-colapsavel > div:not(.cfg-colapsavel-cabecalho) { padding-top: 8px; }
+
+/* ---- foco visível ---------------------------------------------------------
+   Dois campos tiravam o contorno de foco sem pôr nada no lugar. O segundo é
+   o campo de bipagem da conferência: fluxo 100% teclado e leitor, em pé no
+   galpão, sem nenhum sinal de que estava pronto para receber a leitura. */
+.filtros-barra-busca:focus-within,
+.conferencia-scanner-linha:focus-within {
+  outline: 2px solid var(--terracotta);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
+}
+/* O sistema tinha duas aparências de foco: os controles próprios com anel
+   terracota e os botões com o anel padrão do navegador. Agora é um só. */
+.btn:focus-visible, .btn-sec:focus-visible, .btn-icone:focus-visible,
+.icon-btn:focus-visible, .subtab-btn:focus-visible, .logout-btn:focus-visible {
+  outline: 2px solid var(--terracotta);
+  outline-offset: 2px;
+}
+
+/* ---- tabelas novas em tela estreita ---------------------------------------
+   Sem `min-width` elas não rolavam: espremiam em colunas de 30px com o texto
+   quebrando letra a letra. As tabelas antigas já tinham piso. */
+.tabela-mix-criterios { min-width: 720px; }
+.tabela-mix-clientes { min-width: 640px; }
+.tabela-saude-conexoes { min-width: 780px; }
+.tabela-saude-falhas { min-width: 900px; }
+
+@media (max-width: 860px) {
+  /* Os dois botões das telas novas ficaram de fora do bloco de alvo de toque:
+     `.btn-sec` tinha ~35px de altura e `.btn-icone` ~27px, abaixo do mínimo
+     confortável — justamente nas telas de galpão (Produção, Insumos,
+     Cobertura, Onde Está a Peça, Dinheiro Parado, Curva de Tamanho). */
+  .btn-sec { min-height: 42px; padding: 10px 16px; font-size: 13px; }
+  .btn-icone { min-width: 40px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; }
+  table.data-table .btn-icone, .tabela-rolagem .btn-icone { min-height: 34px; min-width: 34px; }
+}
+
+@media (max-width: 420px) {
+  /* Havia UM bloco de 420px no tema inteiro, tratando uma única grade. */
+  .confirm-modal { max-width: calc(100vw - 24px); }
+  .saude-erro { max-width: none; }
+  .tabela-mix-criterios td:last-child { max-width: none; }
+  .indicadores-linha > * { flex-basis: 100%; }
+}
+
+/* ---- Estoque › Bipagem (varredura de 09/09/2026) --------------------------
+   A tela é usada em pé, no galpão, com o leitor numa mão. O que ela precisa
+   dizer o tempo todo é uma coisa só: "o leitor tem para onde mandar a
+   leitura". */
+.bipagem-quantidade { margin-bottom: 12px; }
+.bipagem-quantidade-erro {
+  display: flex; align-items: center; gap: 6px; margin: 6px 0 0;
+  font-size: 12px; color: var(--danger);
+}
+.bipagem-form { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+.bipagem-foco {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; margin-top: 14px; padding: 12px 16px;
+  border-radius: var(--radius); border: 1px solid var(--border);
+  font-family: var(--font-body); font-size: 13px; font-weight: 600;
+  cursor: pointer;
+}
+.bipagem-foco.pronto { background: var(--success-bg); color: var(--success); border-color: var(--success-ring); }
+.bipagem-foco.sem-foco { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-ring); }
+@media (max-width: 860px) {
+  .bipagem-foco { min-height: 52px; font-size: 14px; }
+  .bipagem-form > * { flex: 1 1 100%; }
+}

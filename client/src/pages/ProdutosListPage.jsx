@@ -44,9 +44,12 @@ export default function ProdutosListPage() {
   const [selecionados, setSelecionados] = useState(new Set());
   const [aplicando, setAplicando] = useState(false);
   const [aviso, setAviso] = useState('');
+  // Erro de carga separado do aviso de ação: antes os dois caíam no mesmo
+  // cartão neutro e um erro de marcação em massa parecia confirmação.
+  const [erroCarga, setErroCarga] = useState('');
 
   useEffect(() => {
-    api.get('/listas').then(setListas);
+    api.get('/listas').then(setListas).catch((e) => setErroCarga(e.message));
   }, []);
 
   function load() {
@@ -57,10 +60,13 @@ export default function ProdutosListPage() {
     if (categoria) params.set('categoria', categoria);
     if (marketplace) params.set('marketplace', marketplace);
     if (busca) params.set('busca', busca);
-    api.get(`/produtos?${params.toString()}`).then((data) => {
-      setProdutos(data);
-      setLoading(false);
-    });
+    setErroCarga('');
+    api.get(`/produtos?${params.toString()}`)
+      .then((data) => { setProdutos(data); })
+      // Sem catch, uma falha deixava a tela no esqueleto para sempre, sem
+      // nenhuma mensagem: parecia que não havia produto nenhum cadastrado.
+      .catch((e) => setErroCarga(e.message))
+      .finally(() => setLoading(false));
   }
 
   useEffect(load, [marca, categoria, marketplace]);
@@ -132,6 +138,8 @@ export default function ProdutosListPage() {
           </Link>
         </div>
       </div>
+
+      {erroCarga && <p className="login-error">{erroCarga}</p>}
 
       <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>

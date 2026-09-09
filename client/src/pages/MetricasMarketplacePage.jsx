@@ -644,7 +644,7 @@ function MetricaComMeta({ valor, meta }) {
 }
 
 function ReputacaoTab({ integracoes }) {
-  const lojasML = useMemo(() => integracoes.filter((i) => i.marketplace === 'mercado_livre' && i.conectado), [integracoes]);
+  const lojasML = useMemo(() => integracoes.filter((i) => i.marketplace === 'mercado_livre' && i.conectada), [integracoes]);
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
@@ -707,7 +707,7 @@ function ReputacaoTab({ integracoes }) {
 }
 
 function OpinioesTab({ integracoes }) {
-  const integracaoML = useMemo(() => integracoes.find((i) => i.marketplace === 'mercado_livre' && i.conectado), [integracoes]);
+  const integracaoML = useMemo(() => integracoes.find((i) => i.marketplace === 'mercado_livre' && i.conectada), [integracoes]);
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
@@ -779,7 +779,7 @@ function OpinioesTab({ integracoes }) {
 }
 
 function ConcorrentesTab({ integracoes }) {
-  const integracaoML = useMemo(() => integracoes.find((i) => i.marketplace === 'mercado_livre' && i.conectado), [integracoes]);
+  const integracaoML = useMemo(() => integracoes.find((i) => i.marketplace === 'mercado_livre' && i.conectada), [integracoes]);
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
@@ -865,7 +865,7 @@ function PublicidadeTab({ integracoes }) {
   // o backend devolve é o mesmo pros dois, e o gasto por anúncio sai da
   // mesma tabela (ads_metricas_diarias) que a Lucratividade usa pra ratear.
   const lojasML = useMemo(
-    () => integracoes.filter((i) => PLATAFORMAS_COM_ADS.includes(i.marketplace) && i.conectado),
+    () => integracoes.filter((i) => PLATAFORMAS_COM_ADS.includes(i.marketplace) && i.conectada),
     [integracoes]
   );
   const [lojaId, setLojaId] = useState('');
@@ -1116,7 +1116,7 @@ function CategoriaBrowser({ integracaoId, modoSelecao, onSelecionar }) {
 }
 
 function CategoriasTab({ integracoes }) {
-  const integracaoML = useMemo(() => integracoes.find((i) => i.marketplace === 'mercado_livre' && i.conectado), [integracoes]);
+  const integracaoML = useMemo(() => integracoes.find((i) => i.marketplace === 'mercado_livre' && i.conectada), [integracoes]);
   const [subView, setSubView] = useState('tendencia');
   const [escopo, setEscopo] = useState('pais');
   const [categoriaEscolhida, setCategoriaEscolhida] = useState(null);
@@ -1269,7 +1269,7 @@ function ShopeeTab({ filtros, integracoes }) {
 // saúde da conta, avaliações e devoluções. Carrega sob demanda — cada um é
 // uma chamada externa, e a aba abre bem mais rápido sem esperar as três.
 function ShopeeLojaBlocos({ integracoes }) {
-  const lojas = useMemo(() => integracoes.filter((i) => i.marketplace === 'shopee' && i.conectado), [integracoes]);
+  const lojas = useMemo(() => integracoes.filter((i) => i.marketplace === 'shopee' && i.conectada), [integracoes]);
   const [lojaId, setLojaId] = useState('');
   const [desempenho, setDesempenho] = useState(null);
   const [avaliacoes, setAvaliacoes] = useState(null);
@@ -1463,6 +1463,13 @@ export default function MetricasMarketplacePage() {
   const abaEmMais = TABS_MAIS.some((t) => t.key === subTab);
   const [integracoes, setIntegracoes] = useState([]);
 
+  // ⚠️ O campo é `conectada`, no feminino: é o nome que `/anuncios/lojas`
+  // devolve (`(im.access_token IS NOT NULL) AS conectada`). Até 09/09/2026 as
+  // abas filtravam por `i.conectado`, que é o nome usado por `/api/integracoes`
+  // — outro endpoint. `undefined` é falso, então SEIS das onze abas desta tela
+  // (Reputação, Opiniões, Concorrentes, Publicidade, Categorias e Shopee)
+  // mostravam "Conecte e autorize uma integração" mesmo com as lojas
+  // conectadas e sincronizando normalmente.
   useEffect(() => { api.get(CAMINHO_LOJAS).then(setIntegracoes).catch(() => {}); }, []);
 
   // Loja só mostra as integrações da Plataforma escolhida (ou todas, se

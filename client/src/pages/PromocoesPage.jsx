@@ -622,7 +622,13 @@ function CriarPromocao({ lojas, onFechar, onCriada }) {
     setHorarios(null);
   }, [integracaoId]);
 
-  useEffect(() => { setPrevia(null); }, [regra.tipo, regra.valor, selecionados.length, tipo]);
+  // ⚠️ A dependência é o CONTEÚDO da seleção, não o tamanho dela. Com
+  // `selecionados.length`, desmarcar um anúncio e marcar outro (tamanho
+  // igual) mantinha a prévia antiga — e `aplicar()` envia as linhas dessa
+  // prévia. A promoção era criada com o anúncio que a pessoa acabou de
+  // TIRAR e sem o que ela acabou de PÔR, sem nada na tela indicando isso.
+  const chaveSelecao = selecionados.join(',');
+  useEffect(() => { setPrevia(null); }, [regra.tipo, regra.valor, chaveSelecao, tipo]);
 
   useEffect(() => {
     if (tipo !== 'relampago' || !integracaoId) return;
@@ -1171,8 +1177,14 @@ function PainelPromocao({ promocaoId, onFechar, onMudou }) {
       : null);
   }
 
+  // Uma lista só, usada pelo botão (para acender ou não) e pela função (para
+  // saber o que enviar). Antes eram dois critérios diferentes.
+  const itensAlterados = itens.filter(
+    (i) => edicoes[i.id] != null && Number(edicoes[i.id]) !== Number(i.preco_promocional)
+  );
+
   async function salvarPrecos() {
-    const alterados = itens.filter((i) => edicoes[i.id] != null && Number(edicoes[i.id]) !== Number(i.preco_promocional));
+    const alterados = itensAlterados;
     if (alterados.length === 0) return;
     // Pergunta a margem DE NOVO com os preços que estão nos campos agora. Sem
     // isto, clicar dentro dos 400ms do recálculo mostrava a confirmação sem a
@@ -1461,11 +1473,15 @@ function PainelPromocao({ promocaoId, onFechar, onMudou }) {
                 <button type="button" className="btn-sec perigo" onClick={encerrar} disabled={salvando || !promocao}>
                   Encerrar promoção
                 </button>
+                {/* O botão olha a MESMA lista que salvarPrecos usa. Com
+                    `Object.keys(edicoes)`, apagar o campo de preço de um item
+                    registrava `edicoes[id] = null`: o botão acendia e o clique
+                    não fazia nada, sem mensagem nenhuma. */}
                 <button
                   type="button"
                   className="btn"
                   onClick={salvarPrecos}
-                  disabled={salvando || Object.keys(edicoes).length === 0}
+                  disabled={salvando || itensAlterados.length === 0}
                 >
                   {salvando ? 'Enviando…' : 'Salvar preços na plataforma'}
                 </button>

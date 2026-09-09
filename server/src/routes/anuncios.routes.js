@@ -184,6 +184,44 @@ function enriquecerAds(linha, dias = JANELA_ADS_PADRAO) {
 }
 
 // ---------------------------------------------------------------------------
+// Andamento da varredura
+// ---------------------------------------------------------------------------
+// ⚠️ ESTE BLOCO PRECISA VIR ANTES DE `/:id`. O Express casa as rotas na ordem
+// em que foram registradas: com `/:id` declarado primeiro, uma chamada a
+// `GET /api/anuncios/sincronizacao` caía no handler de detalhe com
+// `id = 'sincronizacao'`, o `WHERE a.id = $1` estourava com "invalid input
+// syntax for type integer" e a rota respondia 500 SEMPRE.
+//
+// O efeito na tela era mudo, porque o `catch` do laço de consulta engolia o
+// erro: depois de clicar em "Atualizar das lojas" o botão ficava em "Lendo as
+// lojas…" para sempre, a barra de progresso nunca saía do esqueleto e a lista
+// nunca recarregava sozinha ao fim da varredura. A sincronização em si sempre
+// funcionou — só não havia como acompanhá-la nem saber que tinha terminado.
+// Andamento da varredura, loja a loja. É o que a tela consulta enquanto a
+// barra de progresso está na tela.
+router.get('/sincronizacao', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT im.id AS integracao_id, im.nome, im.marketplace,
+              e.em_andamento, e.iniciada_em, e.ultima_sincronizacao,
+              e.ultimo_erro, e.anuncios_lidos, e.duracao_ms
+         FROM integracoes_marketplace im
+         LEFT JOIN anuncios_sync_estado e ON e.origem_integracao_id = im.id
+        WHERE im.ativo = TRUE AND im.access_token IS NOT NULL
+        ORDER BY im.marketplace, im.nome`
+    );
+    res.json({
+      // `emAndamento` olha o banco, não só a variável do processo: se o
+      // servidor reiniciar no meio, a tela não fica esperando para sempre.
+      emAndamento: Boolean(varreduraEmCurso) || rows.some((l) => l.em_andamento),
+      lojas: rows,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Detalhe
 // ---------------------------------------------------------------------------
 router.get('/:id', async (req, res, next) => {
@@ -316,30 +354,6 @@ router.post('/sincronizar', async (req, res, next) => {
     res.status(202).json({ iniciada: true, integracaoId });
   } catch (err) {
     varreduraEmCurso = null;
-    next(err);
-  }
-});
-
-// Andamento da varredura, loja a loja. É o que a tela consulta enquanto a
-// barra de progresso está na tela.
-router.get('/sincronizacao', async (req, res, next) => {
-  try {
-    const { rows } = await pool.query(
-      `SELECT im.id AS integracao_id, im.nome, im.marketplace,
-              e.em_andamento, e.iniciada_em, e.ultima_sincronizacao,
-              e.ultimo_erro, e.anuncios_lidos, e.duracao_ms
-         FROM integracoes_marketplace im
-         LEFT JOIN anuncios_sync_estado e ON e.origem_integracao_id = im.id
-        WHERE im.ativo = TRUE AND im.access_token IS NOT NULL
-        ORDER BY im.marketplace, im.nome`
-    );
-    res.json({
-      // `emAndamento` olha o banco, não só a variável do processo: se o
-      // servidor reiniciar no meio, a tela não fica esperando para sempre.
-      emAndamento: Boolean(varreduraEmCurso) || rows.some((l) => l.em_andamento),
-      lojas: rows,
-    });
-  } catch (err) {
     next(err);
   }
 });

@@ -34,6 +34,16 @@ export const qtdFracionaria = (n) =>
 
 export const uid = () => Math.random().toString(36).slice(2, 10);
 
+
+// O dia de HOJE no fuso de Brasília, em 'YYYY-MM-DD' (09/09/2026).
+//
+// Existe porque as telas usavam `new Date().toISOString().slice(0, 10)`, que
+// é UTC: a partir das 21h no horário de Brasília os filtros de data abriam
+// já no dia seguinte, e a Fila do dia da Conferência aparecia vazia para
+// quem vira o turno à noite. Par do lib/dataBrasil.js do servidor.
+export const hojeIso = () =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+
 export const dataBr = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('pt-BR') : '');
 
 // Tempo relativo ("agora mesmo", "há 2 h", "há 3 d") pra campos de

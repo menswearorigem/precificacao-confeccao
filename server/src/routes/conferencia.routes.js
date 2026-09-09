@@ -11,6 +11,7 @@
 
 const express = require('express');
 const pool = require('../db/pool');
+const { hojeEmBrasilia } = require('../lib/dataBrasil');
 const { registrar } = require('../lib/auditoria');
 const {
   acharPedidoPorCodigo, montarEstado, avaliarLeitura, carregarItensDoPedido,
@@ -79,7 +80,9 @@ async function carregarLeituras(client, conferenciaId, limite = 60) {
 // não dá pra abrir bipando a etiqueta ainda.
 router.get('/fila', async (req, res, next) => {
   try {
-    const hoje = new Date().toISOString().slice(0, 10);
+    // hoje no fuso de Brasília — ver lib/dataBrasil.js: em UTC, a partir das
+    // 21h a fila do dia aparecia vazia para quem vira o turno à noite.
+    const hoje = hojeEmBrasilia();
     const de = req.query.de || hoje;
     const ate = req.query.ate || hoje;
     const { rows } = await pool.query(
@@ -532,7 +535,9 @@ router.post('/pedidos/:pedidoId/vincular-rastreio', async (req, res, next) => {
 // não é o mesmo que conferir tudo bipado.
 router.get('/relatorio', async (req, res, next) => {
   try {
-    const hoje = new Date().toISOString().slice(0, 10);
+    // hoje no fuso de Brasília — ver lib/dataBrasil.js: em UTC, a partir das
+    // 21h a fila do dia aparecia vazia para quem vira o turno à noite.
+    const hoje = hojeEmBrasilia();
     const de = req.query.de || hoje;
     const ate = req.query.ate || hoje;
 
@@ -543,7 +548,7 @@ router.get('/relatorio', async (req, res, next) => {
          COUNT(*) FILTER (WHERE houve_divergencia)::int AS com_divergencia,
          COALESCE(SUM(pecas_esperadas), 0)::int AS pecas
        FROM conferencias_pedido
-       WHERE situacao = 'concluida' AND concluida_em::date BETWEEN $1 AND $2`,
+       WHERE situacao = 'concluida' AND (concluida_em AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN $1 AND $2`,
       [de, ate]
     );
 
@@ -551,7 +556,7 @@ router.get('/relatorio', async (req, res, next) => {
     const { rows: recusas } = await pool.query(
       `SELECT l.resultado, COUNT(*)::int AS total
          FROM conferencia_leituras l JOIN conferencias_pedido cp ON cp.id = l.conferencia_id
-        WHERE cp.situacao = 'concluida' AND cp.concluida_em::date BETWEEN $1 AND $2
+        WHERE cp.situacao = 'concluida' AND (cp.concluida_em AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN $1 AND $2
           AND l.resultado IN ('ean_desconhecido', 'fora_do_pedido', 'quantidade_excedida')
         GROUP BY l.resultado ORDER BY total DESC`,
       [de, ate]
@@ -562,7 +567,7 @@ router.get('/relatorio', async (req, res, next) => {
     const { rows: eansDesconhecidos } = await pool.query(
       `SELECT l.codigo, COUNT(*)::int AS vezes
          FROM conferencia_leituras l JOIN conferencias_pedido cp ON cp.id = l.conferencia_id
-        WHERE cp.concluida_em::date BETWEEN $1 AND $2 AND l.resultado = 'ean_desconhecido'
+        WHERE (cp.concluida_em AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN $1 AND $2 AND l.resultado = 'ean_desconhecido'
         GROUP BY l.codigo ORDER BY vezes DESC, l.codigo LIMIT 20`,
       [de, ate]
     );
@@ -572,7 +577,7 @@ router.get('/relatorio', async (req, res, next) => {
               COUNT(*)::int AS conferidos,
               COUNT(*) FILTER (WHERE cp.houve_divergencia)::int AS com_divergencia
          FROM conferencias_pedido cp LEFT JOIN usuarios u ON u.id = cp.usuario_id
-        WHERE cp.situacao = 'concluida' AND cp.concluida_em::date BETWEEN $1 AND $2
+        WHERE cp.situacao = 'concluida' AND (cp.concluida_em AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN $1 AND $2
         GROUP BY u.nome ORDER BY conferidos DESC`,
       [de, ate]
     );
@@ -585,7 +590,7 @@ router.get('/relatorio', async (req, res, next) => {
          JOIN pedidos_venda pv ON pv.id = cp.pedido_id
          LEFT JOIN usuarios u ON u.id = cp.usuario_id
         WHERE cp.situacao = 'concluida' AND cp.houve_divergencia
-          AND cp.concluida_em::date BETWEEN $1 AND $2
+          AND (cp.concluida_em AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN $1 AND $2
         ORDER BY cp.concluida_em DESC LIMIT 100`,
       [de, ate]
     );

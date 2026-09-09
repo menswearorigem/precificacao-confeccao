@@ -218,7 +218,23 @@ router.post('/bipar', async (req, res, next) => {
     const body = req.body || {};
     if (!body.ean) return res.status(400).json({ error: 'ean é obrigatório.' });
     const tipo = body.tipo === 'entrada' ? 'entrada' : 'saida';
-    const quantidade = Math.abs(Number(body.quantidade) || 1);
+    // Teto e piso da leitura (09/09/2026). Antes era só `Math.abs(... || 1)`,
+    // sem limite: a tela de Bipagem tinha o campo de quantidade dentro do
+    // mesmo formulário do EAN, e o Enter que o leitor manda no fim da leitura
+    // podia submeter com os 13 dígitos do código de barras na quantidade —
+    // um único toque errado movia trilhões de peças e destruía o saldo do
+    // galpão. A tela foi corrigida; esta é a segunda tranca, do lado do
+    // servidor, para qualquer outro caminho que chame esta rota.
+    const bruto = Math.abs(Number(body.quantidade));
+    if (body.quantidade !== undefined && (!Number.isFinite(bruto) || !Number.isInteger(bruto))) {
+      return res.status(400).json({ error: 'A quantidade da bipagem precisa ser um número inteiro.' });
+    }
+    const quantidade = bruto > 0 ? bruto : 1;
+    if (quantidade > 999) {
+      return res.status(400).json({
+        error: `Quantidade de ${quantidade} peças numa leitura só. O limite é 999 — se foi o leitor que digitou no campo errado, confira antes de repetir.`,
+      });
+    }
     const delta = tipo === 'entrada' ? quantidade : -quantidade;
 
     await client.query('BEGIN');
