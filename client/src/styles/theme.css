@@ -6184,3 +6184,592 @@ td.num .selo, td.num small, td.num .ink-faint { font-family: var(--font-body); l
    o nome do item sair da tela justamente quando a pessoa clica nele. Este
    modificador é para tabela estreita dentro de painel. */
 .tabela-nota.tabela-estreita { min-width: 0; }
+
+/* ===========================================================================
+   MÓDULO VENDAS — repaginação de 09/09/2026
+
+   Este módulo é usado EM PÉ, no celular, com o cliente esperando. Tudo aqui
+   foi desenhado nessa ordem: primeiro como fica na tela de 360px de largura,
+   depois como aproveita a de 1440px. Por isso quase nada aqui é tabela — o
+   que na tela grande é linha, no celular é cartão.
+
+   REGRA 3: nenhuma cor solta. Só variáveis que já existem no topo do arquivo.
+   Terracota continua significando AÇÃO; latão, ATENÇÃO; e as semânticas,
+   ESTADO DO DADO.
+   =========================================================================== */
+
+/* --- Leitor de código de barras pela câmera --------------------------------
+   Tela cheia de verdade (100dvh) porque no celular a barra do navegador
+   entra e sai: com 100vh o rodapé com os botões some por baixo dela
+   justamente quando a pessoa vai tocar em "Concluir". */
+.leitor-camera {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: flex;
+  flex-direction: column;
+  background: var(--overlay-strong);
+  color: var(--on-chrome);
+}
+@supports (height: 100dvh) { .leitor-camera { height: 100dvh; } }
+
+.leitor-camera-topo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: max(14px, env(safe-area-inset-top)) 16px 12px;
+  background: linear-gradient(180deg, var(--leather-deep), transparent);
+}
+.leitor-camera-titulo { display: flex; align-items: flex-start; gap: 9px; }
+.leitor-camera-titulo svg { color: var(--terracotta-bright); flex-shrink: 0; margin-top: 2px; }
+.leitor-camera-titulo strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 15px;
+  color: var(--on-chrome);
+}
+.leitor-camera-titulo span {
+  display: block;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--on-accent-soft);
+  max-width: 46ch;
+}
+.leitor-camera-fechar {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--on-chrome);
+  border-radius: 999px;
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.leitor-camera-palco { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.leitor-camera-video { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; }
+
+/* A moldura não é enfeite: é o que ensina a distância certa. Quatro cantos em
+   vez de um retângulo fechado porque canto não compete com o código lido. */
+.leitor-camera-mira {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(78vw, 420px);
+  height: min(46vw, 240px);
+  pointer-events: none;
+}
+.leitor-camera-mira span {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border: 3px solid var(--terracotta-bright);
+}
+.leitor-camera-mira span:nth-child(1) { top: 0; left: 0; border-right: none; border-bottom: none; border-radius: 8px 0 0 0; }
+.leitor-camera-mira span:nth-child(2) { top: 0; right: 0; border-left: none; border-bottom: none; border-radius: 0 8px 0 0; }
+.leitor-camera-mira span:nth-child(3) { bottom: 0; left: 0; border-right: none; border-top: none; border-radius: 0 0 0 8px; }
+.leitor-camera-mira span:nth-child(4) { bottom: 0; right: 0; border-left: none; border-top: none; border-radius: 0 0 8px 0; }
+
+.leitor-camera-aviso {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  font-size: 12.5px;
+  color: var(--on-chrome);
+}
+.leitor-camera-erro {
+  position: absolute;
+  inset: auto 16px 16px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.leitor-camera-erro p { margin: 0; font-size: 12.5px; line-height: 1.5; }
+
+.leitor-camera-rodape {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px max(14px, env(safe-area-inset-bottom));
+  background: linear-gradient(0deg, var(--leather-deep), transparent);
+}
+.leitor-camera-status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.leitor-camera-ultima { font-size: 12.5px; color: var(--on-accent-soft); }
+.leitor-camera-dica { font-size: 12px; color: var(--on-accent-soft); max-width: 40ch; }
+.leitor-camera-acoes { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.leitor-camera-acoes .btn { min-height: 42px; }
+
+/* --- Cabeçalho de venda: o resumo que fica colado no alto ------------------ */
+.venda-topo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.venda-topo-identidade { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.venda-topo-identidade h1 { font-size: 22px; }
+.venda-topo-acoes { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Barra de totais que acompanha a rolagem. É o número que a pessoa precisa
+   ver enquanto bipa — no celular ela fica no rodapé, onde o polegar já está. */
+.venda-resumo-fixo {
+  position: sticky;
+  top: 0;
+  z-index: 12;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-sm);
+}
+.venda-resumo-item {
+  background: var(--surface);
+  padding: 11px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.venda-resumo-rotulo {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+.venda-resumo-valor {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.venda-resumo-item.destaque { background: linear-gradient(160deg, var(--surface-raised), var(--surface)); }
+.venda-resumo-item.destaque .venda-resumo-valor { color: var(--leather-ink); font-size: 18px; }
+
+/* --- Painel de bipagem ---------------------------------------------------- */
+.venda-bipagem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: flex-end;
+}
+.venda-bipagem-campo input {
+  font-family: var(--font-mono);
+  font-size: 17px;
+  letter-spacing: 0.04em;
+  padding: 11px 13px;
+}
+.venda-bipagem-acoes { display: flex; gap: 8px; }
+.venda-bipagem-acoes .btn { min-height: 44px; }
+.venda-bipagem-camera { padding-inline: 14px; }
+
+/* Retorno da última bipagem: cor de estado, não de enfeite. */
+.venda-bipagem-retorno {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 13px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  line-height: 1.45;
+  border: 1px solid;
+}
+.venda-bipagem-retorno.ok { color: var(--success); background: var(--success-bg); border-color: color-mix(in srgb, var(--success-ring) 35%, var(--success-bg)); }
+.venda-bipagem-retorno.erro { color: var(--danger); background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger-ring) 35%, var(--danger-bg)); }
+.venda-bipagem-retorno strong { font-family: var(--font-mono); }
+
+/* --- Itens da venda como cartões (é assim no celular; vira tabela no PC) --- */
+.venda-itens-lista { display: flex; flex-direction: column; gap: 10px; }
+.venda-item-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 12px 13px;
+  display: grid;
+  gap: 10px;
+  box-shadow: var(--shadow-xs);
+}
+.venda-item-card.recem-lancado { border-color: var(--brass); background: color-mix(in srgb, var(--brass) 7%, var(--surface)); }
+.venda-item-cabecalho { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.venda-item-identidade { min-width: 0; }
+.venda-item-referencia {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--leather-ink);
+}
+.venda-item-descricao {
+  font-size: 12.5px;
+  color: var(--ink);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.venda-item-grade { font-size: 11.5px; color: var(--ink-soft); margin-top: 2px; }
+.venda-item-total {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.venda-item-campos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 9px;
+  align-items: end;
+}
+.venda-item-campos input { font-family: var(--font-mono); }
+.venda-item-rodape {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-top: 1px dashed var(--border-soft);
+  padding-top: 8px;
+}
+.venda-item-nota { font-size: 11.5px; color: var(--ink-faint); }
+
+/* Contador rápido de quantidade — dois alvos de 40px, para o polegar. */
+.venda-qtd { display: flex; align-items: center; gap: 0; }
+.venda-qtd button {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.venda-qtd button:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+.venda-qtd button:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.venda-qtd button:hover:not(:disabled) { background: var(--border-soft); }
+.venda-qtd button:disabled { opacity: 0.5; cursor: not-allowed; }
+.venda-qtd input {
+  width: 58px;
+  text-align: center;
+  border-radius: 0;
+  border-inline: none;
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+/* --- Resultado da busca por referência ------------------------------------ */
+.venda-busca-resultados {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.venda-busca-linha {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 11px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+.venda-busca-linha:hover { border-color: var(--terracotta); background: var(--accent-softer); }
+.venda-busca-linha:disabled { opacity: 0.55; cursor: not-allowed; }
+.venda-busca-info { min-width: 0; }
+.venda-busca-preco { text-align: right; white-space: nowrap; }
+.venda-busca-preco .mono { font-weight: 700; }
+.venda-busca-preco small { display: block; font-size: 10.5px; color: var(--ink-faint); }
+
+/* --- Cartão de pedido na listagem (substitui a linha de tabela no celular) - */
+.vendas-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.venda-pedido-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+  padding: 14px 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+.venda-pedido-card:hover { border-color: var(--terracotta); box-shadow: var(--shadow-sm); }
+.venda-pedido-topo { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.venda-pedido-numero { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-faint); }
+.venda-pedido-cliente {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.venda-pedido-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11.5px; color: var(--ink-soft); }
+.venda-pedido-meta .mono { color: var(--ink-soft); }
+.venda-pedido-rodape {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 10px;
+}
+.venda-pedido-valor {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.venda-pedido-valor small { display: block; font-family: var(--font-body); font-size: 10.5px; font-weight: 500; color: var(--ink-faint); }
+
+/* Selo de vendedor: identificação, não estado — por isso latão e não uma das
+   cores semânticas. */
+.venda-selo-vendedor {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--brass) 45%, transparent);
+  background: color-mix(in srgb, var(--brass) 12%, transparent);
+  color: var(--leather-ink);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.venda-selo-vendedor.sem-vendedor {
+  border-style: dashed;
+  border-color: var(--border);
+  background: transparent;
+  color: var(--ink-faint);
+  font-weight: 500;
+}
+.venda-selo-tabela {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* --- Cadastro de vendedor / tabela de preço ------------------------------- */
+.vendedor-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 15px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--card-shadow);
+}
+.vendedor-card.inativo { opacity: 0.72; border-style: dashed; }
+.vendedor-card-topo { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.vendedor-nome { font-family: var(--font-display); font-size: 16px; font-weight: 600; color: var(--ink); }
+.vendedor-sub { font-size: 11.5px; color: var(--ink-soft); margin-top: 2px; }
+.vendedor-numeros {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: 10px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 11px;
+}
+.vendedor-numero-rotulo { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); font-weight: 700; }
+.vendedor-numero-valor { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 700; color: var(--ink); }
+
+/* Barra de meta: latão porque é ATENÇÃO (quanto falta), não estado do dado. */
+.meta-barra { height: 7px; border-radius: 999px; background: var(--border-soft); overflow: hidden; margin-top: 5px; }
+.meta-barra span { display: block; height: 100%; border-radius: 999px; background: var(--brass); transition: width 0.4s var(--ease); }
+.meta-barra span.batida { background: var(--success-ring); }
+
+.tabela-preco-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 15px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  box-shadow: var(--card-shadow);
+}
+.tabela-preco-card.selecionada { border-color: var(--terracotta); box-shadow: var(--shadow-sm); }
+.tabela-preco-card.inativa { opacity: 0.7; border-style: dashed; }
+.tabela-preco-desconto {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--leather-ink);
+  line-height: 1;
+}
+.tabela-preco-desconto small { font-family: var(--font-body); font-size: 11.5px; font-weight: 500; color: var(--ink-soft); display: block; margin-top: 3px; }
+
+/* --- Lucratividade: a cascata do lucro ------------------------------------
+   Cada linha tira alguma coisa da receita. A ordem na tela é a ordem da
+   conta, e o que é TIRADO aparece com sinal — sem isso ninguém sabe se a
+   linha soma ou subtrai. */
+.cascata-lucro { display: flex; flex-direction: column; }
+.cascata-linha {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 13px;
+}
+.cascata-linha:last-child { border-bottom: none; }
+.cascata-linha .cascata-rotulo { color: var(--ink-soft); display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+.cascata-linha .cascata-rotulo small { font-size: 11px; color: var(--ink-faint); }
+.cascata-linha .cascata-valor {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--ink);
+}
+.cascata-linha.subtrai .cascata-valor { color: var(--danger); }
+.cascata-linha.subtotal {
+  border-top: 1px solid var(--border);
+  border-bottom: none;
+  margin-top: 2px;
+  padding-top: 11px;
+  font-weight: 700;
+}
+.cascata-linha.subtotal .cascata-rotulo { color: var(--ink); font-weight: 700; }
+.cascata-linha.final {
+  border-top: 2px solid var(--border);
+  border-bottom: none;
+  margin-top: 4px;
+  padding-top: 12px;
+}
+.cascata-linha.final .cascata-rotulo { color: var(--ink); font-family: var(--font-display); font-size: 15px; font-weight: 700; }
+.cascata-linha.final .cascata-valor { font-size: 19px; font-family: var(--font-display); }
+
+/* Ressalva de precisão, no padrão que o sistema já usa em `.nota-precisao`,
+   mas em versão inline para caber dentro de um card de indicador. */
+.venda-ressalva {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  margin-top: 12px;
+}
+.venda-ressalva svg { color: var(--brass); flex-shrink: 0; margin-top: 1px; }
+
+/* --- Barra de ação fixa no rodapé (celular) --------------------------------
+   Faturar é o botão mais importante desta tela e estava no alto, fora do
+   alcance do polegar depois de rolar quinze itens. */
+.venda-acao-fixa {
+  position: sticky;
+  bottom: 0;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px max(11px, env(safe-area-inset-bottom));
+  margin: 16px -14px -14px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -6px 18px -12px rgba(0, 0, 0, 0.45);
+}
+.venda-acao-fixa-total { display: flex; flex-direction: column; min-width: 0; }
+.venda-acao-fixa-total span { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); font-weight: 700; }
+.venda-acao-fixa-total strong { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 17px; }
+.venda-acao-fixa .btn { margin-left: auto; min-height: 44px; }
+
+@media (max-width: 860px) {
+  .venda-resumo-fixo { grid-template-columns: repeat(2, 1fr); }
+  .venda-bipagem { grid-template-columns: 1fr; }
+  .venda-bipagem-acoes .btn { flex: 1; justify-content: center; }
+  .venda-topo-acoes { width: 100%; }
+  .venda-topo-acoes .btn { flex: 1; justify-content: center; }
+  .vendas-cards { grid-template-columns: 1fr; }
+  /* Campo de bipagem em 17px já passa dos 16px do anti-zoom do iOS, mas os
+     outros campos do cartão de item precisam entrar na regra. */
+  .venda-item-campos input,
+  .venda-qtd input { font-size: 16px; }
+}
+
+@media (max-width: 480px) {
+  .venda-topo-identidade h1 { font-size: 19px; }
+  .venda-resumo-valor { font-size: 15px; }
+  .leitor-camera-titulo span { display: none; }
+}
+
+/* --- Correções vindas da revisão da onda de Vendas (09/09/2026) ------------
+   Três defeitos que não quebram o build e por isso só apareceriam na tela. */
+
+/* `.linha-pendente` só existia escopada em `.tabela-nota`. A Lucratividade de
+   Vendas usa `.data-table`, então o pedido "sem custo" — o caso que a tela
+   inteira se esforça para sinalizar — não recebia destaque nenhum. */
+table.data-table tbody tr.linha-pendente,
+table.data-table tbody tr.linha-pendente:nth-child(even) { background: var(--warning-bg); }
+table.data-table tbody tr.linha-pendente:hover { background: color-mix(in srgb, var(--warning-ring) 18%, var(--warning-bg)); }
+.data-table-wrap table.data-table tbody tr.linha-pendente > *:first-child { background: var(--warning-bg); }
+
+/* O ícone do aviso achatava numa lasca quando o texto era longo em tela de
+   360px — `.venda-ressalva svg` já se protegia, `.aviso-inline` não. */
+.aviso-inline > svg { flex-shrink: 0; }
+
+@media (max-width: 860px) {
+  /* Os botões +/− do contador de quantidade são `<button>` puros: nenhuma das
+     regras de alvo de toque do tema os alcançava, e eles ficavam em 40px —
+     abaixo dos 42px que o próprio sistema estabeleceu. São os botões usados
+     com o celular na mão e o cliente esperando. */
+  .venda-qtd button { width: 42px; height: 42px; }
+}

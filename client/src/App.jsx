@@ -39,7 +39,14 @@ import FichaEstoquePage from './pages/FichaEstoquePage';
 import ClientesListPage from './pages/ClientesListPage';
 import ClienteFichaPage from './pages/ClienteFichaPage';
 import PedidosListPage from './pages/PedidosListPage';
+import PedidosVendaListPage from './pages/PedidosVendaListPage';
 import PedidoFormPage from './pages/PedidoFormPage';
+// Repaginação do módulo Vendas (09/09/2026).
+import MetricasVendasPage from './pages/MetricasVendasPage';
+import LucratividadeVendasPage from './pages/LucratividadeVendasPage';
+import DespesasVendasPage from './pages/DespesasVendasPage';
+import VendedoresPage from './pages/VendedoresPage';
+import TabelasPrecoPage from './pages/TabelasPrecoPage';
 import FornecedoresListPage from './pages/FornecedoresListPage';
 import FornecedorFichaPage from './pages/FornecedorFichaPage';
 import ComprasListPage from './pages/ComprasListPage';
@@ -165,10 +172,25 @@ function AppRoutes() {
                   <Route path="/estoque/ficha" element={<FichaEstoquePage />} />
                   <Route path="/clientes" element={<ClientesListPage />} />
                   <Route path="/clientes/:id" element={<ClienteFichaPage />} />
-                  <Route path="/pedidos" element={<PedidosListPage origemFiltro="manual" />} />
+                  {/* Módulo Vendas repaginado (09/09/2026). A lista de venda
+                      direta ganhou tela própria: PedidosListPage continua
+                      servindo o Marketplace, cujas colunas e filtros são
+                      outros. A ficha do pedido (/pedidos/:id) continua sendo a
+                      mesma para os dois — pedido de marketplace abre lá em
+                      modo leitura, como antes. */}
+                  <Route path="/pedidos" element={<PedidosVendaListPage />} />
                   <Route path="/pedidos/:id" element={<PedidoFormPage />} />
                   <Route path="/ficha-venda" element={<FichaVendaPage />} />
-                  <Route path="/vendas/lucratividade" element={<RelatorioLucratividadePage origemFiltro="manual" />} />
+                  <Route path="/vendas/metricas" element={<MetricasVendasPage />} />
+                  <Route path="/vendas/lucratividade" element={<LucratividadeVendasPage />} />
+                  <Route path="/vendas/despesas" element={<DespesasVendasPage />} />
+                  {/* /vendas/lucratividade agora abre a tela NOVA — é a mesma
+                      pergunta, respondida melhor, então quem tinha o link
+                      salvo continua chegando ao lugar certo. A versão antiga
+                      (o componente compartilhado com o Marketplace) fica no
+                      caminho abaixo, para conferência lado a lado no primeiro
+                      mês. */}
+                  <Route path="/vendas/lucratividade-classica" element={<RelatorioLucratividadePage origemFiltro="manual" />} />
                   <Route path="/marketplace/anuncios" element={<AnunciosPage />} />
                   <Route path="/marketplace/promocoes" element={<PromocoesPage />} />
                   <Route path="/marketplace/pedidos" element={<PedidosListPage origemFiltro="marketplace" />} />
@@ -239,6 +261,12 @@ function AppRoutes() {
                   <Route path="/usuarios" element={<Navigate to="/acessos" replace />} />
                   <Route path="/configuracoes/grupos" element={<Navigate to="/acessos?aba=grupos" replace />} />
                   <Route path="/configuracoes/marketplace" element={<ProdutosMarketplacePage />} />
+                  {/* Vendedores e tabelas de preço vivem em Configurações
+                      porque é lá que a comissão e o preço são DEFINIDOS. A
+                      mesma tela de vendedores aparece como sub-aba de Acessos
+                      (mesmo componente, ver AcessosPage.jsx). */}
+                  <Route path="/configuracoes/vendedores" element={<VendedoresPage />} />
+                  <Route path="/configuracoes/tabelas-preco" element={<TabelasPrecoPage />} />
                   <Route path="/saude-dados" element={<SaudeDadosPage />} />
                   <Route path="/qualidade-dados" element={<Navigate to="/saude-dados" replace />} />
                   <Route path="/conferencia-dados" element={<Navigate to="/saude-dados" replace />} />

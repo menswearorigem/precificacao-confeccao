@@ -59,6 +59,11 @@ const financeiroNucleoRoutes = require('./routes/financeiroNucleo.routes');
 const financeiroPonteRoutes = require('./routes/financeiroPonte.routes');
 const auditoriaRoutes = require('./routes/auditoria.routes');
 const emailRoutes = require('./routes/email.routes');
+// Repaginação do módulo Vendas (09/09/2026): vendedores, tabelas de preço e
+// o painel próprio de métricas/lucratividade da venda direta.
+const vendedoresRoutes = require('./routes/vendedores.routes');
+const tabelasPrecoRoutes = require('./routes/tabelasPreco.routes');
+const vendasRoutes = require('./routes/vendas.routes');
 
 const CLIENT_DIST = path.join(__dirname, '..', '..', 'client', 'dist');
 
@@ -231,6 +236,15 @@ function createApp() {
   app.use('/api/analises-estoque', requireAuth, requireModulo('estoque'), analisesEstoqueRoutes);
   app.use('/api/clientes', requireAuth, requireModulo('vendas'), clientesRoutes);
   app.use('/api/pedidos', requireAuth, requireModulo(['vendas', 'marketplace']), pedidosRoutes);
+  // Vendedores e tabelas de preço: LER exige `vendas` ou `configuracoes` (a
+  // tela de pedido precisa dos dois seletores); ESCREVER exige
+  // `configuracoes`, aplicado dentro de cada router, rota a rota. Nenhuma
+  // chave de módulo nova foi criada (REGRA 4).
+  app.use('/api/vendedores', requireAuth, requireModulo(['vendas', 'configuracoes']), vendedoresRoutes);
+  app.use('/api/tabelas-preco', requireAuth, requireModulo(['vendas', 'configuracoes']), tabelasPrecoRoutes);
+  // Painel do módulo Vendas — métricas, lucratividade com comissão e o
+  // lançamento das despesas de publicidade do mês.
+  app.use('/api/vendas', requireAuth, requireModulo('vendas'), vendasRoutes);
   app.use('/api/fornecedores', requireAuth, requireModulo('compras'), fornecedoresRoutes);
   app.use('/api/compras', requireAuth, requireModulo('compras'), comprasRoutes);
   app.use('/api/viagens', requireAuth, requireModulo('viagens'), viagensRoutes);

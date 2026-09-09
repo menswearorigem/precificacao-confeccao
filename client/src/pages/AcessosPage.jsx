@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ShieldCheck, UsersRound, History } from 'lucide-react';
+import { ShieldCheck, UsersRound, History, BadgePercent } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import UsuariosPage from './UsuariosPage';
 import GruposPage from './GruposPage';
 import HistoricoPage from './HistoricoPage';
+import VendedoresPage from './VendedoresPage';
 
 // Página fundida (Etapa 2): "Usuários" e "Grupos" viravam 2 abas separadas
 // — agora são sub-abas de "Acessos". Conteúdo de cada uma inalterado.
@@ -20,6 +21,12 @@ import HistoricoPage from './HistoricoPage';
 const SUBABAS_ADMIN = [
   { chave: 'usuarios', label: 'Usuários', Icone: ShieldCheck },
   { chave: 'grupos', label: 'Grupos', Icone: UsersRound },
+  // Vendedores (09/09/2026). É a MESMA tela de Configurações › Vendedores,
+  // o mesmo componente — aparece aqui porque quem administra os usuários já
+  // está nesta tela quando pensa "essa pessoa também vai vender". Nenhuma
+  // permissão nova: a rota de escrita continua exigindo `configuracoes`,
+  // e quem não tem só enxerga (o backend recusa a gravação).
+  { chave: 'vendedores', label: 'Vendedores', Icone: BadgePercent },
   // Histórico é só de administrador: mostra IP, tentativa de login que falhou
   // e o que cada pessoa alterou. Fica aqui, ao lado de Usuários, porque é a
   // mesma pergunta vista pelos dois lados — "quem tem acesso" e "o que essa
@@ -36,7 +43,7 @@ export default function AcessosPage() {
   const subabas = isAdmin ? SUBABAS_ADMIN : SUBABAS_LIMITADO;
   const [searchParams, setSearchParams] = useSearchParams();
   const abaUrl = searchParams.get('aba');
-  const abaPedida = abaUrl === 'grupos' || abaUrl === 'historico' ? abaUrl : 'usuarios';
+  const abaPedida = ['grupos', 'historico', 'vendedores'].includes(abaUrl) ? abaUrl : 'usuarios';
   const inicial = isAdmin ? abaPedida : 'grupos';
   const [aba, setAba] = useState(inicial);
 
@@ -64,7 +71,11 @@ export default function AcessosPage() {
         </div>
       )}
 
-      {!isAdmin ? <GruposPage /> : aba === 'grupos' ? <GruposPage /> : aba === 'historico' ? <HistoricoPage /> : <UsuariosPage />}
+      {!isAdmin ? <GruposPage />
+        : aba === 'grupos' ? <GruposPage />
+          : aba === 'historico' ? <HistoricoPage />
+            : aba === 'vendedores' ? <VendedoresPage embutido />
+              : <UsuariosPage />}
     </div>
   );
 }

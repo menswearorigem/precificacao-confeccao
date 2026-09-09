@@ -11,6 +11,7 @@ const { importarPedido, sincronizarSeNecessario, encontrarVariante, corrigirPaga
 const mercadoLivre = require('../lib/marketplaces/mercadoLivre');
 const shopee = require('../lib/marketplaces/shopee');
 const { recalcularTotais } = require('../lib/pedidoRecalculo');
+const { aplicarTabelaPreco, carregarTabelaParaProduto, precoFinalPorPeca, tabelaPadrao } = require('../lib/tabelaPreco');
 const produtosRoutes = require('./produtos.routes');
 
 const router = express.Router();
@@ -33,7 +34,16 @@ const HEADER_FIELDS = [
   'data_pedido',
   'cliente_id',
   'empresa_id',
+  // `vendedor` (texto) continua existindo e continua sendo gravado: pedido
+  // antigo e importação de planilha ainda dependem dele. O que passou a
+  // valer para relatório e comissão é `vendedor_id`, o cadastro de verdade
+  // (migration 0062) — ver vendedores.routes.js.
   'vendedor',
+  'vendedor_id',
+  // Tabela de preço aplicada nesta venda (migration 0062). Guardar no
+  // pedido, e não só no cliente, é o que permite responder depois "com qual
+  // tabela essa venda foi feita" mesmo que a do cliente mude amanhã.
+  'tabela_preco_id',
   'operacao',
   'canal_venda',
   'condicao_pagamento',
@@ -70,10 +80,19 @@ function calcularItem({ quantidade, valor_unitario, desconto_pct, desconto_valor
 async function fetchPedidoCompleto(id) {
   const { rows: pedidoRows } = await pool.query(
     `SELECT pv.*, c.nome AS cliente_nome, c.cpf_cnpj AS cliente_cpf_cnpj, c.telefone AS cliente_telefone,
-            e.nome AS empresa_nome
+            e.nome AS empresa_nome,
+            -- A REGRA DE COMISSAO NAO VEM AQUI de proposito: esta rota e aberta
+            -- a quem tem o modulo de vendas, e o percentual de cada colega nao e
+            -- assunto de quem lanca a venda. Ela vive no relatorio de
+            -- lucratividade, que e outro caminho.
+            vd.nome AS vendedor_nome,
+            tp.nome AS tabela_preco_nome, tp.tipo_desconto AS tabela_preco_tipo,
+            tp.desconto_geral AS tabela_preco_desconto
      FROM pedidos_venda pv
      LEFT JOIN clientes c ON c.id = pv.cliente_id
      LEFT JOIN empresas e ON e.id = pv.empresa_id
+     LEFT JOIN vendedores vd ON vd.id = pv.vendedor_id
+     LEFT JOIN tabelas_preco tp ON tp.id = pv.tabela_preco_id
      WHERE pv.id = $1`,
     [id]
   );
@@ -89,7 +108,7 @@ async function fetchPedidoCompleto(id) {
 
 router.get('/buscar-estoque', async (req, res, next) => {
   try {
-    const { busca } = req.query;
+    const { busca, tabela_preco_id: tabelaPrecoId, com_preco: comPreco } = req.query;
     if (!busca) return res.json([]);
     const { rows } = await pool.query(
       `SELECT v.id, v.cor, v.tamanho, v.ean, v.quantidade, v.produto_id, p.referencia, p.descricao
@@ -99,7 +118,49 @@ router.get('/buscar-estoque', async (req, res, next) => {
        LIMIT 200`,
       [`%${busca}%`, busca]
     );
-    res.json(rows);
+    if (comPreco !== '1' || rows.length === 0) return res.json(rows);
+
+    // Preço que ESTA venda vai usar, já com a tabela de preço aplicada —
+    // para a pessoa ver antes de adicionar, em vez de descobrir depois na
+    // linha do item. O preço de partida é o mesmo do motor de cálculo
+    // (REGRA 1): calculado UMA vez por produto, não por variante.
+    const ctx = await getCalcContext();
+    // Teto de 40 referências por busca: cada preço custa três consultas + o
+    // motor de cálculo, e a busca de balcão é digitada com o cliente na frente.
+    // Quem passa disso refina o termo — a lista continua vindo inteira, só sem
+    // preço nas últimas.
+    const produtoIds = [...new Set(rows.map((r) => r.produto_id))].slice(0, 40);
+    const precoBasePorProduto = new Map();
+    for (const produtoId of produtoIds) {
+      precoBasePorProduto.set(produtoId, await precoSugeridoDoProduto(produtoId, ctx));
+    }
+    let tabela = null;
+    let itensTabela = new Map();
+    if (tabelaPrecoId) {
+      const { rows: tabelas } = await pool.query('SELECT * FROM tabelas_preco WHERE id = $1', [tabelaPrecoId]);
+      tabela = tabelas[0] || null;
+      if (tabela && produtoIds.length > 0) {
+        const { rows: itens } = await pool.query(
+          'SELECT * FROM tabela_preco_itens WHERE tabela_id = $1 AND produto_id = ANY($2)',
+          [tabelaPrecoId, produtoIds]
+        );
+        itensTabela = new Map(itens.map((it) => [it.produto_id, it]));
+      }
+    }
+    res.json(rows.map((r) => {
+      const precoBase = precoBasePorProduto.get(r.produto_id);
+      if (precoBase === undefined) return { ...r, precoBase: null, precoVenda: null };
+      const aplicado = aplicarTabelaPreco(tabela, itensTabela.get(r.produto_id) || null, precoBase);
+      return {
+        ...r,
+        precoBase,
+        // Mesmo número que o item vai receber ao ser lançado — a busca e a
+        // linha do pedido não podem mostrar preços diferentes para a mesma peça.
+        precoVenda: precoFinalPorPeca(aplicado),
+        descontoPct: aplicado.descontoPct,
+        descontoPorPeca: aplicado.descontoPorPeca,
+      };
+    }));
   } catch (err) {
     next(err);
   }
@@ -807,7 +868,15 @@ async function mapaCustoPorKit(kitIds, ctx) {
 // "série diária", pra garantir que os três olhem pro mesmo número de lucro
 // por pedido (mesma fórmula, mesmos filtros), só organizado de formas
 // diferentes.
-async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem, origem_integracao_id }) {
+// Filtros novos (09/09/2026): vendedor, cliente, tabela de preço, empresa,
+// forma de pagamento, operação e situação. Todos OPCIONAIS e todos aditivos —
+// quem chama sem eles (as duas telas de Lucratividade que já existiam) recebe
+// exatamente o mesmo resultado de antes. A fórmula de lucro não foi tocada
+// (REGRA 1): só o conjunto de pedidos que entra na conta é que pode ser menor.
+async function calcularRelatorioPedidos({
+  data_inicio, data_fim, canal_venda, origem, origem_integracao_id,
+  vendedor_id, cliente_id, tabela_preco_id, empresa_id, forma_pagamento, operacao, situacao,
+}) {
   if (origem === 'marketplace') sincronizarSeNecessario();
   const conditions = ["pv.situacao != 'cancelado'"];
   const values = [];
@@ -816,13 +885,26 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
   if (data_fim) { conditions.push(`pv.data_pedido <= $${i}`); values.push(data_fim); i += 1; }
   if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
   if (origem_integracao_id) { conditions.push(`pv.origem_integracao_id = $${i}`); values.push(origem_integracao_id); i += 1; }
+  if (vendedor_id) { conditions.push(`pv.vendedor_id = $${i}`); values.push(vendedor_id); i += 1; }
+  if (cliente_id) { conditions.push(`pv.cliente_id = $${i}`); values.push(cliente_id); i += 1; }
+  if (tabela_preco_id) { conditions.push(`pv.tabela_preco_id = $${i}`); values.push(tabela_preco_id); i += 1; }
+  if (empresa_id) { conditions.push(`pv.empresa_id = $${i}`); values.push(empresa_id); i += 1; }
+  if (forma_pagamento) { conditions.push(`pv.forma_pagamento = $${i}`); values.push(forma_pagamento); i += 1; }
+  if (operacao) { conditions.push(`pv.operacao = $${i}`); values.push(operacao); i += 1; }
+  if (situacao) { conditions.push(`pv.situacao = $${i}`); values.push(situacao); i += 1; }
   if (origem === 'marketplace') conditions.push('pv.origem_marketplace IS NOT NULL');
   if (origem === 'manual') conditions.push('pv.origem_marketplace IS NULL');
   const where = `WHERE ${conditions.join(' AND ')}`;
 
   const { rows: pedidosBrutos } = await pool.query(
-    `SELECT pv.*, c.nome AS cliente_nome
-     FROM pedidos_venda pv LEFT JOIN clientes c ON c.id = pv.cliente_id
+    `SELECT pv.*, c.nome AS cliente_nome, vd.nome AS vendedor_nome,
+            vd.comissao_tipo AS vendedor_comissao_tipo, vd.comissao_valor AS vendedor_comissao_valor,
+            vd.comissao_somente_faturado AS vendedor_comissao_somente_faturado,
+            tp.nome AS tabela_preco_nome
+     FROM pedidos_venda pv
+     LEFT JOIN clientes c ON c.id = pv.cliente_id
+     LEFT JOIN vendedores vd ON vd.id = pv.vendedor_id
+     LEFT JOIN tabelas_preco tp ON tp.id = pv.tabela_preco_id
      ${where} ORDER BY pv.data_pedido, pv.id`,
     values
   );
@@ -1062,7 +1144,26 @@ async function calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, or
         pacote: p._membros.length > 1,
         data_pedido: p.data_pedido,
         cliente_nome: p.cliente_nome,
+        clienteId: p.cliente_id,
         canal_venda: p.canal_venda,
+        // Campos acrescentados em 09/09/2026 para o módulo Vendas. São
+        // ADITIVOS: as telas de marketplace simplesmente não os leem.
+        situacao: p.situacao,
+        vendedorId: p.vendedor_id,
+        vendedorNome: p.vendedor_nome || p.vendedor || null,
+        vendedorComissaoTipo: p.vendedor_comissao_tipo || null,
+        vendedorComissaoValor: p.vendedor_comissao_valor !== null && p.vendedor_comissao_valor !== undefined
+          ? Number(p.vendedor_comissao_valor) : null,
+        vendedorComissaoSomenteFaturado: p.vendedor_comissao_somente_faturado !== false,
+        tabelaPrecoId: p.tabela_preco_id,
+        tabelaPrecoNome: p.tabela_preco_nome || null,
+        empresaId: p.empresa_id,
+        formaPagamento: p.forma_pagamento,
+        condicaoPagamento: p.condicao_pagamento,
+        operacao: p.operacao,
+        unidades: itensDoPedido.reduce((s2, it) => s2 + Number(it.quantidade), 0),
+        descontoCabecalho: Number(p.total_desconto) || 0,
+        totalLiquido: Number(p.total_liquido) || 0,
         receita,
         custoPeca,
         imposto,
@@ -1970,12 +2071,21 @@ router.get('/relatorio-taxas', async (req, res, next) => {
 
 router.get('/', async (req, res, next) => {
   try {
-    const { busca, situacao, origem, canal_venda, origem_integracao_id, data_inicio, data_fim } = req.query;
+    const {
+      busca, situacao, origem, canal_venda, origem_integracao_id, data_inicio, data_fim,
+      vendedor_id, cliente_id, tabela_preco_id, forma_pagamento, operacao, empresa_id,
+    } = req.query;
     if (origem === 'marketplace') sincronizarSeNecessario();
     const conditions = [];
     const values = [];
     let i = 1;
     if (situacao) { conditions.push(`pv.situacao = $${i}`); values.push(situacao); i += 1; }
+    if (vendedor_id) { conditions.push(`pv.vendedor_id = $${i}`); values.push(vendedor_id); i += 1; }
+    if (cliente_id) { conditions.push(`pv.cliente_id = $${i}`); values.push(cliente_id); i += 1; }
+    if (tabela_preco_id) { conditions.push(`pv.tabela_preco_id = $${i}`); values.push(tabela_preco_id); i += 1; }
+    if (forma_pagamento) { conditions.push(`pv.forma_pagamento = $${i}`); values.push(forma_pagamento); i += 1; }
+    if (operacao) { conditions.push(`pv.operacao = $${i}`); values.push(operacao); i += 1; }
+    if (empresa_id) { conditions.push(`pv.empresa_id = $${i}`); values.push(empresa_id); i += 1; }
     if (origem === 'marketplace') conditions.push('pv.origem_marketplace IS NOT NULL');
     if (origem === 'manual') conditions.push('pv.origem_marketplace IS NULL');
     if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
@@ -1983,14 +2093,21 @@ router.get('/', async (req, res, next) => {
     if (data_inicio) { conditions.push(`pv.data_pedido >= $${i}`); values.push(data_inicio); i += 1; }
     if (data_fim) { conditions.push(`pv.data_pedido <= $${i}`); values.push(data_fim); i += 1; }
     if (busca) {
-      conditions.push(`(c.nome ILIKE $${i} OR pv.numero::text = $${i + 1})`);
+      // Busca também por vendedor e por telefone do cliente: no balcão a
+      // pergunta costuma ser "o pedido que a Nath fez pro zap tal", não o
+      // número interno.
+      conditions.push(`(c.nome ILIKE $${i} OR c.telefone ILIKE $${i} OR c.cpf_cnpj ILIKE $${i} OR vd.nome ILIKE $${i} OR pv.numero::text = $${i + 1})`);
       values.push(`%${busca}%`, busca);
       i += 2;
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const { rows } = await pool.query(
-      `SELECT pv.*, c.nome AS cliente_nome
-       FROM pedidos_venda pv LEFT JOIN clientes c ON c.id = pv.cliente_id
+      `SELECT pv.*, c.nome AS cliente_nome, c.telefone AS cliente_telefone,
+              vd.nome AS vendedor_nome, tp.nome AS tabela_preco_nome
+       FROM pedidos_venda pv
+       LEFT JOIN clientes c ON c.id = pv.cliente_id
+       LEFT JOIN vendedores vd ON vd.id = pv.vendedor_id
+       LEFT JOIN tabelas_preco tp ON tp.id = pv.tabela_preco_id
        ${where}
        ORDER BY pv.id DESC`,
       values
@@ -2014,6 +2131,26 @@ router.get('/:id', async (req, res, next) => {
 router.post('/', async (req, res, next) => {
   try {
     const body = req.body || {};
+
+    // Pedido novo já nasce com a tabela de preço padrão e com o vendedor
+    // ligado a quem está logado (quando existe). São os dois campos que a
+    // pessoa esquecia de preencher no balcão — e sem eles a venda entra no
+    // relatório como "sem vendedor", que é o buraco que esta onda fecha.
+    // Qualquer valor vindo no corpo continua mandando.
+    if (body.tabela_preco_id === undefined) {
+      const padrao = await tabelaPadrao();
+      if (padrao) body.tabela_preco_id = padrao.id;
+    }
+    if (body.vendedor_id === undefined && req.user?.id) {
+      const { rows: vendedorRows } = await pool.query(
+        'SELECT id, nome FROM vendedores WHERE usuario_id = $1 AND ativo LIMIT 1', [req.user.id]
+      );
+      if (vendedorRows.length > 0) {
+        body.vendedor_id = vendedorRows[0].id;
+        if (body.vendedor === undefined) body.vendedor = vendedorRows[0].nome;
+      }
+    }
+
     const fields = HEADER_FIELDS.filter((f) => body[f] !== undefined && body[f] !== '');
     const columns = fields.length ? fields : ['operacao'];
     const values = fields.length ? fields.map((f) => body[f]) : ['Venda'];
@@ -2088,13 +2225,14 @@ router.post('/:id/duplicar', async (req, res, next) => {
 
     const { rows: novoRows } = await client.query(
       `INSERT INTO pedidos_venda
-         (data_pedido, cliente_id, empresa_id, vendedor, operacao, canal_venda,
+         (data_pedido, cliente_id, empresa_id, vendedor, vendedor_id, tabela_preco_id, operacao, canal_venda,
           condicao_pagamento, forma_pagamento, desconto_pct, desconto_valor,
           acrescimo, valor_frete, observacao, situacao)
-       VALUES (CURRENT_DATE, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'aberto')
+       VALUES (CURRENT_DATE, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'aberto')
        RETURNING *`,
       [
-        clienteId, origem.empresa_id, origem.vendedor, origem.operacao, origem.canal_venda,
+        clienteId, origem.empresa_id, origem.vendedor, origem.vendedor_id, origem.tabela_preco_id,
+        origem.operacao, origem.canal_venda,
         origem.condicao_pagamento, origem.forma_pagamento, origem.desconto_pct, origem.desconto_valor,
         origem.acrescimo, origem.valor_frete, origem.observacao,
       ]
@@ -2191,7 +2329,7 @@ router.delete('/:id', async (req, res, next) => {
 router.post('/:id/itens', async (req, res, next) => {
   const client = await pool.connect();
   try {
-    const { rows: pedidoRows } = await client.query('SELECT situacao FROM pedidos_venda WHERE id = $1', [req.params.id]);
+    const { rows: pedidoRows } = await client.query('SELECT situacao, tabela_preco_id FROM pedidos_venda WHERE id = $1', [req.params.id]);
     if (pedidoRows.length === 0) return res.status(404).json({ error: 'Pedido não encontrado.' });
     if (pedidoRows[0].situacao !== 'aberto') {
       return res.status(409).json({ error: 'Só é possível adicionar itens a pedidos com situação "aberto".' });
@@ -2220,16 +2358,46 @@ router.post('/:id/itens', async (req, res, next) => {
     }
 
     let valorUnitario = body.valor_unitario;
+    let descontoPct = body.desconto_pct;
+    let descontoValor = body.desconto_valor;
+    let tabelaAplicada = null;
     if (valorUnitario === undefined || valorUnitario === '') {
       const ctx = await getCalcContext();
       valorUnitario = await precoSugeridoDoProduto(varianteRow.produto_id, ctx);
+
+      // Tabela de preço do pedido (migration 0062). REGRA 1: o preço de
+      // partida acima continua vindo do motor, intocado — a tabela só aplica
+      // por cima o desconto comercial cadastrado, do mesmo jeito que a pessoa
+      // faria à mão. Preço informado no corpo da requisição sempre manda:
+      // quem digitou um preço quis aquele preço.
+      if (pedidoRows[0].tabela_preco_id) {
+        const { tabela, item } = await carregarTabelaParaProduto(client, pedidoRows[0].tabela_preco_id, varianteRow.produto_id);
+        const resultado = aplicarTabelaPreco(tabela, item, valorUnitario);
+        // Desconto em R$ já vem abatido do preço unitário (ver lib/tabelaPreco.js):
+        // o campo de desconto de `pedido_itens` é da LINHA, e o da tabela é por
+        // PEÇA — gravar um no outro erra a conta assim que a quantidade passa de 1.
+        valorUnitario = resultado.valorUnitario;
+        if (descontoPct === undefined && descontoValor === undefined) {
+          descontoPct = resultado.descontoPct;
+          descontoValor = resultado.descontoValor;
+        }
+        tabelaAplicada = tabela
+          ? {
+            id: tabela.id,
+            nome: tabela.nome,
+            origem: resultado.origem,
+            precoBase: resultado.precoBase,
+            descontoPorPeca: resultado.descontoPorPeca,
+          }
+          : null;
+      }
     }
 
     const calc = calcularItem({
       quantidade: body.quantidade || 1,
       valor_unitario: valorUnitario,
-      desconto_pct: body.desconto_pct,
-      desconto_valor: body.desconto_valor,
+      desconto_pct: descontoPct,
+      desconto_valor: descontoValor,
     });
 
     await client.query('BEGIN');
@@ -2249,7 +2417,12 @@ router.post('/:id/itens', async (req, res, next) => {
     await client.query('COMMIT');
 
     const data = await fetchPedidoCompleto(req.params.id);
-    res.status(201).json({ ...data, itemAdicionado: inserted[0], estoqueDisponivel: Number(varianteRow.quantidade) });
+    res.status(201).json({
+      ...data,
+      itemAdicionado: inserted[0],
+      estoqueDisponivel: Number(varianteRow.quantidade),
+      tabelaAplicada,
+    });
   } catch (err) {
     await client.query('ROLLBACK');
     next(err);
@@ -2318,6 +2491,83 @@ router.delete('/:id/itens/:itemId', async (req, res, next) => {
     res.json(data);
   } catch (err) {
     await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// Reaplicar a tabela de preço a todos os itens do pedido (09/09/2026).
+//
+// Existe porque trocar a tabela no meio do pedido é comum ("esse cliente é
+// lojista, não varejo") e refazer item por item é onde o erro aparece.
+//
+// REGRA 1: o preço de partida de cada item continua sendo o preço sugerido
+// que o motor devolve — nada é recalculado aqui. O que muda é só o desconto
+// comercial aplicado por cima. Item cujo produto não existe mais no cadastro
+// é DEIXADO COMO ESTÁ e relatado na resposta: preencher com zero seria
+// inventar preço (REGRA 2).
+router.post('/:id/reaplicar-tabela-preco', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const { rows: pedidoRows } = await client.query('SELECT situacao, tabela_preco_id FROM pedidos_venda WHERE id = $1', [req.params.id]);
+    if (pedidoRows.length === 0) return res.status(404).json({ error: 'Pedido não encontrado.' });
+    if (pedidoRows[0].situacao !== 'aberto') {
+      return res.status(409).json({ error: 'Só dá para reaplicar a tabela em pedido com situação "aberto".' });
+    }
+    const tabelaId = req.body?.tabela_preco_id !== undefined ? req.body.tabela_preco_id : pedidoRows[0].tabela_preco_id;
+    if (!tabelaId) return res.status(400).json({ error: 'Escolha uma tabela de preço antes de reaplicar.' });
+
+    // Confere a tabela ANTES de gravar qualquer coisa. Sem isso, uma tabela
+    // desativada (que a função de aplicação ignora, por desenho) fazia a rota
+    // zerar o desconto de todos os itens e devolver "atualizados: N" como se
+    // tivesse aplicado alguma coisa — apagando preço negociado à mão. E uma
+    // tabela inexistente estourava a chave estrangeira em 500.
+    const { rows: tabelaRows } = await client.query('SELECT id, nome, ativo FROM tabelas_preco WHERE id = $1', [tabelaId]);
+    if (tabelaRows.length === 0) return res.status(404).json({ error: 'Tabela de preço não encontrada.' });
+    if (!tabelaRows[0].ativo) {
+      return res.status(409).json({
+        error: `A tabela "${tabelaRows[0].nome}" está desativada. Reative-a em Configurações › Tabelas de Preço `
+          + 'antes de reaplicar, ou escolha outra — reaplicar uma tabela desativada apagaria os descontos do pedido.',
+      });
+    }
+
+    const { rows: itens } = await client.query('SELECT * FROM pedido_itens WHERE pedido_id = $1 ORDER BY ordem, id', [req.params.id]);
+    if (itens.length === 0) return res.status(400).json({ error: 'Esse pedido ainda não tem itens.' });
+
+    const ctx = await getCalcContext();
+    const atualizados = [];
+    const semPreco = [];
+
+    await client.query('BEGIN');
+    if (String(tabelaId) !== String(pedidoRows[0].tabela_preco_id || '')) {
+      await client.query('UPDATE pedidos_venda SET tabela_preco_id = $1, updated_at = now() WHERE id = $2', [tabelaId, req.params.id]);
+    }
+    for (const item of itens) {
+      if (!item.produto_id) { semPreco.push(item.referencia || item.descricao || `item ${item.id}`); continue; }
+      const precoBase = await precoSugeridoDoProduto(item.produto_id, ctx);
+      if (!precoBase) { semPreco.push(item.referencia || item.descricao || `item ${item.id}`); continue; }
+      const { tabela, item: itemTabela } = await carregarTabelaParaProduto(client, tabelaId, item.produto_id);
+      const resultado = aplicarTabelaPreco(tabela, itemTabela, precoBase);
+      const calc = calcularItem({
+        quantidade: item.quantidade,
+        valor_unitario: resultado.valorUnitario,
+        desconto_pct: resultado.descontoPct,
+        desconto_valor: resultado.descontoValor,
+      });
+      await client.query(
+        'UPDATE pedido_itens SET valor_unitario=$1, desconto_pct=$2, desconto_valor=$3, total=$4 WHERE id = $5',
+        [calc.valor_unitario, calc.desconto_pct, calc.desconto_valor, calc.total, item.id]
+      );
+      atualizados.push(item.referencia || String(item.id));
+    }
+    await recalcularTotais(client, req.params.id);
+    await client.query('COMMIT');
+
+    const data = await fetchPedidoCompleto(req.params.id);
+    res.json({ ...data, reaplicacao: { atualizados: atualizados.length, semPreco } });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     next(err);
   } finally {
     client.release();
@@ -2449,5 +2699,10 @@ router.post('/:id/cancelar', async (req, res, next) => {
     client.release();
   }
 });
+
+// Exportada para o módulo Vendas (routes/vendas.routes.js) reaproveitar
+// EXATAMENTE a mesma conta de lucro — em vez de escrever uma segunda, que
+// divergiria da primeira no primeiro ajuste feito só de um lado.
+router.calcularRelatorioPedidos = calcularRelatorioPedidos;
 
 module.exports = router;

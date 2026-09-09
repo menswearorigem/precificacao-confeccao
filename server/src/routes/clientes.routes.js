@@ -21,6 +21,11 @@ const EDITABLE_FIELDS = [
   'uf',
   'vendedor',
   'tabela_preco',
+  // Vínculo com o cadastro de verdade (migration 0062). Os dois campos de
+  // texto acima continuam existindo e continuam sendo gravados — nenhum
+  // cliente antigo perde o que já estava escrito nele.
+  'vendedor_id',
+  'tabela_preco_id',
   'limite_credito',
   'observacoes',
   'ativo',
@@ -192,9 +197,14 @@ router.post('/', async (req, res, next) => {
   try {
     const body = req.body || {};
     if (!body.nome) return res.status(400).json({ error: 'nome é obrigatório.' });
+    // Campo numérico com string vazia (o que um <select> com opção "nenhum"
+    // manda) estourava `invalid input syntax for type integer` em 500. Vazio
+    // vira NULL, que é o que a pessoa quis dizer.
+    const CAMPOS_NUMERICOS = new Set(['vendedor_id', 'tabela_preco_id']);
+    const valorDoCampo = (f) => (CAMPOS_NUMERICOS.has(f) && body[f] === '' ? null : body[f]);
     const fields = EDITABLE_FIELDS.filter((f) => body[f] !== undefined);
     const columns = fields.length ? fields : ['nome'];
-    const values = fields.length ? fields.map((f) => body[f]) : [body.nome];
+    const values = fields.length ? fields.map(valorDoCampo) : [body.nome];
     const placeholders = columns.map((_, idx) => `$${idx + 1}`);
     const { rows } = await pool.query(
       `INSERT INTO clientes (${columns.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`,
@@ -212,10 +222,13 @@ router.put('/:id', async (req, res, next) => {
     const updates = [];
     const values = [];
     let i = 1;
+    // Mesma proteção do POST: campo numérico com string vazia vira NULL em
+    // vez de derrubar a requisição com erro de tipo.
+    const CAMPOS_NUMERICOS = new Set(['vendedor_id', 'tabela_preco_id']);
     for (const field of EDITABLE_FIELDS) {
       if (body[field] !== undefined) {
         updates.push(`${field} = $${i}`);
-        values.push(body[field]);
+        values.push(CAMPOS_NUMERICOS.has(field) && body[field] === '' ? null : body[field]);
         i += 1;
       }
     }

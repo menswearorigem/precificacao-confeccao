@@ -7,6 +7,7 @@ import {
   LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer, Activity,
   Banknote, Ruler, MapPin, Gauge, Bookmark, PackageCheck, FileSpreadsheet,
   Inbox, Radar,
+  Megaphone, BadgePercent,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -102,11 +103,20 @@ export const MODULES = [
     label: 'Vendas',
     icon: ClipboardList,
     color: 'var(--info)',
+    // Repaginacao de 09/09/2026. O modulo tinha quatro telas numa fileira
+    // lisa e nenhuma delas respondia "quem vendeu" nem "quanto sobrou".
+    // Agora sao tres grupos, na ordem em que a venda acontece: primeiro o
+    // que se faz TODO dia (lancar a venda, achar o cliente), depois o que se
+    // olha no fim do dia/mes (metricas, lucratividade) e por fim o que se
+    // lanca uma vez por mes (publicidade). Nenhuma chave de permissao nova
+    // (REGRA 4): tudo dentro do modulo `vendas` que ja' existia.
     pages: [
-      { to: '/pedidos', label: 'Pedidos de Venda', icon: ClipboardList },
-      { to: '/clientes', label: 'Clientes', icon: Users },
-      { to: '/ficha-venda', label: 'Ficha de Venda', icon: Printer },
-      { to: '/vendas/lucratividade', label: 'Lucratividade', icon: TrendingUp },
+      { to: '/pedidos', label: 'Pedidos de Venda', icon: ClipboardList, grupo: 'Dia a dia' },
+      { to: '/clientes', label: 'Clientes', icon: Users, grupo: 'Dia a dia' },
+      { to: '/ficha-venda', label: 'Ficha de Venda', icon: Printer, grupo: 'Dia a dia' },
+      { to: '/vendas/metricas', label: 'Métricas', icon: LineChart, grupo: 'Resultado' },
+      { to: '/vendas/lucratividade', label: 'Lucratividade', icon: TrendingUp, grupo: 'Resultado' },
+      { to: '/vendas/despesas', label: 'Publicidade e Despesas', icon: Megaphone, grupo: 'Lançar uma vez por mês' },
     ],
   },
   {
@@ -271,6 +281,13 @@ export const MODULES = [
       { to: '/taxas', label: 'Taxas', icon: Percent, grupo: 'Taxas' },
       { to: '/listas', label: 'Listas', icon: ListIcon, grupo: 'Cadastros' },
       { to: '/configuracoes/marketplace', label: 'Produtos de Marketplace', icon: Store, grupo: 'Cadastros' },
+      // Vendedores e Tabelas de Preco (09/09/2026). Ficam em Configuracoes
+      // porque e' aqui que a comissao e o preco sao DEFINIDOS -- quem lanca a
+      // venda usa os dois, mas nao decide nenhum deles. O backend aceita
+      // `vendas` OU `configuracoes` para LER e exige `configuracoes` para
+      // ESCREVER; nenhuma chave nova (REGRA 4).
+      { to: '/configuracoes/vendedores', label: 'Vendedores', icon: BadgePercent, grupo: 'Cadastros' },
+      { to: '/configuracoes/tabelas-preco', label: 'Tabelas de Preço', icon: Tags, grupo: 'Cadastros' },
       // NÃO é adminOnly (diferente da extinta aba "Usuários", que era):
       // Grupos nunca precisou de admin (backend exige só o módulo
       // "configuracoes"), e a fusão não pode tirar esse acesso de quem não
