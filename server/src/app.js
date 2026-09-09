@@ -24,6 +24,9 @@ const clientesRoutes = require('./routes/clientes.routes');
 const pedidosRoutes = require('./routes/pedidos.routes');
 const fornecedoresRoutes = require('./routes/fornecedores.routes');
 const comprasRoutes = require('./routes/compras.routes');
+const cotacoesRoutes = require('./routes/cotacoes.routes');
+const { router: pedidosCompraRoutes } = require('./routes/pedidosCompra.routes');
+const recebimentosRoutes = require('./routes/recebimentos.routes');
 const integracoesRoutes = require('./routes/integracoes.routes');
 const marketplaceTaxasRoutes = require('./routes/marketplaceTaxas.routes');
 const viagensRoutes = require('./routes/viagens.routes');
@@ -165,6 +168,12 @@ function createApp() {
   // `compras` -- e' quem compra que lanca nota e cadastra materia-prima.
   // Nenhuma permissao existente muda por causa desta rota nova (REGRA 4).
   app.use('/api/insumos', requireAuth, requireModulo('compras'), insumosRoutes);
+  // Fluxo de compra completo (09/09/2026): cotacao -> pedido -> recebimento.
+  // Tudo sob o modulo `compras`, que ja existe -- nenhuma chave de modulo
+  // nova, nenhuma permissao existente muda (REGRA 4).
+  app.use('/api/cotacoes', requireAuth, requireModulo('compras'), cotacoesRoutes);
+  app.use('/api/pedidos-compra', requireAuth, requireModulo('compras'), pedidosCompraRoutes);
+  app.use('/api/recebimentos', requireAuth, requireModulo('compras'), recebimentosRoutes);
   // Estoque minimo, cobertura e ponto de pedido (06/09/2026). Fica sob
   // `estoque` -- e' quem cuida do saldo que precisa disto no dia a dia.
   app.use('/api/estoque-minimo', requireAuth, requireModulo('estoque'), estoqueMinimoRoutes);

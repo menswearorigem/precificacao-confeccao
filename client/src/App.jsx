@@ -44,6 +44,9 @@ import FornecedorFichaPage from './pages/FornecedorFichaPage';
 import ComprasListPage from './pages/ComprasListPage';
 import CompraFormPage from './pages/CompraFormPage';
 import RelatorioComprasPage from './pages/RelatorioComprasPage';
+import CotacoesPage from './pages/CotacoesPage';
+import PedidosCompraPage from './pages/PedidosCompraPage';
+import RecebimentosPage from './pages/RecebimentosPage';
 import RelatorioLucratividadePage from './pages/RelatorioLucratividadePage';
 import MetricasMarketplacePage from './pages/MetricasMarketplacePage';
 import AnunciosPage from './pages/AnunciosPage';
@@ -197,6 +200,12 @@ function AppRoutes() {
                   <Route path="/fornecedores/:id" element={<FornecedorFichaPage />} />
                   <Route path="/compras/relatorio" element={<RelatorioComprasPage />} />
                   <Route path="/compras/insumos" element={<InsumosPage />} />
+                  {/* Cotação → Pedido → Recebimento (09/09/2026). Rotas estáticas
+                      antes de /compras/:id de propósito: são o caminho completo da
+                      compra, do preço perguntado à mercadoria conferida na doca. */}
+                  <Route path="/compras/cotacoes" element={<CotacoesPage />} />
+                  <Route path="/compras/pedidos" element={<PedidosCompraPage />} />
+                  <Route path="/compras/recebimentos" element={<RecebimentosPage />} />
                   <Route path="/compras" element={<ComprasListPage />} />
                   <Route path="/compras/:id" element={<CompraFormPage />} />
                   <Route path="/configuracoes" element={<ConfiguracoesPage />} />

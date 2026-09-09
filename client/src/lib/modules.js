@@ -5,7 +5,7 @@ import {
   Truck, BarChart3, ShieldCheck, Plug, TrendingUp, ReceiptText, Store, Plane,
   LineChart, SearchCheck, Layers, AlertTriangle, CalendarDays, UsersRound,
   LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer, Activity,
-  Banknote, Ruler, MapPin, Gauge, Bookmark,
+  Banknote, Ruler, MapPin, Gauge, Bookmark, PackageCheck,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -171,6 +171,13 @@ export const MODULES = [
       // entrada por nota fiscal que alimenta o custo da peca.
       { to: '/compras/insumos', label: 'Insumos e Notas', icon: Package },
       { to: '/compras', label: 'Compras', icon: ShoppingCart },
+      // Cotacao -> Pedido -> Recebimento (09/09/2026). Ficam nesta ordem de
+      // proposito: e' a ordem em que a compra acontece na vida real -- pergunto
+      // o preco, me comprometo com o pedido, confiro o que chegou. Todas dentro
+      // do modulo `compras` que ja' existe; nenhuma permissao muda (REGRA 4).
+      { to: '/compras/cotacoes', label: 'Cotações', icon: Scale },
+      { to: '/compras/pedidos', label: 'Pedidos de Compra', icon: ClipboardList },
+      { to: '/compras/recebimentos', label: 'Recebimentos', icon: PackageCheck },
       { to: '/compras/relatorio', label: 'Relatório', icon: BarChart3 },
       { to: '/fornecedores', label: 'Fornecedores', icon: Truck },
     ],
