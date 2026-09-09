@@ -5,7 +5,7 @@ import {
   Truck, BarChart3, ShieldCheck, Plug, TrendingUp, ReceiptText, Store, Plane,
   LineChart, SearchCheck, Layers, AlertTriangle, CalendarDays, UsersRound,
   LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer, Activity,
-  Banknote, Ruler, MapPin, Gauge,
+  Banknote, Ruler, MapPin, Gauge, Bookmark,
 } from 'lucide-react';
 
 export const MODULES = [
@@ -42,6 +42,13 @@ export const MODULES = [
       // Fica junto de Cobertura porque as duas respondem sobre o MESMO saldo
       // -- uma pelo lado do tempo, a outra pelo lado do lugar.
       { to: '/estoque/locais', label: 'Onde Está a Peça', icon: MapPin },
+      // Reserva de estoque (09/09/2026). Fica junto de Cobertura e Onde Está
+      // a Peça porque as tres olham o MESMO saldo por angulos diferentes --
+      // esta pelo lado do que ainda PODE SER VENDIDO: saldo menos o que ja'
+      // esta' reservado para pedido pago e nao separado. Mesmo modulo
+      // `estoque` que o backend exige em /api/estoque-reserva; nenhuma chave
+      // de permissao nova (REGRA 4).
+      { to: '/estoque/reserva', label: 'Reserva de Estoque', icon: Bookmark },
       // Dinheiro parado e Curva de tamanho (08/09/2026). As duas leem saldo e
       // historico de venda que ja' existem; nenhuma tabela nova.
       { to: '/estoque/parado', label: 'Dinheiro Parado', icon: Banknote },
