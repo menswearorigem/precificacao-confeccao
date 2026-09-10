@@ -24,6 +24,7 @@ const {
 const locais = require('../lib/estoqueLocais');
 const produtoGrade = require('../lib/produtoGrade');
 const calendarioProducao = require('../lib/producaoCalendario');
+const { sincronizarProducaoAgora } = require('../lib/wikProducaoSync');
 
 const router = express.Router();
 
@@ -42,6 +43,19 @@ router.use('/ordens/:id', async (req, res, next) => {
     );
   } catch (_) { /* descolamento é best-effort; a edição segue */ }
   next();
+});
+
+// Puxa agora as OPs do Wik, sem esperar o ciclo automático (a cada 15 min).
+// Devolve 409 quando a sessão web já está ocupada pelo job de financeiro —
+// é UMA sessão só (ver wikWebSessao.js).
+router.post('/wik/sincronizar', async (req, res, next) => {
+  try {
+    const r = await sincronizarProducaoAgora();
+    if (r && r.pulado) return res.status(409).json({ error: r.pulado });
+    res.json(r);
+  } catch (err) {
+    res.status(422).json({ error: err.message });
+  }
 });
 
 function inteiroPositivo(v) {

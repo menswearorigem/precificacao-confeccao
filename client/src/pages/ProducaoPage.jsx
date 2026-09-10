@@ -3,6 +3,7 @@ import {
   Factory, RefreshCw, Plus, AlertTriangle, Check, Truck, Timer,
   Scissors, ClipboardList, X, ArrowLeftRight, Package, Info, Layers,
   Building2, LayoutGrid, List, CalendarDays, Wallet,
+  DownloadCloud,
 } from 'lucide-react';
 import { api } from '../api/client';
 import {
@@ -1115,6 +1116,8 @@ export default function ProducaoPage() {
   const [buscaAplicada, setBuscaAplicada] = useState('');
   const [filtroSituacao, setFiltroSituacao] = useState('');
   const [novaOrdem, setNovaOrdem] = useState(false);
+  const [puxandoWik, setPuxandoWik] = useState(false);
+  const [avisoWik, setAvisoWik] = useState('');
   const [ordemAberta, setOrdemAberta] = useState(null);
   const [faccoes, setFaccoes] = useState([]);
   const [etapas, setEtapas] = useState([]);
@@ -1211,6 +1214,22 @@ export default function ProducaoPage() {
   }), []);
   const tabela = useTabela(ordens, { colunas, colunaPadrao: 'numero', direcaoPadrao: 'desc', tamanhoPadrao: 50, prefixo: 'op' });
 
+  // Puxar agora as OPs do Wik, sem esperar o ciclo automático (15 min). Chama
+  // o mesmo sincronizarProducaoAgora() do job — nunca dois logins Wik
+  // concorrentes, por isso pode devolver 409 "outro job em andamento".
+  const puxarDoWik = async () => {
+    setPuxandoWik(true); setAvisoWik(''); setErro('');
+    try {
+      await api.post('/producao/wik/sincronizar', {});
+      setAvisoWik('Puxando as OPs do Wik… elas aparecem na lista em instantes (a grade preenche em lote). Clique em Atualizar se não vier na hora.');
+      setTimeout(carregar, 6000);
+    } catch (e) {
+      setErro(e.message || 'Falha ao puxar do Wik.');
+    } finally {
+      setTimeout(() => setPuxandoWik(false), 6000);
+    }
+  };
+
   return (
     <div className="pagina">
       <header className="pagina-topo">
@@ -1225,11 +1244,17 @@ export default function ProducaoPage() {
           <button type="button" className="btn-sec" onClick={carregar} disabled={carregando}>
             <RefreshCw size={15} className={carregando ? 'girando' : ''} /> Atualizar
           </button>
+          <button type="button" className="btn-sec" onClick={puxarDoWik} disabled={puxandoWik}
+            title="Puxa agora as Ordens de Produção do Wik (elas também vêm sozinhas a cada 15 min). Entram como OP comum; editar uma desliga a sincronização dela.">
+            <DownloadCloud size={15} className={puxandoWik ? 'girando' : ''} /> {puxandoWik ? 'Puxando…' : 'Puxar do Wik'}
+          </button>
           <button type="button" className="btn" onClick={() => setNovaOrdem(true)}>
             <Plus size={15} /> Nova ordem
           </button>
         </div>
       </header>
+
+      {avisoWik && <p className="aviso-inline"><DownloadCloud size={14} /> {avisoWik}</p>}
 
       <div className="indicadores-linha">
         <IndicadorDestaque rotulo="Ordens abertas" valor={formatQtd(totais.abertas)} Icone={Factory} />

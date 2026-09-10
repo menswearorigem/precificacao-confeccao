@@ -48,11 +48,14 @@ function fazerLogin(integracao) {
 async function obterSessao(integracao) {
   integracao = integracao || await integracaoWik();
   if (!integracao || !integracao.ativo) throw new Error('Integração Wik não configurada ou inativa.');
-  if (sessaoAtual) return sessaoAtual;
+  // Sessão viva em memória? confirma com um ping barato e reaproveita.
+  if (sessaoAtual && await wikWeb.sessaoViva(sessaoAtual)) return sessaoAtual;
+  // Senão, tenta o cookie guardado no banco (compartilhado entre integrações).
   if (integracao.web_cookie) {
-    sessaoAtual = wikWeb.restaurarCookies(integracao.web_base_url || wikWeb.BASE_PADRAO, integracao.web_cookie);
-    return sessaoAtual;
+    const s = wikWeb.restaurarCookies(integracao.web_base_url || wikWeb.BASE_PADRAO, integracao.web_cookie);
+    if (await wikWeb.sessaoViva(s)) { sessaoAtual = s; return s; }
   }
+  // Sem sessão viva: UM login (single-flight) que todos compartilham.
   return fazerLogin(integracao);
 }
 
