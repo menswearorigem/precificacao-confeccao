@@ -17,7 +17,7 @@ import { formatQtd, dataBr } from './format';
 //      dizer qual é qual nem por que estão nessa ordem.
 //
 // Por isso este arquivo existe em vez de mais uma definição para o motor
-// genérico: aqui o documento é DESENHADO — capa, uma referência por página,
+// genérico: aqui o documento é DESENHADO — uma referência por página,
 // swatch de cor pintado dentro da célula, produção em azul, projetado em
 // verde. O motor genérico continua servindo o Excel, onde nada disso se
 // aplica e a tabela crua é exatamente o que a pessoa quer.
@@ -28,9 +28,7 @@ import { formatQtd, dataBr } from './format';
 const C = {
   leather: [74, 52, 40],
   leatherDeep: [46, 33, 26],
-  leatherMid: [92, 66, 50],
   brass: [184, 134, 59],
-  brassSoft: [217, 184, 120],
   ink: [43, 35, 32],
   inkSoft: [107, 92, 79],
   inkFaint: [154, 139, 124],
@@ -81,135 +79,33 @@ function qtd(v) {
   return v === null || v === undefined ? '—' : formatQtd(v);
 }
 
-// ---------------------------------------------------------------------------
-// Capa
-// ---------------------------------------------------------------------------
-function capa(doc, { totais, referencias, periodo, soComOrdem }) {
-  const L = doc.internal.pageSize.getWidth();
-  const A = doc.internal.pageSize.getHeight();
-
-  // O jsPDF não tem gradiente. Duas ou três faixas grandes deixam degraus
-  // visíveis atravessando a capa; 90 faixas finas interpoladas passam por
-  // gradiente a olho nu e custam nada no arquivo.
-  const FAIXAS = 90;
-  for (let i = 0; i < FAIXAS; i += 1) {
-    const t = i / (FAIXAS - 1);
-    doc.setFillColor(
-      Math.round(C.leatherMid[0] + (C.leatherDeep[0] - C.leatherMid[0]) * t),
-      Math.round(C.leatherMid[1] + (C.leatherDeep[1] - C.leatherMid[1]) * t),
-      Math.round(C.leatherMid[2] + (C.leatherDeep[2] - C.leatherMid[2]) * t),
-    );
-    // +1 no fim de cada faixa evita a linha branca de arredondamento entre elas.
-    doc.rect(0, (A / FAIXAS) * i, L, A / FAIXAS + 1, 'F');
-  }
-
-  // Logo: o anel do HBN Hub.
-  doc.setDrawColor(...C.brass);
-  doc.setLineWidth(3);
-  doc.circle(M + 14, 74, 11, 'S');
-  doc.setFillColor(...C.brass);
-  doc.circle(M + 14, 74, 4.5, 'F');
-
-  doc.setTextColor(243, 236, 225);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(15);
-  doc.text('HBN HUB', M + 36, 71, { charSpace: 1.6 });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.5);
-  doc.setTextColor(...C.brassSoft);
-  doc.text('GRUPO HBN', M + 36, 82, { charSpace: 2.6 });
-
-  const topo = A * 0.40;
-  doc.setFontSize(8);
-  doc.setTextColor(...C.brassSoft);
-  doc.text('RELATÓRIO DE PRODUÇÃO', M, topo, { charSpace: 2.4 });
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(31);
-  doc.setTextColor(243, 236, 225);
-  doc.text('Produção × Estoque', M, topo + 34);
-  doc.setTextColor(...C.brassSoft);
-  doc.text('por referência', M, topo + 66);
-
-  doc.setFillColor(...C.brass);
-  doc.rect(M, topo + 84, 150, 2.5, 'F');
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.setTextColor(205, 191, 174);
-  doc.text(doc.splitTextToSize(
-    'Consolidação das ordens de produção abertas contra o saldo real de estoque, em três '
-    + 'camadas: o que está sendo produzido, como isso se soma ao que já existe, e a posição '
-    + 'final de estoque quando tudo for entregue.',
-    L - M * 2 - 60,
-  ), M, topo + 108);
-
-  // Os cartões.
-  const cards = [
-    ['ESTOQUE HOJE', qtd(totais.estoque), 'peças em saldo', false],
-    ['EM PRODUÇÃO', `+${qtd(totais.producao)}`, `${referencias.reduce((a, r) => a + r.ordens.length, 0)} ordem(ns) viva(s)`, true],
-    ['ESTOQUE PROJETADO', qtd(totais.projetadoBruto), 'após entrega', false],
-  ];
-  const larg = (L - M * 2 - 18) / 3;
-  const cy = A - 210;
-  cards.forEach(([rot, val, det, destaque], i) => {
-    const x = M + i * (larg + 9);
-    if (destaque) {
-      doc.setFillColor(96, 70, 34);
-      doc.setDrawColor(...C.brass);
-    } else {
-      doc.setFillColor(66, 47, 36);
-      doc.setDrawColor(120, 92, 62);
-    }
-    doc.setLineWidth(0.8);
-    doc.roundedRect(x, cy, larg, 74, 5, 5, 'FD');
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6.6);
-    doc.setTextColor(192, 168, 131);
-    doc.text(rot, x + 13, cy + 19, { charSpace: 1.3 });
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(21);
-    doc.setTextColor(...(destaque ? [230, 196, 137] : [243, 236, 225]));
-    doc.text(String(val), x + 13, cy + 45);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6.8);
-    doc.setTextColor(168, 151, 127);
-    doc.text(det, x + 13, cy + 60);
-  });
-
-  doc.setDrawColor(90, 72, 56);
-  doc.setLineWidth(0.6);
-  doc.line(M, A - 74, L - M, A - 74);
-  doc.setFontSize(7);
-  doc.setTextColor(156, 139, 120);
-  doc.text(
-    `${referencias.length} REFERÊNCIA(S) · ${soComOrdem ? 'SÓ COM ORDEM ABERTA' : 'TODAS AS REFERÊNCIAS'}`,
-    M, A - 58, { charSpace: 0.8 },
-  );
-  // Sem `charSpace` aqui: com `align: 'right'` o jsPDF mede a string SEM o
-  // espaçamento e depois desenha COM ele, e o texto vaza pela margem direita.
-  doc.text(
-    `VENDA MEDIDA DE ${dataBr(periodo.inicio)} A ${dataBr(periodo.fim)}`,
-    L - M, A - 58, { align: 'right' },
-  );
-}
-
-// Cabeçalho corrido das páginas internas.
-function cabecalhoPagina(doc, titulo) {
+// Cabeçalho corrido das páginas.
+//
+// Sem capa (a dona tirou em 10/09/2026), a PRIMEIRA página tem de se
+// apresentar: um relatório que sai da impressora sem dizer o que é e de que
+// período vira papel solto na mesa de alguém. Daí o `subtitulo`, que só a
+// primeira página usa.
+function cabecalhoPagina(doc, titulo, subtitulo) {
   const L = doc.internal.pageSize.getWidth();
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
+  doc.setFontSize(13);
   doc.setTextColor(...C.leather);
-  doc.text(titulo, M, 44);
+  doc.text(titulo, M, 46);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
   doc.setTextColor(...C.inkFaint);
-  doc.text(`HBN HUB · ${dataBr(new Date().toISOString().slice(0, 10))}`, L - M, 44, { align: 'right' });
+  doc.text(`HBN HUB · ${dataBr(new Date().toISOString().slice(0, 10))}`, L - M, 46, { align: 'right' });
+  let y = 53;
+  if (subtitulo) {
+    doc.setFontSize(7.6);
+    doc.setTextColor(...C.inkSoft);
+    doc.text(subtitulo, M, y + 6);
+    y += 10;
+  }
   doc.setDrawColor(...C.leather);
   doc.setLineWidth(1.6);
-  doc.line(M, 51, L - M, 51);
-  return 70;
+  doc.line(M, y + 4, L - M, y + 4);
+  return y + 24;
 }
 
 // ---------------------------------------------------------------------------
@@ -402,8 +298,10 @@ function paginaReferencia(doc, autoTable, r) {
     doc.setFont('helvetica', 'normal');
     const wr = doc.getTextWidth(rot);
     const w = Math.max(wv, wr);
-    doc.setTextColor(183, 166, 145);
-    doc.text(rot, nx, 48, { align: 'right', charSpace: 0.6 });
+    // Mais claro do que parece necessário na tela: impresso, rótulo pequeno
+    // sobre fundo couro escuro fecha o contraste e some.
+    doc.setTextColor(208, 192, 170);
+    doc.text(rot, nx, 48, { align: 'right' });
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
     doc.setTextColor(...cor);
@@ -625,11 +523,16 @@ export async function gerarPdfProjecao({ dados, filtradas, periodo }) {
   const t = dados.totais || {};
   const refs = filtradas.map(prepararReferencia);
 
-  capa(doc, { totais: t, referencias: refs, periodo, soComOrdem: dados.soComOrdem });
-
-  // ---- Página consolidada -------------------------------------------------
-  doc.addPage();
-  let y = cabecalhoPagina(doc, 'Visão consolidada');
+  // ---- Página consolidada — a primeira, agora que não há capa -------------
+  const ordensVivas = refs.reduce((a, r) => a + r.ordens.length, 0);
+  let y = cabecalhoPagina(
+    doc,
+    'Projeção de estoque',
+    `Produção × estoque por cor e tamanho  ·  ${refs.length} referência(s), `
+    + `${ordensVivas} ordem(ns) viva(s)  ·  `
+    + `${dados.soComOrdem ? 'só com ordem aberta' : 'todas as referências'}  ·  `
+    + `venda medida de ${dataBr(periodo.inicio)} a ${dataBr(periodo.fim)}`,
+  );
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.4);
@@ -756,7 +659,8 @@ export async function gerarPdfProjecao({ dados, filtradas, periodo }) {
 
   // ---- Rodapé com paginação ----------------------------------------------
   const total = doc.internal.getNumberOfPages();
-  for (let i = 2; i <= total; i += 1) {
+  // Numera da PRIMEIRA página: sem capa não há mais uma folha para pular.
+  for (let i = 1; i <= total; i += 1) {
     doc.setPage(i);
     const A = doc.internal.pageSize.getHeight();
     doc.setDrawColor(...C.border);
