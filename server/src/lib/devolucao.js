@@ -13,7 +13,7 @@
 // às vezes chega antes da decisão da mediação.
 //
 // REGRA 1: nada aqui lê preço, margem ou markup. O valor reembolsado é gravado
-// como dado da devolução; a corrente com o financeiro espera a decisão da dona
+// como dado da devolução; a corrente com o financeiro espera a decisão do dono
 // sobre qual financeiro é o canônico.
 
 const { registrarMovimento } = require('./estoqueMovimento');

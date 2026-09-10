@@ -46,7 +46,7 @@ function testarZ() {
   ok(m.zParaNivel(1) === null, 'nível de serviço de 100% é recusado (Z tende ao infinito)');
   ok(m.zParaNivel(0) === null, 'nível de 0% é recusado');
 
-  igual(m.NIVEL_POR_CURVA.A, 0.975, 'classe A usa 97,5% (escolha da dona)');
+  igual(m.NIVEL_POR_CURVA.A, 0.975, 'classe A usa 97,5% (escolha do dono)');
   igual(m.NIVEL_POR_CURVA.B, 0.95, 'classe B usa 95%');
   igual(m.NIVEL_POR_CURVA.C, 0.90, 'classe C usa 90%');
 }

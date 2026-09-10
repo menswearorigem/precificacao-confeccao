@@ -6,6 +6,7 @@ const { sincronizarEstoqueAgora, renovarTokenWikSeNecessario } = require('./lib/
 const { sincronizarProdutosAgora } = require('./lib/wikProdutosImport');
 const { sincronizarFichaCustoAgora } = require('./lib/wikFichaCustoImport');
 const { sincronizarProducaoAgora } = require('./lib/wikProducaoSync');
+const { sincronizarFinanceiroAgora } = require('./lib/wikFinanceiroSync');
 
 const PORT = process.env.PORT || 3000;
 // Pedidos novos + valor recebido do marketplace — intervalo mais curto que
@@ -18,10 +19,20 @@ const PORT = process.env.PORT || 3000;
 const SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const WIK_SYNC_INTERVAL_MS = 15 * 60 * 1000;
 const WIK_PRODUCAO_INTERVAL_MS = 15 * 60 * 1000; // espelho de Ordem de Produção do Wik (cookie de sessão)
+// Financeiro do Wik (0069). 30min, e não 15 como a produção, por dois motivos:
+// título e extrato não mudam minuto a minuto (o financeiro lança em lote, uma
+// ou duas vezes por dia), e o ciclo é mais caro — lê contas a pagar, contas a
+// receber, extrato e o detalhe das parcelas, empresa por empresa.
+//
+// ⚠️ Produção e financeiro dividem UMA sessão web (o Wik derruba login
+// duplicado). Os dois disputam a mesma trava, então quem chegar depois é
+// recusado sem erro; mesmo assim as partidas são ESCALONADAS abaixo para que
+// o encontro seja exceção e não regra.
+const WIK_FINANCEIRO_INTERVAL_MS = 30 * 60 * 1000;
 // Catálogo (produtos novos) e Ficha de Custo mudam bem menos que o estoque
 // (que muda o tempo todo com vendas/reposição) — 6h é intervalo suficiente
 // pra pegar lançamentos novos e fichas atualizadas sem gerar tráfego à toa
-// contra o limite de 3 req/s do Wik. Ajustável se a usuária preferir outro
+// contra o limite de 3 req/s do Wik. Ajustável se o usuário preferir outro
 // ritmo.
 const WIK_CATALOGO_INTERVAL_MS = 6 * 60 * 60 * 1000;
 // Checagem da renovação do token do Wik SÓ POR AGENDA (27/08/2026, ligação
@@ -92,7 +103,7 @@ app.listen(PORT, () => {
   }, WIK_TOKEN_CHECK_INTERVAL_MS);
 
   // Puxa e aplica o saldo de estoque do Wik Sistemas automaticamente, sem
-  // depender de a usuária clicar em nada. Roda logo na subida (não espera o
+  // depender de o usuário clicar em nada. Roda logo na subida (não espera o
   // primeiro ciclo de 15min) e depois no mesmo intervalo do marketplace-sync.
   setTimeout(() => {
     sincronizarEstoqueAgora().catch((err) => console.error('[wik-sync]', err.message));
@@ -120,4 +131,14 @@ app.listen(PORT, () => {
   setInterval(() => {
     sincronizarProducaoAgora().catch((err) => console.error('[wik-producao-sync]', err.message));
   }, WIK_PRODUCAO_INTERVAL_MS);
+
+  // Financeiro do Wik -> financeiro do Hub (0069). Começa 7min depois da
+  // produção de propósito: 15 e 30 minutos batem de frente a cada meia hora se
+  // as duas partirem juntas, e a sessão web é uma só.
+  setTimeout(() => {
+    sincronizarFinanceiroAgora().catch((err) => console.error('[wik-financeiro-sync]', err.message));
+  }, 7 * 60 * 1000);
+  setInterval(() => {
+    sincronizarFinanceiroAgora().catch((err) => console.error('[wik-financeiro-sync]', err.message));
+  }, WIK_FINANCEIRO_INTERVAL_MS);
 });

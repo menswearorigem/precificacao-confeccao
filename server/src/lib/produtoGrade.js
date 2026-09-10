@@ -1,7 +1,7 @@
 // Cores e grade de tamanho do produto (09/09/2026).
 //
 // Até aqui, cor e tamanho só existiam como texto dentro de `estoque_variantes`.
-// Consequências práticas, todas relatadas pela dona:
+// Consequências práticas, todas relatadas pelo dono:
 //
 //   · a ficha da OG1620 não mostra em nenhum lugar que ela é feita em azul,
 //     verde e vermelho;

@@ -83,7 +83,7 @@ async function montarIndiceReferencias(db) {
 
 // Resolve o produto a partir do SKU do anúncio (ou dos SKUs das variações,
 // que é onde o SKU costuma estar de verdade quando o anúncio tem cor).
-// Aceita os dois padrões que a usuária usa: "REF-COR-TAM" e "KIT-N-REF-COR-TAM".
+// Aceita os dois padrões que o usuário usa: "REF-COR-TAM" e "KIT-N-REF-COR-TAM".
 function resolverProdutoPeloSku(indice, anuncio) {
   const candidatos = [anuncio.skuExterno, ...(anuncio.variacoes || []).map((v) => v.skuExterno)]
     .filter(Boolean);

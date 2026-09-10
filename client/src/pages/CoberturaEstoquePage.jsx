@@ -17,7 +17,7 @@ import { brl, formatQtd, numeroBr, dataBr } from '../lib/format';
 
 // Estoque › Cobertura e Reposição.
 //
-// Repaginada em 10/09/2026, depois de a dona dizer que a versão anterior
+// Repaginada em 10/09/2026, depois de o dono dizer que a versão anterior
 // estava confusa. O diagnóstico não foi da conta — o motor sempre esteve
 // certo — e sim da ORGANIZAÇÃO: a tela respondia com vocabulário de
 // estatística (comportamento, curva, Z, ponto de pedido) uma pergunta que é

@@ -20,6 +20,23 @@
 //   GET  /Login/ListarComboEmpresas                      -> [{id,text,matriz}]
 //   GET  /Kanban/ObterListaPainelInformativo             -> apontamento (OP×etapa)
 //   GET  /OrdemProducao/Create/?id=<op>                  -> cabeçalho + grade (HTML)
+//
+// FINANCEIRO (mapeado ao vivo em 10/09/2026 — ver
+// claude/hbn-wik-endpoint-interno-financeiro-2026-09-10.md no projeto):
+//   POST /ContaPagar/CarregaGrid                 -> títulos a pagar (DataTables)
+//   GET  /ContaPagar/Create?id=<CtaId>           -> parcelas no input `ListaItens`
+//                                                   + `ListaRateioPC`/`ListaRateioCC`
+//   POST /BaixaTituloRec/CarregaGridBaixaRec     -> títulos a receber
+//   POST /ExtratoFinanceiro/CarregaGrid          -> o razão de caixa, linha a linha
+//   POST /PlanoConta/CarregaGrid                 -> plano de contas (com PcIdDre)
+//   POST /CentroCusto/CarregaGrid                -> centros de custo
+//   POST /GrupoReceitaDespesa/CarregaGrid        -> contas bancárias
+//
+// Duas armadilhas destes endpoints, ambas custaram tentativa:
+//   1. O array `columns[]` do DataTables NÃO é decorativo — o servidor ordena
+//      pelo NOME da coluna e devolve 500 se vier nome que ele não conhece.
+//   2. `CarregaGridBaixaRec` devolve JSON DENTRO de JSON: o primeiro parse dá
+//      uma string, e é o SEGUNDO que devolve o array.
 
 const BASE_PADRAO = 'https://appnew1.wikisistemas.com.br';
 const TIMEOUT_MS = 30 * 1000;
@@ -265,10 +282,174 @@ async function carregarGridDepartamentos(sessao) {
   return j.data || j.aaData || [];
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// FINANCEIRO
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Monta o corpo de um grid DataTables server-side do Wik. `colunas` são os
+// nomes EXATOS que a tela usa (ver armadilha 1 no cabeçalho deste arquivo).
+function corpoGrid(colunas, jsonData, { start = 0, length = 1000, ordem = 0, dir = 'desc' } = {}) {
+  const form = { draw: '1', start: String(start), length: String(length) };
+  colunas.forEach((c, i) => {
+    form[`columns[${i}][data]`] = String(c);
+    form[`columns[${i}][name]`] = '';
+    form[`columns[${i}][searchable]`] = 'true';
+    form[`columns[${i}][orderable]`] = 'true';
+    form[`columns[${i}][search][value]`] = '';
+    form[`columns[${i}][search][regex]`] = 'false';
+  });
+  form['order[0][column]'] = String(ordem);
+  form['order[0][dir]'] = dir;
+  form['search[value]'] = '';
+  form['search[regex]'] = 'false';
+  form.jsonData = JSON.stringify(jsonData);
+  return form;
+}
+
+async function postGrid(sessao, caminho, colunas, jsonData, opcoes) {
+  const r = await requisitar(sessao, 'POST', caminho, { form: corpoGrid(colunas, jsonData, opcoes) });
+  const txt = await r.text();
+  if (pareceTelaDeLogin(txt) || pareceSessaoDerrubada(r.status, txt)) { const e = new Error('SESSAO_EXPIRADA'); e.sessaoExpirada = true; throw e; }
+  if (r.status >= 400) throw new Error(`${caminho} devolveu HTTP ${r.status}`);
+  let j;
+  try { j = JSON.parse(txt); } catch { throw new Error(`${caminho} não devolveu JSON.`); }
+  // Alguns endpoints (BaixaTituloRec) devolvem JSON dentro de JSON.
+  if (typeof j === 'string') { try { j = JSON.parse(j); } catch { /* string mesmo */ } }
+  if (Array.isArray(j)) return j;
+  return j.data || j.aaData || [];
+}
+
+// Percorre um grid paginado até acabar. `TETO_PAGINAS` existe para que um
+// filtro mal montado não vire varredura infinita contra o servidor deles.
+const PAGINA_GRID = 1000;
+const TETO_PAGINAS = 40;
+async function gridCompleto(sessao, caminho, colunas, jsonData, opcoes) {
+  const tudo = [];
+  for (let p = 0; p < TETO_PAGINAS; p += 1) {
+    const lote = await postGrid(sessao, caminho, colunas, jsonData, {
+      ...opcoes, start: p * PAGINA_GRID, length: PAGINA_GRID,
+    });
+    tudo.push(...lote);
+    if (lote.length < PAGINA_GRID) break;
+  }
+  return tudo;
+}
+
+// TipoData: 1 = cadastro · 2 = vencimento · 3 = baixa
+const COLS_CONTA_PAGAR = ['CorTexto', 'CtaId', 'CtaDocumento', 'Pessoa', 'CtaVlrBruto', 'CtaVlrLiq', 'Situacao'];
+async function contasPagar(sessao, { de, ate, tipoData = 2 } = {}) {
+  return gridCompleto(sessao, '/ContaPagar/CarregaGrid', COLS_CONTA_PAGAR, {
+    ListaFiltros: {},
+    FiltroSelecionado: '1',
+    DataInicial: de,
+    DataFinal: ate,
+    Valor: '',
+    OperacoesSelecionadas: '',
+    SituacoesSelecionadas: '',
+    TipoData: String(tipoData),
+    ExibicaoSelecionada: '1',
+    TelaPesquisa: 'ContaPagar',
+  }, { ordem: 1 });
+}
+
+// As PARCELAS de uma conta a pagar vêm embutidas no HTML, no input escondido
+// `ListaItens` — mesmo truque da grade da OP, sem AJAX extra. `ListaRateioPC` e
+// `ListaRateioCC` trazem o rateio por plano de contas e por centro de custo
+// (vieram vazios nas contas conferidas ao vivo; a estrutura é essa).
+async function contaPagarDetalhe(sessao, ctaId) {
+  const html = await getHtml(sessao, `/ContaPagar/Create?id=${encodeURIComponent(ctaId)}`);
+  const jsonDe = (nome) => {
+    const bruto = extrairInput(html, nome);
+    if (!bruto) return [];
+    try { const v = JSON.parse(decodeHtml(bruto)); return Array.isArray(v) ? v : []; } catch { return []; }
+  };
+  // ⭐ `CtaGrupoDespId` é a CATEGORIA da despesa — e o id dele é o `PcId` do
+  // plano de contas (conferido ao vivo em 10/09/2026: 109 de 109 opções do
+  // select batem com o PlanoConta por id E por nome; a única divergência era
+  // um espaço duplo no texto). É o campo que faz o DRE sair quebrado por linha
+  // em vez de tudo em "Sem classificação".
+  //
+  // Ele NÃO vem no grid — só nesta página. Como já buscamos esta página pelas
+  // parcelas, a categoria sai de graça, sem requisição a mais.
+  const grupoDespId = numOuNull(extrairSelect(html, 'CtaGrupoDespId') ?? extrairInput(html, 'CtaGrupoDespId'));
+  return {
+    ctaId: Number(ctaId),
+    parcelas: jsonDe('ListaItens'),
+    rateioPlanoContas: jsonDe('ListaRateioPC'),
+    rateioCentroCusto: jsonDe('ListaRateioCC'),
+    // = PcId do plano de contas
+    grupoDespId: grupoDespId && grupoDespId > 0 ? grupoDespId : null,
+    contaBancariaId: numOuNull(extrairSelect(html, 'CtaGrupoRecId')) || null,
+    observacao: decodeHtml(extrairInput(html, 'CtaObservacao')) || null,
+  };
+}
+
+// Contas a RECEBER. Este endpoint não é DataTables (ignora `columns[]`) e
+// devolve JSON dentro de JSON — `postGrid` já desembrulha os dois casos.
+// SituacaoSelecionada: 1 = em aberto · 2 = baixados · 3 = todos (confirmar).
+async function contasReceber(sessao, { de, ate, tipoData = 2, situacao = '3', empId = '0' } = {}) {
+  return postGrid(sessao, '/BaixaTituloRec/CarregaGridBaixaRec', [], {
+    ListaFiltros: {},
+    FiltroSelecionado: '1',
+    DataInicial: de,
+    DataFinal: ate,
+    Valor: '',
+    SituacaoSelecionada: String(situacao),
+    TipoData: String(tipoData),
+    FormaPgto: '0',
+    EmpId: String(empId),
+    CliId: 0,
+    Plataforma: '0',
+    TelaPesquisa: 'BaixaRec',
+  });
+}
+
+// EXTRATO DE CONTAS — o razão de caixa. Diferente de todo o resto, aqui `EmpId`
+// é filtro DE VERDADE: dá para ler as 4 empresas sem trocar a empresa ativa da
+// sessão (provado ao vivo: 192 e 202 devolvem contas e totais diferentes).
+// ⚠️ A coluna `Empresa` de cada linha continua devolvendo a empresa da SESSÃO,
+// não a filtrada — quem carimba a empresa é o chamador, com o EmpId que pediu.
+const COLS_EXTRATO = [
+  0, 'ExtId', 'ExtId', 'Data', 'GrpDescricao', 'Nome', 'PcDescricao', 'DataVencimento', 8,
+  'FormaPgto', 'Historico', 'Observacao', 'Empresa', 'Operacao', 'Tipo', 'Pago', 'CorTexto',
+  'ValorTotalRecRealizado', 'ValorTotalRecNaoRealizado', 'ValorTotalDespRealizado', 'ValorTotalDespNaoRealizado',
+];
+// situacoes: '1,' = realizado · '2,' = não realizado · '1,2,' = ambos
+async function extratoFinanceiro(sessao, { de, ate, empId = '0', situacoes = '1,2,' } = {}) {
+  return gridCompleto(sessao, '/ExtratoFinanceiro/CarregaGrid', COLS_EXTRATO, {
+    ListaFiltros: {},
+    FiltroSelecionado: '1',
+    DataInicial: de,
+    DataFinal: ate,
+    Valor: '',
+    TiposSelecionados: '',
+    SituacoesSelecionadas: situacoes,
+    EmpId: String(empId),
+    FormaPgtoId: '0',
+    GrupoRecId: '0',
+  }, { ordem: 1 });
+}
+
+// ── cadastros (as dimensões) ───────────────────────────────────────────────
+const FILTRO_CADASTRO = { ListaFiltros: {}, FiltroSelecionado: '1', Valor: '', TelaPesquisa: '' };
+
+async function planoContas(sessao) {
+  return gridCompleto(sessao, '/PlanoConta/CarregaGrid', ['a', 'Codigo', 'Descricao'], FILTRO_CADASTRO);
+}
+async function centrosCusto(sessao) {
+  return gridCompleto(sessao, '/CentroCusto/CarregaGrid', ['CorEmpId', 'Codigo', 'Descricao'], FILTRO_CADASTRO);
+}
+async function contasBancarias(sessao) {
+  return gridCompleto(sessao, '/GrupoReceitaDespesa/CarregaGrid', ['EmpId', 'Codigo', 'Descricao'], FILTRO_CADASTRO);
+}
+
 module.exports = {
   BASE_PADRAO,
   novaSessao, restaurarCookies, serializarCookies,
   login, sessaoViva, trocarEmpresa,
   listarEmpresas, apontamentoPainel, ordemProducaoDetalhe, carregarGridDepartamentos,
+  // financeiro
+  contasPagar, contaPagarDetalhe, contasReceber, extratoFinanceiro,
+  planoContas, centrosCusto, contasBancarias,
   getJson, getHtml,
 };

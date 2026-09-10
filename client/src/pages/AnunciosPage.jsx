@@ -253,7 +253,7 @@ export default function AnunciosPage() {
   // "MELI Origem + MELI Hoggar" numa tela só, como no UpSeller.
   const [marketplaces, setMarketplaces] = useState([]);
   const [lojaIds, setLojaIds] = useState([]);
-  // A tela abre filtrada em ATIVOS, que é o pedido da dona e também o padrão
+  // A tela abre filtrada em ATIVOS, que é o pedido do dono e também o padrão
   // do painel de toda plataforma: encerrado e pausado poluem a contagem e não
   // são o que se olha no dia a dia. Continua sendo um filtro comum — aparece
   // como chip e sai com um clique.
@@ -971,7 +971,7 @@ function FaixaDeLojas({ lojas, onSincronizar, sincronizando }) {
 // A foto é a DO ANÚNCIO, não a do produto no cadastro: a casa publica vários
 // anúncios do mesmo produto mudando só as fotos, e usar a foto interna deixava
 // meia dúzia de cartões idênticos. A EXPORTAÇÃO continua usando a foto do
-// cadastro — lá é uma foto por produto, e foi o que a dona escolheu.
+// cadastro — lá é uma foto por produto, e foi o que o dono escolheu.
 function fotoDoAnuncio(a) {
   return a.foto_url || (a.produto_tem_foto ? `/api/produtos/${a.produto_id}/foto` : null);
 }

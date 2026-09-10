@@ -6,7 +6,7 @@
 // verdade é o Fornecedor. Consolidamos por fornecedor (uma facção pode aparecer
 // em várias etapas) e escolhemos a categoria principal por prioridade.
 //
-// IDEMPOTENTE e NÃO-DESTRUTIVO (a dona edita as facções à mão — CNPJ, PIX etc.):
+// IDEMPOTENTE e NÃO-DESTRUTIVO (o dono edita as facções à mão — CNPJ, PIX etc.):
 //   · facção já vinculada (wik_forn_id) -> não mexe;
 //   · fornecedor com o mesmo nome já existe -> só VINCULA (marca eh_faccao,
 //     preenche categoria se estiver vazia), sem sobrescrever o resto;

@@ -21,7 +21,7 @@
 //                    ordem. É o número realista.
 //      Mostrar só o bruto engana em referência de alto giro; mostrar só o
 //      líquido esconde quanto a produção acrescenta e impede conferir contra
-//      a OP. A dona escolheu as duas em 10/09/2026.
+//      a OP. O dono escolheu as duas em 10/09/2026.
 //
 // ---------------------------------------------------------------------------
 // O quarto número

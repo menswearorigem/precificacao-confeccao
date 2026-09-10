@@ -1,6 +1,6 @@
 // Cores e grade de tamanho no CADASTRO DO PRODUTO (09/09/2026).
 //
-// Pedido da dona, literal: "no cadastro de produtos, não é possível adicionar
+// Pedido do dono, literal: "no cadastro de produtos, não é possível adicionar
 // grade ou cores por enquanto, quero que você dê essa opção, visto que na hora
 // da criação da ordem de produção vai ser usada a grade pré-criada do produto.
 // Além disso, todos os produtos que já têm informações de grade e cores, você

@@ -55,7 +55,7 @@ export function chaveDaPlataforma(valor) {
 }
 
 // Nome da loja no formato "MELI Origem". Se o nome cadastrado da conexão já
-// começa com o prefixo (a dona pode ter cadastrado "MELI Origem"), não
+// começa com o prefixo (o dono pode ter cadastrado "MELI Origem"), não
 // duplica.
 export function nomeDaLoja(integracao, plataformaFallback) {
   const chave = integracao?.marketplace || chaveDaPlataforma(plataformaFallback);
@@ -129,7 +129,7 @@ export function CanalMarketplace({ registro, indiceLojas, size = 15, semSelo = f
 export function carimbarCanal(registros, indiceLojas) {
   return (registros || []).map(({ _canal: _antigo, ...r }) => ({
     ...r,
-    // Recarimba sempre do zero: se a lista de lojas mudou (a dona renomeou uma
+    // Recarimba sempre do zero: se a lista de lojas mudou (o dono renomeou uma
     // conexão), o rótulo antigo não pode sobreviver.
     _canal: rotuloDoCanal(r, indiceLojas),
   }));

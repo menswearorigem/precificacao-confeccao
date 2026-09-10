@@ -684,7 +684,7 @@ router.get('/ficha', async (req, res, next) => {
 
       fichas.push({ produto, tamanhos, linhas, totalizador, quantidadeTotal, custoTotal, valorTotal });
     }
-    // Com ?referencias= a ordem é a que a usuária montou na tela; com
+    // Com ?referencias= a ordem é a que o usuário montou na tela; com
     // ?marketplace=1 não há ordem informada, então fica a alfabética que veio
     // do banco (indexOf devolve -1 pra todos e a ordenação não mexe em nada).
     if (referencias.length > 0) {

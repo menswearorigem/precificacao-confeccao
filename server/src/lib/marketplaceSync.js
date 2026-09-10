@@ -157,7 +157,7 @@ function normalizarComparacao(valor) {
     .toUpperCase();
 }
 
-// Padrão de referência da usuária pra anúncio individual: "REF-COR-TAMANHO"
+// Padrão de referência do usuário pra anúncio individual: "REF-COR-TAMANHO"
 // (ex.: "OG1192-AZUL-M"). A referência nunca tem hífen e o tamanho é sempre
 // o último pedaço, então tudo que sobrar no meio é a cor — junta de novo
 // (com espaço) pra dar conta de cor composta tipo "TERRA COTA", mesmo que
@@ -169,7 +169,7 @@ function partirSkuIndividual(sku) {
   return { referencia: partes[0], cor: partes.slice(1, -1).join(' '), tamanho: partes[partes.length - 1] };
 }
 
-// Padrão de kit da usuária: "KIT-QUANTIDADE-REF-COR-TAMANHO" (ex.:
+// Padrão de kit do usuário: "KIT-QUANTIDADE-REF-COR-TAMANHO" (ex.:
 // "KIT-3-OG1192-AZUL-M" = 3 peças da mesma referência/cor/tamanho).
 function partirSkuKit(sku) {
   const partes = String(sku || '').trim().split('-').filter(Boolean);

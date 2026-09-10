@@ -1,6 +1,6 @@
 // Aba de INSUMOS dentro do módulo Produção (10/09/2026).
 //
-// Pedido da dona: "cadastre todos esses insumos com o valor atualizado lá no
+// Pedido do dono: "cadastre todos esses insumos com o valor atualizado lá no
 // módulo de produção, quero uma aba dedicada aos insumos lá. Observe cada
 // insumo e preencha o custo de matéria prima de todos os produtos
 // cadastrados. […] o custo do produto não vai mudar, o que muda é como o

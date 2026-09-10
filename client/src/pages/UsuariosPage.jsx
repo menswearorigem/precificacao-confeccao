@@ -10,7 +10,7 @@ import { confirmar } from '../components/ConfirmDialog';
 // navegação desde a migration 0034, mas nunca tinha sido acrescentado AQUI —
 // e era só por isso que ele não podia ser liberado pra ninguém e acabava
 // funcionando só pra administrador. Corrigido em 04/09/2026, a pedido da
-// dona do projeto (REGRA 4 — mexe em permissão de módulo).
+// dono do projeto (REGRA 4 — mexe em permissão de módulo).
 const MODULOS = [
   { key: 'produto', label: 'Produto' },
   { key: 'estoque', label: 'Estoque' },

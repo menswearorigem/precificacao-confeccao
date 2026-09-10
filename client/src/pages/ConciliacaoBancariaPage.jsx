@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Upload, X, Landmark, ListChecks, AlertTriangle, Info, ArrowLeftRight, Link2,
-  CheckCircle2, Hourglass, Tags,
+  CheckCircle2, Hourglass, Tags, Cloud,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, dataBr, formatQtd, tempoRelativo } from '../lib/format';
@@ -97,6 +97,7 @@ const COLUNAS_EXPORTACAO = [
   { rotulo: 'Situação', valor: (l) => ESTADO_LABEL[estadoDe(l)] },
   { rotulo: 'Categoria', valor: (l) => l.plano_nome || '' },
   { rotulo: 'Arquivo de origem', valor: (l) => l.arquivo_origem || '' },
+  { rotulo: 'Origem', valor: (l) => (l.wik_ext_id ? 'Wik — Extrato de Contas' : 'OFX') },
 ];
 
 // ---------------------------------------------------------------------------
@@ -609,6 +610,16 @@ export default function ConciliacaoBancariaPage() {
                       <span className="cel-dupla">
                         <strong>{l.historico || '—'}</strong>
                         {l.arquivo_origem && <small>{l.arquivo_origem}</small>}
+                        {/* Extrato importado do Wik (0069) convive na mesma tela
+                            com o que veio de OFX — a origem tem que estar na
+                            linha, senão não dá para saber o que conferir onde. */}
+                        {l.wik_ext_id && (
+                          <span className="selos-linha">
+                            <span className="stamp sm tone-neutro" title="Lançamento importado do Extrato de Contas do Wik, não de um arquivo OFX.">
+                              <Cloud size={11} /> Wik
+                            </span>
+                          </span>
+                        )}
                       </span>
                     </td>
                     <td className="mono">{l.documento || '—'}</td>

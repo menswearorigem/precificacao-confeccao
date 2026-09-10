@@ -1,7 +1,7 @@
 // Cliente da API da TikTok Shop (Partner Center / Open API v2) — autorização
 // de loja, busca de pedidos, cancelamentos e conciliação financeira
 // (settlement). Documentação oficial (docv2), confirmada linha a linha via os
-// arquivos markdown baixados pela própria usuária no Partner Center (não é
+// arquivos markdown baixados pela próprio usuário no Partner Center (não é
 // uma implementação por tentativa e erro).
 //
 // Domínios (cada um com um propósito diferente — não são intercambiáveis):

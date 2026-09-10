@@ -7,7 +7,7 @@ import { formatQtd, dataBr } from './format';
 // tabelas, notas. Aplicado a este relatório ele entregou um documento correto
 // e ilegível — quatro problemas, todos de forma e todos fatais aqui:
 //
-//   1. SEM A COR AO LADO DO NOME. Foi o primeiro pedido da dona, e é o que faz
+//   1. SEM A COR AO LADO DO NOME. Foi o primeiro pedido do dono, e é o que faz
 //      a grade ser lida de relance em vez de soletrada.
 //   2. TABELA MAIS LARGA QUE A PÁGINA. Com 7 tamanhos + bruto + líquido +
 //      variação, a última coluna saía cortada na margem direita.
@@ -81,7 +81,7 @@ function qtd(v) {
 
 // Cabeçalho corrido das páginas.
 //
-// Sem capa (a dona tirou em 10/09/2026), a PRIMEIRA página tem de se
+// Sem capa (o dono tirou em 10/09/2026), a PRIMEIRA página tem de se
 // apresentar: um relatório que sai da impressora sem dizer o que é e de que
 // período vira papel solto na mesa de alguém. Daí o `subtitulo`, que só a
 // primeira página usa.
@@ -180,7 +180,7 @@ function grade(doc, autoTable, { y, cabecalhos, linhas, totais, pintar, larguraC
     didDrawCell: (d) => {
       // Camada 2: a célula é "12 +8" e as duas metades têm cores diferentes.
       // autotable pinta a célula inteira de uma cor só, então aqui o texto é
-      // desenhado à mão em dois trechos. É a leitura que a dona pediu — o que
+      // desenhado à mão em dois trechos. É a leitura que o dono pediu — o que
       // está no galpão e, ao lado e em azul, o que está vindo.
       if (duasCores && d.section === 'body' && d.column.index > 0) {
         const bruto = d.cell.raw == null ? '' : String(d.cell.raw);

@@ -6,7 +6,7 @@ const {
 } = require('./wikSync');
 const { resolverEan } = require('./eanResolver');
 
-// Os 4 Ids de Empresa conhecidos (confirmados com a usuária): 192 (Hebron
+// Os 4 Ids de Empresa conhecidos (confirmados com o usuário): 192 (Hebron
 // Dinâmica Matriz), 193 (Hebron Dinâmica Filial), 198 (Hoggar + Miss Manu,
 // compartilham o mesmo cadastro no Wik), 202 (Origem). Varremos os 4 —
 // matriz/filial podem simplesmente não ter produtos próprios, sem problema.
@@ -190,7 +190,7 @@ async function aplicarImportacaoProdutos(criar) {
 }
 
 // Pipeline completo (busca + aplica) usado pelo job automático em segundo
-// plano, pra pegar produtos recém-lançados no Wik sem depender de a usuária
+// plano, pra pegar produtos recém-lançados no Wik sem depender de o usuário
 // clicar em nada. Só CRIA produtos novos (nunca apaga/edita os existentes),
 // então rodar sozinho periodicamente é seguro — mesma trava anti-sobreposição
 // das outras sincronizações.

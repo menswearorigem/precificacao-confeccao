@@ -1,6 +1,6 @@
 // Projeção de estoque: o que a produção acrescenta, por cor e tamanho.
 //
-// 10/09/2026. Nasceu de um relatório em PDF que a dona pediu em três camadas —
+// 10/09/2026. Nasceu de um relatório em PDF que o dono pediu em três camadas —
 // produção agrupada, produção somada ao estoque real, e o estoque que sobra
 // quando tudo chegar — e que ela quis ver aplicado a todas as referências.
 //
@@ -198,7 +198,7 @@ async function ordensVivas({ produtoIds = null, client = pool } = {}) {
 // ---------------------------------------------------------------------------
 // Ordens encerradas com saldo pendente - a faixa de exceção
 // ---------------------------------------------------------------------------
-// Decisão da dona em 10/09/2026: aparecem como exceção visível em vez de
+// Decisão do dono em 10/09/2026: aparecem como exceção visível em vez de
 // serem tratadas como entregues integralmente. Ordem concluída deveria ter
 // dado entrada de tudo; se sobrou pendente na grade, ou a entrada foi parcial
 // ou a grade não foi fechada. Somar em silêncio esconderia as duas coisas.

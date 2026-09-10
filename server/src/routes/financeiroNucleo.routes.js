@@ -9,6 +9,7 @@ const {
   criarTitulo, baixar, estornarBaixa, saldoTitulo, calcularEncargos,
 } = require('../lib/financeiroTitulos');
 const { lerOfx } = require('../lib/ofx');
+const { sincronizarFinanceiroAgora, travarTitulo } = require('../lib/wikFinanceiroSync');
 
 const router = express.Router();
 
@@ -233,6 +234,9 @@ router.post('/titulos/:id/cancelar', async (req, res, next) => {
         WHERE id=$2 AND situacao <> 'cancelado' RETURNING id`, [motivo, req.params.id]
     );
     if (rows.length === 0) return res.status(400).json({ error: 'Título não encontrado ou já cancelado.' });
+    // Decisão do dono (10/09/2026): "Edita e trava a sincronização". Cancelar
+    // aqui é uma edição — o Wik não sobrescreve mais este título.
+    await travarTitulo(req.params.id, req.user?.id, 'cancelado no Hub');
     res.json({ ok: true });
   } catch (err) { next(err); }
 });
@@ -263,6 +267,10 @@ router.post('/titulos/:id/baixar', async (req, res, next) => {
       tituloId: req.params.id, ...req.body, usuarioId: req.user?.id || null,
     });
     await client.query('COMMIT');
+    // Baixou aqui dentro: o Wik para de mexer neste título. Fica FORA da
+    // transação de propósito — a trava é metadado da integração, e falhar nela
+    // não pode desfazer um pagamento que já foi registrado.
+    await travarTitulo(req.params.id, req.user?.id, 'baixado no Hub');
     res.status(201).json(r);
   } catch (err) {
     await client.query('ROLLBACK');
@@ -279,6 +287,9 @@ router.post('/baixas/:id/estornar', async (req, res, next) => {
       baixaId: req.params.id, motivo: req.body?.motivo, usuarioId: req.user?.id || null,
     });
     await client.query('COMMIT');
+    // `estornarBaixa` devolve { baixa, situacao } — o título vem dentro da baixa.
+    const tituloEstornado = r && r.baixa && r.baixa.titulo_id;
+    if (tituloEstornado) await travarTitulo(tituloEstornado, req.user?.id, 'estornado no Hub');
     res.status(201).json(r);
   } catch (err) {
     await client.query('ROLLBACK');
@@ -419,13 +430,17 @@ router.post('/extrato/:id/conciliar', async (req, res, next) => {
         usuarioId: req.user?.id || null,
       });
       await client.query(
-        `UPDATE fin_extrato_bancario SET baixa_id = $1, conciliado_em = now(), conciliado_por = $2
+        `UPDATE fin_extrato_bancario SET baixa_id = $1, conciliado_em = now(), conciliado_por = $2,
+                wik_travado = TRUE
           WHERE id = $3`,
         [r.baixa.id, req.user?.id || null, req.params.id]
       );
     } else if (plano_id) {
+      // Conciliar é uma decisão humana sobre a linha: o Wik não a sobrescreve
+      // mais (0069, "Edita e trava a sincronização").
       await client.query(
-        `UPDATE fin_extrato_bancario SET plano_id = $1, conciliado_em = now(), conciliado_por = $2
+        `UPDATE fin_extrato_bancario SET plano_id = $1, conciliado_em = now(), conciliado_por = $2,
+                wik_travado = TRUE
           WHERE id = $3`,
         [plano_id, req.user?.id || null, req.params.id]
       );
@@ -448,6 +463,10 @@ router.post('/extrato/:id/conciliar', async (req, res, next) => {
     }
 
     await client.query('COMMIT');
+    // Conciliar contra um título é baixá-lo: o título também sai do alcance do
+    // Wik. Fora da transação pelo mesmo motivo da rota de baixa — a trava é
+    // metadado da integração e não pode desfazer uma conciliação já gravada.
+    if (titulo_id) await travarTitulo(titulo_id, req.user?.id, 'conciliado no Hub');
     res.json({ ok: true });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -683,6 +702,136 @@ router.post('/recorrencias/gerar', async (req, res, next) => {
     if (httpErr(res, err)) return;
     next(err);
   } finally { client.release(); }
+});
+
+// ============================================ importação do financeiro do Wik
+// Fica AQUI, dentro do módulo Financeiro, e não num módulo próprio: o pedido
+// foi "como se fosse um cadastro normal de cada aba já existente". Não há tela
+// nova — estes endpoints alimentam o cartão de status dentro das telas que já
+// existem e o botão de sincronizar agora.
+
+router.get('/wik/status', async (req, res, next) => {
+  try {
+    const [{ rows: integ }, { rows: empresas }, { rows: contagem }] = await Promise.all([
+      pool.query(`SELECT id, financeiro_ativo, financeiro_status, financeiro_erro, financeiro_resumo,
+                         financeiro_ultima_sincronizacao, financeiro_dias_retro,
+                         financeiro_carga_inicial_ate, financeiro_carga_inicial_fim,
+                         financeiro_carga_inicial_desde, web_job_ativo, web_usuario
+                    FROM integracoes_wik ORDER BY id LIMIT 1`),
+      pool.query('SELECT id, nome, wik_emp_id, ativo FROM empresas ORDER BY ordem, id'),
+      pool.query(`SELECT natureza,
+                         COUNT(*)::int AS total,
+                         COUNT(*) FILTER (WHERE wik_travado)::int AS travados
+                    FROM fin_titulos WHERE wik_id IS NOT NULL GROUP BY natureza`),
+    ]);
+    const { rows: extrato } = await pool.query(
+      'SELECT COUNT(*)::int AS total FROM fin_extrato_bancario WHERE wik_ext_id IS NOT NULL'
+    );
+    const { rows: dup } = await pool.query(
+      'SELECT COUNT(*)::int AS total FROM vw_fin_titulos_duplicados WHERE NOT ja_resolvido'
+    );
+    res.json({
+      integracao: integ[0] || null,
+      empresas,
+      semMapa: empresas.filter((e) => e.ativo && !e.wik_emp_id).map((e) => e.nome),
+      titulos: contagem,
+      extrato: extrato[0]?.total || 0,
+      duplicados: dup[0]?.total || 0,
+    });
+  } catch (err) { next(err); }
+});
+
+// Liga/desliga e ajusta a janela. Sem isto ligado, o job não roda — a
+// importação nasce DESLIGADA de propósito: puxar o histórico inteiro do
+// financeiro de um ERP é decisão de gente, não default de migration.
+router.put('/wik/config', async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const { rows } = await pool.query(
+      `UPDATE integracoes_wik
+          SET financeiro_ativo = COALESCE($1, financeiro_ativo),
+              financeiro_dias_retro = COALESCE($2, financeiro_dias_retro),
+              financeiro_carga_inicial_desde = COALESCE($3, financeiro_carga_inicial_desde)
+        WHERE id = (SELECT id FROM integracoes_wik ORDER BY id LIMIT 1)
+        RETURNING id, financeiro_ativo, financeiro_dias_retro, financeiro_carga_inicial_desde`,
+      [typeof b.ativo === 'boolean' ? b.ativo : null,
+        Number.isFinite(Number(b.dias_retro)) && b.dias_retro !== null ? Number(b.dias_retro) : null,
+        b.carga_desde || null]
+    );
+    if (!rows[0]) return res.status(400).json({ error: 'Cadastre a credencial do Wik primeiro.' });
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// O mapa empresa do Hub -> empresa do Wik (192/193/198/202). Sem ele o job
+// pula a empresa em vez de chutar CNPJ.
+router.put('/wik/empresas/:id', async (req, res, next) => {
+  try {
+    const valor = req.body?.wik_emp_id === null || req.body?.wik_emp_id === ''
+      ? null : Number(req.body.wik_emp_id);
+    if (valor !== null && !Number.isFinite(valor)) {
+      return res.status(400).json({ error: 'Id de empresa do Wik inválido.' });
+    }
+    const { rows } = await pool.query(
+      'UPDATE empresas SET wik_emp_id = $1 WHERE id = $2 RETURNING id, nome, wik_emp_id',
+      [valor, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Empresa não encontrada.' });
+    res.json(rows[0]);
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(400).json({ error: 'Esse Id de empresa do Wik já está em outra empresa.' });
+    }
+    next(err);
+  }
+});
+
+// Roda um ciclo agora, sem esperar o próximo. Devolve 409 quando a sessão web
+// já está ocupada pelo job de produção — é UMA sessão só (ver 0069).
+router.post('/wik/sincronizar', async (req, res, next) => {
+  try {
+    const r = await sincronizarFinanceiroAgora({ forcarCadastros: req.body?.cadastros === true });
+    if (r && r.pulado) return res.status(409).json({ error: r.pulado });
+    res.json(r);
+  } catch (err) {
+    res.status(422).json({ error: err.message });
+  }
+});
+
+// A fila de conferência de duplicidade. É SUGESTÃO: nada é fundido sozinho.
+router.get('/wik/duplicados', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM vw_fin_titulos_duplicados
+        WHERE NOT ja_resolvido
+        ORDER BY vencimento_wik DESC, valor_bruto DESC LIMIT 500`
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// Marca um título como "é o mesmo fato que aquele outro". O marcado sai do DRE
+// e do fluxo, mas NÃO some da tela e NÃO é apagado — dá para desfazer mandando
+// duplicado_de = null.
+router.post('/titulos/:id/duplicado', async (req, res, next) => {
+  try {
+    const alvo = req.body?.duplicado_de === null || req.body?.duplicado_de === ''
+      ? null : Number(req.body.duplicado_de);
+    if (alvo !== null && !Number.isFinite(alvo)) {
+      return res.status(400).json({ error: 'Informe o título que representa o mesmo fato.' });
+    }
+    if (alvo !== null && Number(alvo) === Number(req.params.id)) {
+      return res.status(400).json({ error: 'Um título não pode ser duplicata dele mesmo.' });
+    }
+    const { rows } = await pool.query(
+      'UPDATE fin_titulos SET wik_duplicado_de_id = $1, atualizado_em = now() WHERE id = $2 RETURNING id, wik_duplicado_de_id',
+      [alvo, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Título não encontrado.' });
+    // Marcar duplicidade é decisão humana sobre o registro: trava também.
+    if (alvo !== null) await travarTitulo(req.params.id, req.user?.id, 'marcado como duplicado');
+    res.json(rows[0]);
+  } catch (err) { next(err); }
 });
 
 module.exports = router;

@@ -186,7 +186,7 @@ export default function IntegracoesPage() {
       await api.put(`/integracoes/${item.id}`, {
         ads_app_id: item.adsAppId || null,
         // Secret vazio significa "não mexer" no servidor — só é enviado
-        // quando a usuária de fato digitou um novo.
+        // quando o usuário de fato digitou um novo.
         ...(item.adsAppSecretNovo ? { ads_app_secret: item.adsAppSecretNovo } : {}),
       });
       load();

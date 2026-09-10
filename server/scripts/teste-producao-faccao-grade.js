@@ -85,7 +85,7 @@ async function main() {
   )).rows[0].id;
 
   // Referência com grade já existente no estoque — é o caso da OG1620 descrito
-  // pela dona: azul, verde e vermelho existem, e não aparecem em lugar nenhum.
+  // pelo dono: azul, verde e vermelho existem, e não aparecem em lugar nenhum.
   const prodA = (await pool.query(
     "INSERT INTO produtos (referencia, descricao, empresa_id) VALUES ('TESTE-FG-A','CAMISA A',$1) RETURNING id",
     [empresa]

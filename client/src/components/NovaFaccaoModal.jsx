@@ -5,7 +5,7 @@ import { Field, Select, NumInput, Checkbox } from './ui';
 
 // Cadastro de facção — o formulário completo, usado em três lugares.
 //
-// A dona pediu duas coisas que parecem diferentes e são a mesma:
+// O dono pediu duas coisas que parecem diferentes e são a mesma:
 //   1. uma aba de cadastro de facção no módulo de Produção;
 //   2. poder criar uma facção NA HORA de gerar a movimentação, sem sair da tela.
 //

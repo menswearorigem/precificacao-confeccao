@@ -4,7 +4,7 @@
 // NADA aqui é precificação. O preço de partida chega pronto de fora (é o
 // preço sugerido que o motor de cálculo já devolve, ou o preço que a pessoa
 // digitou no item). Esta função só aplica em cima dele o desconto comercial
-// que a dona cadastrou na tabela — a mesma conta que hoje é feita de cabeça
+// que o dono cadastrou na tabela — a mesma conta que hoje é feita de cabeça
 // no balcão. Nenhuma margem, markup, imposto ou custo é lido, escrito ou
 // recalculado aqui.
 //

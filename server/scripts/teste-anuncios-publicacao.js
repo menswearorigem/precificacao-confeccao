@@ -3,7 +3,7 @@
 // Roda contra um Postgres LIMPO:
 //   DATABASE_URL=postgres://... DATABASE_SSL=false node server/scripts/teste-anuncios-publicacao.js
 //
-// Cobre exatamente o que a dona apontou olhando a tela contra o painel do
+// Cobre exatamente o que o dono apontou olhando a tela contra o painel do
 // Mercado Livre, e que nenhum teste pegava porque nenhum deles comparava as
 // duas contagens:
 //

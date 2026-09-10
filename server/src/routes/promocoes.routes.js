@@ -12,7 +12,7 @@
 // aparece vem de `promocaoMargem`, que chama o MESMO motor da Ficha de
 // Precificação passando o preço promocional como preço informado.
 //
-// Escrita nas plataformas autorizada pela dona em 06/09/2026 (REGRA 4), com
+// Escrita nas plataformas autorizada pelo dono em 06/09/2026 (REGRA 4), com
 // três travas, iguais às da aba de Anúncios:
 //   · toda operação que sai daqui exige `confirmar: true` no corpo;
 //   · ação em massa passa OBRIGATORIAMENTE pela prévia — o endpoint de
@@ -409,7 +409,7 @@ router.get('/catalogo/candidatos', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // PRÉVIA — obrigatória antes de qualquer ação em massa
 // ---------------------------------------------------------------------------
-// Escolha da dona em 06/09/2026: nada em massa sai daqui sem ela ver, linha
+// Escolha do dono em 06/09/2026: nada em massa sai daqui sem ela ver, linha
 // por linha, o preço que vai valer e a margem que sobra.
 //
 // Três modos de precificação:
@@ -805,7 +805,7 @@ async function gravarItensAplicados(client, promocaoId, itens, falhas, usuarioId
     gravados += 1;
   }
   // As recusadas ficam gravadas COMO RECUSADAS, com o motivo. Sumir com elas
-  // faria a dona repetir a mesma tentativa sem saber por que não entrou.
+  // faria o dono repetir a mesma tentativa sem saber por que não entrou.
   for (const f of falhas) {
     await historico(client, promocaoId, {
       anuncio: f.anuncioIdExterno,
@@ -842,7 +842,7 @@ router.post('/', async (req, res, next) => {
     if (listaItens.length > MAX_ITENS_LOTE) {
       return res.status(400).json({ error: `Máximo de ${MAX_ITENS_LOTE} itens por promoção nesta tela.` });
     }
-    // Prejuízo não bloqueia (escolha da dona em 06/09/2026), mas precisa ser
+    // Prejuízo não bloqueia (escolha do dono em 06/09/2026), mas precisa ser
     // reconhecido explicitamente: quem manda o pedido diz que viu.
     // Quem conta é o motor, não o campo que veio na requisição.
     const comPrejuizo = await contarPrejuizo(listaItens);
@@ -1021,7 +1021,7 @@ router.put('/:id/itens', async (req, res, next) => {
     }
     // A mesma trava da criação, e aqui ela importa mais: este é o caminho do
     // dia a dia (abrir a promoção no ar e mexer nos preços). Prejuízo é
-    // permitido — a dona decidiu isso —, mas nunca calado.
+    // permitido — o dono decidiu isso —, mas nunca calado.
     const comPrejuizo = await contarPrejuizo(req.body?.itens);
     if (comPrejuizo > 0 && req.body?.aceitar_prejuizo !== true) {
       return res.status(400).json({
@@ -1481,7 +1481,7 @@ router.get('/relampago/horarios', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // Relâmpago em massa: várias de uma vez, em horários diferentes
 // ---------------------------------------------------------------------------
-// É o pedido literal da dona: "criar promoções relâmpago em massa". Cada
+// É o pedido literal do dono: "criar promoções relâmpago em massa". Cada
 // horário vira uma relâmpago própria com o MESMO conjunto de itens — é assim
 // que a Shopee funciona (uma relâmpago = um horário).
 //

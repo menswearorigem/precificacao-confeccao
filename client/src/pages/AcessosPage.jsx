@@ -13,7 +13,7 @@ import VendedoresPage from './VendedoresPage';
 // ATENÇÃO (não é só apresentação, é uma diferença de permissão real que a
 // fusão escancarou): a API de /usuarios exige admin (requireAdmin, sem
 // meio-termo), mas /grupos só exige o módulo "configuracoes" (qualquer
-// usuária com acesso a Configurações podia gerenciar Grupos antes da fusão,
+// usuário com acesso a Configurações podia gerenciar Grupos antes da fusão,
 // mesmo sem ser admin). Colocar as duas sob UM flag adminOnly em
 // modules.js perderia esse acesso de quem não é admin. Por isso a aba
 // "Acessos" em si NÃO é adminOnly (ver modules.js) — quem não é admin

@@ -11,7 +11,7 @@
 //             MER.LIVRE ORIGEM  ...
 //             ...
 //
-// O que muda em relação ao arquivo que a dona mandou: a coluna OBSERVAÇÃO
+// O que muda em relação ao arquivo que o dono mandou: a coluna OBSERVAÇÃO
 // vira ADS, com o ROAS e o gasto dos últimos 30 dias daquele anúncio naquela
 // loja (foi o que ela pediu). Todo o resto — as fórmulas, os formatos de
 // número, as bordas, o tamanho 7 do Calibri, as células mescladas e a foto
@@ -24,7 +24,7 @@
 //
 // REGRA 2: o que não se sabe fica em branco ou escrito por extenso, nunca
 // preenchido com zero ou com estimativa. Loja onde o produto não está
-// anunciado recebe "NÃO ESTÁ ANUNCIADO" em vermelho, como a dona pediu.
+// anunciado recebe "NÃO ESTÁ ANUNCIADO" em vermelho, como o dono pediu.
 const { idsDoFiltro, chavesDoFiltro } = require('./filtrosMulti');
 const ExcelJS = require('exceljs');
 const pool = require('../db/pool');
@@ -412,7 +412,7 @@ function escreverBloco(ws, { numero, produto, linhasLoja, calculo, cores, foto, 
   }
 
   // Alturas e formatação condicional do bloco (lucro negativo em vermelho —
-  // é a mesma regra que já existe no arquivo da dona).
+  // é a mesma regra que já existe no arquivo do dono).
   for (let l = linhaCabecalho; l <= ultimaLinhaLoja; l += 1) ws.getRow(l).height = 12;
   const colLucro = ehKit ? 'Q' : 'N';
   const colPct = ehKit ? 'R' : 'O';
@@ -431,7 +431,7 @@ function escreverLinhaLoja(ws, { item, linha, linhaProduto, calculo, ehKit }) {
   const { plataforma, anuncio, kit } = item;
 
   // Loja onde o produto não está anunciado: a linha existe, e diz isso em
-  // vermelho, na frente — foi o pedido explícito da dona.
+  // vermelho, na frente — foi o pedido explícito do dono.
   if (!anuncio) {
     // O aviso ocupa só as colunas de VALOR (J..Q no bloco individual, J..T no
     // de kit). Não pode invadir R..U no bloco individual, que é onde ficam as

@@ -349,7 +349,7 @@ router.post('/marketplace/revincular-custos', async (req, res, next) => {
 
     // Preenche o ID do anúncio (ver migração 0028) em pedidos importados
     // antes desse dado existir — lote maior que o do ciclo automático,
-    // já que é um clique deliberado da usuária pedindo o catch-up.
+    // já que é um clique deliberado do usuário pedindo o catch-up.
     const correcaoAnuncios = await corrigirAnunciosIdTodasIntegracoes({ limite: 60 });
 
     // Preenche o pack_id (ver migração 0027) em pedidos importados antes
@@ -1026,7 +1026,7 @@ async function calcularRelatorioPedidos({
     ), null);
     return {
       ...primario,
-      // Número que a usuária reconhece de verdade pra uma compra em pacote é
+      // Número que o usuário reconhece de verdade pra uma compra em pacote é
       // o pack_id (é o que a tela do Mercado Livre mostra) — nunca o
       // order.id de um item avulso dentro dele.
       origem_pedido_id: primario.pack_id_marketplace,

@@ -15,7 +15,7 @@ const router = express.Router();
 //   3. `client/src/lib/modules.js` (senão o menu não mostra a tela);
 //   4. o `requireModulo` da rota em `app.js` (senão a API continua fechada).
 //
-// `producao` entrou em 08/09/2026, autorizado pela dona: dá para deixar
+// `producao` entrou em 08/09/2026, autorizado pelo dono: dá para deixar
 // alguém tocar ordem de produção e facção SEM abrir o saldo de estoque.
 const MODULOS_VALIDOS = new Set(['produto', 'estoque', 'producao', 'vendas', 'marketplace', 'viagens', 'compras', 'analises', 'configuracoes', 'calendario', 'financeiro']);
 

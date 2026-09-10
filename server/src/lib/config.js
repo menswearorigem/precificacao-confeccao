@@ -5,7 +5,7 @@
 // em produção (esquecida, apagada, com erro de digitação no painel do Render),
 // o sistema subia normalmente, sem erro nenhum, assinando as sessões com um
 // segredo que está publicado no código-fonte — e qualquer pessoa conseguiria
-// fabricar um cookie de administrador e entrar como dona do sistema.
+// fabricar um cookie de administrador e entrar como dono do sistema.
 //
 // Agora: em produção, faltando o segredo, o servidor NÃO SOBE. Errar em voz
 // alta é melhor que rodar aberto em silêncio.

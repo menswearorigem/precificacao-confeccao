@@ -32,7 +32,7 @@ const CAMINHO_LOJAS_PROMOCOES = '/promocoes/lojas';
 // lê), com uma coluna que aquele painel não tem e que é o motivo desta tela:
 // A MARGEM, item por item, no preço promocional.
 //
-// Três travas, decididas pela dona em 06/09/2026:
+// Três travas, decididas pelo dono em 06/09/2026:
 //   1. nenhuma ação em massa sai daqui sem a prévia — ela vê linha por linha;
 //   2. prejuízo é AVISADO em vermelho, e ela decide (queimar estoque parado
 //      às vezes compensa; o Hub não decide isso por ela);
@@ -68,7 +68,7 @@ const STATUS_ROTULO = {
   encerrada: 'Encerrada',
   inativa: 'Desativada',
   // A plataforma respondeu uma situação que o sistema não conhece. NÃO vira
-  // "encerrada": uma promoção no ar marcada como encerrada faz a dona deixar
+  // "encerrada": uma promoção no ar marcada como encerrada faz o dono deixar
   // de mexer numa coisa que está custando dinheiro agora.
   desconhecido: 'Situação não reconhecida',
 };
@@ -109,7 +109,7 @@ const COLUNAS_ORDENAVEIS = {
 
 // O <input type="datetime-local"> entrega "2026-09-10T14:00" — hora de parede,
 // SEM fuso. Mandar esse texto cru faz o servidor (e o Postgres) lerem como
-// UTC: a dona digita 14h e a promoção começa às 11h no Brasil. Aqui a hora
+// UTC: o dono digita 14h e a promoção começa às 11h no Brasil. Aqui a hora
 // digitada é convertida para ISO COM o deslocamento do navegador, que é o que
 // ela quis dizer.
 function horaLocalParaIso(valor) {
@@ -290,7 +290,7 @@ function CartaoPromocao({ promocao, onAbrir, selecionada }) {
 // ===========================================================================
 // Regra de preço em massa
 // ===========================================================================
-// Os três modos que a dona pediu ("promoção x e y para tal valor"), mais o de
+// Os três modos que o dono pediu ("promoção x e y para tal valor"), mais o de
 // margem — que é o único que responde a pergunta certa: "quanto eu POSSO
 // descontar?" em vez de "quanto eu quero descontar?".
 function RegraDePreco({ regra, onChange }) {
@@ -342,7 +342,7 @@ function RegraDePreco({ regra, onChange }) {
 }
 
 // ===========================================================================
-// Tabela da prévia — o que a dona vê ANTES de qualquer coisa sair daqui
+// Tabela da prévia — o que o dono vê ANTES de qualquer coisa sair daqui
 // ===========================================================================
 function TabelaPrevia({ previa, editaveis, onEditarPreco, onEditarEstoque, exigeEstoque }) {
   // Só as linhas cujo preço foi mexido à mão precisam de margem nova. As

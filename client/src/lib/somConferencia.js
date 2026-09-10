@@ -3,7 +3,7 @@
 // Por que isso existe: quem confere está de costas pra tela, com as duas mãos
 // ocupadas e um leitor de código de barras na mão. O som é o retorno de
 // verdade — a tela é confirmação depois. Foi a parte mais bem resolvida da
-// ferramenta antiga da dona e é por isso que veio junto.
+// ferramenta antiga do dono e é por isso que veio junto.
 //
 // Os dois sons são desenhados pra serem distinguíveis a três metros, num
 // galpão barulhento, mesmo sem prestar atenção:

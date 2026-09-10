@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Plus, X, Wallet, AlertTriangle, CalendarClock, Timer, Info, Undo2, Ban,
-  Receipt, CheckCircle2, Trash2, Calculator, Split,
+  Receipt, CheckCircle2, Trash2, Calculator, Split, Cloud, Lock, RefreshCw, Copy,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, dataBr, formatQtd, numeroBr } from '../lib/format';
@@ -107,6 +107,119 @@ function categoriaDe(t) {
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
+// ---------------------------------------------------------------------------
+// Origem do título — Wik ou nascido aqui
+// ---------------------------------------------------------------------------
+// O financeiro do Wik entra nesta MESMA tela como cadastro normal (decisão de
+// 10/09/2026: "faça como se fosse um cadastro normal de cada aba já
+// existente"). Como os dois convivem, a origem precisa estar visível na linha —
+// senão ninguém sabe qual número conferir onde.
+//
+// Dois selos, e eles querem dizer coisas diferentes:
+//   Wik            -> veio do ERP e é atualizado sozinho a cada ciclo
+//   alterado à mão -> alguém baixou/cancelou/marcou aqui, e o Wik não encosta
+//                     mais neste título (decisão "Edita e trava a sincronização")
+function SeloOrigem({ titulo }) {
+  if (!titulo.wik_id) return null;
+  return (
+    <span className="selos-linha">
+      <span className="stamp sm tone-neutro" title={`Importado do Wik (conta ${titulo.wik_id})`}>
+        <Cloud size={11} /> Wik
+      </span>
+      {titulo.wik_travado && (
+        <span
+          className="stamp sm tone-atencao"
+          title={`Alterado aqui dentro${titulo.wik_travado_motivo ? ` (${titulo.wik_travado_motivo})` : ''} — a sincronização com o Wik está travada neste título.`}
+        >
+          <Lock size={11} /> alterado à mão
+        </span>
+      )}
+      {titulo.wik_duplicado_de_id && (
+        <span className="stamp sm tone-prejuizo" title={`Marcado como o mesmo fato do título ${titulo.wik_duplicado_de_id} — fora do DRE e do fluxo.`}>
+          <Copy size={11} /> duplicado
+        </span>
+      )}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Faixa de estado da importação do Wik
+// ---------------------------------------------------------------------------
+// Mora DENTRO desta tela, e não numa aba de integração: o pedido foi que o
+// financeiro do Wik entrasse "como cadastro normal de cada aba já existente".
+// Some sozinha quando a importação está desligada — quem não usa o Wik não
+// precisa ver nada disso.
+function FaixaWik({ aoSincronizar }) {
+  const [st, setSt] = useState(null);
+  const [rodando, setRodando] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  async function carregar() {
+    try { setSt(await api.get(`${BASE}/wik/status`)); } catch { setSt(null); }
+  }
+  useEffect(() => { carregar(); }, []);
+
+  const integ = st?.integracao;
+  if (!integ || !integ.financeiro_ativo) return null;
+
+  const carregando = !integ.financeiro_carga_inicial_fim;
+  const ultima = integ.financeiro_ultima_sincronizacao;
+
+  async function sincronizar() {
+    setMsg('');
+    setRodando(true);
+    try {
+      await api.post(`${BASE}/wik/sincronizar`, {});
+      await carregar();
+      if (aoSincronizar) aoSincronizar();
+    } catch (err) {
+      setMsg(mensagemErro(err));
+    } finally { setRodando(false); }
+  }
+
+  return (
+    <div className="faixa-wik no-print">
+      <Cloud size={14} />
+      <span>
+        {integ.financeiro_status === 'erro'
+          ? <strong>A última importação do Wik falhou.</strong>
+          : <>Importando do Wik · <strong>{ultima ? dataBr(dataIso(ultima)) : 'ainda não rodou'}</strong></>}
+      </span>
+      {carregando && (
+        <span title="A carga do histórico anda para trás em fatias, uma por ciclo, para não pesar no servidor do Wik.">
+          · histórico ainda carregando
+          {integ.financeiro_carga_inicial_ate ? ` (já chegou em ${dataBr(dataIso(integ.financeiro_carga_inicial_ate))})` : ''}
+        </span>
+      )}
+      {st.duplicados > 0 && (
+        <span className="stamp sm tone-atencao" title="Títulos parecidos entre o que veio do Wik e o que nasceu aqui. É sugestão: nada foi fundido nem escondido.">
+          <Copy size={11} /> {st.duplicados} possível(is) duplicidade(s)
+        </span>
+      )}
+      {st.semMapa?.length > 0 && (
+        <span className="stamp sm tone-prejuizo" title="Empresa sem o Id do Wik configurado: os títulos dela não são importados, em vez de cair no CNPJ errado.">
+          sem Id do Wik: {st.semMapa.join(', ')}
+        </span>
+      )}
+      <span className="faixa-wik-sep">
+        {msg && <span className="tone-prejuizo">{msg}</span>}
+        {integ.financeiro_erro && !msg && <span className="tone-prejuizo" title={integ.financeiro_erro}>ver erro</span>}
+        <button type="button" className="btn btn-ghost btn-mini" onClick={sincronizar} disabled={rodando}>
+          <RefreshCw size={13} className={rodando ? 'girando' : undefined} />
+          {rodando ? 'Sincronizando…' : 'Sincronizar agora'}
+        </button>
+      </span>
+    </div>
+  );
+}
+
+const FILTROS_ORIGEM = [
+  { valor: '', rotulo: 'Todas as origens' },
+  { valor: 'wik', rotulo: 'Só do Wik' },
+  { valor: 'hub', rotulo: 'Só lançados aqui' },
+];
+
 const COLUNAS_ORDENAVEIS = {
   vencimento: (t) => dataIso(t.data_vencimento),
   contraparte: (t) => contraparteDe(t),
@@ -119,6 +232,7 @@ const COLUNAS_ORDENAVEIS = {
   saldo: (t) => num(t.saldo_aberto),
   atraso: (t) => num(t.dias_atraso),
   situacao: (t) => t.situacao,
+  origem: (t) => (t.wik_id ? 'Wik' : 'Hub'),
 };
 
 const COLUNAS_EXPORTACAO = [
@@ -138,6 +252,8 @@ const COLUNAS_EXPORTACAO = [
   { rotulo: 'Saldo em aberto', valor: (t) => brl(t.saldo_aberto) },
   { rotulo: 'Dias de atraso', valor: (t) => (num(t.dias_atraso) > 0 ? formatQtd(t.dias_atraso) : '—') },
   { rotulo: 'Situação', valor: (t) => SITUACAO_LABEL[t.situacao] || t.situacao },
+  { rotulo: 'Origem', valor: (t) => (t.wik_id ? `Wik (conta ${t.wik_id})` : 'Lançado no Hub') },
+  { rotulo: 'Sincronização', valor: (t) => (t.wik_id ? (t.wik_travado ? 'travada (alterado à mão)' : 'ativa') : '—') },
 ];
 
 // ---------------------------------------------------------------------------
@@ -851,6 +967,7 @@ export default function TitulosPage() {
   const [empresaId, setEmpresaId] = useState('');
   const [periodo, setPeriodo] = useState({ inicio: '', fim: '' });
   const [soVencidos, setSoVencidos] = useState(false);
+  const [origem, setOrigem] = useState('');
   const [termoDigitado, setTermoDigitado] = useState('');
   const [busca, setBusca] = useState('');
 
@@ -906,12 +1023,20 @@ export default function TitulosPage() {
       .finally(() => setLoading(false));
   }, [params, recarregar]);
 
-  const tabela = useTabela(titulos, { colunas: COLUNAS_ORDENAVEIS, colunaPadrao: 'vencimento', direcaoPadrao: 'asc' });
+  // A origem é filtrada AQUI, não no backend: a lista já veio, e mandar o
+  // filtro ao servidor custaria uma ida a mais para um recorte que é só visual.
+  const titulosFiltrados = useMemo(() => {
+    if (origem === 'wik') return titulos.filter((t) => t.wik_id);
+    if (origem === 'hub') return titulos.filter((t) => !t.wik_id);
+    return titulos;
+  }, [titulos, origem]);
+
+  const tabela = useTabela(titulosFiltrados, { colunas: COLUNAS_ORDENAVEIS, colunaPadrao: 'vencimento', direcaoPadrao: 'asc' });
 
   // Os quatro números da faixa. Todos saem da lista que está na tela — mudar um
   // filtro muda os números junto, e a explicação de cada cartão diz isso.
   const resumo = useMemo(() => {
-    const vivos = titulos.filter((t) => t.situacao !== 'cancelado' && num(t.saldo_aberto) > 0);
+    const vivos = titulosFiltrados.filter((t) => t.situacao !== 'cancelado' && num(t.saldo_aberto) > 0);
     const limite = emDias(7);
     const hoje = hojeIso();
     const vencidos = vivos.filter((t) => num(t.dias_atraso) > 0);
@@ -929,9 +1054,17 @@ export default function TitulosPage() {
       proximosQtd: proximos.length,
       pior: pior && num(pior.dias_atraso) > 0 ? pior : null,
     };
-  }, [titulos]);
+  }, [titulosFiltrados]);
 
   const chips = [];
+  if (origem) {
+    chips.push({
+      chave: 'origem',
+      rotulo: 'Origem',
+      valor: FILTROS_ORIGEM.find((f) => f.valor === origem)?.rotulo || origem,
+      onRemover: () => setOrigem(''),
+    });
+  }
   const rotuloSituacao = FILTROS_SITUACAO.find((f) => f.valor === situacao)?.rotulo;
   if (situacao) chips.push({ chave: 'situacao', rotulo: 'Situação', valor: rotuloSituacao || situacao, onRemover: () => setSituacao('') });
   if (empresaId) {
@@ -953,6 +1086,7 @@ export default function TitulosPage() {
 
   function limparTudo() {
     setSituacao('');
+    setOrigem('');
     setEmpresaId('');
     setPeriodo({ inicio: '', fim: '' });
     setSoVencidos(false);
@@ -998,6 +1132,9 @@ export default function TitulosPage() {
           <option value="">Todas as empresas</option>
           {empresas.map((e) => <option key={e.id} value={String(e.id)}>{e.nome}</option>)}
         </Select>
+        <Select value={origem} onChange={(e) => setOrigem(e.target.value)} aria-label="Origem do título">
+          {FILTROS_ORIGEM.map((f) => <option key={f.valor} value={f.valor}>{f.rotulo}</option>)}
+        </Select>
         <label className="check-linha">
           <Checkbox checked={soVencidos} onChange={(e) => setSoVencidos(e.target.checked)} />
           Só vencidos
@@ -1023,6 +1160,8 @@ export default function TitulosPage() {
       </div>
 
       <ChipsFiltros itens={chips} onLimparTudo={chips.length ? limparTudo : undefined} />
+
+      <FaixaWik aoSincronizar={() => setRecarregar((n) => n + 1)} />
 
       {erro && <div className="aviso-compacto tone-prejuizo">{erro}</div>}
 
@@ -1114,6 +1253,7 @@ export default function TitulosPage() {
                       <span className="cel-dupla">
                         <strong>{contraparteDe(t) || '—'}</strong>
                         {t.empresa_nome && <small>{t.empresa_nome}</small>}
+                        <SeloOrigem titulo={t} />
                       </span>
                     </td>
                     <td>

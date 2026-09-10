@@ -662,7 +662,7 @@ router.post('/ordens/previa', async (req, res, next) => {
     const custoMaterial = comSaldo.reduce((s, i) => s + (i.custoPrevisto || 0), 0);
 
     // A lista do que NÃO dá para produzir com o que existe hoje. É ela que a
-    // tela transforma no aviso de "insumo insuficiente" — pedido da dona:
+    // tela transforma no aviso de "insumo insuficiente" — pedido do dono:
     // "se os insumos forem suficientes para a produção ok, se não for
     // suficiente crie um pop-up avisando que os insumos estão insuficientes,
     // apenas aviso".
@@ -724,7 +724,7 @@ router.post('/ordens/previa', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // Uma função só grava a ordem, e ela é usada pelos dois caminhos: a ordem de um
 // produto e cada referência de uma ordem de KIT. É o que garante o pedido da
-// dona ao pé da letra — "dentro do Kit quero ter todas as funções da OP
+// dono ao pé da letra — "dentro do Kit quero ter todas as funções da OP
 // convencional": a filha de um kit não é uma ordem reduzida, é exatamente a
 // mesma ordem, com roteiro, reserva, movimentação, O.S. e entrada no estoque.
 async function gravarOrdem(client, req, {
@@ -846,7 +846,7 @@ router.post('/ordens', async (req, res, next) => {
     // ORDEM DE KIT
     // -----------------------------------------------------------------------
     // Uma ordem MÃE, e uma ordem FILHA por referência. A ordem de
-    // preenchimento é a que a dona descreveu: primeiro a referência, depois as
+    // preenchimento é a que o dono descreveu: primeiro a referência, depois as
     // cores DENTRO daquela referência, depois as quantidades.
     //
     // Modelar como uma ordem só, com várias referências dentro, obrigaria a
@@ -1172,7 +1172,7 @@ router.post('/ordens/:id/situacao', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // Insumo gasto na ordem: acrescentar, corrigir quantidade, corrigir custo
 // ---------------------------------------------------------------------------
-// Pedido da dona: "acrescentar os insumos que foram gastos na produção, tendo o
+// Pedido do dono: "acrescentar os insumos que foram gastos na produção, tendo o
 // valor mudado deve alterar o valor do custo do produto".
 //
 // A primeira metade é esta rota. A segunda — mexer no custo do produto — é a
@@ -1857,7 +1857,7 @@ router.post('/faccao/movimento', async (req, res, next) => {
     // Baixar o saldo faria a peça sumir do estoque; não baixar faz ela
     // aparecer como disponível estando na lavanderia. A migration 0052 criou
     // o terceiro caminho, que é o certo: a peça MUDA DE LUGAR e o total não
-    // muda. Autorizado pela dona em 08/09/2026 (REGRA 4).
+    // muda. Autorizado pelo dono em 08/09/2026 (REGRA 4).
     let avisoPeca = null;
     if (varianteId) {
       const localOrigem = body.tipo === 'remessa' ? 'proprio' : 'faccao';

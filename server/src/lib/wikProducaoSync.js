@@ -69,15 +69,27 @@ async function mapaEmpParaMarca() {
 
 // ── job lock (mesma ideia do wik.js/wikSync, mas coluna própria) ────────────
 async function reservarJob(id) {
+  // TRAVA COMPARTILHADA (0069): além da trava própria, exige a `web_job_ativo`
+  // livre — o financeiro disputa a mesma, então os dois grandes jobs do Wik não
+  // rodam ao mesmo tempo. Complementa a sessão única (wikWebSessao): nunca dois
+  // logins concorrentes.
   const { rowCount } = await poolReal.query(
-    `UPDATE integracoes_wik SET producao_job_ativo = 'sync', producao_job_ativo_desde = now()
-     WHERE id = $1 AND (producao_job_ativo IS NULL OR producao_job_ativo_desde < now() - interval '20 minutes')`,
+    `UPDATE integracoes_wik
+        SET producao_job_ativo = 'sync', producao_job_ativo_desde = now(),
+            web_job_ativo = 'producao', web_job_ativo_desde = now()
+      WHERE id = $1
+        AND (producao_job_ativo IS NULL OR producao_job_ativo_desde < now() - interval '20 minutes')
+        AND (web_job_ativo IS NULL OR web_job_ativo_desde < now() - interval '25 minutes')`,
     [id]
   );
   return rowCount > 0;
 }
 async function liberarJob(id) {
-  await poolReal.query('UPDATE integracoes_wik SET producao_job_ativo = NULL, producao_job_ativo_desde = NULL WHERE id = $1', [id]);
+  await poolReal.query(
+    `UPDATE integracoes_wik
+        SET producao_job_ativo = NULL, producao_job_ativo_desde = NULL,
+            web_job_ativo = NULL, web_job_ativo_desde = NULL
+      WHERE id = $1`, [id]);
 }
 
 

@@ -12,7 +12,7 @@ import { dataBr } from './format';
 //   RESUMO   — os quatro números e uma linha por referência. É o que se manda
 //              para a direção.
 //   COMPLETO — as três camadas de cada referência, na grade cor × tamanho. É
-//              o relatório que a dona aprovou em PDF em 10/09/2026, agora
+//              o relatório que o dono aprovou em PDF em 10/09/2026, agora
 //              gerado pelo sistema em vez de à mão.
 //
 // A grade vira tabela com uma coluna por tamanho. Como cada referência tem a
@@ -83,7 +83,7 @@ function secoesDaReferencia(ref) {
   // ---- Camada 2 -----------------------------------------------------------
   // No papel não dá para pintar metade da célula de azul, então a Camada 2
   // vira duas colunas por tamanho seria ilegível — a saída é a forma "12 +8",
-  // que é exatamente como a dona lê a célula na tela.
+  // que é exatamente como o dono lê a célula na tela.
   const colunasC2 = [COL_TEXTO('Cor', 120), ...tamanhos.map((t) => COL_TEXTO(t || '—', 52)), COL_TEXTO('Total', 70)];
   secoes.push({
     titulo: `${ref.referencia} · Camada 2 — Estoque real + em produção`,

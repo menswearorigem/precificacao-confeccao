@@ -1,6 +1,6 @@
 // API de estoque mínimo, cobertura e ponto de pedido (06/09/2026).
 //
-// Responde as perguntas que a dona fez:
+// Responde as perguntas que o dono fez:
 //   · quanto tempo dura o estoque de cada referência?
 //   · qual o estoque mínimo dela, pelo método certo para o comportamento
 //     de venda dela?
@@ -430,7 +430,7 @@ router.get('/produtos', async (req, res, next) => {
         nivelPorCurva: NIVEL_POR_CURVA,
         criterioCurva: temMargem ? 'margem' : 'faturamento',
         // Quanto da venda medida veio de kit. Serve para conferir a correção
-        // de 08/09/2026 e para a dona ver o peso real do kit no giro.
+        // de 08/09/2026 e para o dono ver o peso real do kit no giro.
         pecasNaJanela: linhas.reduce((s, l) => s + (l.pecas_vendidas || 0), 0),
         pecasEmKitNaJanela: linhas.reduce((s, l) => s + (l.pecas_vendidas_em_kit || 0), 0),
       },
@@ -723,7 +723,7 @@ router.get('/insumos', async (req, res, next) => {
         estoqueSegurancaValor: seg.valor,
       });
 
-      // O mínimo que a dona fixou à mão vence o calculado: ela pode saber de
+      // O mínimo que o dono fixou à mão vence o calculado: ela pode saber de
       // um contrato ou de uma promessa de fornecedor que o sistema não sabe.
       const minimoEfetivo = i.estoque_minimo_manual != null
         ? Number(i.estoque_minimo_manual) : seg.valor;

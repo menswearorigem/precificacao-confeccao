@@ -1,6 +1,6 @@
 // Cadastro de FACÇÃO (09/09/2026).
 //
-// Pedido da dona, literal: "a aba facção vai ser necessário cadastro de
+// Pedido do dono, literal: "a aba facção vai ser necessário cadastro de
 // categorias, ex.: costureira, lavanderia, e outros, podendo alterar dentro do
 // módulo de produção; essas facções criadas deverão ser tão completas quanto o
 // preenchimento de fornecedores — se for pessoa jurídica quero cadastrar CNPJ,
@@ -16,7 +16,7 @@
 // duas chaves vale, e a resposta certa mudaria conforme a tabela. Facção passa
 // a ser um fornecedor MARCADO como facção (`eh_faccao`), com categoria própria.
 //
-// O efeito prático que a dona vai ver: o combo "Escolha a facção" para de
+// O efeito prático que o dono vai ver: o combo "Escolha a facção" para de
 // listar o fornecedor de embalagem, e a costureira ganha ficha própria com
 // quebra, atraso e custo por peça — que é o que não existia.
 //
@@ -48,7 +48,7 @@ function soDigitos(v) {
 
 // Campos que a facção compartilha com qualquer fornecedor, mais os que a 0063
 // acrescentou. É a mesma lista branca do cadastro de fornecedor — de propósito:
-// a dona pediu um cadastro "tão completo quanto o de fornecedores", e duas
+// o dono pediu um cadastro "tão completo quanto o de fornecedores", e duas
 // listas diferentes garantiriam que uma delas ficasse para trás.
 const CAMPOS = [
   'tipo_pessoa', 'nome', 'nome_fantasia', 'razao_social', 'cpf_cnpj', 'ie', 'ie_isento',

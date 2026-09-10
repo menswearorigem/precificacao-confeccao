@@ -72,7 +72,7 @@ export const MODULES = [
     ],
   },
   {
-    // Modulo proprio da Producao (08/09/2026, autorizado pela dona).
+    // Modulo proprio da Producao (08/09/2026, autorizado pelo dono).
     //
     // Ate aqui a Producao morava dentro de Estoque, e a REGRA 4 nao deixava
     // criar chave nova sem ordem dela. O motivo de separar e' concreto: quem

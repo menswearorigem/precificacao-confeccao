@@ -1,6 +1,6 @@
 // Regra de senha do HBN Hub.
 //
-// O nome de acesso é o primeiro nome da pessoa (decisão da dona do projeto, e
+// O nome de acesso é o primeiro nome da pessoa (decisão do dono do projeto, e
 // ela continua assim). Isso significa que a senha é a ÚNICA coisa segurando a
 // porta: um nome como "nath" é adivinhado de primeira. Por isso o mínimo subiu
 // de 6 para 10 caracteres.

@@ -22,7 +22,7 @@ import { brl, pct, formatQtd, numeroBr, tempoRelativo } from '../lib/format';
 // O ponto que a diferencia de um cadastro qualquer: ela mostra a DEFASAGEM.
 // Quando a malha sobe de R$ 28,50 para R$ 31,00, o sistema não muda a ficha
 // sozinho — ele mostra quais referências estão com o custo velho, de quanto
-// para quanto, e deixa aplicar com um clique. Essa decisão é da dona, não do
+// para quanto, e deixa aplicar com um clique. Essa decisão é do dono, não do
 // sistema (REGRA 1).
 
 const TIPO_INSUMO = {

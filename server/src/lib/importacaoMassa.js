@@ -22,7 +22,7 @@
 //
 // REGRA 1: de propósito, este arquivo NÃO escreve `preco_informado`, materiais
 // nem custos industriais. São as entradas de `calc.js`. Preço em massa é
-// decisão da dona, não efeito colateral de uma planilha.
+// decisão do dono, não efeito colateral de uma planilha.
 
 const { normalizeHeader, buildHeaderLookup } = require('./textNormalize');
 

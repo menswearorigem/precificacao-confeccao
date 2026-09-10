@@ -215,7 +215,7 @@ function distribuirGrade(lote, itens, { minimoPorTamanho = 0 } = {}) {
   if (min > 0) {
     // Tamanho abaixo do mínimo sai da grade e a quantidade dele volta para o
     // maior. Sai da grade, e não sobe para o mínimo, porque subir inflaria o
-    // lote inteiro — e o lote é o que a dona decidiu cortar.
+    // lote inteiro — e o lote é o que o dono decidiu cortar.
     for (const l of linhas) {
       if (l.quantidade > 0 && l.quantidade < min) {
         ajustes.push(`${l.tamanho} sairia com ${l.quantidade} peça(s), abaixo do mínimo de ${min}. Saiu da grade e as peças foram para o tamanho de maior participação.`);

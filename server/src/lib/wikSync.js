@@ -114,7 +114,7 @@ const MARGEM_ANTECIPADA_RENOVACAO_MS = 30 * 60 * 1000; // renova mais cedo se fa
 // Login de verdade + troca atômica em memória e banco. Chamado só pela
 // agenda (renovarTokenWikSeNecessario) ou por uma ação HUMANA explícita
 // ("Testar conexão"/"Testar conexão completa" em wik.routes.js) — um clique
-// deliberado da usuária não é reação a erro, é intervenção humana, sempre
+// deliberado do usuário não é reação a erro, é intervenção humana, sempre
 // permitida pela regra do suporte.
 async function renovarTokenAgora(integracao) {
   const resultado = await wik.login(integracao.email, integracao.senha);
@@ -334,7 +334,7 @@ async function montarPreviewEstoque(integracao, porEmpId) {
     // BUG CORRIGIDO: isso sobrescrevia sem comparar, então quando o mesmo
     // produto+cor+tamanho existia em mais de uma loja (empresa), só a
     // última loja processada no loop "ganhava" — nunca o maior valor entre
-    // elas, como devia ser (pedido explícito da usuária, já que cada loja
+    // elas, como devia ser (pedido explícito do usuário, já que cada loja
     // registra um saldo diferente hoje). Agora compara e fica com o maior.
     const chave = chaveVariante(referencia, cor, tamanho);
     const atual = porChave.get(chave);
@@ -488,7 +488,7 @@ async function sincronizarEstoqueAgora() {
 // notar (foi exatamente o que aconteceu: 7 dias sem sincronizar, sem nada
 // acordar o processo pra tentar de novo). Chamada a cada carregamento da
 // tela de Estoque; o cooldown evita disparar a cada requisição enquanto a
-// usuária navega.
+// usuário navega.
 const COOLDOWN_MS = 5 * 60 * 1000;
 let ultimaChamadaOportunista = 0;
 

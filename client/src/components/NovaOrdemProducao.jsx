@@ -29,7 +29,7 @@ import { brl, formatQtd, numeroBr } from '../lib/format';
 //    calendário como um período, e não como um ponto no dia da entrega.
 //
 // 5. ORDEM DE KIT. Uma referência de cada vez, as cores dentro daquela
-//    referência, as quantidades — nessa ordem, que é a que a dona descreveu.
+//    referência, as quantidades — nessa ordem, que é a que o dono descreveu.
 //    Cada referência do kit vira uma ordem de produção completa.
 
 const chave = (cor, tamanho) => `${cor || ''}|${tamanho || ''}`;

@@ -994,7 +994,7 @@ export function Select({ value, onChange, children, disabled, className = '', st
 // ---------------------------------------------------------------------------
 // Seleção de VÁRIAS opções (10/09/2026)
 // ---------------------------------------------------------------------------
-// Pedido da dona: "todos os lugares que der para filtrar por canal ou por loja
+// Pedido do dono: "todos os lugares que der para filtrar por canal ou por loja
 // quero que dê para selecionar mais de um, da mesma maneira que é no UpSeller".
 //
 // O UpSeller faz assim, e este componente copia o comportamento porque é o que

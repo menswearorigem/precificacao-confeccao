@@ -1,6 +1,6 @@
 // A ordem de produção no calendário (09/09/2026).
 //
-// Pedido da dona: "depois de preencher as informações como início, essa OP
+// Pedido do dono: "depois de preencher as informações como início, essa OP
 // deve ser colocada automaticamente no calendário, com a data inicial e a data
 // de chegada".
 //

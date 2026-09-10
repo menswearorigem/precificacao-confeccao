@@ -200,7 +200,7 @@ function CartaoDestino({
                   </option>
                 ))}
               </Select>
-              {/* Cadastrar a facção SEM SAIR DAQUI. Pedido da dona: a facção
+              {/* Cadastrar a facção SEM SAIR DAQUI. Pedido do dono: a facção
                   nova aparece na hora de mandar a peça, e obrigar a abrir outra
                   tela, cadastrar e voltar faz perder o que já foi digitado no
                   formulário de movimentação. */}

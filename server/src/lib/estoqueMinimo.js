@@ -49,7 +49,7 @@ const Z_POR_NIVEL = {
   0.995: 2.5758,
 };
 
-// Nível de serviço por curva ABC — escolha da dona em 06/09/2026:
+// Nível de serviço por curva ABC — escolha do dono em 06/09/2026:
 // o que mais vende ganha mais proteção, o que menos vende não prende
 // dinheiro parado.
 const NIVEL_POR_CURVA = { A: 0.975, B: 0.95, C: 0.90 };
@@ -59,7 +59,7 @@ function zParaNivel(nivel) {
   if (!Number.isFinite(n) || n <= 0 || n >= 1) return null;
   if (Z_POR_NIVEL[n] != null) return Z_POR_NIVEL[n];
   // Nível fora da tabela: aproximação de Acklam para a inversa da normal.
-  // Fica aqui porque a dona pode digitar 0,93 na tela, e recusar seria pior
+  // Fica aqui porque o dono pode digitar 0,93 na tela, e recusar seria pior
   // do que aproximar com erro na sexta casa.
   return inversaNormalPadrao(n);
 }
@@ -406,7 +406,7 @@ function quantidadeAComprar({ necessidade, loteMinimo, multiplo }) {
 // ---------------------------------------------------------------------------
 // Cobertura — "quanto tempo dura o estoque"
 // ---------------------------------------------------------------------------
-// A pergunta que a dona fez em primeiro lugar. A fórmula é trivial; as
+// A pergunta que o dono fez em primeiro lugar. A fórmula é trivial; as
 // armadilhas não são, e é por isso que esta função devolve ressalvas.
 function coberturaEmDias({ saldo, demandaMediaDia, serie, saldoZeradoNoPeriodo }) {
   const s = Number(saldo);
@@ -533,7 +533,7 @@ function segurancaDeInsumo({ z, consumoMedioDia, desvioLeadTimeDias }) {
 // ---------------------------------------------------------------------------
 // Cadência de reposição — como a casa repõe DE VERDADE (10/09/2026)
 // ---------------------------------------------------------------------------
-// A regra veio da dona, não de livro: "produto de alto giro a gente repõe
+// A regra veio do dono, não de livro: "produto de alto giro a gente repõe
 // toda semana; o que vende menos, ou demora mais para fazer, repõe no mês ou
 // quando precisa".
 //

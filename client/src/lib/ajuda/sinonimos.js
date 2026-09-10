@@ -62,7 +62,7 @@ const GRUPOS = [
   ['estou', ['to']],
   ['esta', ['ta']],
 
-  // ---------- Apelidos internos da equipe (parcial — completar com a dona) ----------
+  // ---------- Apelidos internos da equipe (parcial — completar com o dono) ----------
   // "ficha" sozinha NÃO entra como variante aqui de propósito: como o
   // canônico começa com a própria palavra "ficha", o token isolado
   // duplicava ("ficha tecnica tecnica tecnica…") no laço de ponto fixo da

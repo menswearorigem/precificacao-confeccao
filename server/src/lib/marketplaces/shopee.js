@@ -1249,7 +1249,7 @@ function paraUnix(valor) {
 
 // Situação da promoção. Fora do mapa vira 'desconhecido', nunca um chute:
 // mostrar "encerrada" numa promoção que a Shopee chamou de outra coisa faria
-// a dona deixar de mexer numa promoção que está no ar.
+// o dono deixar de mexer numa promoção que está no ar.
 const STATUS_PROMOCAO_SHOPEE = {
   upcoming: 'agendada',
   ongoing: 'ativa',

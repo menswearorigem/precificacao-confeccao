@@ -7499,3 +7499,33 @@ table.grade-matriz { width: auto; min-width: 0; }
   .pe-card-nums { width: 100%; justify-content: space-between; }
 }
 .pe-card-atraso { color: var(--warning); }
+
+/* Selos de origem na linha da tabela (0069 — financeiro do Wik convivendo com
+   o financeiro lançado aqui). Quebra em vez de esticar a coluna: em telas
+   estreitas os selos descem, a tabela não estoura. */
+.selos-linha {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin-top: 2px;
+}
+
+/* Faixa de estado da importação do Wik. Fica DENTRO das telas que já existem
+   (Contas a Pagar, Contas a Receber, Conciliação Bancária) — não há tela nova
+   para a integração, por decisão de 10/09/2026. */
+.faixa-wik {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 8px);
+  background: var(--border-soft);
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+.faixa-wik .faixa-wik-sep { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.faixa-wik strong { color: var(--ink); font-weight: 600; }

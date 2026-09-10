@@ -94,7 +94,7 @@ function margemNoPreco(base, produtoId, preco) {
     subtotalProducao: calculo.custoTotal.subtotalProducao,
     custoTotalPeca: calculo.custoTotal.custoTotalPeca,
     // Prejuízo é o único caso em que a tela pinta vermelho forte. Margem
-    // abaixo da mínima é laranja: continua sendo decisão da dona (foi o que
+    // abaixo da mínima é laranja: continua sendo decisão do dono (foi o que
     // ela escolheu em 06/09/2026 — avisa, mas deixa aplicar).
     prejuizo: Number(f.lucroRS) < 0,
     abaixoDoMinimo: Number(valor) < Number(f.precoMinimo),

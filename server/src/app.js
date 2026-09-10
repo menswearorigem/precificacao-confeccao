@@ -203,7 +203,7 @@ function createApp() {
   // autorizacao. `estoque` e' o dono natural: toda ordem de producao come
   // insumo do saldo e devolve peca pro saldo, e o saldo em faccao e' estoque
   // da empresa que so' esta' na mao de terceiro.
-  // Produção ganhou MÓDULO PRÓPRIO em 08/09/2026 (autorizado pela dona).
+  // Produção ganhou MÓDULO PRÓPRIO em 08/09/2026 (autorizado pelo dono).
   //
   // O aceite continua sendo `['producao', 'estoque']`, e não só `producao`,
   // de propósito: quem hoje tem `estoque` já usa a Produção, e trocar a chave
@@ -229,7 +229,7 @@ function createApp() {
   app.use('/api/producao-projecao', requireAuth, requireModulo(['producao', 'estoque']), producaoProjecaoRoutes);
   // Cadastro de FACÇÃO e das categorias dela (09/09/2026). Mesma chave da
   // Produção: quem movimenta peça para a facção é quem sabe quem ela é, e a
-  // dona pediu explicitamente para poder criar a facção NA HORA de gerar a
+  // dono pediu explicitamente para poder criar a facção NA HORA de gerar a
   // movimentação. Nenhuma permissão existente muda (REGRA 4).
   //
   // ⚠️ Facção é um fornecedor marcado (`eh_faccao`), então esta rota grava em

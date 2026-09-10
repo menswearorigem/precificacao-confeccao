@@ -15,7 +15,7 @@ import { brl, pct, formatQtd, dataBr, numeroBr } from '../lib/format';
 //
 // Duas coisas numa aba só, porque são a mesma decisão:
 //
-//   1. O CADASTRO — quem é a facção, com tudo que um fornecedor tem (a dona
+//   1. O CADASTRO — quem é a facção, com tudo que um fornecedor tem (o dono
 //      pediu "tão completo quanto o preenchimento de fornecedores") mais a
 //      categoria, que é o que permite perguntar "quanto gastei com lavanderia
 //      este mês".

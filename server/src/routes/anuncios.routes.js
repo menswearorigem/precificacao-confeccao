@@ -47,7 +47,7 @@ function dataIso(valor) {
 //
 //   · `dias=30`            — os últimos N dias (como era desde 06/09/2026);
 //   · `de=…&ate=…`         — um intervalo escolhido no calendário (10/09/2026),
-//                            que é o pedido da dona: as outras telas do módulo
+//                            que é o pedido do dono: as outras telas do módulo
 //                            já têm calendário e esta só tinha uma lista fixa
 //                            de "últimos 7/14/30/60/90 dias", que não responde
 //                            "como foi o Ads na semana da Black Friday".
@@ -331,7 +331,7 @@ function enriquecerAds(linha, janela = { dias: JANELA_ADS_PADRAO, de: null, ate:
     // sincronização: as linhas gravadas antes de 10/09/2026 têm o endereço em
     // http:// do Mercado Livre, que o navegador bloqueia. Assim a foto volta a
     // aparecer no mesmo instante em que este código sobe, sem depender de a
-    // dona rodar "Atualizar das lojas" antes (ver lib/fotoMarketplace.js).
+    // dono rodar "Atualizar das lojas" antes (ver lib/fotoMarketplace.js).
     foto_url: paraHttps(linha.foto_url),
     ads: {
       janelaDias: janela.dias,
@@ -571,7 +571,7 @@ router.put('/:id/vinculo', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // Escrita de volta na plataforma
 // ---------------------------------------------------------------------------
-// Autorizada pela dona do projeto em 04/09/2026. Três travas, porque daqui
+// Autorizada pelo dono do projeto em 04/09/2026. Três travas, porque daqui
 // a alteração vai direto pro anúncio no ar:
 //   · o corpo tem de vir com `confirmar: true` — nenhum PUT acidental passa;
 //   · só preço, estoque, título e situação. Foto, descrição e ficha técnica
@@ -817,7 +817,7 @@ router.get('/exportacao/planilha', async (req, res, next) => {
       marketplace: req.query.marketplace || null,
       integracaoId: req.query.integracao_id || null,
       // A planilha da casa tem a coluna de Ads em JANELA DE DIAS, e é assim
-      // que a dona lê. O calendário da tela não muda o formato do arquivo:
+      // que o dono lê. O calendário da tela não muda o formato do arquivo:
       // quando há intervalo escolhido, ele é convertido em número de dias.
       janelaAdsDias: janelaAds(req).dias,
     });

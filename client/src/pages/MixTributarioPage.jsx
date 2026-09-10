@@ -125,7 +125,7 @@ export default function MixTributarioPage() {
       </header>
 
       {/* O prazo é um FATO com data, e por isso fica no alto. O que vem
-          depois dele é escolha da dona com o contador — a tela não opina. */}
+          depois dele é escolha do dono com o contador — a tela não opina. */}
       {prazo?.dias_restantes != null && (
         <div className="mix-prazo">
           <CalendarClock size={18} />
