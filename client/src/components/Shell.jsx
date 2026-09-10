@@ -124,17 +124,22 @@ export default function Shell({ children }) {
             const Icon = mod.icon;
             const isActive = activeModule && mod.key === activeModule.key;
             return (
-              <button
+              // 10/09/2026: era <button> + navigate(). Virou <Link> pra que o
+              // clique do meio do mouse (e o Ctrl+clique, e o "abrir em nova
+              // aba" do botão direito) abram o módulo numa aba nova, como em
+              // qualquer site. O CSS não mudou — .sidebar-module é seletor de
+              // classe, não de elemento.
+              <Link
                 key={mod.key}
-                type="button"
+                to={mod.pages[0].to}
                 className={'sidebar-module' + (isActive ? ' active' : '')}
                 style={{ '--module-color': mod.color }}
-                onClick={() => navigate(mod.pages[0].to)}
                 title={sidebarColapsado ? mod.label : undefined}
+                onClick={() => setMenuAberto(false)}
               >
                 <span className="module-badge"><Icon size={16} /></span>
                 <span className="module-label">{mod.label}</span>
-              </button>
+              </Link>
             );
           })}
           <button

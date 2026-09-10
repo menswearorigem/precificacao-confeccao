@@ -8,6 +8,7 @@ import FotoProduto from '../components/FotoProduto';
 import { Select, Checkbox, SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazio } from '../components/ui';
 import DataTable from '../components/DataTable';
 import { useTabela } from '../lib/useTabela';
+import { novaAba } from '../lib/novaAba';
 
 const COLUNAS_ORDENAVEIS = {
   referencia: (p) => p.referencia,
@@ -212,7 +213,7 @@ export default function ProdutosListPage() {
           <tbody>
             {loading && produtos.length === 0 && <SkeletonLinhasTabela colunas={11} />}
             {tabela.itensPagina.map((p) => (
-              <tr key={p.id} className="clickable-row" onClick={() => navigate(`/produtos/${p.id}`)}>
+              <tr key={p.id} className="clickable-row" {...novaAba(`/produtos/${p.id}`)} onClick={() => navigate(`/produtos/${p.id}`)}>
                 <td onClick={(e) => e.stopPropagation()}>
                   <Checkbox checked={selecionados.has(p.id)} onChange={() => alternarSelecao(p.id)} />
                 </td>

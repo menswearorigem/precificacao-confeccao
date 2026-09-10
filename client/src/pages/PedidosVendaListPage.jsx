@@ -13,6 +13,7 @@ import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { PRESETS_PERIODO } from '../lib/periodos';
 import DataTable from '../components/DataTable';
 import { useTabela } from '../lib/useTabela';
+import { novaAba } from '../lib/novaAba';
 
 // Lista de pedidos de venda direta — repaginada em 09/09/2026.
 //
@@ -344,7 +345,7 @@ export default function PedidosVendaListPage() {
           <Paginacao {...tabela} posicao="topo" />
           <div className="vendas-cards">
             {tabela.itensPagina.map((p) => (
-              <button key={p.id} type="button" className="venda-pedido-card" onClick={() => navigate(`/pedidos/${p.id}`)}>
+              <button key={p.id} type="button" className="venda-pedido-card" {...novaAba(`/pedidos/${p.id}`)} onClick={() => navigate(`/pedidos/${p.id}`)}>
                 <div className="venda-pedido-topo">
                   <div style={{ minWidth: 0 }}>
                     <div className="venda-pedido-numero">#{p.numero} · {dataBr(String(p.data_pedido).slice(0, 10))}</div>
@@ -401,7 +402,7 @@ export default function PedidosVendaListPage() {
               <tbody>
                 {loading && pedidos.length === 0 && <SkeletonLinhasTabela colunas={10} />}
                 {tabela.itensPagina.map((p) => (
-                  <tr key={p.id} className="clickable-row" onClick={() => navigate(`/pedidos/${p.id}`)}>
+                  <tr key={p.id} className="clickable-row" {...novaAba(`/pedidos/${p.id}`)} onClick={() => navigate(`/pedidos/${p.id}`)}>
                     <td className="mono">#{p.numero}</td>
                     <td className="mono">{dataBr(String(p.data_pedido).slice(0, 10))}</td>
                     <td className="col-truncar">{p.cliente_nome || '—'}</td>

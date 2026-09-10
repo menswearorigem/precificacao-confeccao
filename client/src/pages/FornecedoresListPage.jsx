@@ -12,6 +12,7 @@ import {
 } from '../components/ui';
 import { CartaoGrafico, GraficoRosca, BarraRanking, useRefGrafico, capturarGraficos } from '../components/graficos';
 import { useTabela } from '../lib/useTabela';
+import { novaAba } from '../lib/novaAba';
 
 // Cadastro de fornecedores — agora com o que a operação sabe sobre cada um.
 //
@@ -556,7 +557,7 @@ export default function FornecedoresListPage() {
             <tbody>
               {loading && fornecedores.length === 0 && <SkeletonLinhasTabela colunas={12} />}
               {tabela.itensPagina.map((f) => (
-                <tr key={f.id} className="clickable-row" onClick={() => navigate(`/fornecedores/${f.id}`)}>
+                <tr key={f.id} className="clickable-row" {...novaAba(`/fornecedores/${f.id}`)} onClick={() => navigate(`/fornecedores/${f.id}`)}>
                   <td>
                     <span className="cel-dupla">
                       <strong>{f.nome}</strong>

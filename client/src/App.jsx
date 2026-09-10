@@ -5,6 +5,7 @@ import { DensidadeProvider } from './contexts/DensidadeContext';
 import Shell from './components/Shell';
 import { ConfirmDialogRoot } from './components/ConfirmDialog';
 import { canAccessPath, getDefaultPath } from './lib/modules';
+import { instalarCliqueDoMeio } from './lib/novaAba';
 import LoginPage from './pages/LoginPage';
 import EsqueciSenhaPage from './pages/EsqueciSenhaPage';
 import RedefinirSenhaPage from './pages/RedefinirSenhaPage';
@@ -82,6 +83,7 @@ import RomaneioPage from './pages/RomaneioPage';
 import FinanceiroPage from './pages/FinanceiroPage';
 import TitulosPage from './pages/TitulosPage';
 import ConciliacaoBancariaPage from './pages/ConciliacaoBancariaPage';
+import ContasBancariasPage from './pages/ContasBancariasPage';
 import FluxoCaixaPage from './pages/FluxoCaixaPage';
 import DrePage from './pages/DrePage';
 import CaixaEntradaFinanceiroPage from './pages/CaixaEntradaFinanceiroPage';
@@ -115,6 +117,10 @@ function AppRoutes() {
   useEffect(() => {
     refreshUser().finally(() => setLoading(false));
   }, [refreshUser]);
+
+  // Clique do meio do mouse (scroll pressionado) abre em nova aba — vale para
+  // linha de tabela e cartão clicável em todos os módulos. Ver lib/novaAba.js.
+  useEffect(() => instalarCliqueDoMeio(), []);
 
   return (
     <Routes>
@@ -224,6 +230,7 @@ function AppRoutes() {
                       divergem no primeiro ajuste feito em só uma delas. */}
                   <Route path="/financeiro/pagar" element={<TitulosPage />} />
                   <Route path="/financeiro/receber" element={<TitulosPage />} />
+                  <Route path="/financeiro/contas-bancarias" element={<ContasBancariasPage />} />
                   <Route path="/financeiro/conciliacao-bancaria" element={<ConciliacaoBancariaPage />} />
                   <Route path="/financeiro/fluxo-caixa" element={<FluxoCaixaPage />} />
                   <Route path="/financeiro/dre" element={<DrePage />} />

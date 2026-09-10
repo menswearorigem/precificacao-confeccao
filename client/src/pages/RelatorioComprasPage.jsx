@@ -15,6 +15,7 @@ import {
 } from '../components/graficos';
 import { definicaoRelatorioCompras, indicadoresCompras, SITUACAO_LABEL } from '../lib/relatorioCompras';
 import { textoPeriodo } from '../lib/relatorio';
+import { novaAba } from '../lib/novaAba';
 
 // Relatório de Compras.
 //
@@ -415,7 +416,7 @@ export default function RelatorioComprasPage() {
                 </thead>
                 <tbody>
                   {relatorio.compras.map((c) => (
-                    <tr key={c.id} className="clickable-row" onClick={() => navigate(`/compras/${c.id}`)}>
+                    <tr key={c.id} className="clickable-row" {...novaAba(`/compras/${c.id}`)} onClick={() => navigate(`/compras/${c.id}`)}>
                       <td className="mono">#{c.numero}</td>
                       <td className="mono">{dataBr(String(c.data_compra).slice(0, 10))}</td>
                       <td>{c.fornecedor_nome || '—'}</td>

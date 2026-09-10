@@ -17,6 +17,7 @@ import {
 import { useTabela } from '../lib/useTabela';
 import { definicaoRelatorioCompras, SITUACAO_LABEL } from '../lib/relatorioCompras';
 import { textoPeriodo } from '../lib/relatorio';
+import { novaAba } from '../lib/novaAba';
 
 // Painel de Compras.
 //
@@ -570,7 +571,7 @@ export default function ComprasListPage() {
             <tbody>
               {loading && compras.length === 0 && <SkeletonLinhasTabela colunas={10} />}
               {tabela.itensPagina.map((c) => (
-                <tr key={c.id} className="clickable-row" onClick={() => navigate(`/compras/${c.id}`)}>
+                <tr key={c.id} className="clickable-row" {...novaAba(`/compras/${c.id}`)} onClick={() => navigate(`/compras/${c.id}`)}>
                   <td className="mono">#{c.numero}</td>
                   <td className="mono">{dataBr(String(c.data_compra).slice(0, 10))}</td>
                   <td>

@@ -13,6 +13,7 @@ import {
 import DataTable from '../components/DataTable';
 import CopiarBotao from '../components/CopiarBotao';
 import { useTabela } from '../lib/useTabela';
+import { novaAba } from '../lib/novaAba';
 
 const SITUACAO_TONE = {
   aberto: 'tone-atencao',
@@ -216,7 +217,7 @@ export default function PedidosListPage({ origemFiltro }) {
           <tbody>
             {loading && pedidos.length === 0 && <SkeletonLinhasTabela colunas={8} />}
             {tabela.itensPagina.map((p) => (
-              <tr key={p.id} className="clickable-row" onClick={() => navigate(`/pedidos/${p.id}`)}>
+              <tr key={p.id} className="clickable-row" {...novaAba(`/pedidos/${p.id}`)} onClick={() => navigate(`/pedidos/${p.id}`)}>
                 <td className="mono" style={{ whiteSpace: 'nowrap' }}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                     #{p.numero}

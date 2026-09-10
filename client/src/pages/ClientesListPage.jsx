@@ -6,6 +6,7 @@ import DataTable from '../components/DataTable';
 import { SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazio } from '../components/ui';
 import { useTabela } from '../lib/useTabela';
 import { brl } from '../lib/format';
+import { novaAba } from '../lib/novaAba';
 
 // Data do pedido (coluna DATE) formatada como o resto do sistema formata.
 const dataPedidoBr = (v) => (v ? new Date(v).toLocaleDateString('pt-BR') : '');
@@ -116,7 +117,7 @@ export default function ClientesListPage() {
           <tbody>
             {loading && clientes.length === 0 && <SkeletonLinhasTabela colunas={9} />}
             {tabela.itensPagina.map((c) => (
-              <tr key={c.id} className="clickable-row" onClick={() => navigate(`/clientes/${c.id}`)}>
+              <tr key={c.id} className="clickable-row" {...novaAba(`/clientes/${c.id}`)} onClick={() => navigate(`/clientes/${c.id}`)}>
                 <td>{c.nome}</td>
                 <td className="mono">{c.cpf_cnpj}</td>
                 <td className="mono">{c.telefone}</td>
