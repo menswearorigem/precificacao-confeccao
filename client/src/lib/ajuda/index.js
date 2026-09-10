@@ -7,11 +7,12 @@
 // versionado no repositório como código comum.
 import Fuse from 'fuse.js';
 import { normalizar, analisarConsulta, FUSE_OPTIONS, CORTE_SCORE } from './motor';
-import { getVisibleModules } from '../modules';
+import { getVisibleModules, MODULES } from '../modules';
 
 import { verbetesGeral } from './verbetes/geral';
 import { verbetesProduto } from './verbetes/produto';
 import { verbetesEstoque } from './verbetes/estoque';
+import { verbetesProducao } from './verbetes/producao';
 import { verbetesVendas } from './verbetes/vendas';
 import { verbetesMarketplace } from './verbetes/marketplace';
 import { verbetesFinanceiro } from './verbetes/financeiro';
@@ -25,6 +26,7 @@ const TODOS_OS_VERBETES = [
   ...verbetesGeral,
   ...verbetesProduto,
   ...verbetesEstoque,
+  ...verbetesProducao,
   ...verbetesVendas,
   ...verbetesMarketplace,
   ...verbetesFinanceiro,
@@ -34,6 +36,14 @@ const TODOS_OS_VERBETES = [
   ...verbetesConfiguracoes,
   ...verbetesCalendario,
 ];
+
+// "tambemPor" (lib/modules.js): o módulo Produção é visto tanto por quem
+// tem `producao` quanto por quem tem `estoque` — o backend aceita as duas
+// chaves na mesma rota, e o menu já respeita isso via getVisibleModules.
+// Sem este mapa, usuarioVeVerbete() escondia os verbetes de Produção de
+// quem só tem `estoque`, mesmo essa pessoa enxergando a tela de verdade —
+// o tipo de defeito que aparece como "a Manu não sabe da própria tela".
+const TAMBEM_POR = new Map(MODULES.map((m) => [m.key, m.tambemPor || []]));
 
 // Confere unicidade do id em tempo de build/carregamento do módulo — um id
 // repetido quebraria o link "relacionados" e a navegação por teclado sem
@@ -82,7 +92,12 @@ function moduloDaRota(pathname) {
 function usuarioVeVerbete(v, user) {
   if (v.modulo === 'geral') return !v.adminOnly || user?.role === 'admin';
   const isAdmin = user?.role === 'admin';
-  if (!isAdmin && !(user?.modulos || []).includes(v.modulo)) return false;
+  if (!isAdmin) {
+    const modulos = user?.modulos || [];
+    const temDireto = modulos.includes(v.modulo);
+    const temPorOutroModulo = (TAMBEM_POR.get(v.modulo) || []).some((chave) => modulos.includes(chave));
+    if (!temDireto && !temPorOutroModulo) return false;
+  }
   if (v.adminOnly && !isAdmin) return false;
   return true;
 }
