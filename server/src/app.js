@@ -46,6 +46,7 @@ const estoqueMinimoRoutes = require('./routes/estoqueMinimo.routes');
 const producaoRoutes = require('./routes/producao.routes');
 const producaoMovimentacaoRoutes = require('./routes/producaoMovimentacao.routes');
 const producaoInsumosRoutes = require('./routes/producaoInsumos.routes');
+const producaoProjecaoRoutes = require('./routes/producaoProjecao.routes');
 const faccoesRoutes = require('./routes/faccoes.routes');
 const produtoGradeRoutes = require('./routes/produtoGrade.routes');
 const mixTributarioRoutes = require('./routes/mixTributario.routes');
@@ -221,6 +222,11 @@ function createApp() {
   // `producao`, que e o time que usa esta aba. Nenhuma permissao existente
   // muda (REGRA 4).
   app.use('/api/producao-insumos', requireAuth, requireModulo(['producao', 'estoque']), producaoInsumosRoutes);
+  // Projecao de estoque: producao x estoque em tres camadas, por variante
+  // (10/09/2026). Mesma chave de modulo das demais abas de producao -- a tela
+  // so LE ordem e saldo; a unica escrita e a baixa parcial da grade, que ja
+  // exige a mesma permissao de quem mexe em ordem de producao.
+  app.use('/api/producao-projecao', requireAuth, requireModulo(['producao', 'estoque']), producaoProjecaoRoutes);
   // Cadastro de FACÇÃO e das categorias dela (09/09/2026). Mesma chave da
   // Produção: quem movimenta peça para a facção é quem sabe quem ela é, e a
   // dona pediu explicitamente para poder criar a facção NA HORA de gerar a

@@ -96,6 +96,11 @@ export const MODULES = [
       { to: '/producao/movimentacao', label: 'Gerar Movimentação', icon: ArrowLeftRight },
       { to: '/producao/ordens-servico', label: 'Ordens de Serviço', icon: ClipboardList },
       { to: '/producao/carga', label: 'Carga e Gargalo', icon: Gauge },
+      // Projecao de estoque (10/09/2026): producao x estoque em tres camadas,
+      // por cor e tamanho. Fica DEPOIS da carga porque so faz sentido depois
+      // de existir ordem aberta -- e e' a tela que responde se a ordem que ja'
+      // esta' aberta resolve a falta ou chega curta.
+      { to: '/producao/projecao', label: 'Projeção de Estoque', icon: PackageCheck },
     ],
   },
   {

@@ -63,6 +63,7 @@ import ProducaoPage from './pages/ProducaoPage';
 import MovimentacaoProducaoPage from './pages/MovimentacaoProducaoPage';
 import OrdensServicoPage from './pages/OrdensServicoPage';
 import CargaProducaoPage from './pages/CargaProducaoPage';
+import ProjecaoEstoquePage from './pages/ProjecaoEstoquePage';
 import InsumosPage from './pages/InsumosPage';
 import PromocoesPage from './pages/PromocoesPage';
 import MixTributarioPage from './pages/MixTributarioPage';
@@ -162,6 +163,7 @@ function AppRoutes() {
                   <Route path="/producao/movimentacao" element={<MovimentacaoProducaoPage />} />
                   <Route path="/producao/ordens-servico" element={<OrdensServicoPage />} />
                   <Route path="/producao/carga" element={<CargaProducaoPage />} />
+                  <Route path="/producao/projecao" element={<ProjecaoEstoquePage />} />
                   <Route path="/estoque/locais" element={<EstoqueLocaisPage />} />
                   {/* Reserva de estoque (09/09/2026): saldo × disponível.
                       Mesmo módulo `estoque` das demais telas de saldo —

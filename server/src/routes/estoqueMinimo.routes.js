@@ -30,6 +30,7 @@ const {
 // em silêncio — a referência que mais vende na loja aparecia com venda quase
 // zero. O porquê está escrito em vendasEmPecas.js.
 const vendas = require('../lib/vendasEmPecas');
+const producaoProjecao = require('../lib/producaoProjecao');
 
 const router = express.Router();
 
@@ -111,16 +112,23 @@ async function semanasZeradasPorProduto(janela) {
 // está para chegar — o erro mais caro que uma tela de reposição pode ter.
 // Só ordem VIVA conta: rascunho ainda não é compromisso, concluída já entrou
 // no estoque e cancelada não vai acontecer.
-async function emProducaoPorProduto() {
-  const { rows } = await pool.query(
-    `SELECT produto_id,
-            SUM(GREATEST(quantidade_planejada - quantidade_produzida, 0))::numeric AS pecas
-       FROM ordens_producao
-      WHERE situacao IN ('planejada', 'em_producao')
-      GROUP BY produto_id`
-  );
-  return new Map(rows.map((r) => [r.produto_id, Number(r.pecas) || 0]));
-}
+// 10/09/2026: esta funcao saiu daqui e virou `producaoProjecao.js`, para a
+// tela de Projecao de Estoque e esta usarem a MESMA definicao de "em
+// producao". Duas consultas com a mesma intencao e textos diferentes foi
+// exatamente como nasceram as duas formulas de cobertura que a varredura de
+// 09/09 encontrou discordando (60 dias contra 168, na mesma referencia).
+//
+// A conta compartilhada corrige duas coisas em relacao a versao que estava
+// aqui, e as duas BAIXAM a posicao de estoque -- ela estava alta:
+//
+//   1. Soma a GRADE da ordem, nao o cabecalho. O cabecalho e um resumo
+//      guardado para a listagem nao ter de somar a grade a cada linha; quando
+//      alguem mexe na grade sem atualizar o resumo, os dois divergem, e o
+//      numero que vale e o da grade.
+//   2. Desconta a SEGUNDA QUALIDADE. Peca que voltou com defeito nao vai ser
+//      produzida de novo e nao entra no estoque de primeira -- mante-la no
+//      pendente a deixaria eternamente "a caminho".
+const emProducaoPorProduto = () => producaoProjecao.emProducaoPorProduto({});
 
 // ---------------------------------------------------------------------------
 // Peça acabada: cobertura, cadência de reposição e quanto produzir
