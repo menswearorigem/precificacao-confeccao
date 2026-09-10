@@ -48,37 +48,11 @@ const REGRAS = [
   },
 
   // -------------------------------------------------------------------
-  // 2. Malharia — malha circular e retilínea são vendidas e estocadas em
-  //    QUILO na confecção brasileira. É a regra que mais muda custo, e é
-  //    também a mais estável: quem compra malha compra por peso.
-  // -------------------------------------------------------------------
-  {
-    // "MALHAS WILSON LTDA" é nome de fornecedor e não pode disparar aqui;
-    // por isso `MALHA` precisa vir isolado ou seguido de qualificador.
-    teste: (d) => /\bMALHA\b/.test(d) && !/\bMALHAS \w+ LTDA\b/.test(d),
-    unidade: 'kg', tipo: 'tecido', confianca: 'alta',
-    regra: 'malha — malharia é comprada e estocada em quilo',
-  },
-  {
-    teste: (d) => /\b(SUPLEX|SUPPLEX|CANELADO|CANELADA|SUEDINE|MOLETOM|MOLETON|RIBANA|RIBAN|TRICOT|DRY ?FIT|PIQUET?|PIQUE)\b/.test(d),
-    unidade: 'kg', tipo: 'tecido', confianca: 'alta',
-    regra: 'família de malharia (suplex, canelado, ribana, piquet, suedine, moletom, tricot)',
-  },
-  {
-    // Gola/punho retilínea sai do tear em peso, não em metro nem em peça.
-    teste: (d) => /\bRETILINEA\b/.test(d),
-    unidade: 'kg', tipo: 'aviamento', confianca: 'media',
-    regra: 'retilínea — sai do tear em peso; confira se a sua vem em quilo ou em peça',
-  },
-  {
-    // "RIB FIO 30", "FIO 30 100%ALGODAO": fio e malha de fio contado, em quilo.
-    teste: (d) => /\bFIO \d+\b/.test(d) && !/\bETIQUETA|ETQ|TAG\b/.test(d),
-    unidade: 'kg', tipo: 'tecido', confianca: 'media',
-    regra: 'malha de fio contado (fio 30/40) — costuma ser comprada em quilo',
-  },
-
-  // -------------------------------------------------------------------
-  // 3. Etiquetaria, tags e adesivos — sempre por peça.
+  // 2. Etiquetaria, tags e adesivos — sempre por peça.
+  //    Vem ANTES da malharia de propósito: "ETIQUETA DE TAMANHO OG PIQUET" é
+  //    uma etiqueta contada por peça, não malha vendida por quilo, e a
+  //    palavra PIQUET no meio do nome não muda isso. O relatório de saldo do
+  //    Wik de 10/09/2026 flagrou exatamente esse erro em três itens.
   // -------------------------------------------------------------------
   {
     teste: (d) => /^(ETIQUETA|ETQUETA|ETQ|ETIQUETAS|ET \d|ETIQ)\b/.test(d),
@@ -97,7 +71,7 @@ const REGRAS = [
   },
 
   // -------------------------------------------------------------------
-  // 4. Aviamento contado por peça.
+  // 3. Aviamento contado por peça.
   // -------------------------------------------------------------------
   {
     teste: (d) => /^(BOTAO|BOTOES|BOTO)/.test(d) || /\bBOTAO\b|\bBOTOES\b/.test(d),
@@ -138,6 +112,36 @@ const REGRAS = [
   },
 
   // -------------------------------------------------------------------
+  // 4. Malharia — malha circular e retilínea são vendidas e estocadas em
+  //    QUILO na confecção brasileira. É a regra que mais muda custo, e é
+  //    também a mais estável: quem compra malha compra por peso.
+  // -------------------------------------------------------------------
+  {
+    // "MALHAS WILSON LTDA" é nome de fornecedor e não pode disparar aqui;
+    // por isso `MALHA` precisa vir isolado ou seguido de qualificador.
+    teste: (d) => /\bMALHA\b/.test(d) && !/\bMALHAS \w+ LTDA\b/.test(d),
+    unidade: 'kg', tipo: 'tecido', confianca: 'alta',
+    regra: 'malha — malharia é comprada e estocada em quilo',
+  },
+  {
+    teste: (d) => /\b(SUPLEX|SUPPLEX|CANELADO|CANELADA|SUEDINE|MOLETOM|MOLETON|RIBANA|RIBAN|TRICOT|DRY ?FIT|PIQUET?|PIQUE)\b/.test(d),
+    unidade: 'kg', tipo: 'tecido', confianca: 'alta',
+    regra: 'família de malharia (suplex, canelado, ribana, piquet, suedine, moletom, tricot)',
+  },
+  {
+    // Gola/punho retilínea sai do tear em peso, não em metro nem em peça.
+    teste: (d) => /\bRETILINEA\b/.test(d),
+    unidade: 'kg', tipo: 'aviamento', confianca: 'media',
+    regra: 'retilínea — sai do tear em peso; confira se a sua vem em quilo ou em peça',
+  },
+  {
+    // "RIB FIO 30", "FIO 30 100%ALGODAO": fio e malha de fio contado, em quilo.
+    teste: (d) => /\bFIO \d+\b/.test(d) && !/\bETIQUETA|ETQ|TAG\b/.test(d),
+    unidade: 'kg', tipo: 'tecido', confianca: 'media',
+    regra: 'malha de fio contado (fio 30/40) — costuma ser comprada em quilo',
+  },
+
+  // -------------------------------------------------------------------
   // 5. Aviamento vendido em metro (rolo, mas consumido em metro).
   // -------------------------------------------------------------------
   {
@@ -147,27 +151,41 @@ const REGRAS = [
     regra: 'cadarço/elástico/fita/viés — vendido e consumido em metro',
   },
   {
-    // Entretela é o caso mais traiçoeiro da lista: a de rolo vem em metro,
-    // a de gola/punho já cortada vem em peça. O preço aqui (R$ 0,15 a 0,89)
-    // é típico de PEÇA CORTADA, não de metro de rolo — mas isso é leitura,
-    // não é dado. Fica 'baixa' de propósito, para ir para a conferência.
-    teste: (d) => /^ENTRETELA\b|\bENTRETELA\b/.test(d),
-    unidade: 'un', tipo: 'aviamento', confianca: 'baixa',
-    regra: 'entretela — o preço da lista parece de peça já cortada, mas entretela de rolo vem em metro: CONFIRA',
+    // Entretela de GOLA e de PUNHO: resolvido por dado, não por leitura.
+    // O relatório "Saldo de estoque de Matéria-Prima" do Wik (10/09/2026)
+    // traz 14 entretelas de gola/punho em estoque, e as 14 estão em UN —
+    // nesta casa elas entram já cortadas, por peça. Não é mais palpite.
+    teste: (d) => /\bENTRETELA\b/.test(d) && /\b(GOLA|PUNHO|COLARINHO)\b/.test(d),
+    unidade: 'un', tipo: 'aviamento', confianca: 'alta',
+    regra: 'entretela de gola/punho — as 14 que o Wik tem em estoque estão todas em UN, cortadas por peça',
+  },
+  {
+    // As demais entretelas (pala, calça, braguilha) não aparecem no relatório
+    // de saldo, então continuam sem prova: a de rolo vem em metro, a cortada
+    // vem em peça, e o preço sozinho não decide. Vai para a conferência.
+    teste: (d) => /\bENTRETELA\b/.test(d),
+    unidade: 'un', tipo: 'aviamento', confianca: 'media',
+    regra: 'entretela que não é de gola/punho — pode vir em rolo (metro) ou já cortada (peça): CONFIRA',
   },
 
   // -------------------------------------------------------------------
   // 6. Tecido plano — metro.
   // -------------------------------------------------------------------
   {
-    teste: (d) => /^(TECIDO|TEC)\b/.test(d),
-    unidade: 'm', tipo: 'tecido', confianca: 'alta',
-    regra: 'tecido plano — vendido em metro',
-  },
-  {
+    // A família nomeada vem primeiro: aqui a palavra diz que é plano.
     teste: (d) => /\b(TRICOLINE|VISCOLAICRA|VISCOLYCRA|VISCOSE|LINHO|LINEN|JEANS|DENIM|SARJA|OXFORD|XADREZ|CHAMBRAY|CETIM|COTTON|TEAR TEXTIL|FORRO|BRIM|GABARDINE|ALFAIATARIA|TAFETA|CREPE|LAISE|LASER)\b/.test(d),
     unidade: 'm', tipo: 'tecido', confianca: 'alta',
     regra: 'família de tecido plano (tricoline, viscose, jeans, linho, cetim, xadrez…)',
+  },
+  {
+    // "TECIDO ..." sozinho NÃO prova que é plano. O relatório de saldo do Wik
+    // de 10/09/2026 mostrou "TECIDO DYNAMIC FIT-UV50+" e "TECIDO FITNESS
+    // FURADINHO" estocados em QUILO — são malha, e a palavra "TECIDO" no
+    // começo do nome não avisa. Por isso este caso é 'media', não 'alta':
+    // vai para a fila de conferência em vez de virar custo calado.
+    teste: (d) => /^(TECIDO|TEC)\b/.test(d),
+    unidade: 'm', tipo: 'tecido', confianca: 'media',
+    regra: 'começa por "TECIDO" mas nenhuma palavra diz se é plano (metro) ou malha (quilo) — tratado como metro, CONFIRA',
   },
 
   // -------------------------------------------------------------------

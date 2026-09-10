@@ -423,11 +423,41 @@ também resolve, item por item.
 
 **O QUE FIZ NO LUGAR:** a unidade foi deduzida por regra automática
 (`server/src/lib/insumoUnidade.js`), e **cada insumo carrega o quanto se
-pode confiar nisso**: 368 com confiança alta (a descrição diz — "POR
-QUILO", MALHA, TECIDO, BOTÃO, ETIQUETA… — ou o cadastro de origem informa
-LARGURA, que só existe em artigo vendido por metro), 25 média e 110
-palpite. A frase que explica a decisão fica gravada em `observacoes` e
-aparece na tela.
+pode confiar nisso**. A frase que explica a decisão fica gravada em
+`observacoes` e aparece na tela.
+
+**ATUALIZAÇÃO de 10/09/2026 — parte do problema deixou de existir.** Chegou
+o segundo relatório do Wik, "Saldo de estoque de Matéria-Prima", e ele TEM a
+coluna UND. MED. Ele cobre só quem tem saldo (filtro "Estoque Positivo"),
+mas isso já deu a unidade REAL de **74 das 503** referências — essas saíram
+da dedução de vez (migration 0065).
+
+A conferência das 74 contra o que o sistema tinha deduzido: **70 certas, 4
+erradas** — e as 4 estavam na faixa de confiança ALTA, que é a que entra no
+custo sem passar por ninguém. As duas causas foram consertadas:
+
+- **ordem das regras**: etiqueta com a palavra PIQUET ou MALHA no nome caía
+  na regra de malharia e saía em quilo. Etiqueta, tag e botão passaram a ser
+  avaliados antes de malharia;
+- **"TECIDO" não quer dizer plano**: dois artigos começados por "TECIDO"
+  estão estocados em quilo. A regra que dava confiança ALTA a qualquer coisa
+  começada por "TECIDO" foi rebaixada para MÉDIA.
+
+O efeito colateral é que a fila de conferência **cresceu de 135 para 162**.
+É o resultado certo: o relatório provou que aquela categoria não era
+confiável, e fila maior é melhor do que custo errado com cara de certo.
+
+Em compensação, o caso que estava marcado como o mais traiçoeiro da lista
+saiu da fila: as **14 entretelas de gola e punho em estoque estão todas em
+UN**. Nesta casa elas entram já cortadas, por peça — não é mais leitura, é
+dado.
+
+Estado atual: 74 confirmadas pelo ERP, 267 deduzidas com confiança alta,
+162 na fila de conferência.
+
+**O caminho mais curto para acabar com isso:** o mesmo relatório de saldo
+**sem o filtro "Estoque Positivo"** traria a unidade real das 503 de uma
+vez, e a dedução deixaria de existir neste sistema.
 
 E, o que mais importa: **insumo cuja unidade ainda é palpite do sistema não
 entra no custo de nenhum produto**. A linha da ficha vira pendência escrita

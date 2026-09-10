@@ -151,6 +151,45 @@ async function main() {
   }
 
   // =====================================================================
+  console.log('\n== 1b. Os erros que o relatório de saldo do Wik pegou (10/09/2026) ==');
+  // =====================================================================
+  {
+    // Regressão da ordem das regras: a palavra PIQUET/MALHA no meio do nome
+    // de uma ETIQUETA fazia a regra de malharia disparar antes, e a etiqueta
+    // saía em QUILO. São três itens na lista real.
+    checa('"ETIQUETA DE TAMANHO OG PIQUET" é etiqueta (un), não malha (kg)',
+      classificar('ETIQUETA DE TAMANHO OG PIQUET', 0.09).unidade === 'un',
+      classificar('ETIQUETA DE TAMANHO OG PIQUET', 0.09));
+    checa('"ETIQUETA DE TAMANHO MISS MANU MALHA" também é un',
+      classificar('ETIQUETA DE TAMANHO MISS MANU MALHA', 0.1).unidade === 'un');
+    checa('e "TAG" com palavra de malha no nome continua em un',
+      classificar('TAG MALHA ORIGEM', 0.06).unidade === 'un');
+
+    // "TECIDO" sozinho não prova que é plano: o Wik tem dois estocados em kg.
+    checa('"TECIDO DYNAMIC FIT-UV50+" não pode sair com confiança ALTA',
+      classificar('TECIDO DYNAMIC FIT-UV50+', 86.2).confianca === 'media',
+      classificar('TECIDO DYNAMIC FIT-UV50+', 86.2));
+    checa('"TECIDO FITNESS FURADINHO" idem', classificar('TECIDO FITNESS FURADINHO', 29.16).confianca === 'media');
+    checa('mas "TECIDO TRICOLINE XADREZ" continua alta em metro — a palavra diz que é plano', (() => {
+      const c = classificar('TECIDO TRICOLINE XADREZ FIO TINTO', 16.99);
+      return c.unidade === 'm' && c.confianca === 'alta';
+    })());
+    checa('e "TECIDO PIQUE ORIENTE KING" continua alta em quilo — piquet é malha', (() => {
+      const c = classificar('TECIDO PIQUE ORIENTE KING', 42.35);
+      return c.unidade === 'kg' && c.confianca === 'alta';
+    })());
+
+    // Entretela de gola/punho deixou de ser palpite: as 14 em estoque no Wik
+    // estão todas em UN.
+    checa('entretela de gola virou confiança alta em un', (() => {
+      const c = classificar('ENTRETELA DE GOLA TNT OG', 0.39);
+      return c.unidade === 'un' && c.confianca === 'alta';
+    })());
+    checa('entretela que não é de gola/punho continua para conferência',
+      classificar('ENTRETELA DE PALA', 0.15).confianca === 'media');
+  }
+
+  // =====================================================================
   console.log('\n== 2. Vínculo: exato liga, parecido NÃO liga ==');
   // =====================================================================
   const malha = await criarInsumo({ codigo: 'MALHA', nome: 'MALHA TESTE PI PV PRETA', unidade: 'kg', custo: 40 });
@@ -420,6 +459,38 @@ async function main() {
     checa('nenhum insumo da lista entrou com custo zero', zero[0].n === 0, zero[0].n);
     const resumo = await req('GET', '/api/producao-insumos/resumo');
     checa('o resumo da aba responde', resumo.status === 200 && resumo.body.insumos >= 503, resumo.body);
+  }
+
+  // =====================================================================
+  console.log('\n== 13b. As 74 unidades que vieram do relatório de saldo ==');
+  // =====================================================================
+  {
+    const { rows } = await pool.query(
+      `SELECT COUNT(*)::int n FROM insumos WHERE observacoes LIKE '%Unidade CONFIRMADA pelo relatório%'`);
+    checa('74 insumos com unidade confirmada pelo ERP', rows[0].n === 74, rows[0].n);
+    const { rows: pend } = await pool.query(
+      `SELECT COUNT(*)::int n FROM insumos
+        WHERE observacoes LIKE '%Unidade CONFIRMADA pelo relatório%' AND unidade_confianca IS NOT NULL`);
+    checa('e nenhum deles continua marcado como dedução do sistema', pend[0].n === 0, pend[0].n);
+
+    const esperado = {
+      'ETIQUETA DE TAMANHO OG PIQUET': 'un',
+      'TECIDO DYNAMIC FIT-UV50+': 'kg',
+      'TECIDO FITNESS FURADINHO': 'kg',
+      'ENTRETELA DE GOLA TNT OG': 'un',
+    };
+    for (const [nome, un] of Object.entries(esperado)) {
+      const { rows: r } = await pool.query('SELECT unidade, unidade_confianca FROM insumos WHERE nome = $1', [nome]);
+      checa(`"${nome}" ficou em ${un}, confirmado`,
+        r.length === 1 && r[0].unidade === un && r[0].unidade_confianca === null, r[0]);
+    }
+
+    // A trava que importa: quem já foi confirmado por gente não é sobrescrito
+    // pelo relatório. Provado invertendo o caso — confirma à mão outra
+    // unidade e conferindo que a 0065 (já aplicada) não a desfez.
+    const { rows: livres } = await pool.query(
+      `SELECT COUNT(*)::int n FROM insumos WHERE unidade_confianca IS NULL`);
+    checa('o total de unidades já resolvidas é pelo menos as 74 do ERP', livres[0].n >= 74, livres[0].n);
   }
 
   // =====================================================================
