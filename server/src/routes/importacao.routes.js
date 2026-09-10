@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const pool = require('../db/pool');
+const { lerVinculos, mesclar } = require('../lib/preservarVinculoFicha');
 const { parseImportFile } = require('../lib/importParser');
 const { validarProdutos, validarItensPorReferencia } = require('../lib/importValidate');
 const { getCalcContext } = require('../lib/calcContext');
@@ -161,14 +162,21 @@ router.post('/confirmar', async (req, res, next) => {
     for (const [referencia, itens] of materiaisPorRef.entries()) {
       const produtoId = idPorReferencia.get(referencia);
       if (!produtoId) continue;
+      // Vínculo com insumo é lido antes do DELETE e devolvido linha a linha:
+      // a planilha de importação não traz essas colunas, e sem isto toda
+      // importação desfaria o vínculo da ficha com o cadastro de insumo.
+      const vinculos = await lerVinculos(client, produtoId);
       await client.query('DELETE FROM materiais WHERE produto_id = $1', [produtoId]);
       let ordem = 0;
       for (const m of itens) {
         ordem += 1;
+        const herdado = mesclar(m, vinculos.tomar(m.material));
         await client.query(
-          `INSERT INTO materiais (produto_id, material, unidade, quantidade, valor_unitario, ordem)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [produtoId, m.material || null, m.unidade || null, m.quantidade || 0, m.valor_unitario || 0, ordem]
+          `INSERT INTO materiais (produto_id, material, unidade, quantidade, valor_unitario, ordem,
+                                  insumo_id, consumo_por_peca, perda_pct)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [produtoId, m.material || null, m.unidade || null, m.quantidade || 0, m.valor_unitario || 0, ordem,
+           herdado.insumo_id, herdado.consumo_por_peca, herdado.perda_pct]
         );
       }
     }

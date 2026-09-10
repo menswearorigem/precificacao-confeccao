@@ -13,6 +13,7 @@ import { confirmar } from '../components/ConfirmDialog';
 import NovaOrdemProducao from '../components/NovaOrdemProducao';
 import ProducaoKanban from '../components/ProducaoKanban';
 import FaccoesAba from '../components/FaccoesAba';
+import InsumosProducaoAba from '../components/InsumosProducaoAba';
 import NovaFaccaoModal from '../components/NovaFaccaoModal';
 import { useTabela } from '../lib/useTabela';
 import { brl, pct, formatQtd, numeroBr, dataBr } from '../lib/format';
@@ -1260,6 +1261,9 @@ export default function ProducaoPage() {
         <button type="button" className={`subtab-btn ${aba === 'faccoes' ? 'active' : ''}`} onClick={() => setAba('faccoes')}>
           Cadastro de facção
         </button>
+        <button type="button" className={`subtab-btn ${aba === 'insumos' ? 'active' : ''}`} onClick={() => setAba('insumos')}>
+          Insumos
+        </button>
       </div>
 
       {erro && <p className="erro-inline">{erro}</p>}
@@ -1382,6 +1386,7 @@ export default function ProducaoPage() {
       {aba === 'roteiro' && <RoteiroEConsumo produtos={produtos} fornecedores={fornecedores} />}
       {aba === 'faccao' && <Faccao fornecedores={faccoes.length > 0 ? faccoes : fornecedores} insumos={insumos} onMudou={carregar} />}
       {aba === 'faccoes' && <FaccoesAba etapas={etapas} produtos={produtos} onMudou={carregar} />}
+      {aba === 'insumos' && <InsumosProducaoAba />}
 
       {novaOrdem && (
         <NovaOrdemProducao

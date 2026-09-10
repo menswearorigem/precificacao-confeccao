@@ -3,6 +3,7 @@ const multer = require('multer');
 const pool = require('../db/pool');
 const { calcularProduto, pctImpostosEmpresa } = require('../lib/calc');
 const { getCalcContext, getEmpresa } = require('../lib/calcContext');
+const { lerVinculos, mesclar } = require('../lib/preservarVinculoFicha');
 
 const router = express.Router();
 
@@ -292,14 +293,22 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-async function inserirMateriaisECustos(client, produtoId, materiais, custosIndustriais) {
+// `vinculos` vem de lerVinculos(), lido ANTES do DELETE. Sem ele, regravar a
+// ficha apagaria `insumo_id`, `consumo_por_peca` e `perda_pct` — colunas que
+// não entram no custo e por isso sumiam sem ninguém notar, levando junto o
+// vínculo com o insumo, a explosão de necessidade da O.P. e o estoque mínimo
+// de matéria-prima.
+async function inserirMateriaisECustos(client, produtoId, materiais, custosIndustriais, vinculos) {
   let ordem = 0;
   for (const m of materiais) {
     ordem += 1;
+    const herdado = vinculos ? mesclar(m, vinculos.tomar(m.material)) : mesclar(m, null);
     await client.query(
-      `INSERT INTO materiais (produto_id, material, unidade, quantidade, valor_unitario, ordem)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [produtoId, m.material || null, m.unidade || null, m.quantidade || 0, m.valor_unitario || 0, ordem]
+      `INSERT INTO materiais (produto_id, material, unidade, quantidade, valor_unitario, ordem,
+                              insumo_id, consumo_por_peca, perda_pct)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [produtoId, m.material || null, m.unidade || null, m.quantidade || 0, m.valor_unitario || 0, ordem,
+       herdado.insumo_id, herdado.consumo_por_peca, herdado.perda_pct]
     );
   }
   ordem = 0;
@@ -349,6 +358,9 @@ router.put('/:id', async (req, res, next) => {
       }
     }
 
+    // Guarda os vínculos com insumo antes de apagar as linhas — eles não vêm
+    // no corpo da requisição da tela de produto e sumiriam a cada salvamento.
+    const vinculosAnteriores = body.materiais !== undefined ? await lerVinculos(client, id) : null;
     if (body.materiais !== undefined) {
       await client.query('DELETE FROM materiais WHERE produto_id = $1', [id]);
     }
@@ -362,7 +374,7 @@ router.put('/:id', async (req, res, next) => {
       // deve ficar protegida da próxima atualização automática da Ficha de Custo.
       await client.query('UPDATE produtos SET ficha_custo_origem_wik = FALSE WHERE id = $1', [id]);
     }
-    await inserirMateriaisECustos(client, id, body.materiais || [], body.custosIndustriais || []);
+    await inserirMateriaisECustos(client, id, body.materiais || [], body.custosIndustriais || [], vinculosAnteriores);
 
     const produtoRow = await fetchProdutoRow(client, id);
     if (!produtoRow) {

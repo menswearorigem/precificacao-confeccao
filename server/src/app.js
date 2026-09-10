@@ -45,6 +45,7 @@ const insumosRoutes = require('./routes/insumos.routes');
 const estoqueMinimoRoutes = require('./routes/estoqueMinimo.routes');
 const producaoRoutes = require('./routes/producao.routes');
 const producaoMovimentacaoRoutes = require('./routes/producaoMovimentacao.routes');
+const producaoInsumosRoutes = require('./routes/producaoInsumos.routes');
 const faccoesRoutes = require('./routes/faccoes.routes');
 const produtoGradeRoutes = require('./routes/produtoGrade.routes');
 const mixTributarioRoutes = require('./routes/mixTributario.routes');
@@ -214,6 +215,12 @@ function createApp() {
   // (09/09/2026). Mesma chave de modulo da producao -- nenhuma permissao
   // existente muda (REGRA 4).
   app.use('/api/producao-movimentacao', requireAuth, requireModulo(['producao', 'estoque']), producaoMovimentacaoRoutes);
+  // Aba de INSUMOS da Producao e a redistribuicao do custo entre materia-prima
+  // e custo industrial (10/09/2026). Mesma chave de modulo da Producao -- a
+  // rota /api/insumos vive sob `compras` e daria 403 para quem so tem
+  // `producao`, que e o time que usa esta aba. Nenhuma permissao existente
+  // muda (REGRA 4).
+  app.use('/api/producao-insumos', requireAuth, requireModulo(['producao', 'estoque']), producaoInsumosRoutes);
   // Cadastro de FACÇÃO e das categorias dela (09/09/2026). Mesma chave da
   // Produção: quem movimenta peça para a facção é quem sabe quem ela é, e a
   // dona pediu explicitamente para poder criar a facção NA HORA de gerar a

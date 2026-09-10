@@ -1,7 +1,13 @@
-export const brl = (n) =>
+// `casas` é opcional e serve para os poucos lugares onde duas casas
+// escondem a informação: custo unitário de insumo (R$ 0,0500 por etiqueta) e
+// a diferença de arredondamento da redistribuição de custo, que precisa ser
+// mostrada com precisão para se poder afirmar que ela é zero. Sem argumento,
+// o comportamento é exatamente o de sempre — R$ com duas casas.
+export const brl = (n, casas) =>
   (Number.isFinite(Number(n)) ? Number(n) : 0).toLocaleString('pt-BR', {
     style: 'currency',
     currency: 'BRL',
+    ...(casas === undefined ? {} : { minimumFractionDigits: casas, maximumFractionDigits: casas }),
   });
 
 export const pct = (n, digits = 1) =>

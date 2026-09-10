@@ -7164,3 +7164,36 @@ table.grade-matriz { width: auto; min-width: 0; }
 /* Bloco de leitura da ficha da facção: rótulo pequeno em cima, valor embaixo. */
 .ficha-bloco { min-width: 180px; }
 .ficha-bloco p { margin: 2px 0 0; font-size: 12.5px; }
+
+/* ---------------------------------------------------------------------------
+   Aba de Insumos da Produção (10/09/2026)
+   Três classes novas, todas em cima das variáveis que já existem — nenhuma
+   cor solta (REGRA 3).
+--------------------------------------------------------------------------- */
+
+/* Rótulo com marcador que funciona como filtro na `filtros-linha`. Fica com
+   a mesma altura dos selects para a linha não ficar desalinhada. */
+.filtro-marcavel {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 0 10px; height: 34px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--ink);
+  font-size: 13px; cursor: pointer; user-select: none;
+  white-space: nowrap;
+}
+.filtro-marcavel:hover { border-color: var(--terracotta); }
+
+/* Unidade + selo de "isto ainda é palpite do sistema", lado a lado. */
+.insumo-unidade-selo { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* A tabela de detalhe que abre dentro de uma linha da distribuição. Recuada e
+   com fundo do próprio corpo, para ficar claro que pertence à linha de cima. */
+.tabela-embutida {
+  margin: 8px 0 8px 18px;
+  width: calc(100% - 18px);
+  background: var(--bg);
+}
+.tabela-embutida th { font-size: 11px; }
+.tabela-embutida td { font-size: 12px; }
+
+.aba-insumos-producao { display: flex; flex-direction: column; gap: 14px; }

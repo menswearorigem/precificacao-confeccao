@@ -1,4 +1,5 @@
 const pool = require('../db/pool');
+const { lerVinculos, mesclar } = require('./preservarVinculoFicha');
 const wik = require('./wik');
 const {
   buscarIntegracao, obterTokenBoxAtual, criarOpcoesToken, registrarTentativaWik, registrarFalhaWik, registrarSucessoWik, cicloDevePular,
@@ -147,6 +148,10 @@ async function aplicarImportacaoFichaCusto(produtos) {
       const temFicha = existeMat.length > 0 || existeCusto.length > 0;
       if (temFicha && !produtoRows[0].ficha_custo_origem_wik) { ignorados.push(item.referencia); continue; }
 
+      // O vínculo ficha↔insumo é nosso, não do Wik: ele é lido antes do DELETE
+      // e devolvido às linhas de mesmo nome. Sem isto, toda sincronização
+      // automática da Ficha de Custo desfaria o cadastro de insumo da ficha.
+      const vinculos = temFicha ? await lerVinculos(client, item.produtoId) : null;
       if (temFicha) {
         await client.query('DELETE FROM materiais WHERE produto_id = $1', [item.produtoId]);
         await client.query('DELETE FROM custos_industriais WHERE produto_id = $1', [item.produtoId]);
@@ -155,9 +160,12 @@ async function aplicarImportacaoFichaCusto(produtos) {
       let ordem = 0;
       for (const m of item.materiais || []) {
         ordem += 1;
+        const herdado = vinculos ? mesclar(m, vinculos.tomar(m.material)) : mesclar(m, null);
         await client.query(
-          `INSERT INTO materiais (produto_id, material, unidade, quantidade, valor_unitario, ordem) VALUES ($1,$2,$3,$4,$5,$6)`,
-          [item.produtoId, m.material, m.unidade, m.quantidade, m.valorUnitario, ordem]
+          `INSERT INTO materiais (produto_id, material, unidade, quantidade, valor_unitario, ordem,
+                                  insumo_id, consumo_por_peca, perda_pct) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [item.produtoId, m.material, m.unidade, m.quantidade, m.valorUnitario, ordem,
+           herdado.insumo_id, herdado.consumo_por_peca, herdado.perda_pct]
         );
         materiaisCriados += 1;
       }

@@ -373,3 +373,77 @@ diferentes e a tela não pode confundir as duas.
 exportada — a linha sai como **"NÃO ESTÁ ANUNCIADO"**, igual a qualquer
 outra loja sem aquele anúncio. Assim que a integração existir, o mesmo
 código passa a preencher a linha sem mudar o formato da planilha.
+
+## 9. Redistribuição de custo: a soma fecha com até meio centavo de diferença
+
+**O QUE FOI PEDIDO:** cadastrar a lista de matéria-prima do Wik como insumo
+e preencher o custo de matéria-prima de todos os produtos cadastrados,
+**sem alterar o custo do produto** — só mudando como esse custo está
+distribuído entre material e mão de obra (10/09/2026).
+
+**POR QUE NÃO FECHA EXATO:** `custos_industriais.valor` é `NUMERIC(14,2)`
+— guarda centavo inteiro. O custo novo de matéria-prima sai de
+`quantidade × custo do insumo`, com quatro casas em cada fator, e cai em
+qualquer fração. O valor a devolver ao custo industrial quase nunca é um
+número redondo de centavos, então a soma `materiais + custos_industriais`
+fecha com diferença de **no máximo meio centavo por referência** (nos
+testes, as maiores foram de R$ 0,0030).
+
+A alternativa seria forçar a conta a fechar mentindo o custo unitário de um
+dos insumos — a ficha diria que a malha custa R$ 39,9903/kg quando ela
+custa R$ 39,99. Entre um erro de meio centavo no rateio e um preço de
+insumo falso, foi escolhido o primeiro.
+
+**O QUE SERIA PRECISO:** aumentar a precisão de `custos_industriais.valor`
+para quatro casas. É uma migration aditiva e simples, mas mexe numa coluna
+que o motor de cálculo lê (REGRA 1) e que aparece em toda a Ficha de
+Precificação — não foi feita sem autorização explícita.
+
+**O QUE FIZ NO LUGAR:** a diferença é **medida, mostrada e travada**. A
+prévia da aba mostra a diferença de cada referência com quatro casas e o
+maior desvio do lote no indicador do topo. Ao gravar, o servidor relê do
+banco referência por referência e, se qualquer uma tiver mudado de custo
+mais que meio centavo, dá ROLLBACK em tudo e diz qual foi. Nenhuma
+referência é gravada com diferença acima desse limite.
+
+## 10. A lista do Wik não traz unidade de medida
+
+**O QUE FOI PEDIDO:** "observe que alguns insumos são medidos por metros,
+quilos e etc, considere isso na hora de preencher".
+
+**POR QUE É UMA RESSALVA:** o relatório "LISTA DE MAT.PRIMA" do Wik traz
+referência, descrição e preço — e **não traz a unidade**. Sem unidade o
+preço não quer dizer nada: R$ 45,00 pode ser o metro de um tecido plano ou
+o quilo de uma malha, e o custo da peça muda por um fator de três conforme
+a escolha.
+
+**O QUE SERIA PRECISO:** a unidade de compra de cada insumo, que existe no
+cadastro do Wik mas não sai neste relatório. Uma nota fiscal de entrada
+também resolve, item por item.
+
+**O QUE FIZ NO LUGAR:** a unidade foi deduzida por regra automática
+(`server/src/lib/insumoUnidade.js`), e **cada insumo carrega o quanto se
+pode confiar nisso**: 368 com confiança alta (a descrição diz — "POR
+QUILO", MALHA, TECIDO, BOTÃO, ETIQUETA… — ou o cadastro de origem informa
+LARGURA, que só existe em artigo vendido por metro), 25 média e 110
+palpite. A frase que explica a decisão fica gravada em `observacoes` e
+aparece na tela.
+
+E, o que mais importa: **insumo cuja unidade ainda é palpite do sistema não
+entra no custo de nenhum produto**. A linha da ficha vira pendência escrita
+até alguém confirmar a unidade na aba. Quem quiser deixar o palpite entrar
+tem de marcar isso explicitamente, e a tela avisa em vermelho o que está
+aceitando.
+
+## 11. Preço R$ 0,000000 no relatório do Wik entrou como "sem custo"
+
+**POR QUE É UMA RESSALVA:** 4 dos 503 itens da lista vêm com PREÇO
+impresso como R$ 0,000000 (e outros 22 com a coluna em branco). Matéria-
+prima de graça não existe: zero ali é cadastro sem preço no Wik. Deixar o
+zero entrar faria a peça parecer mais barata do que é, e — pior — faria
+isso em silêncio, porque zero soma sem reclamar.
+
+**O QUE FIZ NO LUGAR:** os 26 entraram com `custo_atual` NULO, e a tela
+escreve "sem custo" com o motivo. Eles não entram em conta nenhuma até
+alguém lançar a nota ou digitar o preço, e o indicador "Sem custo" no topo
+da aba mostra quantos são.
