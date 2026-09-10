@@ -7,6 +7,7 @@ import { Field, Select, NumInput, Toggle, EstadoVazio, AvisoDeFalha, Skeleton } 
 import { confirmar } from '../components/ConfirmDialog';
 import { brl, pct, formatQtd } from '../lib/format';
 import DataTable from '../components/DataTable';
+import { CampoDesconto, CampoTextoLimitado } from '../components/campos';
 
 // Tabelas de preço (09/09/2026).
 //
@@ -78,7 +79,7 @@ function LinhaItem({ item, onRemover }) {
       </td>
       <td className="num">{rotulo}</td>
       <td style={{ textAlign: 'right' }}>
-        <button type="button" className="icon-btn" title="Tirar da tabela" onClick={() => onRemover(item)}>
+        <button type="button" className="icon-btn perigo" title="Tirar da tabela" onClick={() => onRemover(item)}>
           <Trash2 size={14} />
         </button>
       </td>
@@ -301,7 +302,7 @@ export default function TabelasPrecoPage() {
           <div className="card-head">Nova tabela de preço</div>
           <div className="form-grid">
             <Field label="Nome" hint='Como você chama esse preço: "Atacado", "Lojista", "Revenda".'>
-              <input value={nova.nome} onChange={(e) => setNova((t) => ({ ...t, nome: e.target.value }))} />
+              <CampoTextoLimitado value={nova.nome} onChange={(e) => setNova((t) => ({ ...t, nome: e.target.value }))} />
             </Field>
             <Field label="Descrição (opcional)">
               <input value={nova.descricao} onChange={(e) => setNova((t) => ({ ...t, descricao: e.target.value }))} />
@@ -316,10 +317,9 @@ export default function TabelasPrecoPage() {
               {nova.tipo_desconto === 'valor' ? (
                 <NumInput value={nova.desconto_geral} onChange={(v) => setNova((t) => ({ ...t, desconto_geral: v }))} suffix="R$" />
               ) : (
-                <NumInput
+                <CampoDesconto
                   value={(Number(nova.desconto_geral) || 0) * 100}
                   onChange={(v) => setNova((t) => ({ ...t, desconto_geral: (Number(v) || 0) / 100 }))}
-                  suffix="%"
                 />
               )}
             </Field>
@@ -381,7 +381,7 @@ export default function TabelasPrecoPage() {
                     </button>
                   )}
                   {t.pedidos_usando === 0 && (
-                    <button type="button" className="icon-btn" title="Excluir" onClick={() => excluir(t)}>
+                    <button type="button" className="icon-btn perigo" title="Excluir" onClick={() => excluir(t)}>
                       <Trash2 size={15} />
                     </button>
                   )}
@@ -433,7 +433,7 @@ export default function TabelasPrecoPage() {
             <div style={{ marginBottom: 18, paddingBottom: 16, borderBottom: '1px solid var(--border-soft)' }}>
               <div className="form-grid">
                 <Field label="Nome">
-                  <input value={rascunho.nome} onChange={(e) => setRascunho((r) => ({ ...r, nome: e.target.value }))} />
+                  <CampoTextoLimitado value={rascunho.nome} onChange={(e) => setRascunho((r) => ({ ...r, nome: e.target.value }))} />
                 </Field>
                 <Field label="Descrição">
                   <input value={rascunho.descricao || ''} onChange={(e) => setRascunho((r) => ({ ...r, descricao: e.target.value }))} />
@@ -448,10 +448,9 @@ export default function TabelasPrecoPage() {
                   {rascunho.tipo_desconto === 'valor' ? (
                     <NumInput value={rascunho.desconto_geral} onChange={(v) => setRascunho((r) => ({ ...r, desconto_geral: v }))} suffix="R$" />
                   ) : (
-                    <NumInput
+                    <CampoDesconto
                       value={(Number(rascunho.desconto_geral) || 0) * 100}
                       onChange={(v) => setRascunho((r) => ({ ...r, desconto_geral: (Number(v) || 0) / 100 }))}
-                      suffix="%"
                     />
                   )}
                 </Field>
@@ -548,10 +547,9 @@ export default function TabelasPrecoPage() {
                 </Field>
                 <Field label={novoItem.tipo_desconto === 'preco_fixo' ? 'Preço' : 'Desconto'}>
                   {novoItem.tipo_desconto === 'percentual' ? (
-                    <NumInput
+                    <CampoDesconto
                       value={(Number(novoItem.desconto) || 0) * 100}
                       onChange={(v) => setNovoItem((n) => ({ ...n, desconto: (Number(v) || 0) / 100 }))}
-                      suffix="%"
                     />
                   ) : novoItem.tipo_desconto === 'valor' ? (
                     <NumInput value={novoItem.desconto} onChange={(v) => setNovoItem((n) => ({ ...n, desconto: v }))} suffix="R$" />

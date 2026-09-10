@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { Field, NumInput, Select, DateInput } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import { brl } from '../lib/format';
+import { CampoNome, CampoTelefone, CampoCpfCnpj } from '../components/campos';
 
 const SITUACAO_TONE = { pendente: 'tone-atencao', recebido: 'tone-saudavel', cancelado: 'tone-prejuizo' };
 const SITUACAO_LABEL = { pendente: 'Pendente', recebido: 'Recebido', cancelado: 'Cancelado' };
@@ -228,13 +229,13 @@ export default function CompraFormPage() {
             {mostrarNovoFornecedor && (
               <form onSubmit={criarFornecedorRapido} style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
                 <Field label="Nome">
-                  <input value={novoFornecedor.nome} onChange={(e) => setNovoFornecedor((f) => ({ ...f, nome: e.target.value }))} style={{ width: 200 }} />
+                  <CampoNome pessoaFisica={novoFornecedor.tipo_pessoa !== 'PJ'} value={novoFornecedor.nome} onChange={(e) => setNovoFornecedor((f) => ({ ...f, nome: e.target.value }))} style={{ width: 200 }} />
                 </Field>
                 <Field label="Telefone">
-                  <input value={novoFornecedor.telefone} onChange={(e) => setNovoFornecedor((f) => ({ ...f, telefone: e.target.value }))} style={{ width: 140 }} />
+                  <CampoTelefone value={novoFornecedor.telefone} onChange={(e) => setNovoFornecedor((f) => ({ ...f, telefone: e.target.value }))} style={{ width: 170 }} />
                 </Field>
                 <Field label="CPF/CNPJ">
-                  <input value={novoFornecedor.cpf_cnpj} onChange={(e) => setNovoFornecedor((f) => ({ ...f, cpf_cnpj: e.target.value }))} style={{ width: 140 }} />
+                  <CampoCpfCnpj value={novoFornecedor.cpf_cnpj} onChange={(e) => setNovoFornecedor((f) => ({ ...f, cpf_cnpj: e.target.value }))} style={{ width: 175 }} />
                 </Field>
                 <button className="btn btn-primary" type="submit">Criar e selecionar</button>
               </form>
@@ -336,17 +337,22 @@ export default function CompraFormPage() {
                     onBlur={(e) => atualizarItem(it.id, { unidade: e.target.value })} />
                 </td>
                 <td>
-                  <input type="number" min="0.01" step="0.01" className="mono" value={it.quantidade} style={{ width: 70 }}
-                    onChange={(e) => setItens((list) => list.map((x) => (x.id === it.id ? { ...x, quantidade: e.target.value } : x)))}
-                    onBlur={(e) => atualizarItem(it.id, { quantidade: e.target.value })} />
+                  {/* NumInput em vez de <input type="number"> cru: a coluna
+                      NUMERIC do Postgres chega ao navegador como "0.00", e o
+                      campo abria com esse zero em cima do qual não dá pra
+                      digitar. Com o NumInput, clicar na célula limpa o zero
+                      (10/09/2026) e a digitação é em vírgula brasileira. */}
+                  <NumInput value={Number(it.quantidade) || 0} style={{ width: 80 }}
+                    onChange={(v) => setItens((list) => list.map((x) => (x.id === it.id ? { ...x, quantidade: v } : x)))}
+                    onBlur={() => atualizarItem(it.id, { quantidade: it.quantidade })} />
                 </td>
                 <td>
-                  <input type="number" min="0" step="0.01" className="mono" value={it.valor_unitario} style={{ width: 90 }}
-                    onChange={(e) => setItens((list) => list.map((x) => (x.id === it.id ? { ...x, valor_unitario: e.target.value } : x)))}
-                    onBlur={(e) => atualizarItem(it.id, { valor_unitario: e.target.value })} />
+                  <NumInput value={Number(it.valor_unitario) || 0} style={{ width: 110 }} suffix="R$"
+                    onChange={(v) => setItens((list) => list.map((x) => (x.id === it.id ? { ...x, valor_unitario: v } : x)))}
+                    onBlur={() => atualizarItem(it.id, { valor_unitario: it.valor_unitario })} />
                 </td>
                 <td className="mono" style={{ fontWeight: 700 }}>{brl(it.total)}</td>
-                <td><button type="button" className="icon-btn" onClick={() => removerItem(it.id)}><Trash2 size={13} /></button></td>
+                <td><button type="button" className="icon-btn perigo" onClick={() => removerItem(it.id)}><Trash2 size={13} /></button></td>
               </tr>
             ))}
             {itens.length === 0 && (

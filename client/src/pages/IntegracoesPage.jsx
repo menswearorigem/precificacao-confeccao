@@ -13,6 +13,7 @@ import logoMercadoLivre from '../assets/logos/mercado-livre.svg';
 import logoShopee from '../assets/logos/shopee.svg';
 import logoTiktokShop from '../assets/logos/tiktok-shop.svg';
 import logoWikSistemas from '../assets/logos/wik-sistemas.svg';
+import { CampoTextoLimitado } from '../components/campos';
 
 // Logos reais como arquivo SVG no repositório (client/src/assets/logos) —
 // nada de URL externa nem selo com só a cor de marca (que era o que existia
@@ -318,7 +319,7 @@ export default function IntegracoesPage() {
             <form onSubmit={criar}>
               <div className="form-grid">
                 <Field label="Nome (só pra identificar)">
-                  <input value={nova.nome} onChange={(e) => setNova((n) => ({ ...n, nome: e.target.value }))} />
+                  <CampoTextoLimitado value={nova.nome} onChange={(e) => setNova((n) => ({ ...n, nome: e.target.value }))} />
                 </Field>
               </div>
 
@@ -437,7 +438,7 @@ export default function IntegracoesPage() {
                             >
                               Mais {expandido ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                             </button>
-                            <button type="button" className="icon-btn" onClick={() => remover(item.id)} title="Remover conexão" aria-label="Remover conexão"><Trash2 size={14} /></button>
+                            <button type="button" className="icon-btn perigo" onClick={() => remover(item.id)} title="Remover conexão" aria-label="Remover conexão"><Trash2 size={14} /></button>
                           </div>
                         </td>
                       </tr>

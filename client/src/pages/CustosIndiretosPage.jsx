@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { AvisoDeFalha, NumInput } from '../components/ui';
 import BarraAlteracoes from '../components/BarraAlteracoes';
 import { brl, pct } from '../lib/format';
+import { CampoTextoLimitado } from '../components/campos';
 
 function normalizarTexto(v) {
   return String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -210,11 +211,11 @@ export default function CustosIndiretosPage() {
                   const percentualItem = totalMensalRascunho === 0 ? 0 : (Number(item.valor_mensal) || 0) / totalMensalRascunho;
                   return (
                     <div key={item.id} className="cfg-linha-hover cfg-item-linha">
-                      <input value={item.nome} onChange={(e) => atualizarItem(item.id, { nome: e.target.value })} style={{ fontWeight: 400, color: 'var(--ink-soft)' }} />
+                      <CampoTextoLimitado value={item.nome} onChange={(e) => atualizarItem(item.id, { nome: e.target.value })} style={{ fontWeight: 400, color: 'var(--ink-soft)' }} />
                       <div className="cfg-barra"><div className="cfg-barra-preenchimento" style={{ width: `${Math.min(100, percentualItem * 100)}%` }} /></div>
                       <NumInput value={item.valor_mensal} onChange={(v) => atualizarItem(item.id, { valor_mensal: v })} suffix="R$" />
                       <span className="mono" style={{ color: 'var(--ink-soft)', fontSize: 12, textAlign: 'right' }}>{pct(percentualItem)}</span>
-                      <button className="icon-btn cfg-lixeira" onClick={() => removerItem(item.id)}><Trash2 size={13} /></button>
+                      <button className="icon-btn perigo cfg-lixeira" onClick={() => removerItem(item.id)}><Trash2 size={13} /></button>
                     </div>
                   );
                 })}

@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { AvisoDeFalha, Field, NumInput, Select, Toggle } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import BarraAlteracoes from '../components/BarraAlteracoes';
+import { CampoNome } from '../components/campos';
 
 const REGIMES = ['Simples Nacional', 'Lucro Presumido', 'Lucro Real'];
 
@@ -107,13 +108,14 @@ export default function EmpresasPage() {
         <div className="card" style={{ marginBottom: 16 }} key={emp.id}>
           <div className="card-head-linha">
             <div className="card-head">{emp.nome || 'Empresa'}</div>
-            <button className="icon-btn" onClick={() => removeEmpresa(emp.id)}>
+            <button className="icon-btn perigo" onClick={() => removeEmpresa(emp.id)}>
               <Trash2 size={14} />
             </button>
           </div>
           <div className="form-grid">
             <Field label="Nome / Razão Social">
-              <input
+              <CampoNome
+                pessoaFisica={false}
                 value={emp.nome}
                 onChange={(e) => atualizar(emp.id, { nome: e.target.value })}
               />

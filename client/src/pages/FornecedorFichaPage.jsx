@@ -12,6 +12,8 @@ import { confirmar } from '../components/ConfirmDialog';
 import DataTable from '../components/DataTable';
 import { CartaoGrafico, GraficoColunas, GraficoRosca, BarraRanking, useRefGrafico, capturarGraficos } from '../components/graficos';
 import { SITUACAO_LABEL } from '../lib/relatorioCompras';
+import { novaAba } from '../lib/novaAba';
+import { CampoNome, CampoNomeFantasia, CampoCpfCnpj, CampoTelefone, CampoEmail, CampoCep, CampoCidade, CampoUf } from '../components/campos';
 
 // Ficha do fornecedor em duas abas:
 //   Cadastro  — os dados (o formulário que já existia, reorganizado)
@@ -425,15 +427,15 @@ export default function FornecedorFichaPage() {
                 </Select>
               </Field>
               <Field label={fornecedor.tipo_pessoa === 'PJ' ? 'Razão Social' : 'Nome'}>
-                <input value={fornecedor.nome} onChange={(e) => set({ nome: e.target.value })} />
+                <CampoNome pessoaFisica={fornecedor.tipo_pessoa !== 'PJ'} value={fornecedor.nome} onChange={(e) => set({ nome: e.target.value })} />
               </Field>
               {fornecedor.tipo_pessoa === 'PJ' && (
                 <Field label="Nome Fantasia">
-                  <input value={fornecedor.nome_fantasia || ''} onChange={(e) => set({ nome_fantasia: e.target.value })} />
+                  <CampoNomeFantasia value={fornecedor.nome_fantasia || ''} onChange={(e) => set({ nome_fantasia: e.target.value })} />
                 </Field>
               )}
               <Field label={fornecedor.tipo_pessoa === 'PJ' ? 'CNPJ' : 'CPF'}>
-                <input className="mono" value={fornecedor.cpf_cnpj || ''} onChange={(e) => set({ cpf_cnpj: e.target.value })} />
+                <CampoCpfCnpj pj={fornecedor.tipo_pessoa === 'PJ'} value={fornecedor.cpf_cnpj || ''} onChange={(e) => set({ cpf_cnpj: e.target.value })} />
               </Field>
               {fornecedor.tipo_pessoa === 'PJ' && (
                 <Field label="Inscrição Estadual">
@@ -459,10 +461,10 @@ export default function FornecedorFichaPage() {
             <div className="card-head">Contato</div>
             <div className="form-grid">
               <Field label="Telefone / WhatsApp">
-                <input className="mono" value={fornecedor.telefone || ''} onChange={(e) => set({ telefone: e.target.value })} />
+                <CampoTelefone value={fornecedor.telefone || ''} onChange={(e) => set({ telefone: e.target.value })} />
               </Field>
               <Field label="E-mail">
-                <input type="email" value={fornecedor.email || ''} onChange={(e) => set({ email: e.target.value })} />
+                <CampoEmail value={fornecedor.email || ''} onChange={(e) => set({ email: e.target.value })} />
               </Field>
             </div>
           </div>
@@ -471,8 +473,8 @@ export default function FornecedorFichaPage() {
             <div className="card-head">Endereço</div>
             <div className="form-grid">
               <Field label="CEP">
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input className="mono" value={fornecedor.cep || ''} onChange={(e) => set({ cep: e.target.value })} style={{ flex: 1 }} />
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <CampoCep value={fornecedor.cep || ''} onChange={(e) => set({ cep: e.target.value })} style={{ flex: 1 }} />
                   <button type="button" className="btn btn-ghost" onClick={buscarCep} disabled={buscandoCep} title="Buscar endereço pelo CEP" aria-label="Buscar endereço pelo CEP">
                     <MapPinCheck size={14} />
                   </button>
@@ -491,10 +493,10 @@ export default function FornecedorFichaPage() {
                 <input value={fornecedor.bairro || ''} onChange={(e) => set({ bairro: e.target.value })} />
               </Field>
               <Field label="Cidade">
-                <input value={fornecedor.cidade || ''} onChange={(e) => set({ cidade: e.target.value })} />
+                <CampoCidade value={fornecedor.cidade || ''} onChange={(e) => set({ cidade: e.target.value })} />
               </Field>
               <Field label="UF">
-                <input value={fornecedor.uf || ''} onChange={(e) => set({ uf: e.target.value.toUpperCase().slice(0, 2) })} style={{ width: 60 }} />
+                <CampoUf value={fornecedor.uf || ''} onChange={(e) => set({ uf: e.target.value })} style={{ width: 96 }} />
               </Field>
             </div>
           </div>
@@ -648,7 +650,7 @@ export default function FornecedorFichaPage() {
                     </thead>
                     <tbody>
                       {historico.compras.map((c) => (
-                        <tr key={c.id} className="clickable-row" onClick={() => navigate(`/compras/${c.id}`)}>
+                        <tr key={c.id} className="clickable-row" {...novaAba(`/compras/${c.id}`)} onClick={() => navigate(`/compras/${c.id}`)}>
                           <td className="mono">#{c.numero}</td>
                           <td className="mono">{dataBr(String(c.data_compra).slice(0, 10))}</td>
                           <td>{c.categoria}</td>

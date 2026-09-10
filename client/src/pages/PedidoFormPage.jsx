@@ -11,6 +11,7 @@ import { confirmar } from '../components/ConfirmDialog';
 import { brl, pct, formatQtd } from '../lib/format';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import LeitorCamera from '../components/LeitorCamera';
+import { CampoNome, CampoTelefone, CampoCpfCnpj, CampoDesconto } from '../components/campos';
 
 // Pedido de venda — repaginado em 09/09/2026.
 //
@@ -735,13 +736,13 @@ export default function PedidoFormPage() {
             {mostrarNovoCliente && (
               <form onSubmit={criarClienteRapido} className="form-linha" style={{ marginTop: 12, alignItems: 'flex-end' }}>
                 <Field label="Nome">
-                  <input value={novoCliente.nome} onChange={(e) => setNovoCliente((c) => ({ ...c, nome: e.target.value }))} />
+                  <CampoNome pessoaFisica={novoCliente.tipo_pessoa !== 'PJ'} value={novoCliente.nome} onChange={(e) => setNovoCliente((c) => ({ ...c, nome: e.target.value }))} />
                 </Field>
                 <Field label="Telefone">
-                  <input value={novoCliente.telefone} onChange={(e) => setNovoCliente((c) => ({ ...c, telefone: e.target.value }))} />
+                  <CampoTelefone value={novoCliente.telefone} onChange={(e) => setNovoCliente((c) => ({ ...c, telefone: e.target.value }))} />
                 </Field>
                 <Field label="CPF/CNPJ">
-                  <input value={novoCliente.cpf_cnpj} onChange={(e) => setNovoCliente((c) => ({ ...c, cpf_cnpj: e.target.value }))} />
+                  <CampoCpfCnpj value={novoCliente.cpf_cnpj} onChange={(e) => setNovoCliente((c) => ({ ...c, cpf_cnpj: e.target.value }))} />
                 </Field>
                 <button className="btn btn-primary" type="submit">Criar e usar</button>
               </form>
@@ -854,10 +855,9 @@ export default function PedidoFormPage() {
                         />
                       </Field>
                       <Field label="Desconto">
-                        <NumInput
+                        <CampoDesconto
                           value={(Number(it.desconto_pct) || 0) * 100}
                           onChange={(v) => alterarCampoItem(it.id, 'desconto_pct', (Number(v) || 0) / 100)}
-                          suffix="%"
                         />
                       </Field>
                     </div>
@@ -867,7 +867,7 @@ export default function PedidoFormPage() {
                           ? `Desconto de ${brl(it.desconto_valor)} nesta linha`
                           : 'Sem desconto nesta linha'}
                       </span>
-                      <button type="button" className="icon-btn" onClick={() => removerItem(it)} title="Tirar do pedido">
+                      <button type="button" className="icon-btn perigo" onClick={() => removerItem(it)} title="Tirar do pedido">
                         <Trash2 size={15} />
                       </button>
                     </div>
@@ -959,12 +959,11 @@ export default function PedidoFormPage() {
                 </Select>
               </Field>
               <Field label="Desconto no total (%)">
-                <NumInput
+                <CampoDesconto
                   disabled={!aberto}
                   value={(Number(pedido.desconto_pct) || 0) * 100}
                   onChange={(v) => setHeader({ desconto_pct: (Number(v) || 0) / 100 })}
                   onBlur={() => salvarHeader()}
-                  suffix="%"
                 />
               </Field>
               <Field label="Desconto no total (R$)" hint="Use um ou outro — o percentual manda quando os dois estão preenchidos.">

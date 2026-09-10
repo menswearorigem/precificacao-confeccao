@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import { AvisoDeFalha, Field, NumInput } from '../components/ui';
 import BarraAlteracoes from '../components/BarraAlteracoes';
 import { brl } from '../lib/format';
+import { CampoDesconto } from '../components/campos';
 
 const LABELS_CAMPOS = {
   margem_minima: 'Mínima', limite_atencao: 'Atenção', margem_ideal: 'Margem ideal',
@@ -240,7 +241,7 @@ export default function ConfiguracoesPage() {
         <div className="card">
           <div className="card-head">Kits</div>
           <Field label="Desconto vs. avulso" hint="Quanto o preço do kit sai mais barato que comprar as peças avulsas.">
-            <NumInput value={Number(rascunho.desconto_kit_pct) * 100} onChange={(v) => atualizar('desconto_kit_pct', (Number(v) || 0) / 100)} suffix="%" />
+            <CampoDesconto value={Number(rascunho.desconto_kit_pct) * 100} onChange={(v) => atualizar('desconto_kit_pct', (Number(v) || 0) / 100)} />
           </Field>
           <Field label="Margem alvo do kit" hint="Meta de margem usada só na formação de preço de kits.">
             <NumInput value={Number(rascunho.margem_alvo_kit_pct) * 100} onChange={(v) => atualizar('margem_alvo_kit_pct', (Number(v) || 0) / 100)} suffix="%" />

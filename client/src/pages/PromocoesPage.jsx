@@ -13,6 +13,8 @@ import { confirmar } from '../components/ConfirmDialog';
 import { useTabela } from '../lib/useTabela';
 import { brl, pct, formatQtd, tempoRelativo } from '../lib/format';
 import { SeloPlataforma, nomeDaLoja } from '../lib/canalMarketplace';
+import { CampoDesconto } from '../components/campos';
+import { CampoTextoLimitado } from '../components/campos';
 
 // A lista de lojas vem de /promocoes/lojas, e NÃO do CAMINHO_LOJAS de
 // Anúncios: as duas rotas devolvem o mesmo cadastro, mas o estado de
@@ -306,11 +308,10 @@ function RegraDePreco({ regra, onChange }) {
 
       {regra.tipo === 'desconto_pct' && (
         <Field label="Desconto (%)" hint="Aplicado sobre o preço lido da plataforma, variação por variação.">
-          <NumInput
+          <CampoDesconto
             value={regra.valorBruto ?? ''}
             onChange={(v) => onChange({ ...regra, valorBruto: v, valor: v === '' ? '' : Number(v) / 100 })}
             step="1"
-            suffix="%"
           />
         </Field>
       )}
@@ -875,7 +876,7 @@ function CriarPromocao({ lojas, onFechar, onCriada }) {
           {destino === 'nova' && tipo !== 'relampago' && (
             <>
               <Field label="Nome da promoção">
-                <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Setembro Dry Fit" />
+                <CampoTextoLimitado value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Setembro Dry Fit" />
               </Field>
               <Field label="Início" hint="A Shopee exige pelo menos 1 hora à frente de agora.">
                 <input type="datetime-local" value={inicio} onChange={(e) => setInicio(e.target.value)} />
@@ -1535,7 +1536,7 @@ function PainelPromocao({ promocaoId, onFechar, onMudou }) {
                 <form className="promocao-form-edicao" onSubmit={salvarPromocao}>
                   <div className="field">
                     <span className="field-label">Nome da promoção</span>
-                    <input value={formPromo.nome} onChange={(e) => setFormPromo((f) => ({ ...f, nome: e.target.value }))} />
+                    <CampoTextoLimitado value={formPromo.nome} onChange={(e) => setFormPromo((f) => ({ ...f, nome: e.target.value }))} />
                   </div>
                   <div className="field">
                     <span className="field-label">Início</span>

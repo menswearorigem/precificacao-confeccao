@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { X, Check, Plus, AlertTriangle, Building2 } from 'lucide-react';
 import { api } from '../api/client';
 import { Field, Select, NumInput, Checkbox } from './ui';
+import { CampoNome, CampoNomeFantasia, CampoCpfCnpj, CampoTelefone, CampoEmail, CampoCep, CampoCidade, CampoUf } from './campos';
 
 // Cadastro de facção — o formulário completo, usado em três lugares.
 //
@@ -135,15 +136,15 @@ export default function NovaFaccaoModal({ faccaoId, compacto = false, onFechar, 
               </Select>
             </Field>
             <Field label="Nome" hint="Como a casa chama esta facção.">
-              <input className="input" value={form.nome} onChange={set('nome')} placeholder="Tânia Moura" />
+              <CampoNome className="input" value={form.nome} onChange={set('nome')} placeholder="Tânia Moura" />
             </Field>
             {pj && (
               <Field label="Razão social" hint="O nome que sai na nota.">
-                <input className="input" value={form.razao_social} onChange={set('razao_social')} />
+                <CampoNome className="input" pessoaFisica={false} value={form.razao_social} onChange={set('razao_social')} />
               </Field>
             )}
             <Field label={pj ? 'CNPJ' : 'CPF'} hint="Conferido na hora: dígito verificador errado só apareceria na emissão da nota de remessa.">
-              <input className="input" value={form.cpf_cnpj} onChange={set('cpf_cnpj')} placeholder={pj ? '00.000.000/0001-00' : '000.000.000-00'} />
+              <CampoCpfCnpj className="input" pj={pj} value={form.cpf_cnpj} onChange={set('cpf_cnpj')} />
             </Field>
             <Field label="Categoria" hint="Costureira, lavanderia, bordado…">
               <Select value={form.faccao_categoria_id} onChange={set('faccao_categoria_id')} placeholder="Sem categoria">
@@ -167,7 +168,7 @@ export default function NovaFaccaoModal({ faccaoId, compacto = false, onFechar, 
           {!compacto && (
             <div className="form-linha">
               <Field label="Nome fantasia">
-                <input className="input" value={form.nome_fantasia} onChange={set('nome_fantasia')} />
+                <CampoNomeFantasia className="input" value={form.nome_fantasia} onChange={set('nome_fantasia')} />
               </Field>
               <Field label="Inscrição estadual">
                 <input className="input" value={form.ie} onChange={set('ie')} disabled={form.ie_isento} />
@@ -184,28 +185,28 @@ export default function NovaFaccaoModal({ faccaoId, compacto = false, onFechar, 
           <h3 className="card-titulo">Contato</h3>
           <div className="form-linha">
             <Field label="Pessoa de contato" hint="Com quem se fala — quase nunca é a empresa.">
-              <input className="input" value={form.contato_nome} onChange={set('contato_nome')} />
+              <CampoNome className="input" value={form.contato_nome} onChange={set('contato_nome')} />
             </Field>
             <Field label="Telefone do contato">
-              <input className="input" value={form.contato_telefone} onChange={set('contato_telefone')} />
+              <CampoTelefone className="input" value={form.contato_telefone} onChange={set('contato_telefone')} />
             </Field>
             <Field label="Telefone">
-              <input className="input" value={form.telefone} onChange={set('telefone')} />
+              <CampoTelefone className="input" value={form.telefone} onChange={set('telefone')} />
             </Field>
             <Field label="E-mail">
-              <input className="input" value={form.email} onChange={set('email')} />
+              <CampoEmail className="input" value={form.email} onChange={set('email')} />
             </Field>
           </div>
 
           <h3 className="card-titulo">Endereço</h3>
           <div className="form-linha">
-            <Field label="CEP"><input className="input" value={form.cep} onChange={set('cep')} /></Field>
+            <Field label="CEP"><CampoCep className="input" value={form.cep} onChange={set('cep')} /></Field>
             <Field label="Logradouro"><input className="input" value={form.logradouro} onChange={set('logradouro')} /></Field>
             <Field label="Número"><input className="input" value={form.numero} onChange={set('numero')} /></Field>
             <Field label="Complemento"><input className="input" value={form.complemento} onChange={set('complemento')} /></Field>
             <Field label="Bairro"><input className="input" value={form.bairro} onChange={set('bairro')} /></Field>
-            <Field label="Cidade"><input className="input" value={form.cidade} onChange={set('cidade')} /></Field>
-            <Field label="UF"><input className="input" maxLength={2} value={form.uf} onChange={(e) => setForm((f) => ({ ...f, uf: e.target.value.toUpperCase() }))} /></Field>
+            <Field label="Cidade"><CampoCidade className="input" value={form.cidade} onChange={set('cidade')} /></Field>
+            <Field label="UF"><CampoUf value={form.uf} onChange={(e) => setForm((f) => ({ ...f, uf: e.target.value }))} /></Field>
           </div>
 
           <h3 className="card-titulo">Pagamento</h3>

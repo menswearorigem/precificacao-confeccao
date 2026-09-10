@@ -13,6 +13,7 @@ import {
 import { confirmar } from '../components/ConfirmDialog';
 import { useTabela } from '../lib/useTabela';
 import { brl, pct, formatQtd, numeroBr, tempoRelativo } from '../lib/format';
+import { CampoTextoLimitado } from '../components/campos';
 
 // Compras › Insumos e Notas.
 //
@@ -652,7 +653,7 @@ function CadastroInsumo({ insumo, fornecedores, onFechar, onSalvo }) {
         <div className="anuncio-painel-corpo">
           <div className="form-linha">
             <Field label="Nome">
-              <input className="input" value={f.nome} onChange={setEv('nome')} placeholder="Malha PV 30.1" />
+              <CampoTextoLimitado className="input" value={f.nome} onChange={setEv('nome')} placeholder="Malha PV 30.1" />
             </Field>
             <Field label="Código" hint="Opcional. O código do fornecedor, se houver.">
               <input className="input" value={f.codigo || ''} onChange={setEv('codigo')} />

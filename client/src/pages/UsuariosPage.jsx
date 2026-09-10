@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { Field, Select, Checkbox, Toggle } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
+import { CampoTextoLimitado, CampoEmail } from '../components/campos';
 
 // Esta lista precisa espelhar MODULOS_VALIDOS de
 // server/src/routes/usuarios.routes.js. O Calendário existia no backend e na
@@ -282,10 +283,10 @@ export default function UsuariosPage() {
           <form onSubmit={criarUsuario}>
             <div className="form-grid">
               <Field label="Nome">
-                <input value={novoUsuario.nome} onChange={(e) => setNovoUsuario((u) => ({ ...u, nome: e.target.value }))} />
+                <CampoTextoLimitado value={novoUsuario.nome} onChange={(e) => setNovoUsuario((u) => ({ ...u, nome: e.target.value }))} />
               </Field>
               <Field label="E-mail">
-                <input type="email" value={novoUsuario.email} onChange={(e) => setNovoUsuario((u) => ({ ...u, email: e.target.value }))} />
+                <CampoEmail value={novoUsuario.email} onChange={(e) => setNovoUsuario((u) => ({ ...u, email: e.target.value }))} />
               </Field>
               <Field label="Senha inicial">
                 <input type="password" value={novoUsuario.senha} onChange={(e) => setNovoUsuario((u) => ({ ...u, senha: e.target.value }))} />
@@ -339,7 +340,7 @@ export default function UsuariosPage() {
                 <KeyRound size={13} /> Resetar senha
               </button>
               {u.id !== usuarioAtual.id && (
-                <button type="button" className="icon-btn" onClick={() => removerUsuario(u.id)}><Trash2 size={14} /></button>
+                <button type="button" className="icon-btn perigo" onClick={() => removerUsuario(u.id)}><Trash2 size={14} /></button>
               )}
             </div>
           </div>
@@ -349,15 +350,14 @@ export default function UsuariosPage() {
               <div className="card-head" style={{ marginBottom: 8 }}>Editar dados da conta</div>
               <div className="form-grid">
                 <Field label="Nome (é com ele que a pessoa entra no sistema)">
-                  <input
+                  <CampoTextoLimitado
                     value={rascunhoEdicao.nome}
                     onChange={(e) => setRascunhoEdicao((r) => ({ ...r, nome: e.target.value }))}
                     autoFocus
                   />
                 </Field>
                 <Field label="E-mail (usado pra recuperar a conta)">
-                  <input
-                    type="email"
+                  <CampoEmail
                     value={rascunhoEdicao.email}
                     onChange={(e) => setRascunhoEdicao((r) => ({ ...r, email: e.target.value }))}
                   />

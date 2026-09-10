@@ -10,6 +10,7 @@ import {
 } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import { formatQtd, tempoRelativo } from '../lib/format';
+import { CampoTextoLimitado } from '../components/campos';
 
 // Estoque › Depósitos e transferências.
 //
@@ -99,11 +100,10 @@ function PainelDeposito({ deposito, fornecedores, onFechar, onPronto }) {
             />
           </Field>
           <Field label="Nome">
-            <input
+            <CampoTextoLimitado
               value={form.nome}
               onChange={(e) => setForm({ ...form, nome: e.target.value })}
               placeholder="Expedição"
-              maxLength={80}
             />
           </Field>
           <Field label="Natureza">
@@ -324,7 +324,7 @@ function PainelTransferencia({ depositos, onFechar, onPronto }) {
                       <td className="num">
                         <button
                           type="button"
-                          className="btn-icone"
+                          className="btn-icone perigo"
                           title="Tirar da remessa"
                           onClick={() => setLinhas(linhas.filter((x) => x.chave !== l.chave))}
                         >

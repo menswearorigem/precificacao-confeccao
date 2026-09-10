@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { brl, pct, uid, formatQtd } from '../lib/format';
 import { Select } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
+import { CampoTextoLimitado, CampoDesconto } from '../components/campos';
 
 // Formulário de kit manual — cria e edita (09/09/2026).
 //
@@ -73,11 +74,11 @@ function KitManualForm({ produtos, kit, onPronto, onCancelar }) {
       <div className="form-grid" style={{ marginBottom: 12 }}>
         <div className="field">
           <span className="field-label">Nome do Kit</span>
-          <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Kit Sortido Verão" />
+          <CampoTextoLimitado value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Kit Sortido Verão" />
         </div>
         <div className="field">
           <span className="field-label">% desconto (opcional — deixe em branco para usar o padrão)</span>
-          <input type="number" value={descontoOverride} onChange={(e) => setDescontoOverride(e.target.value)} />
+          <CampoDesconto value={descontoOverride} onChange={(v) => setDescontoOverride(v === '' ? '' : String(v))} step="1" />
         </div>
       </div>
 
@@ -93,7 +94,7 @@ function KitManualForm({ produtos, kit, onPronto, onCancelar }) {
                 </Select>
               </td>
               <td><input type="number" min="1" value={item.quantidade} onChange={(e) => updateItem(item._key, { quantidade: e.target.value })} /></td>
-              <td><button type="button" className="icon-btn" onClick={() => removeItem(item._key)}><Trash2 size={13} /></button></td>
+              <td><button type="button" className="icon-btn perigo" onClick={() => removeItem(item._key)}><Trash2 size={13} /></button></td>
             </tr>
           ))}
         </tbody>
@@ -151,7 +152,7 @@ function KitManualCard({ kit, produtos, onRemovido, onAlterado }) {
         <div className="card-head">{kit.nome}</div>
         <div style={{ display: 'flex', gap: 4 }}>
           <button type="button" className="icon-btn" title="Editar kit" aria-label={`Editar o kit ${kit.nome}`} onClick={() => setEditando(true)}><Pencil size={14} /></button>
-          <button type="button" className="icon-btn" title="Remover kit" aria-label={`Remover o kit ${kit.nome}`} onClick={handleRemover}><Trash2 size={14} /></button>
+          <button type="button" className="icon-btn perigo" title="Remover kit" aria-label={`Remover o kit ${kit.nome}`} onClick={handleRemover}><Trash2 size={14} /></button>
         </div>
       </div>
       {erro && <div className="login-error" style={{ marginBottom: 10 }}>{erro}</div>}

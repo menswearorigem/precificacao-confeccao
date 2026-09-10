@@ -3,6 +3,7 @@ import { CheckCircle2, AlertTriangle, RefreshCw, Save } from 'lucide-react';
 import { api } from '../api/client';
 import { Field } from './ui';
 import { formatQtd } from '../lib/format';
+import { CampoEmail } from './campos';
 
 function hoje(iso) {
   if (!iso) return '—';
@@ -200,7 +201,7 @@ export default function WikIntegracaoCard() {
 
       <form onSubmit={salvarCredencial} className="form-grid" style={{ marginBottom: 10 }}>
         <Field label="Email (login do Wik)">
-          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@dominio.com" />
+          <CampoEmail value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
         <Field label="Senha">
           <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} placeholder={integracao ? '•••••• (deixe em branco pra manter)' : ''} />

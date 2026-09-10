@@ -4,6 +4,7 @@ import { Plane, Plus, MapPin, CalendarDays, Package, TrendingUp } from 'lucide-r
 import { api } from '../api/client';
 import { Field, DateInput, Skeleton } from '../components/ui';
 import { brl } from '../lib/format';
+import { CampoTextoLimitado } from '../components/campos';
 
 const SITUACAO_LABEL = { planejamento: 'Planejamento', em_andamento: 'Em andamento', finalizada: 'Finalizada' };
 const SITUACAO_TONE = { planejamento: 'tone-neutro', em_andamento: 'tone-atencao', finalizada: 'tone-saudavel' };
@@ -77,7 +78,7 @@ export default function ViagensListPage() {
           <form onSubmit={criarViagem}>
             <div className="form-grid">
               <Field label="Nome da viagem">
-                <input autoFocus placeholder="Ex: Circuito Nordeste — Agosto" value={nova.nome} onChange={(e) => setNova((n) => ({ ...n, nome: e.target.value }))} />
+                <CampoTextoLimitado autoFocus placeholder="Ex: Circuito Nordeste — Agosto" value={nova.nome} onChange={(e) => setNova((n) => ({ ...n, nome: e.target.value }))} />
               </Field>
               <Field label="Local">
                 <input placeholder="Ex: Fortaleza / Recife" value={nova.local} onChange={(e) => setNova((n) => ({ ...n, local: e.target.value }))} />

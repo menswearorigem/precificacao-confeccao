@@ -17,6 +17,7 @@ import InsumosProducaoAba from '../components/InsumosProducaoAba';
 import NovaFaccaoModal from '../components/NovaFaccaoModal';
 import { useTabela } from '../lib/useTabela';
 import { brl, pct, formatQtd, numeroBr, dataBr } from '../lib/format';
+import { CampoTextoLimitado } from '../components/campos';
 
 // Estoque › Produção.
 //
@@ -648,7 +649,7 @@ function RoteiroEConsumo({ produtos, fornecedores }) {
                 ))}
                 <tr className="linha-nova">
                   <td className="num"><NumInput step="1" value={nova.sequencia} onChange={(v) => setNova((n) => ({ ...n, sequencia: v }))} /></td>
-                  <td><input className="input" placeholder="Costura" value={nova.nome} onChange={(e) => setNova((n) => ({ ...n, nome: e.target.value }))} /></td>
+                  <td><CampoTextoLimitado className="input" placeholder="Costura" value={nova.nome} onChange={(e) => setNova((n) => ({ ...n, nome: e.target.value }))} /></td>
                   <td><input className="input" placeholder="Setor" value={nova.setor} onChange={(e) => setNova((n) => ({ ...n, setor: e.target.value }))} /></td>
                   <td className="num"><NumInput step="1" value={nova.tempo_segundos} onChange={(v) => setNova((n) => ({ ...n, tempo_segundos: v }))} /></td>
                   <td className="num"><NumInput value={nova.valor_por_peca} onChange={(v) => setNova((n) => ({ ...n, valor_por_peca: v }))} /></td>

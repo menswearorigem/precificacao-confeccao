@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Plus, Trash2, X, LayoutTemplate } from 'lucide-react';
 import { api } from '../api/client';
 import { Select, Checkbox, Toggle, EstadoVazio } from '../components/ui';
+import { CampoTextoLimitado } from '../components/campos';
 
 const TIPOS_CAMPO = [
   { valor: 'texto', rotulo: 'Texto' },
@@ -81,7 +82,7 @@ function FormularioTemplate({ template, onSalvar, onCancelar }) {
 
       <div className="field" style={{ marginBottom: 12 }}>
         <span className="field-label">Nome do modelo</span>
-        <input value={nome} onChange={(e) => setNome(e.target.value)} autoFocus placeholder="Ex.: Revisão de amostra" />
+        <CampoTextoLimitado value={nome} onChange={(e) => setNome(e.target.value)} autoFocus placeholder="Ex.: Revisão de amostra" />
       </div>
 
       <div className="field-label" style={{ marginBottom: 6 }}>Campos deste modelo</div>
@@ -102,7 +103,7 @@ function FormularioTemplate({ template, onSalvar, onCancelar }) {
                 <Checkbox checked={campo.obrigatorio} onChange={(e) => atualizarCampo(idx, { obrigatorio: e.target.checked })} />
                 Obrigatório
               </label>
-              <button type="button" className="icon-btn" onClick={() => removerCampo(idx)}><Trash2 size={14} /></button>
+              <button type="button" className="icon-btn perigo" onClick={() => removerCampo(idx)}><Trash2 size={14} /></button>
             </div>
             {campo.tipo === 'select' && (
               <div style={{ marginTop: 8 }}>

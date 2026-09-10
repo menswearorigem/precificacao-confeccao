@@ -6,6 +6,7 @@ import {
 import { api } from '../api/client';
 import { Field, Select, NumInput, Checkbox, DateInput, IndicadorDestaque } from './ui';
 import { brl, formatQtd, numeroBr } from '../lib/format';
+import { CampoTextoLimitado } from './campos';
 
 // NOVA ORDEM DE PRODUÇÃO — de um produto ou de um KIT.
 //
@@ -218,7 +219,7 @@ function BlocoInsumos({ previa, insumosCatalogo, extras, onExtras }) {
                   <td>
                     {manual && (
                       <button
-                        type="button" className="btn-icone" aria-label="Tirar da ordem"
+                        type="button" className="btn-icone perigo" aria-label="Tirar da ordem"
                         onClick={() => onExtras(extras.filter((e) => Number(e.insumo_id) !== Number(i.insumoId)))}
                       ><Trash2 size={14} /></button>
                     )}
@@ -512,7 +513,7 @@ export default function NovaOrdemProducao({
                   </Select>
                 </Field>
                 <Field label="Nome do kit">
-                  <input className="input" value={nomeKit} onChange={(e) => setNomeKit(e.target.value)} placeholder="Kit 3 camisetas dryfit" />
+                  <CampoTextoLimitado className="input" value={nomeKit} onChange={(e) => setNomeKit(e.target.value)} placeholder="Kit 3 camisetas dryfit" />
                 </Field>
                 <Field label="Quantos kits" hint="Só informativo: o que a fábrica produz é a peça.">
                   <NumInput step="1" value={quantidadeKits} onChange={setQuantidadeKits} />

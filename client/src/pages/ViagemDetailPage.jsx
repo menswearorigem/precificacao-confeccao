@@ -9,6 +9,7 @@ import { Field } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import FotoProduto from '../components/FotoProduto';
 import { brl, pct, formatQtd } from '../lib/format';
+import { CampoDesconto } from '../components/campos';
 
 const SITUACAO_LABEL = { planejamento: 'Planejamento', em_andamento: 'Em andamento', finalizada: 'Finalizada' };
 const SITUACAO_TONE = { planejamento: 'tone-neutro', em_andamento: 'tone-atencao', finalizada: 'tone-saudavel' };
@@ -385,7 +386,7 @@ function ProdutoCard({ produto, limiteEstoqueBaixo, emCarrinhoPorVariante, podeV
           <button className="icon-btn" title="Dar entrada de estoque" aria-label="Dar entrada de estoque" onClick={() => setEntradaAberta((v) => !v)}>
             <PackagePlus size={15} />
           </button>
-          <button className="icon-btn" title="Tirar da viagem" aria-label="Tirar da viagem" onClick={onRemover}><Trash2 size={13} /></button>
+          <button className="icon-btn perigo" title="Tirar da viagem" aria-label="Tirar da viagem" onClick={onRemover}><Trash2 size={13} /></button>
         </div>
       </div>
 
@@ -516,7 +517,7 @@ function CheckoutModal({ itens, total, onAtualizarItem, onRemoverItem, onClose, 
                     <div className="mono" style={{ fontWeight: 700 }}>{it.referencia}</div>
                     <div style={{ fontSize: 11, color: 'var(--ink-soft)' }}>{[it.cor, it.tamanho].filter(Boolean).join(' / ')}</div>
                   </div>
-                  <button className="icon-btn" onClick={() => onRemoverItem(it.varianteId)}><Trash2 size={13} /></button>
+                  <button className="icon-btn perigo" onClick={() => onRemoverItem(it.varianteId)}><Trash2 size={13} /></button>
                 </div>
                 <div className="viagem-checkout-item-campos">
                   <Field label="Qtd.">
@@ -531,9 +532,11 @@ function CheckoutModal({ itens, total, onAtualizarItem, onRemoverItem, onClose, 
                       onChange={(e) => onAtualizarItem(it.varianteId, { valorUnitario: Number(e.target.value) || 0 })} />
                   </Field>
                   <Field label="Desconto %">
-                    <input type="number" step="1" className="mono" style={{ borderColor: descontoAcimaDoMaximo ? 'var(--danger)' : undefined }}
+                    <CampoDesconto
+                      step="1"
+                      style={{ borderColor: descontoAcimaDoMaximo ? 'var(--danger)' : undefined }}
                       value={Math.round(it.descontoPct * 1000) / 10}
-                      onChange={(e) => onAtualizarItem(it.varianteId, { descontoPct: Math.max(0, Math.min(1, (Number(e.target.value) || 0) / 100)) })} />
+                      onChange={(v) => onAtualizarItem(it.varianteId, { descontoPct: Math.max(0, Math.min(1, (Number(v) || 0) / 100)) })} />
                     {descontoAcimaDoMaximo && <span className="field-hint" style={{ color: 'var(--danger)' }}>acima do máximo</span>}
                   </Field>
                 </div>

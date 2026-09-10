@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { Field, NumInput, Select, Checkbox, Toggle, Skeleton, IndicadorDestaque } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import { brl, formatQtd, dataBr } from '../lib/format';
+import { CampoNome, CampoNomeFantasia, CampoCpfCnpj, CampoTelefone, CampoEmail, CampoCep, CampoCidade, CampoUf } from '../components/campos';
 
 function emptyCliente() {
   return {
@@ -179,15 +180,15 @@ export default function ClienteFichaPage() {
             </Select>
           </Field>
           <Field label={cliente.tipo_pessoa === 'PJ' ? 'Razão Social' : 'Nome'}>
-            <input value={cliente.nome} onChange={(e) => set({ nome: e.target.value })} />
+            <CampoNome pessoaFisica={cliente.tipo_pessoa !== 'PJ'} value={cliente.nome} onChange={(e) => set({ nome: e.target.value })} />
           </Field>
           {cliente.tipo_pessoa === 'PJ' && (
             <Field label="Nome Fantasia">
-              <input value={cliente.nome_fantasia || ''} onChange={(e) => set({ nome_fantasia: e.target.value })} />
+              <CampoNomeFantasia value={cliente.nome_fantasia || ''} onChange={(e) => set({ nome_fantasia: e.target.value })} />
             </Field>
           )}
           <Field label={cliente.tipo_pessoa === 'PJ' ? 'CNPJ' : 'CPF'}>
-            <input className="mono" value={cliente.cpf_cnpj || ''} onChange={(e) => set({ cpf_cnpj: e.target.value })} />
+            <CampoCpfCnpj pj={cliente.tipo_pessoa === 'PJ'} value={cliente.cpf_cnpj || ''} onChange={(e) => set({ cpf_cnpj: e.target.value })} />
           </Field>
           {cliente.tipo_pessoa === 'PJ' && (
             <Field label="Inscrição Estadual">
@@ -213,10 +214,10 @@ export default function ClienteFichaPage() {
         <div className="card-head">Contato</div>
         <div className="form-grid">
           <Field label="Telefone / WhatsApp">
-            <input className="mono" value={cliente.telefone || ''} onChange={(e) => set({ telefone: e.target.value })} />
+            <CampoTelefone value={cliente.telefone || ''} onChange={(e) => set({ telefone: e.target.value })} />
           </Field>
           <Field label="E-mail">
-            <input type="email" value={cliente.email || ''} onChange={(e) => set({ email: e.target.value })} />
+            <CampoEmail value={cliente.email || ''} onChange={(e) => set({ email: e.target.value })} />
           </Field>
         </div>
       </div>
@@ -225,8 +226,8 @@ export default function ClienteFichaPage() {
         <div className="card-head">Endereço</div>
         <div className="form-grid">
           <Field label="CEP">
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input className="mono" value={cliente.cep || ''} onChange={(e) => set({ cep: e.target.value })} style={{ flex: 1 }} />
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <CampoCep value={cliente.cep || ''} onChange={(e) => set({ cep: e.target.value })} style={{ flex: 1 }} />
               <button type="button" className="btn btn-ghost" onClick={buscarCep} disabled={buscandoCep} title="Buscar endereço pelo CEP" aria-label="Buscar endereço pelo CEP">
                 <MapPinCheck size={14} />
               </button>
@@ -245,10 +246,10 @@ export default function ClienteFichaPage() {
             <input value={cliente.bairro || ''} onChange={(e) => set({ bairro: e.target.value })} />
           </Field>
           <Field label="Cidade">
-            <input value={cliente.cidade || ''} onChange={(e) => set({ cidade: e.target.value })} />
+            <CampoCidade value={cliente.cidade || ''} onChange={(e) => set({ cidade: e.target.value })} />
           </Field>
           <Field label="UF">
-            <input value={cliente.uf || ''} onChange={(e) => set({ uf: e.target.value.toUpperCase().slice(0, 2) })} style={{ width: 60 }} />
+            <CampoUf value={cliente.uf || ''} onChange={(e) => set({ uf: e.target.value })} style={{ width: 96 }} />
           </Field>
         </div>
       </div>

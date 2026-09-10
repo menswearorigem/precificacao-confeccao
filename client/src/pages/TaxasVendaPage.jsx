@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { AvisoDeFalha, NumInput, Toggle } from '../components/ui';
 import BarraAlteracoes from '../components/BarraAlteracoes';
 import { brl, pct } from '../lib/format';
+import { CampoTextoLimitado } from '../components/campos';
 
 const VALOR_REFERENCIA = 100;
 
@@ -48,7 +49,7 @@ function SeletorTipo({ valor, onChange, disabled }) {
 function LinhaTaxa({ taxa, onChange, onRemover }) {
   return (
     <tr className="cfg-linha-hover">
-      <td><input value={taxa.nome} onChange={(e) => onChange({ nome: e.target.value })} /></td>
+      <td><CampoTextoLimitado value={taxa.nome} onChange={(e) => onChange({ nome: e.target.value })} /></td>
       <td>
         <label className="toggle">
           <Toggle checked={taxa.ativo} onChange={(e) => onChange({ ativo: e.target.checked })} />
@@ -63,7 +64,7 @@ function LinhaTaxa({ taxa, onChange, onRemover }) {
         <NumInput value={taxa.valor_fixo} onChange={(v) => onChange({ valor_fixo: Number(v) || 0 })} suffix="R$" disabled={taxa.tipo === 'percentual'} />
       </td>
       <td className="cfg-efeito-valor">- {brl(efeitoNaVenda(taxa, VALOR_REFERENCIA))}</td>
-      <td><button className="icon-btn cfg-lixeira" onClick={onRemover}><Trash2 size={13} /></button></td>
+      <td><button className="icon-btn perigo cfg-lixeira" onClick={onRemover}><Trash2 size={13} /></button></td>
     </tr>
   );
 }

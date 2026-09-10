@@ -3,6 +3,7 @@ import { Plus, Trash2, X, UsersRound } from 'lucide-react';
 import { api } from '../api/client';
 import { Checkbox, Toggle, EstadoVazio } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
+import { CampoTextoLimitado } from '../components/campos';
 
 // Cadastro simples de grupos de usuários — usados no seletor de
 // visibilidade dos eventos do Calendário (liberar um evento pra um grupo
@@ -39,7 +40,7 @@ function FormularioGrupo({ grupo, usuarios, onSalvar, onCancelar }) {
       </div>
       <div className="field" style={{ marginBottom: 12 }}>
         <span className="field-label">Nome do grupo</span>
-        <input value={nome} onChange={(e) => setNome(e.target.value)} autoFocus placeholder="Ex.: Produção" />
+        <CampoTextoLimitado value={nome} onChange={(e) => setNome(e.target.value)} autoFocus placeholder="Ex.: Produção" />
       </div>
       <div className="field-label" style={{ marginBottom: 6 }}>Membros</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflowY: 'auto', marginBottom: 12 }}>
@@ -155,7 +156,7 @@ export default function GruposPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <Toggle checked={g.ativo} onChange={() => alternarAtivo(g)} />
             <button className="btn btn-ghost" onClick={() => setEditando(g)}>Editar</button>
-            <button className="icon-btn" onClick={() => excluir(g)}><Trash2 size={16} /></button>
+            <button className="icon-btn perigo" onClick={() => excluir(g)}><Trash2 size={16} /></button>
           </div>
         </div>
       ))}

@@ -8,6 +8,7 @@ import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { PRESETS_PERIODO } from '../lib/periodos';
 import { confirmar } from '../components/ConfirmDialog';
 import { brl, pct, formatQtd, dataBr } from '../lib/format';
+import { CampoNome, CampoTelefone, CampoEmail } from '../components/campos';
 
 // Cadastro de vendedores (09/09/2026).
 //
@@ -49,7 +50,7 @@ function FormularioVendedor({ valor, onChange, usuarios, mostrarUsuario = true }
     <>
       <div className="form-grid">
         <Field label="Nome">
-          <input
+          <CampoNome
             value={valor.nome}
             onChange={(e) => onChange({ nome: e.target.value })}
             placeholder="Como aparece no pedido e no relatório"
@@ -59,10 +60,10 @@ function FormularioVendedor({ valor, onChange, usuarios, mostrarUsuario = true }
           <input value={valor.apelido || ''} onChange={(e) => onChange({ apelido: e.target.value })} />
         </Field>
         <Field label="Telefone">
-          <input value={valor.telefone || ''} onChange={(e) => onChange({ telefone: e.target.value })} />
+          <CampoTelefone value={valor.telefone || ''} onChange={(e) => onChange({ telefone: e.target.value })} />
         </Field>
         <Field label="E-mail">
-          <input value={valor.email || ''} onChange={(e) => onChange({ email: e.target.value })} />
+          <CampoEmail value={valor.email || ''} onChange={(e) => onChange({ email: e.target.value })} />
         </Field>
         {mostrarUsuario && (
           <Field
@@ -356,7 +357,7 @@ export default function VendedoresPage({ embutido = false }) {
                     <Pencil size={15} />
                   </button>
                   {(v.resumo?.pedidos || 0) === 0 && (
-                    <button type="button" className="icon-btn" title="Excluir" onClick={() => excluir(v)}>
+                    <button type="button" className="icon-btn perigo" title="Excluir" onClick={() => excluir(v)}>
                       <Trash2 size={15} />
                     </button>
                   )}

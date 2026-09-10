@@ -12,6 +12,7 @@ import { brl, pct, uid, numeroBr } from '../lib/format';
 import Lightbox from '../components/Lightbox';
 import HistoricoPrecoCard from '../components/HistoricoPrecoCard';
 import GradeProdutoCard from '../components/GradeProdutoCard';
+import { CampoNome } from '../components/campos';
 
 const UNIDADES_FALLBACK = ['un', 'm', 'cm', 'kg', 'g', 'par', 'cj', 'rolo', 'pct'];
 
@@ -303,7 +304,7 @@ export default function ProdutoFichaPage() {
                   {produto.temFoto ? 'Trocar' : 'Enviar'}
                 </button>
                 {produto.temFoto && (
-                  <button type="button" className="icon-btn" title="Remover foto" aria-label="Remover foto" onClick={handleRemoverFoto}><Trash2 size={13} /></button>
+                  <button type="button" className="icon-btn perigo" title="Remover foto" aria-label="Remover foto" onClick={handleRemoverFoto}><Trash2 size={13} /></button>
                 )}
               </div>
             )}
@@ -354,7 +355,7 @@ export default function ProdutoFichaPage() {
               </Select>
             </Field>
             <Field label="Responsável pela Precificação">
-              <input value={produto.responsavel || ''} onChange={(e) => updateProduto({ responsavel: e.target.value })} />
+              <CampoNome value={produto.responsavel || ''} onChange={(e) => updateProduto({ responsavel: e.target.value })} />
             </Field>
             <Field label="Peso da peça (opcional)">
               <NumInput value={produto.peso_kg ?? ''} onChange={(v) => updateProduto({ peso_kg: v === '' ? null : v })} suffix="kg" placeholder="usado na conferência de frete de marketplace" />
@@ -425,7 +426,7 @@ export default function ProdutoFichaPage() {
                   <td><NumInput value={m.quantidade} onChange={(v) => updateMaterial(m._key, { quantidade: v })} /></td>
                   <td><NumInput value={m.valor_unitario} onChange={(v) => updateMaterial(m._key, { valor_unitario: v })} suffix="R$" /></td>
                   <td className="mono">{brl((Number(m.quantidade) || 0) * (Number(m.valor_unitario) || 0))}</td>
-                  <td><button className="icon-btn" onClick={() => removeMaterial(m._key)}><Trash2 size={13} /></button></td>
+                  <td><button className="icon-btn perigo" onClick={() => removeMaterial(m._key)}><Trash2 size={13} /></button></td>
                 </tr>
               ))}
             </tbody>
@@ -458,7 +459,7 @@ export default function ProdutoFichaPage() {
                   </td>
                   <td><input value={cst.observacao || ''} onChange={(e) => updateCusto(cst._key, { observacao: e.target.value })} /></td>
                   <td><NumInput value={cst.valor} onChange={(v) => updateCusto(cst._key, { valor: v })} suffix="R$" /></td>
-                  <td><button className="icon-btn" onClick={() => removeCusto(cst._key)}><Trash2 size={13} /></button></td>
+                  <td><button className="icon-btn perigo" onClick={() => removeCusto(cst._key)}><Trash2 size={13} /></button></td>
                 </tr>
               ))}
             </tbody>
