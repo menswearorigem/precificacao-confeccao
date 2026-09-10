@@ -175,8 +175,9 @@ function repartirProporcional(linhas, alvo) {
 //   custosIndustriais   — linhas de `custos_industriais` do produto
 //   insumosPorId        — Map/objeto id -> linha de `insumos`
 //   opcoes.aceitarUnidadeNaoConfirmada — se false (padrão), insumo cuja
-//     unidade ainda é palpite do sistema NÃO entra na conta; a linha vira
-//     pendência. É o que impede o palpite de virar custo.
+//     unidade ainda é dedução do sistema não entra na conta QUANDO A LINHA
+//     PRECISA CONVERTER de unidade. Sem conversão, o rótulo da unidade não
+//     muda o número calculado, e a linha segue com ressalva escrita.
 //
 // Saída: objeto com o antes, o depois, a diferença e as pendências escritas
 // em português. `aplicavel` só é true quando existe algo a gravar E a conta
@@ -222,15 +223,6 @@ function planejarRedistribuicao({ materiais, custosIndustriais, insumosPorId, op
       continue;
     }
 
-    if (!cfg.aceitarUnidadeNaoConfirmada && insumo.unidade_confianca) {
-      linhas.push({ ...base, valor_unitario_novo: atualUnit, custo_novo: custoAtualLinha, mudou: false,
-        situacao: 'unidade_nao_confirmada',
-        motivo: `a unidade do insumo "${insumo.nome}" ("${insumo.unidade}") ainda é palpite do sistema (confiança ${insumo.unidade_confianca}). Confirme a unidade antes de deixar esse custo entrar na ficha.` });
-      totalMateriaisNovo += custoAtualLinha;
-      pendencias.push(`insumo "${insumo.nome}" com unidade não confirmada`);
-      continue;
-    }
-
     const qtd = quantidadeDaLinha(m);
     if (qtd.valor === null) {
       linhas.push({ ...base, valor_unitario_novo: atualUnit, custo_novo: custoAtualLinha, mudou: false,
@@ -241,6 +233,34 @@ function planejarRedistribuicao({ materiais, custosIndustriais, insumosPorId, op
     }
 
     const custo = custoNaUnidadeDaFicha(m, insumo);
+
+    // ---------------------------------------------------------------------
+    // A unidade não confirmada trava aqui — e SÓ aqui.
+    // ---------------------------------------------------------------------
+    // Onde a unidade do insumo ainda é dedução do sistema, o perigo real é a
+    // CONVERSÃO: se a ficha mede em metro e o sistema acha que o insumo é
+    // comprado em quilo, o fator entra e o custo sai errado por um fator de
+    // três.
+    //
+    // Quando a ficha NÃO diz unidade — que é o caso da esmagadora maioria das
+    // linhas antigas — não há conversão nenhuma: a conta é quantidade × custo
+    // do insumo, e o RÓTULO da unidade não muda esse número. Chamar o quilo de
+    // metro ali dá exatamente o mesmo valor. Bloquear esse caso era prudência
+    // no lugar errado: deixava a ficha em R$ 0,00, que é um número errado com
+    // cara de certo, para evitar um risco que não existia naquela conta.
+    //
+    // Então: bloqueia quando houve conversão de verdade, e segue com ressalva
+    // escrita quando não houve.
+    const houveConversao = custo.valor !== null && Number(custo.fator) !== 1;
+    if (!cfg.aceitarUnidadeNaoConfirmada && insumo.unidade_confianca && houveConversao) {
+      linhas.push({ ...base, valor_unitario_novo: atualUnit, custo_novo: custoAtualLinha, mudou: false,
+        situacao: 'unidade_nao_confirmada',
+        motivo: `esta linha precisa converter de "${insumo.unidade}" para "${m.unidade}", e a unidade do insumo "${insumo.nome}" ainda é dedução do sistema (confiança ${insumo.unidade_confianca}). Converter a partir de uma unidade que ninguém confirmou erraria o custo por um fator de três. Confirme a unidade do insumo antes.` });
+      totalMateriaisNovo += custoAtualLinha;
+      pendencias.push(`insumo "${insumo.nome}" precisa de conversão e está com unidade não confirmada`);
+      continue;
+    }
+
     if (custo.valor === null) {
       linhas.push({ ...base, valor_unitario_novo: atualUnit, custo_novo: custoAtualLinha, mudou: false,
         situacao: custo.motivo.includes('grandezas diferentes') ? 'unidade_incompativel' : 'insumo_sem_custo',
@@ -257,6 +277,9 @@ function planejarRedistribuicao({ materiais, custosIndustriais, insumosPorId, op
     totalMateriaisNovo += novoCusto;
 
     if (custo.ressalva) ressalvas.push(`"${m.material || insumo.nome}": ${custo.ressalva}`);
+    if (insumo.unidade_confianca) {
+      ressalvas.push(`"${m.material || insumo.nome}": a unidade do insumo ("${insumo.unidade}") ainda é dedução do sistema, mas como não houve conversão nesta linha, o valor calculado é o mesmo qualquer que seja o nome da unidade.`);
+    }
 
     linhas.push({
       ...base,

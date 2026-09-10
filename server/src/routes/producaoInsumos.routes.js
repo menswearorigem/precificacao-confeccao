@@ -40,6 +40,7 @@ const { registrar } = require('../lib/auditoria');
 const { casar, indiceExato } = require('../lib/vinculoInsumo');
 const { classificar, UNIDADES } = require('../lib/insumoUnidade');
 const { planejarRedistribuicao, TOLERANCIA } = require('../lib/redistribuicaoCusto');
+const { planosDe, vincularExatos, aplicarPlanos, preencherTudo } = require('../lib/preencherCustoMaterial');
 
 const router = express.Router();
 
@@ -297,36 +298,19 @@ router.post('/vincular', async (req, res, next) => {
 router.post('/vincular-exatos', async (req, res, next) => {
   const client = await pool.connect();
   try {
-    const [{ rows: linhas }, { rows: insumos }] = await Promise.all([
-      pool.query(
-        `SELECT m.id, m.material, p.referencia
-           FROM materiais m JOIN produtos p ON p.id = m.produto_id
-          WHERE m.insumo_id IS NULL`),
-      pool.query('SELECT id, codigo, nome FROM insumos WHERE ativo'),
-    ]);
-    const idx = indiceExato(insumos);
-    const paraLigar = [];
-    for (const l of linhas) {
-      const r = casar(l.material, insumos, idx);
-      if (r.tipo === 'exato') paraLigar.push({ material_id: l.id, material: l.material, referencia: l.referencia, insumo_id: r.insumo.id, insumo_nome: r.insumo.nome });
-    }
-
-    if (req.body?.confirmar !== true) {
-      return res.json({ previa: true, total: paraLigar.length, vinculos: paraLigar });
-    }
-
+    const gravar = req.body?.confirmar === true;
     await client.query('BEGIN');
-    for (const v of paraLigar) {
-      await client.query('UPDATE materiais SET insumo_id = $2 WHERE id = $1 AND insumo_id IS NULL', [v.material_id, v.insumo_id]);
-    }
-    await client.query('COMMIT');
+    const r = await vincularExatos(client, { gravar });
+    if (gravar) await client.query('COMMIT'); else await client.query('ROLLBACK');
 
-    await registrar(req, {
-      acao: 'alterar', entidade: 'material_ficha', entidadeId: null,
-      descricao: `Vinculou em lote ${paraLigar.length} linha(s) de ficha a insumo por casamento exato de nome`,
-      sucesso: true,
-    });
-    res.json({ previa: false, total: paraLigar.length, vinculos: paraLigar });
+    if (gravar) {
+      await registrar(req, {
+        acao: 'alterar', entidade: 'material_ficha', entidadeId: null,
+        descricao: `Vinculou em lote ${r.vinculos.length} linha(s) de ficha a insumo por casamento exato de nome`,
+        sucesso: true,
+      });
+    }
+    res.json({ previa: !gravar, total: r.vinculos.length, vinculos: r.vinculos, nao_casaram: r.naoCasaram });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     next(err);
@@ -335,49 +319,40 @@ router.post('/vincular-exatos', async (req, res, next) => {
   }
 });
 
-// ---------------------------------------------------------------------------
-// Carrega ficha + custos + insumos de um conjunto de produtos, e monta o
-// plano de redistribuição de cada um. Usado pela prévia e pela aplicação —
-// de propósito o MESMO código, para a prévia não mentir sobre o que vai
-// acontecer.
-// ---------------------------------------------------------------------------
-async function planosDe(executor, produtoIds, opcoes) {
-  const { rows: produtos } = await executor.query(
-    `SELECT id, referencia, descricao, marca FROM produtos
-      WHERE ($1::int[] IS NULL OR id = ANY($1)) ORDER BY referencia`,
-    [produtoIds && produtoIds.length ? produtoIds : null]
-  );
-  if (produtos.length === 0) return [];
-  const ids = produtos.map((p) => p.id);
-
-  const [{ rows: materiais }, { rows: industriais }, { rows: insumos }] = await Promise.all([
-    executor.query('SELECT * FROM materiais WHERE produto_id = ANY($1) ORDER BY produto_id, ordem, id', [ids]),
-    executor.query('SELECT * FROM custos_industriais WHERE produto_id = ANY($1) ORDER BY produto_id, ordem, id', [ids]),
-    executor.query('SELECT * FROM insumos'),
-  ]);
-
-  const insumosPorId = new Map(insumos.map((i) => [Number(i.id), i]));
-  const matPorProduto = new Map();
-  const indPorProduto = new Map();
-  for (const m of materiais) {
-    if (!matPorProduto.has(m.produto_id)) matPorProduto.set(m.produto_id, []);
-    matPorProduto.get(m.produto_id).push(m);
-  }
-  for (const c of industriais) {
-    if (!indPorProduto.has(c.produto_id)) indPorProduto.set(c.produto_id, []);
-    indPorProduto.get(c.produto_id).push(c);
-  }
-
-  return produtos.map((p) => {
-    const plano = planejarRedistribuicao({
-      materiais: matPorProduto.get(p.id) || [],
-      custosIndustriais: indPorProduto.get(p.id) || [],
-      insumosPorId,
-      opcoes,
+// ===========================================================================
+// POST /preencher-tudo — a corrente inteira num pedido só
+// ===========================================================================
+// Vincula o que casa por nome exato, planeja, grava e confere — na mesma
+// transação. É o que responde ao pedido como ele foi feito ("preencha o custo
+// de matéria prima de todos os produtos cadastrados"), em vez de exigir três
+// visitas a três telas.
+//
+// Sem `confirmar: true` é PRÉVIA de verdade: roda tudo, inclusive os vínculos,
+// e desfaz no fim. Por isso a prévia mostra o mesmo número que a gravação —
+// se ela vinculasse só na hora de gravar, a prévia diria menos do que faria.
+router.post('/preencher-tudo', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const relatorio = await preencherTudo(client, {
+      confirmar: req.body?.confirmar === true,
+      aceitarUnidadeNaoConfirmada: req.body?.aceitar_unidade_nao_confirmada === true,
+      produtoIds: Array.isArray(req.body?.produto_ids)
+        ? req.body.produto_ids.map(inteiroPositivo).filter(Boolean) : null,
     });
-    return { produto_id: p.id, referencia: p.referencia, descricao: p.descricao, marca: p.marca, ...plano };
-  });
-}
+    if (relatorio.confirmado) {
+      await registrar(req, {
+        acao: 'alterar', entidade: 'produto', entidadeId: null,
+        descricao: `Preencheu o custo de matéria-prima de ${relatorio.referencias_preenchidas} referência(s) de uma vez: ${relatorio.vinculos_criados} vínculo(s) novo(s) e R$ ${relatorio.valor_movido.toFixed(2)} movidos do custo industrial para a ficha. Custo de produção inalterado.`,
+        sucesso: true,
+      });
+    }
+    res.status(relatorio.erro ? 409 : 200).json(relatorio);
+  } catch (err) {
+    next(err);
+  } finally {
+    client.release();
+  }
+});
 
 // ===========================================================================
 // GET /distribuicao — a prévia, referência por referência
@@ -439,46 +414,7 @@ router.post('/distribuicao/aplicar', async (req, res, next) => {
       return res.json({ aplicados: 0, referencias: [], aviso: 'Nenhuma referência estava pronta para redistribuir. Veja a prévia para saber o que falta em cada uma.' });
     }
 
-    const antes = new Map();
-    for (const p of planos) {
-      antes.set(p.produto_id, p.subtotalAtual);
-      for (const l of p.linhas) {
-        if (!l.mudou) continue;
-        await client.query(
-          `UPDATE materiais
-              SET valor_unitario = $2,
-                  consumo_por_peca = COALESCE(consumo_por_peca, $3)
-            WHERE id = $1`,
-          [l.id, l.valor_unitario_novo, l.quantidade]
-        );
-      }
-      for (const c of p.industriais) {
-        if (!c.mudou) continue;
-        const nota = `redistribuição 10/09/2026: era R$ ${c.valor_atual.toFixed(2)}, parte virou matéria-prima na ficha`;
-        await client.query(
-          `UPDATE custos_industriais
-              SET valor = $2,
-                  observacao = CASE
-                    WHEN COALESCE(observacao,'') = '' THEN $3
-                    WHEN observacao LIKE '%redistribuição%' THEN observacao
-                    ELSE observacao || ' — ' || $3 END
-            WHERE id = $1`,
-          [c.id, c.valor_novo, nota]
-        );
-      }
-    }
-
-    // A conferência: relê do banco o que foi gravado.
-    const { rows: conferencia } = await client.query(
-      `SELECT p.id, p.referencia,
-              COALESCE((SELECT SUM(m.quantidade * m.valor_unitario) FROM materiais m WHERE m.produto_id = p.id), 0)
-            + COALESCE((SELECT SUM(c.valor) FROM custos_industriais c WHERE c.produto_id = p.id), 0) AS subtotal
-         FROM produtos p WHERE p.id = ANY($1)`,
-      [planos.map((p) => p.produto_id)]
-    );
-    const fora = conferencia
-      .map((r) => ({ referencia: r.referencia, diferenca: Number(r.subtotal) - Number(antes.get(r.id)) }))
-      .filter((r) => Math.abs(r.diferenca) > TOLERANCIA);
+    const { fora } = await aplicarPlanos(client, planos);
 
     if (fora.length > 0) {
       await client.query('ROLLBACK');

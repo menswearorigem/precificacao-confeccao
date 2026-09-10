@@ -477,3 +477,31 @@ isso em silêncio, porque zero soma sem reclamar.
 escreve "sem custo" com o motivo. Eles não entram em conta nenhuma até
 alguém lançar a nota ou digitar o preço, e o indicador "Sem custo" no topo
 da aba mostra quantos são.
+
+## 12. A trava de unidade estava no lugar errado — corrigido em 10/09/2026
+
+**O QUE ACONTECEU:** a primeira versão da redistribuição recusava QUALQUER
+linha cujo insumo estivesse com a unidade ainda deduzida pelo sistema. A
+intenção era boa (não deixar palpite virar custo), mas o efeito prático foi o
+contrário do pretendido: a ficha continuava mostrando **R$ 0,00 de material**,
+que é um número errado com cara de certo, para evitar um risco que naquela
+conta não existia.
+
+**POR QUE NÃO EXISTIA:** quando a linha da ficha não declara unidade — que é o
+caso da esmagadora maioria das linhas antigas — a conta é
+`quantidade × custo do insumo`, e o **rótulo** da unidade não muda esse
+número. Chamar aquilo de quilo ou de metro dá exatamente o mesmo valor. O
+perigo da unidade deduzida está na **conversão**: se a ficha mede em metro e o
+sistema *acha* que o insumo é comprado em quilo, o fator de conversão entra na
+conta e o custo sai errado por um fator de três.
+
+**O QUE FOI FEITO:** a trava passou a valer só onde há conversão de verdade.
+Sem conversão, a linha calcula normalmente e a ressalva fica escrita na
+prévia ("a unidade do insumo ainda é dedução do sistema, mas como não houve
+conversão nesta linha, o valor calculado é o mesmo qualquer que seja o nome
+da unidade"). Com conversão, continua travada até alguém confirmar a unidade.
+
+Efeito medido na réplica do produto 268: a ficha saía de R$ 0,00 para
+R$ 0,30 (só as etiquetas) com a trava antiga, e vai para R$ 7,88 com a
+correta — o tecido, que é 96% do material da peça, ficava de fora por causa
+de um risco que não se aplicava a ele.

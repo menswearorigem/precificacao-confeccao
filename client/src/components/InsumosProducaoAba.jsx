@@ -19,7 +19,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Boxes, CircleSlash, AlertTriangle, Link2, Scale, ArrowLeftRight, Check, Info,
+  Boxes, CircleSlash, AlertTriangle, Link2, Scale, ArrowLeftRight, Check, Info, Wand2,
 } from 'lucide-react';
 import { api } from '../api/client';
 import {
@@ -701,10 +701,123 @@ function Distribuicao({ onMudou }) {
 }
 
 // ===========================================================================
+// Preencher tudo de uma vez
+// ===========================================================================
+// O pedido foi "preencha o custo de matéria prima de todos os produtos
+// cadastrados". Fazer isso em três telas é transformar um pedido em tarefa.
+// Este botão faz a corrente inteira num clique — vincular por nome exato,
+// calcular, abater do industrial e conferir — sem afrouxar nenhuma trava:
+// o que não dá para calcular continua ficando de fora, com o motivo escrito.
+function PreencherTudo({ aceitarPalpite, onFeito }) {
+  const [rodando, setRodando] = useState(false);
+  const [erro, setErro] = useState('');
+  const [resultado, setResultado] = useState(null);
+
+  async function rodar() {
+    setRodando(true);
+    setErro('');
+    setResultado(null);
+    try {
+      const previa = await api.post('/producao-insumos/preencher-tudo', {
+        aceitar_unidade_nao_confirmada: aceitarPalpite,
+      });
+      if (previa.referencias_preenchidas === 0) {
+        setResultado(previa);
+        setErro('Nenhuma referência está pronta para preencher. O quadro abaixo diz o que falta em cada uma.');
+        return;
+      }
+      const segue = await confirmar(
+        `${previa.vinculos_criados} linha(s) de ficha serão ligadas ao insumo de mesmo nome, e `
+        + `${previa.referencias_preenchidas} referência(s) terão ${brl(previa.valor_movido)} tirados do custo industrial `
+        + 'e lançados como matéria-prima na ficha.\n\n'
+        + 'O custo de produção de cada peça NÃO muda — muda só onde o custo está. '
+        + `A maior diferença é de ${brl(previa.maior_diferenca, 4)}, e o sistema recusa qualquer coisa acima de meio centavo.\n\n`
+        + `${previa.travadas?.length || 0} referência(s) ficam de fora, cada uma com o motivo escrito.`,
+        { titulo: 'Preencher o custo de matéria-prima', confirmarTexto: 'Preencher', perigo: false }
+      );
+      if (!segue) return;
+      const r = await api.post('/producao-insumos/preencher-tudo', {
+        confirmar: true, aceitar_unidade_nao_confirmada: aceitarPalpite,
+      });
+      setResultado(r);
+      onFeito?.();
+    } catch (e) {
+      setErro(e.message);
+      if (e.data) setResultado(e.data);
+    } finally {
+      setRodando(false);
+    }
+  }
+
+  return (
+    <div className="preencher-tudo">
+      <div className="preencher-tudo-texto">
+        <strong>Preencher o custo de matéria-prima de todos os produtos</strong>
+        <p className="ink-soft">
+          Liga cada linha de ficha ao insumo de nome idêntico, calcula o custo do material pela unidade certa
+          e abate exatamente o mesmo valor do custo industrial. <strong>O custo da peça não muda</strong> — e o
+          sistema confere isso relendo do banco depois de gravar. O que não der para calcular fica de fora,
+          com o motivo escrito.
+        </p>
+      </div>
+      <button type="button" className="btn btn-primary" disabled={rodando} onClick={rodar}>
+        <Wand2 size={14} /> {rodando ? 'Preenchendo…' : 'Preencher tudo'}
+      </button>
+
+      {erro && <p className="erro-inline">{erro}</p>}
+
+      {resultado && (
+        <div className="preencher-tudo-resultado">
+          {resultado.confirmado && (
+            <p className="aviso-inline aviso-bom">
+              <Check size={14} /> Pronto: {formatQtd(resultado.referencias_preenchidas)} referência(s) preenchidas,
+              {' '}{brl(resultado.valor_movido)} movidos do custo industrial para a ficha. Maior mudança no custo
+              da peça: {brl(resultado.maior_diferenca, 4)}.
+            </p>
+          )}
+          <div className="tabela-rolagem">
+            <table className="tabela-nota tabela-embutida">
+              <tbody>
+                <tr><td>Vínculos criados por nome exato</td><td className="num mono">{formatQtd(resultado.vinculos_criados)}</td></tr>
+                <tr><td>Linhas de ficha que continuam sem vínculo</td><td className="num mono">{formatQtd(resultado.linhas_sem_vinculo_restantes)}</td></tr>
+                <tr className="ink-soft"><td>— o nome bate com mais de um insumo (empate)</td><td className="num mono">{formatQtd(resultado.linhas_que_nao_casaram?.ambiguo || 0)}</td></tr>
+                <tr className="ink-soft"><td>— só parecidas, casar por semelhança é proibido</td><td className="num mono">{formatQtd(resultado.linhas_que_nao_casaram?.sugestao || 0)}</td></tr>
+                <tr className="ink-soft"><td>— nada parecido no cadastro</td><td className="num mono">{formatQtd(resultado.linhas_que_nao_casaram?.nenhum || 0)}</td></tr>
+                <tr><td>Referências preenchidas</td><td className="num mono">{formatQtd(resultado.referencias_preenchidas)}</td></tr>
+                <tr><td>Referências que ficaram de fora</td><td className="num mono">{formatQtd(resultado.travadas?.length || 0)}</td></tr>
+              </tbody>
+            </table>
+          </div>
+          {resultado.travadas?.length > 0 && (
+            <details className="preencher-tudo-detalhe">
+              <summary>Ver por que {formatQtd(resultado.travadas.length)} ficaram de fora</summary>
+              <div className="tabela-rolagem">
+                <table className="tabela-nota tabela-embutida">
+                  <thead><tr><th>Referência</th><th>O que falta</th></tr></thead>
+                  <tbody>
+                    {resultado.travadas.slice(0, 200).map((t) => (
+                      <tr key={t.referencia}>
+                        <td className="mono">{t.referencia}</td>
+                        <td className="ink-soft">{t.motivo || t.pendencias?.[0] || t.situacao}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ===========================================================================
 // A aba
 // ===========================================================================
 export default function InsumosProducaoAba() {
   const [sub, setSub] = useState('insumos');
+  const [aceitarPalpite, setAceitarPalpite] = useState(false);
   const [insumos, setInsumos] = useState([]);
   const [resumo, setResumo] = useState(null);
   const [carregando, setCarregando] = useState(true);
@@ -749,6 +862,8 @@ export default function InsumosProducaoAba() {
             explicacao="Têm ficha de materiais somando R$ 0,00 — todo o custo está empilhado no custo industrial. É o problema que a aba de Distribuição resolve." />
         </div>
       )}
+
+      <PreencherTudo aceitarPalpite={aceitarPalpite} onFeito={carregar} />
 
       <div className="subtab-row">
         <button type="button" className={`subtab-btn ${sub === 'insumos' ? 'active' : ''}`} onClick={() => setSub('insumos')}>

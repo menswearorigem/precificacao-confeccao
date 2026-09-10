@@ -355,26 +355,51 @@ async function main() {
   }
 
   // =====================================================================
-  console.log('\n== 8. Unidade que o sistema chutou não entra no custo sozinha ==');
+  console.log('\n== 8. Unidade deduzida: trava onde há conversão, segue onde não há ==');
   // =====================================================================
   {
+    // (a) SEM conversão — a ficha não diz unidade, ou diz a mesma do insumo.
+    //     O rótulo da unidade não muda o número: quantidade × custo do insumo
+    //     dá o mesmo valor se aquilo se chamar quilo ou metro. Travar aqui
+    //     deixava a ficha em R$ 0,00 para evitar um risco que não existe.
     const p = await criarProduto('005',
       [{ material: 'TECIDO TESTE PI SEM NOME', unidade: 'm', quantidade: 1, valor_unitario: 0, insumo_id: palpite.id }],
       [{ tipo: 'Facção', valor: 50 }]);
-    const bloqueado = await req('GET', `/api/producao-insumos/distribuicao?produto_ids=${p}`);
-    checa('com unidade só inferida, a linha fica de fora',
-      bloqueado.body.planos[0].linhas[0].situacao === 'unidade_nao_confirmada', bloqueado.body.planos[0].linhas[0]);
+    const semConversao = await req('GET', `/api/producao-insumos/distribuicao?produto_ids=${p}`);
+    const linha = semConversao.body.planos[0].linhas[0];
+    checa('sem conversão, a linha calcula mesmo com unidade deduzida', linha.situacao === 'ok', linha);
+    perto('e usa o custo do insumo direto', linha.valor_unitario_novo, 30);
+    checa('mas a ressalva fica escrita, para quem lê a prévia',
+      (semConversao.body.planos[0].ressalvas || []).some((r) => /dedução do sistema/.test(r)),
+      semConversao.body.planos[0].ressalvas);
 
-    const liberado = await req('GET', `/api/producao-insumos/distribuicao?produto_ids=${p}&aceitar_unidade_nao_confirmada=true`);
-    checa('só entra se alguém pedir explicitamente para aceitar o palpite',
+    // (b) COM conversão — aí sim a unidade deduzida é perigosa de verdade:
+    //     o fator entra na conta e erra o custo por um fator de três.
+    const comFatorPalpite = await criarInsumo({
+      codigo: 'PALPFATOR', nome: 'MALHA TESTE PI PALPITE COM FATOR', unidade: 'kg',
+      custo: 40, confianca: 'baixa', unidadeConsumo: 'm', fator: 0.32,
+    });
+    const p2 = await criarProduto('005b',
+      [{ material: 'MALHA TESTE PI PALPITE COM FATOR', unidade: 'm', quantidade: 1.2, valor_unitario: 0, insumo_id: comFatorPalpite.id }],
+      [{ tipo: 'Facção', valor: 50 }]);
+    const comConversao = await req('GET', `/api/producao-insumos/distribuicao?produto_ids=${p2}`);
+    const l2 = comConversao.body.planos[0].linhas[0];
+    checa('com conversão e unidade deduzida, a linha É travada', l2.situacao === 'unidade_nao_confirmada', l2);
+    checa('e o motivo diz que o problema é a conversão', /converter/.test(l2.motivo || ''), l2.motivo);
+
+    const liberado = await req('GET', `/api/producao-insumos/distribuicao?produto_ids=${p2}&aceitar_unidade_nao_confirmada=true`);
+    checa('só entra se alguém pedir explicitamente para aceitar a dedução',
       liberado.body.planos[0].linhas[0].situacao === 'ok', liberado.body.planos[0].linhas[0]);
 
-    // E confirmar a unidade tira o insumo da fila de vez.
-    const conf = await req('PUT', `/api/producao-insumos/${palpite.id}/unidade`, { unidade: 'm' });
+    // Confirmar a unidade tira o insumo da fila de vez.
+    const conf = await req('PUT', `/api/producao-insumos/${comFatorPalpite.id}/unidade`,
+      { unidade: 'kg', unidade_consumo: 'm', fator_conversao: 0.32 });
     checa('confirmar a unidade responde 200', conf.status === 200, conf.body);
-    checa('e zera a marca de palpite', conf.body.unidade_confianca === null, conf.body.unidade_confianca);
-    const agora = await req('GET', `/api/producao-insumos/distribuicao?produto_ids=${p}`);
-    checa('depois de confirmada, a linha calcula normalmente', agora.body.planos[0].linhas[0].situacao === 'ok');
+    checa('e zera a marca de dedução', conf.body.unidade_confianca === null, conf.body.unidade_confianca);
+    const agora = await req('GET', `/api/producao-insumos/distribuicao?produto_ids=${p2}`);
+    checa('depois de confirmada, a linha com conversão calcula normalmente',
+      agora.body.planos[0].linhas[0].situacao === 'ok');
+    perto('1,2 m a 40,00/kg com fator 0,32 = 15,36', agora.body.planos[0].totalMateriaisNovo, 15.36);
 
     const semFator = await req('PUT', `/api/producao-insumos/${palpite.id}/unidade`, { unidade: 'kg', unidade_consumo: 'm' });
     checa('trocar para consumo em outra grandeza SEM fator é recusado', semFator.status === 400, semFator.body);
@@ -517,6 +542,69 @@ async function main() {
     perto('a soma dos industriais novos bate com o alvo arredondado',
       plano.industriais.reduce((s, c) => s + c.valor_novo, 0), arred(plano.totalIndustrialAtual - plano.delta, 2), 1e-9);
     checa('nenhum custo industrial ficou negativo', plano.industriais.every((c) => c.valor_novo >= 0), plano.industriais);
+  }
+
+  // =====================================================================
+  console.log('\n== 15. Réplica do produto 268 real, e o "preencher tudo" de um clique ==');
+  // =====================================================================
+  // O retrato exato do que a tela mostrava em 10/09/2026: ficha com
+  // quantidade e valor ZERADO, coluna de unidade em branco, e o custo inteiro
+  // empilhado numa única linha industrial de R$ 14,98 (as outras zeradas,
+  // "Importado do Wik — valor de mão-de-obra").
+  {
+    const tecido = await criarInsumo({ codigo: 'FIO30', nome: 'TECIDO TESTE PI FIO 30 ROVITEX', unidade: 'kg', custo: 39.9, confianca: 'media' });
+    const tag = await criarInsumo({ codigo: 'TAGOG', nome: 'TAG TESTE PI ORIGEM', unidade: 'un', custo: 0.06, tipo: 'etiqueta' });
+    const emb = await criarInsumo({ codigo: 'EMBL', nome: 'EMBALAGEM TESTE PI LISA 25X35', unidade: 'un', custo: 0.15, tipo: 'embalagem' });
+    const etq = await criarInsumo({ codigo: 'ETQCOMP', nome: 'ETIQUETA TESTE PI DE COMPOSICAO', unidade: 'un', custo: 0.09, tipo: 'etiqueta' });
+    await criarInsumo({ codigo: 'CODBAR', nome: 'CODICO TESTE PI DE BARRA', unidade: 'un', custo: 0.05, tipo: 'etiqueta' });
+
+    const p268 = await criarProduto('268',
+      [ // unidade em branco de propósito, como está na tela real
+        { material: 'TECIDO TESTE PI FIO 30 ROVITEX', unidade: null, quantidade: 0.19, valor_unitario: 0 },
+        { material: 'TAG TESTE PI ORIGEM', unidade: null, quantidade: 1, valor_unitario: 0 },
+        { material: 'EMBALAGEM TESTE PI LISA 25X35', unidade: null, quantidade: 1, valor_unitario: 0 },
+        { material: 'ETIQUETA TESTE PI DE COMPOSICAO', unidade: null, quantidade: 1, valor_unitario: 0 },
+        // este tem o mesmo erro de digitação do cadastro real (CODIGO x CODICO):
+        // não casa por nome exato, e tem de sobrar para conferência humana
+        { material: 'CODIGO TESTE PI DE BARRA', unidade: null, quantidade: 1, valor_unitario: 0 },
+      ],
+      [ { tipo: 'Facção', valor: 0, observacao: 'Importado do Wik — valor de mão-de-obra não veio' },
+        { tipo: 'Corte', valor: 0, observacao: 'Importado do Wik — valor de mão-de-obra não veio' },
+        { tipo: 'Outro', valor: 14.98, observacao: 'Custo total já calculado e aprovado na Ficha de Custo do Wik' } ]);
+
+    const antes268 = await subtotalDe(p268);
+    perto('o custo de produção antes é 14,98', antes268, 14.98);
+
+    // A prévia do botão: roda a corrente inteira e desfaz.
+    const previa = await req('POST', '/api/producao-insumos/preencher-tudo', {});
+    checa('a prévia enxerga os vínculos que ela mesma criaria', previa.body.vinculos_criados >= 4, previa.body.vinculos_criados);
+    checa('a prévia não gravou nada', (await subtotalDe(p268)) === antes268);
+    const { rows: aindaSem } = await pool.query('SELECT COUNT(*)::int n FROM materiais WHERE produto_id = $1 AND insumo_id IS NOT NULL', [p268]);
+    checa('e não deixou vínculo para trás', aindaSem[0].n === 0, aindaSem[0].n);
+
+    // Agora de verdade.
+    const feito = await req('POST', '/api/producao-insumos/preencher-tudo', { confirmar: true });
+    checa('preencheu de uma vez', feito.body.confirmado === true, feito.body.erro || feito.body);
+
+    const { rows: mats } = await pool.query(
+      'SELECT material, quantidade, valor_unitario, insumo_id FROM materiais WHERE produto_id = $1 ORDER BY ordem', [p268]);
+    perto('o tecido entrou a R$ 39,90 — a unidade deduzida NÃO travou, porque não há conversão aqui',
+      Number(mats[0].valor_unitario), 39.9);
+    perto('a tag entrou a R$ 0,06', Number(mats[1].valor_unitario), 0.06);
+    checa('o "CODIGO x CODICO" continua sem vínculo, como tem de ser', mats[4].insumo_id === null, mats[4]);
+    perto('e o valor dele continua zero, sem ninguém inventar nada', Number(mats[4].valor_unitario), 0);
+
+    const materialDepois = 0.19 * 39.9 + 0.06 + 0.15 + 0.09;
+    const { rows: soma } = await pool.query(
+      'SELECT SUM(quantidade * valor_unitario) s FROM materiais WHERE produto_id = $1', [p268]);
+    perto('material da ficha saiu de R$ 0,00 para R$ 7,88', Number(soma[0].s), materialDepois, 0.005);
+
+    const { rows: inds } = await pool.query(
+      'SELECT tipo, valor FROM custos_industriais WHERE produto_id = $1 ORDER BY ordem', [p268]);
+    perto('as linhas industriais zeradas continuam zeradas', Number(inds[0].valor), 0);
+    perto('e a linha de R$ 14,98 caiu para R$ 7,10', Number(inds[2].valor), 7.10, 0.005);
+
+    perto('O CUSTO DE PRODUÇÃO CONTINUA 14,98', await subtotalDe(p268), antes268, 0.005);
   }
 
   await limpar();
