@@ -156,6 +156,16 @@ router.get('/produtos', async (req, res, next) => {
       pool.query(
         `SELECT ev.produto_id, p.referencia, p.descricao, p.marca, p.categoria,
                 p.cadencia_reposicao, p.nivel_reposicao, p.lead_time_producao_dias,
+                -- A foto. Duas origens, nesta ordem: a do CADASTRO (bytea em
+                -- produto_fotos, que é a foto que a casa escolheu) e, quando
+                -- não houver, a do ANÚNCIO no marketplace. A segunda é um
+                -- link para a plataforma, não um arquivo nosso — some se o
+                -- anúncio for encerrado, e por isso não substitui a primeira.
+                EXISTS (SELECT 1 FROM produto_fotos pf WHERE pf.produto_id = ev.produto_id) AS tem_foto,
+                (SELECT a.foto_url FROM anuncios_marketplace a
+                  WHERE a.produto_id = ev.produto_id AND a.foto_url IS NOT NULL
+                  ORDER BY (a.status = 'ativo') DESC, a.atualizado_em_plataforma DESC NULLS LAST
+                  LIMIT 1) AS foto_url,
                 SUM(ev.quantidade)::numeric AS saldo,
                 COUNT(*) FILTER (WHERE ev.quantidade <= 0) AS variantes_zeradas,
                 COUNT(*) AS variantes,
@@ -347,6 +357,8 @@ router.get('/produtos', async (req, res, next) => {
         descricao: s.descricao,
         marca: s.marca,
         categoria: s.categoria,
+        tem_foto: s.tem_foto === true,
+        foto_url: s.foto_url || null,
         saldo,
         em_producao: naFaccao,
         posicao,
@@ -443,6 +455,33 @@ router.get('/produtos', async (req, res, next) => {
   }
 });
 
+
+// ---------------------------------------------------------------------------
+// A foto da referência
+// ---------------------------------------------------------------------------
+// Os mesmos bytes que `/api/produtos/:id/foto` serve — repetidos aqui porque
+// aquela rota exige o módulo `produto` ou `analises`, e quem abre esta tela
+// pode ter só `estoque`. Sem isto, a miniatura viraria uma imagem quebrada
+// justamente para quem mais usa a tela. É o mesmo caminho que Viagens já
+// tinha aberto para o módulo dela.
+router.get('/produtos/:id/foto', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT dados, mime_type FROM produto_fotos WHERE produto_id = $1',
+      [req.params.id]
+    );
+    if (rows.length === 0) return res.status(404).end();
+    const tipo = /^image\/(jpeg|png|webp)$/.test(rows[0].mime_type) ? rows[0].mime_type : 'application/octet-stream';
+    res.set('Content-Type', tipo);
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Content-Disposition', 'inline');
+    res.set('Cache-Control', 'private, max-age=86400');
+    res.send(rows[0].dados);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // A GRADE de uma referência: cor × tamanho
 // ---------------------------------------------------------------------------
@@ -463,7 +502,13 @@ router.get('/produtos/:id/grade', async (req, res, next) => {
 
     const janela = janelaDeAnalise(req);
     const { rows: prodRows } = await pool.query(
-      'SELECT id, referencia, descricao, categoria, nivel_reposicao, cadencia_reposicao FROM produtos WHERE id = $1',
+      `SELECT p.id, p.referencia, p.descricao, p.categoria, p.nivel_reposicao, p.cadencia_reposicao,
+              EXISTS (SELECT 1 FROM produto_fotos pf WHERE pf.produto_id = p.id) AS tem_foto,
+              (SELECT a.foto_url FROM anuncios_marketplace a
+                WHERE a.produto_id = p.id AND a.foto_url IS NOT NULL
+                ORDER BY (a.status = 'ativo') DESC, a.atualizado_em_plataforma DESC NULLS LAST
+                LIMIT 1) AS foto_url
+         FROM produtos p WHERE p.id = $1`,
       [produtoId]
     );
     if (prodRows.length === 0) return res.status(404).json({ erro: 'referência não encontrada' });

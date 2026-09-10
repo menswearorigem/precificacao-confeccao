@@ -9,6 +9,7 @@ import {
   EstadoVazio, Select, Skeleton, CampoBusca, ChipsFiltros, Paginacao,
   NumInput, Field, BotaoExportar,
 } from '../components/ui';
+import FotoProduto from '../components/FotoProduto';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoTresMeses } from '../lib/periodos';
 import { useTabela } from '../lib/useTabela';
@@ -353,7 +354,16 @@ function DetalheDaLinha({ linha, periodo, parametros, aoSalvarReposicao }) {
         {/* 1. A decisão — fica primeiro porque é o que a pessoa veio fazer. */}
         <section className="detalhe-bloco">
           <h4><Sparkles size={14} /> Como esta referência é reposta</h4>
-          <div className="detalhe-campos">
+          <div className="detalhe-com-foto">
+            <FotoProduto
+              produtoId={linha.produto_id}
+              temFoto={linha.tem_foto}
+              url={linha.foto_url}
+              urlBase="/estoque-minimo/produtos"
+              size={132}
+              alt={linha.descricao || linha.referencia}
+            />
+            <div className="detalhe-campos">
             <Field label="Cadência" hint="Decide o prazo usado no cálculo. A escolha à mão vence a sugerida pela venda.">
               <Select
                 value={linha.cadencia_manual || ''}
@@ -388,6 +398,7 @@ function DetalheDaLinha({ linha, periodo, parametros, aoSalvarReposicao }) {
                 disabled={salvando}
               />
             </Field>
+            </div>
           </div>
           <p className="detalhe-nota">
             {cad.origem === 'manual'
@@ -925,6 +936,20 @@ export default function CoberturaEstoquePage() {
                           </td>
                           <td>
                             <div className="cobertura-ref">
+                              {/* A foto vem primeiro porque é por ela que a
+                                  peça é reconhecida: quem decide reposição
+                                  sabe de cor o que é a "polo piquet marinho",
+                                  não o que é a OG1621. A do cadastro manda; a
+                                  do anúncio entra quando não há cadastrada. */}
+                              <FotoProduto
+                                produtoId={l.produto_id}
+                                temFoto={l.tem_foto}
+                                url={l.foto_url}
+                                urlBase="/estoque-minimo/produtos"
+                                size={44}
+                                alt={l.descricao || l.referencia}
+                              />
+                              <div className="cobertura-ref-texto">
                               <strong>{l.referencia}</strong>
                               <small>{l.descricao}</small>
                               <span className="cobertura-selos">
@@ -944,6 +969,7 @@ export default function CoberturaEstoquePage() {
                                   </span>
                                 )}
                               </span>
+                              </div>
                             </div>
                           </td>
                           <td>

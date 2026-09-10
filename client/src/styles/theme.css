@@ -5577,6 +5577,20 @@ table.ficha-doc-tabela {
 .tabela-cobertura tr.linha-detalhe-tr > td { padding: 0; background: var(--surface-alt); }
 .produzir-valor { font-size: 14px; color: var(--terracotta); }
 
+/* A linha da referência é foto + texto. A foto tem tamanho fixo para as
+   linhas não ficarem com alturas diferentes conforme a imagem.
+   Prefixado com .tabela-cobertura de propósito: a regra original de
+   `.cobertura-ref` (coluna) vem depois no arquivo e ganharia no empate. */
+.tabela-cobertura .cobertura-ref { flex-direction: row; align-items: center; gap: 10px; }
+.cobertura-ref .foto-produto-thumb,
+.cobertura-ref .foto-produto-placeholder { flex: 0 0 auto; }
+.cobertura-ref-texto { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+
+.detalhe-com-foto { display: flex; align-items: flex-start; gap: 14px; }
+.detalhe-com-foto > .detalhe-campos { flex: 1 1 auto; }
+.detalhe-com-foto .foto-produto-thumb,
+.detalhe-com-foto .foto-produto-placeholder { flex: 0 0 auto; }
+
 .cobertura-selos { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
 .cobertura-selos .selo { margin: 0; }
 
@@ -5677,6 +5691,7 @@ table.ficha-doc-tabela {
      meio Select não dá para ler nem para acertar com o dedo. */
   .cobertura-barra > .select-custom { flex: 1 1 100%; max-width: none; }
   .detalhe-lista > div { grid-template-columns: 1fr; gap: 2px; }
+  .detalhe-com-foto { flex-direction: column; }
   .linha-detalhe { padding: 12px; }
 }
 
