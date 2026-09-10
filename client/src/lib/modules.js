@@ -102,7 +102,6 @@ export const MODULES = [
       // de existir ordem aberta -- e e' a tela que responde se a ordem que ja'
       // esta' aberta resolve a falta ou chega curta.
       { to: '/producao/projecao', label: 'Projeção de Estoque', icon: PackageCheck },
-      { to: '/producao/wik', label: 'Produção no Wik', icon: Cloud },
     ],
   },
   {

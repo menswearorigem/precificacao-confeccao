@@ -1331,7 +1331,7 @@ export default function ProducaoPage() {
                   <tbody>
                     {tabela.itensPagina.map((o) => (
                       <tr key={o.id} className="linha-clicavel" onClick={() => setOrdemAberta(o.id)}>
-                        <td className="num">{o.numero}</td>
+                        <td className="num">{o.origem === 'wik' ? o.wik_op : o.numero}</td>
                         <td>
                           {o.tipo === 'kit'
                             ? (
@@ -1343,7 +1343,15 @@ export default function ProducaoPage() {
                             )
                             : <>{o.referencia}<span className="ink-soft"> · {o.produto_descricao}</span></>}
                         </td>
-                        <td><SeloSituacao situacao={o.situacao} /></td>
+                        <td>
+                          <SeloSituacao situacao={o.situacao} />
+                          {o.origem === 'wik' && (
+                            <span className="selo tone-neutro" title={`Espelhada do Wik${o.wik_situacao ? ' — ' + o.wik_situacao : ''}${o.wik_etapas ? '. Onde está: ' + o.wik_etapas : ''}. Editar aqui desliga a sincronização desta OP.`}>Wik</span>
+                          )}
+                          {o.origem === 'wik' && o.wik_atrasada && (
+                            <span className="selo tone-ruim" title="Previsão de entrega já passou (cálculo nosso).">atrasada</span>
+                          )}
+                        </td>
                         <td className="num">{formatQtd(o.quantidade_planejada)}</td>
                         <td className="num">{formatQtd(o.quantidade_produzida)}</td>
                         <td className="num">

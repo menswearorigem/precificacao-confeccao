@@ -60,7 +60,6 @@ import MetricasMarketplacePage from './pages/MetricasMarketplacePage';
 import AnunciosPage from './pages/AnunciosPage';
 import CoberturaEstoquePage from './pages/CoberturaEstoquePage';
 import ProducaoPage from './pages/ProducaoPage';
-import ProducaoWikPage from './pages/ProducaoWikPage';
 import MovimentacaoProducaoPage from './pages/MovimentacaoProducaoPage';
 import OrdensServicoPage from './pages/OrdensServicoPage';
 import CargaProducaoPage from './pages/CargaProducaoPage';
@@ -165,7 +164,6 @@ function AppRoutes() {
                   <Route path="/producao/ordens-servico" element={<OrdensServicoPage />} />
                   <Route path="/producao/carga" element={<CargaProducaoPage />} />
                   <Route path="/producao/projecao" element={<ProjecaoEstoquePage />} />
-                  <Route path="/producao/wik" element={<ProducaoWikPage />} />
                   <Route path="/estoque/locais" element={<EstoqueLocaisPage />} />
                   {/* Reserva de estoque (09/09/2026): saldo × disponível.
                       Mesmo módulo `estoque` das demais telas de saldo —

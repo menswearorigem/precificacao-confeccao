@@ -47,7 +47,6 @@ const producaoRoutes = require('./routes/producao.routes');
 const producaoMovimentacaoRoutes = require('./routes/producaoMovimentacao.routes');
 const producaoInsumosRoutes = require('./routes/producaoInsumos.routes');
 const producaoProjecaoRoutes = require('./routes/producaoProjecao.routes');
-const producaoWikRoutes = require('./routes/producaoWik.routes');
 const faccoesRoutes = require('./routes/faccoes.routes');
 const produtoGradeRoutes = require('./routes/produtoGrade.routes');
 const mixTributarioRoutes = require('./routes/mixTributario.routes');
@@ -228,11 +227,6 @@ function createApp() {
   // so LE ordem e saldo; a unica escrita e a baixa parcial da grade, que ja
   // exige a mesma permissao de quem mexe em ordem de producao.
   app.use('/api/producao-projecao', requireAuth, requireModulo(['producao', 'estoque']), producaoProjecaoRoutes);
-  // Espelho da PRODUÇÃO do Wik (Ordem de Produção) — endpoint interno por
-  // cookie de sessão, já que a API pública não expõe OP (10/09/2026). Mesma
-  // chave de módulo das demais abas de Produção; a tela só LÊ (nenhuma escrita
-  // no Wik). Nenhuma permissão existente muda (REGRA 4).
-  app.use('/api/producao-wik', requireAuth, requireModulo(['producao', 'estoque']), producaoWikRoutes);
   // Cadastro de FACÇÃO e das categorias dela (09/09/2026). Mesma chave da
   // Produção: quem movimenta peça para a facção é quem sabe quem ela é, e a
   // dona pediu explicitamente para poder criar a facção NA HORA de gerar a

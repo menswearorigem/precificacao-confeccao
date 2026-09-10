@@ -19,7 +19,7 @@
 
 const pool = require('../db/pool');
 const wikWeb = require('./wikWeb');
-const { obterSessao, buscarIntegracao } = require('./wikProducaoSync');
+const { obterSessao, renovarSessao, integracaoWik } = require('./wikWebSessao');
 
 // Etapa do Wik (DepTipoDep, sem o código) -> nome da categoria no Hub
 // (faccao_categorias, semeadas na 0063).
@@ -92,7 +92,7 @@ async function importarFaccoesDoWik() {
   if (importando) return { pulado: 'importação já em andamento' };
   importando = true;
   try {
-    const integracao = await buscarIntegracao();
+    const integracao = await integracaoWik();
     if (!integracao || !integracao.ativo) throw new Error('Integração Wik não configurada ou inativa.');
     let sessao = await obterSessao(integracao);
 
@@ -100,7 +100,7 @@ async function importarFaccoesDoWik() {
     try {
       departamentos = await wikWeb.carregarGridDepartamentos(sessao);
     } catch (e) {
-      if (e.sessaoExpirada) { sessao = await obterSessao({ ...integracao, web_cookie: null }); departamentos = await wikWeb.carregarGridDepartamentos(sessao); }
+      if (e.sessaoExpirada) { sessao = await renovarSessao(integracao); departamentos = await wikWeb.carregarGridDepartamentos(sessao); }
       else throw e;
     }
 

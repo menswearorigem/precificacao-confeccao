@@ -103,6 +103,13 @@ function extrairTokenAntiforgery(html) {
 function pareceTelaDeLogin(html) {
   return /name="UsrSenha"/i.test(html) && /name="UsrNome"/i.test(html);
 }
+// O Wik permite UMA sessão por usuário. Quando outra sessão do mesmo login
+// assume, as telas voltam uma CASCA (layout sem conteúdo) e mostram este aviso,
+// ou devolvem 401. Tratamos os dois como sessão derrubada -> relogar.
+function pareceSessaoDerrubada(status, html) {
+  if (status === 401) return true;
+  return /logado em outra sess/i.test(html || '');
+}
 
 // Faz login e devolve uma sessão com cookies válidos. Lança em falha.
 async function login(baseUrl, usuario, senha) {
@@ -138,13 +145,17 @@ async function sessaoViva(sessao) {
 async function getJson(sessao, caminho) {
   const r = await requisitar(sessao, 'GET', caminho);
   const t = await r.text();
-  if (pareceTelaDeLogin(t)) { const e = new Error('SESSAO_EXPIRADA'); e.sessaoExpirada = true; throw e; }
+  if (pareceTelaDeLogin(t) || pareceSessaoDerrubada(r.status, t)) {
+    const e = new Error('SESSAO_EXPIRADA'); e.sessaoExpirada = true; throw e;
+  }
   return JSON.parse(t);
 }
 async function getHtml(sessao, caminho) {
   const r = await requisitar(sessao, 'GET', caminho);
   const t = await r.text();
-  if (pareceTelaDeLogin(t)) { const e = new Error('SESSAO_EXPIRADA'); e.sessaoExpirada = true; throw e; }
+  if (pareceTelaDeLogin(t) || pareceSessaoDerrubada(r.status, t)) {
+    const e = new Error('SESSAO_EXPIRADA'); e.sessaoExpirada = true; throw e;
+  }
   return t;
 }
 async function trocarEmpresa(sessao, empId) {
@@ -198,6 +209,12 @@ async function ordemProducaoDetalhe(sessao, op) {
     dtPrevFim: extrairInput(html, 'OprDtPrevFim') || null,
     obs: decodeHtml(extrairInput(html, 'OprObs')) || null,
   };
+  // Página válida da OP SEMPRE traz o input ListaItens (mesmo que vazio). Se ele
+  // nem existe, veio uma casca (sessão derrubada / OP fora da empresa ativa) —
+  // não marcar como lida com grade vazia; sinalizar pra relogar e tentar de novo.
+  if (!/(?:name|id)="ListaItens"/.test(html)) {
+    const e = new Error('SESSAO_EXPIRADA'); e.sessaoExpirada = true; throw e;
+  }
   let grade = [];
   const bruto = extrairInput(html, 'ListaItens');
   if (bruto) {
@@ -241,7 +258,9 @@ async function carregarGridDepartamentos(sessao) {
   form['jsonData'] = JSON.stringify({ ListaFiltros: {}, FiltroSelecionado: '1', Valor: '' });
   const r = await requisitar(sessao, 'POST', '/Departamento/CarregaGrid', { form });
   const txt = await r.text();
-  if (pareceTelaDeLogin(txt)) { const e = new Error('SESSAO_EXPIRADA'); e.sessaoExpirada = true; throw e; }
+  if (pareceTelaDeLogin(txt) || pareceSessaoDerrubada(r.status, txt)) {
+    const e = new Error('SESSAO_EXPIRADA'); e.sessaoExpirada = true; throw e;
+  }
   const j = JSON.parse(txt);
   return j.data || j.aaData || [];
 }

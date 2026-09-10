@@ -27,6 +27,23 @@ const calendarioProducao = require('../lib/producaoCalendario');
 
 const router = express.Router();
 
+// DESCOLAMENTO DO WIK. Uma OP importada do Wik (origem 'wik', sincroniza_wik)
+// é espelho: o sincronizador manda nela. No instante em que a casa EDITA a OP
+// (qualquer escrita em /ordens/:id/*), ela deixa de ser espelho e vira da casa
+// — o sync para de sobrescrevê-la. É o que a dona pediu: "se eu editar
+// manualmente, aquela OP específica para de atualizar com o Wik". Não bloqueia
+// a edição se o UPDATE falhar (best-effort).
+router.use('/ordens/:id', async (req, res, next) => {
+  if (req.method === 'GET') return next();
+  try {
+    await pool.query(
+      'UPDATE ordens_producao SET sincroniza_wik = FALSE, atualizado_em = now() WHERE id = $1 AND sincroniza_wik = TRUE',
+      [req.params.id]
+    );
+  } catch (_) { /* descolamento é best-effort; a edição segue */ }
+  next();
+});
+
 function inteiroPositivo(v) {
   const n = Number(v);
   return Number.isInteger(n) && n > 0 ? n : null;
