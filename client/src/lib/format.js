@@ -44,7 +44,19 @@ export const uid = () => Math.random().toString(36).slice(2, 10);
 export const hojeIso = () =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
 
-export const dataBr = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('pt-BR') : '');
+// ⚠️ Corrigido em 10/09/2026: coluna DATE do Postgres chega ao cliente como
+// timestamp ISO completo ("2026-09-09T00:00:00.000Z", serializado pelo
+// `pg`+`res.json()`), não como "AAAA-MM-DD". Concatenar `T00:00:00` num valor
+// que já tem hora e fuso produz uma string inválida e `Date` devolve
+// "Invalid Date" sem erro nenhum — foi assim que a lista de Ordens de Produção
+// (e a ficha de facção) passaram a mostrar "Invalid Date" na coluna de datas.
+// Cortar para os 10 primeiros caracteres antes de montar a data resolve os
+// dois formatos: "AAAA-MM-DD" já tinha exatamente esse tamanho.
+export const dataBr = (iso) => {
+  if (!iso) return '';
+  const dia = (iso instanceof Date ? iso.toISOString() : String(iso)).slice(0, 10);
+  return new Date(`${dia}T00:00:00`).toLocaleDateString('pt-BR');
+};
 
 // Tempo relativo ("agora mesmo", "há 2 h", "há 3 d") pra campos de
 // sincronização — cai pra data completa em pt-BR quando mais antigo que uma
