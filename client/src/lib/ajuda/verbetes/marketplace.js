@@ -401,7 +401,7 @@ export const verbetesMarketplace = [
     resposta:
       'A tela **Importar Pedidos** recebe uma planilha .xlsx exportada do Mercado Livre (Vendas → Relatórios → Vendas), da Shopee (Meus Pedidos → Exportar) ou do UpSeller (Pedidos → Exportar — que também cobre TikTok Shop e Shein, sem precisar de API própria pra essas duas).\n\nEscolha a origem da planilha, envie o arquivo e clique em **Pré-visualizar**: nada é gravado ainda nessa etapa. A prévia lista os pedidos encontrados, marca os que já foram importados antes (ficam desmarcados e esmaecidos) e avisa quando algum item não bateu com nenhuma referência/EAN do estoque — esse item entra só com a descrição, sem baixar estoque ao faturar. Marque os pedidos desejados e clique em **Importar N pedido(s) selecionado(s)**: cada um vira um pedido de venda em aberto, igual à sincronização automática.',
     relacionados: ['mkt-pedidos-listar-filtrar'],
-  },,
+  },
   {
     id: 'mkt-anuncios-publicacao-variacao',
     modulo: 'marketplace',
