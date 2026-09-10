@@ -68,10 +68,24 @@ router.post('/centros-custo', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// A conta bancária existia no banco desde a migration 0055 e era criada só
+// por POST solto ou pela sincronização do Wik — não havia tela nenhuma para
+// cadastrar, corrigir um saldo inicial digitado errado ou desativar uma conta
+// encerrada. A sub-aba Financeiro › Contas Bancárias (10/09/2026) usa estas
+// rotas. `wik_grp_id` vai junto porque conta que vem do Wik é sobrescrita a
+// cada sincronização: a tela precisa avisar isso e travar o que não adianta
+// editar.
+// `s.conta_id AS id` existe porque a view chama a chave de `conta_id` e o
+// POST antigo devolvia a linha crua de `fin_contas`, cuja chave é `id` — quem
+// já consumia o retorno do POST (e os testes) lê `.id`. Os dois nomes saem
+// juntos: nada que já funcionava precisa mudar de campo.
+const COLUNAS_CONTA = `s.*, s.conta_id AS id, c.banco_codigo, c.banco_nome, c.agencia, c.conta,
+         c.ativo, c.saldo_inicial_data, c.wik_grp_id, e.nome AS empresa_nome`;
+
 router.get('/contas', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT s.*, c.banco_nome, c.agencia, c.conta, c.ativo, e.nome AS empresa_nome
+      `SELECT ${COLUNAS_CONTA}
          FROM vw_fin_saldo_conta s
          JOIN fin_contas c ON c.id = s.conta_id
          LEFT JOIN empresas e ON e.id = s.empresa_id
@@ -82,6 +96,36 @@ router.get('/contas', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+async function lerConta(id) {
+  const { rows } = await pool.query(
+    `SELECT ${COLUNAS_CONTA}
+       FROM vw_fin_saldo_conta s
+       JOIN fin_contas c ON c.id = s.conta_id
+       LEFT JOIN empresas e ON e.id = s.empresa_id
+      WHERE s.conta_id = $1`, [id]
+  );
+  return rows[0] || null;
+}
+
+// Só o que a tela pode gravar. Empresa fica de fora de propósito: mudar a
+// empresa de uma conta que já tem extrato e baixa lançados jogaria histórico
+// de um CNPJ no outro.
+const CAMPOS_CONTA = ['nome', 'tipo', 'banco_codigo', 'banco_nome', 'agencia',
+  'conta', 'saldo_inicial', 'saldo_inicial_data', 'ativo'];
+
+function normalizarConta(body) {
+  const saida = {};
+  for (const campo of CAMPOS_CONTA) {
+    if (body[campo] === undefined) continue;
+    let valor = body[campo];
+    if (valor === '') valor = null;
+    if (campo === 'saldo_inicial') valor = Number(valor) || 0;
+    if (campo === 'ativo') valor = Boolean(valor);
+    saida[campo] = valor;
+  }
+  return saida;
+}
+
 router.post('/contas', async (req, res, next) => {
   try {
     const { empresa_id, nome, tipo, banco_codigo, banco_nome, agencia, conta,
@@ -90,11 +134,60 @@ router.post('/contas', async (req, res, next) => {
     const { rows } = await pool.query(
       `INSERT INTO fin_contas
          (empresa_id, nome, tipo, banco_codigo, banco_nome, agencia, conta, saldo_inicial, saldo_inicial_data)
-       VALUES ($1,$2,COALESCE($3,'bancaria'),$4,$5,$6,$7,$8,$9) RETURNING *`,
+       VALUES ($1,$2,COALESCE($3,'bancaria'),$4,$5,$6,$7,$8,$9) RETURNING id`,
       [empresa_id, nome, tipo || null, banco_codigo || null, banco_nome || null,
-       agencia || null, conta || null, saldo_inicial, saldo_inicial_data || null]
+       agencia || null, conta || null, Number(saldo_inicial) || 0, saldo_inicial_data || null]
     );
-    res.status(201).json(rows[0]);
+    res.status(201).json(await lerConta(rows[0].id));
+  } catch (err) { next(err); }
+});
+
+router.put('/contas/:id', async (req, res, next) => {
+  try {
+    if (!/^\d+$/.test(String(req.params.id))) return res.status(400).json({ error: 'Conta inválida.' });
+    const atual = await lerConta(req.params.id);
+    if (!atual) return res.status(404).json({ error: 'Conta não encontrada.' });
+
+    const dados = normalizarConta(req.body || {});
+    if (dados.nome !== undefined && !String(dados.nome || '').trim()) {
+      return res.status(400).json({ error: 'A conta precisa de um nome.' });
+    }
+    const campos = Object.keys(dados);
+    if (campos.length > 0) {
+      await pool.query(
+        `UPDATE fin_contas SET ${campos.map((c, i) => `${c} = $${i + 1}`).join(', ')}
+          WHERE id = $${campos.length + 1}`,
+        [...campos.map((c) => dados[c]), req.params.id]
+      );
+    }
+    res.json(await lerConta(req.params.id));
+  } catch (err) { next(err); }
+});
+
+// Conta com extrato ou baixa NÃO é excluída — é desativada. Apagar levaria
+// junto o extrato conciliado (a FK do extrato é ON DELETE CASCADE) e o
+// histórico de pagamento pararia de bater com o DRE do mês fechado.
+router.delete('/contas/:id', async (req, res, next) => {
+  try {
+    if (!/^\d+$/.test(String(req.params.id))) return res.status(400).json({ error: 'Conta inválida.' });
+    const atual = await lerConta(req.params.id);
+    if (!atual) return res.status(404).json({ error: 'Conta não encontrada.' });
+
+    const { rows } = await pool.query(
+      `SELECT (SELECT COUNT(*) FROM fin_extrato_bancario WHERE conta_id = $1)::int AS extrato,
+              (SELECT COUNT(*) FROM fin_baixas          WHERE conta_id = $1)::int AS baixas`,
+      [req.params.id]
+    );
+    const usos = rows[0].extrato + rows[0].baixas;
+    if (usos > 0) {
+      return res.status(409).json({
+        error: `"${atual.nome}" já tem ${rows[0].extrato} lançamento(s) de extrato e ${rows[0].baixas} baixa(s) `
+          + 'no nome dela. Em vez de excluir, desative a conta — assim o extrato conciliado e os meses '
+          + 'já fechados continuam batendo.',
+      });
+    }
+    await pool.query('DELETE FROM fin_contas WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
   } catch (err) { next(err); }
 });
 

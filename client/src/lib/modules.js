@@ -181,7 +181,11 @@ export const MODULES = [
       // cinco são o financeiro da empresa inteira.
       { to: '/financeiro/pagar', label: 'Contas a Pagar', icon: ReceiptText },
       { to: '/financeiro/receber', label: 'Contas a Receber', icon: Banknote },
-      { to: '/financeiro/conciliacao-bancaria', label: 'Conciliação Bancária', icon: Landmark },
+      // Contas Bancárias (10/09/2026) vem ANTES da Conciliação de propósito:
+      // sem conta cadastrada a Conciliação não tem o que mostrar, e até hoje
+      // não havia tela nenhuma pra cadastrar uma.
+      { to: '/financeiro/contas-bancarias', label: 'Contas Bancárias', icon: Landmark },
+      { to: '/financeiro/conciliacao-bancaria', label: 'Conciliação Bancária', icon: Scale },
       { to: '/financeiro/fluxo-caixa', label: 'Fluxo de Caixa', icon: LineChart },
       { to: '/financeiro/dre', label: 'DRE Gerencial', icon: BarChart3 },
       // A ponte com os módulos (09/09/2026). Ficam por último de propósito:
