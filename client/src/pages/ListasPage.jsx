@@ -183,7 +183,7 @@ export default function ListasPage() {
                       {item.ativo ? 'Sim' : 'Não'}
                     </label>
                   </td>
-                  <td><button type="button" className="icon-btn cfg-lixeira" onClick={() => remover(item)}><Trash2 size={13} /></button></td>
+                  <td><button type="button" className="icon-btn perigo cfg-lixeira" onClick={() => remover(item)}><Trash2 size={13} /></button></td>
                 </tr>
               ))}
               {itensExibidos.length === 0 && (

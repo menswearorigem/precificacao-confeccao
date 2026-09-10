@@ -82,7 +82,7 @@ function Categorias({ categorias, etapas, onMudou, onFechar }) {
                     <td className="num">{formatQtd(c.faccoes)}</td>
                     <td>
                       <button
-                        type="button" className="btn-icone" aria-label={`Excluir ${c.nome}`}
+                        type="button" className="btn-icone perigo" aria-label={`Excluir ${c.nome}`}
                         onClick={async () => {
                           if (!(await confirmar(`Excluir a categoria ${c.nome}?`, {
                             titulo: 'Excluir categoria', confirmarTexto: 'Excluir', perigo: true,

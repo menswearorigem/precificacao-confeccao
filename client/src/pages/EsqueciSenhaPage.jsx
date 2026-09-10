@@ -120,7 +120,6 @@ export default function EsqueciSenhaPage() {
           <button
             type="button"
             className="login-link"
-            style={{ background: 'none', border: 0, cursor: 'pointer', padding: 0, font: 'inherit' }}
             onClick={() => trocarModo(cfg.alternativa.para)}
           >
             {cfg.alternativa.texto}

@@ -407,7 +407,7 @@ export default function DespesasVendasPage() {
                           <button type="button" className="btn-icone" onClick={() => editar(item)} title="Editar">
                             <Pencil size={14} />
                           </button>
-                          <button type="button" className="icon-btn" onClick={() => excluir(item)} title="Excluir">
+                          <button type="button" className="icon-btn perigo" onClick={() => excluir(item)} title="Excluir">
                             <Trash2 size={14} />
                           </button>
                         </td>

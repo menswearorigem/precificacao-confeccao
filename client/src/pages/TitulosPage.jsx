@@ -445,7 +445,7 @@ function ModalNovoTitulo({ natureza, empresas, plano, centros, contrapartes, onF
                     <td><NumInput value={r.aliquota} onChange={(v) => alterarRetencao(idx, { aliquota: v })} suffix="%" /></td>
                     <td><NumInput value={r.valor} onChange={(v) => alterarRetencao(idx, { valor: v })} suffix="R$" /></td>
                     <td>
-                      <button type="button" className="icon-btn" title="Tirar esta retenção" onClick={() => setRetencoes((l) => l.filter((_, i) => i !== idx))}>
+                      <button type="button" className="icon-btn perigo" title="Tirar esta retenção" onClick={() => setRetencoes((l) => l.filter((_, i) => i !== idx))}>
                         <Trash2 size={13} />
                       </button>
                     </td>
@@ -493,7 +493,7 @@ function ModalNovoTitulo({ natureza, empresas, plano, centros, contrapartes, onF
                       <td><NumInput value={r.percentual} onChange={(v) => alterarRateio(idx, { percentual: v })} suffix="%" /></td>
                       <td className="mono">{bruto > 0 ? brl(bruto * (num(r.percentual) / 100)) : '—'}</td>
                       <td>
-                        <button type="button" className="icon-btn" title="Tirar esta linha" onClick={() => setRateios((l) => l.filter((_, i) => i !== idx))}>
+                        <button type="button" className="icon-btn perigo" title="Tirar esta linha" onClick={() => setRateios((l) => l.filter((_, i) => i !== idx))}>
                           <Trash2 size={13} />
                         </button>
                       </td>

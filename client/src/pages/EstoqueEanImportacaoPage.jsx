@@ -108,7 +108,7 @@ function EansGuardados({ chave }) {
                 <td>
                   <button
                     type="button"
-                    className="icon-btn"
+                    className="icon-btn perigo"
                     title="Apagar este mapeamento"
                     aria-label={`Apagar o EAN ${m.ean}`}
                     disabled={removendo === m.id}

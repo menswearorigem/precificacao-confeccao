@@ -66,7 +66,7 @@ export default function GradeVariacoes({ linhas, onChange, coresOpcoes, tamanhos
             placeholder="0"
           />
           {!disabled && (
-            <button type="button" className="icon-btn" onClick={() => remover(idx)} aria-label="Remover variação">
+            <button type="button" className="icon-btn perigo" onClick={() => remover(idx)} aria-label="Remover variação">
               <Trash2 size={14} />
             </button>
           )}

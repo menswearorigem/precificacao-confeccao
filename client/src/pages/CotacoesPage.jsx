@@ -174,7 +174,7 @@ function ModalNovaCotacao({ fornecedores, insumos, onFechar, onCriada }) {
                     <NumInput value={it.quantidade} onChange={(v) => alterarItem(idx, { quantidade: v })} />
                   </td>
                   <td>
-                    <button type="button" className="icon-btn" title="Tirar este item" onClick={() => setItens((l) => l.filter((_, i) => i !== idx))}>
+                    <button type="button" className="icon-btn perigo" title="Tirar este item" onClick={() => setItens((l) => l.filter((_, i) => i !== idx))}>
                       <Trash2 size={13} />
                     </button>
                   </td>

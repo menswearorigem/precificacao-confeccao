@@ -413,15 +413,22 @@ export default function ProjecaoEstoquePage() {
       <header className="pagina-topo">
         <div>
           <h1><Factory size={20} /> Projeção de estoque</h1>
-          <p className="pagina-sub">
+          <p className="page-sub">
             O que você vai ter em cada cor e tamanho quando a produção chegar — e onde ela não
             vai ser suficiente.
           </p>
         </div>
         <div className="pagina-acoes">
           <PeriodoFiltro inicio={periodo.inicio} fim={periodo.fim} onChange={setPeriodo} />
-          <button type="button" className="botao-secundario" onClick={carregar} disabled={carregando}>
-            <RefreshCw size={14} className={carregando ? 'girando' : ''} /> Atualizar
+          {/* CORRIGIDO 10/09/2026 — estes três botões usavam `botao-primario` e
+              `botao-secundario`, classes que NUNCA existiram no tema: saíam
+              como botão cinza nativo do navegador, com borda 3D e fonte do
+              sistema, no meio de uma barra onde tudo o mais é couro/terracota.
+              Eram os únicos do sistema inteiro assim. Agora usam as classes de
+              verdade: `btn-sec` (o mesmo "Atualizar" de outras 12 telas) e
+              `btn btn-primary` na ação principal. */}
+          <button type="button" className="btn-sec" onClick={carregar} disabled={carregando}>
+            <RefreshCw size={15} className={carregando ? 'girando' : ''} /> Atualizar
           </button>
           {/* O PDF tem gerador próprio (`projecaoPdf.js`), com capa, uma
               referência por página e o swatch de cor pintado na célula. O
@@ -429,7 +436,7 @@ export default function ProjecaoEstoquePage() {
               tabela crua é justamente o que se quer. */}
           <button
             type="button"
-            className="botao-primario"
+            className="btn btn-primary"
             disabled={carregando || !dados || filtradas.length === 0 || exportando}
             onClick={exportar}
           >
@@ -437,7 +444,7 @@ export default function ProjecaoEstoquePage() {
           </button>
           <button
             type="button"
-            className="botao-secundario"
+            className="btn-sec"
             disabled={carregando || !dados || filtradas.length === 0 || exportando}
             onClick={exportarExcel}
           >

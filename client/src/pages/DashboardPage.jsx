@@ -171,12 +171,8 @@ export default function DashboardPage() {
                 <button
                   key={c.canal}
                   type="button"
+                  className="linha-clicavel"
                   onClick={() => setCanalVenda(c.canal === canalVenda ? '' : c.canal)}
-                  style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%',
-                    background: 'none', border: 'none', borderBottom: '1px solid var(--border-soft)',
-                    padding: '10px 0', cursor: 'pointer', textAlign: 'left',
-                  }}
                 >
                   <span>{c.canal}</span>
                   <span style={{ display: 'flex', gap: 14, alignItems: 'center' }}>

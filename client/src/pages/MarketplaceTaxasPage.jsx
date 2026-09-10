@@ -310,7 +310,7 @@ export default function MarketplaceTaxasPage() {
                   {marketplace === 'shopee' && (
                     <td><NumInput value={paraPct(f.subsidio_pix_pct)} onChange={(v) => atualizarComissao(f.id, { subsidio_pix_pct: (Number(v) || 0) / 100 })} suffix="%" /></td>
                   )}
-                  <td><button className="icon-btn cfg-lixeira" onClick={() => removeComissao(f.id)}><Trash2 size={13} /></button></td>
+                  <td><button className="icon-btn perigo cfg-lixeira" onClick={() => removeComissao(f.id)}><Trash2 size={13} /></button></td>
                 </tr>
               );
             })}
@@ -392,7 +392,7 @@ export default function MarketplaceTaxasPage() {
                 <td><NumInput value={f.valor_min} onChange={(v) => atualizarFrete(f.id, { valor_min: v })} /></td>
                 <td><NumInput value={f.valor_max ?? ''} onChange={(v) => atualizarFrete(f.id, { valor_max: v === '' ? null : v })} placeholder="sem teto" /></td>
                 <td><NumInput value={f.custo_frete} onChange={(v) => atualizarFrete(f.id, { custo_frete: v })} suffix="R$" /></td>
-                <td><button className="icon-btn cfg-lixeira" onClick={() => removeFrete(f.id)}><Trash2 size={13} /></button></td>
+                <td><button className="icon-btn perigo cfg-lixeira" onClick={() => removeFrete(f.id)}><Trash2 size={13} /></button></td>
               </tr>
             ))}
             {freteDoMarketplace.length === 0 && <tr><td colSpan="7">Nenhuma faixa cadastrada.</td></tr>}

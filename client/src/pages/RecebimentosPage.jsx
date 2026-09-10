@@ -496,7 +496,7 @@ function Conferencia({ detalhe, onVoltar, onAtualizar }) {
                       <td>
                         <button
                           type="button"
-                          className="icon-btn"
+                          className="icon-btn perigo"
                           title="Tirar esta linha da entrega"
                           onClick={() => { const novas = linhas.filter((_, i) => i !== idx); setLinhas(novas); gravarLinhas(novas); }}
                         >

@@ -146,7 +146,7 @@ export default function GradeProdutoCard({ produtoId, referencia }) {
                     />
                   </td>
                   <td>
-                    <button type="button" className="icon-btn" aria-label={`Remover ${c.cor}`}
+                    <button type="button" className="icon-btn perigo" aria-label={`Remover ${c.cor}`}
                       onClick={() => setCores((l) => l.filter((_, j) => j !== i))}><Trash2 size={13} /></button>
                   </td>
                 </tr>
@@ -173,7 +173,7 @@ export default function GradeProdutoCard({ produtoId, referencia }) {
                     />
                   </td>
                   <td>
-                    <button type="button" className="icon-btn" aria-label={`Remover ${t.tamanho}`}
+                    <button type="button" className="icon-btn perigo" aria-label={`Remover ${t.tamanho}`}
                       onClick={() => setTamanhos((l) => l.filter((_, j) => j !== i))}><Trash2 size={13} /></button>
                   </td>
                 </tr>

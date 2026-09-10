@@ -532,7 +532,7 @@ export default function EstoquePage() {
                         <History size={13} />
                       </button>
                     </td>
-                    <td><button type="button" className="icon-btn" title="Excluir (só se nunca vendida)" aria-label="Excluir (só se nunca vendida)" onClick={() => removerVariante(v.id)}><Trash2 size={13} /></button></td>
+                    <td><button type="button" className="icon-btn perigo" title="Excluir (só se nunca vendida)" aria-label="Excluir (só se nunca vendida)" onClick={() => removerVariante(v.id)}><Trash2 size={13} /></button></td>
                   </tr>
                 ))}
                 {variantes.length === 0 && (

@@ -35,9 +35,11 @@ const corSecundaria = (paleta) => corPorIndice(paleta, 5);  // série de apoio
 // modos, e trocam junto com o tema. Repete em ciclo se houver mais lojas.
 const paletaLojas = (paleta) => (paleta?.series?.length ? paleta.series : []);
 
-// Botão que parece um link de texto (breadcrumb de categoria) — sem classe
-// própria no CSS do app, então só um estilo inline reutilizado.
-const LINK_STYLE = { background: 'none', border: 'none', color: 'var(--terracotta)', cursor: 'pointer', padding: 0, font: 'inherit' };
+// Botão que parece um link de texto (breadcrumb de categoria). Era um objeto
+// de estilo inline que, descobriu-se em 10/09/2026, reescrevia à mão a classe
+// `.botao-link` — que já existia no tema. Passou a usar a classe: um desenho
+// só no sistema inteiro, e o botão volta a ter anel de foco no teclado.
+const ATUAL_STYLE = { fontWeight: 700, color: 'var(--ink)' };
 
 
 // Cores oficiais de cada marca — usadas só no selo/ícone de identificação da
@@ -1146,11 +1148,11 @@ function CategoriaBrowser({ integracaoId, modoSelecao, onSelecionar }) {
   return (
     <div>
       <div className="page-sub" style={{ marginBottom: 10 }}>
-        <button type="button" onClick={() => setPilha([])} style={pilha.length === 0 ? { ...LINK_STYLE, fontWeight: 700, color: 'var(--ink)' } : LINK_STYLE}>Todas as Categorias</button>
+        <button type="button" className="botao-link" onClick={() => setPilha([])} style={pilha.length === 0 ? ATUAL_STYLE : undefined}>Todas as Categorias</button>
         {pilha.map((c, i) => (
           <span key={c.id}>
             {' › '}
-            <button type="button" onClick={() => setPilha((p) => p.slice(0, i + 1))} style={i === pilha.length - 1 ? { ...LINK_STYLE, fontWeight: 700, color: 'var(--ink)' } : LINK_STYLE}>
+            <button type="button" className="botao-link" onClick={() => setPilha((p) => p.slice(0, i + 1))} style={i === pilha.length - 1 ? ATUAL_STYLE : undefined}>
               {c.nome}
             </button>
           </span>
@@ -1248,7 +1250,7 @@ function CategoriasTab({ integracoes }) {
           {escopo === 'categoria' && categoriaEscolhida && (
             <p className="page-sub">
               Categoria escolhida: <strong>{categoriaEscolhida.nome}</strong>{' '}
-              <button type="button" onClick={() => setCategoriaEscolhida(null)} style={LINK_STYLE}>(trocar)</button>
+              <button type="button" className="botao-link" onClick={() => setCategoriaEscolhida(null)}>(trocar)</button>
             </p>
           )}
           <button className="btn btn-primary" onClick={buscarTendencias} disabled={carregando || (escopo === 'categoria' && !categoriaEscolhida)}>

@@ -230,7 +230,7 @@ function ModalAtender({ pendencia, plano, centros, empresas, onFechar, onFeito }
                   {parcelas.length > 1 && (
                     <button
                       type="button"
-                      className="icon-btn"
+                      className="icon-btn perigo"
                       title="Tirar esta parcela"
                       onClick={() => setParcelas((l) => l.filter((_, i) => i !== idx))}
                     >

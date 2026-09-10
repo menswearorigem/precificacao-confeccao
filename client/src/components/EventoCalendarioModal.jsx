@@ -199,7 +199,7 @@ function SeletorMultiplo({ usuarios, grupos, itens, onChange, comNivel }) {
                   <option value="editar">Editar</option>
                 </Select>
               )}
-              <button type="button" className="icon-btn" onClick={() => remover(item)}><Trash2 size={14} /></button>
+              <button type="button" className="icon-btn perigo" onClick={() => remover(item)}><Trash2 size={14} /></button>
             </div>
           ))}
         </div>
@@ -944,7 +944,7 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
               <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
                 <FileTypeIcon nomeArquivo={a.nome_arquivo} size={26} />
                 <a href={`/api/calendario/anexos/${a.id}`} target="_blank" rel="noreferrer" style={{ flex: 1 }}>{a.nome_arquivo}</a>
-                {podeEditar && <button type="button" className="icon-btn" onClick={() => removerAnexo(a.id)}><Trash2 size={13} /></button>}
+                {podeEditar && <button type="button" className="icon-btn perigo" onClick={() => removerAnexo(a.id)}><Trash2 size={13} /></button>}
               </div>
             ))}
             {podeEditar && anexos.length < 5 && (
