@@ -46,6 +46,57 @@
 const PEDIDO_VALIDO = "pv.situacao <> 'cancelado' AND pv.cancelado_em IS NULL";
 
 /**
+ * A JANELA de análise, em datas (10/09/2026).
+ *
+ * Antes daqui a janela era um número solto de semanas ("últimas 26"), e por
+ * isso a tela não conseguia responder "e no mês passado?" nem casar com o
+ * filtro de período que o resto do sistema usa. Agora ela é um par de datas
+ * — e continua sendo medida em SEMANAS CHEIAS, porque a série de venda é
+ * semanal e meia semana no fim da janela vira um degrau falso na média.
+ *
+ * Aceita os dois formatos de propósito: um número (compatível com quem já
+ * chamava com `26`) ou `{ inicio, fim }` em ISO. Devolve sempre as duas
+ * datas, para a resposta da API poder DIZER que janela usou de verdade —
+ * o arredondamento para semana cheia não pode ser silencioso.
+ */
+function normalizarJanela(janela) {
+  const iso = (d) => {
+    const ano = d.getFullYear();
+    const mes = String(d.getMonth() + 1).padStart(2, '0');
+    const dia = String(d.getDate()).padStart(2, '0');
+    return `${ano}-${mes}-${dia}`;
+  };
+
+  if (typeof janela === 'number' || typeof janela === 'string') {
+    const n = Math.min(104, Math.max(4, Math.round(Number(janela) || 26)));
+    const fim = new Date();
+    const inicio = new Date();
+    inicio.setDate(inicio.getDate() - (n - 1) * 7);
+    return { inicio: iso(inicio), fim: iso(fim), semanasPedidas: n };
+  }
+
+  const hoje = new Date();
+  const fim = janela?.fim || iso(hoje);
+  const padraoInicio = new Date(hoje.getTime());
+  padraoInicio.setDate(padraoInicio.getDate() - 25 * 7);
+  const inicio = janela?.inicio || iso(padraoInicio);
+  // Início depois do fim é engano de digitação, não pedido de janela vazia.
+  return inicio > fim ? { inicio: fim, fim: inicio } : { inicio, fim };
+}
+
+// Os dois parâmetros da janela, na ordem em que as consultas daqui os usam:
+// $1 = início, $2 = fim. As duas pontas são arredondadas para a SEMANA da
+// data (segunda-feira, que é o que `date_trunc('week')` devolve), e o fim é
+// inclusivo: a semana do dia final entra inteira.
+function paramsJanela(janela) {
+  const { inicio, fim } = normalizarJanela(janela);
+  return [inicio, fim];
+}
+
+const FILTRO_JANELA = `pv.data_pedido >= date_trunc('week', $1::date)
+         AND pv.data_pedido < date_trunc('week', $2::date) + INTERVAL '7 days'`;
+
+/**
  * As CTEs que transformam itens de pedido em PEÇAS por produto.
  *
  * @param {string} filtroData  condição SQL adicional sobre `pv.data_pedido`
@@ -125,12 +176,12 @@ function ctesVendasEmPecas(filtroData = 'TRUE') {
  * então a semana sem venda não existe na tabela. Sem gerar os zeros, o ADI
  * sai 1 para todo mundo e a classificação de comportamento vira ficção.
  */
-async function serieSemanalPorProduto(db, numSemanas) {
+async function serieSemanalPorProduto(db, janela) {
   const { rows } = await db.query(
     `WITH semanas AS (
        SELECT generate_series(
-         date_trunc('week', CURRENT_DATE) - ($1::int - 1) * INTERVAL '1 week',
-         date_trunc('week', CURRENT_DATE),
+         date_trunc('week', $1::date),
+         date_trunc('week', $2::date),
          INTERVAL '1 week'
        )::date AS semana
      ),
@@ -139,9 +190,7 @@ async function serieSemanalPorProduto(db, numSemanas) {
          FROM produtos p
          JOIN estoque_variantes ev ON ev.produto_id = p.id AND ev.ativo
      ),
-     ${ctesVendasEmPecas(
-    "pv.data_pedido >= date_trunc('week', CURRENT_DATE) - ($1::int - 1) * INTERVAL '1 week'"
-  )},
+     ${ctesVendasEmPecas(FILTRO_JANELA)},
      por_semana AS (
        SELECT v.produto_id,
               date_trunc('week', v.data_pedido)::date AS semana,
@@ -154,7 +203,7 @@ async function serieSemanalPorProduto(db, numSemanas) {
        CROSS JOIN semanas s
        LEFT JOIN por_semana ps ON ps.produto_id = pa.produto_id AND ps.semana = s.semana
       ORDER BY pa.produto_id, s.semana`,
-    [numSemanas]
+    paramsJanela(janela)
   );
 
   const porProduto = new Map();
@@ -169,18 +218,16 @@ async function serieSemanalPorProduto(db, numSemanas) {
  * Totais da janela por produto: peças, faturamento e — o número que deixa o
  * defeito visível — quantas dessas peças vieram de kit.
  */
-async function totaisPorProduto(db, numSemanas) {
+async function totaisPorProduto(db, janela) {
   const { rows } = await db.query(
-    `WITH ${ctesVendasEmPecas(
-    "pv.data_pedido >= date_trunc('week', CURRENT_DATE) - ($1::int - 1) * INTERVAL '1 week'"
-  )}
+    `WITH ${ctesVendasEmPecas(FILTRO_JANELA)}
      SELECT produto_id,
             SUM(pecas)::numeric AS pecas,
             SUM(faturamento)::numeric AS faturamento,
             SUM(pecas) FILTER (WHERE de_kit)::numeric AS pecas_em_kit
        FROM vendas_em_pecas
       GROUP BY produto_id`,
-    [numSemanas]
+    paramsJanela(janela)
   );
   return new Map(rows.map((r) => [r.produto_id, {
     produto_id: r.produto_id,
@@ -198,16 +245,14 @@ async function totaisPorProduto(db, numSemanas) {
  * esperado) simplesmente não aparece na venda de referência alguma — e sem
  * esta contagem ninguém descobre que a venda medida está incompleta.
  */
-async function itensSemProduto(db, numSemanas) {
+async function itensSemProduto(db, janela) {
   const { rows } = await db.query(
-    `WITH ${ctesVendasEmPecas(
-    "pv.data_pedido >= date_trunc('week', CURRENT_DATE) - ($1::int - 1) * INTERVAL '1 week'"
-  )}
+    `WITH ${ctesVendasEmPecas(FILTRO_JANELA)}
      SELECT COUNT(*)::int AS itens,
             COALESCE(SUM(unidades), 0)::numeric AS unidades
        FROM itens_venda
       WHERE produto_id IS NULL`,
-    [numSemanas]
+    paramsJanela(janela)
   );
   const r = rows[0] || {};
   return { itens: Number(r.itens) || 0, unidades: Number(r.unidades) || 0 };
@@ -217,25 +262,84 @@ async function itensSemProduto(db, numSemanas) {
  * Itens de venda que apontam um kit cuja composição não existe mais. Foram
  * contados como 1 peça por unidade (o conservador), e a tela avisa.
  */
-async function itensDeKitSemComposicao(db, numSemanas) {
+async function itensDeKitSemComposicao(db, janela) {
   const { rows } = await db.query(
-    `WITH ${ctesVendasEmPecas(
-    "pv.data_pedido >= date_trunc('week', CURRENT_DATE) - ($1::int - 1) * INTERVAL '1 week'"
-  )}
+    `WITH ${ctesVendasEmPecas(FILTRO_JANELA)}
      SELECT COUNT(*)::int AS itens
        FROM itens_venda i
       WHERE i.kit_id IS NOT NULL
         AND NOT EXISTS (SELECT 1 FROM kit_pecas k WHERE k.kit_id = i.kit_id)`,
-    [numSemanas]
+    paramsJanela(janela)
   );
   return Number(rows[0]?.itens) || 0;
 }
 
+
+/**
+ * Venda por VARIANTE (cor × tamanho) de uma referência (10/09/2026).
+ *
+ * Serve à grade da tela de Cobertura — a matriz cor × tamanho que a planilha
+ * da casa usa, e que é o formato em que a facção recebe o pedido.
+ *
+ * ⚠️ O limite desta medida, dito aqui porque a tela precisa repetir:
+ * item de pedido de KIT não tem variante (`kits_manuais_itens` guarda
+ * produto, não cor nem tamanho). Então a peça vendida dentro de kit existe
+ * no total da referência e NÃO existe na grade. A função devolve as duas
+ * coisas separadas — `porVariante` e `pecasEmKitSemGrade` — em vez de
+ * espalhar o kit pela grade com um rateio inventado (REGRA 2).
+ */
+async function vendaPorVariante(db, janela, produtoId) {
+  const [inicio, fim] = paramsJanela(janela);
+  const { rows } = await db.query(
+    `SELECT ev.id AS variante_id, ev.cor, ev.tamanho,
+            ev.quantidade::numeric AS saldo,
+            ev.ativo,
+            COALESCE(v.pecas, 0)::numeric AS pecas
+       FROM estoque_variantes ev
+       LEFT JOIN LATERAL (
+         SELECT SUM(pi.quantidade)::numeric AS pecas
+           FROM pedido_itens pi
+           JOIN pedidos_venda pv ON pv.id = pi.pedido_id
+          WHERE pi.variante_id = ev.id
+            AND ${PEDIDO_VALIDO}
+            AND pv.data_pedido >= date_trunc('week', $2::date)
+            AND pv.data_pedido < date_trunc('week', $3::date) + INTERVAL '7 days'
+       ) v ON TRUE
+      WHERE ev.produto_id = $1
+      ORDER BY ev.cor, ev.tamanho`,
+    [produtoId, inicio, fim]
+  );
+
+  const { rows: kitRows } = await db.query(
+    `WITH ${ctesVendasEmPecas(FILTRO_JANELA)}
+     SELECT COALESCE(SUM(pecas) FILTER (WHERE de_kit), 0)::numeric AS pecas_em_kit
+       FROM vendas_em_pecas
+      WHERE produto_id = $3`,
+    [inicio, fim, produtoId]
+  );
+
+  return {
+    porVariante: rows.map((r) => ({
+      variante_id: r.variante_id,
+      cor: r.cor || '—',
+      tamanho: r.tamanho || '—',
+      saldo: Number(r.saldo) || 0,
+      pecas: Number(r.pecas) || 0,
+      ativo: r.ativo,
+    })),
+    pecasEmKitSemGrade: Number(kitRows[0]?.pecas_em_kit) || 0,
+  };
+}
+
 module.exports = {
   PEDIDO_VALIDO,
+  normalizarJanela,
+  paramsJanela,
+  FILTRO_JANELA,
   ctesVendasEmPecas,
   serieSemanalPorProduto,
   totaisPorProduto,
   itensSemProduto,
   itensDeKitSemComposicao,
+  vendaPorVariante,
 };

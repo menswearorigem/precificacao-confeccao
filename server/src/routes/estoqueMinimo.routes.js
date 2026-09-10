@@ -21,6 +21,8 @@ const {
   classificarDemanda, estoqueSeguranca, pontoDePedido, coberturaEmDias,
   curvaAbc, quantidadeAComprar, necessidadeDeInsumo, segurancaDeInsumo,
   zParaNivel, NIVEL_POR_CURVA, POLITICA_POR_QUADRANTE, PERIODOS_MINIMOS, media,
+  CADENCIAS, ORDEM_CADENCIA, NIVEIS_REPOSICAO, cadenciaDaReferencia,
+  leadTimeEfetivo, quantidadeAProduzir, prazoParaPedir, temNumero,
 } = require('../lib/estoqueMinimo');
 // A venda medida em PEÇAS, com o kit explodido na composição dele. Antes de
 // 08/09/2026 a consulta desta rota era um INNER JOIN em `estoque_variantes`,
@@ -37,10 +39,43 @@ const router = express.Router();
 // em moda um item migra de "constante" para "raro" conforme a coleção morre.
 const SEMANAS_PADRAO = 26;
 
-function semanas(req) {
+// A janela agora vem em DATAS (10/09/2026), como no resto do sistema: a tela
+// usa o mesmo `PeriodoFiltro` do Marketplace, do Financeiro e das Compras,
+// com os atalhos de 3 e 6 meses e o calendário. O número de semanas continua
+// aceito para não quebrar chamada antiga — e continua sendo a unidade real
+// do cálculo, porque a série de venda é semanal.
+function janelaDeAnalise(req) {
+  const { inicio, fim } = req.query || {};
+  const dataOk = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  if (dataOk(inicio) && dataOk(fim)) return vendas.normalizarJanela({ inicio, fim });
   const n = Number(req.query?.semanas);
-  if (!Number.isFinite(n)) return SEMANAS_PADRAO;
-  return Math.min(104, Math.max(8, Math.round(n)));
+  return vendas.normalizarJanela(Number.isFinite(n) ? n : SEMANAS_PADRAO);
+}
+
+// Quantas semanas cheias a janela tem de verdade. A tela mostra este número
+// ao lado do período: pedir "últimos 3 meses" e receber 13 semanas não é
+// detalhe, é o que explica a média.
+function semanasDaJanela(janela) {
+  const ms = new Date(`${janela.fim}T00:00:00`) - new Date(`${janela.inicio}T00:00:00`);
+  return Math.max(1, Math.round(ms / (7 * 24 * 3600 * 1000)) + 1);
+}
+
+// Os prazos de cada cadência podem ser ajustados na tela — são suposição
+// (7/15/30 dias vieram da planilha da casa), e suposição que manda no
+// resultado precisa estar à mão de quem sabe o prazo real da facção.
+function cadenciasComParametros(query = {}) {
+  const num = (v, padrao) => (temNumero(v) && Number(v) >= 0 ? Number(v) : padrao);
+  const saida = {};
+  for (const chave of ORDEM_CADENCIA) {
+    const base = CADENCIAS[chave];
+    saida[chave] = {
+      ...base,
+      leadTimeDias: num(query[`lt_${chave}`], base.leadTimeDias),
+      segurancaDias: num(query[`seg_${chave}`], base.segurancaDias),
+      intervaloDias: base.intervaloDias == null ? null : num(query[`int_${chave}`], base.intervaloDias),
+    };
+  }
+  return saida;
 }
 
 // ---------------------------------------------------------------------------
@@ -58,42 +93,79 @@ const serieSemanalPorProduto = (numSemanas) => vendas.serieSemanalPorProduto(poo
 //
 // A medida possível hoje é indireta: o movimento de estoque diz quando o
 // saldo resultante foi a zero. É uma aproximação, e a tela diz que é.
-async function semanasZeradasPorProduto(numSemanas) {
+async function semanasZeradasPorProduto(janela) {
   const { rows } = await pool.query(
     `SELECT ev.produto_id, COUNT(DISTINCT date_trunc('week', em.criado_em)) AS semanas_zeradas
        FROM estoque_movimentos em
        JOIN estoque_variantes ev ON ev.id = em.variante_id
       WHERE em.quantidade_resultante <= 0
-        AND em.criado_em >= date_trunc('week', CURRENT_DATE) - ($1::int - 1) * INTERVAL '1 week'
+        AND em.criado_em >= date_trunc('week', $1::date)
+        AND em.criado_em < date_trunc('week', $2::date) + INTERVAL '7 days'
       GROUP BY ev.produto_id`,
-    [numSemanas]
+    vendas.paramsJanela(janela)
   );
   return new Map(rows.map((r) => [r.produto_id, Number(r.semanas_zeradas)]));
 }
 
+// O que já está na facção. Sem isto, o sistema manda produzir de novo o que
+// está para chegar — o erro mais caro que uma tela de reposição pode ter.
+// Só ordem VIVA conta: rascunho ainda não é compromisso, concluída já entrou
+// no estoque e cancelada não vai acontecer.
+async function emProducaoPorProduto() {
+  const { rows } = await pool.query(
+    `SELECT produto_id,
+            SUM(GREATEST(quantidade_planejada - quantidade_produzida, 0))::numeric AS pecas
+       FROM ordens_producao
+      WHERE situacao IN ('planejada', 'em_producao')
+      GROUP BY produto_id`
+  );
+  return new Map(rows.map((r) => [r.produto_id, Number(r.pecas) || 0]));
+}
+
 // ---------------------------------------------------------------------------
-// Peça acabada: cobertura, comportamento e estoque mínimo
+// Peça acabada: cobertura, cadência de reposição e quanto produzir
 // ---------------------------------------------------------------------------
+// Repaginada em 10/09/2026. O que mudou, e por quê:
+//
+//   · A janela vem em DATAS, não num número de semanas solto.
+//   · O prazo de reposição deixou de ser UM para todas as 994 referências e
+//     passou a ser o da CADÊNCIA de cada uma (semanal 7 · quinzenal 15 ·
+//     mensal 30), com o prazo da própria referência vencendo quando existe.
+//   · A resposta traz "quanto produzir NESTA rodada" e "até quando dá para
+//     pedir" — que são as duas perguntas da operação. "Está abaixo do ponto
+//     de pedido" não é tarefa; "produza 56 peças, e o pedido já está
+//     atrasado 4 dias" é.
+//   · Cada linha vem com um BLOCO, que é como a tela agrupa: produzir agora ·
+//     programar · tranquilo · sobrando · sem cálculo. A tela não organiza mais
+//     por vocabulário de estatística.
 router.get('/produtos', async (req, res, next) => {
   try {
-    const numSemanas = semanas(req);
-    // Prazo de reposição da PRODUÇÃO própria, em dias. Sem um valor real
-    // cadastrado, a tela pede que alguém informe — o padrão é declarado,
-    // não escondido.
-    const leadTimeProducao = Number(req.query.lead_time_dias);
+    const janela = janelaDeAnalise(req);
+    const numSemanas = semanasDaJanela(janela);
+    const cadencias = cadenciasComParametros(req.query);
+    const cortes = {
+      semanal: temNumero(req.query.corte_semanal) ? Number(req.query.corte_semanal) : cadencias.semanal.minimoVendaDia,
+      quinzenal: temNumero(req.query.corte_quinzenal) ? Number(req.query.corte_quinzenal) : cadencias.quinzenal.minimoVendaDia,
+    };
+    // Quantas vezes o mínimo é "sobra". 3× é o corte da planilha da casa.
+    const fatorExcesso = temNumero(req.query.fator_excesso) ? Number(req.query.fator_excesso) : 3;
 
-    const [serie, zeradas, saldos, margemPorProduto, semReferencia, kitsSemComposicao] = await Promise.all([
-      serieSemanalPorProduto(numSemanas),
-      semanasZeradasPorProduto(numSemanas),
+    const [serie, zeradas, saldos, margemPorProduto, semReferencia, kitsSemComposicao, emProducao] = await Promise.all([
+      vendas.serieSemanalPorProduto(pool, janela),
+      semanasZeradasPorProduto(janela),
       pool.query(
         `SELECT ev.produto_id, p.referencia, p.descricao, p.marca, p.categoria,
+                p.cadencia_reposicao, p.nivel_reposicao, p.lead_time_producao_dias,
                 SUM(ev.quantidade)::numeric AS saldo,
                 COUNT(*) FILTER (WHERE ev.quantidade <= 0) AS variantes_zeradas,
-                COUNT(*) AS variantes
+                COUNT(*) AS variantes,
+                COUNT(DISTINCT ev.cor) AS cores,
+                COUNT(DISTINCT ev.tamanho) AS tamanhos
            FROM estoque_variantes ev
            JOIN produtos p ON p.id = ev.produto_id
           WHERE ev.ativo
-          GROUP BY ev.produto_id, p.referencia, p.descricao, p.marca, p.categoria`
+          GROUP BY ev.produto_id, p.referencia, p.descricao, p.marca, p.categoria,
+                   p.cadencia_reposicao, p.nivel_reposicao, p.lead_time_producao_dias`
       ),
       // Faturamento e PEÇAS vendidas por produto na janela — pela mesma
       // medida da série, com o kit explodido. Antes isto contava kit como
@@ -106,11 +178,12 @@ router.get('/produtos', async (req, res, next) => {
       // faturamento menos o custo de producao que o MOTOR calcula, lido pelo
       // mesmo caminho da tela de Estoque. Nao inclui taxa de marketplace, e a
       // resposta diz isso por escrito.
-      vendas.totaisPorProduto(pool, numSemanas),
+      vendas.totaisPorProduto(pool, janela),
       // O que ficou de fora: venda sem referência ligada (REGRA 2 — aparece
       // com o motivo, em vez de virar zero calado).
-      vendas.itensSemProduto(pool, numSemanas),
-      vendas.itensDeKitSemComposicao(pool, numSemanas),
+      vendas.itensSemProduto(pool, janela),
+      vendas.itensDeKitSemComposicao(pool, janela),
+      emProducaoPorProduto(),
     ]);
 
     // Custo de producao por produto, LIDO do motor de calculo — a mesma
@@ -178,9 +251,29 @@ router.get('/produtos', async (req, res, next) => {
 
       const zeradasNaJanela = zeradas.get(s.produto_id) || 0;
       const totais = margemPorProduto.get(s.produto_id) || null;
+      const saldo = Number(s.saldo);
+      const naFaccao = emProducao.get(s.produto_id) || 0;
+      // Posição de estoque, não saldo físico: é com ela que o ponto de
+      // pedido se compara, senão o sistema manda fazer de novo o que já
+      // está na facção.
+      const posicao = saldo + naFaccao;
+
+      // A cadência: a escolhida à mão vence a sugerida pela venda.
+      const cadencia = cadenciaDaReferencia({
+        vendaMediaDia: mediaDia,
+        cadenciaManual: s.cadencia_reposicao,
+        parametros: cortes,
+      });
+      const cad = cadencia.chave ? cadencias[cadencia.chave] : null;
+      const cadenciaAplicada = cad ? { ...cadencia, ...cad, origem: cadencia.origem, explicacao: cadencia.explicacao } : cadencia;
+
+      const lead = leadTimeEfetivo({
+        leadTimeProduto: s.lead_time_producao_dias,
+        cadencia: cadenciaAplicada,
+      });
 
       const cobertura = coberturaEmDias({
-        saldo: Number(s.saldo),
+        saldo,
         demandaMediaDia: mediaDia,
         serie: serieProduto,
         saldoZeradoNoPeriodo: zeradasNaJanela > 0,
@@ -191,15 +284,62 @@ router.get('/produtos', async (req, res, next) => {
         z,
         demandaMediaDia: mediaDia,
         desvioDemandaDia: desvioDia,
-        leadTimeDias: Number.isFinite(leadTimeProducao) ? leadTimeProducao : null,
+        leadTimeDias: lead.dias,
         tamanhoTipicoPedido: comportamento.mediaQuandoVende,
       });
 
       const rop = pontoDePedido({
         demandaMediaDia: mediaDia,
-        leadTimeDias: Number.isFinite(leadTimeProducao) ? leadTimeProducao : null,
+        leadTimeDias: lead.dias,
         estoqueSegurancaValor: seguranca.valor,
       });
+
+      const produzir = quantidadeAProduzir({
+        demandaMediaDia: mediaDia,
+        cadencia: cadenciaAplicada,
+        posicaoEstoque: posicao,
+        pontoDePedidoValor: rop.valor,
+      });
+
+      const pedirAte = prazoParaPedir({
+        coberturaDias: cobertura.dias,
+        leadTimeDias: lead.dias,
+      });
+
+      const situacao = (() => {
+        if (saldo <= 0) return 'sem_estoque';
+        if (rop.valor == null) return 'indeterminado';
+        if (posicao <= rop.valor) return 'comprar_agora';
+        if (seguranca.valor != null && posicao <= rop.valor * 1.2) return 'atencao';
+        return 'ok';
+      })();
+
+      // Quanto está parado acima do necessário, em peças e em dinheiro ao
+      // custo de produção. O alvo do ciclo é a referência de "necessário" —
+      // não o ponto de pedido, que é gatilho, não meta.
+      const alvo = produzir.alvo ?? rop.valor ?? null;
+      const custoUnit = custoPorProduto.get(s.produto_id) ?? null;
+      const excedente = alvo != null && alvo > 0 ? Math.max(0, saldo - alvo * fatorExcesso) : null;
+      const excesso = {
+        pecas: excedente,
+        // Só há valor quando há custo cadastrado. Custo ausente não vira zero
+        // (REGRA 2): vira "não dá para dizer quanto dinheiro está parado".
+        valor: excedente != null && custoUnit != null && custoUnit > 0 ? excedente * custoUnit : null,
+        motivo: custoUnit == null || custoUnit <= 0 ? 'sem custo de produção cadastrado, dá para contar as peças mas não o dinheiro' : null,
+      };
+
+      // O BLOCO é o que a tela usa para agrupar — a organização por AÇÃO,
+      // no lugar da lista única ordenada por jargão.
+      const bloco = (() => {
+        if (comportamento.quadrante === 'sem_venda' && saldo > 0) return 'parado';
+        if (rop.valor == null) return 'sem_calculo';
+        if (saldo <= 0 && Number.isFinite(mediaDia) && mediaDia > 0) return 'produzir_agora';
+        if (posicao <= rop.valor) {
+          return cadenciaAplicada.chave === 'semanal' ? 'produzir_agora' : 'programar';
+        }
+        if (excedente != null && excedente > 0) return 'sobrando';
+        return 'ok';
+      })();
 
       return {
         produto_id: s.produto_id,
@@ -207,9 +347,24 @@ router.get('/produtos', async (req, res, next) => {
         descricao: s.descricao,
         marca: s.marca,
         categoria: s.categoria,
-        saldo: Number(s.saldo),
+        saldo,
+        em_producao: naFaccao,
+        posicao,
         variantes: Number(s.variantes),
         variantes_zeradas: Number(s.variantes_zeradas),
+        cores: Number(s.cores),
+        tamanhos: Number(s.tamanhos),
+
+        nivel_reposicao: s.nivel_reposicao || null,
+        nivel: s.nivel_reposicao ? NIVEIS_REPOSICAO[s.nivel_reposicao] || null : null,
+        // A escolha gravada, separada da cadência EFETIVA: a tela precisa
+        // saber a diferença entre "alguém escolheu mensal" e "o cálculo
+        // sugeriu mensal", senão o campo de edição mostraria uma escolha
+        // que ninguém fez.
+        cadencia_manual: s.cadencia_reposicao || null,
+        lead_time_producao_dias: s.lead_time_producao_dias ?? null,
+        cadencia: cadenciaAplicada,
+        lead_time: lead,
 
         comportamento: {
           ...comportamento,
@@ -221,6 +376,7 @@ router.get('/produtos', async (req, res, next) => {
 
         venda_media_semana: mediaSemana,
         venda_media_dia: mediaDia,
+        faturamento: totais ? totais.faturamento : 0,
 
         // O que a média mediu, em peças, para a conta poder ser conferida na
         // tela. `pecas_em_kit` é o número que denuncia o defeito antigo: era
@@ -230,17 +386,12 @@ router.get('/produtos', async (req, res, next) => {
         cobertura,
         estoque_seguranca: seguranca,
         ponto_de_pedido: rop,
+        produzir,
+        pedir_ate: pedirAte,
+        excesso,
 
-        // O sinal que a tela pinta. Vem depois de tudo porque depende de
-        // ter conseguido calcular — e quando não conseguiu, o sinal é
-        // "não sei", não "tudo bem".
-        situacao: (() => {
-          if (Number(s.saldo) <= 0) return 'sem_estoque';
-          if (rop.valor == null) return 'indeterminado';
-          if (Number(s.saldo) <= rop.valor) return 'comprar_agora';
-          if (seguranca.valor != null && Number(s.saldo) <= rop.valor * 1.2) return 'atencao';
-          return 'ok';
-        })(),
+        situacao,
+        bloco,
         censura_de_demanda: zeradasNaJanela > 0,
         semanas_zeradas: zeradasNaJanela,
       };
@@ -249,9 +400,13 @@ router.get('/produtos', async (req, res, next) => {
     res.json({
       linhas,
       parametros: {
+        janela: { inicio: janela.inicio, fim: janela.fim },
         semanas: numSemanas,
         periodosMinimos: PERIODOS_MINIMOS,
-        leadTimeDias: Number.isFinite(leadTimeProducao) ? leadTimeProducao : null,
+        cadencias,
+        cortes,
+        fatorExcesso,
+        niveis: NIVEIS_REPOSICAO,
         nivelPorCurva: NIVEL_POR_CURVA,
         criterioCurva: temMargem ? 'margem' : 'faturamento',
         // Quanto da venda medida veio de kit. Serve para conferir a correção
@@ -266,7 +421,9 @@ router.get('/produtos', async (req, res, next) => {
       // Avisos de MÉTODO, mostrados uma vez no alto da tela em vez de
       // repetidos em cada linha.
       avisos: [
-        ...(Number.isFinite(leadTimeProducao) ? [] : ['Sem o prazo de reposição em dias, dá para mostrar a cobertura mas não o estoque mínimo nem o ponto de pedido. Informe quantos dias leva para repor uma peça.']),
+        `A janela é de ${numSemanas} semana(s) cheia(s) — de ${janela.inicio} a ${janela.fim}. A venda é medida por semana, então as duas pontas do período escolhido são arredondadas para a semana inteira.`,
+        'O prazo de produção usado é o da CADÊNCIA de cada referência (semanal, quinzenal ou mensal), e não um prazo único para o catálogo inteiro. Onde a referência tem prazo próprio cadastrado, é ele que vale.',
+        'A comparação com o ponto de pedido é feita com a POSIÇÃO de estoque (saldo + o que está na facção), não com o saldo físico — senão o sistema mandaria produzir de novo o que já está para chegar.',
         ...(temMargem
           ? ['A curva ABC usa MARGEM DE CONTRIBUIÇÃO (faturamento menos o custo de produção que o motor calcula). Ela não desconta taxa de marketplace nem publicidade.']
           : ['A curva ABC está sendo feita por FATURAMENTO, porque os produtos vendidos na janela não têm custo cadastrado. Faturamento alto com margem baixa vai aparecer como classe A.']),
@@ -275,11 +432,134 @@ router.get('/produtos', async (req, res, next) => {
         // porque o número MUDOU: quem comparar com a tela de antes de
         // 08/09/2026 precisa saber por quê.
         'A venda é medida em PEÇAS, com o kit aberto na composição dele: um KIT-3 vendido uma vez conta 3 peças na referência, porque são 3 peças que saem do estoque.',
+        'Toda venda registrada entra na conta — Shopee, Mercado Livre, TikTok Shop, venda direta e viagens. A tela não separa por canal: o estoque é um só, e é dele que todos tiram.',
         ...(linhas.some((l) => l.censura_de_demanda) ? ['Alguns itens ficaram sem estoque na janela. A venda medida deles é menor que a demanda real, e o mínimo calculado sai otimista — estão marcados na lista.'] : []),
         ...(semReferencia.itens > 0 ? [`${semReferencia.itens} item(ns) de venda da janela (${Math.round(semReferencia.unidades)} unidade(s)) não estão ligados a nenhuma referência cadastrada e ficaram de fora de TODA a conta — normalmente SKU de anúncio que o casamento não reconheceu. Enquanto isso não for resolvido, a venda medida está incompleta.`] : []),
         ...(kitsSemComposicao > 0 ? [`${kitsSemComposicao} item(ns) apontam um kit sem composição cadastrada. Foram contados como 1 peça por unidade, que é o número conservador — a venda real deles pode ser maior.`] : []),
       ],
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// A GRADE de uma referência: cor × tamanho
+// ---------------------------------------------------------------------------
+// É o formato da planilha da casa ("Produtos que Vamos Permanecer") e o
+// formato em que a facção recebe o pedido. Existe como rota separada de
+// propósito: a lista principal tem centenas de referências e mandar a grade
+// de todas junto engordaria a resposta sem que ninguém olhasse 90% dela.
+//
+// ⚠️ O que esta rota NÃO consegue medir, e diz: a peça vendida dentro de KIT
+// não tem cor nem tamanho (a composição do kit é por produto). Ela aparece
+// no total da referência e fica FORA da grade — devolvida à parte, para a
+// tela escrever isso, em vez de espalhá-la pela grade com um rateio
+// inventado.
+router.get('/produtos/:id/grade', async (req, res, next) => {
+  try {
+    const produtoId = Number(req.params.id);
+    if (!Number.isInteger(produtoId)) return res.status(400).json({ erro: 'referência inválida' });
+
+    const janela = janelaDeAnalise(req);
+    const { rows: prodRows } = await pool.query(
+      'SELECT id, referencia, descricao, categoria, nivel_reposicao, cadencia_reposicao FROM produtos WHERE id = $1',
+      [produtoId]
+    );
+    if (prodRows.length === 0) return res.status(404).json({ erro: 'referência não encontrada' });
+
+    const { porVariante, pecasEmKitSemGrade } = await vendas.vendaPorVariante(pool, janela, produtoId);
+
+    const cores = [...new Set(porVariante.map((v) => v.cor))];
+    // Tamanho de roupa não ordena em ordem alfabética: GG viria antes de M.
+    const ORDEM_TAMANHO = ['PP', 'P', 'M', 'G', 'GG', 'XG', 'XGG', 'EXG', 'G1', 'G2', 'G3', 'U', 'ÚNICO', 'UNICO'];
+    const tamanhos = [...new Set(porVariante.map((v) => v.tamanho))].sort((a, b) => {
+      const ia = ORDEM_TAMANHO.indexOf(String(a).toUpperCase());
+      const ib = ORDEM_TAMANHO.indexOf(String(b).toUpperCase());
+      if (ia >= 0 && ib >= 0) return ia - ib;
+      if (ia >= 0) return -1;
+      if (ib >= 0) return 1;
+      // Numéricos (calça: 38, 40, 42) ordenam por número, não por texto.
+      const na = Number(a); const nb = Number(b);
+      if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+      return String(a).localeCompare(String(b), 'pt-BR');
+    });
+
+    const pecasComGrade = porVariante.reduce((s, v) => s + v.pecas, 0);
+
+    res.json({
+      produto: prodRows[0],
+      janela: { inicio: janela.inicio, fim: janela.fim },
+      cores,
+      tamanhos,
+      celulas: porVariante,
+      totais: {
+        saldo: porVariante.reduce((s, v) => s + v.saldo, 0),
+        pecasComGrade,
+        pecasEmKitSemGrade,
+      },
+      avisos: [
+        ...(pecasEmKitSemGrade > 0
+          ? [`${Math.round(pecasEmKitSemGrade)} peça(s) desta referência saíram dentro de KIT na janela. O kit não guarda cor nem tamanho, então essas peças contam no total da referência mas NÃO aparecem na grade abaixo — a venda por cor/tamanho aqui está subestimada nessa proporção.`]
+          : []),
+        ...(pecasComGrade === 0 && pecasEmKitSemGrade === 0
+          ? ['Nenhuma venda com cor e tamanho identificados nesta janela.']
+          : []),
+      ],
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Decidir a cadência e o nível de uma referência
+// ---------------------------------------------------------------------------
+// A decisão é gravada AQUI, na tela onde ela é tomada, e não escondida no
+// cadastro de produto: quem olha a lista de reposição é quem sabe dizer "essa
+// aqui é semanal". Gravar quem decidiu e quando faz parte — decisão de
+// reposição é da mesma família das decisões de compra, e precisa ser
+// auditável meses depois.
+router.put('/produtos/:id/reposicao', async (req, res, next) => {
+  try {
+    const produtoId = Number(req.params.id);
+    if (!Number.isInteger(produtoId)) return res.status(400).json({ erro: 'referência inválida' });
+
+    const { cadencia, nivel, lead_time_dias: leadTime } = req.body || {};
+
+    // `null` é um valor legítimo e significa "volta a ser o que o sistema
+    // sugere" — diferente de não mandar o campo, que significa "não mexe".
+    if (cadencia !== undefined && cadencia !== null && !CADENCIAS[cadencia]) {
+      return res.status(400).json({ erro: `cadência inválida: ${cadencia}` });
+    }
+    if (nivel !== undefined && nivel !== null && !NIVEIS_REPOSICAO[nivel]) {
+      return res.status(400).json({ erro: `nível inválido: ${nivel}` });
+    }
+    if (leadTime !== undefined && leadTime !== null && !(Number(leadTime) > 0)) {
+      return res.status(400).json({ erro: 'o prazo de produção tem de ser maior que zero' });
+    }
+
+    const campos = [];
+    const valores = [];
+    const põe = (sql, valor) => { valores.push(valor); campos.push(`${sql} = $${valores.length}`); };
+
+    if (cadencia !== undefined) põe('cadencia_reposicao', cadencia || null);
+    if (nivel !== undefined) põe('nivel_reposicao', nivel || null);
+    if (leadTime !== undefined) põe('lead_time_producao_dias', leadTime == null ? null : Math.round(Number(leadTime)));
+    if (campos.length === 0) return res.status(400).json({ erro: 'nada para alterar' });
+
+    põe('reposicao_definida_por', req.user?.id ?? null);
+    campos.push('reposicao_definida_em = now()');
+
+    valores.push(produtoId);
+    const { rows } = await pool.query(
+      `UPDATE produtos SET ${campos.join(', ')} WHERE id = $${valores.length}
+       RETURNING id, referencia, cadencia_reposicao, nivel_reposicao,
+                 lead_time_producao_dias, reposicao_definida_em`,
+      valores
+    );
+    if (rows.length === 0) return res.status(404).json({ erro: 'referência não encontrada' });
+    res.json({ produto: rows[0] });
   } catch (err) {
     next(err);
   }

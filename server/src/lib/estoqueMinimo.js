@@ -529,8 +529,228 @@ function segurancaDeInsumo({ z, consumoMedioDia, desvioLeadTimeDias }) {
   };
 }
 
+
+// ---------------------------------------------------------------------------
+// Cadência de reposição — como a casa repõe DE VERDADE (10/09/2026)
+// ---------------------------------------------------------------------------
+// A regra veio da dona, não de livro: "produto de alto giro a gente repõe
+// toda semana; o que vende menos, ou demora mais para fazer, repõe no mês ou
+// quando precisa".
+//
+// Isso muda o eixo do cálculo. Antes havia UM prazo de reposição para as 994
+// referências — o campo "prazo para repor uma peça" no alto da tela. Um prazo
+// só é falso nos dois sentidos: exagera o mínimo da polo que volta em uma
+// semana e subestima o da tricoline que leva um mês.
+//
+// Cada cadência carrega três prazos, e os três são diferentes:
+//
+//   leadTimeDias    quanto tempo a peça leva para ficar pronta;
+//   segurancaDias   o colchão contra pico de venda e atraso;
+//   intervaloDias   de quanto em quanto tempo a rodada acontece — é o que
+//                   faz a reposição semanal produzir MENOS por vez que a
+//                   mensal, e não é a mesma coisa que o lead time.
+//
+// `minimoVendaDia` é só a SUGESTÃO de classe (os cortes da planilha de
+// 24/08: 0,5 e 0,15 peça/dia). A escolha gravada no produto vence sempre.
+const CADENCIAS = {
+  semanal: {
+    chave: 'semanal',
+    rotulo: 'Semanal',
+    descricao: 'Reposição toda semana — alto giro, o que não pode faltar.',
+    leadTimeDias: 7,
+    segurancaDias: 3,
+    intervaloDias: 7,
+    minimoVendaDia: 0.5,
+  },
+  quinzenal: {
+    chave: 'quinzenal',
+    rotulo: 'Quinzenal',
+    descricao: 'Entra na ordem de duas em duas semanas — giro médio.',
+    leadTimeDias: 15,
+    segurancaDias: 5,
+    intervaloDias: 14,
+    minimoVendaDia: 0.15,
+  },
+  mensal: {
+    chave: 'mensal',
+    rotulo: 'Mensal',
+    descricao: 'Programada no mês — vende menos, ou demora mais para produzir.',
+    leadTimeDias: 30,
+    segurancaDias: 7,
+    intervaloDias: 30,
+    minimoVendaDia: 0,
+  },
+  sob_demanda: {
+    chave: 'sob_demanda',
+    rotulo: 'Sob demanda',
+    descricao: 'Só quando precisa. O sistema não sugere quantidade — apenas avisa quando zera.',
+    leadTimeDias: 30,
+    segurancaDias: 0,
+    intervaloDias: null,
+    minimoVendaDia: null,
+  },
+};
+
+const ORDEM_CADENCIA = ['semanal', 'quinzenal', 'mensal', 'sob_demanda'];
+
+const NIVEIS_REPOSICAO = {
+  essencial: { chave: 'essencial', rotulo: 'Essencial', descricao: 'Carro-chefe. Nunca pode faltar.' },
+  intermediario: { chave: 'intermediario', rotulo: 'Intermediário', descricao: 'Reposição frequente, prioridade abaixo das essenciais.' },
+  sob_demanda: { chave: 'sob_demanda', rotulo: 'Sob demanda', descricao: 'Cauda longa. Produz quando alguém pede.' },
+  a_descontinuar: { chave: 'a_descontinuar', rotulo: 'A descontinuar', descricao: 'Vai sair de linha — escoar o que tem, não repor.' },
+};
+
+// A cadência de uma referência: a escolhida à mão, ou a que a venda sugere.
+//
+// REGRA 2 aplicada aqui: quando não há venda medida, a função NÃO chuta
+// "mensal" — devolve cadência nula com o motivo, e quem chamou decide o que
+// escrever na tela. Item sem venda não é item de giro baixo; pode ser item
+// que passou a janela inteira zerado.
+function cadenciaDaReferencia({ vendaMediaDia, cadenciaManual, parametros } = {}) {
+  const cortes = {
+    semanal: Number(parametros?.semanal ?? CADENCIAS.semanal.minimoVendaDia),
+    quinzenal: Number(parametros?.quinzenal ?? CADENCIAS.quinzenal.minimoVendaDia),
+  };
+
+  if (cadenciaManual && CADENCIAS[cadenciaManual]) {
+    return {
+      ...CADENCIAS[cadenciaManual],
+      origem: 'manual',
+      explicacao: 'Cadência escolhida à mão para esta referência. O cálculo não sobrescreve.',
+    };
+  }
+
+  // ⚠️ `temNumero`, não `Number.isFinite`: Number(null) é 0, e 0 é finito.
+  // Escrito do jeito óbvio, "sem venda medida" viraria "vende 0 por dia" e
+  // a referência receberia cadência MENSAL com cara de decisão — quando o
+  // certo é dizer que não dá para sugerir. É a mesma armadilha que já mordeu
+  // a perda de corte e o estoque de segurança.
+  if (!temNumero(vendaMediaDia)) {
+    return {
+      chave: null,
+      rotulo: '—',
+      origem: 'indefinida',
+      motivo: 'sem venda medida na janela, não dá para sugerir uma cadência',
+    };
+  }
+  const v = Number(vendaMediaDia);
+
+  const chave = v >= cortes.semanal ? 'semanal' : (v >= cortes.quinzenal ? 'quinzenal' : 'mensal');
+  return {
+    ...CADENCIAS[chave],
+    origem: 'sugerida',
+    explicacao: `Sugerida pela venda medida (${v.toFixed(2)} peça/dia). Cortes em uso: ${cortes.semanal} e ${cortes.quinzenal} peça/dia.`,
+  };
+}
+
+// O prazo de reposição efetivo desta referência, em dias.
+// Ordem de precedência, da mais específica para a mais genérica:
+//   1. o prazo cadastrado NA referência (alguém mediu aquela peça);
+//   2. o prazo da cadência (7 / 15 / 30);
+// Nunca há um padrão universal escondido: se as duas faltarem, é nulo.
+function leadTimeEfetivo({ leadTimeProduto, cadencia }) {
+  if (temNumero(leadTimeProduto) && Number(leadTimeProduto) > 0) {
+    return { dias: Number(leadTimeProduto), origem: 'referencia' };
+  }
+  if (cadencia?.leadTimeDias > 0) {
+    return { dias: Number(cadencia.leadTimeDias), origem: 'cadencia' };
+  }
+  return { dias: null, origem: null };
+}
+
+// ---------------------------------------------------------------------------
+// Quanto produzir NESTA rodada
+// ---------------------------------------------------------------------------
+// Com reposição periódica, "quanto comprar até chegar no mínimo" é a pergunta
+// errada: ela repõe só o buraco e o item volta a furar antes da próxima
+// rodada. O alvo de um sistema de revisão periódica é cobrir o ciclo INTEIRO
+// mais o intervalo até a próxima visita:
+//
+//     alvo     = venda/dia × (lead time + segurança + intervalo entre rodadas)
+//     produzir = alvo − posição de estoque
+//
+// A posição é saldo + o que já está em produção — senão o sistema manda
+// produzir de novo o que já está na facção.
+function quantidadeAProduzir({ demandaMediaDia, cadencia, posicaoEstoque, pontoDePedidoValor }) {
+  const d = temNumero(demandaMediaDia) ? Number(demandaMediaDia) : NaN;
+  const pos = temNumero(posicaoEstoque) ? Number(posicaoEstoque) : NaN;
+
+  if (!Number.isFinite(d) || d <= 0) {
+    return { valor: null, motivo: 'sem venda medida, não há quanto repor' };
+  }
+  if (!cadencia?.chave) {
+    return { valor: null, motivo: 'sem cadência definida' };
+  }
+  if (cadencia.chave === 'sob_demanda') {
+    return {
+      valor: null,
+      motivo: 'reposição sob demanda — a quantidade sai do pedido, não da média',
+    };
+  }
+  if (!Number.isFinite(pos)) {
+    return { valor: null, motivo: 'sem posição de estoque' };
+  }
+
+  const cicloDias = Number(cadencia.leadTimeDias) + Number(cadencia.segurancaDias)
+    + Number(cadencia.intervaloDias || 0);
+  const alvo = d * cicloDias;
+
+  // Só há o que produzir quando a posição já caiu no ponto de pedido. Acima
+  // dele a resposta certa é zero — e zero aqui NÃO é "não sei calcular", é
+  // "não precisa", que é informação diferente e a tela mostra diferente.
+  const precisa = temNumero(pontoDePedidoValor) ? pos <= Number(pontoDePedidoValor) : true;
+  const bruto = Math.max(0, alvo - pos);
+
+  return {
+    valor: precisa ? Math.ceil(bruto) : 0,
+    alvo: Math.ceil(alvo),
+    cicloDias,
+    posicao: pos,
+    naoPrecisaAinda: !precisa,
+    formula: 'venda/dia × (prazo + segurança + intervalo até a próxima rodada) − posição de estoque',
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Até quando dá para pedir
+// ---------------------------------------------------------------------------
+// "Está acabando" é ruído. "Peça até sexta ou falta dia 20" é tarefa.
+//
+// O saldo cobre `cobertura` dias; a peça leva `leadTime` dias para ficar
+// pronta. A folga é a diferença — e quando ela é negativa, o pedido já está
+// atrasado e a tela precisa dizer isso com essa palavra.
+function prazoParaPedir({ coberturaDias, leadTimeDias, hoje = new Date() }) {
+  // Mesma armadilha do Number(null): sem cobertura calculável, a folga
+  // sairia negativa e a tela diria "atrasado" para um item sobre o qual não
+  // se sabe nada.
+  const c = temNumero(coberturaDias) ? Number(coberturaDias) : NaN;
+  const lt = temNumero(leadTimeDias) ? Number(leadTimeDias) : NaN;
+  if (!Number.isFinite(c) || !Number.isFinite(lt) || lt <= 0) {
+    return { dias: null, data: null, atrasado: null, motivo: 'faltam a cobertura ou o prazo de produção' };
+  }
+  const folga = Math.floor(c - lt);
+  const data = new Date(hoje.getTime());
+  data.setDate(data.getDate() + Math.max(0, folga));
+  return {
+    dias: folga,
+    data: data.toISOString().slice(0, 10),
+    atrasado: folga < 0,
+    diasFaltando: folga < 0 ? Math.abs(folga) : 0,
+    explicacao: folga < 0
+      ? `O estoque dura ${Math.round(c)} dia(s) e a peça leva ${lt} para ficar pronta: já vai faltar ${Math.abs(folga)} dia(s) antes de chegar.`
+      : `O estoque dura ${Math.round(c)} dia(s) e a peça leva ${lt}: dá para pedir até daqui a ${folga} dia(s) sem faltar.`,
+  };
+}
+
 module.exports = {
   temNumero,
+  CADENCIAS,
+  ORDEM_CADENCIA,
+  NIVEIS_REPOSICAO,
+  cadenciaDaReferencia,
+  leadTimeEfetivo,
+  quantidadeAProduzir,
+  prazoParaPedir,
   Z_POR_NIVEL,
   NIVEL_POR_CURVA,
   CORTE_ADI,

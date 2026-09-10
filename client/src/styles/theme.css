@@ -5437,10 +5437,249 @@ table.ficha-doc-tabela {
    isso é calculado", e a tabela em que a AUSÊNCIA de número é tão visível
    quanto o número. */
 
-.cobertura-parametros {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 16px; margin-bottom: 14px;
+/* A barra de comando: período, recorte e busca numa linha só. Substituiu o
+   bloco de dois campos soltos (prazo + janela) que ocupava um card inteiro
+   no alto da tela. */
+.cobertura-barra {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  margin-bottom: 12px;
 }
+.cobertura-barra > .campo-busca { margin-left: auto; min-width: 230px; max-width: 300px; }
+/* Sem isto os Select esticam para 100% e cada filtro cai numa linha,
+   empurrando a busca (e a lista) para baixo da dobra. */
+.cobertura-barra > .select-custom { flex: 0 1 210px; min-width: 155px; max-width: 240px; }
+.cobertura-janela {
+  font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint);
+  padding: 4px 9px; border: 1px dashed var(--border); border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* Os cartões SÃO a navegação: cada um é um grupo de ação, e clicar troca a
+   lista. É o que tirou a tela da lista única de 994 linhas. */
+.cobertura-cartoes {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px; margin-bottom: 14px;
+}
+.cartao-secao {
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column; gap: 3px; align-items: flex-start;
+  padding: 13px 15px 12px; text-align: left; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-xs);
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease),
+              border-color 0.18s var(--ease), background 0.18s var(--ease);
+}
+.cartao-secao::before {
+  content: ''; position: absolute; inset: 0 auto 0 0; width: 3px;
+  background: var(--border); transition: background 0.18s var(--ease);
+}
+.cartao-secao:hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.cartao-secao.ativo {
+  border-color: var(--terracotta); background: var(--accent-softer);
+  box-shadow: var(--shadow-sm), 0 0 0 3px var(--focus-ring);
+}
+.cartao-negativo::before { background: var(--danger-ring); }
+.cartao-atencao::before { background: var(--warning-ring); }
+.cartao-positivo::before { background: var(--success-ring); }
+.cartao-neutro::before { background: var(--brass); }
+.cartao-topo {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px; font-weight: 600; color: var(--ink-soft);
+}
+.cartao-negativo .cartao-topo svg { color: var(--danger-ring); }
+.cartao-atencao .cartao-topo svg { color: var(--warning-ring); }
+.cartao-positivo .cartao-topo svg { color: var(--success-ring); }
+.cartao-neutro .cartao-topo svg { color: var(--brass); }
+.cartao-valor {
+  font-family: var(--font-display); font-size: 25px; line-height: 1.05;
+  color: var(--ink); font-weight: 600;
+}
+.cartao-sub { font-size: 10.5px; color: var(--ink-faint); }
+
+/* O alerta de dinheiro parado na porta: fica acima da lista porque é a única
+   informação da tela que vale sozinha, sem ninguém abrir linha nenhuma. */
+.cobertura-alerta {
+  display: flex; align-items: flex-start; gap: 8px; margin: 0 0 12px;
+  padding: 10px 13px; font-size: 12.5px; line-height: 1.5;
+  color: var(--danger); background: var(--danger-bg);
+  border-left: 3px solid var(--danger-ring); border-radius: var(--radius-sm);
+}
+.cobertura-alerta svg { flex: 0 0 auto; margin-top: 2px; }
+
+/* As ressalvas de método viraram um <details> fechado: elas continuam
+   inteiras e deixaram de empurrar a lista para baixo da dobra. */
+.cobertura-avisos-caixa {
+  margin-bottom: 14px; border: 1px solid var(--border);
+  border-left: 3px solid var(--brass); border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+}
+.cobertura-avisos-caixa > summary {
+  cursor: pointer; padding: 9px 12px; font-size: 11.5px; color: var(--ink-soft);
+  display: flex; align-items: center; gap: 7px; list-style: none;
+}
+.cobertura-avisos-caixa > summary::-webkit-details-marker { display: none; }
+.cobertura-avisos-caixa > summary:hover { color: var(--ink); }
+.cobertura-avisos-caixa[open] > summary { border-bottom: 1px solid var(--border-soft); }
+
+.cobertura-lista { padding: 0; overflow: visible; }
+.cobertura-lista-topo {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 14px; padding: 14px 16px 10px;
+}
+.cobertura-lista-topo .card-titulo { margin: 0 0 3px; }
+.cobertura-lista-topo p { margin: 0; font-size: 12px; max-width: 70ch; }
+
+.cobertura-prazos { margin-bottom: 14px; }
+.cobertura-prazos > p { margin: 4px 0 12px; font-size: 12.5px; line-height: 1.55; }
+.prazos-grade {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px;
+}
+.prazo-cartao {
+  display: flex; flex-direction: column; gap: 9px;
+  padding: 12px; border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm); background: var(--surface-raised);
+}
+.prazo-cartao > .selo { align-self: flex-start; text-transform: capitalize; }
+
+.cobertura-rodape {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  margin: 12px 0 0; font-size: 11px; color: var(--ink-faint);
+}
+
+/* A faixa da grade: um quadradinho por variante, vazio quando zerada. É o
+   sinal que o saldo por referência esconde — GG encalhado e P esgotado se
+   cancelam dentro do mesmo número. */
+.grade-botao {
+  background: none; border: 0; padding: 2px; cursor: pointer; display: block;
+  border-radius: var(--radius-sm);
+}
+.grade-botao:hover { background: var(--row-hover); }
+.grade-faixa { display: inline-flex; align-items: center; gap: 2px; flex-wrap: wrap; max-width: 150px; }
+.grade-faixa i {
+  width: 7px; height: 12px; border-radius: 2px; display: block;
+}
+.grade-faixa i.cheia { background: var(--success-ring); opacity: 0.75; }
+.grade-faixa i.vazia { background: var(--danger-ring); opacity: 0.55; }
+.grade-faixa-barra { width: 130px; max-width: 130px; flex-wrap: nowrap; }
+.grade-faixa-barra i { width: auto; flex: 1 1 auto; min-width: 2px; }
+.grade-faixa-barra small { font-size: 9.5px; color: var(--ink-faint); margin-left: 4px; }
+
+.btn-expandir {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; padding: 0; cursor: pointer;
+  background: none; border: 1px solid transparent; border-radius: 6px;
+  color: var(--ink-soft); transition: background 0.15s var(--ease);
+}
+.btn-expandir:hover { background: var(--accent-soft); color: var(--terracotta); }
+
+.tabela-cobertura tr.linha-aberta { background: var(--accent-softer); }
+.tabela-cobertura tr.linha-aberta td { border-bottom-color: transparent; }
+.tabela-cobertura tr.linha-detalhe-tr > td { padding: 0; background: var(--surface-alt); }
+.produzir-valor { font-size: 14px; color: var(--terracotta); }
+
+.cobertura-selos { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.cobertura-selos .selo { margin: 0; }
+
+/* O painel que abre dentro da linha. É para onde o jargão se mudou: curva,
+   comportamento, Z e as fórmulas por extenso — perto de quem quer conferir,
+   longe de quem só quer saber quanto produzir. */
+.linha-detalhe {
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 16px; border-left: 3px solid var(--terracotta);
+  animation: detalheAbre 0.2s var(--ease);
+}
+@keyframes detalheAbre {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+.detalhe-colunas {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px;
+}
+.detalhe-bloco {
+  background: var(--surface); border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm); padding: 13px 14px;
+}
+.detalhe-bloco h4 {
+  display: flex; align-items: center; gap: 6px; margin: 0 0 10px;
+  font-family: var(--font-display); font-size: 13px; color: var(--terracotta);
+}
+.detalhe-campos {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;
+}
+.detalhe-nota { margin: 10px 0 0; font-size: 11px; color: var(--ink-faint); line-height: 1.5; }
+.detalhe-lista { margin: 0; display: flex; flex-direction: column; gap: 7px; }
+.detalhe-lista > div {
+  display: grid; grid-template-columns: 130px 1fr; gap: 10px; align-items: baseline;
+}
+.detalhe-lista dt {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--ink-faint); font-weight: 700;
+}
+.detalhe-lista dd { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-soft); }
+.detalhe-lista dd.ressalva { color: var(--warning); }
+.detalhe-grade { background: var(--surface); }
+
+.grade-topo {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; margin-bottom: 10px;
+}
+.segmentado {
+  display: inline-flex; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); overflow: hidden;
+}
+.segmentado button {
+  border: 0; background: var(--surface-raised); cursor: pointer;
+  padding: 6px 11px; font-size: 11.5px; color: var(--ink-soft);
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.segmentado button + button { border-left: 1px solid var(--border); }
+.segmentado button:hover { background: var(--row-hover); color: var(--ink); }
+.segmentado button.ativo { background: var(--terracotta); color: var(--on-accent); }
+.segmentado-mini button { padding: 5px 10px; font-size: 11px; }
+
+/* A matriz cor × tamanho — a forma da planilha da casa, e a forma em que a
+   facção recebe o pedido. O "—" não é erro: é a combinação que não existe no
+   catálogo, e a planilha já dizia isso assim. */
+.grade-rolagem { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.tabela-grade { border-collapse: separate; border-spacing: 0; font-size: 12px; }
+.tabela-grade th, .tabela-grade td {
+  padding: 6px 10px; border-bottom: 1px solid var(--border-soft);
+  white-space: nowrap;
+}
+.tabela-grade thead th {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--ink-faint); background: var(--surface-raised);
+  border-bottom: 1px solid var(--border);
+}
+.tabela-grade tbody th, .tabela-grade tfoot th {
+  position: sticky; left: 0; z-index: 1; text-align: left; font-weight: 600;
+  background: var(--zebra-frozen); color: var(--ink);
+  box-shadow: 1px 0 0 var(--border-soft);
+}
+.tabela-grade td.num, .tabela-grade th.num { text-align: right; font-family: var(--font-mono); }
+.tabela-grade tbody tr:hover td { background: var(--row-hover); }
+.tabela-grade td.vazia { color: var(--ink-faint); opacity: 0.5; }
+.tabela-grade td.celula-zerada {
+  background: var(--danger-bg); color: var(--danger); font-weight: 700;
+}
+.tabela-grade td.celula-venda { color: var(--success); }
+.tabela-grade .total { font-weight: 700; color: var(--ink); background: var(--surface-alt); }
+.tabela-grade .total.geral { color: var(--terracotta); }
+.grade-aviso {
+  display: flex; align-items: flex-start; gap: 6px; margin: 9px 0 0;
+  font-size: 11px; line-height: 1.5; color: var(--warning);
+}
+.grade-aviso svg { flex: 0 0 auto; margin-top: 2px; }
+
+@media (max-width: 720px) {
+  .cobertura-barra > .campo-busca { margin-left: 0; width: 100%; max-width: none; }
+  /* No celular cada filtro ocupa a linha inteira: meio Select ao lado de
+     meio Select não dá para ler nem para acertar com o dedo. */
+  .cobertura-barra > .select-custom { flex: 1 1 100%; max-width: none; }
+  .detalhe-lista > div { grid-template-columns: 1fr; gap: 2px; }
+  .linha-detalhe { padding: 12px; }
+}
+
 
 .cobertura-explicacao { margin-bottom: 14px; }
 .cobertura-explicacao-grade {
