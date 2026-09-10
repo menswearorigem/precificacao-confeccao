@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Building2, Plus, RefreshCw, Tag, X, Check, AlertTriangle, Trash2,
-  DollarSign, Phone, MapPin, Info,
+  DollarSign, Phone, MapPin, Info, Download,
 } from 'lucide-react';
 import { api } from '../api/client';
 import {
@@ -398,6 +398,7 @@ export default function FaccoesAba({ etapas = [], produtos = [], onMudou }) {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
+  const [importandoWik, setImportandoWik] = useState(false);
   const [busca, setBusca] = useState('');
   const [buscaAplicada, setBuscaAplicada] = useState('');
   const [filtroCategoria, setFiltroCategoria] = useState('');
@@ -437,6 +438,23 @@ export default function FaccoesAba({ etapas = [], produtos = [], onMudou }) {
     semCategoria: faccoes.filter((f) => !f.faccao_categoria_id).length,
   }), [faccoes]);
 
+    const importarFaccoesWik = async () => {
+    setImportandoWik(true); setErro(''); setAviso('');
+    try {
+      const r = await api.post('/faccoes/importar-wik', {});
+      const partes = [];
+      if (r.criadas) partes.push(`${r.criadas} criadas`);
+      if (r.vinculadas) partes.push(`${r.vinculadas} vinculadas`);
+      if (r.jaExistiam) partes.push(`${r.jaExistiam} já existiam`);
+      setAviso(`Facções do Wik: ${partes.join(', ') || 'nada a importar'} (de ${r.totalWik || 0} no Wik).`);
+      await carregar();
+    } catch (e) {
+      setErro(e.message || 'Falha ao importar facções do Wik.');
+    } finally {
+      setImportandoWik(false);
+    }
+  };
+
   return (
     <>
       <div className="indicadores-linha">
@@ -470,6 +488,10 @@ export default function FaccoesAba({ etapas = [], produtos = [], onMudou }) {
         </button>
         <button type="button" className="btn-sec" onClick={carregar} disabled={carregando}>
           <RefreshCw size={15} className={carregando ? 'girando' : ''} /> Atualizar
+        </button>
+        <button type="button" className="btn-sec" onClick={importarFaccoesWik} disabled={importandoWik}
+          title="Traz as facções do Wik (cadastro de Departamento). Cria as que faltam e vincula as de mesmo nome — não sobrescreve o que você já editou.">
+          <Download size={15} className={importandoWik ? 'girando' : ''} /> {importandoWik ? 'Importando…' : 'Importar do Wik'}
         </button>
         <button type="button" className="btn" onClick={() => setEditando('novo')}>
           <Plus size={15} /> Nova facção

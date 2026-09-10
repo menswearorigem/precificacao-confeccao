@@ -209,10 +209,47 @@ async function ordemProducaoDetalhe(sessao, op) {
 }
 function numOuNull(v) { if (v === null || v === undefined || v === '') return null; const n = Number(v); return Number.isNaN(n) ? null : n; }
 
+
+// Puxa TODOS os departamentos (cadastro Produção) via o grid DataTables
+// server-side. O corpo replica exatamente o que a tela manda (urlencoded,
+// notação de colchetes do jQuery.param) — provado ao vivo devolvendo os 305
+// registros. Cada departamento liga um Fornecedor (DepFornId "id - nome") a uma
+// etapa/categoria (DepTipoDep, ex. "2 - FACÇÃO") e um status (Situacao).
+async function carregarGridDepartamentos(sessao) {
+  const cols = [
+    { d: 'DepId', o: true, s: false },
+    { d: 'DepDescricao', o: false, s: false },
+    { d: 'DepTipoDep', o: false, s: false },
+    { d: 'DepFornId', o: true, s: false },
+    { d: 'Situacao', o: true, s: true },
+  ];
+  const form = { draw: '1' };
+  cols.forEach((c, i) => {
+    form[`columns[${i}][data]`] = c.d;
+    form[`columns[${i}][name]`] = c.d;
+    form[`columns[${i}][searchable]`] = c.s ? 'true' : 'false';
+    form[`columns[${i}][orderable]`] = c.o ? 'true' : 'false';
+    form[`columns[${i}][search][value]`] = '';
+    form[`columns[${i}][search][regex]`] = 'false';
+  });
+  form['order[0][column]'] = '1';
+  form['order[0][dir]'] = 'asc';
+  form['start'] = '0';
+  form['length'] = '2000';
+  form['search[value]'] = '';
+  form['search[regex]'] = 'false';
+  form['jsonData'] = JSON.stringify({ ListaFiltros: {}, FiltroSelecionado: '1', Valor: '' });
+  const r = await requisitar(sessao, 'POST', '/Departamento/CarregaGrid', { form });
+  const txt = await r.text();
+  if (pareceTelaDeLogin(txt)) { const e = new Error('SESSAO_EXPIRADA'); e.sessaoExpirada = true; throw e; }
+  const j = JSON.parse(txt);
+  return j.data || j.aaData || [];
+}
+
 module.exports = {
   BASE_PADRAO,
   novaSessao, restaurarCookies, serializarCookies,
   login, sessaoViva, trocarEmpresa,
-  listarEmpresas, apontamentoPainel, ordemProducaoDetalhe,
+  listarEmpresas, apontamentoPainel, ordemProducaoDetalhe, carregarGridDepartamentos,
   getJson, getHtml,
 };

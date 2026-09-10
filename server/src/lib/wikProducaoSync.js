@@ -273,4 +273,4 @@ async function sincronizarProducaoAgora() {
   }
 }
 
-module.exports = { sincronizarProducaoAgora };
+module.exports = { sincronizarProducaoAgora, obterSessao, buscarIntegracao };

@@ -489,4 +489,25 @@ router.post('/precos/:precoId/encerrar', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+
+// Importa as facções do Wik (cadastro de Departamento -> Fornecedor). Cria as
+// que faltam, vincula as de mesmo nome, não sobrescreve o que a casa já editou.
+// Detalhes em lib/wikFaccoesImport.js. Só admin, como as demais ações de Wik.
+router.post('/importar-wik', async (req, res, next) => {
+  try {
+    const { importarFaccoesDoWik } = require('../lib/wikFaccoesImport');
+    const resumo = await importarFaccoesDoWik();
+    try {
+      await registrar(req, {
+        acao: 'importar-wik', entidade: 'faccao', entidadeId: null,
+        descricao: `Importação de facções do Wik: ${resumo.criadas || 0} criadas, ${resumo.vinculadas || 0} vinculadas, ${resumo.jaExistiam || 0} já existiam.`,
+        sucesso: true,
+      });
+    } catch (_) { /* auditoria é best-effort */ }
+    res.json(resumo);
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 module.exports = router;
