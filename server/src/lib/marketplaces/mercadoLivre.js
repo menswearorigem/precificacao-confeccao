@@ -996,21 +996,35 @@ function mapearAnuncio(item) {
 
   return {
     anuncioIdExterno: String(item.id),
-    // ---- PUBLICAÇÃO (o que o painel do Mercado Livre chama de "anúncio") ----
+    // ---- PUBLICAÇÃO x VARIAÇÃO ----
     //
     // Desde a reestruturação do catálogo, um anúncio que a vendedora criou no
-    // painel pode virar VÁRIOS itens MLB na API — um por variação — amarrados
-    // por `user_product_id`. O painel conta a PUBLICAÇÃO (82, na conta Origem);
-    // a API devolve os ITENS (perto de 800). Não é erro de nenhum dos dois:
-    // são duas unidades de contagem diferentes, e o HBN Hub estava exibindo a
-    // da API com o nome da do painel.
+    // painel vira VÁRIOS itens MLB na API — um por cor — e o painel conta a
+    // PUBLICAÇÃO (82, na conta Origem) enquanto a API devolve os ITENS (888
+    // registros). Não é erro de nenhum dos dois: são duas unidades de contagem
+    // diferentes.
     //
-    // Guardar o identificador de família aqui é o que permite a tela agrupar e
-    // bater com o painel. É casamento por ID EXATO da própria plataforma —
-    // nada de juntar por título parecido (REGRA 2). Item sem família fica com
-    // NULO e continua valendo por si só.
-    publicacaoIdExterna: item.user_product_id ? String(item.user_product_id) : null,
+    // ⚠️ Os dois campos abaixo são de NÍVEIS diferentes, e confundi-los foi
+    // exatamente o defeito da primeira versão desta tela:
+    //
+    //   · `user_product_id` (MLBU…) identifica a VARIAÇÃO. Cada cor tem o seu,
+    //     então agrupar por ele não agrupa nada — 888 itens viravam 888
+    //     "anúncios";
+    //   · a FAMÍLIA é o que junta as variações num anúncio só. Agrupando por
+    //     ela, a mesma conta dá 82 — o número do painel, na vírgula.
+    //
+    // `family_id` nem sempre vem na resposta de item; quando não vem, o nome
+    // da família faz o papel de chave. Ele NÃO é o título do anúncio nem uma
+    // descrição digitada: é o campo de família da própria plataforma (REGRA 2
+    // — nada é casado por descrição). Item sem família fica NULO e continua
+    // valendo por si só.
+    // O nome vem antes do código de propósito — ver a nota de CHAVE_PUBLICACAO
+    // em routes/anuncios.routes.js: numa varredura de transição, dar
+    // precedência ao código partiria em dois a família cujas linhas antigas
+    // ainda não o tivessem.
+    publicacaoIdExterna: item.family_name || (item.family_id ? String(item.family_id) : null),
     publicacaoNome: item.family_name || null,
+    variacaoIdExterna: item.user_product_id ? String(item.user_product_id) : null,
     titulo: item.title || null,
     skuExterno: extrairSku(item, null),
     preco: item.price != null ? Number(item.price) : null,

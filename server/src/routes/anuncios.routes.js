@@ -90,6 +90,58 @@ function paramsAds(janela) {
   return [janela.de, janela.ate, janela.dias];
 }
 
+// ---------------------------------------------------------------------------
+// A PUBLICAÇÃO — o que o painel da plataforma chama de "anúncio"
+// ---------------------------------------------------------------------------
+// Escrita UMA vez e usada na listagem, no detalhe e na contagem por loja: são
+// três lugares que precisam contar igual, e três cópias divergiriam na
+// primeira correção.
+//
+// COMO SE CHEGOU NESTA EXPRESSÃO (10/09/2026, corrigida no mesmo dia)
+//
+// A primeira tentativa agrupou por user_product_id e não agrupou nada. O
+// motivo, conferido contra os dados reais da conta MELI origem: no Mercado
+// Livre o user_product_id (MLBU…) identifica a VARIAÇÃO, não o anúncio — cada
+// cor tem o seu. Quem junta as variações num anúncio só é a FAMÍLIA.
+//
+// A conferência que fechou o assunto, na conta MELI origem:
+//
+//   888 registros gravados · agrupados por user_product_id → 888 (nada muda)
+//                          · agrupados por família        →  82
+//   painel do Mercado Livre                               →  82
+//
+// E nenhuma família dessa conta reúne mais de uma referência do cadastro — ou
+// seja, ela não está juntando produtos diferentes por engano.
+//
+// A ordem do COALESCE, e POR QUE o nome vem antes do código:
+//
+//   1. family_name — o campo de família que a API de itens devolve, e o único
+//      dos dois que foi CONFERIDO contra a conta real: agrupando por ele, a
+//      MELI origem dá 82, o mesmo do painel, e nenhuma família reúne mais de
+//      uma referência do cadastro. Não é o título do anúncio nem descrição
+//      digitada — é campo de família da plataforma (REGRA 2), e dois anúncios
+//      quase idênticos recebem nomes de família diferentes (verificado na
+//      OG1190: duas famílias de 12 cores, com nomes distintos).
+//
+//   2. family_id — o código, quando existir. Fica em SEGUNDO de propósito.
+//      `bruto` é um retrato guardado em varreduras de datas diferentes: se a
+//      plataforma passar a mandar o código, parte das linhas de uma mesma
+//      família teria código e parte não, e dar precedência a ele partiria essa
+//      família em dois cartões justamente durante a transição. Como segundo,
+//      ele só entra onde não há nome — nunca divide o que o nome já uniu.
+//
+//   3. o código do anúncio, para quem não tem família nenhuma — Shopee e
+//      TikTok Shop, onde esse conceito não existe, e itens antigos do Mercado
+//      Livre. Aí cada item vale por si, que é o certo: sem identificador de
+//      família, juntar seria adivinhar (REGRA 2).
+//
+// O NULLIF protege contra família de nome vazio: sem ele, todos os anúncios
+// com family_name = '' cairiam no mesmo balde e virariam um anúncio só.
+const CHAVE_PUBLICACAO = `COALESCE(
+                NULLIF(a.bruto->>'family_name', ''),
+                NULLIF(a.bruto->>'family_id', ''),
+                a.anuncio_id_externo)`;
+
 // As colunas do anúncio que a tela usa.
 //
 // Existe escrita à mão, no lugar de `a.*`, por dois motivos:
@@ -109,13 +161,13 @@ const COLUNAS_ANUNCIO = `a.id, a.origem_integracao_id, a.marketplace, a.anuncio_
               a.criado_em_plataforma, a.atualizado_em_plataforma,
               a.ativo, a.sumiu_em, a.primeira_sincronizacao, a.ultima_sincronizacao,
               a.criado_em, a.atualizado_em,
-              -- A PUBLICAÇÃO: o que o painel da plataforma chama de "anúncio".
-              -- No Mercado Livre, um anúncio com variações pode virar vários
-              -- itens MLB amarrados por user_product_id; na Shopee e na
-              -- TikTok isso não existe, o campo vem nulo e cada item vale por
-              -- si (o COALESCE cuida dos dois casos com a mesma expressão).
-              COALESCE(a.bruto->>'user_product_id', a.anuncio_id_externo) AS publicacao_id_externa,
-              a.bruto->>'family_name' AS publicacao_nome`;
+              -- A PUBLICAÇÃO (ver CHAVE_PUBLICACAO logo acima).
+              ${CHAVE_PUBLICACAO} AS publicacao_id_externa,
+              NULLIF(a.bruto->>'family_name', '') AS publicacao_nome,
+              -- A VARIAÇÃO dentro da publicação. No Mercado Livre é o
+              -- user_product_id — que foi o campo confundido com o anúncio na
+              -- primeira versão desta tela.
+              NULLIF(a.bruto->>'user_product_id', '') AS variacao_id_externa`;
 
 // Monta o WHERE compartilhado pela listagem e pela exportação — é o que
 // permite exportar "o que está na tela" mandando os FILTROS, e não a lista de
@@ -180,19 +232,25 @@ router.get('/lojas', async (req, res, next) => {
               e.ultima_sincronizacao, e.ultimo_erro, e.anuncios_lidos, e.em_andamento,
               -- Duas contagens, de propósito, porque são duas perguntas:
               --
-              -- "anuncios"  = PUBLICAÇÕES ativas. É o número que o painel da
-              --   plataforma mostra (82 na MELI Origem) e o único que faz
-              --   sentido comparar com ele. Um anúncio criado com variações
-              --   pode virar vários itens MLB amarrados por user_product_id;
-              --   contar item por item é o que fazia esta faixa dizer ~800.
+              -- "anuncios" = PUBLICAÇÕES no ar, no MESMO recorte do painel
+              --   da plataforma: ativos, pausados e em análise — tudo que não
+              --   foi encerrado. É de propósito, pra faixa poder ser conferida
+              --   contra o painel sem ninguém precisar mexer em filtro: na
+              --   MELI origem dá 82 aqui e 82 lá.
+              --
+              --   Não confundir com o número do indicador "Anúncios" no meio
+              --   da tela, que conta o que está VALENDO NOS FILTROS — e a tela
+              --   abre filtrada em ativos, que nessa mesma conta são 49. Os
+              --   dois estão certos; o indicador diz o filtro por escrito.
               --
               -- "itens" = os registros crus, um por item da plataforma. Fica
               --   visível na tela em vez de sumir: é ele que explica a
               --   diferença pra quem estranhar os dois números (REGRA 2 — o
               --   número menor não pode parecer que "perdeu" anúncio).
-              (SELECT COUNT(DISTINCT COALESCE(a.bruto->>'user_product_id', a.anuncio_id_externo))
+              (SELECT COUNT(DISTINCT ${CHAVE_PUBLICACAO})
                  FROM anuncios_marketplace a
-                WHERE a.origem_integracao_id = im.id AND a.ativo AND a.status = 'ativo') AS anuncios,
+                WHERE a.origem_integracao_id = im.id AND a.ativo
+                  AND a.status <> 'encerrado') AS anuncios,
               (SELECT COUNT(*) FROM anuncios_marketplace a
                 WHERE a.origem_integracao_id = im.id AND a.ativo) AS itens
          FROM integracoes_marketplace im

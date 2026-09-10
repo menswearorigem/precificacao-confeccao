@@ -645,11 +645,21 @@ export default function AnunciosPage() {
             Icone={Store}
             rotulo="Anúncios"
             valor={formatQtd(resumo.total)}
-            explicacao={resumo.itens > resumo.total
-              ? `Anúncios (publicações) que batem com os filtros — a mesma contagem do painel da plataforma. `
-                + `Eles somam ${formatQtd(resumo.itens)} itens/variações, que é o que a API devolve; `
-                + `o modo "Por variação" mostra um a um.`
-              : 'Quantos anúncios batem com os filtros que estão valendo agora.'}
+            explicacao={[
+              `Anúncios que batem com os filtros de agora`,
+              status.length
+                ? ` — situação: ${status.map((v) => (STATUS_ROTULO[v] || v).toLowerCase()).join(', ')}.`
+                : ' (qualquer situação).',
+              // A frase que evita a dúvida mais provável: "por que aqui dá
+              // menos que no painel?". O painel, sem filtro, mostra tudo que
+              // não foi encerrado — é o número da faixa de lojas lá em cima.
+              status.length === 1 && status[0] === 'ativo'
+                ? ' O painel da plataforma, sem filtro, também conta os pausados — esse número é o da faixa de lojas no topo.'
+                : '',
+              resumo.itens > resumo.total
+                ? ` Somam ${formatQtd(resumo.itens)} variações, que é o que a API devolve; o modo "Por variação" mostra uma a uma.`
+                : '',
+            ].join('')}
           />
           <IndicadorDestaque
             Icone={Megaphone}
@@ -929,10 +939,12 @@ function FaixaDeLojas({ lojas, onSincronizar, sincronizando }) {
               {l.ultimo_erro
                 ? `Falhou: ${l.ultimo_erro}`
                 : l.ultima_sincronizacao
-                  // `anuncios` é a contagem de PUBLICAÇÕES ativas — a mesma
-                  // que o painel da plataforma mostra. Quando ela difere do
-                  // número de itens lidos, os dois aparecem: sem isso, quem
-                  // conhecia o número antigo (~800) acharia que sumiu anúncio.
+                  // `anuncios` é a contagem de PUBLICAÇÕES no ar (ativas,
+                  // pausadas e em análise) — o mesmo recorte que o painel da
+                  // plataforma mostra sem filtro, pra este número poder ser
+                  // conferido contra ele direto. Quando difere do número de
+                  // itens lidos, os dois aparecem: sem isso, quem conhecia o
+                  // número antigo (~800) acharia que sumiu anúncio.
                   ? `${formatQtd(l.anuncios)} anúncios${Number(l.itens) > Number(l.anuncios) ? ` · ${formatQtd(l.itens)} variações` : ''} · ${tempoRelativo(l.ultima_sincronizacao)}`
                   : 'ainda não foi lida'}
             </div>

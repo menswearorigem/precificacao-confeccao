@@ -32,11 +32,18 @@ function igual(a, b, descricao) {
   ok(String(a) === String(b), descricao, `esperado ${b}, veio ${a}`);
 }
 
-// A MESMA expressão usada na rota (COLUNAS_ANUNCIO e a contagem de /lojas).
+// A MESMA expressão usada na rota (CHAVE_PUBLICACAO em anuncios.routes.js).
 // Está escrita aqui de novo de propósito: se alguém mudar a da rota sem mudar
 // esta, o teste quebra e a divergência aparece — em vez de as duas saírem
 // juntas do ar em silêncio.
-const CHAVE_PUBLICACAO = "COALESCE(a.bruto->>'user_product_id', a.anuncio_id_externo)";
+//
+// ⚠️ A chave é a FAMÍLIA, não o user_product_id. Ver a nota longa na rota: o
+// user_product_id identifica a VARIAÇÃO (cada cor tem o seu), e foi essa
+// confusão que fez a tela continuar mostrando cor por cor na primeira versão.
+const CHAVE_PUBLICACAO = `COALESCE(
+  NULLIF(a.bruto->>'family_name', ''),
+  NULLIF(a.bruto->>'family_id', ''),
+  a.anuncio_id_externo)`;
 
 async function semear() {
   const { rows: [empresa] } = await pool.query(
@@ -55,8 +62,17 @@ async function semear() {
   return { empresa, lojas };
 }
 
-async function inserir(lojaId, marketplace, idExterno, { userProductId = null, status = 'ativo', fotoUrl = null } = {}) {
-  const bruto = userProductId ? JSON.stringify({ id: idExterno, user_product_id: userProductId }) : null;
+// `familyName`/`familyId` = a publicação. `userProductId` = a variação dentro
+// dela. O teste semeia os dois separados de propósito: é a única forma de
+// provar que a contagem usa a família e NÃO a variação.
+async function inserir(lojaId, marketplace, idExterno, {
+  familyName = null, familyId = null, userProductId = null, status = 'ativo', fotoUrl = null,
+} = {}) {
+  const cru = {};
+  if (familyName) cru.family_name = familyName;
+  if (familyId) cru.family_id = familyId;
+  if (userProductId) cru.user_product_id = userProductId;
+  const bruto = Object.keys(cru).length ? JSON.stringify({ id: idExterno, ...cru }) : null;
   const { rows } = await pool.query(
     `INSERT INTO anuncios_marketplace
        (origem_integracao_id, marketplace, anuncio_id_externo, titulo, preco, estoque, status, foto_url, bruto, ativo)
@@ -72,17 +88,20 @@ async function main() {
   const meliHoggar = lojas['mercado_livre:Hoggar'];
   const shopeeOrigem = lojas['shopee:Origem'];
 
-  // Uma publicação com 5 variações (o caso que inflava a contagem), uma
-  // publicação simples, e um anúncio encerrado que não deve entrar.
+  // Uma publicação com 5 cores — cada cor com o SEU PRÓPRIO user_product_id,
+  // que é como o Mercado Livre devolve de verdade. É este caso que a primeira
+  // versão errava: agrupando por user_product_id saem 5 anúncios; agrupando
+  // pela família sai 1, que é o que o painel mostra.
   for (const cor of ['PRETO', 'AZUL', 'VERDE', 'VINHO', 'BRANCO']) {
     await inserir(meliOrigem, 'mercado_livre', `MLB-CAMISA-${cor}`, {
-      userProductId: 'UP-CAMISA',
+      familyName: 'Camisa Country Masculina Manga Longa',
+      userProductId: `MLBU-CAMISA-${cor}`,
       fotoUrl: 'http://http2.mlstatic.com/D_1-MLB.jpg',
     });
   }
-  await inserir(meliOrigem, 'mercado_livre', 'MLB-BONE', { userProductId: 'UP-BONE' });
-  await inserir(meliOrigem, 'mercado_livre', 'MLB-ANTIGO', { userProductId: 'UP-ANTIGO', status: 'encerrado' });
-  await inserir(meliHoggar, 'mercado_livre', 'MLB-HOGGAR-1', { userProductId: 'UP-HOGGAR' });
+  await inserir(meliOrigem, 'mercado_livre', 'MLB-BONE', { familyName: 'Boné Country', userProductId: 'MLBU-BONE' });
+  await inserir(meliOrigem, 'mercado_livre', 'MLB-ANTIGO', { familyName: 'Camisa Antiga', status: 'encerrado' });
+  await inserir(meliHoggar, 'mercado_livre', 'MLB-HOGGAR-1', { familyName: 'Camisa Hoggar' });
   // Shopee não tem família: cada item vale por si, e é o COALESCE que garante
   // que ele não seja agrupado com outro por engano.
   await inserir(shopeeOrigem, 'shopee', 'SHP-1');
@@ -100,6 +119,55 @@ async function main() {
   igual(contagem.itens, 6, 'a API devolve um item por variação (5 cores + 1 boné)');
   igual(contagem.publicacoes, 2, 'e as 5 cores contam como UM anúncio: 2 publicações');
   ok(contagem.publicacoes < contagem.itens, 'é essa diferença que fazia 82 virar ~800 na tela');
+
+  // A prova do defeito de 10/09: agrupar por user_product_id NÃO agrupa nada,
+  // porque cada cor tem o seu. Se alguém voltar a usar esse campo como chave,
+  // esta asserção quebra.
+  const { rows: [porVariacao] } = await pool.query(
+    `SELECT COUNT(DISTINCT COALESCE(a.bruto->>'user_product_id', a.anuncio_id_externo))::int AS n
+       FROM anuncios_marketplace a
+      WHERE a.origem_integracao_id = $1 AND a.ativo AND a.status = 'ativo'`,
+    [meliOrigem]
+  );
+  igual(porVariacao.n, 6, 'agrupar por user_product_id não junta nada — cada cor tem o seu');
+  ok(porVariacao.n !== contagem.publicacoes, 'é por isso que a chave é a FAMÍLIA, não a variação');
+
+  // Item que tem CÓDIGO de família mas não tem nome: o código faz o papel de
+  // chave e junta os dois.
+  await inserir(meliHoggar, 'mercado_livre', 'MLB-COD-1', { familyId: 'FAM-9' });
+  await inserir(meliHoggar, 'mercado_livre', 'MLB-COD-2', { familyId: 'FAM-9' });
+  const { rows: [comCodigo] } = await pool.query(
+    `SELECT COUNT(DISTINCT ${CHAVE_PUBLICACAO})::int AS n
+       FROM anuncios_marketplace a
+      WHERE a.origem_integracao_id = $1 AND a.anuncio_id_externo LIKE 'MLB-COD-%'`,
+    [meliHoggar]
+  );
+  igual(comCodigo.n, 1, 'sem nome de família, o código da família junta os itens');
+
+  // O caso que decidiu a ORDEM do COALESCE: numa varredura de transição, parte
+  // das linhas da mesma família pode ter código e parte não. Com o nome em
+  // primeiro, a família continua inteira; com o código em primeiro, ela se
+  // partiria em dois cartões.
+  await inserir(meliHoggar, 'mercado_livre', 'MLB-MISTO-1', { familyName: 'Familia Mista', familyId: 'FAM-M' });
+  await inserir(meliHoggar, 'mercado_livre', 'MLB-MISTO-2', { familyName: 'Familia Mista' });
+  const { rows: [misto] } = await pool.query(
+    `SELECT COUNT(DISTINCT ${CHAVE_PUBLICACAO})::int AS n
+       FROM anuncios_marketplace a
+      WHERE a.origem_integracao_id = $1 AND a.anuncio_id_externo LIKE 'MLB-MISTO-%'`,
+    [meliHoggar]
+  );
+  igual(misto.n, 1, 'família em que só parte dos itens tem código continua sendo UM anúncio');
+
+  // Família de nome vazio não pode virar um balde só.
+  await inserir(meliHoggar, 'mercado_livre', 'MLB-VAZIO-1', { familyName: '' });
+  await inserir(meliHoggar, 'mercado_livre', 'MLB-VAZIO-2', { familyName: '' });
+  const { rows: [vazios] } = await pool.query(
+    `SELECT COUNT(DISTINCT ${CHAVE_PUBLICACAO})::int AS n
+       FROM anuncios_marketplace a
+      WHERE a.origem_integracao_id = $1 AND a.anuncio_id_externo LIKE 'MLB-VAZIO-%'`,
+    [meliHoggar]
+  );
+  igual(vazios.n, 2, 'família de nome vazio NÃO junta anúncios — cada um continua valendo por si');
 
   const { rows: [shopee] } = await pool.query(
     `SELECT COUNT(DISTINCT ${CHAVE_PUBLICACAO})::int AS publicacoes
@@ -140,7 +208,7 @@ async function main() {
   );
 
   const item = {
-    id: 'MLB123', title: 'Camisa', status: 'active', user_product_id: 'UP-9', family_name: 'Camisa Social',
+    id: 'MLB123', title: 'Camisa', status: 'active', user_product_id: 'MLBU-9', family_name: 'Camisa Social',
     price: 79.9, available_quantity: 12, thumbnail: 'http://http2.mlstatic.com/thumb-I.jpg',
     secure_thumbnail: 'https://http2.mlstatic.com/thumb-I.jpg',
     pictures: [{ url: 'http://http2.mlstatic.com/grande-O.jpg', secure_url: 'https://http2.mlstatic.com/grande-O.jpg' }],
@@ -148,8 +216,14 @@ async function main() {
   const mapeado = mercadoLivre.mapearAnuncio(item);
   igual(mapeado.fotoUrl, 'https://http2.mlstatic.com/grande-O.jpg', 'o mapeador prefere a foto grande em https, não a miniatura em http');
   ok(!String(mapeado.fotoUrl).startsWith('http://'), 'nenhuma foto sai do mapeador em http — é o que o navegador bloqueia');
-  igual(mapeado.publicacaoIdExterna, 'UP-9', 'o mapeador guarda o código de família do anúncio');
-  igual(mapeado.publicacaoNome, 'Camisa Social', 'e o nome da família, que é o título que o painel mostra');
+  igual(mapeado.publicacaoIdExterna, 'Camisa Social', 'sem family_id, a família é identificada pelo nome dela');
+  igual(mapeado.publicacaoNome, 'Camisa Social', 'e o nome da família é o título que o painel mostra');
+  igual(mapeado.variacaoIdExterna, 'MLBU-9', 'o user_product_id é guardado como VARIAÇÃO, não como anúncio');
+  igual(
+    mercadoLivre.mapearAnuncio({ id: 'MLB9', family_id: 'FAM-1' }).publicacaoIdExterna,
+    'FAM-1',
+    'item só com código de família usa o código'
+  );
   ok(mercadoLivre.mapearAnuncio({ id: 'MLB9' }).publicacaoIdExterna === null, 'item sem família fica NULO em vez de inventar um código');
 
   // A política de conteúdo precisa deixar a CDN passar — sem isso o endereço
@@ -182,7 +256,11 @@ async function main() {
   const cond = condMulti('a.origem_integracao_id', `${meliOrigem},${meliHoggar}`, valores);
   const { rows: [duasLojas] } = await pool.query(
     `SELECT COUNT(DISTINCT ${CHAVE_PUBLICACAO})::int AS n
-       FROM anuncios_marketplace a WHERE ${cond} AND a.ativo AND a.status = 'ativo'`,
+       FROM anuncios_marketplace a
+      WHERE ${cond} AND a.ativo AND a.status = 'ativo'
+        AND a.anuncio_id_externo NOT LIKE 'MLB-COD-%'
+        AND a.anuncio_id_externo NOT LIKE 'MLB-MISTO-%'
+        AND a.anuncio_id_externo NOT LIKE 'MLB-VAZIO-%'`,
     valores
   );
   igual(duasLojas.n, 3, 'as duas contas do Mercado Livre juntas: 2 publicações da Origem + 1 da Hoggar');
@@ -190,7 +268,8 @@ async function main() {
   const valoresUma = [];
   const condUma = condMulti('a.origem_integracao_id', String(meliHoggar), valoresUma);
   const { rows: [umaLoja] } = await pool.query(
-    `SELECT COUNT(*)::int AS n FROM anuncios_marketplace a WHERE ${condUma} AND a.ativo`,
+    `SELECT COUNT(*)::int AS n FROM anuncios_marketplace a
+      WHERE ${condUma} AND a.ativo AND a.anuncio_id_externo = 'MLB-HOGGAR-1'`,
     valoresUma
   );
   igual(umaLoja.n, 1, 'e uma loja sozinha devolve exatamente o que devolvia antes');
