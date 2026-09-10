@@ -23,8 +23,19 @@ const GRUPOS = [
   // ---------- Substantivos do negócio ----------
   ['produto', ['peca', 'item', 'artigo', 'modelo', 'referencia', 'ref', 'sku', 'mercadoria', 'camiseta', 'camisa', 'roupa']],
   ['cliente', ['comprador', 'fregues', 'freguesia', 'loja', 'revenda']],
-  ['fornecedor', ['fabrica', 'faccao', 'terceiro', 'malharia', 'aviamenteiro']],
-  ['pedido', ['venda', 'ordem', 'nota']],
+  // 'faccao' saiu deste grupo em 10/09/2026: com o módulo Produção, facção
+  // virou conceito próprio (cadastro, preço por etapa, O.S., ranking) —
+  // forçar "faccao" para o canônico "fornecedor" fazia buscas como
+  // "cadastrar faccao" caírem no verbete genérico de Fornecedores (Compras)
+  // em vez do cadastro de facção de dentro de Produção.
+  ['fornecedor', ['fabrica', 'terceiro', 'malharia', 'aviamenteiro']],
+  // 'ordem' saiu deste grupo em 10/09/2026: até então só existia "ordem"
+  // como jeito raro de dizer "pedido" de venda, mas agora "ordem" é o nome
+  // oficial de duas telas inteiras de Produção (Ordem de Produção, Ordem de
+  // Serviço) — mantendo o token aqui, "quebra na ordem de servico" virava
+  // "quebra na pedido de servico" e casava com verbetes de Vendas em vez
+  // dos de Produção.
+  ['pedido', ['venda', 'nota']],
   ['estoque', ['saldo', 'quantidade', 'disponivel', 'inventario']],
   ['custo', ['gasto', 'despesa']],
   ['preco', ['valor', 'quanto cobrar', 'quanto vender']],

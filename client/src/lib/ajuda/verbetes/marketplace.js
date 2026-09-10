@@ -703,18 +703,16 @@ export const verbetesMarketplace = [
     titulo: 'Peça sem local cadastrado aparece por último na separação',
     rota: '/marketplace/etiquetas',
     perguntas: [
-      'local da peca aparece vazio',
-      'onde cadastro o endereco da peca no galpao',
+      'local da peca aparece vazio na lista de separacao',
       'peca sem localizacao na lista de separacao',
-      'por que a linha foi para o fim da lista',
-      'endereco da peca no estoque',
-      'onde esta a peca cadastro de endereco',
-      'como organizar o galpao para a separacao',
+      'por que a linha foi para o fim da lista de separacao',
       'local vazio travessao na lista de separacao',
+      'separacao no galpao fora de ordem',
+      'picking sem endereco vai pro final',
     ],
     resposta:
-      'Na Lista de separação, quando uma peça não tem endereço cadastrado no galpão, a coluna **Local** sai com travessão e a linha vai pro fim da lista — são justamente essas peças que fazem quem separa ficar procurando. Cadastrar o endereço em **Estoque › Onde Está a Peça** tira a peça dessa situação nas próximas listas.',
-    relacionados: ['mkt-etiquetas-lista-separacao-picking'],
+      'Na Lista de separação, quando uma peça não tem endereço cadastrado no galpão, a coluna **Local** sai com travessão e a linha vai pro fim da lista — são justamente essas peças que fazem quem separa ficar procurando. Cadastrar o endereço em **Estoque › Onde Está a Peça** (ver verbete específico) tira a peça dessa situação nas próximas listas.',
+    relacionados: ['mkt-etiquetas-lista-separacao-picking', 'estoque-locais-visao-geral-disponivel'],
   },
 
   // ---------------------------------------------------------------------
@@ -897,6 +895,7 @@ export const verbetesMarketplace = [
     rota: '/marketplace/promocoes',
     perguntas: [
       'quais tipos de promocao da para criar',
+      'criar promocao relampago na shopee',
       'shopee relampago',
       'criar promocao no mercado livre',
       'shein nao tem criacao de promocao',
