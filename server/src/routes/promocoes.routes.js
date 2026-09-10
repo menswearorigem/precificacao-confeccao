@@ -27,6 +27,7 @@ const {
   sincronizarPromocoesTodasAtivas,
 } = require('../lib/promocoesSync');
 const { garantirTokenValido } = require('../lib/marketplaceSync');
+const { condMulti } = require('../lib/filtrosMulti');
 const {
   carregarBaseDeMargem, margemNoPreco, precoParaMargemAlvo, motivoSemMargem,
 } = require('../lib/promocaoMargem');
@@ -160,8 +161,12 @@ function filtrosDaConsulta(q) {
   const add = (sql, valor) => { vals.push(valor); cond.push(sql.replace('$?', `$${vals.length}`)); };
 
   if (!q.incluir_inativas) cond.push('pm.ativo');
-  if (q.marketplace) add('pm.marketplace = $?', q.marketplace);
-  if (q.integracao_id) add('pm.origem_integracao_id = $?', q.integracao_id);
+  // Loja e plataforma aceitam VÁRIOS valores (10/09/2026), no mesmo formato
+  // do UpSeller: "7" continua valendo e "7,9" filtra as duas lojas de uma vez.
+  const condMkt = condMulti('pm.marketplace', q.marketplace, vals, 'text');
+  if (condMkt) cond.push(condMkt);
+  const condLoja = condMulti('pm.origem_integracao_id', q.integracao_id, vals, 'int');
+  if (condLoja) cond.push(condLoja);
   if (q.tipo) add('pm.tipo = $?', q.tipo);
   if (q.status) add('pm.status = $?', q.status);
   // "no ar agora" é uma pergunta de janela, não de situação gravada: uma

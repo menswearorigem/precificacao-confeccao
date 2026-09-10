@@ -8,7 +8,7 @@ import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { brl, dataBr, formatQtd, numeroBr } from '../lib/format';
 import {
-  Select, Checkbox, ThOrdenavel, Paginacao, BotaoExportar, BotaoRelatorio,
+  Select, MultiSelect, Checkbox, ThOrdenavel, Paginacao, BotaoExportar, BotaoRelatorio,
   IndicadorDestaque, EstadoVazio,
 } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
@@ -94,8 +94,10 @@ export default function FinanceiroPage({ aba = 'movimentacao' }) {
     || (user?.modulos || []).some((m) => m === 'vendas' || m === 'marketplace');
 
   const [{ inicio: dataInicio, fim: dataFim }, setPeriodo] = useState(periodoPadrao());
-  const [marketplace, setMarketplace] = useState('');
-  const [lojaId, setLojaId] = useState('');
+  // Várias plataformas / várias lojas de uma vez (10/09/2026), como no
+  // UpSeller — ver MultiSelect em components/ui.jsx.
+  const [marketplaces, setMarketplaces] = useState([]);
+  const [lojaIds, setLojaIds] = useState([]);
   const [tiposMarcados, setTiposMarcados] = useState(() => new Set(TIPOS.map((t) => t.chave)));
   const [statusFiltro, setStatusFiltro] = useState('liberado');
   const [comPedido, setComPedido] = useState('');
@@ -114,14 +116,27 @@ export default function FinanceiroPage({ aba = 'movimentacao' }) {
   }, []);
 
   const lojasDisponiveis = useMemo(() => (
-    conexoes.filter((c) => c.autorizada && (!marketplace || c.marketplace === marketplace))
-  ), [conexoes, marketplace]);
+    conexoes.filter((c) => c.autorizada && (marketplaces.length === 0 || marketplaces.includes(c.marketplace)))
+  ), [conexoes, marketplaces]);
 
-  function mudarPlataforma(valor) {
-    setMarketplace(valor);
-    if (lojaId && !conexoes.some((c) => String(c.id) === String(lojaId) && (!valor || c.marketplace === valor))) {
-      setLojaId('');
-    }
+  const opcoesPlataformas = useMemo(
+    () => Object.entries(PLATAFORMA_LABEL).map(([chave, rotulo]) => ({ valor: chave, rotulo })),
+    []
+  );
+  const opcoesLojas = useMemo(
+    () => lojasDisponiveis.map((c) => ({ valor: String(c.id), rotulo: c.nome || PLATAFORMA_LABEL[c.marketplace] })),
+    [lojasDisponiveis]
+  );
+
+  // Tirar uma plataforma solta as lojas dela, senão sobra um filtro de loja
+  // que não casa com nada e a tela volta vazia sem explicar.
+  function mudarPlataformas(valores) {
+    setMarketplaces(valores);
+    if (valores.length === 0) return;
+    setLojaIds((atuais) => atuais.filter((id) => {
+      const loja = conexoes.find((c) => String(c.id) === String(id));
+      return loja && valores.includes(loja.marketplace);
+    }));
   }
 
   function alternarTipo(chave) {
@@ -137,8 +152,8 @@ export default function FinanceiroPage({ aba = 'movimentacao' }) {
     const p = new URLSearchParams();
     if (dataInicio) p.set('data_inicio', dataInicio);
     if (dataFim) p.set('data_fim', dataFim);
-    if (marketplace) p.set('marketplace', marketplace);
-    if (lojaId) p.set('origem_integracao_id', lojaId);
+    if (marketplaces.length) p.set('marketplace', marketplaces.join(','));
+    if (lojaIds.length) p.set('origem_integracao_id', lojaIds.join(','));
     // Todos marcados = sem filtro de tipo (evita mandar uma lista enorme na
     // URL só pra dizer "tudo").
     if (tiposMarcados.size > 0 && tiposMarcados.size < TIPOS.length) {
@@ -147,7 +162,7 @@ export default function FinanceiroPage({ aba = 'movimentacao' }) {
     if (statusFiltro) p.set('status', statusFiltro);
     if (comPedido) p.set('com_pedido', comPedido);
     return p.toString();
-  }, [dataInicio, dataFim, marketplace, lojaId, tiposMarcados, statusFiltro, comPedido]);
+  }, [dataInicio, dataFim, marketplaces, lojaIds, tiposMarcados, statusFiltro, comPedido]);
 
   useEffect(() => {
     // Nenhum tipo marcado: a lista está vazia por escolha da pessoa, não por
@@ -201,8 +216,12 @@ export default function FinanceiroPage({ aba = 'movimentacao' }) {
   // Os filtros escritos por extenso — viajam no cabeçalho de todo relatório
   // exportado, pra ninguém receber um PDF e não saber de que recorte ele é.
   const filtrosTexto = [
-    marketplace ? `Plataforma: ${rotuloPlataforma(marketplace)}` : 'Todas as plataformas',
-    lojaId ? `Loja: ${conexoes.find((c) => String(c.id) === String(lojaId))?.nome || lojaId}` : null,
+    marketplaces.length
+      ? `Plataforma${marketplaces.length > 1 ? 's' : ''}: ${marketplaces.map(rotuloPlataforma).join(', ')}`
+      : 'Todas as plataformas',
+    lojaIds.length
+      ? `Loja${lojaIds.length > 1 ? 's' : ''}: ${lojaIds.map((id) => conexoes.find((c) => String(c.id) === String(id))?.nome || id).join(', ')}`
+      : null,
     tiposMarcados.size < TIPOS.length ? `Tipos: ${[...tiposMarcados].map(rotuloTipo).join(', ')}` : null,
     aba === 'movimentacao' && statusFiltro ? `Lista: ${statusFiltro === 'liberado' ? 'só o já liberado' : 'só o pendente'}` : null,
     aba === 'movimentacao' && comPedido ? `Vínculo: ${comPedido === 'sim' ? 'só com pedido' : 'só sem pedido'}` : null,
@@ -231,18 +250,22 @@ export default function FinanceiroPage({ aba = 'movimentacao' }) {
 
         <div className="filtros-barra">
           <PeriodoFiltro inicio={dataInicio} fim={dataFim} onChange={({ inicio, fim }) => setPeriodo({ inicio, fim })} />
-          <Select value={marketplace} onChange={(e) => mudarPlataforma(e.target.value)} style={{ maxWidth: 180 }}>
-            <option value="">Todas as plataformas</option>
-            {Object.entries(PLATAFORMA_LABEL).map(([chave, label]) => (
-              <option key={chave} value={chave}>{label}</option>
-            ))}
-          </Select>
-          <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)} style={{ maxWidth: 180 }}>
-            <option value="">Todas as lojas</option>
-            {lojasDisponiveis.map((c) => (
-              <option key={c.id} value={c.id}>{c.nome || PLATAFORMA_LABEL[c.marketplace]}</option>
-            ))}
-          </Select>
+          <MultiSelect
+            valor={marketplaces}
+            onChange={mudarPlataformas}
+            opcoes={opcoesPlataformas}
+            rotuloTudo="Todas as plataformas"
+            rotuloVazio="Todas as plataformas"
+            larguraMinima={180}
+          />
+          <MultiSelect
+            valor={lojaIds}
+            onChange={setLojaIds}
+            opcoes={opcoesLojas}
+            rotuloTudo="Todas as lojas"
+            rotuloVazio="Todas as lojas"
+            larguraMinima={180}
+          />
           {aba === 'movimentacao' && (
             <>
               {/* Vale para a LISTA de lançamentos. Os totais e resumos acima

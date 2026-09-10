@@ -1,3 +1,4 @@
+const { condMulti } = require('../lib/filtrosMulti');
 const express = require('express');
 const multer = require('multer');
 const pool = require('../db/pool');
@@ -883,8 +884,13 @@ async function calcularRelatorioPedidos({
   let i = 1;
   if (data_inicio) { conditions.push(`pv.data_pedido >= $${i}`); values.push(data_inicio); i += 1; }
   if (data_fim) { conditions.push(`pv.data_pedido <= $${i}`); values.push(data_fim); i += 1; }
-  if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
-  if (origem_integracao_id) { conditions.push(`pv.origem_integracao_id = $${i}`); values.push(origem_integracao_id); i += 1; }
+  // Loja e plataforma aceitam VÁRIOS valores (10/09/2026): "7" continua
+  // valendo, e "7,9" filtra as duas lojas de uma vez — é o mesmo formato
+  // do UpSeller, que a equipe já usa. Ver lib/filtrosMulti.js.
+  const condCanal = condMulti('pv.canal_venda', canal_venda, values, 'text');
+  if (condCanal) { conditions.push(condCanal); i = values.length + 1; }
+  const condLoja = condMulti('pv.origem_integracao_id', origem_integracao_id, values, 'int');
+  if (condLoja) { conditions.push(condLoja); i = values.length + 1; }
   if (vendedor_id) { conditions.push(`pv.vendedor_id = $${i}`); values.push(vendedor_id); i += 1; }
   if (cliente_id) { conditions.push(`pv.cliente_id = $${i}`); values.push(cliente_id); i += 1; }
   if (tabela_preco_id) { conditions.push(`pv.tabela_preco_id = $${i}`); values.push(tabela_preco_id); i += 1; }
@@ -1749,8 +1755,13 @@ async function buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda, or
   let i = 1;
   if (data_inicio) { conditions.push(`pv.data_pedido >= $${i}`); values.push(data_inicio); i += 1; }
   if (data_fim) { conditions.push(`pv.data_pedido <= $${i}`); values.push(data_fim); i += 1; }
-  if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
-  if (origem_integracao_id) { conditions.push(`pv.origem_integracao_id = $${i}`); values.push(origem_integracao_id); i += 1; }
+  // Loja e plataforma aceitam VÁRIOS valores (10/09/2026): "7" continua
+  // valendo, e "7,9" filtra as duas lojas de uma vez — é o mesmo formato
+  // do UpSeller, que a equipe já usa. Ver lib/filtrosMulti.js.
+  const condCanal = condMulti('pv.canal_venda', canal_venda, values, 'text');
+  if (condCanal) { conditions.push(condCanal); i = values.length + 1; }
+  const condLoja = condMulti('pv.origem_integracao_id', origem_integracao_id, values, 'int');
+  if (condLoja) { conditions.push(condLoja); i = values.length + 1; }
   const { rows } = await pool.query(
     `SELECT pv.id, pv.situacao, pv.cliente_id, pv.data_pedido, pv.canal_venda, pv.origem_integracao_id, pv.pack_id_marketplace,
             COALESCE((SELECT SUM(pi.total) FROM pedido_itens pi WHERE pi.pedido_id = pv.id), 0) AS receita

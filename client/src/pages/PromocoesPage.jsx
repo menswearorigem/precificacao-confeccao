@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import {
-  EstadoVazio, Select, Skeleton, CampoBusca, ChipsFiltros, IndicadorDestaque,
+  EstadoVazio, Select, MultiSelect, Skeleton, CampoBusca, ChipsFiltros, IndicadorDestaque,
   Checkbox, NumInput, Field, Paginacao,
 } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
@@ -1768,7 +1768,11 @@ export default function PromocoesPage() {
   const [abertaId, setAbertaId] = useState(null);
   const [erro, setErro] = useState(null);
 
-  const [filtroLoja, setFiltroLoja] = useState('');
+  // Várias lojas de uma vez (10/09/2026), como no UpSeller. Continua sendo
+  // só FILTRO DE LISTA: criar ou editar uma promoção segue por loja, porque a
+  // promoção pertence a uma conta na plataforma — não existe promoção de duas
+  // lojas ao mesmo tempo.
+  const [filtroLojas, setFiltroLojas] = useState([]);
   const [filtroTipo, setFiltroTipo] = useState('');
   const [filtroJanela, setFiltroJanela] = useState('');
   const [busca, setBusca] = useState('');
@@ -1779,7 +1783,7 @@ export default function PromocoesPage() {
 
   const carregar = useCallback(() => {
     const params = new URLSearchParams();
-    if (filtroLoja) params.set('integracao_id', filtroLoja);
+    if (filtroLojas.length) params.set('integracao_id', filtroLojas.join(','));
     if (filtroTipo) params.set('tipo', filtroTipo);
     if (filtroJanela) params.set('janela', filtroJanela);
     if (buscaAplicada) params.set('busca', buscaAplicada);
@@ -1788,7 +1792,7 @@ export default function PromocoesPage() {
       .then(setPromocoes)
       .catch((e) => setErro(e.message))
       .finally(() => setCarregando(false));
-  }, [filtroLoja, filtroTipo, filtroJanela, buscaAplicada]);
+  }, [filtroLojas, filtroTipo, filtroJanela, buscaAplicada]);
 
   useEffect(() => { api.get(CAMINHO_LOJAS_PROMOCOES).then(setLojas).catch(() => setLojas([])); }, []);
   useEffect(() => { carregar(); }, [carregar]);
@@ -1813,7 +1817,13 @@ export default function PromocoesPage() {
   async function sincronizar() {
     setErro(null);
     try {
-      await api.post('/promocoes/sincronizar', filtroLoja ? { integracao_id: Number(filtroLoja) } : {});
+      // Uma loja marcada = varre só ela (como antes). Nenhuma ou mais de uma =
+      // varre todas: a rota de varredura recebe uma loja ou nenhuma, e mandar
+      // "a primeira das marcadas" leria menos do que a tela está mostrando.
+      await api.post(
+        '/promocoes/sincronizar',
+        filtroLojas.length === 1 ? { integracao_id: Number(filtroLojas[0]) } : {}
+      );
       setSincronizando(true);
     } catch (e) {
       setErro(e.message);
@@ -1822,15 +1832,21 @@ export default function PromocoesPage() {
 
   const chips = useMemo(() => {
     const itens = [];
-    if (filtroLoja) {
-      const l = lojas.find((x) => String(x.id) === String(filtroLoja));
-      itens.push({ chave: 'loja', rotulo: 'Loja', valor: l ? nomeDaLoja(l) : filtroLoja, onRemover: () => setFiltroLoja('') });
+    if (filtroLojas.length) {
+      itens.push({
+        chave: 'loja',
+        rotulo: filtroLojas.length > 1 ? 'Lojas' : 'Loja',
+        valor: filtroLojas
+          .map((id) => { const l = lojas.find((x) => String(x.id) === String(id)); return l ? nomeDaLoja(l) : id; })
+          .join(', '),
+        onRemover: () => setFiltroLojas([]),
+      });
     }
     if (filtroTipo) itens.push({ chave: 'tipo', rotulo: 'Tipo', valor: TIPO_ROTULO[filtroTipo] || filtroTipo, onRemover: () => setFiltroTipo('') });
     if (filtroJanela) itens.push({ chave: 'janela', rotulo: 'Período', valor: JANELA_ROTULO[filtroJanela] || filtroJanela, onRemover: () => setFiltroJanela('') });
     if (buscaAplicada) itens.push({ chave: 'busca', rotulo: 'Busca', valor: buscaAplicada, onRemover: () => { setBusca(''); setBuscaAplicada(''); } });
     return itens;
-  }, [filtroLoja, filtroTipo, filtroJanela, buscaAplicada, lojas]);
+  }, [filtroLojas, filtroTipo, filtroJanela, buscaAplicada, lojas]);
 
   const totais = useMemo(() => ({
     total: promocoes.length,
@@ -1914,9 +1930,14 @@ export default function PromocoesPage() {
 
       <div className="filtros-linha">
         <CampoBusca valor={busca} onChange={setBusca} onSubmit={() => setBuscaAplicada(busca)} placeholder="Nome da promoção" />
-        <Select value={filtroLoja} onChange={(e) => setFiltroLoja(e.target.value)} placeholder="Todas as lojas">
-          {lojas.map((l) => <option key={l.id} value={l.id}>{nomeDaLoja(l)}</option>)}
-        </Select>
+        <MultiSelect
+          valor={filtroLojas}
+          onChange={setFiltroLojas}
+          opcoes={lojas.map((l) => ({ valor: String(l.id), rotulo: nomeDaLoja(l) }))}
+          rotuloTudo="Todas as lojas"
+          rotuloVazio="Todas as lojas"
+          larguraMinima={190}
+        />
         <Select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)} placeholder="Todos os tipos">
           {Object.entries(TIPO_ROTULO).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </Select>
@@ -1931,7 +1952,7 @@ export default function PromocoesPage() {
         <ChipsFiltros
           itens={chips}
           onLimparTudo={() => {
-            setFiltroLoja(''); setFiltroTipo(''); setFiltroJanela('');
+            setFiltroLojas([]); setFiltroTipo(''); setFiltroJanela('');
             setBusca(''); setBuscaAplicada('');
           }}
         />

@@ -7,7 +7,7 @@ import {
 import { api } from '../api/client';
 import { usePaletaGrafico, corPorIndice } from '../lib/coresGrafico';
 import { brl, pct, formatQtd } from '../lib/format';
-import { Select, StatCard, ThOrdenavel, ThGrupoOrdenavel, Paginacao, BotaoExportar } from '../components/ui';
+import { Select, MultiSelect, StatCard, ThOrdenavel, ThGrupoOrdenavel, Paginacao, BotaoExportar } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL, CANAIS_COM_REPASSE } from '../lib/marketplaces';
@@ -869,8 +869,16 @@ function BuscarPedidoOrigem() {
 
 export default function RelatorioLucratividadePage({ origemFiltro }) {
   const [{ inicio: dataInicio, fim: dataFim }, setPeriodo] = useState(periodoDeHoje());
-  const [canalVenda, setCanalVenda] = useState('');
-  const [lojaId, setLojaId] = useState('');
+  // Esta tela atende DOIS casos com o mesmo filtro de canal:
+  //   · marketplace  — lista de plataformas conhecidas, agora com seleção de
+  //                    várias de uma vez (10/09/2026), como no UpSeller;
+  //   · manual       — um campo de texto livre, porque ali o canal é digitado
+  //                    à mão e não existe lista pra escolher.
+  // Por isso o estado é uma LISTA nos dois casos: no manual ela tem no máximo
+  // um item. Assim o resto da tela (parâmetros, cabeçalho do relatório) tem um
+  // caminho só, em vez de dois que precisam ser mantidos em sincronia.
+  const [canaisVenda, setCanaisVenda] = useState([]);
+  const [lojaIds, setLojaIds] = useState([]);
   const [integracoes, setIntegracoes] = useState([]);
   const [busca, setBusca] = useState('');
   const [relatorio, setRelatorio] = useState(null);
@@ -893,14 +901,25 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
   const indiceLojas = useMemo(() => indiceDeLojas(integracoes), [integracoes]);
 
   const lojasDisponiveis = useMemo(() => (
-    integracoes.filter((i) => !canalVenda || PLATAFORMA_LABEL[i.marketplace] === canalVenda)
-  ), [integracoes, canalVenda]);
+    integracoes.filter((i) => canaisVenda.length === 0 || canaisVenda.includes(PLATAFORMA_LABEL[i.marketplace]))
+  ), [integracoes, canaisVenda]);
 
-  function mudarPlataforma(valor) {
-    setCanalVenda(valor);
-    if (lojaId && !integracoes.some((i) => String(i.id) === String(lojaId) && (!valor || PLATAFORMA_LABEL[i.marketplace] === valor))) {
-      setLojaId('');
-    }
+  const opcoesPlataformas = useMemo(
+    () => Object.values(PLATAFORMA_LABEL).map((label) => ({ valor: label, rotulo: label })),
+    []
+  );
+  const opcoesLojas = useMemo(
+    () => lojasDisponiveis.map((i) => ({ valor: String(i.id), rotulo: nomeDaLoja(i) })),
+    [lojasDisponiveis]
+  );
+
+  function mudarPlataformas(valores) {
+    setCanaisVenda(valores);
+    if (valores.length === 0) return;
+    setLojaIds((atuais) => atuais.filter((id) => {
+      const loja = integracoes.find((i) => String(i.id) === String(id));
+      return loja && valores.includes(PLATAFORMA_LABEL[loja.marketplace]);
+    }));
   }
 
   function gerar() {
@@ -909,8 +928,8 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
     const params = new URLSearchParams();
     if (dataInicio) params.set('data_inicio', dataInicio);
     if (dataFim) params.set('data_fim', dataFim);
-    if (canalVenda) params.set('canal_venda', canalVenda);
-    if (isMarketplace && lojaId) params.set('origem_integracao_id', lojaId);
+    if (canaisVenda.length) params.set('canal_venda', canaisVenda.join(','));
+    if (isMarketplace && lojaIds.length) params.set('origem_integracao_id', lojaIds.join(','));
     if (origemFiltro) params.set('origem', origemFiltro);
     const qs = params.toString();
     const chamadas = [api.get(`/pedidos/relatorio-lucratividade?${qs}`)];
@@ -931,7 +950,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => { gerar(); }, [dataInicio, dataFim, canalVenda, lojaId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { gerar(); }, [dataInicio, dataFim, canaisVenda, lojaIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function revincularCustos() {
     setRevinculando(true);
@@ -992,24 +1011,28 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
           <PeriodoFiltro inicio={dataInicio} fim={dataFim} onChange={({ inicio, fim }) => setPeriodo({ inicio, fim })} />
           {isMarketplace ? (
             <>
-              <Select value={canalVenda} onChange={(e) => mudarPlataforma(e.target.value)} style={{ maxWidth: 180 }}>
-                <option value="">Todas as plataformas</option>
-                {Object.values(PLATAFORMA_LABEL).map((label) => (
-                  <option key={label} value={label}>{label}</option>
-                ))}
-              </Select>
-              <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)} style={{ maxWidth: 180 }}>
-                <option value="">Todas as lojas</option>
-                {lojasDisponiveis.map((i) => (
-                  <option key={i.id} value={i.id}>{nomeDaLoja(i)}</option>
-                ))}
-              </Select>
+              <MultiSelect
+                valor={canaisVenda}
+                onChange={mudarPlataformas}
+                opcoes={opcoesPlataformas}
+                rotuloTudo="Todas as plataformas"
+                rotuloVazio="Todas as plataformas"
+                larguraMinima={180}
+              />
+              <MultiSelect
+                valor={lojaIds}
+                onChange={setLojaIds}
+                opcoes={opcoesLojas}
+                rotuloTudo="Todas as lojas"
+                rotuloVazio="Todas as lojas"
+                larguraMinima={180}
+              />
             </>
           ) : (
             <input
               placeholder="Canal de venda: Ex: Mercado Livre, Shopee..."
-              value={canalVenda}
-              onChange={(e) => setCanalVenda(e.target.value)}
+              value={canaisVenda[0] || ''}
+              onChange={(e) => setCanaisVenda(e.target.value ? [e.target.value] : [])}
               style={{ maxWidth: 220 }}
             />
           )}
@@ -1116,7 +1139,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
             <h2 style={{ margin: 0 }}>{titulo}</h2>
             <p style={{ margin: '4px 0 0', color: 'var(--ink-soft)' }}>
               Período: {dataBr(dataInicio)} a {dataBr(dataFim)}
-              {canalVenda ? ` · Canal: ${canalVenda}` : ''}
+              {canaisVenda.length ? ` · Canal: ${canaisVenda.join(', ')}` : ''}
             </p>
             {relatorio.calculadoEm && (
               <p style={{ margin: '2px 0 0', color: 'var(--ink-faint)', fontSize: 12 }}>

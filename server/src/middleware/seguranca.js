@@ -12,9 +12,41 @@ const { ehProducao } = require('../lib/config');
 //     que é o que realmente importa contra XSS
 //   - fontes do Google (Fraunces, Inter, JetBrains Mono — ver REGRA 3)
 //   - imagem em data: e blob: (foto de produto, gráfico exportado pro PDF)
+//   - imagem das CDNs dos marketplaces, e SÓ delas (ver FOTOS_MARKETPLACE
+//     logo abaixo): é o que faz a foto do anúncio aparecer na aba Anúncios
 //   - conexão só pro próprio domínio
 //   - frame-ancestors 'none': ninguém consegue abrir o sistema dentro de um
 //     iframe pra enganar quem clica (clickjacking)
+// Domínios de imagem das plataformas — e nada além deles.
+//
+// Por que precisou (10/09/2026): a foto do anúncio não aparecia em lugar
+// nenhum da aba Anúncios, e a causa era esta linha. `img-src 'self'` barra
+// toda imagem de fora do domínio, então TODA foto de anúncio (que mora na CDN
+// da plataforma, nunca no nosso banco) era baixada e descartada pelo
+// navegador — em silêncio, porque CSP não gera erro visível na tela.
+//
+// A liberação é a menor possível e continua fechando o que interessa:
+//   · só `img-src` — script, conexão, frame e formulário seguem em 'self';
+//   · só https — a foto em http do Mercado Livre é convertida antes de chegar
+//     aqui (lib/fotoMarketplace.js), e sem `http:` na lista uma que escape
+//     é bloqueada em vez de trafegar aberta;
+//   · domínios nomeados um a um, sem curinga de topo.
+//
+// Imagem não executa código: um domínio a mais aqui não abre porta pra XSS,
+// que é o que `script-src 'self'` (intocado) impede.
+//
+// ⚠️ Precisa bater com DOMINIOS_DE_FOTO em server/src/lib/fotoMarketplace.js.
+const FOTOS_MARKETPLACE = [
+  'https://*.mlstatic.com',      // Mercado Livre
+  'https://*.susercontent.com',  // Shopee
+  'https://*.shopee.com.br',
+  'https://*.tiktokcdn.com',     // TikTok Shop
+  'https://*.tiktokcdn-us.com',
+  'https://*.ibyteimg.com',
+  'https://*.sheincdn.com',      // Shein (quando a integração existir)
+  'https://*.ltwebstatic.com',
+];
+
 const CSP = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -24,7 +56,7 @@ const CSP = [
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com data:",
-  "img-src 'self' data: blob:",
+  `img-src 'self' data: blob: ${FOTOS_MARKETPLACE.join(' ')}`,
   "connect-src 'self'",
   "worker-src 'self' blob:",
 ].join('; ');

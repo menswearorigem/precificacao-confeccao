@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Printer, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct } from '../lib/format';
-import { Select, ThOrdenavel, Paginacao, Checkbox, BotaoExportar } from '../components/ui';
+import { Select, MultiSelect, ThOrdenavel, Paginacao, Checkbox, BotaoExportar } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
@@ -41,8 +41,10 @@ const COLUNAS_EXPORTACAO = [
 
 export default function RelatorioTaxasPage() {
   const [{ inicio: dataInicio, fim: dataFim }, setPeriodo] = useState(periodoDeHoje());
-  const [canalVenda, setCanalVenda] = useState('');
-  const [lojaId, setLojaId] = useState('');
+  // Várias plataformas / várias lojas de uma vez (10/09/2026), como no
+  // UpSeller — ver MultiSelect em components/ui.jsx.
+  const [canaisVenda, setCanaisVenda] = useState([]);
+  const [lojaIds, setLojaIds] = useState([]);
   const [integracoes, setIntegracoes] = useState([]);
   const [relatorio, setRelatorio] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -56,14 +58,25 @@ export default function RelatorioTaxasPage() {
   const indiceLojas = useMemo(() => indiceDeLojas(integracoes), [integracoes]);
 
   const lojasDisponiveis = useMemo(() => (
-    integracoes.filter((i) => !canalVenda || PLATAFORMA_LABEL[i.marketplace] === canalVenda)
-  ), [integracoes, canalVenda]);
+    integracoes.filter((i) => canaisVenda.length === 0 || canaisVenda.includes(PLATAFORMA_LABEL[i.marketplace]))
+  ), [integracoes, canaisVenda]);
 
-  function mudarPlataforma(valor) {
-    setCanalVenda(valor);
-    if (lojaId && !integracoes.some((i) => String(i.id) === String(lojaId) && (!valor || PLATAFORMA_LABEL[i.marketplace] === valor))) {
-      setLojaId('');
-    }
+  const opcoesPlataformas = useMemo(
+    () => Object.values(PLATAFORMA_LABEL).map((label) => ({ valor: label, rotulo: label })),
+    []
+  );
+  const opcoesLojas = useMemo(
+    () => lojasDisponiveis.map((i) => ({ valor: String(i.id), rotulo: nomeDaLoja(i) })),
+    [lojasDisponiveis]
+  );
+
+  function mudarPlataformas(valores) {
+    setCanaisVenda(valores);
+    if (valores.length === 0) return;
+    setLojaIds((atuais) => atuais.filter((id) => {
+      const loja = integracoes.find((i) => String(i.id) === String(id));
+      return loja && valores.includes(PLATAFORMA_LABEL[loja.marketplace]);
+    }));
   }
 
   useEffect(() => {
@@ -72,13 +85,13 @@ export default function RelatorioTaxasPage() {
     const params = new URLSearchParams();
     if (dataInicio) params.set('data_inicio', dataInicio);
     if (dataFim) params.set('data_fim', dataFim);
-    if (canalVenda) params.set('canal_venda', canalVenda);
-    if (lojaId) params.set('origem_integracao_id', lojaId);
+    if (canaisVenda.length) params.set('canal_venda', canaisVenda.join(','));
+    if (lojaIds.length) params.set('origem_integracao_id', lojaIds.join(','));
     api.get(`/pedidos/relatorio-taxas?${params.toString()}`)
       .then((data) => setRelatorio(data))
       .catch((err) => setErro(err.message))
       .finally(() => setLoading(false));
-  }, [dataInicio, dataFim, canalVenda, lojaId]);
+  }, [dataInicio, dataFim, canaisVenda, lojaIds]);
 
   const divergentes = useMemo(() => (relatorio ? relatorio.pedidos.filter((p) => p.divergente) : []), [relatorio]);
   const totalAnalisados = relatorio ? relatorio.pedidos.length : 0;
@@ -109,8 +122,8 @@ export default function RelatorioTaxasPage() {
       const params = new URLSearchParams();
       if (dataInicio) params.set('data_inicio', dataInicio);
       if (dataFim) params.set('data_fim', dataFim);
-      if (canalVenda) params.set('canal_venda', canalVenda);
-      if (lojaId) params.set('origem_integracao_id', lojaId);
+      if (canaisVenda.length) params.set('canal_venda', canaisVenda.join(','));
+      if (lojaIds.length) params.set('origem_integracao_id', lojaIds.join(','));
       const data = await api.get(`/pedidos/relatorio-taxas?${params.toString()}`);
       setRelatorio(data);
     } catch (err) {
@@ -133,18 +146,22 @@ export default function RelatorioTaxasPage() {
 
         <div className="filtros-barra">
           <PeriodoFiltro inicio={dataInicio} fim={dataFim} onChange={({ inicio, fim }) => setPeriodo({ inicio, fim })} />
-          <Select value={canalVenda} onChange={(e) => mudarPlataforma(e.target.value)} style={{ maxWidth: 180 }}>
-            <option value="">Todas as plataformas</option>
-            {Object.values(PLATAFORMA_LABEL).map((label) => (
-              <option key={label} value={label}>{label}</option>
-            ))}
-          </Select>
-          <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)} style={{ maxWidth: 180 }}>
-            <option value="">Todas as lojas</option>
-            {lojasDisponiveis.map((i) => (
-              <option key={i.id} value={i.id}>{nomeDaLoja(i)}</option>
-            ))}
-          </Select>
+          <MultiSelect
+            valor={canaisVenda}
+            onChange={mudarPlataformas}
+            opcoes={opcoesPlataformas}
+            rotuloTudo="Todas as plataformas"
+            rotuloVazio="Todas as plataformas"
+            larguraMinima={180}
+          />
+          <MultiSelect
+            valor={lojaIds}
+            onChange={setLojaIds}
+            opcoes={opcoesLojas}
+            rotuloTudo="Todas as lojas"
+            rotuloVazio="Todas as lojas"
+            larguraMinima={180}
+          />
           <div className="filtros-barra-acoes">
             {loading && <span className="page-sub" style={{ margin: 0 }}>Atualizando…</span>}
             {relatorio && (

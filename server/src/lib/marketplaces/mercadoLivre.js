@@ -6,6 +6,8 @@
 // Depois disso, a autorização é feita pela tela padrão do Mercado Livre
 // (o usuário loga na própria conta ML e confirma o acesso).
 
+const { melhorFoto } = require('../fotoMarketplace');
+
 const AUTH_BASE = 'https://auth.mercadolivre.com.br/authorization';
 const API_BASE = 'https://api.mercadolibre.com';
 // O pagamento em si (GET /v1/payments/:id) só existe no host do Mercado
@@ -994,6 +996,21 @@ function mapearAnuncio(item) {
 
   return {
     anuncioIdExterno: String(item.id),
+    // ---- PUBLICAÇÃO (o que o painel do Mercado Livre chama de "anúncio") ----
+    //
+    // Desde a reestruturação do catálogo, um anúncio que a vendedora criou no
+    // painel pode virar VÁRIOS itens MLB na API — um por variação — amarrados
+    // por `user_product_id`. O painel conta a PUBLICAÇÃO (82, na conta Origem);
+    // a API devolve os ITENS (perto de 800). Não é erro de nenhum dos dois:
+    // são duas unidades de contagem diferentes, e o HBN Hub estava exibindo a
+    // da API com o nome da do painel.
+    //
+    // Guardar o identificador de família aqui é o que permite a tela agrupar e
+    // bater com o painel. É casamento por ID EXATO da própria plataforma —
+    // nada de juntar por título parecido (REGRA 2). Item sem família fica com
+    // NULO e continua valendo por si só.
+    publicacaoIdExterna: item.user_product_id ? String(item.user_product_id) : null,
+    publicacaoNome: item.family_name || null,
     titulo: item.title || null,
     skuExterno: extrairSku(item, null),
     preco: item.price != null ? Number(item.price) : null,
@@ -1012,7 +1029,18 @@ function mapearAnuncio(item) {
     status: STATUS_ANUNCIO_ML[item.status] || 'desconhecido',
     statusExterno: item.status || null,
     url: item.permalink || null,
-    fotoUrl: item.thumbnail || item.pictures?.[0]?.secure_url || item.pictures?.[0]?.url || null,
+    // A foto do CARTÃO, sempre em https e na melhor resolução que o ML
+    // entregou. A ordem importa: `pictures[0].secure_url` é a foto grande
+    // (500px), `secure_thumbnail` é a miniatura (100px) e `thumbnail` é a
+    // MESMA miniatura porém em http:// — que o navegador bloqueia dentro de
+    // uma página https. Era o `thumbnail` que estava sendo gravado, e é por
+    // isso que a tela não mostrava foto nenhuma.
+    fotoUrl: melhorFoto(
+      item.pictures?.[0]?.secure_url,
+      item.secure_thumbnail,
+      item.pictures?.[0]?.url,
+      item.thumbnail
+    ),
     categoriaExterna: item.category_id || null,
     tipoAnuncio: mapearTipoAnuncio(item.listing_type_id),
     vendasTotal: item.sold_quantity != null ? Number(item.sold_quantity) : null,

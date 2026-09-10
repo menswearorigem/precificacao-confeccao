@@ -10,12 +10,13 @@ import {
 } from 'recharts';
 import { api } from '../api/client';
 import {
-  EstadoVazio, Select, Skeleton, CampoBusca, ChipsFiltros, FiltrosAvancados,
+  EstadoVazio, Select, MultiSelect, Skeleton, CampoBusca, ChipsFiltros, FiltrosAvancados,
   IndicadorDestaque, Paginacao, Checkbox,
 } from '../components/ui';
+import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { confirmar } from '../components/ConfirmDialog';
 import { useTabela } from '../lib/useTabela';
-import { brl, numeroBr, formatQtd, tempoRelativo } from '../lib/format';
+import { brl, numeroBr, formatQtd, tempoRelativo, dataBr } from '../lib/format';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import { SeloPlataforma, nomeDaLoja, chaveDaPlataforma, PREFIXO_PLATAFORMA } from '../lib/canalMarketplace';
 import { usePaletaGrafico } from '../lib/coresGrafico';
@@ -27,8 +28,23 @@ import { usePaletaGrafico } from '../lib/coresGrafico';
 // são o motivo desta tela existir: de qual LOJA é cada anúncio (aqui convivem
 // quatro plataformas e duas contas em cada uma), e se ele roda Ads.
 //
-// Três modos de ver a mesma lista:
-//   · por anúncio    — um cartão por anúncio, fiel ao painel da plataforma;
+// ANÚNCIO x VARIAÇÃO — a correção de 10/09/2026
+//
+// O painel do Mercado Livre da conta Origem diz "82 anúncios". Esta tela dizia
+// perto de 800. Os dois números estavam certos, contando coisas diferentes:
+//
+//   · o painel conta a PUBLICAÇÃO — o anúncio que a pessoa criou;
+//   · a API devolve os ITENS — e um anúncio com variações pode virar um item
+//     MLB por variação, todos amarrados pelo mesmo `user_product_id`.
+//
+// A tela mostrava a contagem da API com o nome da contagem do painel, e não
+// havia como conferir uma contra a outra. Agora o padrão é a PUBLICAÇÃO (bate
+// com o painel), e a variação continua a um clique de distância — nada foi
+// escondido, só reorganizado (REGRA 2: número menor não pode parecer perda).
+//
+// Quatro modos de ver a mesma lista:
+//   · por anúncio    — um cartão por PUBLICAÇÃO, igual ao painel da plataforma;
+//   · por variação   — um cartão por item da plataforma, a lista crua;
 //   · por referência — um cartão por produto em cada loja, com contador;
 //   · comparar lojas — a matriz produto × plataforma, que é a organização da
 //                      planilha da casa.
@@ -46,6 +62,26 @@ const STATUS_ROTULO = {
 
 const PLATAFORMAS_MATRIZ = ['shopee', 'mercado_livre', 'tiktok_shop', 'shein'];
 
+// Como o período do Ads é dito em texto na tela. Sem intervalo escolhido,
+// continua sendo "nos últimos 30 dias"; com intervalo, são as duas datas — e
+// nunca "nos últimos 0 dias", que era o risco de derivar isso de uma conta.
+function rotuloPeriodoAds(periodo) {
+  if (periodo?.inicio && periodo?.fim) return `de ${dataBr(periodo.inicio)} a ${dataBr(periodo.fim)}`;
+  if (periodo?.inicio) return `a partir de ${dataBr(periodo.inicio)}`;
+  if (periodo?.fim) return `até ${dataBr(periodo.fim)}`;
+  return 'nos últimos 30 dias';
+}
+
+// Os parâmetros de período que vão para o servidor, na mesma forma usada pela
+// listagem — assim o painel do anúncio e a grade somam exatamente o mesmo Ads.
+function paramsPeriodoAds(periodo) {
+  const p = new URLSearchParams();
+  if (periodo?.inicio) p.set('de', periodo.inicio);
+  if (periodo?.fim) p.set('ate', periodo.fim);
+  if (!periodo?.inicio && !periodo?.fim) p.set('dias', '30');
+  return p.toString();
+}
+
 // Colunas ordenáveis. Sem isso a ordem era sempre plataforma → loja → título,
 // e "o mais caro primeiro" / "o de pior ROAS" — que são as perguntas que
 // levam alguém a abrir esta tela — não tinham resposta.
@@ -59,6 +95,20 @@ const COLUNAS_ORDENAVEIS = {
   gasto: (a) => a.ads?.custo ?? null,
   roas: (a) => a.ads?.roas ?? null,
   situacao: (a) => STATUS_ROTULO[a.status] || a.status,
+};
+
+// Ordenação da grade de publicações. Espelha as colunas da grade de itens,
+// mas lendo do grupo — o preço vira faixa, o estoque vira soma das variações.
+const COLUNAS_PUBLICACAO = {
+  titulo: (g) => g.titulo || g.principal?.titulo,
+  loja: (g) => `${g.principal?.marketplace}${g.principal?.loja_nome || ''}`,
+  preco: (g) => g.precoMin,
+  estoque: (g) => g.estoqueTotal,
+  vendas: (g) => g.itens.reduce((soma, i) => soma + (Number(i.vendas_total) || 0), 0),
+  visitas: (g) => g.itens.reduce((soma, i) => soma + (Number(i.visitas) || 0), 0),
+  gasto: (g) => g.adsCusto,
+  roas: (g) => g.adsRoas,
+  situacao: (g) => (g.ativos > 0 ? 'Ativo' : 'Pausado'),
 };
 
 const ORDENS = [
@@ -113,6 +163,54 @@ function agruparPorReferencia(anuncios) {
   });
 }
 
+// Chave da PUBLICAÇÃO: loja + identificador de família da plataforma.
+//
+// Vem do servidor já resolvida (`publicacao_id_externa`), que no Mercado Livre
+// é o `user_product_id` e, onde esse conceito não existe (Shopee, TikTok), é o
+// próprio código do anúncio — nesses casos cada item continua valendo por si.
+// É casamento por ID EXATO da plataforma: nada é juntado por título parecido
+// (REGRA 2).
+function chaveDaPublicacao(a) {
+  return `${a.origem_integracao_id}:${a.publicacao_id_externa || a.anuncio_id_externo}`;
+}
+
+function agruparPorPublicacao(anuncios) {
+  const grupos = new Map();
+  for (const a of anuncios) {
+    const chave = chaveDaPublicacao(a);
+    if (!grupos.has(chave)) grupos.set(chave, []);
+    grupos.get(chave).push(a);
+  }
+  return [...grupos.entries()].map(([chave, itens]) => {
+    const precos = itens.map((i) => (i.preco != null ? Number(i.preco) : null)).filter((v) => v != null);
+    const custo = itens.reduce((soma, i) => soma + (i.ads?.custo || 0), 0);
+    const receita = itens.reduce((soma, i) => soma + (i.ads?.receita || 0), 0);
+    // A publicação herda a foto e o título do primeiro item que TIVER foto —
+    // numa família por cor, o primeiro item pode ser justamente o que ficou
+    // sem imagem, e o cartão sairia vazio sem motivo.
+    const comFoto = itens.find((i) => i.foto_url) || itens[0];
+    const estoques = itens.map((i) => (i.estoque != null ? Number(i.estoque) : null)).filter((v) => v != null);
+    return {
+      chave,
+      itens,
+      principal: comFoto,
+      quantidade: itens.length,
+      // Aqui o estoque É somado, ao contrário do agrupamento por referência:
+      // as variações de UMA publicação são peças diferentes (cor/tamanho), não
+      // anúncios distintos dividindo o mesmo estoque físico. É exatamente o
+      // número que o painel da plataforma mostra na linha do anúncio.
+      estoqueTotal: estoques.length ? estoques.reduce((soma, e) => soma + e, 0) : null,
+      precoMin: precos.length ? Math.min(...precos) : null,
+      precoMax: precos.length ? Math.max(...precos) : null,
+      ativos: itens.filter((i) => i.status === 'ativo').length,
+      adsCusto: custo > 0 ? custo : null,
+      adsReceita: custo > 0 ? receita : null,
+      adsRoas: custo > 0 ? receita / custo : null,
+      titulo: comFoto.publicacao_nome || comFoto.titulo,
+    };
+  });
+}
+
 // Matriz produto × plataforma: uma linha por produto, uma coluna por
 // plataforma. É a organização da planilha da casa, na tela.
 function montarMatriz(anuncios) {
@@ -151,16 +249,26 @@ export default function AnunciosPage() {
 
   const [busca, setBusca] = useState('');
   const [buscaAplicada, setBuscaAplicada] = useState('');
-  const [marketplace, setMarketplace] = useState('');
-  const [lojaId, setLojaId] = useState('');
-  const [status, setStatus] = useState('');
+  // Plataforma, loja e situação viraram LISTAS (10/09/2026): dá pra ver
+  // "MELI Origem + MELI Hoggar" numa tela só, como no UpSeller.
+  const [marketplaces, setMarketplaces] = useState([]);
+  const [lojaIds, setLojaIds] = useState([]);
+  // A tela abre filtrada em ATIVOS, que é o pedido da dona e também o padrão
+  // do painel de toda plataforma: encerrado e pausado poluem a contagem e não
+  // são o que se olha no dia a dia. Continua sendo um filtro comum — aparece
+  // como chip e sai com um clique.
+  const [status, setStatus] = useState(['ativo']);
   const [vinculo, setVinculo] = useState('');
   const [ads, setAds] = useState('');
-  const [dias, setDias] = useState(30);
+  // Período do Ads: vazio = "últimos 30 dias" (o padrão de antes). Com data
+  // escolhida no calendário, manda o intervalo.
+  const [periodoAds, setPeriodoAds] = useState({ inicio: '', fim: '' });
   const [filtrosAbertos, setFiltrosAbertos] = useState(false);
 
   const [selecionado, setSelecionado] = useState(null);
-  const [modo, setModo] = useState('anuncio');
+  // Abre em PUBLICAÇÃO — a mesma unidade que o painel da plataforma conta.
+  const [modo, setModo] = useState('publicacao');
+  const [publicacaoFocada, setPublicacaoFocada] = useState(null);
   const [grupoFocado, setGrupoFocado] = useState(null);
   const [marcados, setMarcados] = useState(() => new Set());
   const [aplicandoLote, setAplicandoLote] = useState(false);
@@ -172,14 +280,22 @@ export default function AnunciosPage() {
   const parametros = useCallback(() => {
     const p = new URLSearchParams();
     if (buscaAplicada) p.set('busca', buscaAplicada);
-    if (marketplace) p.set('marketplace', marketplace);
-    if (lojaId) p.set('integracao_id', lojaId);
-    if (status) p.set('status', status);
+    // Lista separada por vírgula — o servidor aceita um valor ou vários no
+    // mesmo parâmetro, então links e favoritos antigos continuam valendo.
+    if (marketplaces.length) p.set('marketplace', marketplaces.join(','));
+    if (lojaIds.length) p.set('integracao_id', lojaIds.join(','));
+    if (status.length) p.set('status', status.join(','));
+    // Situação escolhida à mão precisa trazer também o que saiu do ar: sem
+    // isto, filtrar por "Encerrado" devolveria vazio, porque o corte padrão da
+    // rota já esconde o anúncio que sumiu da loja.
+    if (status.some((s) => s !== 'ativo')) p.set('incluir_inativos', '1');
     if (vinculo) p.set('vinculo', vinculo);
     if (ads) p.set('ads', ads);
-    p.set('dias', String(dias));
+    if (periodoAds.inicio) p.set('de', periodoAds.inicio);
+    if (periodoAds.fim) p.set('ate', periodoAds.fim);
+    if (!periodoAds.inicio && !periodoAds.fim) p.set('dias', '30');
     return p;
-  }, [buscaAplicada, marketplace, lojaId, status, vinculo, ads, dias]);
+  }, [buscaAplicada, marketplaces, lojaIds, status, vinculo, ads, periodoAds]);
 
   const carregar = useCallback(() => {
     setCarregando(true);
@@ -198,16 +314,21 @@ export default function AnunciosPage() {
   // descartado é ignorada.
   useEffect(carregar, [carregar]);
 
-  function mudarPlataforma(valor) {
-    setMarketplace(valor);
-    if (lojaId && !lojas.some((l) => String(l.id) === String(lojaId) && (!valor || l.marketplace === valor))) {
-      setLojaId('');
-    }
+  // Trocar a plataforma solta as lojas que deixaram de fazer parte dela —
+  // senão sobrava um filtro de loja da Shopee valendo com "só Mercado Livre"
+  // marcado, e a tela voltava vazia sem dizer por quê.
+  function mudarPlataformas(valores) {
+    setMarketplaces(valores);
+    if (valores.length === 0) return;
+    setLojaIds((atuais) => atuais.filter((id) => {
+      const loja = lojas.find((l) => String(l.id) === String(id));
+      return loja && valores.includes(loja.marketplace);
+    }));
   }
 
   function limparTudo() {
-    setBusca(''); setBuscaAplicada(''); setMarketplace(''); setLojaId('');
-    setStatus(''); setVinculo(''); setAds('');
+    setBusca(''); setBuscaAplicada(''); setMarketplaces([]); setLojaIds([]);
+    setStatus([]); setVinculo(''); setAds('');
   }
 
   // ---- sincronização em segundo plano ----
@@ -257,32 +378,68 @@ export default function AnunciosPage() {
   }
 
   const lojasFiltradas = useMemo(
-    () => lojas.filter((l) => !marketplace || l.marketplace === marketplace),
-    [lojas, marketplace]
+    () => lojas.filter((l) => marketplaces.length === 0 || marketplaces.includes(l.marketplace)),
+    [lojas, marketplaces]
+  );
+
+  // As opções dos dois seletores múltiplos, montadas uma vez.
+  const opcoesLojas = useMemo(
+    () => lojasFiltradas.map((l) => ({ valor: String(l.id), rotulo: nomeDaLoja(l) })),
+    [lojasFiltradas]
+  );
+  const opcoesPlataformas = useMemo(
+    () => Object.entries(PLATAFORMA_LABEL).map(([chave, rotulo]) => ({ valor: chave, rotulo })),
+    []
+  );
+  const opcoesSituacao = useMemo(
+    () => Object.entries(STATUS_ROTULO).map(([chave, rotulo]) => ({ valor: chave, rotulo })),
+    []
   );
 
   const chips = useMemo(() => {
     const itens = [];
     if (buscaAplicada) itens.push({ chave: 'busca', rotulo: 'Busca', valor: buscaAplicada, onRemover: () => { setBusca(''); setBuscaAplicada(''); } });
-    if (marketplace) itens.push({ chave: 'mkt', rotulo: 'Plataforma', valor: PLATAFORMA_LABEL[marketplace] || marketplace, onRemover: () => mudarPlataforma('') });
-    if (lojaId) {
-      const l = lojas.find((x) => String(x.id) === String(lojaId));
-      itens.push({ chave: 'loja', rotulo: 'Loja', valor: nomeDaLoja(l), onRemover: () => setLojaId('') });
+    if (marketplaces.length) {
+      itens.push({
+        chave: 'mkt',
+        rotulo: 'Plataforma',
+        valor: marketplaces.map((m) => PLATAFORMA_LABEL[m] || m).join(', '),
+        onRemover: () => mudarPlataformas([]),
+      });
     }
-    if (status) itens.push({ chave: 'status', rotulo: 'Situação', valor: STATUS_ROTULO[status] || status, onRemover: () => setStatus('') });
+    if (lojaIds.length) {
+      itens.push({
+        chave: 'loja',
+        rotulo: lojaIds.length > 1 ? 'Lojas' : 'Loja',
+        valor: lojaIds.map((id) => nomeDaLoja(lojas.find((x) => String(x.id) === String(id)))).join(', '),
+        onRemover: () => setLojaIds([]),
+      });
+    }
+    if (status.length) {
+      itens.push({
+        chave: 'status',
+        rotulo: 'Situação',
+        valor: status.map((v) => STATUS_ROTULO[v] || v).join(', '),
+        onRemover: () => setStatus([]),
+      });
+    }
     if (vinculo) itens.push({ chave: 'vinc', rotulo: 'Cadastro', valor: vinculo === 'sem' ? 'sem vínculo' : 'com vínculo', onRemover: () => setVinculo('') });
     if (ads) itens.push({ chave: 'ads', rotulo: 'Ads', valor: ads === 'sim' ? 'rodando' : 'sem Ads', onRemover: () => setAds('') });
     return itens;
-  }, [buscaAplicada, marketplace, lojaId, status, vinculo, ads, lojas]);
+  }, [buscaAplicada, marketplaces, lojaIds, status, vinculo, ads, lojas]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filtrosAvancadosAtivos = [marketplace, status, vinculo, ads].filter(Boolean).length;
+  const filtrosAvancadosAtivos = [marketplaces.length > 0, status.length > 0, Boolean(vinculo), Boolean(ads)]
+    .filter(Boolean).length;
 
   const grupos = useMemo(() => agruparPorReferencia(anuncios), [anuncios]);
+  const publicacoes = useMemo(() => agruparPorPublicacao(anuncios), [anuncios]);
   const matriz = useMemo(() => montarMatriz(anuncios), [anuncios]);
 
-  const anunciosVisiveis = useMemo(() => (
-    grupoFocado ? (grupos.find((g) => g.chave === grupoFocado)?.itens || []) : anuncios
-  ), [grupoFocado, grupos, anuncios]);
+  const anunciosVisiveis = useMemo(() => {
+    if (publicacaoFocada) return publicacoes.find((g) => g.chave === publicacaoFocada)?.itens || [];
+    if (grupoFocado) return grupos.find((g) => g.chave === grupoFocado)?.itens || [];
+    return anuncios;
+  }, [publicacaoFocada, grupoFocado, publicacoes, grupos, anuncios]);
 
   // `modo` entra nas dependências (09/09/2026): a barra de ação em massa
   // aparece sempre que há algo marcado, INCLUSIVE nos modos "Por referência" e
@@ -291,11 +448,22 @@ export default function AnunciosPage() {
   // pausava 30 anúncios que a pessoa não estava vendo.
   useEffect(() => {
     setGrupoFocado(null);
+    setPublicacaoFocada(null);
     setMarcados(new Set());
-  }, [buscaAplicada, marketplace, lojaId, status, vinculo, ads, dias, modo]);
+  }, [buscaAplicada, marketplaces, lojaIds, status, vinculo, ads, periodoAds, modo]);
 
   const tabela = useTabela(anunciosVisiveis, {
     colunas: COLUNAS_ORDENAVEIS,
+    colunaPadrao: 'titulo',
+    direcaoPadrao: 'asc',
+    tamanhoPadrao: 50,
+  });
+
+  // A grade de publicações tem paginação própria — com 82 anúncios de uma
+  // loja e 4 lojas, a lista continua longa, e a regra da casa é paginação no
+  // topo E no rodapé de toda lista.
+  const tabelaPublicacoes = useTabela(publicacoes, {
+    colunas: COLUNAS_PUBLICACAO,
     colunaPadrao: 'titulo',
     direcaoPadrao: 'asc',
     tamanhoPadrao: 50,
@@ -306,7 +474,11 @@ export default function AnunciosPage() {
     const gasto = comAds.reduce((s, a) => s + (a.ads.custo || 0), 0);
     const receita = comAds.reduce((s, a) => s + (a.ads.receita || 0), 0);
     return {
-      total: anuncios.length,
+      // O número de cima é o de PUBLICAÇÕES — o mesmo que o painel da
+      // plataforma mostra. `itens` fica logo abaixo, na explicação, pra
+      // diferença entre os dois nunca virar mistério.
+      total: publicacoes.length,
+      itens: anuncios.length,
       semVinculo: anuncios.filter((a) => !a.produto_id).length,
       comAds: comAds.length,
       gasto,
@@ -314,7 +486,7 @@ export default function AnunciosPage() {
       // ROAS de cada anúncio, que daria outro número (REGRA 2).
       roas: gasto > 0 ? receita / gasto : null,
     };
-  }, [anuncios]);
+  }, [anuncios, publicacoes]);
 
   function alternarMarcado(id) {
     setMarcados((atual) => {
@@ -354,7 +526,9 @@ export default function AnunciosPage() {
     }
   }
 
-  const emGrade = modo === 'anuncio' || grupoFocado;
+  const emGrade = modo === 'item' || grupoFocado || publicacaoFocada;
+  const emPublicacoes = modo === 'publicacao' && !publicacaoFocada;
+  const tabelaAtiva = emPublicacoes ? tabelaPublicacoes : tabela;
   const listaNaTela = emGrade ? tabela.itensPagina : [];
   const todosMarcados = listaNaTela.length > 0 && listaNaTela.every((a) => marcados.has(a.id));
   const jaLeuAlguma = lojas.some((l) => l.ultima_sincronizacao);
@@ -397,17 +571,29 @@ export default function AnunciosPage() {
             onSubmit={(valor) => setBuscaAplicada(valor === '' ? '' : busca)}
             placeholder="Título, SKU, código do anúncio ou referência"
           />
-          <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)} style={{ maxWidth: 200 }}>
-            <option value="">Todas as lojas</option>
-            {lojasFiltradas.map((l) => <option key={l.id} value={l.id}>{nomeDaLoja(l)}</option>)}
-          </Select>
-          <Select value={String(dias)} onChange={(e) => setDias(Number(e.target.value))} style={{ maxWidth: 200 }}>
-            <option value="7">Ads dos últimos 7 dias</option>
-            <option value="14">Ads dos últimos 14 dias</option>
-            <option value="30">Ads dos últimos 30 dias</option>
-            <option value="60">Ads dos últimos 60 dias</option>
-            <option value="90">Ads dos últimos 90 dias</option>
-          </Select>
+          {/* Várias lojas de uma vez, no formato do UpSeller: busca, "Tudo",
+              caixas de seleção e Salvar. Ver MultiSelect em components/ui.jsx. */}
+          <MultiSelect
+            valor={lojaIds}
+            onChange={setLojaIds}
+            opcoes={opcoesLojas}
+            rotuloTudo="Todas as lojas"
+            rotuloVazio="Todas as lojas"
+            larguraMinima={190}
+          />
+          {/* O período do Ads passou a ser o MESMO filtro de calendário das
+              outras telas do módulo (10/09/2026). A lista fixa de "últimos
+              7/14/30/60/90 dias" não respondia "como foi o Ads na semana da
+              campanha", que é justamente quando alguém abre esta tela. */}
+          <span className="filtro-ads-periodo" title="Período das métricas de publicidade">
+            <Megaphone size={13} />
+            <PeriodoFiltro
+              inicio={periodoAds.inicio}
+              fim={periodoAds.fim}
+              onChange={setPeriodoAds}
+              permitirTudo
+            />
+          </span>
           <FiltrosAvancados
             ativos={filtrosAvancadosAtivos}
             aberto={filtrosAbertos}
@@ -415,18 +601,22 @@ export default function AnunciosPage() {
             resumo="Plataforma, situação, publicidade e vínculo com o cadastro."
           >
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <Select value={marketplace} onChange={(e) => mudarPlataforma(e.target.value)} style={{ maxWidth: 180 }}>
-                <option value="">Todas as plataformas</option>
-                {Object.entries(PLATAFORMA_LABEL).map(([chave, rotulo]) => (
-                  <option key={chave} value={chave}>{rotulo}</option>
-                ))}
-              </Select>
-              <Select value={status} onChange={(e) => setStatus(e.target.value)} style={{ maxWidth: 200 }}>
-                <option value="">Qualquer situação</option>
-                {Object.entries(STATUS_ROTULO).map(([chave, rotulo]) => (
-                  <option key={chave} value={chave}>{rotulo}</option>
-                ))}
-              </Select>
+              <MultiSelect
+                valor={marketplaces}
+                onChange={mudarPlataformas}
+                opcoes={opcoesPlataformas}
+                rotuloTudo="Todas as plataformas"
+                rotuloVazio="Todas as plataformas"
+                larguraMinima={180}
+              />
+              <MultiSelect
+                valor={status}
+                onChange={setStatus}
+                opcoes={opcoesSituacao}
+                rotuloTudo="Qualquer situação"
+                rotuloVazio="Qualquer situação"
+                larguraMinima={190}
+              />
               <Select value={ads} onChange={(e) => setAds(e.target.value)} style={{ maxWidth: 160 }}>
                 <option value="">Com e sem Ads</option>
                 <option value="sim">Rodando Ads</option>
@@ -455,13 +645,17 @@ export default function AnunciosPage() {
             Icone={Store}
             rotulo="Anúncios"
             valor={formatQtd(resumo.total)}
-            explicacao="Quantos anúncios batem com os filtros que estão valendo agora."
+            explicacao={resumo.itens > resumo.total
+              ? `Anúncios (publicações) que batem com os filtros — a mesma contagem do painel da plataforma. `
+                + `Eles somam ${formatQtd(resumo.itens)} itens/variações, que é o que a API devolve; `
+                + `o modo "Por variação" mostra um a um.`
+              : 'Quantos anúncios batem com os filtros que estão valendo agora.'}
           />
           <IndicadorDestaque
             Icone={Megaphone}
             rotulo="Rodando Ads"
             valor={formatQtd(resumo.comAds)}
-            explicacao={`${brl(resumo.gasto)} gastos com publicidade nos últimos ${dias} dias.`}
+            explicacao={`${brl(resumo.gasto)} gastos com publicidade ${rotuloPeriodoAds(periodoAds)}.`}
           />
           <IndicadorDestaque
             Icone={TrendingUp}
@@ -486,33 +680,42 @@ export default function AnunciosPage() {
         <div className="modo-exibicao" role="group" aria-label="Como agrupar os anúncios">
           <button
             type="button"
-            className={'modo-btn' + (modo === 'anuncio' ? ' active' : '')}
-            onClick={() => { setModo('anuncio'); setGrupoFocado(null); }}
+            className={'modo-btn' + (modo === 'publicacao' ? ' active' : '')}
+            onClick={() => { setModo('publicacao'); setGrupoFocado(null); setPublicacaoFocada(null); }}
+            title="Um cartão por anúncio, contado do mesmo jeito que o painel da plataforma conta"
           >
             <LayoutGrid size={13} /> Por anúncio
           </button>
           <button
             type="button"
+            className={'modo-btn' + (modo === 'item' ? ' active' : '')}
+            onClick={() => { setModo('item'); setGrupoFocado(null); setPublicacaoFocada(null); }}
+            title="A lista crua: um cartão por item da plataforma. Um anúncio com variações aparece várias vezes."
+          >
+            <Copy size={13} /> Por variação
+          </button>
+          <button
+            type="button"
             className={'modo-btn' + (modo === 'referencia' ? ' active' : '')}
-            onClick={() => { setModo('referencia'); setGrupoFocado(null); }}
+            onClick={() => { setModo('referencia'); setGrupoFocado(null); setPublicacaoFocada(null); }}
           >
             <Layers size={13} /> Por referência
           </button>
           <button
             type="button"
             className={'modo-btn' + (modo === 'matriz' ? ' active' : '')}
-            onClick={() => { setModo('matriz'); setGrupoFocado(null); }}
+            onClick={() => { setModo('matriz'); setGrupoFocado(null); setPublicacaoFocada(null); }}
           >
             <Table2 size={13} /> Comparar lojas
           </button>
         </div>
 
-        {emGrade && (
+        {(emGrade || emPublicacoes) && (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
             <span className="page-sub" style={{ margin: 0 }}>Ordenar por</span>
             <Select
-              value={tabela.coluna}
-              onChange={(e) => tabela.ordenarPor(e.target.value)}
+              value={tabelaAtiva.coluna}
+              onChange={(e) => tabelaAtiva.ordenarPor(e.target.value)}
               style={{ maxWidth: 170 }}
             >
               {ORDENS.map((o) => <option key={o.chave} value={o.chave}>{o.rotulo}</option>)}
@@ -520,10 +723,10 @@ export default function AnunciosPage() {
             <button
               type="button"
               className="btn btn-ghost sm"
-              onClick={() => tabela.ordenarPor(tabela.coluna)}
-              title={tabela.direcao === 'asc' ? 'Do menor para o maior' : 'Do maior para o menor'}
+              onClick={() => tabelaAtiva.ordenarPor(tabelaAtiva.coluna)}
+              title={tabelaAtiva.direcao === 'asc' ? 'Do menor para o maior' : 'Do maior para o menor'}
             >
-              {tabela.direcao === 'asc' ? '↑ crescente' : '↓ decrescente'}
+              {tabelaAtiva.direcao === 'asc' ? '↑ crescente' : '↓ decrescente'}
             </button>
           </span>
         )}
@@ -583,6 +786,25 @@ export default function AnunciosPage() {
         />
       ) : modo === 'matriz' ? (
         <MatrizLojas matriz={matriz} lojas={lojas} semVinculo={resumo.semVinculo} />
+      ) : modo === 'publicacao' && !publicacaoFocada ? (
+        <>
+          <p className="page-sub" style={{ marginTop: -4, marginBottom: 12 }}>
+            Um cartão por anúncio, como no painel da plataforma. Anúncio criado com variações vira
+            vários itens na API do Mercado Livre — aqui eles voltam para um cartão só, juntados pelo
+            código de família da própria plataforma. Clique para ver as variações.
+          </p>
+          <Paginacao {...tabelaPublicacoes} posicao="topo" />
+          <div className="anuncios-grade">
+            {tabelaPublicacoes.itensPagina.map((g) => (
+              <CartaoPublicacao
+                key={g.chave}
+                grupo={g}
+                onAbrir={() => (g.quantidade > 1 ? setPublicacaoFocada(g.chave) : setSelecionado(g.principal.id))}
+              />
+            ))}
+          </div>
+          <Paginacao {...tabelaPublicacoes} posicao="rodape" />
+        </>
       ) : modo === 'referencia' && !grupoFocado ? (
         <>
           <p className="page-sub" style={{ marginTop: -4, marginBottom: 12 }}>
@@ -601,6 +823,17 @@ export default function AnunciosPage() {
         </>
       ) : (
         <>
+          {publicacaoFocada && (
+            <div className="voltar-grupo">
+              <button type="button" className="btn btn-ghost sm" onClick={() => setPublicacaoFocada(null)}>
+                <ArrowLeft size={13} /> Voltar para os anúncios
+              </button>
+              <span className="page-sub" style={{ margin: 0 }}>
+                {anunciosVisiveis.length} variação(ões) do anúncio{' '}
+                <strong>{anunciosVisiveis[0]?.publicacao_nome || anunciosVisiveis[0]?.titulo || ''}</strong>
+              </span>
+            </div>
+          )}
           {grupoFocado && (
             <div className="voltar-grupo">
               <button type="button" className="btn btn-ghost sm" onClick={() => setGrupoFocado(null)}>
@@ -635,7 +868,7 @@ export default function AnunciosPage() {
       {selecionado && (
         <PainelAnuncio
           anuncioId={selecionado}
-          dias={dias}
+          periodoAds={periodoAds}
           onFechar={() => setSelecionado(null)}
           onAlterado={carregar}
         />
@@ -696,7 +929,11 @@ function FaixaDeLojas({ lojas, onSincronizar, sincronizando }) {
               {l.ultimo_erro
                 ? `Falhou: ${l.ultimo_erro}`
                 : l.ultima_sincronizacao
-                  ? `${formatQtd(l.anuncios)} anúncios · ${tempoRelativo(l.ultima_sincronizacao)}`
+                  // `anuncios` é a contagem de PUBLICAÇÕES ativas — a mesma
+                  // que o painel da plataforma mostra. Quando ela difere do
+                  // número de itens lidos, os dois aparecem: sem isso, quem
+                  // conhecia o número antigo (~800) acharia que sumiu anúncio.
+                  ? `${formatQtd(l.anuncios)} anúncios${Number(l.itens) > Number(l.anuncios) ? ` · ${formatQtd(l.itens)} variações` : ''} · ${tempoRelativo(l.ultima_sincronizacao)}`
                   : 'ainda não foi lida'}
             </div>
           </div>
@@ -727,6 +964,12 @@ function fotoDoAnuncio(a) {
   return a.foto_url || (a.produto_tem_foto ? `/api/produtos/${a.produto_id}/foto` : null);
 }
 
+// A reserva, quando a foto da plataforma não abre: a foto do produto no
+// cadastro. Só existe se houver produto vinculado E foto gravada.
+function fotoDeReserva(a) {
+  return a.foto_url && a.produto_tem_foto && a.produto_id ? `/api/produtos/${a.produto_id}/foto` : null;
+}
+
 // O ROAS ganha cor de ESTADO (acima ou abaixo de 1), que é a informação que
 // interessa — nunca a cor de acento, que no sistema significa ação.
 function ChipRoas({ ads }) {
@@ -748,15 +991,50 @@ function ChipRoas({ ads }) {
   );
 }
 
+// A foto do anúncio, com duas quedas em vez de uma imagem quebrada.
+//
+// Por que precisou de queda (10/09/2026): o endereço gravado pode não abrir —
+// foto apagada na plataforma, CDN fora do ar, ou uma linha antiga gravada em
+// http:// antes da correção. Antes, qualquer um desses casos deixava o ícone
+// de imagem quebrada do navegador no lugar da peça, sem dizer nada.
+//
+// A ordem é: foto do anúncio → foto do produto no cadastro → a referência
+// escrita por extenso. Nunca some em silêncio (REGRA 2).
 function FotoOuReferencia({ anuncio }) {
-  const foto = fotoDoAnuncio(anuncio);
-  if (foto) return <img src={foto} alt="" loading="lazy" />;
+  const [falhou, setFalhou] = useState(false);
+  const [tentouReserva, setTentouReserva] = useState(false);
+
+  const principal = fotoDoAnuncio(anuncio);
+  const reserva = fotoDeReserva(anuncio);
+  const foto = falhou ? null : (tentouReserva ? reserva : principal);
+
+  // Anúncio diferente = foto diferente: sem isto, rolar a grade reaproveitaria
+  // o "falhou" de um cartão em outro.
+  useEffect(() => { setFalhou(false); setTentouReserva(false); }, [anuncio.id, principal]);
+
+  if (foto) {
+    return (
+      <img
+        src={foto}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        // A CDN do Mercado Livre recusa requisição com referer de outro site.
+        // Sem isto, parte das fotos volta 403 mesmo com o endereço certo.
+        referrerPolicy="no-referrer"
+        onError={() => {
+          if (!tentouReserva && reserva) setTentouReserva(true);
+          else setFalhou(true);
+        }}
+      />
+    );
+  }
   // Sem foto: a referência grande na tinta da plataforma. Diz "não tem foto" e
   // ainda ajuda a identificar a peça — melhor que um ícone cinza.
   return (
     <div className="anuncio-card-foto-vazia">
       {anuncio.referencia || anuncio.anuncio_id_externo}
-      <small>sem foto</small>
+      <small>{falhou ? 'foto não abriu' : 'sem foto'}</small>
     </div>
   );
 }
@@ -830,6 +1108,79 @@ function CartaoAnuncio({ anuncio, marcado, onMarcar, onAbrir }) {
           {STATUS_ROTULO[anuncio.status] || anuncio.status}
         </span>
         <ChipRoas ads={anuncio.ads} />
+      </div>
+    </article>
+  );
+}
+
+// O cartão de uma PUBLICAÇÃO: um anúncio, do jeito que o painel da plataforma
+// mostra. Quando ele tem variações, elas viram um contador e uma faixa de
+// preço — e o clique entra na lista delas.
+function CartaoPublicacao({ grupo, onAbrir }) {
+  const { principal, quantidade } = grupo;
+  const chave = chaveDaPlataforma(principal.marketplace);
+  const faixa = grupo.precoMin == null
+    ? '—'
+    : (grupo.precoMin === grupo.precoMax
+      ? brl(grupo.precoMin)
+      : `${brl(grupo.precoMin)} – ${brl(grupo.precoMax)}`);
+
+  return (
+    <article className={`anuncio-card plataforma-${chave}`}>
+      <div className="anuncio-card-faixa" />
+      <button type="button" className="anuncio-card-alvo" onClick={onAbrir}>
+        Abrir {grupo.titulo || principal.titulo || 'anúncio'}
+      </button>
+
+      <div className="anuncio-card-foto">
+        <FotoOuReferencia anuncio={principal} />
+        <span className="anuncio-card-loja">
+          <SeloPlataforma chave={chave} size={14} />
+          <span>{nomeDaLoja({ marketplace: principal.marketplace, nome: principal.loja_nome })}</span>
+        </span>
+        {quantidade > 1 && (
+          <span className="anuncio-card-contador" title="Variações publicadas dentro deste anúncio">
+            <Layers size={10} /> {quantidade} variações
+          </span>
+        )}
+      </div>
+
+      <div className="anuncio-card-corpo">
+        <p className="anuncio-card-titulo">{grupo.titulo || principal.titulo || '(sem título)'}</p>
+        <div className="anuncio-card-linha-preco">
+          <span className="anuncio-card-preco">{faixa}</span>
+        </div>
+        {!principal.referencia && (
+          <span className="anuncio-card-sem-vinculo"><Link2Off size={11} /> sem vínculo no cadastro</span>
+        )}
+        <div className="anuncio-card-ref">
+          <span>{principal.referencia || ''}</span>
+          <span className="anuncio-card-id" title="Código do anúncio na plataforma">
+            {principal.anuncio_id_externo}
+          </span>
+        </div>
+        <div className="anuncio-card-metricas">
+          <span title="Visitas informadas pela plataforma, somando as variações">
+            <Eye size={11} /> {formatQtd(grupo.itens.reduce((soma, i) => soma + (Number(i.visitas) || 0), 0))}
+          </span>
+          <span title="Vendas acumuladas na plataforma, somando as variações">
+            <ShoppingBag size={11} /> {formatQtd(grupo.itens.reduce((soma, i) => soma + (Number(i.vendas_total) || 0), 0))}
+          </span>
+          <span title="Estoque anunciado somando as variações — aqui a soma vale, porque cada variação é uma peça diferente (cor/tamanho), não o mesmo estoque repetido">
+            <Layers size={11} /> {grupo.estoqueTotal != null ? formatQtd(grupo.estoqueTotal) : '—'}
+          </span>
+        </div>
+      </div>
+
+      <div className="anuncio-card-rodape">
+        <span className="anuncio-situacao">
+          <span className={`anuncio-ponto ${grupo.ativos > 0 ? 'ativo' : 'pausado'}`} />
+          {quantidade > 1 ? `${grupo.ativos} de ${quantidade} ativa(s)` : (STATUS_ROTULO[principal.status] || principal.status)}
+        </span>
+        <ChipRoas ads={grupo.adsCusto != null
+          ? { rodaAds: true, roas: grupo.adsRoas, custo: grupo.adsCusto, receita: grupo.adsReceita }
+          : null}
+        />
       </div>
     </article>
   );
@@ -996,7 +1347,7 @@ function MatrizLojas({ matriz, lojas, semVinculo }) {
 // ---------------------------------------------------------------------------
 // Painel de detalhe
 // ---------------------------------------------------------------------------
-function PainelAnuncio({ anuncioId, dias, onFechar, onAlterado }) {
+function PainelAnuncio({ anuncioId, periodoAds, onFechar, onAlterado }) {
   const [dado, setDado] = useState(null);
   const [historico, setHistorico] = useState(null);
   const [aba, setAba] = useState('resumo');
@@ -1005,9 +1356,9 @@ function PainelAnuncio({ anuncioId, dias, onFechar, onAlterado }) {
   const focoAnterior = useRef(null);
 
   const recarregar = useCallback(() => {
-    api.get(`/anuncios/${anuncioId}?dias=${dias}`).then(setDado).catch((e) => setErro(e.message));
+    api.get(`/anuncios/${anuncioId}?${paramsPeriodoAds(periodoAds)}`).then(setDado).catch((e) => setErro(e.message));
     api.get(`/anuncios/${anuncioId}/historico`).then(setHistorico).catch(() => {});
-  }, [anuncioId, dias]);
+  }, [anuncioId, periodoAds]);
 
   useEffect(recarregar, [recarregar]);
 
@@ -1188,7 +1539,7 @@ function AbaAds({ dado }) {
     return (
       <EstadoVazio
         Icone={Megaphone}
-        titulo={`Este anúncio não teve gasto com Ads nos últimos ${ads.janelaDias || 30} dias`}
+        titulo={`Este anúncio não teve gasto com Ads ${rotuloPeriodoAds({ inicio: ads.de, fim: ads.ate })}`}
         descricao={ads.diasComDado > 0
           ? 'Existe métrica registrada no período, mas sem custo — a campanha pode estar pausada.'
           : 'Nenhuma métrica de publicidade foi registrada para este anúncio no período. Isso pode significar que ele nunca foi anunciado, ou que a leitura de Ads dessa loja ainda não rodou.'}
@@ -1204,7 +1555,10 @@ function AbaAds({ dado }) {
   return (
     <>
       <div className="grid-3">
-        <Indicador rotulo={`Gasto em ${ads.janelaDias} dias`} valor={brl(ads.custo)} />
+        <Indicador
+          rotulo={ads.de || ads.ate ? 'Gasto no período' : `Gasto em ${ads.janelaDias} dias`}
+          valor={brl(ads.custo)}
+        />
         <Indicador rotulo="Receita atribuída" valor={ads.receita != null ? brl(ads.receita) : '—'} />
         <Indicador rotulo="ROAS" valor={ads.roas != null ? `${numeroBr(ads.roas)}x` : '—'} Icone={TrendingUp} />
         <Indicador rotulo="Cliques" valor={ads.cliques != null ? formatQtd(ads.cliques) : '—'} />

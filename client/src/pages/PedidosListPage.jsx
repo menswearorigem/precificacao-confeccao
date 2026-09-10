@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Search, ChevronRight, ClipboardList, Plug } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, formatQtd } from '../lib/format';
-import { Select, SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazio } from '../components/ui';
+import { Select, MultiSelect, SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazio } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
@@ -54,8 +54,10 @@ export default function PedidosListPage({ origemFiltro }) {
   const [pedidos, setPedidos] = useState([]);
   const [busca, setBusca] = useState('');
   const [situacao, setSituacao] = useState('');
-  const [plataforma, setPlataforma] = useState('');
-  const [lojaId, setLojaId] = useState('');
+  // Plataforma e loja aceitam VÁRIAS de uma vez (10/09/2026), como no
+  // UpSeller — ver MultiSelect em components/ui.jsx.
+  const [plataformas, setPlataformas] = useState([]);
+  const [lojaIds, setLojaIds] = useState([]);
   const [{ inicio: dataInicio, fim: dataFim }, setPeriodo] = useState(periodoDeHoje());
   const [integracoes, setIntegracoes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -68,14 +70,27 @@ export default function PedidosListPage({ origemFiltro }) {
   const pedidosComCanal = useMemo(() => carimbarCanal(pedidos, indiceLojas), [pedidos, indiceLojas]);
 
   const lojasDisponiveis = useMemo(() => (
-    integracoes.filter((i) => !plataforma || PLATAFORMA_LABEL[i.marketplace] === plataforma)
-  ), [integracoes, plataforma]);
+    integracoes.filter((i) => plataformas.length === 0 || plataformas.includes(PLATAFORMA_LABEL[i.marketplace]))
+  ), [integracoes, plataformas]);
 
-  function mudarPlataforma(valor) {
-    setPlataforma(valor);
-    if (lojaId && !integracoes.some((i) => String(i.id) === String(lojaId) && (!valor || PLATAFORMA_LABEL[i.marketplace] === valor))) {
-      setLojaId('');
-    }
+  const opcoesPlataformas = useMemo(
+    () => Object.values(PLATAFORMA_LABEL).map((label) => ({ valor: label, rotulo: label })),
+    []
+  );
+  const opcoesLojas = useMemo(
+    () => lojasDisponiveis.map((i) => ({ valor: String(i.id), rotulo: nomeDaLoja(i) })),
+    [lojasDisponiveis]
+  );
+
+  // Tirar uma plataforma do filtro solta as lojas dela — senão sobraria um
+  // filtro de loja que não pode casar com nada e a lista voltaria vazia.
+  function mudarPlataformas(valores) {
+    setPlataformas(valores);
+    if (valores.length === 0) return;
+    setLojaIds((atuais) => atuais.filter((id) => {
+      const loja = integracoes.find((i) => String(i.id) === String(id));
+      return loja && valores.includes(PLATAFORMA_LABEL[loja.marketplace]);
+    }));
   }
 
   function load() {
@@ -84,8 +99,8 @@ export default function PedidosListPage({ origemFiltro }) {
     if (busca) params.set('busca', busca);
     if (situacao) params.set('situacao', situacao);
     if (origemFiltro) params.set('origem', origemFiltro);
-    if (isMarketplace && plataforma) params.set('canal_venda', plataforma);
-    if (isMarketplace && lojaId) params.set('origem_integracao_id', lojaId);
+    if (isMarketplace && plataformas.length) params.set('canal_venda', plataformas.join(','));
+    if (isMarketplace && lojaIds.length) params.set('origem_integracao_id', lojaIds.join(','));
     if (isMarketplace && dataInicio) params.set('data_inicio', dataInicio);
     if (isMarketplace && dataFim) params.set('data_fim', dataFim);
     setErroCarga('');
@@ -103,7 +118,7 @@ export default function PedidosListPage({ origemFiltro }) {
     const t = setTimeout(load, busca ? 350 : 0);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [situacao, plataforma, lojaId, dataInicio, dataFim, busca]);
+  }, [situacao, plataformas, lojaIds, dataInicio, dataFim, busca]);
 
   const tabela = useTabela(pedidosComCanal, { colunas: COLUNAS_ORDENAVEIS, colunaPadrao: 'data', direcaoPadrao: 'desc' });
 
@@ -160,18 +175,22 @@ export default function PedidosListPage({ origemFiltro }) {
         </Select>
         {isMarketplace && (
           <>
-            <Select value={plataforma} onChange={(e) => mudarPlataforma(e.target.value)} style={{ maxWidth: 180 }}>
-              <option value="">Todas as plataformas</option>
-              {Object.values(PLATAFORMA_LABEL).map((label) => (
-                <option key={label} value={label}>{label}</option>
-              ))}
-            </Select>
-            <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)} style={{ maxWidth: 180 }}>
-              <option value="">Todas as lojas</option>
-              {lojasDisponiveis.map((i) => (
-                <option key={i.id} value={i.id}>{nomeDaLoja(i)}</option>
-              ))}
-            </Select>
+            <MultiSelect
+              valor={plataformas}
+              onChange={mudarPlataformas}
+              opcoes={opcoesPlataformas}
+              rotuloTudo="Todas as plataformas"
+              rotuloVazio="Todas as plataformas"
+              larguraMinima={180}
+            />
+            <MultiSelect
+              valor={lojaIds}
+              onChange={setLojaIds}
+              opcoes={opcoesLojas}
+              rotuloTudo="Todas as lojas"
+              rotuloVazio="Todas as lojas"
+              larguraMinima={180}
+            />
           </>
         )}
       </div>

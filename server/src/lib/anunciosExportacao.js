@@ -25,6 +25,7 @@
 // REGRA 2: o que não se sabe fica em branco ou escrito por extenso, nunca
 // preenchido com zero ou com estimativa. Loja onde o produto não está
 // anunciado recebe "NÃO ESTÁ ANUNCIADO" em vermelho, como a dona pediu.
+const { idsDoFiltro, chavesDoFiltro } = require('./filtrosMulti');
 const ExcelJS = require('exceljs');
 const pool = require('../db/pool');
 const { calcularProduto, pctImpostosEmpresa } = require('./calc');
@@ -109,8 +110,17 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
   const vals = [];
   let i = 1;
   if (produtoIds) { cond.push(`a.produto_id = ANY($${i})`); vals.push(produtoIds); i += 1; }
-  if (marketplace) { cond.push(`a.marketplace = $${i}`); vals.push(marketplace); i += 1; }
-  if (integracaoId) { cond.push(`a.origem_integracao_id = $${i}`); vals.push(integracaoId); i += 1; }
+  // Plataforma e loja aceitam VÁRIOS valores desde 10/09/2026 (a tela deixa
+  // marcar mais de uma loja, como no UpSeller). A exportação recebe os mesmos
+  // filtros da tela, então precisa ler o mesmo formato — senão "exportar o que
+  // está na tela" traria mais linhas do que a tela mostra.
+  const plataformas = chavesDoFiltro(marketplace);
+  if (plataformas.length === 1) { cond.push(`a.marketplace = $${i}`); vals.push(plataformas[0]); i += 1; }
+  else if (plataformas.length > 1) { cond.push(`a.marketplace = ANY($${i}::text[])`); vals.push(plataformas); i += 1; }
+
+  const lojasFiltro = idsDoFiltro(integracaoId);
+  if (lojasFiltro.length === 1) { cond.push(`a.origem_integracao_id = $${i}`); vals.push(lojasFiltro[0]); i += 1; }
+  else if (lojasFiltro.length > 1) { cond.push(`a.origem_integracao_id = ANY($${i}::int[])`); vals.push(lojasFiltro); i += 1; }
 
   const { rows: anuncios } = await pool.query(
     `SELECT a.*, im.nome AS loja_nome,

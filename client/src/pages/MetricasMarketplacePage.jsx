@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, pct, numeroBr, formatQtd } from '../lib/format';
-import { DateInput, Select, StatCard } from '../components/ui';
+import { DateInput, Select, MultiSelect, StatCard } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { PRESETS_PERIODO } from '../lib/periodos';
 import { PLATAFORMA_LABEL, PLATAFORMAS_COM_ADS } from '../lib/marketplaces';
@@ -881,9 +881,17 @@ function PublicidadeTab({ integracoes }) {
     () => integracoes.filter((i) => PLATAFORMAS_COM_ADS.includes(i.marketplace) && i.conectada),
     [integracoes]
   );
-  const [lojaId, setLojaId] = useState('');
-  const [dataInicio, setDataInicio] = useState(trintaDiasAtras());
-  const [dataFim, setDataFim] = useState(hoje());
+  // VÁRIAS lojas de uma vez (10/09/2026). A publicidade é justamente onde
+  // "MELI Origem + MELI Hoggar" é a pergunta natural: o orçamento é decidido
+  // junto, mas cada conta tem a API dela. Cada loja é uma chamada; o resultado
+  // é juntado com o nome da loja carimbado em cada linha, pra ninguém somar
+  // dois gastos e não saber de onde vieram.
+  const [lojaIds, setLojaIds] = useState([]);
+  // Período: o mesmo filtro de calendário das outras telas do módulo, em vez
+  // de dois campos soltos de Data Início / Data Fim.
+  const [{ inicio: dataInicio, fim: dataFim }, setPeriodo] = useState(
+    () => ({ inicio: trintaDiasAtras(), fim: hoje() })
+  );
   const [campanhas, setCampanhas] = useState(null);
   const [anuncios, setAnuncios] = useState(null);
   const [carregando, setCarregando] = useState(false);
@@ -891,32 +899,71 @@ function PublicidadeTab({ integracoes }) {
   const [sincronizando, setSincronizando] = useState(false);
   const [resultadoSync, setResultadoSync] = useState(null);
 
+  // Abre já com a primeira loja marcada — a aba não tem o que mostrar com
+  // nenhuma escolhida, e obrigar um clique antes de qualquer número seria pior
+  // que o comportamento antigo.
   useEffect(() => {
-    if (!lojaId && lojasML.length > 0) setLojaId(String(lojasML[0].id));
-  }, [lojasML, lojaId]);
+    if (lojaIds.length === 0 && lojasML.length > 0) setLojaIds([String(lojasML[0].id)]);
+  }, [lojasML, lojaIds]);
+
+  const opcoesLojasAds = useMemo(
+    () => lojasML.map((l) => ({ valor: String(l.id), rotulo: nomeDaLoja(l) })),
+    [lojasML]
+  );
+
+  const varias = lojaIds.length > 1;
 
   function buscar() {
-    if (!lojaId) return;
+    if (lojaIds.length === 0) return;
     setCarregando(true);
     setErro('');
     const qs = `?data_inicio=${dataInicio}&data_fim=${dataFim}`;
-    Promise.all([
-      api.get(`/integracoes/${lojaId}/ads/campanhas${qs}`),
-      api.get(`/integracoes/${lojaId}/ads/anuncios${qs}`),
-    ])
-      .then(([c, a]) => { setCampanhas(c.campanhas); setAnuncios(a.anuncios); })
-      .catch((err) => { setErro(err.message); setCampanhas(null); setAnuncios(null); })
+    // allSettled, e não all: uma loja sem Ads habilitado (ou com token de
+    // publicidade vencido) não pode zerar a tela das outras. O que falhou é
+    // dito por escrito em vez de sumir (REGRA 2).
+    Promise.allSettled(lojaIds.flatMap((id) => ([
+      api.get(`/integracoes/${id}/ads/campanhas${qs}`).then((r) => ({ tipo: 'campanhas', id, dados: r.campanhas })),
+      api.get(`/integracoes/${id}/ads/anuncios${qs}`).then((r) => ({ tipo: 'anuncios', id, dados: r.anuncios })),
+    ])))
+      .then((resultados) => {
+        const nomeDe = (id) => nomeDaLoja(lojasML.find((l) => String(l.id) === String(id)));
+        const juntar = (tipo) => resultados
+          .filter((r) => r.status === 'fulfilled' && r.value.tipo === tipo)
+          .flatMap((r) => (r.value.dados || []).map((linha) => ({
+            ...linha,
+            _lojaId: r.value.id,
+            _lojaNome: nomeDe(r.value.id),
+          })));
+        setCampanhas(juntar('campanhas'));
+        setAnuncios(juntar('anuncios'));
+        const falhas = resultados.filter((r) => r.status === 'rejected');
+        setErro(falhas.length === 0
+          ? ''
+          : `${falhas.length} consulta(s) de publicidade falharam: ${[...new Set(falhas.map((f) => f.reason?.message || 'erro desconhecido'))].join('; ')}`);
+      })
       .finally(() => setCarregando(false));
   }
 
   function sincronizarHistorico() {
-    if (!lojaId) return;
+    if (lojaIds.length === 0) return;
     setSincronizando(true);
     setResultadoSync(null);
     setErro('');
-    api.post(`/integracoes/${lojaId}/ads/sincronizar`, {})
-      .then((r) => { setResultadoSync(r); buscar(); })
-      .catch((err) => setErro(err.message))
+    Promise.allSettled(lojaIds.map((id) => api.post(`/integracoes/${id}/ads/sincronizar`, {})))
+      .then((resultados) => {
+        const ok = resultados.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+        setResultadoSync(ok.length === 0 ? null : {
+          registros: ok.reduce((soma, r) => soma + (r.registros || 0), 0),
+          campanhas: ok.reduce((soma, r) => soma + (r.campanhas || 0), 0),
+          // A janela é a mesma pra todas as lojas — pega a primeira, sem
+          // somar (somar "dias sincronizados" não significaria nada).
+          diasSincronizados: ok[0]?.diasSincronizados,
+          lojas: ok.length,
+        });
+        const falhas = resultados.filter((r) => r.status === 'rejected');
+        if (falhas.length) setErro(falhas.map((f) => f.reason?.message || 'erro desconhecido').join('; '));
+        buscar();
+      })
       .finally(() => setSincronizando(false));
   }
 
@@ -939,23 +986,18 @@ function PublicidadeTab({ integracoes }) {
   return (
     <div>
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="form-grid">
+        <div className="filtros-barra">
           {lojasML.length > 1 && (
-            <div className="field">
-              <span className="field-label">Loja</span>
-              <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)}>
-                {lojasML.map((l) => <option key={l.id} value={l.id}>{nomeDaLoja(l)}</option>)}
-              </Select>
-            </div>
+            <MultiSelect
+              valor={lojaIds}
+              onChange={setLojaIds}
+              opcoes={opcoesLojasAds}
+              rotuloTudo="Todas as lojas com Ads"
+              rotuloVazio="Escolha a loja"
+              larguraMinima={200}
+            />
           )}
-          <div className="field">
-            <span className="field-label">Data Início</span>
-            <DateInput value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
-          </div>
-          <div className="field">
-            <span className="field-label">Data Fim</span>
-            <DateInput value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
-          </div>
+          <PeriodoFiltro inicio={dataInicio} fim={dataFim} onChange={({ inicio, fim }) => setPeriodo({ inicio, fim })} />
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
           <button className="btn btn-primary" onClick={buscar} disabled={carregando}>
@@ -973,7 +1015,8 @@ function PublicidadeTab({ integracoes }) {
         </p>
         {resultadoSync && (
           <div className="aviso-compacto tone-saudavel">
-            Sincronizados {resultadoSync.registros} registro(s) de {resultadoSync.campanhas} campanha(s) nos últimos {resultadoSync.diasSincronizados} dias.
+            Sincronizados {resultadoSync.registros} registro(s) de {resultadoSync.campanhas} campanha(s)
+            {resultadoSync.lojas > 1 ? ` em ${resultadoSync.lojas} lojas` : ''} nos últimos {resultadoSync.diasSincronizados} dias.
           </div>
         )}
         {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
@@ -995,11 +1038,18 @@ function PublicidadeTab({ integracoes }) {
             <DataTable>
             <table className="data-table">
               <thead>
-                <tr><th>Campanha</th><th>Status</th><th>Estratégia</th><th>ROAS Alvo</th><th>Custo</th><th>Cliques</th><th>Impressões</th><th>CPC</th><th>ROAS</th></tr>
+                <tr>
+                  {/* A coluna de loja só existe quando há mais de uma
+                      escolhida — com uma só, ela repetiria o mesmo nome em
+                      todas as linhas sem informar nada. */}
+                  {varias && <th>Loja</th>}
+                  <th>Campanha</th><th>Status</th><th>Estratégia</th><th>ROAS Alvo</th><th>Custo</th><th>Cliques</th><th>Impressões</th><th>CPC</th><th>ROAS</th>
+                </tr>
               </thead>
               <tbody>
                 {campanhas.map((c) => (
-                  <tr key={c.id}>
+                  <tr key={`${c._lojaId}:${c.id}`}>
+                    {varias && <td>{c._lojaNome}</td>}
                     <td>{c.nome}</td>
                     <td><span className={'stamp sm ' + (c.status === 'active' ? 'tone-saudavel' : 'tone-neutro')}>{c.status || '—'}</span></td>
                     <td>{c.estrategia || '—'}</td>
@@ -1011,7 +1061,7 @@ function PublicidadeTab({ integracoes }) {
                     <td className="mono">{roas(c.metricas.roas)}</td>
                   </tr>
                 ))}
-                {campanhas.length === 0 && <tr><td colSpan="9">Nenhuma campanha no período.</td></tr>}
+                {campanhas.length === 0 && <tr><td colSpan={varias ? 10 : 9}>Nenhuma campanha no período.</td></tr>}
               </tbody>
             </table>
             </DataTable>
@@ -1026,11 +1076,15 @@ function PublicidadeTab({ integracoes }) {
             <DataTable>
             <table className="data-table">
               <thead>
-                <tr><th>Produto</th><th>ID do Anúncio</th><th>Custo</th><th>Cliques</th><th>Impressões</th><th>CPC</th></tr>
+                <tr>
+                  {varias && <th>Loja</th>}
+                  <th>Produto</th><th>ID do Anúncio</th><th>Custo</th><th>Cliques</th><th>Impressões</th><th>CPC</th>
+                </tr>
               </thead>
               <tbody>
                 {anuncios.map((a) => (
-                  <tr key={a.anuncioId}>
+                  <tr key={`${a._lojaId}:${a.anuncioId}`}>
+                    {varias && <td>{a._lojaNome}</td>}
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <FotoProduto produtoId={a.produtoId} temFoto={false} size={32} alt={a.referencia || a.titulo} />
@@ -1047,7 +1101,7 @@ function PublicidadeTab({ integracoes }) {
                     <td className="mono">{a.cpc > 0 ? brl(a.cpc) : '—'}</td>
                   </tr>
                 ))}
-                {anuncios.length === 0 && <tr><td colSpan="6">Nenhum gasto de Ads sincronizado ainda nesse período — clique em "Sincronizar histórico".</td></tr>}
+                {anuncios.length === 0 && <tr><td colSpan={varias ? 7 : 6}>Nenhum gasto de Ads sincronizado ainda nesse período — clique em &quot;Sincronizar histórico&quot;.</td></tr>}
               </tbody>
             </table>
             </DataTable>
@@ -1469,8 +1523,10 @@ const PRESET_PADRAO_METRICAS = PRESETS_PERIODO.find((p) => p.chave === '30dias')
 
 export default function MetricasMarketplacePage() {
   const [{ inicio: dataInicio, fim: dataFim }, setPeriodo] = useState(PRESET_PADRAO_METRICAS);
-  const [plataforma, setPlataforma] = useState('');
-  const [lojaId, setLojaId] = useState('');
+  // Várias plataformas / várias lojas de uma vez (10/09/2026), como no
+  // UpSeller — ver MultiSelect em components/ui.jsx.
+  const [plataformas, setPlataformas] = useState([]);
+  const [lojaIds, setLojaIds] = useState([]);
   const [busca, setBusca] = useState('');
   const [subTab, setSubTab] = useState('visaoGeral');
   const [maisAberto, setMaisAberto] = useState(false);
@@ -1490,24 +1546,35 @@ export default function MetricasMarketplacePage() {
   // nenhuma plataforma foi selecionada ainda) — evita listar "Shopee X"
   // quando o filtro de Plataforma já está em Mercado Livre.
   const lojasDisponiveis = useMemo(() => (
-    integracoes.filter((i) => !plataforma || PLATAFORMA_LABEL[i.marketplace] === plataforma)
-  ), [integracoes, plataforma]);
+    integracoes.filter((i) => plataformas.length === 0 || plataformas.includes(PLATAFORMA_LABEL[i.marketplace]))
+  ), [integracoes, plataformas]);
 
-  function mudarPlataforma(valor) {
-    setPlataforma(valor);
-    if (lojaId && !integracoes.some((i) => String(i.id) === String(lojaId) && (!valor || PLATAFORMA_LABEL[i.marketplace] === valor))) {
-      setLojaId('');
-    }
+  const opcoesPlataformas = useMemo(
+    () => Object.values(PLATAFORMA_LABEL).map((label) => ({ valor: label, rotulo: label })),
+    []
+  );
+  const opcoesLojas = useMemo(
+    () => lojasDisponiveis.map((i) => ({ valor: String(i.id), rotulo: nomeDaLoja(i) })),
+    [lojasDisponiveis]
+  );
+
+  function mudarPlataformas(valores) {
+    setPlataformas(valores);
+    if (valores.length === 0) return;
+    setLojaIds((atuais) => atuais.filter((id) => {
+      const loja = integracoes.find((i) => String(i.id) === String(id));
+      return loja && valores.includes(PLATAFORMA_LABEL[loja.marketplace]);
+    }));
   }
 
   // Filtro se aplica na hora, sem precisar clicar em nenhum botão — mesmo
   // padrão já usado em Lucratividade/Pedidos/Taxas de Marketplace.
   const filtrosAplicados = useMemo(() => {
     const f = { data_inicio: dataInicio, data_fim: dataFim };
-    if (plataforma) f.canal_venda = plataforma;
-    if (lojaId) f.origem_integracao_id = lojaId;
+    if (plataformas.length) f.canal_venda = plataformas.join(',');
+    if (lojaIds.length) f.origem_integracao_id = lojaIds.join(',');
     return f;
-  }, [dataInicio, dataFim, plataforma, lojaId]);
+  }, [dataInicio, dataFim, plataformas, lojaIds]);
 
   return (
     <div className="page-wide">
@@ -1519,18 +1586,22 @@ export default function MetricasMarketplacePage() {
 
       <div className="filtros-barra">
         <PeriodoFiltro inicio={dataInicio} fim={dataFim} onChange={({ inicio, fim }) => setPeriodo({ inicio, fim })} />
-        <Select value={plataforma} onChange={(e) => mudarPlataforma(e.target.value)} style={{ maxWidth: 180 }}>
-          <option value="">Todas as plataformas</option>
-          {Object.values(PLATAFORMA_LABEL).map((label) => (
-            <option key={label} value={label}>{label}</option>
-          ))}
-        </Select>
-        <Select value={lojaId} onChange={(e) => setLojaId(e.target.value)} style={{ maxWidth: 180 }}>
-          <option value="">Todas as lojas</option>
-          {lojasDisponiveis.map((i) => (
-            <option key={i.id} value={i.id}>{nomeDaLoja(i)}</option>
-          ))}
-        </Select>
+        <MultiSelect
+          valor={plataformas}
+          onChange={mudarPlataformas}
+          opcoes={opcoesPlataformas}
+          rotuloTudo="Todas as plataformas"
+          rotuloVazio="Todas as plataformas"
+          larguraMinima={180}
+        />
+        <MultiSelect
+          valor={lojaIds}
+          onChange={setLojaIds}
+          opcoes={opcoesLojas}
+          rotuloTudo="Todas as lojas"
+          rotuloVazio="Todas as lojas"
+          larguraMinima={180}
+        />
         {(subTab === 'vendasPorAnuncio' || subTab === 'abc') && (
           <div className="filtros-barra-busca">
             <Search size={14} />

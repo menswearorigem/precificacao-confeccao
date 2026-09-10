@@ -990,6 +990,203 @@ export function Select({ value, onChange, children, disabled, className = '', st
   );
 }
 
+
+// ---------------------------------------------------------------------------
+// Seleção de VÁRIAS opções (10/09/2026)
+// ---------------------------------------------------------------------------
+// Pedido da dona: "todos os lugares que der para filtrar por canal ou por loja
+// quero que dê para selecionar mais de um, da mesma maneira que é no UpSeller".
+//
+// O UpSeller faz assim, e este componente copia o comportamento porque é o que
+// a equipe já tem no dedo:
+//   · o botão mostra "Todas as lojas" quando nada está marcado;
+//   · o painel abre com uma busca no topo, um "Tudo" e uma caixa por opção;
+//   · marcar/desmarcar NÃO recarrega a tela — só ao clicar em Salvar;
+//   · Cancelar devolve exatamente o que estava antes de abrir.
+//
+// Esse "só aplica no Salvar" não é enfeite: sem ele, marcar quatro lojas
+// dispararia quatro consultas, e as respostas podiam chegar fora de ordem e
+// deixar na tela o resultado de uma seleção intermediária.
+//
+// A API é a mesma do Select em espírito — `valor` é um ARRAY de strings e
+// `onChange` recebe um ARRAY —, então trocar um filtro de loja por este
+// componente é mudar a tag e o estado, sem mexer em mais nada da tela.
+export function MultiSelect({
+  valor = [],
+  onChange,
+  opcoes = [],
+  rotuloTudo = 'Todos',
+  rotuloVazio,
+  placeholder,
+  disabled,
+  className = '',
+  style,
+  larguraMinima = 190,
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [rascunho, setRascunho] = useState(() => new Set(valor.map(String)));
+  const [filtro, setFiltro] = useState('');
+  const raizRef = useRef(null);
+  const gatilhoRef = useRef(null);
+  const painelRef = useRef(null);
+  const buscaRef = useRef(null);
+  const pos = usePosicaoFlutuante(aberto, gatilhoRef, { alturaEstimada: 360 });
+
+  const selecionados = useMemo(() => new Set((valor || []).map(String)), [valor]);
+
+  // Abrir sempre parte do que está valendo AGORA — inclusive quando outra
+  // parte da tela mexeu na seleção enquanto o painel estava fechado (limpar
+  // um chip de filtro, por exemplo).
+  useEffect(() => {
+    if (!aberto) { setFiltro(''); return; }
+    setRascunho(new Set(selecionados));
+    setTimeout(() => buscaRef.current?.focus(), 0);
+  }, [aberto]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!aberto) return undefined;
+    function aoClicarFora(e) {
+      if (raizRef.current?.contains(e.target)) return;
+      if (painelRef.current?.contains(e.target)) return;
+      // Clicar fora é CANCELAR, não salvar: sair sem querer não pode aplicar
+      // uma seleção pela metade.
+      setAberto(false);
+    }
+    function aoTeclar(e) {
+      if (e.key === 'Escape') { e.preventDefault(); setAberto(false); }
+    }
+    document.addEventListener('mousedown', aoClicarFora);
+    document.addEventListener('keydown', aoTeclar);
+    return () => {
+      document.removeEventListener('mousedown', aoClicarFora);
+      document.removeEventListener('keydown', aoTeclar);
+    };
+  }, [aberto]);
+
+  const opcoesFiltradas = useMemo(() => {
+    if (!filtro) return opcoes;
+    const alvo = normalizarTexto(filtro);
+    return opcoes.filter((o) => normalizarTexto(String(o.rotulo ?? '')).includes(alvo));
+  }, [opcoes, filtro]);
+
+  // "Tudo" olha só o que está VISÍVEL na busca — é o que o usuário enxerga
+  // marcar. Com a busca vazia, é a lista inteira.
+  const visiveis = opcoesFiltradas.map((o) => String(o.valor));
+  const todosVisiveisMarcados = visiveis.length > 0 && visiveis.every((v) => rascunho.has(v));
+
+  function alternar(v) {
+    setRascunho((atual) => {
+      const proximo = new Set(atual);
+      if (proximo.has(v)) proximo.delete(v);
+      else proximo.add(v);
+      return proximo;
+    });
+  }
+
+  function alternarTudo() {
+    setRascunho((atual) => {
+      const proximo = new Set(atual);
+      if (todosVisiveisMarcados) visiveis.forEach((v) => proximo.delete(v));
+      else visiveis.forEach((v) => proximo.add(v));
+      return proximo;
+    });
+  }
+
+  function salvar() {
+    // Devolve na ordem das OPÇÕES, não na ordem dos cliques: assim o endereço
+    // da página fica igual pra mesma seleção, e o chip de filtro não muda de
+    // ordem sozinho a cada vez que alguém reabre o painel.
+    const escolhidos = opcoes.map((o) => String(o.valor)).filter((v) => rascunho.has(v));
+    onChange?.(escolhidos);
+    setAberto(false);
+  }
+
+  const quantos = selecionados.size;
+  const rotuloBotao = quantos === 0
+    ? (rotuloVazio || placeholder || `${rotuloTudo}`)
+    : quantos === 1
+      ? (opcoes.find((o) => String(o.valor) === [...selecionados][0])?.rotulo ?? '1 selecionado')
+      : `${quantos} selecionados`;
+
+  return (
+    <div
+      ref={raizRef}
+      className={`multi-select${aberto ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}${quantos > 0 ? ' tem-selecao' : ''}${className ? ` ${className}` : ''}`}
+      style={{ minWidth: larguraMinima, ...style }}
+    >
+      <button
+        type="button"
+        ref={gatilhoRef}
+        className="select-custom-trigger multi-select-trigger"
+        aria-haspopup="listbox"
+        aria-expanded={aberto}
+        disabled={disabled}
+        onClick={() => setAberto((a) => !a)}
+      >
+        <span className={`select-custom-valor${quantos === 0 ? ' is-placeholder' : ''}`}>{rotuloBotao}</span>
+        {quantos > 1 && <span className="multi-select-contador">{quantos}</span>}
+        <ChevronDown size={14} className="select-custom-seta" />
+      </button>
+
+      {aberto && pos && createPortal(
+        <div
+          className="multi-select-painel"
+          ref={painelRef}
+          {...{ [ATRIBUTO_FLUTUANTE]: '' }}
+          style={{ top: pos.top, left: pos.left, minWidth: Math.max(pos.width, larguraMinima), maxHeight: pos.maxHeight }}
+        >
+          <div className="multi-select-busca">
+            <Search size={13} />
+            <input
+              ref={buscaRef}
+              type="text"
+              placeholder="Buscar…"
+              value={filtro}
+              onChange={(e) => setFiltro(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); salvar(); } }}
+            />
+          </div>
+
+          <ul className="multi-select-lista" role="listbox" aria-multiselectable="true">
+            {opcoesFiltradas.length === 0 && <li className="select-custom-vazio">Nada encontrado.</li>}
+            {/* A linha inteira é um botão, e o Checkbox dentro dela é só o
+                desenho (pointer-events: none no CSS). O Checkbox do sistema já
+                é um <label>, e um <label> dentro de outro faz o navegador
+                disparar a troca DUAS vezes — marcar e desmarcar no mesmo
+                clique. Com o botão por fora, um clique é um clique. */}
+            {opcoesFiltradas.length > 0 && (
+              <li className="multi-select-opcao multi-select-tudo">
+                <button type="button" onClick={alternarTudo}>
+                  <Checkbox checked={todosVisiveisMarcados} onChange={() => {}} tabIndex={-1} aria-hidden="true" />
+                  <span>{rotuloTudo}</span>
+                </button>
+              </li>
+            )}
+            {opcoesFiltradas.map((o) => {
+              const v = String(o.valor);
+              return (
+                <li key={v} className="multi-select-opcao" role="option" aria-selected={rascunho.has(v)}>
+                  <button type="button" onClick={() => alternar(v)}>
+                    <Checkbox checked={rascunho.has(v)} onChange={() => {}} tabIndex={-1} aria-hidden="true" />
+                    {o.selo || null}
+                    <span>{o.rotulo}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="multi-select-rodape">
+            <button type="button" className="btn btn-ghost sm" onClick={() => setAberto(false)}>Cancelar</button>
+            <button type="button" className="btn btn-primary sm" onClick={salvar}>Salvar</button>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 const MESES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',

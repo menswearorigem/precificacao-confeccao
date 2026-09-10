@@ -7197,3 +7197,137 @@ table.grade-matriz { width: auto; min-width: 0; }
 .tabela-embutida td { font-size: 12px; }
 
 .aba-insumos-producao { display: flex; flex-direction: column; gap: 14px; }
+
+/* ===========================================================================
+   Seleção de várias lojas / vários canais (MultiSelect) — 10/09/2026
+   ---------------------------------------------------------------------------
+   Reaproveita o gatilho e o painel do Select (mesma altura, mesma borda,
+   mesma sombra), então os dois convivem lado a lado na barra de filtros sem
+   um parecer maior que o outro. O que é próprio daqui: a lista de caixas de
+   seleção, o contador no botão e o rodapé Cancelar/Salvar.
+   Nenhuma cor solta: tudo vem das variáveis do tema (REGRA 3).
+   =========================================================================== */
+.multi-select { position: relative; display: inline-flex; }
+.multi-select .multi-select-trigger { width: 100%; }
+.multi-select.tem-selecao .multi-select-trigger { border-color: var(--terracotta); }
+.multi-select.is-open .select-custom-seta { transform: rotate(180deg); color: var(--terracotta); }
+
+/* O contador ao lado do rótulo ("3") — o mesmo recurso que o UpSeller usa pra
+   dizer quantas lojas estão valendo sem alongar o botão. */
+.multi-select-contador {
+  flex-shrink: 0;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--terracotta);
+  color: var(--on-terracotta, #fff);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.multi-select-painel {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  animation: select-custom-abrir 0.14s var(--ease);
+  overflow: hidden;
+}
+
+.multi-select-busca {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 9px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  color: var(--ink-faint);
+}
+.multi-select-busca input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  padding: 5px 2px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+}
+.multi-select-busca input:focus { outline: none; }
+
+.multi-select-lista {
+  margin: 0;
+  padding: 5px;
+  list-style: none;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+
+.multi-select-opcao { display: block; }
+.multi-select-opcao > button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s var(--ease);
+}
+.multi-select-opcao > button:hover,
+.multi-select-opcao > button:focus-visible { background: var(--surface-alt); outline: none; }
+.multi-select-opcao > button > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A caixa é só o desenho — quem recebe o clique é o botão da linha inteira
+   (ver o comentário no MultiSelect em ui.jsx). */
+.multi-select-opcao .checkbox-custom { pointer-events: none; flex-shrink: 0; }
+
+.multi-select-tudo { border-bottom: 1px solid var(--border); margin-bottom: 4px; padding-bottom: 4px; }
+.multi-select-tudo > button { font-weight: 650; }
+
+.multi-select-rodape {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 9px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-alt);
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .multi-select-painel { animation: none; }
+  .multi-select-opcao > button { transition: none; }
+}
+
+@media (max-width: 640px) {
+  .multi-select { width: 100%; }
+  .multi-select-painel { max-height: min(70vh, 420px); }
+}
+
+/* ---------------------------------------------------------------------------
+   Foto do anúncio que a plataforma não entregou
+   ---------------------------------------------------------------------------
+   Quando o endereço da foto existe mas o navegador não consegue baixar (foto
+   apagada na plataforma, CDN fora do ar), a tela cai pra este quadro em vez de
+   mostrar o ícone de imagem quebrada do navegador. */
+.anuncio-card-foto img.foto-falhou { display: none; }

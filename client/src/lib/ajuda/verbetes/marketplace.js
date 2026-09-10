@@ -401,5 +401,60 @@ export const verbetesMarketplace = [
     resposta:
       'A tela **Importar Pedidos** recebe uma planilha .xlsx exportada do Mercado Livre (Vendas → Relatórios → Vendas), da Shopee (Meus Pedidos → Exportar) ou do UpSeller (Pedidos → Exportar — que também cobre TikTok Shop e Shein, sem precisar de API própria pra essas duas).\n\nEscolha a origem da planilha, envie o arquivo e clique em **Pré-visualizar**: nada é gravado ainda nessa etapa. A prévia lista os pedidos encontrados, marca os que já foram importados antes (ficam desmarcados e esmaecidos) e avisa quando algum item não bateu com nenhuma referência/EAN do estoque — esse item entra só com a descrição, sem baixar estoque ao faturar. Marque os pedidos desejados e clique em **Importar N pedido(s) selecionado(s)**: cada um vira um pedido de venda em aberto, igual à sincronização automática.',
     relacionados: ['mkt-pedidos-listar-filtrar'],
+  },,
+  {
+    id: 'mkt-anuncios-publicacao-variacao',
+    modulo: 'marketplace',
+    tela: 'Anúncios',
+    titulo: 'Por que o número de anúncios daqui bate (agora) com o do painel da plataforma',
+    rota: '/marketplace/anuncios',
+    perguntas: [
+      'por que tem mais anuncios aqui do que no mercado livre',
+      'numero de anuncios diferente do painel',
+      'anuncio repetido na tela de anuncios',
+      'o que e publicacao e o que e variacao',
+      'por anuncio ou por variacao',
+      'aparecem 800 anuncios e no mercado livre sao 82',
+      'contagem de anuncios errada',
+    ],
+    resposta:
+      'A tela abre em **Por anúncio**, que conta do mesmo jeito que o painel da plataforma conta — se lá diz 82 anúncios, aqui também diz 82.\n\nO motivo de um dia ter dito quase 800: no Mercado Livre, **um anúncio criado com variações vira vários itens na API**, um por variação, todos amarrados pelo mesmo código de família. O painel mostra a *publicação* (o anúncio que você criou); a API devolve os *itens*. Os dois números estão certos, só contam coisas diferentes — e a tela mostrava o da API com o nome do outro.\n\nNada foi escondido. Clicando num cartão com o selo "N variações" você entra na lista delas, e o modo **Por variação** mostra a lista crua, um cartão por item, como era antes. A faixa de lojas no topo diz os dois números quando eles diferem ("82 anúncios · 794 variações").\n\nO agrupamento é por **código exato de família da própria plataforma** — nunca por título parecido. Na Shopee e na TikTok Shop esse conceito não existe: lá cada anúncio já vale por si, e a contagem não muda.',
+    relacionados: ['mkt-anuncios-filtros', 'mkt-metricas-vendas-anuncio-abc'],
+  },
+  {
+    id: 'mkt-anuncios-filtros',
+    modulo: 'marketplace',
+    tela: 'Anúncios',
+    titulo: 'Filtros: várias lojas de uma vez, situação e período do Ads',
+    rota: '/marketplace/anuncios',
+    perguntas: [
+      'filtrar por mais de uma loja',
+      'selecionar duas lojas ao mesmo tempo',
+      'filtrar por varias lojas como no upseller',
+      'por que so aparecem anuncios ativos',
+      'ver anuncios pausados e encerrados',
+      'mudar o periodo do ads',
+      'calendario do ads',
+      'ads de um periodo especifico',
+    ],
+    resposta:
+      'Todo filtro de **loja** e de **plataforma** do módulo Marketplace aceita mais de uma escolha ao mesmo tempo, no mesmo formato do UpSeller: clique no filtro, use a busca ou o "Tudo", marque as que quiser e clique em **Salvar** (a lista só recarrega no Salvar — Cancelar desfaz). Vale em Anúncios, Pedidos, Promoções, Métricas, Publicidade, Taxas Cobradas, Lucratividade e Financeiro.\n\nA tela de Anúncios **abre filtrada em Ativos**, que é o padrão do painel de qualquer plataforma. Isso aparece como um chip de filtro logo abaixo da busca — clique no "x" dele para ver também pausados, encerrados e em análise. Nada é apagado: anúncio que saiu do ar continua gravado, com a data em que sumiu.\n\nO **período do Ads** é o mesmo filtro de calendário das outras telas do módulo: atalhos (hoje, 7 dias, 30 dias, este mês, mês passado) e um período personalizado com calendário nas duas pontas. Sem escolher nada, continuam valendo os últimos 30 dias.',
+    relacionados: ['mkt-anuncios-publicacao-variacao', 'mkt-metricas-publicidade'],
+  },
+  {
+    id: 'mkt-anuncios-sem-foto',
+    modulo: 'marketplace',
+    tela: 'Anúncios',
+    titulo: 'A foto do anúncio não aparece',
+    rota: '/marketplace/anuncios',
+    perguntas: [
+      'nao aparece foto do anuncio',
+      'foto do anuncio em branco',
+      'cartao de anuncio sem imagem',
+      'imagem quebrada no anuncio',
+    ],
+    resposta:
+      'Isso era um defeito do sistema, corrigido em 10/09/2026: as fotos vêm da CDN da plataforma, e duas coisas as barravam ao mesmo tempo — o Mercado Livre entrega o endereço em `http://`, que o navegador bloqueia dentro de uma página segura, e a política de segurança do próprio HBN Hub não liberava nenhuma imagem de fora do domínio. As duas foram corrigidas, e vale para as fotos já gravadas: não é preciso rodar "Atualizar das lojas" antes.\n\nSe ainda houver cartão sem imagem, o quadro diz o motivo: **"sem foto"** significa que a plataforma não mandou endereço nenhum; **"foto não abriu"** significa que o endereço existe mas não respondeu (foto apagada na plataforma, por exemplo). Nesses casos o sistema tenta antes a foto do produto no cadastro, e só depois mostra a referência escrita.',
+    relacionados: ['mkt-anuncios-publicacao-variacao'],
   },
 ];

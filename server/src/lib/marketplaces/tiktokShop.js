@@ -36,6 +36,8 @@
 //    detalhar o que já estava no banco). A chamada por pedido existe, mas só
 //    como último recurso, em lote pequeno.
 
+const { melhorFoto } = require('../fotoMarketplace');
+
 const crypto = require('crypto');
 
 const HOST_AUTORIZACAO = 'https://services.tiktokshop.com'; // ROW (inclui Brasil); US usaria services.us.tiktokshop.com
@@ -666,7 +668,8 @@ function mapearAnuncioTikTok(produto) {
     status: STATUS_ANUNCIO_TIKTOK[produto.status] || 'desconhecido',
     statusExterno: produto.status || null,
     url: produto.id ? `https://shop.tiktok.com/view/product/${produto.id}` : null,
-    fotoUrl: produto.main_images?.[0]?.urls?.[0] || null,
+    // Sempre em https — ver lib/fotoMarketplace.js.
+    fotoUrl: melhorFoto(...(produto.main_images?.[0]?.urls || [])),
     categoriaExterna: produto.category_chains?.map((c) => c.local_name).filter(Boolean).join(' > ') || null,
     tipoAnuncio: variacoes.length > 1 ? 'com_variacao' : 'simples',
     // A busca de produtos da TikTok NÃO devolve vendas nem visitas. Fica

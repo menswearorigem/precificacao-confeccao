@@ -13,6 +13,7 @@
 // tabela do motor de cálculo. Tudo é leitura, fora a sincronização do
 // extrato, que só escreve nas tabelas `fin_*`.
 
+const { condMulti } = require('../lib/filtrosMulti');
 const express = require('express');
 const pool = require('../db/pool');
 const {
@@ -42,8 +43,13 @@ function filtrosExtrato(query, aliasTabela = 'l', { ignorarStatus = false } = {}
 
   if (query.data_inicio) { conditions.push(`${t}.data_liberacao >= $${i}`); values.push(query.data_inicio); i += 1; }
   if (query.data_fim) { conditions.push(`${t}.data_liberacao <= $${i}`); values.push(query.data_fim); i += 1; }
-  if (query.marketplace) { conditions.push(`${t}.marketplace = $${i}`); values.push(query.marketplace); i += 1; }
-  if (query.origem_integracao_id) { conditions.push(`${t}.origem_integracao_id = $${i}`); values.push(Number(query.origem_integracao_id)); i += 1; }
+  // Loja e plataforma aceitam VÁRIOS valores (10/09/2026): "7" continua
+  // valendo, e "7,9" filtra as duas lojas de uma vez — é o mesmo formato
+  // do UpSeller, que a equipe já usa. Ver lib/filtrosMulti.js.
+  const condMkt = condMulti(`${t}.marketplace`, query.marketplace, values, 'text');
+  if (condMkt) { conditions.push(condMkt); i = values.length + 1; }
+  const condLoja = condMulti(`${t}.origem_integracao_id`, query.origem_integracao_id, values, 'int');
+  if (condLoja) { conditions.push(condLoja); i = values.length + 1; }
 
   // `tipo` aceita lista separada por vírgula ("ads,taxa,ajuste") — é o
   // filtro de "o que aparece na tela" que o financeiro pediu.
@@ -198,8 +204,10 @@ router.get('/repasses', async (req, res, next) => {
     let i = 1;
     if (req.query.data_inicio) { conditions.push(`r.data_liberacao >= $${i}`); values.push(req.query.data_inicio); i += 1; }
     if (req.query.data_fim) { conditions.push(`r.data_liberacao <= $${i}`); values.push(req.query.data_fim); i += 1; }
-    if (req.query.marketplace) { conditions.push(`r.marketplace = $${i}`); values.push(req.query.marketplace); i += 1; }
-    if (req.query.origem_integracao_id) { conditions.push(`r.origem_integracao_id = $${i}`); values.push(Number(req.query.origem_integracao_id)); i += 1; }
+    const condMktR = condMulti('r.marketplace', req.query.marketplace, values, 'text');
+    if (condMktR) { conditions.push(condMktR); i = values.length + 1; }
+    const condLojaR = condMulti('r.origem_integracao_id', req.query.origem_integracao_id, values, 'int');
+    if (condLojaR) { conditions.push(condLojaR); i = values.length + 1; }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const { rows } = await pool.query(
@@ -243,8 +251,10 @@ router.get('/conciliacao', async (req, res, next) => {
     let i = 1;
     if (data_inicio) { cond.push(`data_liberacao >= $${i}`); vals.push(data_inicio); i += 1; }
     if (data_fim) { cond.push(`data_liberacao <= $${i}`); vals.push(data_fim); i += 1; }
-    if (marketplace) { cond.push(`marketplace = $${i}`); vals.push(marketplace); i += 1; }
-    if (origem_integracao_id) { cond.push(`origem_integracao_id = $${i}`); vals.push(Number(origem_integracao_id)); i += 1; }
+    const condMktE = condMulti('marketplace', marketplace, vals, 'text');
+    if (condMktE) { cond.push(condMktE); i = vals.length + 1; }
+    const condLojaE = condMulti('origem_integracao_id', origem_integracao_id, vals, 'int');
+    if (condLojaE) { cond.push(condLojaE); i = vals.length + 1; }
     const whereExtrato = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
 
     const { rows: extrato } = await pool.query(
@@ -273,8 +283,10 @@ router.get('/conciliacao', async (req, res, next) => {
     let j = 1;
     if (data_inicio) { condP.push(`(pv.valor_recebido_liberacao_em AT TIME ZONE 'America/Sao_Paulo')::date >= $${j}`); valsP.push(data_inicio); j += 1; }
     if (data_fim) { condP.push(`(pv.valor_recebido_liberacao_em AT TIME ZONE 'America/Sao_Paulo')::date <= $${j}`); valsP.push(data_fim); j += 1; }
-    if (marketplace) { condP.push(`pv.origem_marketplace = $${j}`); valsP.push(marketplace); j += 1; }
-    if (origem_integracao_id) { condP.push(`pv.origem_integracao_id = $${j}`); valsP.push(Number(origem_integracao_id)); j += 1; }
+    const condMktP = condMulti('pv.origem_marketplace', marketplace, valsP, 'text');
+    if (condMktP) { condP.push(condMktP); j = valsP.length + 1; }
+    const condLojaP = condMulti('pv.origem_integracao_id', origem_integracao_id, valsP, 'int');
+    if (condLojaP) { condP.push(condLojaP); j = valsP.length + 1; }
 
     const { rows: pedidos } = await pool.query(
       `SELECT (pv.valor_recebido_liberacao_em AT TIME ZONE 'America/Sao_Paulo')::date AS data,

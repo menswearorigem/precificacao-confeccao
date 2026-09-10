@@ -18,6 +18,8 @@
 //    permite calcular a lucratividade real (mesmo papel que o
 //    net_received_amount do pagamento tem no Mercado Livre).
 
+const { melhorFoto } = require('../fotoMarketplace');
+
 const crypto = require('crypto');
 
 const HOST = 'https://partner.shopeemobile.com';
@@ -1097,7 +1099,10 @@ function mapearAnuncioShopee(item, variacoes) {
     status: STATUS_ANUNCIO_SHOPEE[item.item_status] || 'desconhecido',
     statusExterno: item.item_status || null,
     url: item.item_id ? `https://shopee.com.br/product/${item.shop_id || ''}/${item.item_id}` : null,
-    fotoUrl: item.image?.image_url_list?.[0] || null,
+    // Sempre em https — ver lib/fotoMarketplace.js. A Shopee costuma
+    // devolver https, mas nem toda conta: uma única foto em http bloqueia o
+    // quadro inteiro dentro da página, sem erro visível.
+    fotoUrl: melhorFoto(...(item.image?.image_url_list || [])),
     categoriaExterna: item.category_id != null ? String(item.category_id) : null,
     tipoAnuncio: item.item_status === 'NORMAL' && item.has_model ? 'com_variacao' : 'simples',
     vendasTotal: item.sold != null ? Number(item.sold) : null,
