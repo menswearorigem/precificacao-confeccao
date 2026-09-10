@@ -191,15 +191,25 @@ export function NumInput({ value, onChange, step = '0.01', suffix, onFocus, onBl
     onChange(textoParaNumero(limpo));
   }
 
+  // 10/09/2026: clicar num campo que mostra "0,00" LIMPA o campo, em vez de
+  // deixar o zero pra pessoa apagar antes de digitar. Era o atrito nº 1 de
+  // quem lança preço e quantidade o dia inteiro: sem isso, digitar "35" em
+  // cima de "0,00" produzia "0,0035" ou obrigava a selecionar tudo antes.
+  // Só o zero some — qualquer outro valor continua aparecendo pra ser
+  // corrigido, que é o que se espera de um campo já preenchido.
   function aoFocar(e) {
     setFocado(true);
-    setTexto(numeroParaTextoEdicao(value));
+    const zerado = value === 0 || value === '0' || value === '' || value === null || value === undefined;
+    setTexto(zerado ? '' : numeroParaTextoEdicao(value));
     onFocus?.(e);
   }
 
   function aoDesfocar(e) {
     setFocado(false);
-    const numero = textoParaNumero(texto);
+    // Campo esvaziado no foco e não digitado volta ao que era (não vira
+    // ''): quem só clicou fora não pretendia apagar o valor.
+    const vazio = texto.trim() === '';
+    const numero = vazio ? (value ?? '') : textoParaNumero(texto);
     setTexto(formatarNumeroExibicao(numero, casas, forcarCasas));
     if (numero !== value) onChange(numero);
     onBlur?.(e);
