@@ -2,16 +2,19 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Factory, RefreshCw, AlertTriangle, ChevronDown, ChevronRight, Layers,
   TriangleAlert, CalendarClock, CheckCircle2, Boxes, PackageCheck, Info,
+  FileDown, FileSpreadsheet,
 } from 'lucide-react';
 import { api } from '../api/client';
 import {
-  EstadoVazio, Skeleton, CampoBusca, Paginacao, BotaoRelatorio,
+  EstadoVazio, Skeleton, CampoBusca, Paginacao,
 } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoTresMeses } from '../lib/periodos';
 import { useTabela } from '../lib/useTabela';
 import { formatQtd, dataBr } from '../lib/format';
 import { montarDefinicaoProjecao } from '../lib/projecaoRelatorio';
+import { gerarPdfProjecao } from '../lib/projecaoPdf';
+import { gerarXlsx } from '../lib/relatorio';
 
 // Produção › Projeção de estoque.
 //
@@ -338,6 +341,28 @@ export default function ProjecaoEstoquePage() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
   const [abertas, setAbertas] = useState(() => new Set());
+  const [exportando, setExportando] = useState('');
+
+  async function exportar() {
+    setExportando('pdf'); setErro(null);
+    try {
+      await gerarPdfProjecao({ dados, filtradas, periodo });
+    } catch (e) {
+      // Falhar em silencio aqui e' o pior caso: a pessoa acha que baixou.
+      setErro(e?.message || 'Não consegui gerar o PDF.');
+    } finally { setExportando(''); }
+  }
+
+  async function exportarExcel() {
+    setExportando('xlsx'); setErro(null);
+    try {
+      const def = montarDefinicaoProjecao({ dados, filtradas, periodo, tipo: 'completo' });
+      if (!def) throw new Error('Não há dado para exportar com os filtros atuais.');
+      await gerarXlsx(def);
+    } catch (e) {
+      setErro(e?.message || 'Não consegui gerar o Excel.');
+    } finally { setExportando(''); }
+  }
 
   const carregar = useCallback(async () => {
     setCarregando(true); setErro(null);
@@ -398,13 +423,26 @@ export default function ProjecaoEstoquePage() {
           <button type="button" className="botao-secundario" onClick={carregar} disabled={carregando}>
             <RefreshCw size={14} className={carregando ? 'girando' : ''} /> Atualizar
           </button>
-          <BotaoRelatorio
-            disabled={carregando || !dados}
-            rotulo="Exportar"
-            descricaoResumo="Os quatro números e uma linha por referência — cabe em poucas páginas."
-            descricaoCompleto="As três camadas de cada referência, na grade cor × tamanho."
-            montar={(tipo) => montarDefinicaoProjecao({ dados, filtradas, periodo, tipo })}
-          />
+          {/* O PDF tem gerador próprio (`projecaoPdf.js`), com capa, uma
+              referência por página e o swatch de cor pintado na célula. O
+              motor genérico de relatório continua servindo o Excel, onde a
+              tabela crua é justamente o que se quer. */}
+          <button
+            type="button"
+            className="botao-primario"
+            disabled={carregando || !dados || filtradas.length === 0 || exportando}
+            onClick={exportar}
+          >
+            <FileDown size={14} /> {exportando === 'pdf' ? 'Gerando…' : 'Exportar PDF'}
+          </button>
+          <button
+            type="button"
+            className="botao-secundario"
+            disabled={carregando || !dados || filtradas.length === 0 || exportando}
+            onClick={exportarExcel}
+          >
+            <FileSpreadsheet size={14} /> {exportando === 'xlsx' ? 'Gerando…' : 'Excel'}
+          </button>
         </div>
       </header>
 
@@ -469,12 +507,11 @@ export default function ProjecaoEstoquePage() {
           <div className="pe-lista">
             {tabela.itensPagina.map((r) => {
               const aberta = abertas.has(r.produtoId);
-              // A ordem canônica de tamanho vem pronta do servidor (a mesma
-              // ORDEM_TAMANHOS da casa). Preservar a ordem de primeira
-              // aparição basta — reordenar aqui alfabeticamente colocaria o
-              // GG antes do M.
-              const tamanhosOrdenados = [];
-              for (const l of r.linhas) if (!tamanhosOrdenados.includes(l.tamanho)) tamanhosOrdenados.push(l.tamanho);
+              // A ordem canônica de tamanho vem PRONTA do servidor. Deduzi-la
+              // aqui pela ordem de aparição das linhas dava G, GG, P, M sempre
+              // que a primeira cor da referência só tinha G e GG — e a grade
+              // saía ilegível justo onde ela é mais quebrada.
+              const tamanhosOrdenados = r.tamanhos || [];
 
               return (
                 <article key={r.produtoId} className={`pe-card ${aberta ? 'pe-card-aberto' : ''}`}>

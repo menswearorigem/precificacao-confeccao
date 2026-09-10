@@ -300,8 +300,17 @@ router.get('/', async (req, res, next) => {
         return projecao.pesoTamanho(a.tamanho) - projecao.pesoTamanho(b.tamanho);
       });
 
+      // A lista de tamanhos da referencia, na ORDEM CANONICA da casa. Sai
+      // daqui e nao de quem consome porque tela e PDF precisam da mesma, e
+      // deduzi-la da ordem de aparicao das linhas dava G, GG, P, M quando a
+      // primeira cor da referencia so' tinha G e GG -- a grade saia ilegivel
+      // justamente na referencia com a grade mais quebrada.
+      const tamanhos = [...new Set(linhas.map((l) => l.tamanho))]
+        .sort((x, y) => projecao.pesoTamanho(x) - projecao.pesoTamanho(y));
+
       referencias.push({
         produtoId,
+        tamanhos,
         referencia: prod.referencia,
         descricao: prod.descricao,
         marca: prod.marca,
