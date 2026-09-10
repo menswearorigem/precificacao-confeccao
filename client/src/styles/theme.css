@@ -1011,6 +1011,16 @@ input:disabled, select:disabled, textarea:disabled { opacity: 0.6; cursor: not-a
   align-items: center;
   cursor: pointer;
   vertical-align: middle;
+  /* CORRIGIDO 10/09/2026 — a rolagem que passava do fim da página.
+     O <input> real destes dois é `position: absolute` (fica escondido, mas
+     continua no DOM pro teclado e pro leitor de tela). Sem `relative` aqui, o
+     bloco contentor dele virava a PÁGINA INTEIRA: numa tela com uma checkbox
+     por linha (Romaneio, Etiquetas, Estoque, Produtos…) as caixas escondidas
+     se empilhavam fora da casca, o `overflow: hidden` do .shell não as
+     recortava e o documento ganhava uma barra de rolagem própria — aquela
+     área branca enorme depois do último cartão, arrastando cabeçalho e menu
+     lateral junto. Uma linha resolve em todas as telas de uma vez. */
+  position: relative;
 }
 .checkbox-custom input, .toggle-custom input {
   position: absolute;
@@ -1448,7 +1458,15 @@ table.data-table .select-custom-lista { font-size: 12.5px; }
   border-radius: 6px;
   transition: color 0.15s var(--ease), background 0.15s var(--ease);
 }
-.icon-btn:hover { color: var(--danger); background: var(--danger-bg); }
+/* PADRONIZADO 10/09/2026 — o hover era SEMPRE vermelho, inclusive no lápis de
+   editar e na engrenagem, porque a classe nasceu para o botão de excluir. Nas
+   telas novas isso já tinha sido contornado com uma classe paralela
+   (`.btn-icone`, hover neutro), e o sistema ficou com dois botões-ícone
+   diferentes convivendo na mesma tela. Agora é um só: hover neutro por padrão,
+   vermelho só quando o botão é mesmo de remover (`.perigo`, posta em todo
+   botão com ícone de lixeira). */
+.icon-btn:hover { color: var(--ink); background: var(--border-soft); }
+.icon-btn.perigo:hover, .btn-icone.perigo:hover { color: var(--danger); background: var(--danger-bg); }
 
 /* Botão de copiar inline (ao lado de nº de pedido, código etc.) — mesma
    base do .icon-btn, mas destaca em verde-sucesso (não em vermelho, que é
@@ -1566,6 +1584,11 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
 /* ---------- esqueleto de carregamento ---------- */
 .skeleton {
   display: inline-block;
+  /* Sem isto, um <Skeleton height={180} /> (sem `width`) media 0px de largura:
+     reservava a altura e não desenhava nada — o "branco no meio da tela"
+     enquanto carrega. Largura explícita na prop continua vencendo, porque vem
+     como style inline. */
+  width: 100%;
   border-radius: var(--radius-sm);
   background: linear-gradient(100deg, var(--border-soft) 30%, var(--border) 50%, var(--border-soft) 70%);
   background-size: 250% 100%;
@@ -2216,6 +2239,15 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
   font-weight: 500;
   border-bottom: 1px solid transparent;
   transition: border-color 0.16s;
+  /* A classe nasceu para <a>; em "Esqueci a senha" ela veste um <button>, que
+     vinha com o reset repetido no style inline de cada uso. O reset passou pra
+     cá: a classe agora serve aos dois elementos, e quem usa não precisa saber
+     disso. */
+  background: none;
+  border-top: 0; border-right: 0; border-left: 0;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
 }
 .login-link:hover { border-bottom-color: var(--terracotta); }
 .login-link:focus-visible { outline: 2px solid var(--terracotta); outline-offset: 2px; }
@@ -5900,11 +5932,21 @@ table.ficha-doc-tabela {
 }
 .btn-sec:hover:not(:disabled) { background: var(--border-soft); border-color: var(--ink-faint); }
 .btn-sec:disabled, .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+/* Faltavam duas coisas pro `.btn-sec` ser indistinguível do `.btn.btn-ghost`:
+   o afundar de 3% no clique e o `text-decoration: none` (quando o botão é um
+   <Link>). Com isto, os dois dialetos de botão do sistema desenham igual. */
+.btn-sec { text-decoration: none; }
+.btn-sec:active:not(:disabled) { transform: scale(0.97); }
 
+/* `.btn-icone` é apelido de `.icon-btn` (mesmas medidas, mesmo raio, mesmo
+   hover) — as duas existem porque as telas de setembro/2026 foram escritas com
+   o nome novo; em vez de reescrever 17 arquivos, os dois nomes passam a
+   desenhar exatamente o mesmo botão. */
 .btn-icone {
   display: inline-flex; align-items: center; justify-content: center;
-  padding: 5px; border-radius: var(--radius-sm); cursor: pointer;
-  background: transparent; border: 1px solid transparent; color: var(--ink-soft);
+  padding: 5px; border-radius: 6px; cursor: pointer;
+  background: transparent; border: none; color: var(--ink-soft);
+  transition: color 0.15s var(--ease), background 0.15s var(--ease);
 }
 .btn-icone:hover { background: var(--border-soft); color: var(--ink); }
 
@@ -5923,12 +5965,42 @@ table.ficha-doc-tabela {
 /* A tabela larga rola DENTRO da caixa dela. Sem isso a página inteira ganha
    barra horizontal, que no celular é o jeito mais rápido de perder a coluna
    da esquerda de vista. */
-.tabela-rolagem { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.tabela-rolagem { overflow-x: auto; -webkit-overflow-scrolling: touch; position: relative; }
 
 .erro-inline {
   font-size: 12.5px; padding: 9px 13px; border-radius: var(--radius-sm);
   background: var(--danger-bg); color: var(--danger); margin: 0;
 }
+
+/* ---- Aviso de campo (components/campos.jsx) -------------------------------
+   Mensagem curta logo abaixo do campo que não passou na regra: "CNPJ inválido
+   — o dígito verificador não fecha", "E-mail precisa ter @ — o campo foi
+   limpo". Fica no mesmo lugar do `.field-hint` (o <Field> é uma coluna flex),
+   só que em vermelho. `flex-basis: 100%` é para o caso do CEP, que mora numa
+   LINHA (campo + botão "Buscar"): sem isso o aviso espremeria o campo em vez
+   de cair na linha de baixo. */
+.campo-aviso {
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--danger);
+  flex-basis: 100%;
+  width: 100%;
+}
+.campo-aviso-atencao { color: var(--warning); }
+input[aria-invalid='true'] { border-color: var(--danger-ring); }
+input[aria-invalid='true']:focus { border-color: var(--danger); box-shadow: 0 0 0 3px var(--danger-bg); }
+
+/* ---- Linha clicável dentro de um cartão -----------------------------------
+   Existia como estilo inline solto no Dashboard ("Vendas por Canal"). Virou
+   classe pra deixar de ser um botão sem className e sem anel de foco. */
+.linha-clicavel {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 10px 0; text-align: left;
+  background: none; border: none; border-bottom: 1px solid var(--border-soft);
+  color: inherit; font: inherit; cursor: pointer;
+  transition: background 0.15s var(--ease);
+}
+.linha-clicavel:hover { background: var(--surface-alt); }
 .aviso-inline {
   display: flex; align-items: flex-start; gap: 7px;
   font-size: 12.5px; padding: 9px 13px; border-radius: var(--radius-sm);
