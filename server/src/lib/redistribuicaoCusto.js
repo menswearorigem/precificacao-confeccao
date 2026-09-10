@@ -50,6 +50,23 @@ const { mesmaGrandeza, normalizar } = require('./insumoUnidade');
 
 const TOLERANCIA = 0.005; // meio centavo
 
+// ---------------------------------------------------------------------------
+// Comparar dinheiro com `>` contra 0,005 em ponto flutuante não funciona.
+// ---------------------------------------------------------------------------
+// Uma diferença que é EXATAMENTE meio centavo sai da conta como
+// 0.005000000000002558 — lixo de ponto flutuante na 15ª casa. Com `>` puro,
+// esse caso era recusado, e como meio centavo é justamente o máximo que o
+// desenho permite, a referência mais comum de todas caía fora: a tela mostrava
+// "maior diferença R$ 0,0050" e a gravação era desfeita inteira.
+//
+// A comparação passa a ser feita sobre o valor ARREDONDADO na 6ª casa — que é
+// mais precisão do que qualquer coluna de dinheiro deste banco guarda, e
+// muito além do que meio centavo precisa. Não é afrouxar o limite: é comparar
+// dinheiro com dinheiro em vez de comparar com o resíduo binário.
+function acimaDaTolerancia(valor) {
+  return arred(Math.abs(n(valor)), 6) > TOLERANCIA;
+}
+
 function n(v) {
   const x = Number(v);
   return Number.isFinite(x) ? x : 0;
@@ -332,7 +349,7 @@ function planejarRedistribuicao({ materiais, custosIndustriais, insumosPorId, op
     return plano;
   }
 
-  if (delta > totalIndustrialAtual + TOLERANCIA) {
+  if (arred(delta - totalIndustrialAtual, 6) > TOLERANCIA) {
     plano.situacao = 'industrial_insuficiente';
     plano.motivo = `O custo de matéria-prima calculado pelos insumos (R$ ${totalMateriaisNovo.toFixed(2)}) é maior do que todo o custo industrial da referência (R$ ${totalIndustrialAtual.toFixed(2)}). Redistribuir aqui deixaria custo industrial negativo, ou aumentaria o custo da peça. Não dá para fazer sem revisar a quantidade da ficha ou o custo do insumo.`;
     return plano;
@@ -357,7 +374,7 @@ function planejarRedistribuicao({ materiais, custosIndustriais, insumosPorId, op
   plano.subtotalNovo = subtotalNovo;
   plano.diferenca = diferenca;
 
-  if (Math.abs(diferenca) > TOLERANCIA) {
+  if (acimaDaTolerancia(diferenca)) {
     plano.situacao = 'diferenca_acima_do_limite';
     plano.motivo = `A conta não fechou: o custo da peça mudaria R$ ${diferenca.toFixed(6)}, acima do meio centavo que a precisão das colunas permite. Nada será gravado.`;
     return plano;
@@ -377,6 +394,7 @@ module.exports = {
   quantidadeDaLinha,
   repartirProporcional,
   TOLERANCIA,
+  acimaDaTolerancia,
   arred,
   temNumero,
 };

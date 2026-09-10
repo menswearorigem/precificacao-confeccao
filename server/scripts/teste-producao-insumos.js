@@ -25,7 +25,7 @@ const pool = require('../src/db/pool');
 
 const producaoInsumos = require('../src/routes/producaoInsumos.routes');
 const produtosRoutes = require('../src/routes/produtos.routes');
-const { planejarRedistribuicao, repartirProporcional, arred } = require('../src/lib/redistribuicaoCusto');
+const { planejarRedistribuicao, repartirProporcional, arred, acimaDaTolerancia } = require('../src/lib/redistribuicaoCusto');
 const { classificar } = require('../src/lib/insumoUnidade');
 const { casar, casarExato, candidatos, indiceExato, placar } = require('../src/lib/vinculoInsumo');
 
@@ -44,6 +44,14 @@ function checa(nome, condicao, detalhe) {
 }
 function perto(nome, a, b, tol = 0.0001) {
   checa(nome, Math.abs(Number(a) - Number(b)) <= tol, { esperado: b, veio: a });
+}
+// Para dinheiro, o teste tem de medir do mesmo jeito que o código mede: meio
+// centavo é o limite, e o resíduo binário da 15ª casa não conta. Comparar com
+// `<=` cru aqui reintroduziria, na asserção, exatamente o defeito que o código
+// acabou de consertar.
+function custoIgual(nome, depois, antes) {
+  const d = Number(depois) - Number(antes);
+  checa(`${nome} (diferença R$ ${d.toFixed(6)})`, !acimaDaTolerancia(d), { antes, depois });
 }
 
 let servidor;
@@ -266,7 +274,7 @@ async function main() {
     const r = await req('POST', '/api/producao-insumos/distribuicao/aplicar', { produto_ids: [p1], confirmar: true });
     checa('aplicou 1 referência', r.body.aplicados === 1, r.body);
     const depois = await subtotalDe(p1);
-    perto('RELENDO DO BANCO: o custo de produção continua 25,00', depois, antesP1, 0.005);
+    custoIgual('RELENDO DO BANCO: o custo de produção continua 25,00', depois, antesP1);
 
     const { rows: mats } = await pool.query('SELECT material, quantidade, valor_unitario FROM materiais WHERE produto_id = $1 ORDER BY ordem', [p1]);
     perto('a malha ficou com R$ 40,0000 por kg na ficha', Number(mats[0].valor_unitario), 40);
@@ -335,7 +343,7 @@ async function main() {
     perto('1,2 m × 12,80 = 15,36 de matéria-prima', plano.totalMateriaisNovo, 15.36);
     perto('o industrial cai para 14,64', plano.totalIndustrialNovo, 14.64);
     await req('POST', '/api/producao-insumos/distribuicao/aplicar', { produto_ids: [p], confirmar: true });
-    perto('e o custo de produção continua o mesmo', await subtotalDe(p), antes, 0.005);
+    custoIgual('e o custo de produção continua o mesmo', await subtotalDe(p), antes);
   }
 
   // =====================================================================
@@ -468,8 +476,8 @@ async function main() {
       const d = Math.abs((await subtotalDe(c.id)) - c.antes);
       if (d > maior) maior = d;
     }
-    checa(`nenhuma das ${criados.length} referências mudou de custo (maior diferença: R$ ${maior.toFixed(6)})`, maior <= 0.005, maior);
-    checa('e o próprio endpoint reporta a maior diferença dentro do limite', Number(r.body.maior_diferenca) <= 0.005, r.body.maior_diferenca);
+    checa(`nenhuma das ${criados.length} referências mudou de custo (maior diferença: R$ ${maior.toFixed(6)})`, !acimaDaTolerancia(maior), maior);
+    checa('e o próprio endpoint reporta a maior diferença dentro do limite', !acimaDaTolerancia(r.body.maior_diferenca), r.body.maior_diferenca);
   }
 
   // =====================================================================
@@ -538,7 +546,7 @@ async function main() {
       ]),
     });
     perto('subtotal antes = 44,51', plano.subtotalAtual, 44.51);
-    checa(`a diferença fica dentro de meio centavo (R$ ${plano.diferenca.toFixed(6)})`, Math.abs(plano.diferenca) <= 0.005, plano.diferenca);
+    checa(`a diferença fica dentro de meio centavo (R$ ${plano.diferenca.toFixed(6)})`, !acimaDaTolerancia(plano.diferenca), plano.diferenca);
     perto('a soma dos industriais novos bate com o alvo arredondado',
       plano.industriais.reduce((s, c) => s + c.valor_novo, 0), arred(plano.totalIndustrialAtual - plano.delta, 2), 1e-9);
     checa('nenhum custo industrial ficou negativo', plano.industriais.every((c) => c.valor_novo >= 0), plano.industriais);
@@ -604,7 +612,37 @@ async function main() {
     perto('as linhas industriais zeradas continuam zeradas', Number(inds[0].valor), 0);
     perto('e a linha de R$ 14,98 caiu para R$ 7,10', Number(inds[2].valor), 7.10, 0.005);
 
-    perto('O CUSTO DE PRODUÇÃO CONTINUA 14,98', await subtotalDe(p268), antes268, 0.005);
+    custoIgual('O CUSTO DE PRODUÇÃO CONTINUA 14,98', await subtotalDe(p268), antes268);
+  }
+
+  // =====================================================================
+  console.log('\n== 15b. Meio centavo EXATO tem de passar, não ser recusado ==');
+  // =====================================================================
+  // A diferença de exatamente meio centavo é o máximo que o desenho permite —
+  // e era justamente ela que caía fora, porque em ponto flutuante sai como
+  // 0.005000000000002558 e `> 0.005` dava verdadeiro. Na base real isso
+  // aparecia como "maior diferença por peça R$ 0,0050" e a gravação inteira
+  // era desfeita.
+  {
+    const plano = planejarRedistribuicao({
+      materiais: [{ id: 1, material: 'A', unidade: null, quantidade: 1, valor_unitario: 0, insumo_id: 10 }],
+      custosIndustriais: [{ id: 1, tipo: 'Facção', valor: 10 }],
+      insumosPorId: new Map([[10, { id: 10, nome: 'A', unidade: 'un', custo_atual: 1.005 }]]),
+    });
+    perto('a diferença é de meio centavo, no fio', Math.abs(plano.diferenca), 0.005, 1e-9);
+    checa('e o plano é ACEITO — meio centavo é o limite, não o que ultrapassa',
+      plano.situacao !== 'diferenca_acima_do_limite' && plano.aplicavel === true,
+      { situacao: plano.situacao, diferenca: plano.diferenca });
+
+    // E o mesmo caso indo até o banco, pelo caminho de verdade.
+    const insMeio = await criarInsumo({ codigo: 'MEIO', nome: 'INSUMO TESTE PI MEIO CENTAVO', unidade: 'un', custo: 1.005, tipo: 'aviamento' });
+    const p = await criarProduto('009',
+      [{ material: 'INSUMO TESTE PI MEIO CENTAVO', unidade: null, quantidade: 1, valor_unitario: 0, insumo_id: insMeio.id }],
+      [{ tipo: 'Facção', valor: 10 }]);
+    const antes = await subtotalDe(p);
+    const r = await req('POST', '/api/producao-insumos/distribuicao/aplicar', { produto_ids: [p], confirmar: true });
+    checa('a gravação não é recusada por causa do resíduo binário', r.status === 200 && r.body.aplicados === 1, r.body);
+    custoIgual('e o custo de produção continua o mesmo', await subtotalDe(p), antes);
   }
 
   // =====================================================================
@@ -698,11 +736,13 @@ async function main() {
     checa('preencheu de verdade', cheio.body.referencias_preenchidas >= 500, cheio.body.referencias_preenchidas);
 
     let maior = 0;
+    let fora = 0;
     for (const [id, antes] of antesTudo) {
       const d = Math.abs((await subtotalDe(id)) - antes);
       if (d > maior) maior = d;
+      if (acimaDaTolerancia(d)) fora += 1;
     }
-    checa(`o custo das 600 referências não mudou (maior diferença R$ ${maior.toFixed(6)})`, maior <= 0.005, maior);
+    checa(`o custo das 600 referências não mudou (maior diferença R$ ${maior.toFixed(6)}, nenhuma acima de meio centavo)`, fora === 0, fora);
 
     t0 = Date.now();
     const dist = await req('GET', '/api/producao-insumos/distribuicao?tamanho=50');

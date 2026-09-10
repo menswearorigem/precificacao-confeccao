@@ -35,7 +35,7 @@
 // A diferença é só quem aperta o botão, e quantas vezes.
 
 const { casar, casarExato, indiceExato } = require('./vinculoInsumo');
-const { planejarRedistribuicao, TOLERANCIA } = require('./redistribuicaoCusto');
+const { planejarRedistribuicao, TOLERANCIA, acimaDaTolerancia, arred } = require('./redistribuicaoCusto');
 
 // ---------------------------------------------------------------------------
 // Monta o plano de redistribuição de um conjunto de produtos.
@@ -51,11 +51,18 @@ async function planosDe(executor, produtoIds, opcoes) {
   if (produtos.length === 0) return [];
   const ids = produtos.map((p) => p.id);
 
-  const [{ rows: materiais }, { rows: industriais }, { rows: insumos }] = await Promise.all([
-    executor.query('SELECT * FROM materiais WHERE produto_id = ANY($1) ORDER BY produto_id, ordem, id', [ids]),
-    executor.query('SELECT * FROM custos_industriais WHERE produto_id = ANY($1) ORDER BY produto_id, ordem, id', [ids]),
-    executor.query('SELECT * FROM insumos'),
-  ]);
+  // Em SÉRIE, e não em Promise.all: quando `executor` é o client de uma
+  // transação (que é o caso de toda gravação aqui), disparar três consultas ao
+  // mesmo tempo no mesmo client é justamente o que o driver avisa que vai
+  // parar de funcionar — "client.query() when the client is already executing
+  // a query". Numa base pequena passa; numa base grande, dentro de BEGIN, é
+  // erro interno do servidor. O ganho de paralelismo aqui era nenhum: é o
+  // mesmo client, uma conexão só.
+  const { rows: materiais } = await executor.query(
+    'SELECT * FROM materiais WHERE produto_id = ANY($1) ORDER BY produto_id, ordem, id', [ids]);
+  const { rows: industriais } = await executor.query(
+    'SELECT * FROM custos_industriais WHERE produto_id = ANY($1) ORDER BY produto_id, ordem, id', [ids]);
+  const { rows: insumos } = await executor.query('SELECT * FROM insumos');
 
   const insumosPorId = new Map(insumos.map((i) => [Number(i.id), i]));
   const matPorProduto = new Map();
@@ -69,14 +76,22 @@ async function planosDe(executor, produtoIds, opcoes) {
     indPorProduto.get(c.produto_id).push(c);
   }
 
+  // O try/catch por referência não é decoração: sem ele, um dado estranho numa
+  // única ficha derruba a requisição inteira com "erro interno do servidor" e
+  // um código de seis letras, e ninguém descobre qual referência era.
   return produtos.map((p) => {
-    const plano = planejarRedistribuicao({
-      materiais: matPorProduto.get(p.id) || [],
-      custosIndustriais: indPorProduto.get(p.id) || [],
-      insumosPorId,
-      opcoes,
-    });
-    return { produto_id: p.id, referencia: p.referencia, descricao: p.descricao, marca: p.marca, ...plano };
+    try {
+      const plano = planejarRedistribuicao({
+        materiais: matPorProduto.get(p.id) || [],
+        custosIndustriais: indPorProduto.get(p.id) || [],
+        insumosPorId,
+        opcoes,
+      });
+      return { produto_id: p.id, referencia: p.referencia, descricao: p.descricao, marca: p.marca, ...plano };
+    } catch (err) {
+      err.message = `Falhou ao planejar a referência ${p.referencia} (id ${p.id}): ${err.message}`;
+      throw err;
+    }
   });
 }
 
@@ -124,7 +139,7 @@ async function gravarMateriais(executor, linhas) {
                       unnest($2::numeric[]) AS valor,
                       unnest($3::numeric[]) AS consumo) v
         WHERE m.id = v.id`,
-      [lote.map((l) => l.id), lote.map((l) => l.valor_unitario_novo), lote.map((l) => l.quantidade)]
+      [lote.map((l) => l.id), lote.map((l) => arred(l.valor_unitario_novo, 4)), lote.map((l) => arred(l.quantidade, 6))]
     );
   }
 }
@@ -142,7 +157,7 @@ async function gravarIndustriais(executor, linhas) {
                       unnest($2::numeric[]) AS valor,
                       unnest($3::text[]) AS nota) v
         WHERE c.id = v.id`,
-      [lote.map((l) => l.id), lote.map((l) => l.valor_novo), lote.map((l) => l.nota)]
+      [lote.map((l) => l.id), lote.map((l) => arred(l.valor_novo, 2)), lote.map((l) => l.nota)]
     );
   }
 }
@@ -158,13 +173,13 @@ async function vincularExatos(executor, { gravar = false, produtoIds = null } = 
     vals.push(produtoIds);
     cond.push(`m.produto_id = ANY($${vals.length})`);
   }
-  const [{ rows: linhas }, { rows: insumos }] = await Promise.all([
-    executor.query(
-      `SELECT m.id, m.material, m.produto_id, p.referencia
-         FROM materiais m JOIN produtos p ON p.id = m.produto_id
-        WHERE ${cond.join(' AND ')}`, vals),
-    executor.query('SELECT id, codigo, nome FROM insumos WHERE ativo'),
-  ]);
+  // Em série, pelo mesmo motivo de `planosDe`: este executor é o client da
+  // transação quando `gravar` é true.
+  const { rows: linhas } = await executor.query(
+    `SELECT m.id, m.material, m.produto_id, p.referencia
+       FROM materiais m JOIN produtos p ON p.id = m.produto_id
+      WHERE ${cond.join(' AND ')}`, vals);
+  const { rows: insumos } = await executor.query('SELECT id, codigo, nome FROM insumos WHERE ativo');
 
   const idx = indiceExato(insumos);
   const paraLigar = [];
@@ -210,8 +225,18 @@ async function aplicarPlanos(client, planos, { data = '10/09/2026' } = {}) {
       });
     }
   }
-  await gravarMateriais(client, materiais);
-  await gravarIndustriais(client, industriais);
+  try {
+    await gravarMateriais(client, materiais);
+  } catch (err) {
+    err.message = `Falhou ao gravar a ficha de materiais (${materiais.length} linha(s)): ${err.message}`;
+    throw err;
+  }
+  try {
+    await gravarIndustriais(client, industriais);
+  } catch (err) {
+    err.message = `Falhou ao gravar o custo industrial (${industriais.length} linha(s)): ${err.message}`;
+    throw err;
+  }
 
   const { rows: conferencia } = await client.query(
     `SELECT p.id, p.referencia,
@@ -222,7 +247,7 @@ async function aplicarPlanos(client, planos, { data = '10/09/2026' } = {}) {
   );
   const fora = conferencia
     .map((r) => ({ referencia: r.referencia, diferenca: Number(r.subtotal) - Number(antes.get(r.id)) }))
-    .filter((r) => Math.abs(r.diferenca) > TOLERANCIA);
+    .filter((r) => acimaDaTolerancia(r.diferenca));
 
   return { fora };
 }
