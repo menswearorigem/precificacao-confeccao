@@ -5,6 +5,7 @@ const { sincronizarExtratoTodasAtivas } = require('./lib/financeiroExtrato');
 const { sincronizarEstoqueAgora, renovarTokenWikSeNecessario } = require('./lib/wikSync');
 const { sincronizarProdutosAgora } = require('./lib/wikProdutosImport');
 const { sincronizarFichaCustoAgora } = require('./lib/wikFichaCustoImport');
+const { sincronizarProducaoAgora } = require('./lib/wikProducaoSync');
 
 const PORT = process.env.PORT || 3000;
 // Pedidos novos + valor recebido do marketplace — intervalo mais curto que
@@ -16,6 +17,7 @@ const PORT = process.env.PORT || 3000;
 // falhou" na tela de Integrações, e dá pra alongar esse intervalo de novo.
 const SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const WIK_SYNC_INTERVAL_MS = 15 * 60 * 1000;
+const WIK_PRODUCAO_INTERVAL_MS = 15 * 60 * 1000; // espelho de Ordem de Produção do Wik (cookie de sessão)
 // Catálogo (produtos novos) e Ficha de Custo mudam bem menos que o estoque
 // (que muda o tempo todo com vendas/reposição) — 6h é intervalo suficiente
 // pra pegar lançamentos novos e fichas atualizadas sem gerar tráfego à toa
@@ -107,4 +109,15 @@ app.listen(PORT, () => {
   setInterval(() => {
     sincronizarCatalogoWikAgora();
   }, WIK_CATALOGO_INTERVAL_MS);
+
+  // Espelho da PRODUÇÃO do Wik (Ordem de Produção) — 15 min. Usa o backend web
+  // por cookie de sessão (wikWeb.js), NÃO a API/token, então não concorre com
+  // os jobs acima nem entra na fila do wik.js. Espera 90s na subida pra não
+  // brigar com o bootstrap do token/estoque.
+  setTimeout(() => {
+    sincronizarProducaoAgora().catch((err) => console.error('[wik-producao-sync]', err.message));
+  }, 90 * 1000);
+  setInterval(() => {
+    sincronizarProducaoAgora().catch((err) => console.error('[wik-producao-sync]', err.message));
+  }, WIK_PRODUCAO_INTERVAL_MS);
 });

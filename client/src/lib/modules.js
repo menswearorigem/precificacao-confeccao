@@ -1,4 +1,5 @@
 import {
+  Cloud,
   Package, Settings, Landmark, Percent, Factory, Upload,
   FlaskConical, LayoutDashboard, Boxes, FileText, List as ListIcon,
   Warehouse, Barcode, Tags, Printer, Users, ClipboardList, ShoppingCart,
@@ -101,6 +102,7 @@ export const MODULES = [
       // de existir ordem aberta -- e e' a tela que responde se a ordem que ja'
       // esta' aberta resolve a falta ou chega curta.
       { to: '/producao/projecao', label: 'Projeção de Estoque', icon: PackageCheck },
+      { to: '/producao/wik', label: 'Produção no Wik', icon: Cloud },
     ],
   },
   {
