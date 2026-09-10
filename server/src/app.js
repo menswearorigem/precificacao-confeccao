@@ -356,6 +356,16 @@ function createApp() {
     // número e dá pra achar o erro exato no log, sem expor detalhe interno.
     const marca = Math.random().toString(36).slice(2, 8).toUpperCase();
     console.error(`[erro ${marca}]`, err);
+
+    // `err.paraUsuario` marca um erro cuja mensagem foi ESCRITA para ser lida
+    // por quem está na tela — do tipo "falhou ao planejar a referência 36168".
+    // Sem isso, a pessoa via só um código de seis letras e a única forma de
+    // descobrir o motivo era abrir o log do servidor, que nem todo mundo que
+    // usa o sistema sabe (ou deveria precisar) fazer. Erro sem endereço é erro
+    // que ninguém conserta.
+    if (err && err.paraUsuario && err.message) {
+      return res.status(err.status || 500).json({ error: `${err.message} (código ${marca})` });
+    }
     res.status(500).json({ error: `Erro interno do servidor. Se precisar de ajuda, informe o código ${marca}.` });
   });
 

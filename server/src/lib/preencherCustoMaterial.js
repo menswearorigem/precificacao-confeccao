@@ -90,6 +90,7 @@ async function planosDe(executor, produtoIds, opcoes) {
       return { produto_id: p.id, referencia: p.referencia, descricao: p.descricao, marca: p.marca, ...plano };
     } catch (err) {
       err.message = `Falhou ao planejar a referência ${p.referencia} (id ${p.id}): ${err.message}`;
+      err.paraUsuario = true;
       throw err;
     }
   });
@@ -144,20 +145,43 @@ async function gravarMateriais(executor, linhas) {
   }
 }
 
+// `custos_industriais.observacao` é VARCHAR(200), e as fichas que vieram da
+// importação do Wik já chegam com 182 caracteres ali dentro ("Custo total já
+// calculado e aprovado na Ficha de Custo do Wik…"). Acrescentar a nota da
+// redistribuição a esse texto dava 260 caracteres e o banco recusava a
+// gravação inteira — era o "erro interno do servidor" que aparecia ao clicar
+// em Redistribuir, e que não aparecia em base de teste porque lá a observação
+// era curta ou vazia.
+//
+// A regra agora é: a nota entra quando CABE. Quando não cabe, a observação que
+// já estava lá fica intacta — o texto existente vale mais do que a nota, e o
+// registro completo da mudança (de quanto para quanto, em qual referência)
+// está no histórico de alterações de qualquer jeito.
+const LIMITE_OBSERVACAO = 200;
+
 async function gravarIndustriais(executor, linhas) {
   for (const lote of pedacos(linhas)) {
     await executor.query(
       `UPDATE custos_industriais c
           SET valor = v.valor,
               observacao = CASE
-                WHEN COALESCE(c.observacao,'') = '' THEN v.nota
-                WHEN c.observacao LIKE '%redistribuição%' THEN c.observacao
-                ELSE c.observacao || ' — ' || v.nota END
+                WHEN COALESCE(c.observacao,'') = '' THEN left(v.nota, $4)
+                WHEN c.observacao LIKE '%' || v.marca || '%' THEN c.observacao
+                WHEN length(c.observacao) + 3 + length(v.nota) <= $4
+                  THEN c.observacao || ' — ' || v.nota
+                ELSE c.observacao END
          FROM (SELECT unnest($1::int[]) AS id,
                       unnest($2::numeric[]) AS valor,
-                      unnest($3::text[]) AS nota) v
+                      unnest($3::text[]) AS nota,
+                      unnest($5::text[]) AS marca) v
         WHERE c.id = v.id`,
-      [lote.map((l) => l.id), lote.map((l) => arred(l.valor_novo, 2)), lote.map((l) => l.nota)]
+      [
+        lote.map((l) => l.id),
+        lote.map((l) => arred(l.valor_novo, 2)),
+        lote.map((l) => l.nota),
+        LIMITE_OBSERVACAO,
+        lote.map((l) => l.marca),
+      ]
     );
   }
 }
@@ -221,7 +245,12 @@ async function aplicarPlanos(client, planos, { data = '10/09/2026' } = {}) {
       if (!c.mudou) continue;
       industriais.push({
         ...c,
-        nota: `redistribuição ${data}: era R$ ${c.valor_atual.toFixed(2)}, parte virou matéria-prima na ficha`,
+        // Curta de propósito: quanto menor, mais linhas conseguem guardá-la
+        // sem estourar os 200 caracteres da coluna.
+        nota: `redistribuído ${data}: era R$ ${c.valor_atual.toFixed(2)}`,
+        // A marca serve para não repetir a nota se a redistribuição rodar de
+        // novo — antes isso era um LIKE '%redistribuição%' fixo no SQL.
+        marca: `redistribuído ${data}`,
       });
     }
   }
@@ -229,12 +258,14 @@ async function aplicarPlanos(client, planos, { data = '10/09/2026' } = {}) {
     await gravarMateriais(client, materiais);
   } catch (err) {
     err.message = `Falhou ao gravar a ficha de materiais (${materiais.length} linha(s)): ${err.message}`;
+    err.paraUsuario = true;
     throw err;
   }
   try {
     await gravarIndustriais(client, industriais);
   } catch (err) {
     err.message = `Falhou ao gravar o custo industrial (${industriais.length} linha(s)): ${err.message}`;
+    err.paraUsuario = true;
     throw err;
   }
 

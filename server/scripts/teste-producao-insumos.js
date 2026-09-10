@@ -281,7 +281,7 @@ async function main() {
     perto('a etiqueta ficou com R$ 0,0500 por unidade', Number(mats[1].valor_unitario), 0.05);
     const { rows: inds } = await pool.query('SELECT tipo, valor, observacao FROM custos_industriais WHERE produto_id = $1 ORDER BY ordem', [p1]);
     perto('o custo industrial da Facção foi gravado como 8,76', Number(inds[0].valor), 8.76);
-    checa('a linha industrial guarda por escrito quanto era antes', /redistribui/i.test(inds[0].observacao || ''), inds[0].observacao);
+    checa('a linha industrial guarda por escrito quanto era antes', /redistribuído .*era R\$/.test(inds[0].observacao || ''), inds[0].observacao);
 
     const denovo = await req('GET', `/api/producao-insumos/distribuicao?produto_ids=${p1}`);
     checa('rodar de novo não faz nada (é idempotente)', denovo.body.planos[0].situacao === 'nada_a_fazer', denovo.body.planos[0].situacao);
@@ -749,6 +749,75 @@ async function main() {
     checa(`a aba de Distribuição responde em ${Date.now() - t0} ms`, (Date.now() - t0) < 8000);
     checa('devolvendo só a página pedida', dist.body.planos.length <= 50, dist.body.planos.length);
     checa('com os totais do cadastro inteiro', dist.body.total >= 600, dist.body.total);
+  }
+
+  // =====================================================================
+  console.log('\n== 16b. Observação longa do Wik não pode derrubar a gravação ==');
+  // =====================================================================
+  // `custos_industriais.observacao` é VARCHAR(200), e a importação da Ficha de
+  // Custo do Wik já deixa 182 caracteres ali. Somar a nota da redistribuição
+  // dava 260 e o banco recusava a gravação inteira — era o "erro interno do
+  // servidor" ao clicar em Redistribuir, invisível em base de teste porque lá
+  // a observação era curta.
+  {
+    const OBS_WIK = 'Custo total já calculado e aprovado na Ficha de Custo do Wik (matéria-prima + serviços) — os materiais acima entram só como referência (o Wik não expõe custo confiável por material).';
+    checa('a observação que vem do Wik tem 182 caracteres', OBS_WIK.length === 182, OBS_WIK.length);
+
+    const ins = await criarInsumo({ codigo: 'OBSLONGA', nome: 'INSUMO TESTE PI OBS LONGA', unidade: 'un', custo: 2, tipo: 'aviamento' });
+    const pLonga = await criarProduto('010',
+      [{ material: 'INSUMO TESTE PI OBS LONGA', unidade: null, quantidade: 3, valor_unitario: 0, insumo_id: ins.id }],
+      [{ tipo: 'Outro', valor: 20, observacao: OBS_WIK }]);
+    const antes = await subtotalDe(pLonga);
+
+    const r = await req('POST', '/api/producao-insumos/distribuicao/aplicar', { produto_ids: [pLonga], confirmar: true });
+    checa('a gravação NÃO explode com observação de 182 caracteres', r.status === 200 && r.body.aplicados === 1,
+      { status: r.status, erro: r.body && r.body.error });
+    custoIgual('e o custo de produção continua o mesmo', await subtotalDe(pLonga), antes);
+
+    const { rows: obs } = await pool.query('SELECT observacao, valor FROM custos_industriais WHERE produto_id = $1', [pLonga]);
+    checa('a observação original ficou INTEIRA, sem corte', obs[0].observacao === OBS_WIK, obs[0].observacao);
+    perto('e o valor foi redistribuído mesmo assim', Number(obs[0].valor), 14, 0.005);
+
+    // Onde CABE, a nota entra.
+    const pCurta = await criarProduto('011',
+      [{ material: 'INSUMO TESTE PI OBS LONGA', unidade: null, quantidade: 3, valor_unitario: 0, insumo_id: ins.id }],
+      [{ tipo: 'Facção', valor: 20, observacao: 'Facção do Zé' }]);
+    await req('POST', '/api/producao-insumos/distribuicao/aplicar', { produto_ids: [pCurta], confirmar: true });
+    const { rows: obs2 } = await pool.query('SELECT observacao FROM custos_industriais WHERE produto_id = $1', [pCurta]);
+    checa('com observação curta, a nota da redistribuição entra', /redistribuído/.test(obs2[0].observacao || ''), obs2[0].observacao);
+    checa('e o texto que já estava lá continua na frente', (obs2[0].observacao || '').startsWith('Facção do Zé'), obs2[0].observacao);
+    checa('e nada passa dos 200 caracteres da coluna', (obs2[0].observacao || '').length <= 200, (obs2[0].observacao || '').length);
+  }
+
+  // =====================================================================
+  console.log('\n== 17. Erro com endereço: a tela diz QUAL referência quebrou ==');
+  // =====================================================================
+  // Antes, qualquer defeito virava "Erro interno do servidor, código I507N0" e
+  // a única forma de saber o motivo era abrir o log do servidor. Quem usa o
+  // sistema não tem por que saber fazer isso.
+  {
+    const { planosDe } = require('../src/lib/preencherCustoMaterial');
+    // Um executor que devolve um produto e depois explode: simula dado
+    // estranho numa ficha.
+    const fake = {
+      _n: 0,
+      async query(sql) {
+        this._n += 1;
+        if (this._n === 1) return { rows: [{ id: 99, referencia: 'REF-QUEBRADA', descricao: 'x', marca: 'y' }] };
+        // material cuja leitura explode DENTRO do planejamento — é o cenário
+        // real: um dado estranho numa ficha só
+        if (this._n === 2) {
+          return { rows: [{ id: 1, produto_id: 99, material: 'A', insumo_id: null,
+            get quantidade() { throw new Error('dado corrompido'); }, valor_unitario: 0 }] };
+        }
+        if (this._n === 3) return { rows: [{ id: 1, produto_id: 99, tipo: 'Facção', valor: 10 }] };
+        return { rows: [] };
+      },
+    };
+    let capturado = null;
+    try { await planosDe(fake, null, {}); } catch (e) { capturado = e; }
+    checa('o erro diz QUAL referência quebrou', capturado && /REF-QUEBRADA/.test(capturado.message), capturado && capturado.message);
+    checa('e vem marcado para aparecer na tela', capturado && capturado.paraUsuario === true, capturado && capturado.paraUsuario);
   }
 
   await limpar();
