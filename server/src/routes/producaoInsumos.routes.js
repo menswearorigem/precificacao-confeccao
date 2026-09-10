@@ -205,6 +205,12 @@ router.get('/vinculos', async (req, res, next) => {
       vals.push(`%${req.query.busca}%`);
       cond.push(`(m.material ILIKE $${vals.length} OR p.referencia ILIKE $${vals.length})`);
     }
+    // Só as situações pedidas (exato / ambiguo / sugestao / nenhum). O filtro
+    // é aplicado depois do casamento, porque a situação não existe no banco.
+    const filtroSituacao = String(req.query.situacao || '').trim() || null;
+
+    const tamanho = Math.min(Math.max(inteiroPositivo(req.query.tamanho) || 50, 1), 200);
+    const pagina = Math.max(inteiroPositivo(req.query.pagina) || 1, 1);
 
     const [{ rows: linhas }, { rows: insumos }] = await Promise.all([
       pool.query(
@@ -213,15 +219,30 @@ router.get('/vinculos', async (req, res, next) => {
            FROM materiais m
            JOIN produtos p ON p.id = m.produto_id
           WHERE ${cond.join(' AND ')}
-          ORDER BY p.referencia, m.ordem, m.id
-          LIMIT 1000`,
+          ORDER BY p.referencia, m.ordem, m.id`,
         vals
       ),
       pool.query('SELECT id, codigo, nome, tipo, unidade, unidade_confianca, custo_atual FROM insumos WHERE ativo'),
     ]);
 
     const idx = indiceExato(insumos);
-    const saida = linhas.map((l) => {
+
+    // 1ª passada, BARATA: classifica todas as linhas sem pontuar candidato.
+    // É o que dá os números do topo da tela sobre o cadastro inteiro — com
+    // 3.267 linhas contra 503 insumos, pontuar tudo levava ~10 s de CPU e a
+    // tela não terminava de carregar.
+    const classificadas = linhas.map((l) => ({ l, tipo: casar(l.material, insumos, idx, 5, { comCandidatos: false }).tipo }));
+    const contagem = { exato: 0, ambiguo: 0, sugestao: 0, nenhum: 0 };
+    for (const c of classificadas) contagem[c.tipo] = (contagem[c.tipo] || 0) + 1;
+
+    const filtradas = filtroSituacao ? classificadas.filter((c) => c.tipo === filtroSituacao) : classificadas;
+    const totalPaginas = Math.max(1, Math.ceil(filtradas.length / tamanho));
+    const paginaAtual = Math.min(pagina, totalPaginas);
+    const inicio = (paginaAtual - 1) * tamanho;
+    const daPagina = filtradas.slice(inicio, inicio + tamanho);
+
+    // 2ª passada, CARA: só nas linhas que vão aparecer nesta página.
+    const saida = daPagina.map(({ l }) => {
       const r = casar(l.material, insumos, idx);
       return {
         ...l,
@@ -242,11 +263,17 @@ router.get('/vinculos', async (req, res, next) => {
     });
 
     res.json({
-      total: saida.length,
-      exatos: saida.filter((s) => s.casamento === 'exato').length,
-      ambiguos: saida.filter((s) => s.casamento === 'ambiguo').length,
-      sugestoes: saida.filter((s) => s.casamento === 'sugestao').length,
-      sem_candidato: saida.filter((s) => s.casamento === 'nenhum').length,
+      total: linhas.length,
+      exatos: contagem.exato,
+      ambiguos: contagem.ambiguo,
+      sugestoes: contagem.sugestao,
+      sem_candidato: contagem.nenhum,
+      pagina: paginaAtual,
+      tamanho,
+      total_paginas: totalPaginas,
+      total_filtrado: filtradas.length,
+      inicio,
+      fim: inicio + daPagina.length,
       linhas: saida,
     });
   } catch (err) {
@@ -362,21 +389,40 @@ router.get('/distribuicao', async (req, res, next) => {
     const ids = String(req.query.produto_ids || '')
       .split(',').map((s) => inteiroPositivo(s.trim())).filter(Boolean);
     const opcoes = { aceitarUnidadeNaoConfirmada: req.query.aceitar_unidade_nao_confirmada === 'true' };
-    let planos = await planosDe(pool, ids, opcoes);
+    const todos = await planosDe(pool, ids, opcoes);
 
+    // Os números do topo saem de TODAS as referências; a lista devolvida é só
+    // a página pedida. Sem isso, um cadastro com 1.926 referências devolvia um
+    // JSON de vários MB por requisição — e a tela desenhava tudo de uma vez.
+    const resumo = {
+      total: todos.length,
+      aplicaveis: todos.filter((p) => p.aplicavel).length,
+      por_situacao: todos.reduce((acc, p) => { acc[p.situacao] = (acc[p.situacao] || 0) + 1; return acc; }, {}),
+      // O que vai mudar de composição, somado. Não é mudança de custo: é
+      // mudança de onde o custo está.
+      valor_a_mover: todos.filter((p) => p.aplicavel).reduce((s2, p) => s2 + p.delta, 0),
+      maior_diferenca: todos.reduce((mx, p) => Math.max(mx, Math.abs(p.diferenca || 0)), 0),
+      tolerancia: TOLERANCIA,
+    };
+    if (req.query.resumo === 'true') return res.json({ ...resumo, planos: [] });
+
+    let planos = todos;
     if (req.query.situacao) planos = planos.filter((p) => p.situacao === req.query.situacao);
     if (req.query.somente_aplicaveis === 'true') planos = planos.filter((p) => p.aplicavel);
 
+    const tamanho = Math.min(Math.max(inteiroPositivo(req.query.tamanho) || 50, 1), 200);
+    const totalPaginas = Math.max(1, Math.ceil(planos.length / tamanho));
+    const pagina = Math.min(Math.max(inteiroPositivo(req.query.pagina) || 1, 1), totalPaginas);
+    const inicio = (pagina - 1) * tamanho;
+
     res.json({
-      total: planos.length,
-      aplicaveis: planos.filter((p) => p.aplicavel).length,
-      por_situacao: planos.reduce((acc, p) => { acc[p.situacao] = (acc[p.situacao] || 0) + 1; return acc; }, {}),
-      // O que vai mudar de composição, somado. Não é mudança de custo: é
-      // mudança de onde o custo está.
-      valor_a_mover: planos.filter((p) => p.aplicavel).reduce((s, p) => s + p.delta, 0),
-      maior_diferenca: planos.reduce((mx, p) => Math.max(mx, Math.abs(p.diferenca || 0)), 0),
-      tolerancia: TOLERANCIA,
-      planos,
+      ...resumo,
+      // ids de tudo que dá para aplicar — a tela precisa deles para marcar o
+      // lote inteiro sem ter de baixar todos os planos.
+      aplicaveis_ids: todos.filter((p) => p.aplicavel).map((p) => p.produto_id),
+      pagina, tamanho, total_paginas: totalPaginas, total_filtrado: planos.length,
+      inicio, fim: inicio + Math.min(tamanho, planos.length - inicio),
+      planos: planos.slice(inicio, inicio + tamanho),
     });
   } catch (err) {
     next(err);

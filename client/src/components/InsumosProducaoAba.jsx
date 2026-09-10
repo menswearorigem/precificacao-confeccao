@@ -301,19 +301,26 @@ function Vinculos({ onMudou }) {
   const [busca, setBusca] = useState('');
   const [buscaAplicada, setBuscaAplicada] = useState('');
   const [aplicando, setAplicando] = useState(false);
+  const [pagina, setPagina] = useState(1);
+  const [tamanho, setTamanho] = useState(50);
+  const [situacao, setSituacao] = useState('');
 
+  // A paginação é do SERVIDOR, e não da tela: com 3.267 linhas de ficha, baixar
+  // tudo e desenhar tudo era o que deixava esta aba carregando para sempre.
   const carregar = useCallback(async () => {
     setCarregando(true);
     setErro('');
     try {
-      const qs = buscaAplicada ? `?busca=${encodeURIComponent(buscaAplicada)}` : '';
-      setDados(await api.get(`/producao-insumos/vinculos${qs}`));
+      const qs = new URLSearchParams({ pagina: String(pagina), tamanho: String(tamanho) });
+      if (buscaAplicada) qs.set('busca', buscaAplicada);
+      if (situacao) qs.set('situacao', situacao);
+      setDados(await api.get(`/producao-insumos/vinculos?${qs}`));
     } catch (e) {
       setErro(e.message);
     } finally {
       setCarregando(false);
     }
-  }, [buscaAplicada]);
+  }, [buscaAplicada, pagina, tamanho, situacao]);
 
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -379,8 +386,14 @@ function Vinculos({ onMudou }) {
       </div>
 
       <div className="filtros-linha">
-        <CampoBusca valor={busca} onChange={setBusca} onSubmit={() => setBuscaAplicada(busca)}
+        <CampoBusca valor={busca} onChange={setBusca} onSubmit={() => { setPagina(1); setBuscaAplicada(busca); }}
           placeholder="Referência do produto ou texto do material" />
+        <Select value={situacao} onChange={(e) => { setPagina(1); setSituacao(e.target.value); }} placeholder="Todas as situações">
+          <option value="exato">Nome exato</option>
+          <option value="ambiguo">Empate</option>
+          <option value="sugestao">Só parecidas</option>
+          <option value="nenhum">Sem candidato</option>
+        </Select>
         <button type="button" className="btn btn-primary" disabled={aplicando || dados.exatos === 0} onClick={ligarExatos}>
           <Link2 size={14} /> Vincular as {formatQtd(dados.exatos)} de nome exato
         </button>
@@ -392,6 +405,12 @@ function Vinculos({ onMudou }) {
         <EstadoVazio Icone={Check} titulo="Nenhuma linha de ficha sem vínculo"
           descricao="Todas as linhas de ficha técnica já apontam para um insumo cadastrado." />
       ) : (
+        <>
+        <Paginacao
+          pagina={dados.pagina} totalPaginas={dados.total_paginas} tamanho={dados.tamanho}
+          totalItens={dados.total_filtrado} inicio={dados.inicio} fim={dados.fim}
+          setPagina={setPagina} setTamanho={(t) => { setPagina(1); setTamanho(t); }} posicao="topo"
+        />
         <div className="tabela-rolagem">
           <table className="tabela-nota">
             <thead>
@@ -443,6 +462,12 @@ function Vinculos({ onMudou }) {
             </tbody>
           </table>
         </div>
+        <Paginacao
+          pagina={dados.pagina} totalPaginas={dados.total_paginas} tamanho={dados.tamanho}
+          totalItens={dados.total_filtrado} inicio={dados.inicio} fim={dados.fim}
+          setPagina={setPagina} setTamanho={(t) => { setPagina(1); setTamanho(t); }}
+        />
+        </>
       )}
     </>
   );
@@ -460,43 +485,41 @@ function Distribuicao({ onMudou }) {
   const [marcados, setMarcados] = useState(() => new Set());
   const [aberta, setAberta] = useState(null);
   const [aplicando, setAplicando] = useState(false);
+  const [pagina, setPagina] = useState(1);
+  const [tamanho, setTamanho] = useState(50);
 
+  // Paginação do SERVIDOR: os indicadores do topo somam TODAS as referências,
+  // mas só a página pedida vem na resposta. Com 1.926 referências, devolver
+  // todos os planos de uma vez dava um JSON de vários MB por requisição.
   const carregar = useCallback(async () => {
     setCarregando(true);
     setErro('');
     try {
-      const qs = new URLSearchParams();
+      const qs = new URLSearchParams({ pagina: String(pagina), tamanho: String(tamanho) });
       if (aceitarPalpite) qs.set('aceitar_unidade_nao_confirmada', 'true');
+      if (somenteAplicaveis) qs.set('somente_aplicaveis', 'true');
       const r = await api.get(`/producao-insumos/distribuicao?${qs}`);
       setDados(r);
-      setMarcados(new Set(r.planos.filter((p) => p.aplicavel).map((p) => p.produto_id)));
+      setMarcados(new Set(r.aplicaveis_ids || []));
     } catch (e) {
       setErro(e.message);
     } finally {
       setCarregando(false);
     }
-  }, [aceitarPalpite]);
+  }, [aceitarPalpite, pagina, tamanho, somenteAplicaveis]);
 
   useEffect(() => { carregar(); }, [carregar]);
 
-  const visiveis = useMemo(() => {
-    if (!dados) return [];
-    return somenteAplicaveis ? dados.planos.filter((p) => p.aplicavel) : dados.planos;
-  }, [dados, somenteAplicaveis]);
-
-  const colunas = useMemo(() => ({
-    referencia: (p) => p.referencia || '',
-    material: (p) => Number(p.totalMateriaisNovo || 0),
-    industrial: (p) => Number(p.totalIndustrialNovo || 0),
-    move: (p) => Number(p.delta || 0),
-    situacao: (p) => p.situacao || '',
-  }), []);
-  const tabela = useTabela(visiveis, { colunas, colunaPadrao: 'move', direcaoPadrao: 'desc', tamanhoPadrao: 50, prefixo: 'pdist' });
+  const visiveis = useMemo(() => (dados ? dados.planos : []), [dados]);
 
   async function aplicar() {
     const ids = [...marcados];
     if (ids.length === 0) return;
-    const total = (dados.planos.filter((p) => marcados.has(p.produto_id)).reduce((s, p) => s + p.delta, 0));
+    // O total vem do indicador do topo, que soma o cadastro inteiro — a
+    // página carregada tem só uma fatia dos planos.
+    const total = ids.length === (dados.aplicaveis_ids || []).length
+      ? dados.valor_a_mover
+      : dados.planos.filter((p) => marcados.has(p.produto_id)).reduce((s, p) => s + p.delta, 0);
     const segue = await confirmar(
       `${ids.length} referência(s) vão ter ${brl(total)} tirados do custo industrial e lançados como matéria-prima na ficha. `
       + 'O custo de produção de cada peça continua o mesmo — muda só onde o custo está. '
@@ -524,7 +547,7 @@ function Distribuicao({ onMudou }) {
   if (erro && !dados) return <p className="erro-inline">{erro}</p>;
   if (!dados) return null;
 
-  const marcadosAplicaveis = dados.planos.filter((p) => p.aplicavel && marcados.has(p.produto_id));
+  const marcadosAplicaveis = (dados.aplicaveis_ids || []).filter((id) => marcados.has(id));
 
   return (
     <>
@@ -551,11 +574,11 @@ function Distribuicao({ onMudou }) {
 
       <div className="filtros-linha">
         <label className="filtro-marcavel">
-          <Checkbox checked={somenteAplicaveis} onChange={(e) => setSomenteAplicaveis(e.target.checked)} />
+          <Checkbox checked={somenteAplicaveis} onChange={(e) => { setPagina(1); setSomenteAplicaveis(e.target.checked); }} />
           Só as que dá para aplicar
         </label>
         <label className="filtro-marcavel" title="Insumo cuja unidade o sistema deduziu da descrição e ninguém confirmou ainda. Marcar isto deixa o palpite entrar no custo.">
-          <Checkbox checked={aceitarPalpite} onChange={(e) => setAceitarPalpite(e.target.checked)} />
+          <Checkbox checked={aceitarPalpite} onChange={(e) => { setPagina(1); setAceitarPalpite(e.target.checked); }} />
           Aceitar insumos com unidade ainda não confirmada
         </label>
         <button type="button" className="btn btn-primary" disabled={aplicando || marcadosAplicaveis.length === 0} onClick={aplicar}>
@@ -578,7 +601,11 @@ function Distribuicao({ onMudou }) {
           descricao="Comece pela aba de Vínculos: enquanto a linha da ficha não apontar para um insumo, não há custo de matéria-prima para calcular." />
       ) : (
         <>
-          <Paginacao {...tabela} posicao="topo" />
+          <Paginacao
+            pagina={dados.pagina} totalPaginas={dados.total_paginas} tamanho={dados.tamanho}
+            totalItens={dados.total_filtrado} inicio={dados.inicio} fim={dados.fim}
+            setPagina={setPagina} setTamanho={(t) => { setPagina(1); setTamanho(t); }} posicao="topo"
+          />
           <div className="tabela-rolagem">
             <table className="tabela-nota">
               <thead>
@@ -594,7 +621,7 @@ function Distribuicao({ onMudou }) {
                 </tr>
               </thead>
               <tbody>
-                {tabela.itensPagina.map((p) => (
+                {visiveis.map((p) => (
                   <Fragment key={p.produto_id}>
                     <tr
                       className={`linha-clicavel ${p.aplicavel ? '' : 'linha-pendente'}`}
@@ -693,7 +720,11 @@ function Distribuicao({ onMudou }) {
               </tbody>
             </table>
           </div>
-          <Paginacao {...tabela} />
+          <Paginacao
+            pagina={dados.pagina} totalPaginas={dados.total_paginas} tamanho={dados.tamanho}
+            totalItens={dados.total_filtrado} inicio={dados.inicio} fim={dados.fim}
+            setPagina={setPagina} setTamanho={(t) => { setPagina(1); setTamanho(t); }}
+          />
         </>
       )}
     </>

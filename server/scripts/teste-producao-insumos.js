@@ -27,7 +27,7 @@ const producaoInsumos = require('../src/routes/producaoInsumos.routes');
 const produtosRoutes = require('../src/routes/produtos.routes');
 const { planejarRedistribuicao, repartirProporcional, arred } = require('../src/lib/redistribuicaoCusto');
 const { classificar } = require('../src/lib/insumoUnidade');
-const { casar, indiceExato } = require('../src/lib/vinculoInsumo');
+const { casar, casarExato, candidatos, indiceExato, placar } = require('../src/lib/vinculoInsumo');
 
 const app = express();
 app.use(express.json());
@@ -605,6 +605,110 @@ async function main() {
     perto('e a linha de R$ 14,98 caiu para R$ 7,10', Number(inds[2].valor), 7.10, 0.005);
 
     perto('O CUSTO DE PRODUÇÃO CONTINUA 14,98', await subtotalDe(p268), antes268, 0.005);
+  }
+
+  // =====================================================================
+  console.log('\n== 16. Volume real: o índice dá o MESMO resultado, e a tela carrega ==');
+  // =====================================================================
+  // O cadastro real tem 3.267 linhas de ficha sem vínculo contra 503 insumos.
+  // A primeira versão comparava cada linha com todos os insumos, normalizando
+  // os textos a cada comparação: ~10 s de CPU só para montar a aba de
+  // Vínculos, e um UPDATE por linha na hora de gravar — que no servidor virou
+  // erro 502 ao clicar em "vincular as 866 de nome exato".
+  {
+    const { rows: reais } = await pool.query('SELECT id, codigo, nome FROM insumos WHERE ativo');
+    checa('o cadastro de teste tem os 503 insumos da lista', reais.length >= 503, reais.length);
+    const idx = indiceExato(reais);
+
+    // (a) O índice não pode MUDAR o resultado — só chegar nele mais rápido.
+    //     Aqui a comparação é contra a força bruta, item a item.
+    const textos = [];
+    for (let i = 0; i < 400; i++) {
+      const base = reais[i % reais.length].nome;
+      textos.push(i % 3 === 0 ? base : `${base.slice(0, Math.max(6, base.length - 3))} X`);
+    }
+    let divergiu = 0;
+    for (const t of textos) {
+      const rapido = casar(t, reais, idx);
+      // força bruta: pontua contra TODOS, como a versão antiga fazia
+      const bruto = reais
+        .map((i) => ({ insumo: i, placar: Math.max(placar(t, i.nome), i.codigo ? placar(t, i.codigo) : 0) }))
+        .filter((c) => c.placar >= 0.2)
+        .sort((a, b) => b.placar - a.placar || a.insumo.id - b.insumo.id)
+        .slice(0, 5);
+      const mesmaLista = JSON.stringify(rapido.candidatos.map((c) => [c.insumo.id, Number(c.placar.toFixed(6))]))
+        === JSON.stringify(bruto.map((c) => [c.insumo.id, Number(c.placar.toFixed(6))]));
+      if (rapido.tipo === 'exato' || rapido.tipo === 'ambiguo') continue; // aí a lista não vem da pontuação
+      if (!mesmaLista) divergiu += 1;
+    }
+    checa('o índice devolve exatamente os mesmos candidatos da força bruta', divergiu === 0, divergiu);
+
+    // (b) A contagem barata (sem pontuar) tem de bater com a cara.
+    let diferentes = 0;
+    for (const t of textos) {
+      if (casar(t, reais, idx, 5, { comCandidatos: false }).tipo !== casar(t, reais, idx).tipo) diferentes += 1;
+    }
+    checa('classificar sem pontuar dá a mesma situação de classificar pontuando', diferentes === 0, diferentes);
+
+    // (c) Volume de verdade no banco: 600 referências, 3.000 linhas de ficha.
+    const nomes = reais.map((r) => r.nome);
+    const criados = [];
+    for (let i = 0; i < 600; i++) {
+      const mats = [];
+      for (let k = 0; k < 5; k++) {
+        const nome = nomes[(i * 5 + k) % nomes.length];
+        mats.push({ material: k % 4 === 3 ? `${nome} XYZ` : nome, unidade: null, quantidade: 0.1 + k * 0.01, valor_unitario: 0 });
+      }
+      criados.push(await criarProduto(`V${String(i).padStart(3, '0')}`, mats,
+        [{ tipo: 'Facção', valor: 40 + (i % 17) }, { tipo: 'Corte', valor: 9 + (i % 5) }]));
+    }
+    const { rows: semVinc } = await pool.query(
+      `SELECT COUNT(*)::int n FROM materiais m JOIN produtos p ON p.id = m.produto_id
+        WHERE m.insumo_id IS NULL AND p.referencia LIKE '${PREFIXO}V%'`);
+    checa(`montou ${semVinc[0].n} linhas de ficha sem vínculo`, semVinc[0].n === 3000, semVinc[0].n);
+
+    let t0 = Date.now();
+    const tela = await req('GET', '/api/producao-insumos/vinculos?tamanho=50');
+    const msTela = Date.now() - t0;
+    checa(`a aba de Vínculos responde em ${msTela} ms`, msTela < 4000, msTela);
+    checa('e devolve só a página pedida, não as milhares de linhas', tela.body.linhas.length === 50, tela.body.linhas.length);
+    checa('mas os números do topo continuam falando do cadastro inteiro',
+      tela.body.total >= 3000 && (tela.body.exatos + tela.body.ambiguos + tela.body.sugestoes + tela.body.sem_candidato) === tela.body.total,
+      { total: tela.body.total, exatos: tela.body.exatos });
+    checa('e a paginação diz quantas páginas existem', tela.body.total_paginas > 1, tela.body.total_paginas);
+
+    t0 = Date.now();
+    const pag7 = await req('GET', '/api/producao-insumos/vinculos?tamanho=50&pagina=7');
+    checa(`a página 7 responde em ${Date.now() - t0} ms`, (Date.now() - t0) < 4000);
+    checa('e traz linhas diferentes da página 1', pag7.body.linhas[0].id !== tela.body.linhas[0].id);
+
+    const antesTudo = new Map();
+    for (const id of criados) antesTudo.set(id, await subtotalDe(id));
+
+    t0 = Date.now();
+    const lig = await req('POST', '/api/producao-insumos/vincular-exatos', { confirmar: true });
+    const msLig = Date.now() - t0;
+    checa(`vincular ${lig.body.total} linhas de nome exato levou ${msLig} ms`, msLig < 8000, msLig);
+    checa('e vinculou o que tinha de vincular', lig.body.total >= 2000, lig.body.total);
+
+    t0 = Date.now();
+    const cheio = await req('POST', '/api/producao-insumos/preencher-tudo', { confirmar: true });
+    const msCheio = Date.now() - t0;
+    checa(`preencher ${cheio.body.referencias_preenchidas} referências levou ${msCheio} ms`, msCheio < 20000, msCheio);
+    checa('preencheu de verdade', cheio.body.referencias_preenchidas >= 500, cheio.body.referencias_preenchidas);
+
+    let maior = 0;
+    for (const [id, antes] of antesTudo) {
+      const d = Math.abs((await subtotalDe(id)) - antes);
+      if (d > maior) maior = d;
+    }
+    checa(`o custo das 600 referências não mudou (maior diferença R$ ${maior.toFixed(6)})`, maior <= 0.005, maior);
+
+    t0 = Date.now();
+    const dist = await req('GET', '/api/producao-insumos/distribuicao?tamanho=50');
+    checa(`a aba de Distribuição responde em ${Date.now() - t0} ms`, (Date.now() - t0) < 8000);
+    checa('devolvendo só a página pedida', dist.body.planos.length <= 50, dist.body.planos.length);
+    checa('com os totais do cadastro inteiro', dist.body.total >= 600, dist.body.total);
   }
 
   await limpar();

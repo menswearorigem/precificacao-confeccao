@@ -34,7 +34,7 @@
 //
 // A diferença é só quem aperta o botão, e quantas vezes.
 
-const { casar, indiceExato } = require('./vinculoInsumo');
+const { casar, casarExato, indiceExato } = require('./vinculoInsumo');
 const { planejarRedistribuicao, TOLERANCIA } = require('./redistribuicaoCusto');
 
 // ---------------------------------------------------------------------------
@@ -80,6 +80,73 @@ async function planosDe(executor, produtoIds, opcoes) {
   });
 }
 
+
+// ---------------------------------------------------------------------------
+// Gravação em LOTE, e por que isso não é detalhe
+// ---------------------------------------------------------------------------
+// A primeira versão gravava uma linha por comando. Com 866 vínculos e alguns
+// milhares de linhas de ficha, isso vira milhares de idas e voltas ao banco;
+// no servidor de produção, com o banco noutra máquina, cada ida custa dezenas
+// de milissegundos e o total passa do tempo que o Render espera por uma
+// requisição — que é o erro 502 que apareceu na tela ao clicar em "vincular
+// as 866 de nome exato".
+//
+// Aqui vai tudo em um comando por lote, com `unnest`: o mesmo UPDATE, uma ida
+// só. Os lotes são picados em CHUNK linhas para o array de parâmetros não
+// ficar gigante.
+const CHUNK = 2000;
+
+function pedacos(lista, tamanho = CHUNK) {
+  const saida = [];
+  for (let i = 0; i < lista.length; i += tamanho) saida.push(lista.slice(i, i + tamanho));
+  return saida;
+}
+
+async function gravarVinculos(executor, vinculos) {
+  for (const lote of pedacos(vinculos)) {
+    await executor.query(
+      `UPDATE materiais m
+          SET insumo_id = v.insumo_id
+         FROM (SELECT unnest($1::int[]) AS id, unnest($2::int[]) AS insumo_id) v
+        WHERE m.id = v.id AND m.insumo_id IS NULL`,
+      [lote.map((v) => v.material_id), lote.map((v) => v.insumo_id)]
+    );
+  }
+}
+
+async function gravarMateriais(executor, linhas) {
+  for (const lote of pedacos(linhas)) {
+    await executor.query(
+      `UPDATE materiais m
+          SET valor_unitario = v.valor,
+              consumo_por_peca = COALESCE(m.consumo_por_peca, v.consumo)
+         FROM (SELECT unnest($1::int[]) AS id,
+                      unnest($2::numeric[]) AS valor,
+                      unnest($3::numeric[]) AS consumo) v
+        WHERE m.id = v.id`,
+      [lote.map((l) => l.id), lote.map((l) => l.valor_unitario_novo), lote.map((l) => l.quantidade)]
+    );
+  }
+}
+
+async function gravarIndustriais(executor, linhas) {
+  for (const lote of pedacos(linhas)) {
+    await executor.query(
+      `UPDATE custos_industriais c
+          SET valor = v.valor,
+              observacao = CASE
+                WHEN COALESCE(c.observacao,'') = '' THEN v.nota
+                WHEN c.observacao LIKE '%redistribuição%' THEN c.observacao
+                ELSE c.observacao || ' — ' || v.nota END
+         FROM (SELECT unnest($1::int[]) AS id,
+                      unnest($2::numeric[]) AS valor,
+                      unnest($3::text[]) AS nota) v
+        WHERE c.id = v.id`,
+      [lote.map((l) => l.id), lote.map((l) => l.valor_novo), lote.map((l) => l.nota)]
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Quais linhas de ficha casam por nome EXATO com um único insumo.
 // `gravar: false` só devolve a lista.
@@ -103,7 +170,11 @@ async function vincularExatos(executor, { gravar = false, produtoIds = null } = 
   const paraLigar = [];
   const naoCasaram = { ambiguo: 0, sugestao: 0, nenhum: 0 };
   for (const l of linhas) {
-    const r = casar(l.material, insumos, idx);
+    // `comCandidatos: false` — para LIGAR em lote, os parecidos não interessam
+    // (eles não podem ser gravados de qualquer jeito), e pontuar 3.267 linhas
+    // contra 503 insumos era o que fazia esta rota estourar o tempo do
+    // servidor. O resultado do casamento é o mesmo; o caminho é que é curto.
+    const r = casar(l.material, insumos, idx, 5, { comCandidatos: false });
     if (r.tipo === 'exato') {
       paraLigar.push({
         material_id: l.id, produto_id: l.produto_id, material: l.material,
@@ -114,14 +185,7 @@ async function vincularExatos(executor, { gravar = false, produtoIds = null } = 
     }
   }
 
-  if (gravar) {
-    for (const v of paraLigar) {
-      await executor.query(
-        'UPDATE materiais SET insumo_id = $2 WHERE id = $1 AND insumo_id IS NULL',
-        [v.material_id, v.insumo_id]
-      );
-    }
-  }
+  if (gravar) await gravarVinculos(executor, paraLigar);
   return { vinculos: paraLigar, naoCasaram, linhasSemVinculo: linhas.length };
 }
 
@@ -133,33 +197,21 @@ async function vincularExatos(executor, { gravar = false, produtoIds = null } = 
 // ---------------------------------------------------------------------------
 async function aplicarPlanos(client, planos, { data = '10/09/2026' } = {}) {
   const antes = new Map();
+  const materiais = [];
+  const industriais = [];
   for (const p of planos) {
     antes.set(p.produto_id, p.subtotalAtual);
-    for (const l of p.linhas) {
-      if (!l.mudou) continue;
-      await client.query(
-        `UPDATE materiais
-            SET valor_unitario = $2,
-                consumo_por_peca = COALESCE(consumo_por_peca, $3)
-          WHERE id = $1`,
-        [l.id, l.valor_unitario_novo, l.quantidade]
-      );
-    }
+    for (const l of p.linhas) if (l.mudou) materiais.push(l);
     for (const c of p.industriais) {
       if (!c.mudou) continue;
-      const nota = `redistribuição ${data}: era R$ ${c.valor_atual.toFixed(2)}, parte virou matéria-prima na ficha`;
-      await client.query(
-        `UPDATE custos_industriais
-            SET valor = $2,
-                observacao = CASE
-                  WHEN COALESCE(observacao,'') = '' THEN $3
-                  WHEN observacao LIKE '%redistribuição%' THEN observacao
-                  ELSE observacao || ' — ' || $3 END
-          WHERE id = $1`,
-        [c.id, c.valor_novo, nota]
-      );
+      industriais.push({
+        ...c,
+        nota: `redistribuição ${data}: era R$ ${c.valor_atual.toFixed(2)}, parte virou matéria-prima na ficha`,
+      });
     }
   }
+  await gravarMateriais(client, materiais);
+  await gravarIndustriais(client, industriais);
 
   const { rows: conferencia } = await client.query(
     `SELECT p.id, p.referencia,
@@ -243,4 +295,4 @@ async function preencherTudo(client, { confirmar = false, aceitarUnidadeNaoConfi
   }
 }
 
-module.exports = { planosDe, vincularExatos, aplicarPlanos, preencherTudo, TOLERANCIA };
+module.exports = { planosDe, vincularExatos, aplicarPlanos, preencherTudo, gravarVinculos, TOLERANCIA };
