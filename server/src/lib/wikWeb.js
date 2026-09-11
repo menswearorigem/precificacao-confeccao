@@ -214,31 +214,58 @@ function decodeHtml(s) {
           .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)));
 }
 async function ordemProducaoDetalhe(sessao, op) {
-  const html = await getHtml(sessao, `/OrdemProducao/Create/?id=${encodeURIComponent(op)}`);
-  const cabecalho = {
-    op: Number(op),
-    descricao: decodeHtml(extrairInput(html, 'OprDescricao')),
-    tipo: numOuNull(extrairSelect(html, 'OprTipo') ?? extrairInput(html, 'OprTipo')),
-    situacao: numOuNull(extrairSelect(html, 'OprSituacao') ?? extrairInput(html, 'OprSituacao')),
-    statusInterno: numOuNull(extrairSelect(html, 'OprStatusInterno') ?? extrairInput(html, 'OprStatusInterno')),
-    dtPreFase: extrairInput(html, 'OprDtPreFase') || null,
-    dtPrevInicio: extrairInput(html, 'OprDtPrevInicio') || null,
-    dtPrevFim: extrairInput(html, 'OprDtPrevFim') || null,
-    obs: decodeHtml(extrairInput(html, 'OprObs')) || null,
-  };
-  // Página válida da OP SEMPRE traz o input ListaItens (mesmo que vazio). Se ele
-  // nem existe, veio uma casca (sessão derrubada / OP fora da empresa ativa) —
-  // não marcar como lida com grade vazia; sinalizar pra relogar e tentar de novo.
-  if (!/(?:name|id)="ListaItens"/.test(html)) {
-    const e = new Error('SESSAO_EXPIRADA'); e.sessaoExpirada = true; throw e;
+  const idEnc = encodeURIComponent(op);
+
+  function lerCabecalho(html) {
+    return {
+      op: Number(op),
+      descricao: decodeHtml(extrairInput(html, 'OprDescricao')),
+      tipo: numOuNull(extrairSelect(html, 'OprTipo') ?? extrairInput(html, 'OprTipo')),
+      situacao: numOuNull(extrairSelect(html, 'OprSituacao') ?? extrairInput(html, 'OprSituacao')),
+      statusInterno: numOuNull(extrairSelect(html, 'OprStatusInterno') ?? extrairInput(html, 'OprStatusInterno')),
+      dtPreFase: extrairInput(html, 'OprDtPreFase') || null,
+      dtPrevInicio: extrairInput(html, 'OprDtPrevInicio') || null,
+      dtPrevFim: extrairInput(html, 'OprDtPrevFim') || null,
+      obs: decodeHtml(extrairInput(html, 'OprObs')) || null,
+    };
   }
-  let grade = [];
-  const bruto = extrairInput(html, 'ListaItens');
-  if (bruto) {
-    try { grade = JSON.parse(decodeHtml(bruto)); } catch { grade = []; }
+  // A grade cor×tamanho vem embutida no input escondido `ListaItens` (JSON).
+  function lerGrade(html) {
+    const bruto = extrairInput(html, 'ListaItens');
+    if (!bruto) return [];
+    let arr = [];
+    try { arr = JSON.parse(decodeHtml(bruto)); } catch { arr = []; }
+    // filtra linhas-modelo vazias (sem tamanho)
+    return (arr || []).filter((g) => g && g.OpriTamanho);
   }
-  // filtra linhas-modelo vazias (sem tamanho)
-  grade = (grade || []).filter((g) => g && g.OpriTamanho);
+
+  // 1ª tentativa: sem statusTela — já dá o cabeçalho e, em parte das OPs, a grade.
+  let html = await getHtml(sessao, `/OrdemProducao/Create/?id=${idEnc}`);
+  let cabecalho = lerCabecalho(html);
+  let grade = lerGrade(html);
+
+  // A página da OP só embute os ITENS (ListaItens) quando recebe `statusTela` =
+  // a SITUAÇÃO da própria OP (documentado no endpoint interno da produção). Sem
+  // ele a grade volta vazia — que era exatamente o sintoma "OPs sem grade". Como
+  // a situação só é conhecida depois de abrir a página, relemos com o statusTela
+  // certo quando a grade não veio de primeira. (getHtml já detecta sessão caída
+  // de verdade — tela de login / "logado em outra sessão" — então não tratamos
+  // "sem ListaItens" como sessão expirada: normalmente é só o statusTela.)
+  if (grade.length === 0) {
+    // Tenta a situação lida na página primeiro; se nem o cabeçalho veio, cai nos
+    // códigos de OP em produção (1/2/4), que é o estado das OPs do painel. Para
+    // na primeira que trouxer grade — no máximo poucas tentativas, só quando a
+    // grade não veio de primeira.
+    const candidatos = [];
+    if (cabecalho.situacao != null) candidatos.push(cabecalho.situacao);
+    for (const s of [1, 2, 4, 0]) if (!candidatos.includes(s)) candidatos.push(s);
+    for (const st of candidatos) {
+      const htmlN = await getHtml(sessao, `/OrdemProducao/Create/?id=${idEnc}&statusTela=${encodeURIComponent(st)}`);
+      const gradeN = lerGrade(htmlN);
+      if (gradeN.length > 0) { html = htmlN; grade = gradeN; cabecalho = lerCabecalho(htmlN); break; }
+    }
+  }
+
   return { cabecalho, grade, html };
 }
 function numOuNull(v) { if (v === null || v === undefined || v === '') return null; const n = Number(v); return Number.isNaN(n) ? null : n; }

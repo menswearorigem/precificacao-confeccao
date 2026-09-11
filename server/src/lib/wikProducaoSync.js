@@ -196,6 +196,10 @@ async function opsComGradePendente(limite) {
 // TIER 2 — grava a GRADE (cor×tamanho) e a situação/datas exatas na OP nativa.
 async function atualizarGradeDaOp(ordemId, detalhe) {
   const c = detalhe.cabecalho || {};
+  // Grade vazia = leitura incompleta (ex.: statusTela não resolveu). NÃO apaga a
+  // grade que já existe nem marca a OP como lida — deixa pra reler no próximo
+  // ciclo, em vez de zerar a grade boa e travar por 2h com wik_grade_em setado.
+  if (!Array.isArray(detalhe.grade) || detalhe.grade.length === 0) return;
   const client = await poolReal.connect();
   try {
     await client.query('BEGIN');
