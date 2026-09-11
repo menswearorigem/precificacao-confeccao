@@ -167,6 +167,11 @@ function testeSemCalculo() {
   ok(semSaldo[0].falta === null, 'sem saldo não se calcula falta');
   ok(semSaldo[0].pedido.valor === null && semSaldo[0].pedido.motivo,
     'e o pedido sai NULO com motivo, em vez de mandar comprar os 54 m inteiros');
+  // Defeito visto na tela rodando: "atrasado 45 d" aparecia ao lado de "falta
+  // cadastro". Vinha de tratar saldo desconhecido como zero na hora de medir a
+  // cobertura em dias.
+  ok(semSaldo[0].folgaDias === null && semSaldo[0].motivo,
+    'e NÃO se diz que o pedido está atrasado — sem saldo não há cobertura em dias');
 
   const comSaldoZero = mp.consolidarPorInsumoCor([{
     produtoId: 1, referencia: '36168', corProduto: 'Branco', pecas: 40,

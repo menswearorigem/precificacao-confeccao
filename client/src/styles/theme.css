@@ -8351,82 +8351,236 @@ table.grade-matriz { width: auto; min-width: 0; }
 .imp-previa-barra .btn { color: #fff; border-color: rgba(255,255,255,.4); }
 @media print { .imp-previa-barra { display: none !important; } }
 
-/* ---------------------------------------------------------------------------
-   Produção › Matéria-Prima (11/09/2026)
 
-   A tela repete a organização da planilha: um bloco por referência, com as
-   quatro matrizes cor × tamanho lado a lado e o quadro do tecido à direita.
-   Reaproveita as classes `.pe-*` da Projeção de Estoque — é a mesma grade, com
-   a mesma régua de tamanho e o mesmo swatch de cor, e duas telas da Produção
-   que mostram a mesma grade com aparências diferentes seriam duas telas que
-   parecem de sistemas diferentes.
---------------------------------------------------------------------------- */
-.mp-blocos { display: flex; gap: 18px; align-items: flex-start; }
-.mp-bloco { flex: 0 0 auto; }
-.mp-bloco > h4 {
-  margin: 0 0 6px; font-size: 9.5px; font-weight: 700; letter-spacing: .13em;
-  text-transform: uppercase; color: var(--muted);
+/* ===========================================================================
+   Produção › Matéria-Prima  (11/09/2026, redesenhada no mesmo dia)
+
+   A primeira versão foi reprovada com razão: cinco parágrafos de aviso antes
+   de qualquer número, sete cartões gigantes com uma linha de texto cada, e
+   QUATRO matrizes cor × tamanho iguais lado a lado — mesma cor, mesma fonte,
+   títulos de 9px — que viravam uma parede de números indistinguíveis.
+
+   O que mudou, e por quê:
+
+   1. As quatro matrizes viraram TRÊS, com nome de gente e cor própria:
+      PRECISO (couro) · TENHO (neutro, com a produção em azul dentro da mesma
+      célula) · FALTA (vermelho). Estoque e produção estavam separados sem
+      motivo: a pergunta é "tenho quanto", e "5 no galpão + 5 na facção" é uma
+      resposta só — é o formato que a Projeção de Estoque já usa.
+
+   2. Os avisos saíram da frente. Viraram um painel que abre. O que ficou no
+      topo é o que exige AÇÃO, com contador e botão.
+
+   3. A lista de referências virou lista: 44px por linha, com uma faixa de
+      quadradinhos mostrando o estado de cada cor de relance.
+=========================================================================== */
+
+/* --- barra de topo: os controles como chips, não como formulário --------- */
+.mp-barra { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mp-seg { display: inline-flex; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 9px; padding: 3px; gap: 2px; }
+.mp-seg button {
+  border: 0; background: transparent; color: var(--ink-soft); cursor: pointer;
+  font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: 6px;
+  font-family: inherit; white-space: nowrap; transition: background .15s var(--ease), color .15s var(--ease);
 }
-.mp-bloco.mp-destaque > h4 { color: var(--leather); }
+.mp-seg button:hover { color: var(--ink); }
+.mp-seg button[aria-pressed="true"] { background: var(--surface); color: var(--leather); box-shadow: var(--shadow-sm); }
 
-/* A faixa de parâmetros do bloco — o cabeçalho AF4/AI4/AJ da planilha. */
+/* --- o painel de "falta configurar", que substitui os cinco parágrafos --- */
+.mp-setup {
+  display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center;
+  background: linear-gradient(100deg, var(--warning-bg), var(--surface) 70%);
+  border: 1px solid var(--warning-ring); border-radius: var(--radius);
+  padding: 15px 18px; margin-bottom: 16px;
+}
+.mp-setup h3 { margin: 0 0 3px; font-size: 14px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 7px; }
+.mp-setup p { margin: 0; font-size: 12.5px; color: var(--ink-soft); line-height: 1.5; }
+.mp-passos { display: flex; gap: 20px; margin-top: 10px; flex-wrap: wrap; }
+.mp-passo { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.mp-passo b { font-variant-numeric: tabular-nums; }
+.mp-passo-ok { color: var(--success); }
+.mp-passo-falta { color: var(--warning); font-weight: 600; }
+.mp-barra-progresso { width: 54px; height: 5px; border-radius: 3px; background: var(--border-soft); overflow: hidden; }
+.mp-barra-progresso i { display: block; height: 100%; background: var(--terracotta); border-radius: 3px; }
+
+/* --- indicadores -------------------------------------------------------- */
+.mp-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.mp-kpi {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 13px 15px; box-shadow: var(--card-shadow); position: relative; overflow: hidden;
+}
+.mp-kpi::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--border); }
+.mp-kpi-perigo::before { background: var(--danger); }
+.mp-kpi-alerta::before { background: var(--warning); }
+.mp-kpi-bom::before { background: var(--success); }
+.mp-kpi-rotulo {
+  display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
+}
+.mp-kpi strong { display: block; font-size: 27px; line-height: 1.05; font-variant-numeric: tabular-nums; color: var(--ink); }
+.mp-kpi-perigo strong { color: var(--danger); }
+.mp-kpi-alerta strong { color: var(--warning); }
+.mp-kpi small { display: block; margin-top: 5px; font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+
+/* --- "como esta tela calcula": os avisos, fora do caminho ---------------- */
+.mp-ajuda-btn {
+  display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent;
+  color: var(--muted); font-size: 12px; font-family: inherit; cursor: pointer; padding: 4px 0;
+  text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--border);
+}
+.mp-ajuda-btn:hover { color: var(--leather); }
+.mp-ajuda {
+  background: var(--surface-alt); border: 1px solid var(--border-soft); border-radius: var(--radius);
+  padding: 14px 18px; margin-bottom: 16px;
+}
+.mp-ajuda li { font-size: 12.5px; line-height: 1.6; color: var(--ink-soft); margin-bottom: 7px; }
+.mp-ajuda code { font-size: 11.5px; background: var(--surface); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--border-soft); }
+
+/* --- a lista de referências, compacta ----------------------------------- */
+.mp-lista { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--card-shadow); overflow: hidden; }
+.mp-ref { border-bottom: 1px solid var(--border-soft); }
+.mp-ref:last-child { border-bottom: 0; }
+.mp-ref-topo {
+  display: grid; grid-template-columns: 18px minmax(200px, 1.4fr) minmax(90px, auto) repeat(3, minmax(78px, auto));
+  gap: 14px; align-items: center; padding: 11px 16px; cursor: pointer; width: 100%;
+  background: transparent; border: 0; font-family: inherit; text-align: left; color: inherit;
+  transition: background .12s var(--ease);
+}
+.mp-ref-topo:hover { background: var(--surface-alt); }
+.mp-ref-aberta > .mp-ref-topo { background: var(--surface-alt); }
+.mp-ref-id { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
+.mp-ref-id b { font-size: 13.5px; color: var(--ink); white-space: nowrap; }
+.mp-ref-id span { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-ref-num { text-align: right; font-variant-numeric: tabular-nums; line-height: 1.25; }
+.mp-ref-num b { display: block; font-size: 14px; color: var(--ink); }
+.mp-ref-num span { font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.mp-ref-num-alerta b { color: var(--danger); }
+.mp-ref-corpo { padding: 4px 16px 18px; background: var(--surface-alt); border-top: 1px solid var(--border-soft); }
+
+/* Faixa de estado por cor: um quadradinho por cor, cor = situação. */
+.mp-faixa { display: flex; gap: 3px; align-items: center; }
+.mp-faixa i { width: 9px; height: 15px; border-radius: 2px; display: block; }
+.mp-f-ok { background: var(--success); opacity: .55; }
+.mp-f-falta { background: var(--danger); }
+.mp-f-sem { background: repeating-linear-gradient(45deg, var(--border) 0 2px, var(--border-soft) 2px 4px); }
+
+/* --- os três quadros ---------------------------------------------------- */
+.mp-quadros { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.mp-quadro { background: var(--surface); border: 1px solid var(--border-soft); border-radius: 10px; overflow: hidden; }
+/* Os três cabeçalhos usam a MESMA fórmula — fundo tonal claro, texto na cor
+   forte, barra sólida de 3px à esquerda — e não "fundo sólido com texto
+   branco". O motivo apareceu no print do modo escuro: ali `--danger` vira um
+   vermelho CLARO, e o texto branco por cima sumia. Cor de fundo forte com
+   texto branco só funciona num tema; tonal funciona nos dois, e a barra
+   devolve a presença que o fundo sólido dava. */
+.mp-quadro > h4 {
+  margin: 0; padding: 8px 12px 8px 0; font-size: 10.5px; font-weight: 700; letter-spacing: .11em;
+  text-transform: uppercase; display: flex; align-items: center; gap: 7px;
+  border-bottom: 1px solid var(--border-soft); border-left: 3px solid var(--border);
+  padding-left: 11px;
+}
+.mp-q-preciso > h4 { background: var(--surface-alt); color: var(--leather); border-left-color: var(--leather); }
+.mp-q-tenho > h4 { background: var(--surface-alt); color: var(--ink-soft); border-left-color: var(--producao-azul, #1f5fa8); }
+.mp-q-falta > h4 { background: var(--danger-bg); color: var(--danger); border-left-color: var(--danger); }
+.mp-quadro > h4 small { margin-left: auto; font-weight: 600; letter-spacing: 0; text-transform: none; font-size: 11px; opacity: .8; }
+.mp-q-falta { border-color: var(--danger-ring, var(--danger)); }
+
+.mp-tab { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.mp-tab th {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--muted); padding: 6px 6px; text-align: center; border-bottom: 1px solid var(--border-soft);
+}
+.mp-tab th:first-child { text-align: left; padding-left: 12px; }
+.mp-tab th:last-child { text-align: right; padding-right: 12px; }
+.mp-tab td { padding: 5px 6px; text-align: center; font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--border-soft); }
+.mp-tab tr:last-child td { border-bottom: 0; }
+.mp-tab td:first-child { text-align: left; padding-left: 12px; white-space: nowrap; color: var(--ink); }
+.mp-tab td:last-child { text-align: right; padding-right: 12px; font-weight: 700; color: var(--leather); }
+.mp-tab .mp-vazio { color: var(--border); }
+.mp-tab tfoot td { background: var(--surface-alt); font-weight: 700; color: var(--leather); border-top: 1px solid var(--border); }
+.mp-tab tfoot td:first-child { font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+
+/* "117 +38" — o que está no galpão e o que vem da facção, na mesma célula. */
+.mp-prod { color: var(--producao-azul, #1f5fa8); font-weight: 700; font-size: 11px; margin-left: 2px; }
+.mp-falta-n { color: var(--danger); font-weight: 700; }
+.mp-falta-n-bg { background: var(--danger-bg); border-radius: 4px; }
+
+/* --- o cartão do tecido: a resposta do bloco ---------------------------- */
+.mp-tecido-cartao {
+  margin-top: 14px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden;
+}
+.mp-tecido-topo {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 11px 14px; background: var(--leather-deep, var(--leather-dark)); color: #f4ead9;
+}
+/* No modo escuro o couro "dark" clareia e o texto creme perde contraste; o
+   "deep" continua escuro nos dois temas. O fallback acima cobre o caso de a
+   variável não existir. */
+.mp-tecido-topo h4 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .11em; text-transform: uppercase; }
+.mp-tecido-topo .mp-acoes { margin-left: auto; display: flex; gap: 7px; }
+.mp-tecido-tab { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.mp-tecido-tab th {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--muted);
+  padding: 8px 8px; text-align: center; border-bottom: 1px solid var(--border-soft); background: var(--surface-alt);
+}
+.mp-tecido-tab th:first-child, .mp-tecido-tab th:nth-child(2) { text-align: left; }
+.mp-tecido-tab td { padding: 7px 8px; text-align: center; border-bottom: 1px solid var(--border-soft); font-variant-numeric: tabular-nums; }
+.mp-tecido-tab td:first-child, .mp-tecido-tab td:nth-child(2) { text-align: left; }
+.mp-tecido-tab tr:last-child td { border-bottom: 0; }
+.mp-tecido-tab select {
+  height: 29px; font-size: 12px; max-width: 210px; border-radius: 6px; padding: 0 6px;
+}
+.mp-tecido-tab input.mp-saldo { width: 86px; height: 29px; text-align: right; font-size: 12px; border-radius: 6px; padding: 0 7px; }
+
+/* --- a faixa de parâmetros --------------------------------------------- */
 .mp-params {
-  display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: flex-end;
-  padding: 11px 14px; background: var(--surface-alt);
-  border: 1px solid var(--border-soft); border-radius: 8px; margin-bottom: 14px;
+  display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-end;
+  padding: 12px 14px; background: var(--surface); border: 1px solid var(--border-soft);
+  border-radius: 10px; margin-bottom: 14px;
 }
-.mp-param { display: flex; flex-direction: column; gap: 3px; }
+.mp-param { display: flex; flex-direction: column; gap: 4px; }
 .mp-param > label {
-  font-size: 9.5px; font-weight: 700; letter-spacing: .1em;
-  text-transform: uppercase; color: var(--muted);
+  font-size: 9.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--muted);
+  display: flex; align-items: center; gap: 4px;
 }
-.mp-param input, .mp-param select {
-  height: 30px; padding: 0 8px; font-size: 13px;
-  border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--ink);
-  font-variant-numeric: tabular-nums;
-}
-.mp-param input[type="number"] { width: 92px; text-align: right; }
-.mp-param .mp-unid { font-size: 11px; color: var(--muted); margin-left: 5px; }
-.mp-param-largo select { min-width: 260px; }
-.mp-sujo { border-color: var(--warning-ring) !important; background: var(--warning-bg) !important; }
+.mp-param .mp-campo { display: flex; align-items: center; gap: 5px; }
+.mp-param input, .mp-param select { height: 31px; font-size: 13px; border-radius: 7px; padding: 0 8px; }
+.mp-param input[type="number"] { width: 84px; text-align: right; font-variant-numeric: tabular-nums; }
+.mp-param select { min-width: 250px; }
+.mp-unid { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.mp-sujo { border-color: var(--terracotta) !important; background: var(--warning-bg) !important; }
 
-/* O quadro do tecido: uma linha por cor, a decisão de compra à direita. */
-.mp-tecido th.mp-hped { background: var(--leather-deep); }
-.mp-tecido td.mp-ped { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; padding-right: 11px !important; }
-.mp-tecido td.mp-ped-sim { color: var(--danger); }
-.mp-tecido td.mp-ped-nao { color: var(--border); }
-.mp-tecido select.mp-depara { max-width: 190px; height: 26px; font-size: 12px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--ink); }
-.mp-tecido input.mp-saldo { width: 88px; height: 26px; text-align: right; font-size: 12px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--ink); font-variant-numeric: tabular-nums; }
-
+/* --- selos -------------------------------------------------------------- */
 .mp-selo {
-  display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: .06em;
-  text-transform: uppercase; border-radius: 3px; padding: 1px 5px; margin-left: 6px; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 3px; font-size: 9.5px; font-weight: 700;
+  letter-spacing: .05em; text-transform: uppercase; border-radius: 4px; padding: 2px 6px; white-space: nowrap;
 }
+.mp-selo-neutro { color: var(--muted); background: var(--surface-alt); box-shadow: inset 0 0 0 1px var(--border-soft); }
 .mp-selo-sugerida { color: var(--info); background: var(--info-bg); }
 .mp-selo-confirmada { color: var(--success); background: var(--success-bg); }
 .mp-selo-pendente { color: var(--warning); background: var(--warning-bg); }
-.mp-selo-dividido { color: var(--leather); background: var(--surface-alt); box-shadow: inset 0 0 0 1px var(--border-soft); }
+.mp-selo-dividido { color: var(--leather); background: var(--surface-alt); box-shadow: inset 0 0 0 1px var(--border); cursor: help; }
 
-.mp-sit { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; font-size: 12px; white-space: nowrap; }
-.mp-sit-comprar { color: var(--danger); }
-.mp-sit-atrasado { color: var(--danger); }
+.mp-sit { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: 11.5px; white-space: nowrap; }
+.mp-sit-comprar, .mp-sit-atrasado { color: var(--danger); }
 .mp-sit-atencao { color: var(--warning); }
 .mp-sit-ok { color: var(--success); }
 .mp-sit-sem_calculo { color: var(--muted); }
 
-.mp-contrib { font-size: 12px; color: var(--muted); padding: 8px 14px; background: var(--surface-alt); }
-.mp-contrib b { color: var(--ink); font-weight: 600; }
+.mp-contrib { font-size: 12px; color: var(--ink-soft); padding: 10px 16px; background: var(--surface-alt); line-height: 1.7; }
+.mp-contrib b { color: var(--ink); }
 
-.mp-aviso {
-  display: flex; gap: 9px; align-items: flex-start; font-size: 12.5px; line-height: 1.5;
-  color: var(--muted); padding: 9px 12px; background: var(--surface-alt);
-  border-left: 3px solid var(--border); border-radius: 0 6px 6px 0; margin-bottom: 8px;
+.mp-nota { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; line-height: 1.5; color: var(--muted); margin-top: 10px; }
+.mp-nota svg { flex: 0 0 auto; margin-top: 1px; }
+
+@media (max-width: 1100px) {
+  .mp-kpis { grid-template-columns: repeat(2, 1fr); }
+  .mp-ref-topo { grid-template-columns: 18px 1fr auto; row-gap: 8px; }
 }
-.mp-aviso svg { flex: 0 0 auto; margin-top: 2px; }
-
-@media (max-width: 900px) {
-  .mp-blocos { flex-direction: column; }
-  .mp-bloco { width: 100%; }
+@media (max-width: 760px) {
+  .mp-kpis { grid-template-columns: 1fr; }
+  .mp-setup { grid-template-columns: 1fr; }
   .mp-params { flex-direction: column; align-items: stretch; }
-  .mp-param input[type="number"] { width: 100%; }
+  .mp-param input[type="number"], .mp-param select { width: 100%; min-width: 0; }
 }

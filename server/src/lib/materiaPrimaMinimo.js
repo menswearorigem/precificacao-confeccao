@@ -422,11 +422,19 @@ function consolidarPorInsumoCor(linhas = []) {
     const disponivel = g.saldo == null ? null : g.saldo + g.emCompras;
     const falta = disponivel == null ? null : Math.max(0, g.necessidade - disponivel);
     const pedido = falta == null ? { valor: null, motivo: 'saldo por cor deste tecido não informado' } : pedidoDeCompra({ falta, barca: g.barca });
-    const prazo = prazoParaPedirTecido({
-      saldoTecido: disponivel ?? 0,
-      consumoDia: g.consumoDia,
-      prazoEntregaDias: g.prazoEntregaDias,
-    });
+    // ⚠️ CORRIGIDO 11/09/2026, achado olhando a tela rodando: aqui passava
+    // `disponivel ?? 0`. Com o saldo NÃO INFORMADO, o zero entrava como se
+    // fosse saldo real, a cobertura dava zero dia e a linha escrevia
+    // "atrasado 45 d" ao lado de "falta cadastro" — duas coisas que não podem
+    // aparecer juntas. Não saber quanto tem não é ter zero, e a tela não pode
+    // dizer que está atrasada uma compra que ela não sabe se é necessária.
+    const prazo = disponivel == null
+      ? { coberturaDias: null, folgaDias: null, motivo: 'o saldo desta cor não foi informado — sem ele não dá para saber quantos dias o estoque dura' }
+      : prazoParaPedirTecido({
+        saldoTecido: disponivel,
+        consumoDia: g.consumoDia,
+        prazoEntregaDias: g.prazoEntregaDias,
+      });
     return {
       ...g,
       disponivel,
