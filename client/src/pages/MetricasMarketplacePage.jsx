@@ -1529,6 +1529,7 @@ export default function MetricasMarketplacePage() {
   // UpSeller — ver MultiSelect em components/ui.jsx.
   const [plataformas, setPlataformas] = useState([]);
   const [lojaIds, setLojaIds] = useState([]);
+  const [recorteFull, setRecorteFull] = useState('');
   const [busca, setBusca] = useState('');
   const [subTab, setSubTab] = useState('visaoGeral');
   const [maisAberto, setMaisAberto] = useState(false);
@@ -1575,8 +1576,11 @@ export default function MetricasMarketplacePage() {
     const f = { data_inicio: dataInicio, data_fim: dataFim };
     if (plataformas.length) f.canal_venda = plataformas.join(',');
     if (lojaIds.length) f.origem_integracao_id = lojaIds.join(',');
+    // Recorte do fulfillment (11/09/2026). Ver lib/filtroFull.js no servidor:
+    // filtra os anúncios que ESTÃO HOJE no Full, e o rótulo diz isso.
+    if (recorteFull) f.full = recorteFull;
     return f;
-  }, [dataInicio, dataFim, plataformas, lojaIds]);
+  }, [dataInicio, dataFim, plataformas, lojaIds, recorteFull]);
 
   return (
     <div className="page-wide">
@@ -1604,6 +1608,22 @@ export default function MetricasMarketplacePage() {
           rotuloVazio="Todas as lojas"
           larguraMinima={180}
         />
+        {/* Recorte do fulfillment. Fica ao lado do filtro de loja porque é
+            um recorte do mesmo tipo — QUAIS anúncios entram na conta —, e o
+            título diz o que ele mede: anúncio que está no Full HOJE, não
+            "venda que saiu pelo Full" (o modo de envio do pedido não é
+            gravado pelo sincronismo). */}
+        <Select
+          value={recorteFull}
+          onChange={(e) => setRecorteFull(e.target.value)}
+          style={{ maxWidth: 210 }}
+          title={'Filtra pelos anúncios que estão no fulfillment AGORA — incluindo as vendas que eles fizeram '
+            + 'antes de entrar lá. Não é o modo de envio de cada pedido, que o sincronismo não guarda.'}
+        >
+          <option value="">Full e envio próprio</option>
+          <option value="1">Só anúncios no Full</option>
+          <option value="0">Só fora do Full</option>
+        </Select>
         {(subTab === 'vendasPorAnuncio' || subTab === 'abc') && (
           <div className="filtros-barra-busca">
             <Search size={14} />

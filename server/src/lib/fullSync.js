@@ -25,7 +25,7 @@ const shopee = require('./marketplaces/shopee');
 const { garantirTokenValido, partirSkuKit } = require('./marketplaceSync');
 const { montarIndiceReferencias, resolverProdutoPeloSku } = require('./anunciosSync');
 const { hojeEmBrasilia, diaSqlBrasilia } = require('./dataBrasil');
-const { casarVariantes } = require('./full');
+const { casarVariantes, casarComposicao } = require('./full');
 
 // O "hoje" de toda gravação desta varredura, em SQL e no fuso da empresa.
 //
@@ -563,6 +563,12 @@ async function sincronizarFullDaIntegracao(integracaoId) {
           [integracaoId, vistos]
         );
       }
+
+      // A composição do kit também recasa a cada passada. A linha nasce sem
+      // variante quando a combinação cor × tamanho ainda não existe no
+      // cadastro; cadastrada depois, ela ficaria sem variante para sempre —
+      // e o plano mandaria produzir tudo, com a prateleira cheia.
+      await casarComposicao(client, vistos);
 
       enviosGravados = await gravarEnvios(client, integracao, envios);
       await inferirEnvios(client, integracao);

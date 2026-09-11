@@ -1521,8 +1521,57 @@ function statusFullPorSaldo(saldo) {
 // esta casa não deixa o sistema chutar.
 const CAMINHOS_REMESSA_ML = [
   (sellerId) => `/inbound-shipments/search?seller_id=${sellerId}&limit=50`,
+  (sellerId) => `/inbound/shipments/search?seller_id=${sellerId}&limit=50`,
   (sellerId) => `/stock/fulfillment/operations/search?seller_id=${sellerId}&limit=50`,
+  (sellerId) => `/stock/fulfillment/inbound/search?seller_id=${sellerId}&limit=50`,
+  (sellerId) => `/marketplace/stock/fulfillment/operations/search?seller_id=${sellerId}&limit=50`,
+  (sellerId) => `/users/${sellerId}/inbound-shipments/search?limit=50`,
 ];
+
+// O histórico POR UNIDADE DE ESTOQUE. Caminho diferente dos de cima e, quando
+// responde, melhor: traz a movimentação daquele inventory_id — entradas
+// incluídas — em vez da remessa inteira. É o que permite dizer "esta cor
+// recebeu 120 peças em 14/08" sem depender da API de remessa.
+const CAMINHOS_OPERACAO_INVENTARIO_ML = [
+  (inventoryId) => `/inventories/${inventoryId}/stock/operations/search?limit=50`,
+  (inventoryId) => `/stock/fulfillment/operations/search?inventory_id=${inventoryId}&limit=50`,
+];
+
+// Diagnóstico: tenta cada caminho conhecido e devolve o que CADA um
+// respondeu, com status e um pedaço do corpo.
+//
+// Existe porque a documentação pública do Mercado Livre responde 403 à
+// leitura automatizada e a forma do caminho de remessas não pôde ser
+// confirmada contra a conta real. Em vez de o sistema ficar dizendo "não
+// respondeu" para sempre, isto transforma a dúvida numa resposta conferível:
+// roda com o token da casa e mostra qual caminho existe.
+async function diagnosticarEnviosFullML({ accessToken, sellerId, inventoryId }) {
+  const tentativas = [];
+  const testar = async (caminho) => {
+    try {
+      const data = await chamarApi(caminho, accessToken);
+      const lista = data?.results || data?.shipments || data?.operations || data?.data || null;
+      tentativas.push({
+        caminho,
+        ok: true,
+        status: 200,
+        registros: Array.isArray(lista) ? lista.length : null,
+        chaves: data && typeof data === 'object' ? Object.keys(data).slice(0, 12) : null,
+        amostra: Array.isArray(lista) && lista.length > 0
+          ? JSON.stringify(lista[0]).slice(0, 600)
+          : JSON.stringify(data ?? null).slice(0, 600),
+      });
+    } catch (err) {
+      tentativas.push({ caminho, ok: false, status: err.status || null, erro: err.message.slice(0, 400) });
+    }
+  };
+
+  for (const montar of CAMINHOS_REMESSA_ML) await testar(montar(sellerId));
+  if (inventoryId) {
+    for (const montar of CAMINHOS_OPERACAO_INVENTARIO_ML) await testar(montar(inventoryId));
+  }
+  return tentativas;
+}
 
 const STATUS_REMESSA_ML = {
   draft: 'rascunho',
@@ -1645,5 +1694,6 @@ module.exports = {
   buscarEstoqueFullML,
   statusFullPorSaldo,
   buscarEnviosFullML,
+  diagnosticarEnviosFullML,
   mapearRemessaML,
 };

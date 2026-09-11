@@ -8087,3 +8087,53 @@ table.grade-matriz { width: auto; min-width: 0; }
   background: var(--info-bg); color: var(--info); border-color: var(--info-ring);
 }
 .full-card-enviar small { font-family: var(--font-mono); font-size: 10px; color: var(--ink-soft); font-weight: 500; }
+
+/* ---- composição do kit, vendas e diagnóstico (11/09/2026) ---- */
+.full-composicao-cabeca,
+.full-composicao-linha {
+  display: grid;
+  grid-template-columns: minmax(72px, 1fr) minmax(90px, 1.3fr) minmax(70px, 0.9fr) 68px 30px;
+  gap: 8px; align-items: center;
+}
+.full-composicao-cabeca {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--ink-faint); padding-bottom: 6px; border-bottom: 1px solid var(--border-soft);
+}
+.full-composicao-linha { padding: 6px 0; }
+.full-composicao-linha input { width: 100%; }
+.full-composicao-linha input.num { text-align: right; font-variant-numeric: tabular-nums; }
+.full-composicao-ref { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); }
+.full-composicao-rodape {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-soft);
+}
+.full-composicao-total { font-size: 11.5px; color: var(--ink-soft); }
+.full-composicao-total b { font-family: var(--font-mono); font-size: 14px; color: var(--ink); }
+.full-composicao-total em { color: var(--warning); font-style: normal; }
+
+.full-vendas-topo { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+
+.full-diagnostico { margin-top: 14px; }
+.full-diagnostico-saida { margin-top: 12px; }
+.full-diagnostico-lista { list-style: none; margin: 10px 0 0; padding: 0; }
+.full-diagnostico-lista li {
+  padding: 7px 9px; border-radius: var(--radius-sm); margin-bottom: 6px;
+  background: var(--surface-alt); border: 1px solid var(--border-soft); font-size: 11px;
+}
+.full-diagnostico-lista li.ok { border-color: var(--success-ring); background: var(--success-bg); }
+.full-diagnostico-lista code {
+  font-family: var(--font-mono); font-size: 10.5px; display: block;
+  color: var(--ink); word-break: break-all;
+}
+.full-diagnostico-lista span { display: block; color: var(--ink-soft); margin-top: 2px; }
+.full-diagnostico-lista pre {
+  margin: 6px 0 0; padding: 6px 8px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; font-size: 10px; white-space: pre-wrap; word-break: break-all; max-height: 120px;
+  overflow-y: auto;
+}
+/* Ressalva que muda o que a fábrica corta: mais forte que as outras. */
+.full-ressalvas p.full-ressalva-forte {
+  color: var(--danger); background: var(--danger-bg);
+  border: 1px solid var(--danger-ring); border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}

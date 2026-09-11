@@ -3,7 +3,7 @@ import {
   Warehouse, RefreshCw, X, ExternalLink, Factory, Truck, AlertTriangle,
   Timer, CalendarClock, TrendingUp, TrendingDown, LayoutGrid, Table2,
   Settings2, Send, Info, CheckCircle2, Ban, Sparkles, History, Printer,
-  Boxes, ArrowRight, Flame, Layers, Link2, Search,
+  Boxes, ArrowRight, Flame, Layers, Link2, Search, ShoppingBag, Plus, Trash2, Copy,
 } from 'lucide-react';
 import {
   AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine,
@@ -13,6 +13,7 @@ import {
   EstadoVazio, Select, MultiSelect, Skeleton, CampoBusca, ChipsFiltros, FiltrosAvancados,
   IndicadorDestaque, Paginacao, Checkbox, Toggle, Field, BotaoExportar,
 } from '../components/ui';
+import { confirmar } from '../components/ConfirmDialog';
 import { useTabela } from '../lib/useTabela';
 import { brl, numeroBr, formatQtd, dataBr, tempoRelativo } from '../lib/format';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
@@ -549,8 +550,14 @@ function PainelFull({ alvo, janela, diasAlvo, onFechar, onAlterado }) {
         </div>
 
         <div className="subtab-row" style={{ padding: '0 18px' }}>
-          {[['resumo', 'Resumo'], ['estoque', 'Saldo no Full'], ['envios', 'Envios'],
-            ['variacoes', 'Cores e tamanhos'], ['ajustes', 'Ajustes']].map(([chave, rotulo]) => (
+          {/* A aba de Composição aparece SEMPRE. Escondê-la atrás de
+              `ehKit` criava um impasse: `ehKit` vem do padrão de SKU, então
+              um kit cujo SKU não segue o padrão nunca virava kit, nunca podia
+              registrar a composição, e o plano mandava produzir uma peça por
+              kit vendido — um terço do necessário. */}
+          {[['resumo', 'Resumo'], ['vendas', 'Vendas'], ['estoque', 'Saldo no Full'], ['envios', 'Envios'],
+            ['variacoes', 'Cores e tamanhos'], ['composicao', 'Composição'], ['ajustes', 'Ajustes']]
+            .map(([chave, rotulo]) => (
               <button
                 key={chave}
                 type="button"
@@ -567,8 +574,14 @@ function PainelFull({ alvo, janela, diasAlvo, onFechar, onAlterado }) {
           {!dado ? <Skeleton height={240} /> : (
             <>
               {aba === 'resumo' && <AbaResumoFull a={a} hoje={dado.hoje} onVinculado={() => { recarregar(); onAlterado(); }} />}
+              {aba === 'vendas' && <AbaVendasFull alvo={alvo} a={a} />}
               {aba === 'estoque' && <AbaEstoqueFull a={a} curva={dado.curva} />}
-              {aba === 'envios' && <AbaEnviosFull a={a} envios={dado.envios} onAlterado={() => { recarregar(); onAlterado(); }} />}
+              {aba === 'composicao' && (
+                <AbaComposicaoFull a={a} onGravado={() => { recarregar(); onAlterado(); }} />
+              )}
+              {aba === 'envios' && (
+                <AbaEnviosFull a={a} envios={dado.envios} onAlterado={() => { recarregar(); onAlterado(); }} />
+              )}
               {aba === 'variacoes' && <AbaVariacoesFull a={a} />}
               {aba === 'ajustes' && <AbaAjustesFull a={a} onGravado={() => { recarregar(); onAlterado(); }} />}
             </>
@@ -818,7 +831,14 @@ function VincularReferencia({ anuncio, onVinculado }) {
     setGravando(true);
     setErro('');
     try {
-      await api.put(`/full/anuncios/${anuncio.anuncioId}/vinculo`, { produto_id: produtoId });
+      const r = await api.put(`/full/anuncios/${anuncio.anuncioId}/vinculo`, { produto_id: produtoId });
+      if (r.composicoesRemovidas > 0) {
+        // A composição descreve o trio de UMA referência. Trocada a
+        // referência, ela não vale mais — e quem trocou precisa saber que vai
+        // ter de registrar de novo, em vez de descobrir na fábrica.
+        setErro(`Vinculado. Atenção: ${r.composicoesRemovidas} linha(s) de composição de kit foram apagadas `
+          + 'porque eram da referência anterior — registre o kit de novo na aba Composição.');
+      }
       onVinculado();
     } catch (e) {
       setErro(e.message);
@@ -869,6 +889,365 @@ function VincularReferencia({ anuncio, onVinculado }) {
       )}
       {erro && <div className="login-error" style={{ marginTop: 8 }}>{erro}</div>}
     </div>
+  );
+}
+
+// A quantidade vendida, com clareza — foi o que a dona pediu: um lugar que
+// responda "quanto este anúncio vendeu" sem precisar interpretar velocidade,
+// cobertura ou base de medição.
+//
+// Três leituras da mesma venda: o total do período, a curva dia a dia e a
+// grade cor × tamanho, que é como a produção pensa.
+// A COMPOSIÇÃO DO KIT — o que sai da expedição quando uma unidade daquela
+// variação é vendida.
+//
+// Existe porque o kit da casa é SORTIDO: uma unidade do "Kit 3" são três
+// camisas de cores diferentes, em combinação fixa por variação. O padrão de
+// SKU ("KIT-3-REF-COR-TAM") descreve outra coisa — três peças iguais —, e o
+// plano montado em cima dele manda cortar o triplo de uma cor e nenhuma das
+// outras duas.
+//
+// "Aplicar a todas as variações" não é conveniência: um anúncio de dez
+// tamanhos exigiria dez preenchimentos idênticos, e o resultado previsível é
+// ninguém preencher nenhum. O trio de cores se repete; o tamanho vem de cada
+// variação.
+function AbaComposicaoFull({ a, onGravado }) {
+  const [itemId, setItemId] = useState(a.unidades[0]?.id ?? null);
+  const [dados, setDados] = useState(null);
+  const [linhas, setLinhas] = useState([]);
+  // Nasce DESLIGADO. Ligado por padrão, um "gravar" feito para corrigir uma
+  // quantidade no tamanho M apagava os trios já registrados de P, G, GG e
+  // XGG — sem aviso e sem desfazer.
+  const [aplicarEmTodas, setAplicarEmTodas] = useState(false);
+  const [gravando, setGravando] = useState(false);
+  const [erro, setErro] = useState('');
+  const [aviso, setAviso] = useState('');
+
+  const carregar = useCallback(() => {
+    if (!itemId) return;
+    setDados(null);
+    api.get(`/full/itens/${itemId}/composicao`)
+      .then((r) => {
+        setDados(r);
+        setLinhas(r.composicao.length > 0
+          ? r.composicao.map((c) => ({ produtoId: c.produtoId, cor: c.cor, tamanho: c.tamanho, quantidade: c.quantidade }))
+          : (r.sugestao ? [{ ...r.sugestao }] : []));
+      })
+      .catch((e) => setErro(e.message));
+  }, [itemId]);
+
+  useEffect(carregar, [carregar]);
+
+  function mudar(i, campo, valor) {
+    setLinhas((atual) => atual.map((l, idx) => (idx === i ? { ...l, [campo]: valor } : l)));
+  }
+
+  function acrescentar() {
+    const base = dados?.sugestao || linhas[0] || {};
+    setLinhas((atual) => [...atual, {
+      produtoId: base.produtoId ?? dados?.item?.produtoId ?? null,
+      cor: '',
+      tamanho: base.tamanho ?? dados?.item?.tamanho ?? '',
+      quantidade: 1,
+    }]);
+  }
+
+  async function gravar(e) {
+    e.preventDefault();
+    setErro('');
+    setAviso('');
+    setGravando(true);
+    try {
+      if (aplicarEmTodas) {
+        const outrasComComposicao = a.unidades
+          .filter((u) => u.id !== itemId && (u.composicao?.length || 0) > 0).length;
+        if (outrasComComposicao > 0) {
+          const segue = await confirmar(
+            `${outrasComComposicao} outra(s) variação(ões) deste anúncio já têm composição própria. `
+            + 'Repetir esta vai apagar as delas e colocar este trio no lugar, com o tamanho de cada uma. '
+            + 'Não dá para desfazer.',
+            { titulo: 'Sobrescrever composições já registradas?', confirmarTexto: 'Sobrescrever' }
+          );
+          if (!segue) { setGravando(false); return; }
+        }
+      }
+      const r = await api.put(`/full/itens/${itemId}/composicao`, {
+        linhas: linhas.map((l) => ({
+          produto_id: l.produtoId,
+          cor: l.cor,
+          tamanho: l.tamanho,
+          quantidade: Number(l.quantidade) || 0,
+        })),
+        aplicar_em_todas: aplicarEmTodas,
+      });
+      setAviso(`Composição gravada em ${r.aplicadaEm} variação(ões).`
+        + (r.sobrescreveu > 0 ? ` ${r.sobrescreveu} tinha(m) composição própria e foi(ram) substituída(s).` : ''));
+      carregar();
+      onGravado();
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setGravando(false);
+    }
+  }
+
+  const total = linhas.reduce((acc, l) => acc + (Number(l.quantidade) || 0), 0);
+  const coresDoCadastro = [...new Set((dados?.variantes || []).map((v) => v.cor).filter(Boolean))];
+  const tamanhosDoCadastro = [...new Set((dados?.variantes || []).map((v) => v.tamanho).filter(Boolean))];
+
+  return (
+    <>
+      <p className="page-sub" style={{ marginTop: 0 }}>
+        O que sai da expedição quando <b>uma unidade</b> desta variação é vendida. É daqui que o plano de produção
+        tira o que cortar — sem isto, ele supõe que o kit é de uma cor só e manda o triplo de uma, zero das
+        outras.
+      </p>
+
+      {a.unidades.length > 1 && (
+        <Field label="Variação do anúncio" hint="A composição é por variação. Grave uma e mande repetir nas outras.">
+          <Select value={String(itemId ?? '')} onChange={(e) => setItemId(Number(e.target.value))}>
+            {a.unidades.map((u) => (
+              <option key={u.id} value={u.id}>
+                {[u.cor, u.tamanho].filter(Boolean).join(' · ') || u.sku || `variação ${u.variacaoIdExterna}`}
+                {(u.composicao?.length || 0) > 0 ? ' ✓' : ''}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
+
+      {!dados ? <Skeleton height={180} /> : (
+        <form onSubmit={gravar}>
+          <div className="full-composicao-cabeca">
+            <span>Peça</span>
+            <span>Cor</span>
+            <span>Tamanho</span>
+            <span className="num">Qtd.</span>
+            <span />
+          </div>
+          {linhas.map((l, i) => (
+            <div className="full-composicao-linha" key={i}>
+              <span className="full-composicao-ref">{dados.item.referencia || 'sem referência'}</span>
+              <input
+                list="full-cores-cadastro"
+                value={l.cor}
+                onChange={(e) => mudar(i, 'cor', e.target.value)}
+                placeholder="cor"
+                aria-label="Cor"
+              />
+              <input
+                list="full-tamanhos-cadastro"
+                value={l.tamanho}
+                onChange={(e) => mudar(i, 'tamanho', e.target.value)}
+                placeholder="tamanho"
+                aria-label="Tamanho"
+              />
+              <input
+                type="number"
+                min="1"
+                className="num"
+                value={l.quantidade}
+                onChange={(e) => mudar(i, 'quantidade', e.target.value)}
+                aria-label="Quantidade"
+              />
+              <button
+                type="button"
+                className="icon-btn"
+                title="Tirar esta peça do kit"
+                onClick={() => setLinhas((atual) => atual.filter((_, idx) => idx !== i))}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+          <datalist id="full-cores-cadastro">
+            {coresDoCadastro.map((c) => <option key={c} value={c} />)}
+          </datalist>
+          <datalist id="full-tamanhos-cadastro">
+            {tamanhosDoCadastro.map((t) => <option key={t} value={t} />)}
+          </datalist>
+
+          <div className="full-composicao-rodape">
+            <button type="button" className="btn btn-ghost" onClick={acrescentar}>
+              <Plus size={13} /> Acrescentar peça
+            </button>
+            <span className="full-composicao-total">
+              <b>{formatQtd(total)}</b> peças por unidade vendida
+              {dados.item.pecasPorUnidade > 1 && total !== dados.item.pecasPorUnidade && (
+                <em> — o SKU diz {dados.item.pecasPorUnidade}</em>
+              )}
+            </span>
+          </div>
+
+          {a.unidades.length > 1 && (
+            <div className="full-toggle-linha">
+              <Toggle checked={aplicarEmTodas} onChange={() => setAplicarEmTodas((v) => !v)} />
+              <div>
+                <b>Repetir nas outras {a.unidades.length - 1} variações deste anúncio</b>
+                <small>
+                  As mesmas cores e quantidades, com o <b>tamanho de cada variação</b> no lugar deste. É o caso
+                  normal: o trio se repete, o que muda é o tamanho.
+                </small>
+              </div>
+            </div>
+          )}
+
+          {(dados.composicao || []).some((c) => c.varianteId == null) && (
+            <div className="full-aviso">
+              <AlertTriangle size={14} />
+              <span>
+                Alguma linha não casou com uma variante do cadastro — a cor ou o tamanho não existem nessa
+                referência. A ordem de produção nasce sem variante nessas linhas, e alguém vai ter que completar
+                à mão. Use as sugestões dos campos, que vêm do cadastro.
+              </span>
+            </div>
+          )}
+
+          {erro && <div className="login-error" style={{ marginBottom: 8 }}>{erro}</div>}
+          {aviso && <div className="full-aviso full-aviso-info"><CheckCircle2 size={14} /><span>{aviso}</span></div>}
+          <button className="btn btn-primary" disabled={gravando || linhas.length === 0}>
+            {gravando ? 'Gravando…' : 'Gravar composição'}
+          </button>
+        </form>
+      )}
+
+      <p className="full-nota">
+        Esta composição é do ANÚNCIO — do que sai da caixa. Ela não altera o kit da Ficha de Precificação, que
+        continua sendo o que compõe o preço.
+      </p>
+    </>
+  );
+}
+
+function AbaVendasFull({ alvo, a }) {
+  const paleta = usePaletaGrafico();
+  const [dias, setDias] = useState(90);
+  const [dados, setDados] = useState(null);
+  const [erro, setErro] = useState('');
+
+  useEffect(() => {
+    setDados(null);
+    api.get(`/full/anuncios/${alvo.integracaoId}/${encodeURIComponent(alvo.anuncioIdExterno)}/vendas?dias=${dias}`)
+      .then(setDados)
+      .catch((e) => setErro(e.message));
+  }, [alvo.integracaoId, alvo.anuncioIdExterno, dias]);
+
+  if (erro) return <div className="login-error">{erro}</div>;
+  if (!dados) return <Skeleton height={240} />;
+
+  const r = dados.resumo;
+  const unidade = a.ehKit ? 'kits' : 'peças';
+  const porDia = r.unidades > 0 && dias > 0 ? r.unidades / dias : 0;
+  const serie = dados.serie.map((d) => ({ ...d, dia: dataBr(d.data)?.slice(0, 5) }));
+
+  return (
+    <>
+      <div className="full-vendas-topo">
+        <div className="modo-exibicao" role="group" aria-label="Período das vendas">
+          {[30, 60, 90, 180, 365].map((d) => (
+            <button
+              key={d}
+              type="button"
+              className={'modo-btn' + (dias === d ? ' active' : '')}
+              onClick={() => setDias(d)}
+            >
+              {d} dias
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="full-blocos">
+        <div className="full-bloco destaque">
+          <span className="full-bloco-rotulo">Vendeu</span>
+          <span className="full-bloco-valor">{formatQtd(r.unidades)}</span>
+          <small>
+            {unidade} em {dias} dias
+            {a.ehKit && <> · {formatQtd(r.unidades * a.pecasPorUnidade)} peças</>}
+          </small>
+        </div>
+        <div className="full-bloco">
+          <span className="full-bloco-rotulo">Por dia</span>
+          <span className="full-bloco-valor">{numeroBr(porDia, 2)}</span>
+          <small>{unidade} por dia, no período inteiro</small>
+        </div>
+        <div className="full-bloco">
+          <span className="full-bloco-rotulo">Pedidos</span>
+          <span className="full-bloco-valor">{formatQtd(r.pedidos)}</span>
+          <small>{r.diasComVenda} dias com venda de {dias}</small>
+        </div>
+        <div className="full-bloco">
+          <span className="full-bloco-rotulo">Receita</span>
+          <span className="full-bloco-valor">{brl(r.receita)}</span>
+          <small>{r.unidades > 0 ? `${brl(r.receita / r.unidades)} por ${a.ehKit ? 'kit' : 'peça'}` : 'sem venda'}</small>
+        </div>
+      </div>
+
+      {serie.length === 0 ? (
+        <EstadoVazio
+          Icone={ShoppingBag}
+          titulo="Sem venda no período"
+          descricao="Nenhum pedido deste anúncio caiu no recorte escolhido. Aumente o período para procurar mais para trás."
+        />
+      ) : (
+        <>
+          <div className="card-head">Dia a dia</div>
+          <div style={{ height: 190 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={serie} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
+                <CartesianGrid stroke={paleta.grade} strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="dia" tick={{ fontSize: 10, fill: paleta.rotulo }} stroke={paleta.eixo} />
+                <YAxis tick={{ fontSize: 10, fill: paleta.rotulo }} stroke={paleta.eixo} allowDecimals={false} />
+                <Tooltip
+                  formatter={(v) => [formatQtd(v), unidade]}
+                  labelFormatter={(l) => `Dia ${l}`}
+                />
+                <Area type="monotone" dataKey="unidades" stroke={paleta.series[1]} fill={paleta.series[1]} fillOpacity={0.2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      )}
+
+      {dados.grade.length > 0 && (
+        <>
+          <div className="card-head" style={{ marginTop: 16 }}>O que saiu, por cor e tamanho</div>
+          <div className="data-table-outer">
+            <div className="data-table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Cor</th>
+                    <th>Tamanho</th>
+                    <th className="num">Vendeu</th>
+                    <th className="num">Receita</th>
+                    <th className="num">Participação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dados.grade.map((g) => (
+                    <tr key={`${g.cor}|${g.tamanho}`}>
+                      <td>{g.cor || <span className="full-sem-medida">—</span>}</td>
+                      <td>{g.tamanho || <span className="full-sem-medida">—</span>}</td>
+                      <td className="num"><b>{formatQtd(g.unidades)}</b></td>
+                      <td className="num">{brl(g.receita)}</td>
+                      <td className="num">
+                        {r.unidades > 0 ? `${numeroBr((g.unidades / r.unidades) * 100, 1)}%` : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <p className="full-nota">
+            É esta grade que reparte o envio entre as cores. Venda dentro de kit aparece pela cor gravada no
+            pedido — quando o kit é sortido, quem manda no que produzir é a <b>Composição do kit</b>, não esta
+            tabela.
+          </p>
+        </>
+      )}
+    </>
   );
 }
 
@@ -965,12 +1344,16 @@ function AbaEnviosFull({ a, envios, onAlterado }) {
       </p>
 
       {(!envios || envios.length === 0) ? (
-        <EstadoVazio
-          Icone={Truck}
-          titulo="Nenhum envio registrado ainda"
-          descricao={'A plataforma pode não devolver o histórico de remessa desta conta. Enquanto isso, registre '
-            + 'abaixo o que a expedição despachou — é o que mantém a data do último envio de pé.'}
-        />
+        <>
+          <EstadoVazio
+            Icone={Truck}
+            titulo="Nenhum envio veio da plataforma"
+            descricao={'O Mercado Livre tem mais de uma forma documentada para a API de remessas, e o portal de '
+              + 'desenvolvedor deles recusa leitura automatizada — então o caminho certo para esta conta nunca '
+              + 'foi confirmado. O diagnóstico abaixo pergunta à API, com o token da loja, qual deles responde.'}
+          />
+          <DiagnosticoEnvios integracaoId={a.integracaoId} />
+        </>
       ) : (
         <div className="full-timeline">
           {envios.map((e) => {
@@ -1033,6 +1416,75 @@ function AbaEnviosFull({ a, envios, onAlterado }) {
         faltar. Ele existe para a data do último envio não se perder quando a plataforma não devolve o histórico.
       </p>
     </>
+  );
+}
+
+// Pergunta à API do Mercado Livre qual caminho de remessas responde nesta
+// conta, e mostra o que cada um devolveu.
+//
+// É o oposto de deixar "não respondeu" no ar: com o resultado, a leitura de
+// envios passa a ser uma linha de código em vez de um chute — e, se nenhum
+// responder, fica provado que a conta não tem esse acesso, o que também é uma
+// resposta.
+function DiagnosticoEnvios({ integracaoId }) {
+  const [rodando, setRodando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState('');
+
+  async function rodar() {
+    setRodando(true);
+    setErro('');
+    try {
+      setResultado(await api.post('/full/diagnostico-envios', { integracao_id: integracaoId }));
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setRodando(false);
+    }
+  }
+
+  return (
+    <div className="full-diagnostico">
+      <button type="button" className="btn btn-ghost" onClick={rodar} disabled={rodando}>
+        <Search size={13} /> {rodando ? 'Perguntando à API…' : 'Descobrir por que os envios não vieram'}
+      </button>
+      {erro && <div className="login-error" style={{ marginTop: 8 }}>{erro}</div>}
+      {resultado && (
+        <div className="full-diagnostico-saida">
+          {resultado.funcionou.length > 0 ? (
+            <div className="full-aviso full-aviso-info">
+              <CheckCircle2 size={14} />
+              <span>
+                <b>{resultado.funcionou.length} caminho(s) responderam.</b> Mande esta tela para quem cuida do
+                sistema: com o formato da resposta em mãos, a leitura de envios entra na próxima versão.
+              </span>
+            </div>
+          ) : (
+            <div className="full-aviso">
+              <AlertTriangle size={14} />
+              <span>
+                Nenhum caminho conhecido respondeu para a loja <b>{resultado.loja}</b> (vendedor{' '}
+                {resultado.sellerId}). Isso costuma querer dizer que o aplicativo desta conta não tem a permissão
+                de fulfillment — o que se resolve no painel de desenvolvedor do Mercado Livre, não aqui.
+              </span>
+            </div>
+          )}
+          <ul className="full-diagnostico-lista">
+            {resultado.tentativas.map((t) => (
+              <li key={t.caminho} className={t.ok ? 'ok' : 'falhou'}>
+                <code>{t.caminho}</code>
+                <span>
+                  {t.ok
+                    ? `200 · ${t.registros != null ? `${t.registros} registro(s)` : 'sem lista'}${t.chaves ? ` · campos: ${t.chaves.join(', ')}` : ''}`
+                    : `${t.status || 'erro'} · ${t.erro}`}
+                </span>
+                {t.ok && t.amostra && <pre>{t.amostra}</pre>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1496,7 +1948,8 @@ function ModalPlano({ alvos, janela, diasAlvoInicial, onFechar }) {
             ))}
 
             {(plano.ressalvas.semVinculo.length > 0 || plano.ressalvas.semMedida.length > 0
-              || plano.ressalvas.gradeIncerta.length > 0 || plano.ressalvas.rateioPorIgual.length > 0) && (
+              || plano.ressalvas.gradeIncerta.length > 0 || plano.ressalvas.rateioPorIgual.length > 0
+              || plano.ressalvas.composicaoSuposta?.length > 0) && (
               <div className="full-ressalvas">
                 <div className="card-head">O que este plano não conseguiu medir</div>
                 {plano.ressalvas.semVinculo.length > 0 && (
@@ -1509,6 +1962,14 @@ function ModalPlano({ alvos, janela, diasAlvoInicial, onFechar }) {
                   <p>
                     <b>{plano.ressalvas.semMedida.length} anúncio(s) sem venda no período</b> entraram sem quantidade
                     calculada — a velocidade deles não pôde ser medida.
+                  </p>
+                )}
+                {plano.ressalvas.composicaoSuposta?.length > 0 && (
+                  <p className="full-ressalva-forte">
+                    <b>{plano.ressalvas.composicaoSuposta.length} linha(s) supõem que o kit é de uma cor só.</b>{' '}
+                    Ninguém registrou a composição dessas variações, então o plano repetiu a cor da própria
+                    variação. Se o kit for sortido, isto manda cortar o triplo de uma cor e nenhuma das outras —
+                    abra o anúncio e preencha a aba <b>Composição</b> antes de abrir a ordem.
                   </p>
                 )}
                 {plano.ressalvas.rateioPorIgual.length > 0 && (

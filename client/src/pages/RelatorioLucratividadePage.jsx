@@ -879,6 +879,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
   // caminho só, em vez de dois que precisam ser mantidos em sincronia.
   const [canaisVenda, setCanaisVenda] = useState([]);
   const [lojaIds, setLojaIds] = useState([]);
+  const [recorteFull, setRecorteFull] = useState('');
   const [integracoes, setIntegracoes] = useState([]);
   const [busca, setBusca] = useState('');
   const [relatorio, setRelatorio] = useState(null);
@@ -930,6 +931,8 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
     if (dataFim) params.set('data_fim', dataFim);
     if (canaisVenda.length) params.set('canal_venda', canaisVenda.join(','));
     if (isMarketplace && lojaIds.length) params.set('origem_integracao_id', lojaIds.join(','));
+    // Recorte do fulfillment (11/09/2026). Ver lib/filtroFull.js no servidor.
+    if (isMarketplace && recorteFull) params.set('full', recorteFull);
     if (origemFiltro) params.set('origem', origemFiltro);
     const qs = params.toString();
     const chamadas = [api.get(`/pedidos/relatorio-lucratividade?${qs}`)];
@@ -950,7 +953,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => { gerar(); }, [dataInicio, dataFim, canaisVenda, lojaIds]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { gerar(); }, [dataInicio, dataFim, canaisVenda, lojaIds, recorteFull]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function revincularCustos() {
     setRevinculando(true);
@@ -1027,6 +1030,20 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                 rotuloVazio="Todas as lojas"
                 larguraMinima={180}
               />
+              {/* Recorte do fulfillment. O título diz o que ele mede: anúncio
+                  que está no Full HOJE — não o modo de envio de cada pedido,
+                  que o sincronismo não guarda. */}
+              <Select
+                value={recorteFull}
+                onChange={(e) => setRecorteFull(e.target.value)}
+                style={{ maxWidth: 210 }}
+                title={'Filtra pelos anúncios que estão no fulfillment AGORA — incluindo as vendas que fizeram '
+                  + 'antes de entrar lá. Não é o modo de envio de cada pedido.'}
+              >
+                <option value="">Full e envio próprio</option>
+                <option value="1">Só anúncios no Full</option>
+                <option value="0">Só fora do Full</option>
+              </Select>
             </>
           ) : (
             <input

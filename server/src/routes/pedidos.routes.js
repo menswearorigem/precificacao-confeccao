@@ -1,4 +1,5 @@
 const { condMulti } = require('../lib/filtrosMulti');
+const { aplicarFiltroFull } = require('../lib/filtroFull');
 const express = require('express');
 const multer = require('multer');
 const pool = require('../db/pool');
@@ -885,6 +886,7 @@ async function mapaCustoPorKit(kitIds, ctx) {
 async function calcularRelatorioPedidos({
   data_inicio, data_fim, canal_venda, origem, origem_integracao_id,
   vendedor_id, cliente_id, tabela_preco_id, empresa_id, forma_pagamento, operacao, situacao,
+  full,
 }) {
   if (origem === 'marketplace') sincronizarSeNecessario();
   const conditions = ["pv.situacao != 'cancelado'"];
@@ -908,6 +910,8 @@ async function calcularRelatorioPedidos({
   if (situacao) { conditions.push(`pv.situacao = $${i}`); values.push(situacao); i += 1; }
   if (origem === 'marketplace') conditions.push('pv.origem_marketplace IS NOT NULL');
   if (origem === 'manual') conditions.push('pv.origem_marketplace IS NULL');
+  // Recorte do fulfillment (11/09/2026). Ver lib/filtroFull.js.
+  aplicarFiltroFull(conditions, full, 'pv');
   const where = `WHERE ${conditions.join(' AND ')}`;
 
   const { rows: pedidosBrutos } = await pool.query(
@@ -1368,8 +1372,8 @@ async function sinalizarCandidatosDescontoNaoCapturado(resultado) {
 
 router.get('/relatorio-lucratividade', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, canal_venda, origem, origem_integracao_id } = req.query;
-    const { resultado, totalGeral } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem, origem_integracao_id });
+    const { data_inicio, data_fim, canal_venda, origem, origem_integracao_id, full: recorteFull } = req.query;
+    const { resultado, totalGeral } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem, origem_integracao_id, full: recorteFull });
     await sinalizarCandidatosDescontoNaoCapturado(resultado);
     const candidatosDescontoNaoCapturado = resultado.filter((p) => p.candidatoDescontoNaoCapturado).length;
     // PROBLEMA 6 do pedido de auditoria: o rateio de Ads de um pedido usa
@@ -1394,8 +1398,8 @@ router.get('/relatorio-lucratividade', async (req, res, next) => {
 // pedido inteiro, e cada produto carrega sua fatia justa.
 router.get('/relatorio-lucratividade/resumo-produto', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, canal_venda, origem, origem_integracao_id } = req.query;
-    const { resultado } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem, origem_integracao_id });
+    const { data_inicio, data_fim, canal_venda, origem, origem_integracao_id, full: recorteFull } = req.query;
+    const { resultado } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem, origem_integracao_id, full: recorteFull });
 
     const porProduto = new Map();
     for (const p of resultado) {
@@ -1466,8 +1470,8 @@ router.get('/relatorio-lucratividade/resumo-produto', async (req, res, next) => 
 // chave "sem-anuncio" baseada no SKU, pra não sumir do relatório.
 router.get('/relatorio-lucratividade/resumo-anuncio', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, canal_venda, origem, origem_integracao_id } = req.query;
-    const { resultado } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem, origem_integracao_id });
+    const { data_inicio, data_fim, canal_venda, origem, origem_integracao_id, full: recorteFull } = req.query;
+    const { resultado } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem, origem_integracao_id, full: recorteFull });
 
     const porAnuncio = new Map();
     for (const p of resultado) {
@@ -1523,8 +1527,8 @@ router.get('/relatorio-lucratividade/resumo-anuncio', async (req, res, next) => 
 // de cálculo do relatório por pedido, só agrupada por dia.
 router.get('/relatorio-lucratividade/serie-diaria', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, canal_venda, origem, origem_integracao_id } = req.query;
-    const { resultado, totalGeral } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem, origem_integracao_id });
+    const { data_inicio, data_fim, canal_venda, origem, origem_integracao_id, full: recorteFull } = req.query;
+    const { resultado, totalGeral } = await calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, origem, origem_integracao_id, full: recorteFull });
 
     const porDia = new Map();
     for (const p of resultado) {
@@ -1584,13 +1588,13 @@ router.get('/relatorio-lucratividade/serie-diaria', async (req, res, next) => {
 // excluídos por esse motivo é devolvido pra virar o <SeloDeConfianca>.
 router.get('/relatorio-lucratividade/dashboard-executivo', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, empresa_id, canal_venda } = req.query;
+    const { data_inicio, data_fim, empresa_id, canal_venda, full: recorteFull } = req.query;
     if (!data_inicio || !data_fim) {
       return res.status(400).json({ error: 'Informe data_inicio e data_fim.' });
     }
 
     const [{ resultado: pedidosBrutos }, ctx, { rows: cfgRows }] = await Promise.all([
-      calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda }),
+      calcularRelatorioPedidos({ data_inicio, data_fim, canal_venda, full: recorteFull }),
       getCalcContext(),
       pool.query('SELECT margem_minima FROM configuracoes WHERE id = 1'),
     ]);
@@ -1602,7 +1606,7 @@ router.get('/relatorio-lucratividade/dashboard-executivo', async (req, res, next
 
     const { data_inicio: dataInicioAnterior, data_fim: dataFimAnterior } = periodoAnterior(data_inicio, data_fim);
     const { resultado: pedidosAnterioresBrutos } = await calcularRelatorioPedidos({
-      data_inicio: dataInicioAnterior, data_fim: dataFimAnterior, canal_venda,
+      data_inicio: dataInicioAnterior, data_fim: dataFimAnterior, canal_venda, full: recorteFull,
     });
     const pedidosAnteriores = empresa_id
       ? pedidosAnterioresBrutos.filter((p) => String(p.empresa_id) === String(empresa_id))
@@ -1757,7 +1761,7 @@ function variacaoPct(atual, anterior) {
 // Busca os pedidos de marketplace do período (id, situação, cliente,
 // integração/loja e receita já somada dos itens) — base compartilhada pelos
 // cálculos de resumo, por-loja e série diária desse painel.
-async function buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda, origem_integracao_id }) {
+async function buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda, origem_integracao_id, full }) {
   const conditions = ['pv.origem_marketplace IS NOT NULL'];
   const values = [];
   let i = 1;
@@ -1770,6 +1774,9 @@ async function buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda, or
   if (condCanal) { conditions.push(condCanal); i = values.length + 1; }
   const condLoja = condMulti('pv.origem_integracao_id', origem_integracao_id, values, 'int');
   if (condLoja) { conditions.push(condLoja); i = values.length + 1; }
+  // Recorte do fulfillment (11/09/2026). Ver lib/filtroFull.js: filtra os
+  // pedidos de anúncios que ESTÃO HOJE no Full — a tela diz isso por escrito.
+  aplicarFiltroFull(conditions, full, 'pv');
   const { rows } = await pool.query(
     `SELECT pv.id, pv.situacao, pv.cliente_id, pv.data_pedido, pv.canal_venda, pv.origem_integracao_id, pv.pack_id_marketplace,
             COALESCE((SELECT SUM(pi.total) FROM pedido_itens pi WHERE pi.pedido_id = pv.id), 0) AS receita
@@ -1856,8 +1863,8 @@ function preencherDiasVazios(dataInicio, dataFim, listaPorDia) {
 // variação % contra o período anterior de mesma duração.
 router.get('/metricas/resumo', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, canal_venda, origem_integracao_id, comparar } = req.query;
-    const pedidosAtual = await buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda, origem_integracao_id });
+    const { data_inicio, data_fim, canal_venda, origem_integracao_id, comparar, full: recorteFull } = req.query;
+    const pedidosAtual = await buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda, origem_integracao_id, full: recorteFull });
     const atual = resumirPedidosMarketplace(pedidosAtual);
 
     let anterior = null;
@@ -1865,7 +1872,7 @@ router.get('/metricas/resumo', async (req, res, next) => {
     let periodoAnteriorDatas = null;
     if (comparar !== '0' && data_inicio && data_fim) {
       periodoAnteriorDatas = periodoAnterior(data_inicio, data_fim);
-      const pedidosAnterior = await buscarPedidosMarketplace({ ...periodoAnteriorDatas, canal_venda, origem_integracao_id });
+      const pedidosAnterior = await buscarPedidosMarketplace({ ...periodoAnteriorDatas, canal_venda, origem_integracao_id, full: recorteFull });
       anterior = resumirPedidosMarketplace(pedidosAnterior);
       variacao = {};
       for (const campo of Object.keys(atual)) variacao[campo] = variacaoPct(atual[campo], anterior[campo]);
@@ -1883,15 +1890,15 @@ router.get('/metricas/resumo', async (req, res, next) => {
 // por ÍNDICE do dia (não pela data real), pra sobrepor no mesmo eixo.
 router.get('/metricas/serie', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, canal_venda, origem_integracao_id, comparar } = req.query;
-    const pedidos = await buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda, origem_integracao_id });
+    const { data_inicio, data_fim, canal_venda, origem_integracao_id, comparar, full: recorteFull } = req.query;
+    const pedidos = await buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda, origem_integracao_id, full: recorteFull });
     const porDiaLista = agruparPedidosPorDia(pedidos);
     const serie = data_inicio && data_fim ? preencherDiasVazios(data_inicio, data_fim, porDiaLista) : porDiaLista;
 
     let serieAnterior = null;
     if (comparar !== '0' && data_inicio && data_fim) {
       const per = periodoAnterior(data_inicio, data_fim);
-      const pedidosAnterior = await buscarPedidosMarketplace({ ...per, canal_venda, origem_integracao_id });
+      const pedidosAnterior = await buscarPedidosMarketplace({ ...per, canal_venda, origem_integracao_id, full: recorteFull });
       const porDiaAnteriorLista = agruparPedidosPorDia(pedidosAnterior);
       serieAnterior = preencherDiasVazios(per.data_inicio, per.data_fim, porDiaAnteriorLista)
         .map((d, indice) => ({ indice, valorVendasValidas: d.valorVendasValidas, pedidosValidos: d.pedidosValidos }));
@@ -1908,8 +1915,8 @@ router.get('/metricas/serie', async (req, res, next) => {
 // "Sem integração" pra pedidos importados manualmente por planilha.
 router.get('/metricas/por-loja', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, canal_venda, origem_integracao_id } = req.query;
-    const pedidos = await buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda, origem_integracao_id });
+    const { data_inicio, data_fim, canal_venda, origem_integracao_id, full: recorteFull } = req.query;
+    const pedidos = await buscarPedidosMarketplace({ data_inicio, data_fim, canal_venda, origem_integracao_id, full: recorteFull });
 
     const integracaoIds = [...new Set(pedidos.map((p) => p.origem_integracao_id).filter(Boolean))];
     const { rows: integracoes } = integracaoIds.length > 0
@@ -1979,7 +1986,7 @@ router.get('/metricas/por-loja', async (req, res, next) => {
 // quantidade vendida no pedido é o sinal confiável e sempre disponível.
 router.get('/metricas/movimento-estoque', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, canal_venda, origem_integracao_id } = req.query;
+    const { data_inicio, data_fim, canal_venda, origem_integracao_id, full: recorteFull } = req.query;
     const conditions = ["pv.origem_marketplace IS NOT NULL", "pv.situacao != 'cancelado'"];
     const values = [];
     let i = 1;
@@ -1987,6 +1994,11 @@ router.get('/metricas/movimento-estoque', async (req, res, next) => {
     if (data_fim) { conditions.push(`pv.data_pedido <= $${i}`); values.push(data_fim); i += 1; }
     if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
     if (origem_integracao_id) { conditions.push(`pv.origem_integracao_id = $${i}`); values.push(origem_integracao_id); i += 1; }
+    // Recorte do fulfillment. Esta rota monta o WHERE à mão, e a variável de
+    // query sozinha não filtrava nada: a tela dizia "Só anúncios no Full" no
+    // topo e este gráfico mostrava o marketplace inteiro — dois números
+    // contraditórios na mesma página.
+    aplicarFiltroFull(conditions, recorteFull, 'pv');
     const { rows } = await pool.query(
       `SELECT pv.data_pedido::text AS data, COALESCE(SUM(pi.quantidade), 0) AS unidades, COUNT(DISTINCT pv.id) AS pedidos
        FROM pedidos_venda pv JOIN pedido_itens pi ON pi.pedido_id = pv.id
@@ -2005,7 +2017,7 @@ router.get('/metricas/movimento-estoque', async (req, res, next) => {
 
 router.get('/relatorio-taxas', async (req, res, next) => {
   try {
-    const { data_inicio, data_fim, canal_venda, origem_integracao_id } = req.query;
+    const { data_inicio, data_fim, canal_venda, origem_integracao_id, full: recorteFull } = req.query;
     const conditions = ["pv.situacao != 'cancelado'", 'pv.origem_marketplace IS NOT NULL'];
     const values = [];
     let i = 1;
@@ -2013,6 +2025,8 @@ router.get('/relatorio-taxas', async (req, res, next) => {
     if (data_fim) { conditions.push(`pv.data_pedido <= $${i}`); values.push(data_fim); i += 1; }
     if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
     if (origem_integracao_id) { conditions.push(`pv.origem_integracao_id = $${i}`); values.push(origem_integracao_id); i += 1; }
+    // Recorte do fulfillment, pelo mesmo motivo da rota acima.
+    aplicarFiltroFull(conditions, recorteFull, 'pv');
     const where = `WHERE ${conditions.join(' AND ')}`;
 
     const { rows: pedidos } = await pool.query(

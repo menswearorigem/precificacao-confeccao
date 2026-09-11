@@ -542,7 +542,158 @@ console.log('\n8. A prateleira é uma só');
   igual(a.unidades[1].produtoId, 9, 'e a outra carrega a sua');
 }
 
-console.log('\n9. Utilidades de data');
+console.log('\n9. Kit sortido: a composição manda no plano');
+{
+  // O caso da dona: uma unidade do "Kit 3" são TRÊS camisas de cores
+  // diferentes. Sem a composição registrada, o plano supunha três da mesma
+  // cor — o triplo de uma e nenhuma das outras duas.
+  const comp = [
+    { produtoId: 7, cor: 'PRETO', tamanho: 'M', varianteId: 11, quantidade: 1, estoqueCasa: 50 },
+    { produtoId: 7, cor: 'BRANCO', tamanho: 'M', varianteId: 12, quantidade: 1, estoqueCasa: 20 },
+    { produtoId: 7, cor: 'CINZA', tamanho: 'M', varianteId: 13, quantidade: 1, estoqueCasa: 0 },
+  ];
+  const a = full.montarAnuncio({
+    unidades: [unidade(1, 'SORTIDO', {
+      estoque_disponivel: 0, pecas_por_unidade: 3, sku_externo: 'KIT-3-OG1190-SORTIDO-M', estoque_casa: null,
+    })],
+    vendas: {
+      janela: 60, total: 60, anterior: null, receita: 9000,
+      unidadesJanela: 60, unidadesTotal: 60, primeira: '2026-06-01', ultima: HOJE,
+    },
+    mix: [], params, snapshots: new Map(), pontas: new Map(), transito: new Map(),
+    composicao: new Map([[1, comp]]),
+    hoje: HOJE, diasAlvoPedido: 60, janelaDias: 30,
+  });
+  igual(a.ehKit, true, 'o anúncio é tratado como kit');
+  igual(a.composicaoRegistrada, 1, 'e a variação tem composição registrada');
+  igual(a.unidades[0].composicao.length, 3, 'com as três peças do trio');
+  // 2 kits/dia x 60 dias + mínimo (2 x 20 = 40) = 160 KITS.
+  igual(a.reposicao.precisaEnviar, 160, 'manda 160 kits');
+  // E a produção lê 160 de CADA cor, não 480 de uma.
+  const porCor = new Map(a.unidades[0].composicao.map((c) => [c.cor, c.quantidade * 160]));
+  igual(porCor.get('PRETO'), 160, '160 peças pretas');
+  igual(porCor.get('BRANCO'), 160, '160 brancas');
+  igual(porCor.get('CINZA'), 160, '160 cinzas');
+  igual([...porCor.values()].reduce((s, v) => s + v, 0), 480, 'que somam as mesmas 480 peças');
+}
+{
+  // Sem composição registrada, o plano cai no padrão do SKU e DECLARA isso.
+  const a = montar([unidade(1, 'PRETO', {
+    estoque_disponivel: 0, pecas_por_unidade: 3, sku_externo: 'KIT-3-OG1190-PRETO-M',
+  })], { mix: [] });
+  igual(a.composicaoRegistrada, 0, 'nenhuma variação tem composição registrada');
+  igual(a.unidades[0].composicao.length, 0, 'e a variação volta sem composição');
+  igual(a.unidades[0].pecasPorUnidade, 3, 'valendo o padrão do SKU: 3 peças da própria cor');
+}
+
+console.log('\n10. O plano de produção do kit sortido');
+
+// Um anúncio de kit sortido, já montado, do jeito que montarAnuncio devolve.
+function anuncioDeKit({ chave = '1|MLB1', unidades }) {
+  return {
+    chave,
+    anuncioId: 10,
+    anuncioIdExterno: chave.split('|')[1],
+    integracaoId: Number(chave.split('|')[0]),
+    marketplace: 'mercado_livre',
+    lojaNome: 'hoggar',
+    titulo: 'Kit 3 Camisa Gola Polo',
+    produtoId: 7,
+    referencia: 'OG1190',
+    produtoDescricao: 'Camisa Polo',
+    produtoTemFoto: true,
+    pecasPorUnidade: 3,
+    ehKit: true,
+    velocidade: { porDia: 2, base: 'full' },
+    reposicao: { precisaEnviar: 100, diasAlvo: 60, dataLimiteEnvio: '2026-10-01', dataPrecisaEstarLa: '2026-10-11' },
+    unidades,
+  };
+}
+
+function varComposicao(id, trio, precisaEnviarUnidade) {
+  return {
+    id,
+    cor: 'SORTIDO',
+    tamanho: 'M',
+    sku: 'KIT-3-OG1190-SORTIDO-M',
+    produtoId: 7,
+    varianteId: null,
+    estoqueCasa: null,
+    estoqueCasaChave: null,
+    estoqueCasaOrigem: null,
+    pecasPorUnidade: 3,
+    ignorarReposicao: false,
+    precisaEnviarUnidade,
+    participacaoOrigem: 'variante',
+    composicao: trio,
+  };
+}
+
+{
+  const trio = [
+    { produtoId: 7, cor: 'PRETO', tamanho: 'M', varianteId: 11, quantidade: 1, estoqueCasa: 50 },
+    { produtoId: 7, cor: 'BRANCO', tamanho: 'M', varianteId: 12, quantidade: 1, estoqueCasa: 20 },
+    { produtoId: 7, cor: 'CINZA', tamanho: 'M', varianteId: 13, quantidade: 1, estoqueCasa: 0 },
+  ];
+  const r = full.montarPlano({ escolhidos: [anuncioDeKit({ unidades: [varComposicao(1, trio, 100)] })] });
+  igual(r.produtos.length, 1, 'uma referência no plano');
+  const p = r.produtos[0];
+  igual(p.linhas.length, 3, 'e três linhas de grade — uma por cor do trio');
+  igual(p.totais.aEnviar, 300, '100 kits viram 300 peças');
+  igual(p.totais.unidadesAEnviar, 100, 'mas continuam sendo 100 UNIDADES de anúncio, não 300');
+  // Prateleira: 50 pretas + 20 brancas + 0 cinzas = 70 da casa; 230 a produzir.
+  igual(p.totais.daCasa, 70, 'o que já está na casa é descontado por cor');
+  igual(p.totais.aProduzir, 230, 'e o resto vira ordem de produção');
+  const porCor = new Map(p.linhas.map((l) => [l.cor, l]));
+  igual(porCor.get('PRETO').aProduzir, 50, '50 pretas a produzir (100 − 50 na casa)');
+  igual(porCor.get('BRANCO').aProduzir, 80, '80 brancas');
+  igual(porCor.get('CINZA').aProduzir, 100, '100 cinzas');
+  igual(p.anuncios[0].pecasAEnviar, 300, 'o chip do anúncio mostra as peças DESTA referência');
+}
+{
+  // Kit que mistura DUAS referências: cada card tem de mostrar só as peças
+  // dele — repetir o total do anúncio nos dois fazia somar o dobro.
+  const trio = [
+    { produtoId: 7, cor: 'PRETO', tamanho: 'M', varianteId: 11, quantidade: 2, estoqueCasa: 0 },
+    { produtoId: 9, cor: 'AZUL', tamanho: 'M', varianteId: 21, quantidade: 1, estoqueCasa: 0 },
+  ];
+  const r = full.montarPlano({ escolhidos: [anuncioDeKit({ unidades: [varComposicao(1, trio, 100)] })] });
+  igual(r.produtos.length, 2, 'duas referências no plano');
+  const porProd = new Map(r.produtos.map((p) => [p.produtoId, p]));
+  igual(porProd.get(7).totais.aEnviar, 200, 'a referência de 2 por kit leva 200 peças');
+  igual(porProd.get(9).totais.aEnviar, 100, 'a de 1 por kit leva 100');
+  igual(porProd.get(7).anuncios[0].pecasAEnviar, 200, 'e o chip de cada card mostra a fatia dele');
+  igual(porProd.get(9).anuncios[0].pecasAEnviar, 100, 'não o total do anúncio nos dois');
+  igual(porProd.get(7).totais.unidadesAEnviar, 100, 'as unidades do anúncio não se multiplicam por card');
+  igual(porProd.get(9).referencia, null, 'a referência que entrou pelo kit vem sem nome, para a rota completar');
+}
+{
+  // A prateleira é uma só: a mesma variante em duas variações do anúncio não
+  // pode ser prometida duas vezes.
+  const trioM = [{ produtoId: 7, cor: 'PRETO', tamanho: 'M', varianteId: 11, quantidade: 1, estoqueCasa: 60 }];
+  const trioG = [{ produtoId: 7, cor: 'PRETO', tamanho: 'M', varianteId: 11, quantidade: 1, estoqueCasa: 60 }];
+  const r = full.montarPlano({
+    escolhidos: [anuncioDeKit({ unidades: [varComposicao(1, trioM, 50), varComposicao(2, trioG, 50)] })],
+  });
+  const p = r.produtos[0];
+  igual(p.totais.aEnviar, 100, '100 peças no total');
+  igual(p.totais.daCasa, 60, 'e só as 60 que existem de verdade saem da casa');
+  igual(p.totais.aProduzir, 40, 'as outras 40 são produzidas');
+  igual(p.totais.unidadesAEnviar, 100, 'as unidades somam as duas variações');
+}
+{
+  // Sem composição registrada, cai no padrão do SKU e MARCA a linha.
+  const r = full.montarPlano({
+    escolhidos: [anuncioDeKit({
+      unidades: [{ ...varComposicao(1, [], 100), cor: 'PRETO', varianteId: 11, estoqueCasa: 0, estoqueCasaChave: 'v11' }],
+    })],
+  });
+  const l = r.produtos[0].linhas[0];
+  igual(l.aEnviar, 300, 'supõe 3 peças da própria cor');
+  igual(l.origemComposicao, 'sku', 'e marca a linha como suposição, para a tela avisar');
+}
+
+console.log('\n11. Utilidades de data');
 igual(full.diasEntre('2026-09-11', '2026-10-01'), 20, 'diasEntre conta 20 dias');
 igual(full.somarDias('2026-09-11', -10), '2026-09-01', 'somarDias anda para trás');
 igual(full.arredondarParaMultiplo(0, 24), 0, 'zero não vira uma caixa cheia');

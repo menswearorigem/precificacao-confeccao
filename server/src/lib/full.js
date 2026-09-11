@@ -690,6 +690,70 @@ async function casarVariantes(db, itemIds) {
   return rowCount;
 }
 
+// A COMPOSIÇÃO de cada variação: o que sai da expedição quando uma unidade
+// daquela variação é vendida (migration 0074).
+//
+// Só existe onde alguém registrou. Onde não existe, o plano cai no padrão do
+// SKU — N peças da própria cor —, que é o kit de uma cor só. A diferença
+// entre os dois casos é dita na tela: um plano montado sobre a composição
+// registrada é medição; montado sobre o SKU, é a suposição de que o kit é
+// monocromático.
+async function carregarComposicao(db, itemIds) {
+  if (!itemIds || itemIds.length === 0) return new Map();
+  const { rows } = await db.query(
+    `SELECT fc.full_item_id, fc.id, fc.produto_id, fc.cor, fc.tamanho,
+            fc.variante_id, fc.quantidade, fc.ordem,
+            p.referencia, p.descricao,
+            evd.disponivel AS estoque_casa, evd.reservado AS estoque_casa_reservado
+       FROM full_composicao fc
+       JOIN produtos p ON p.id = fc.produto_id
+       LEFT JOIN vw_estoque_disponivel evd ON evd.variante_id = fc.variante_id
+      WHERE fc.full_item_id = ANY($1::int[])
+      ORDER BY fc.full_item_id, fc.ordem, fc.id`,
+    [itemIds]
+  );
+  const mapa = new Map();
+  for (const r of rows) {
+    const chave = Number(r.full_item_id);
+    if (!mapa.has(chave)) mapa.set(chave, []);
+    mapa.get(chave).push({
+      id: r.id,
+      produtoId: r.produto_id,
+      referencia: r.referencia,
+      descricao: r.descricao,
+      cor: r.cor,
+      tamanho: r.tamanho,
+      varianteId: r.variante_id,
+      quantidade: Number(r.quantidade) || 0,
+      estoqueCasa: numero(r.estoque_casa),
+      estoqueCasaReservado: numero(r.estoque_casa_reservado),
+    });
+  }
+  return mapa;
+}
+
+// Casa cada linha da composição com a variante do cadastro, por cor e tamanho
+// normalizados DENTRO da referência já escolhida. Não é casar por descrição
+// (REGRA 2): a referência veio de uma escolha explícita, e cor e tamanho são
+// campos do cadastro comparados com os campos da composição.
+const SQL_CASAR_COMPOSICAO = `
+  UPDATE full_composicao fc
+     SET variante_id = ev.id, atualizado_em = now()
+    FROM estoque_variantes ev
+   WHERE fc.full_item_id = ANY($1::int[])
+     AND ev.produto_id = fc.produto_id
+     AND upper(regexp_replace(ev.cor, '[^A-Za-z0-9]', '', 'g'))
+         = upper(regexp_replace(fc.cor, '[^A-Za-z0-9]', '', 'g'))
+     AND upper(regexp_replace(ev.tamanho, '[^A-Za-z0-9]', '', 'g'))
+         = upper(regexp_replace(fc.tamanho, '[^A-Za-z0-9]', '', 'g'))
+     AND fc.variante_id IS DISTINCT FROM ev.id`;
+
+async function casarComposicao(db, itemIds) {
+  if (!itemIds || itemIds.length === 0) return 0;
+  const { rowCount } = await db.query(SQL_CASAR_COMPOSICAO, [itemIds]);
+  return rowCount;
+}
+
 // Peças JÁ DESPACHADAS e ainda não confirmadas lá dentro, segundo o nosso
 // registro — não o da plataforma.
 //
@@ -842,7 +906,7 @@ function repartirEntreUnidades(unidades, mix) {
 // ---------------------------------------------------------------------------
 // Monta um anúncio inteiro: saldo, velocidade, reposição, desempenho
 // ---------------------------------------------------------------------------
-function montarAnuncio({ unidades, vendas, mix, params, snapshots, pontas, transito, hoje, diasAlvoPedido, janelaDias }) {
+function montarAnuncio({ unidades, vendas, mix, params, snapshots, pontas, transito, composicao, hoje, diasAlvoPedido, janelaDias }) {
   const primeiro = unidades[0];
 
   // "A caminho" tem DUAS fontes, e as duas precisam entrar — pela MAIOR, não
@@ -948,6 +1012,10 @@ function montarAnuncio({ unidades, vendas, mix, params, snapshots, pontas, trans
       // cabem em UMA unidade do anúncio (3 num kit de 3, 1 no resto).
       pecasPorUnidade: inteiro(u.pecas_por_unidade) ?? 1,
       pecasPorUnidadeOrigem: u.pecas_por_unidade_origem || null,
+      // O que sai da expedição quando UMA unidade desta variação é vendida.
+      // Vazio = ninguém registrou, e o plano cai no padrão do SKU (N peças da
+      // própria cor). A tela diz qual dos dois está valendo.
+      composicao: composicao?.get(u.id) || [],
       // A chave que impede a mesma peça física de ser contada (ou prometida)
       // duas vezes quando alimenta dois anúncios.
       estoqueCasaChave: u.variante_id != null
@@ -1128,7 +1196,10 @@ function montarAnuncio({ unidades, vendas, mix, params, snapshots, pontas, trans
     // kit — a tela escreve as DUAS medidas lado a lado, porque "mandar 998"
     // significa coisas muito diferentes para a expedição e para o corte.
     pecasPorUnidade: Math.max(...detalhes.map((d) => d.pecasPorUnidade || 1), 1),
-    ehKit: detalhes.some((d) => (d.pecasPorUnidade || 1) > 1),
+    ehKit: detalhes.some((d) => (d.pecasPorUnidade || 1) > 1 || (d.composicao || []).length > 0),
+    // Quantas variações já têm a composição registrada. É o que separa um
+    // plano medido de um plano suposto, e a tela escreve a diferença.
+    composicaoRegistrada: detalhes.filter((d) => (d.composicao || []).length > 0).length,
     // A tela precisa disto para não afirmar um total que não mediu.
     leitura: {
       unidades: unidades.length,
@@ -1158,8 +1229,265 @@ function montarAnuncio({ unidades, vendas, mix, params, snapshots, pontas, trans
   };
 }
 
+// ---------------------------------------------------------------------------
+// O PLANO DE PRODUÇÃO
+// ---------------------------------------------------------------------------
+// Função PURA: recebe os anúncios já montados e devolve a grade por
+// referência. Mora aqui, e não na rota, porque é o trecho que mais errou —
+// três defeitos numa revisão só — e aqui o teste o alcança sem banco:
+// unidade contada uma vez por variação (e não por linha de grade), peças de
+// cada referência no chip do anúncio certo, e a prateleira prometida uma vez.
+//
+// `referencia`/`descricao` saem NULAS para as peças que entraram pela
+// composição de um kit sortido — elas são de outra referência, e quem
+// completa o nome é quem tem banco à mão.
+function montarPlano({ escolhidos, usarEstoqueCasa = true }) {
+  const porProduto = new Map();
+  const semVinculo = [];
+  const semMedida = [];
+
+  for (const a of escolhidos) {
+    // As cores que TÊM referência. Desde que a varredura passou a resolver
+    // o SKU por variação, um anúncio pode ter parte das cores vinculada e
+    // parte não — e cada cor pode até apontar referências diferentes.
+    // Uma variação serve ao plano quando sabe QUE PEÇA produzir: pela
+    // referência dela, pela do anúncio, ou pela composição registrada (que
+    // carrega as próprias referências, inclusive de outras peças do kit).
+    const comReferencia = a.unidades.filter(
+      (u) => (u.produtoId ?? a.produtoId) != null || (u.composicao || []).length > 0
+    );
+
+    // Anúncio sem NENHUMA referência não é descartado em silêncio.
+    //
+    // Ele não pode virar ordem de produção — sem saber qual peça é, não há
+    // o que cortar. Mas ele TEM uma quantidade a enviar, e ela é a resposta
+    // à pergunta que trouxe a pessoa até aqui. Descartá-lo fazia o plano
+    // abrir com "A enviar 0 · Já na casa 0 · A produzir 0" e a mensagem
+    // "Nada a produzir", que é falsa: há 998 unidades a mandar. Pior, mudar
+    // o período não mexia em número nenhum, e a tela parecia quebrada.
+    if (comReferencia.length === 0) {
+      semVinculo.push({
+        chave: a.chave,
+        titulo: a.titulo,
+        anuncioIdExterno: a.anuncioIdExterno,
+        lojaNome: a.lojaNome,
+        marketplace: a.marketplace,
+        anuncioId: a.anuncioId,
+        sku: a.unidades.map((u) => u.sku).filter(Boolean)[0] || null,
+        aEnviar: a.reposicao.precisaEnviar,
+        pecasPorUnidade: a.pecasPorUnidade,
+        pecasAEnviar: a.reposicao.precisaEnviar != null
+          ? a.reposicao.precisaEnviar * (a.pecasPorUnidade || 1)
+          : null,
+        dataLimiteEnvio: a.reposicao.dataLimiteEnvio,
+        diasAlvo: a.reposicao.diasAlvo,
+      });
+      continue;
+    }
+    if (a.velocidade.porDia == null) semMedida.push(a);
+
+    for (const u of a.unidades) {
+      if (u.ignorarReposicao) continue;
+      const unidadesAEnviar = u.precisaEnviarUnidade || 0;
+      if (unidadesAEnviar <= 0) continue;
+
+      // O QUE UMA UNIDADE VENDIDA LEVA PARA FORA DA EXPEDIÇÃO.
+      //
+      // Duas fontes, e a diferença entre elas é a diferença entre um plano
+      // medido e um plano suposto:
+      //
+      //   1. a COMPOSIÇÃO registrada da variação (migration 0074) — é o
+      //      caso do kit sortido, em que uma unidade são três camisas de
+      //      cores diferentes. Cada linha vira uma linha de grade própria;
+      //
+      //   2. sem composição registrada, o padrão do SKU: N peças da PRÓPRIA
+      //      cor e tamanho da variação. É o kit de uma cor só, e é uma
+      //      suposição — que a tela declara como tal.
+      //
+      // Sem a primeira, o plano mandava cortar o triplo de uma cor e
+      // nenhuma das outras duas.
+      const composicao = (u.composicao || []).length > 0
+        ? u.composicao.map((c) => ({
+          produtoId: c.produtoId,
+          cor: c.cor,
+          tamanho: c.tamanho,
+          varianteId: c.varianteId,
+          estoqueCasa: c.estoqueCasa,
+          estoqueCasaReservado: c.estoqueCasaReservado,
+          estoqueCasaChave: c.varianteId != null ? `v${c.varianteId}` : `p${c.produtoId}`,
+          estoqueCasaOrigem: c.varianteId != null ? 'variante' : null,
+          quantidade: c.quantidade,
+          origem: 'composicao',
+        }))
+        : [{
+          produtoId: u.produtoId ?? a.produtoId,
+          cor: u.cor || '',
+          tamanho: u.tamanho || '',
+          varianteId: u.varianteId ?? null,
+          estoqueCasa: u.estoqueCasa,
+          estoqueCasaReservado: u.estoqueCasaReservado,
+          estoqueCasaChave: u.estoqueCasaChave || null,
+          estoqueCasaOrigem: u.estoqueCasaOrigem || null,
+          quantidade: u.pecasPorUnidade || 1,
+          origem: (u.pecasPorUnidade || 1) > 1 ? 'sku' : 'direto',
+        }];
+
+      for (const c of composicao) {
+        const produtoId = c.produtoId;
+        if (produtoId == null) continue;
+        const enviar = unidadesAEnviar * (c.quantidade || 0);
+        if (enviar <= 0) continue;
+
+        if (!porProduto.has(produtoId)) {
+          porProduto.set(produtoId, {
+            produtoId,
+            referencia: null,
+            descricao: null,
+            temFoto: false,
+            anuncios: [],
+            linhas: new Map(),
+            // As unidades do anúncio que alimentam ESTA referência, por
+            // variação. Um kit sortido vira três linhas de grade, mas
+            // continua sendo UM conjunto de kits — somar a unidade em cada
+            // linha dizia "200 unidades de anúncio" onde havia 100.
+            unidadesPorVariacao: new Map(),
+          });
+        }
+        const alvo = porProduto.get(produtoId);
+        // Referência e descrição vêm do anúncio quando ele é o dono delas;
+        // para uma peça de outra referência dentro do kit, ficam nulas até
+        // a consulta de nomes logo abaixo.
+        if (produtoId === a.produtoId) {
+          alvo.referencia = alvo.referencia ?? a.referencia;
+          alvo.descricao = alvo.descricao ?? a.produtoDescricao;
+          alvo.temFoto = alvo.temFoto || Boolean(a.produtoTemFoto);
+        }
+        alvo.unidadesPorVariacao.set(`${a.chave}|${u.id}`, unidadesAEnviar);
+
+        let noAnuncio = alvo.anuncios.find((x) => x.chave === a.chave);
+        if (!noAnuncio) {
+          noAnuncio = {
+            chave: a.chave,
+            titulo: a.titulo,
+            lojaNome: a.lojaNome,
+            marketplace: a.marketplace,
+            // Unidades do ANÚNCIO (kits), e peças DESTA referência — que
+            // num kit sortido não é o total do anúncio. Repetir o total em
+            // cada card fazia quem lesse três cards somar 900 peças onde
+            // existem 300.
+            aEnviar: a.reposicao.precisaEnviar,
+            pecasAEnviar: 0,
+            pecasPorUnidade: a.pecasPorUnidade,
+            dataLimiteEnvio: a.reposicao.dataLimiteEnvio,
+            dataPrecisaEstarLa: a.reposicao.dataPrecisaEstarLa,
+            velocidadeDia: a.velocidade.porDia,
+            baseVelocidade: a.velocidade.base,
+            diasAlvo: a.reposicao.diasAlvo,
+            rateio: a.unidades[0]?.participacaoOrigem || null,
+          };
+          alvo.anuncios.push(noAnuncio);
+        }
+        noAnuncio.pecasAEnviar += enviar;
+
+        // A chave é NORMALIZADA: duas lojas cadastram a mesma cor de jeitos
+        // diferentes ("Azul Marinho" e "AZUL MARINHO"), e agrupar pelo texto
+        // cru criava duas linhas para a MESMA variante, cada uma descontando
+        // o mesmo saldo do galpão.
+        const chave = `${normalizar(c.cor)}|${normalizar(c.tamanho)}`;
+        const linha = alvo.linhas.get(chave) || {
+          cor: c.cor,
+          tamanho: c.tamanho,
+          varianteId: c.varianteId ?? null,
+          estoqueCasaChave: c.estoqueCasaChave || null,
+          estoqueCasaOrigem: c.estoqueCasaOrigem || null,
+          aEnviar: 0,
+          pecasPorUnidade: c.quantidade || 1,
+          estoqueCasa: c.estoqueCasa,
+          estoqueCasaReservado: c.estoqueCasaReservado,
+          // Sem cor nem tamanho não dá para montar grade: a linha entra
+          // marcada e a tela pede que alguém complete, em vez de a ordem
+          // nascer com "cor em branco".
+          gradeIncerta: !c.cor && !c.tamanho,
+          origemComposicao: c.origem,
+          origemRateio: u.participacaoOrigem,
+        };
+        linha.aEnviar += enviar;
+        if (linha.varianteId == null && c.varianteId != null) linha.varianteId = c.varianteId;
+        if (linha.estoqueCasaChave == null) linha.estoqueCasaChave = c.estoqueCasaChave || null;
+        if (linha.estoqueCasa == null) linha.estoqueCasa = c.estoqueCasa;
+        alvo.linhas.set(chave, linha);
+      }
+    }
+  }
+
+  // A prateleira é UMA só: a mesma variante pode alimentar duas lojas, e
+  // cada peça dela só pode ser prometida uma vez. Este mapa é o que impede
+  // que o saldo da casa seja descontado duas vezes e a ordem de produção
+  // nasça curta.
+  const casaJaPrometida = new Map();
+  const produtos = [...porProduto.values()].map((p) => {
+    const linhas = [...p.linhas.values()].map((l) => {
+      const bruto = usarEstoqueCasa && l.estoqueCasa != null ? Math.max(0, Number(l.estoqueCasa)) : 0;
+      // A chave vem da UNIDADE (v<variante> ou p<produto>). Montá-la aqui
+      // com cor e tamanho fazia cada cor de um anúncio sem variante casada
+      // receber o saldo INTEIRO da referência — 18 linhas prometendo as
+      // mesmas 200 peças, e o "a produzir" caindo para zero.
+      const chaveCasa = l.estoqueCasaChave
+        || (l.varianteId != null ? `v${l.varianteId}` : `p${p.produtoId}`);
+      const jaUsado = casaJaPrometida.get(chaveCasa) || 0;
+      const disponivelCasa = Math.max(0, bruto - jaUsado);
+      const daCasa = Math.min(l.aEnviar, disponivelCasa);
+      casaJaPrometida.set(chaveCasa, jaUsado + daCasa);
+      return {
+        ...l,
+        daCasa,
+        aProduzir: Math.max(0, l.aEnviar - daCasa),
+      };
+    }).sort((a, b) => (a.cor || '').localeCompare(b.cor || '') || (a.tamanho || '').localeCompare(b.tamanho || ''));
+
+    // Tudo em PEÇAS, menos `unidadesAEnviar`, que é o que a expedição
+    // conta na caixa — e vem do mapa por VARIAÇÃO, não da soma das linhas:
+    // um kit sortido vira três linhas de grade e continua sendo um só
+    // conjunto de kits.
+    const totais = linhas.reduce((acc, l) => ({
+      aEnviar: acc.aEnviar + l.aEnviar,
+      daCasa: acc.daCasa + l.daCasa,
+      aProduzir: acc.aProduzir + l.aProduzir,
+    }), { aEnviar: 0, daCasa: 0, aProduzir: 0 });
+    totais.unidadesAEnviar = [...p.unidadesPorVariacao.values()].reduce((acc, v) => acc + v, 0);
+
+    const datas = p.anuncios.map((a) => a.dataLimiteEnvio).filter(Boolean).sort();
+    return {
+      produtoId: p.produtoId,
+      referencia: p.referencia,
+      descricao: p.descricao,
+      temFoto: p.temFoto,
+      anuncios: p.anuncios,
+      linhas,
+      totais,
+      ehKit: linhas.some((l) => (l.pecasPorUnidade || 1) > 1),
+      dataLimiteEnvio: datas[0] || null,
+      // A grade pronta para POST /api/producao/ordens. O formato é o que
+      // aquela rota já espera — nenhuma rota nova, nenhuma permissão nova.
+      gradeParaOrdem: linhas
+        .filter((l) => l.aProduzir > 0 && !l.gradeIncerta)
+        .map((l) => ({
+          cor: l.cor,
+          tamanho: l.tamanho,
+          variante_id: l.varianteId,
+          quantidade_planejada: l.aProduzir,
+        })),
+    };
+  }).sort((a, b) => b.totais.aProduzir - a.totais.aProduzir);
+
+
+  return { produtos, semVinculo, semMedida };
+}
+
 module.exports = {
+  HOJE_SQL,
   montarAnuncio,
+  montarPlano,
   normalizar,
   somaOuNulo,
   repartirEntreUnidades,
@@ -1185,6 +1513,9 @@ module.exports = {
   carregarEnvios,
   carregarEmTransitoRegistrado,
   carregarPontasDeEnvio,
+  carregarComposicao,
+  casarComposicao,
+  SQL_CASAR_COMPOSICAO,
   casarVariantes,
   SQL_CASAR_VARIANTE,
   distribuirInteiros,

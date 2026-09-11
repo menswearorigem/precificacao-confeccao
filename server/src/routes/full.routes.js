@@ -27,6 +27,8 @@ const {
   AVISO_SEM_LEITURA,
 } = require('../lib/fullSync');
 const { idsDoFiltro, chavesDoFiltro } = require('../lib/filtrosMulti');
+const { garantirTokenValido } = require('../lib/marketplaceSync');
+const mercadoLivre = require('../lib/marketplaces/mercadoLivre');
 
 const router = express.Router();
 
@@ -34,7 +36,7 @@ const router = express.Router();
 // lá que o teste os alcança sem precisar de banco nenhum.
 // A montagem de um anúncio é FUNÇÃO PURA e mora em lib/full.js: é lá que o
 // teste a alcança sem precisar de banco nenhum. Aqui ficou só o HTTP.
-const { normalizar, somaOuNulo, montarAnuncio } = full;
+const { normalizar, somaOuNulo, montarAnuncio, montarPlano } = full;
 
 // O saldo do galpão somado SEM repetir variante. A prateleira é UMA só: a
 // mesma referência anunciada no MELI e na Shopee não tem duas vezes o saldo.
@@ -107,10 +109,11 @@ async function montarPainel(db, opcoes) {
   }));
 
   const itemIds = linhas.map((l) => l.id);
-  const [snapshots, pontas, transito] = await Promise.all([
+  const [snapshots, pontas, transito, composicao] = await Promise.all([
     full.carregarSnapshots(db, itemIds),
     full.carregarPontasDeEnvio(db, itemIds),
     full.carregarEmTransitoRegistrado(db, itemIds),
+    full.carregarComposicao(db, itemIds),
   ]);
 
   const anuncios = [...grupos.entries()].map(([chave, unidades]) => {
@@ -123,6 +126,7 @@ async function montarPainel(db, opcoes) {
       snapshots,
       pontas,
       transito,
+      composicao,
       hoje,
       diasAlvoPedido: opcoes.diasAlvo,
       janelaDias: janelaDaLoja(integracaoId),
@@ -338,136 +342,11 @@ router.post('/plano', async (req, res, next) => {
     // Agrupa por REFERÊNCIA: duas lojas podem vender o mesmo produto, e a
     // produção é uma só. Somar aqui é o que evita abrir duas ordens da mesma
     // peça na mesma semana.
-    const porProduto = new Map();
-    const semVinculo = [];
-    const semMedida = [];
+    const { produtos, semVinculo, semMedida } = montarPlano({ escolhidos, usarEstoqueCasa });
 
-    for (const a of escolhidos) {
-      // As cores que TÊM referência. Desde que a varredura passou a resolver
-      // o SKU por variação, um anúncio pode ter parte das cores vinculada e
-      // parte não — e cada cor pode até apontar referências diferentes.
-      const comReferencia = a.unidades.filter((u) => (u.produtoId ?? a.produtoId) != null);
-
-      // Anúncio sem NENHUMA referência não é descartado em silêncio.
-      //
-      // Ele não pode virar ordem de produção — sem saber qual peça é, não há
-      // o que cortar. Mas ele TEM uma quantidade a enviar, e ela é a resposta
-      // à pergunta que trouxe a pessoa até aqui. Descartá-lo fazia o plano
-      // abrir com "A enviar 0 · Já na casa 0 · A produzir 0" e a mensagem
-      // "Nada a produzir", que é falsa: há 998 unidades a mandar. Pior, mudar
-      // o período não mexia em número nenhum, e a tela parecia quebrada.
-      if (comReferencia.length === 0) {
-        semVinculo.push({
-          chave: a.chave,
-          titulo: a.titulo,
-          anuncioIdExterno: a.anuncioIdExterno,
-          lojaNome: a.lojaNome,
-          marketplace: a.marketplace,
-          anuncioId: a.anuncioId,
-          sku: a.unidades.map((u) => u.sku).filter(Boolean)[0] || null,
-          aEnviar: a.reposicao.precisaEnviar,
-          pecasPorUnidade: a.pecasPorUnidade,
-          pecasAEnviar: a.reposicao.precisaEnviar != null
-            ? a.reposicao.precisaEnviar * (a.pecasPorUnidade || 1)
-            : null,
-          dataLimiteEnvio: a.reposicao.dataLimiteEnvio,
-          diasAlvo: a.reposicao.diasAlvo,
-        });
-        continue;
-      }
-      if (a.velocidade.porDia == null) semMedida.push(a);
-
-      for (const u of a.unidades) {
-        if (u.ignorarReposicao) continue;
-        const produtoId = u.produtoId ?? a.produtoId;
-        if (produtoId == null) continue;
-
-        if (!porProduto.has(produtoId)) {
-          porProduto.set(produtoId, {
-            produtoId,
-            referencia: null,
-            descricao: null,
-            temFoto: false,
-            anuncios: [],
-            linhas: new Map(),
-          });
-        }
-        const alvo = porProduto.get(produtoId);
-        // A referência e a descrição do produto vêm do anúncio quando ele é o
-        // dono dela; para uma cor de referência diferente, ficam nulas até a
-        // consulta de nomes lá embaixo.
-        if (produtoId === a.produtoId) {
-          alvo.referencia = alvo.referencia ?? a.referencia;
-          alvo.descricao = alvo.descricao ?? a.produtoDescricao;
-          alvo.temFoto = alvo.temFoto || Boolean(a.produtoTemFoto);
-        }
-        if (!alvo.anuncios.some((x) => x.chave === a.chave)) {
-          alvo.anuncios.push({
-            chave: a.chave,
-            titulo: a.titulo,
-            lojaNome: a.lojaNome,
-            marketplace: a.marketplace,
-            aEnviar: a.reposicao.precisaEnviar,
-            pecasAEnviar: a.reposicao.precisaEnviar != null
-              ? a.reposicao.precisaEnviar * (a.pecasPorUnidade || 1)
-              : null,
-            pecasPorUnidade: a.pecasPorUnidade,
-            dataLimiteEnvio: a.reposicao.dataLimiteEnvio,
-            dataPrecisaEstarLa: a.reposicao.dataPrecisaEstarLa,
-            velocidadeDia: a.velocidade.porDia,
-            baseVelocidade: a.velocidade.base,
-            diasAlvo: a.reposicao.diasAlvo,
-            rateio: a.unidades[0]?.participacaoOrigem || null,
-          });
-        }
-
-        // Da moeda do Full para a moeda da fábrica: a quantidade a enviar é
-        // em UNIDADES DO ANÚNCIO (kits, quando for kit) e a grade de produção
-        // é em PEÇAS. Multiplicar aqui é o que evita mandar cortar um terço
-        // do necessário num anúncio de kit de 3 (ver migration 0073).
-        const unidadesAEnviar = u.precisaEnviarUnidade || 0;
-        const enviar = unidadesAEnviar * (u.pecasPorUnidade || 1);
-        if (enviar <= 0) continue;
-
-        const cor = u.cor || '';
-        const tamanho = u.tamanho || '';
-        // A chave é NORMALIZADA. Duas lojas cadastram a mesma cor de jeitos
-        // diferentes ("Azul Marinho" e "AZUL MARINHO"), e agrupar pelo texto
-        // cru criava duas linhas para a MESMA variante — cada uma descontando
-        // o mesmo saldo da casa.
-        const chave = `${normalizar(cor)}|${normalizar(tamanho)}`;
-        const linha = alvo.linhas.get(chave) || {
-          cor,
-          tamanho,
-          varianteId: u.varianteId ?? null,
-          // A chave de dedupe do saldo do galpão vem da UNIDADE: quando o
-          // saldo é o da referência inteira (item lido no nível do anúncio, ou
-          // cor sem variante casada), a chave é o PRODUTO — senão cada cor
-          // prometeria de novo a mesma prateleira.
-          estoqueCasaChave: u.estoqueCasaChave || null,
-          estoqueCasaOrigem: u.estoqueCasaOrigem || null,
-          aEnviar: 0,
-          unidadesAEnviar: 0,
-          pecasPorUnidade: u.pecasPorUnidade || 1,
-          estoqueCasa: u.estoqueCasa,
-          estoqueCasaReservado: u.estoqueCasaReservado,
-          // Sem cor/tamanho lidos da plataforma não dá para montar grade: a
-          // linha entra marcada, e a tela pede que alguém complete à mão em
-          // vez de a ordem nascer com "cor em branco".
-          gradeIncerta: !cor && !tamanho,
-          origemRateio: u.participacaoOrigem,
-        };
-        linha.aEnviar += enviar;
-        linha.unidadesAEnviar += unidadesAEnviar;
-        if (linha.varianteId == null && u.varianteId != null) linha.varianteId = u.varianteId;
-        if (linha.estoqueCasaChave == null) linha.estoqueCasaChave = u.estoqueCasaChave || null;
-        if (linha.estoqueCasa == null) linha.estoqueCasa = u.estoqueCasa;
-        alvo.linhas.set(chave, linha);
-      }
-    }
-
-    // Nome das referências que entraram por uma COR, e não pelo anúncio.
-    const semNome = [...porProduto.values()].filter((p) => !p.referencia).map((p) => p.produtoId);
+    // Nome das referências que entraram por uma PEÇA do kit, e não pelo
+    // anúncio — o kit sortido pode misturar referências.
+    const semNome = produtos.filter((p) => !p.referencia).map((p) => p.produtoId);
     if (semNome.length > 0) {
       const { rows: nomes } = await pool.query(
         `SELECT p.id, p.referencia, p.descricao, (pf.produto_id IS NOT NULL) AS tem_foto
@@ -475,72 +354,15 @@ router.post('/plano', async (req, res, next) => {
           WHERE p.id = ANY($1::int[])`,
         [semNome]
       );
-      for (const n of nomes) {
-        const alvo = porProduto.get(n.id);
-        if (!alvo) continue;
-        alvo.referencia = n.referencia;
-        alvo.descricao = n.descricao;
-        alvo.temFoto = n.tem_foto;
+      const porId = new Map(nomes.map((n) => [n.id, n]));
+      for (const p of produtos) {
+        const n = porId.get(p.produtoId);
+        if (!n) continue;
+        p.referencia = n.referencia;
+        p.descricao = n.descricao;
+        p.temFoto = n.tem_foto;
       }
     }
-
-    // A prateleira é UMA só: a mesma variante pode alimentar duas lojas, e
-    // cada peça dela só pode ser prometida uma vez. Este mapa é o que impede
-    // que o saldo da casa seja descontado duas vezes e a ordem de produção
-    // nasça curta.
-    const casaJaPrometida = new Map();
-    const produtos = [...porProduto.values()].map((p) => {
-      const linhas = [...p.linhas.values()].map((l) => {
-        const bruto = usarEstoqueCasa && l.estoqueCasa != null ? Math.max(0, Number(l.estoqueCasa)) : 0;
-        // A chave vem da UNIDADE (v<variante> ou p<produto>). Montá-la aqui
-        // com cor e tamanho fazia cada cor de um anúncio sem variante casada
-        // receber o saldo INTEIRO da referência — 18 linhas prometendo as
-        // mesmas 200 peças, e o "a produzir" caindo para zero.
-        const chaveCasa = l.estoqueCasaChave
-          || (l.varianteId != null ? `v${l.varianteId}` : `p${p.produtoId}`);
-        const jaUsado = casaJaPrometida.get(chaveCasa) || 0;
-        const disponivelCasa = Math.max(0, bruto - jaUsado);
-        const daCasa = Math.min(l.aEnviar, disponivelCasa);
-        casaJaPrometida.set(chaveCasa, jaUsado + daCasa);
-        return {
-          ...l,
-          daCasa,
-          aProduzir: Math.max(0, l.aEnviar - daCasa),
-        };
-      }).sort((a, b) => (a.cor || '').localeCompare(b.cor || '') || (a.tamanho || '').localeCompare(b.tamanho || ''));
-
-      // Tudo em PEÇAS, menos `unidadesAEnviar`, que é o número que a
-      // expedição vai contar na caixa.
-      const totais = linhas.reduce((acc, l) => ({
-        aEnviar: acc.aEnviar + l.aEnviar,
-        unidadesAEnviar: acc.unidadesAEnviar + l.unidadesAEnviar,
-        daCasa: acc.daCasa + l.daCasa,
-        aProduzir: acc.aProduzir + l.aProduzir,
-      }), { aEnviar: 0, unidadesAEnviar: 0, daCasa: 0, aProduzir: 0 });
-
-      const datas = p.anuncios.map((a) => a.dataLimiteEnvio).filter(Boolean).sort();
-      return {
-        produtoId: p.produtoId,
-        referencia: p.referencia,
-        descricao: p.descricao,
-        temFoto: p.temFoto,
-        anuncios: p.anuncios,
-        linhas,
-        totais,
-        ehKit: linhas.some((l) => (l.pecasPorUnidade || 1) > 1),
-        dataLimiteEnvio: datas[0] || null,
-        // A grade pronta para POST /api/producao/ordens. O formato é o que
-        // aquela rota já espera — nenhuma rota nova, nenhuma permissão nova.
-        gradeParaOrdem: linhas
-          .filter((l) => l.aProduzir > 0 && !l.gradeIncerta)
-          .map((l) => ({
-            cor: l.cor,
-            tamanho: l.tamanho,
-            variante_id: l.varianteId,
-            quantidade_planejada: l.aProduzir,
-          })),
-      };
-    }).sort((a, b) => b.totais.aProduzir - a.totais.aProduzir);
 
     res.json({
       hoje,
@@ -552,7 +374,10 @@ router.post('/plano', async (req, res, next) => {
       produtos,
       totais: produtos.reduce((acc, p) => ({
         aEnviar: acc.aEnviar + p.totais.aEnviar,
-        unidadesAEnviar: acc.unidadesAEnviar + p.totais.unidadesAEnviar,
+        // As unidades NÃO são somadas por produto: um kit sortido alimenta
+        // três referências com o mesmo conjunto de kits. O total do plano sai
+        // dos anúncios distintos, logo abaixo.
+        unidadesAEnviar: acc.unidadesAEnviar,
         daCasa: acc.daCasa + p.totais.daCasa,
         aProduzir: acc.aProduzir + p.totais.aProduzir,
       }), {
@@ -560,7 +385,7 @@ router.post('/plano', async (req, res, next) => {
         // eles não entram na produção, mas entram no total do que a expedição
         // tem de despachar.
         aEnviar: semVinculo.reduce((acc, a) => acc + (a.pecasAEnviar || 0), 0),
-        unidadesAEnviar: semVinculo.reduce((acc, a) => acc + (a.aEnviar || 0), 0),
+        unidadesAEnviar: escolhidos.reduce((acc, a) => acc + (a.reposicao.precisaEnviar || 0), 0),
         daCasa: 0,
         aProduzir: 0,
       }),
@@ -576,6 +401,11 @@ router.post('/plano', async (req, res, next) => {
           .map((l) => ({ referencia: p.referencia, aEnviar: l.aEnviar }))),
         rateioPorIgual: produtos.flatMap((p) => p.linhas.filter((l) => l.origemRateio === 'igual')
           .map((l) => ({ referencia: p.referencia, cor: l.cor, tamanho: l.tamanho }))),
+        // Linhas montadas sobre a SUPOSIÇÃO de que o kit é de uma cor só,
+        // porque ninguém registrou a composição daquela variação. Num kit
+        // sortido isso manda cortar o triplo de uma cor e nenhuma das outras.
+        composicaoSuposta: produtos.flatMap((p) => p.linhas.filter((l) => l.origemComposicao === 'sku')
+          .map((l) => ({ referencia: p.referencia, cor: l.cor, tamanho: l.tamanho, aEnviar: l.aEnviar }))),
       },
     });
   } catch (err) { next(err); }
@@ -659,6 +489,28 @@ router.put('/anuncios/:anuncioId/vinculo', async (req, res, next) => {
       [anuncioId, produtoId]
     );
 
+    // A COMPOSIÇÃO cai junto quando a referência muda.
+    //
+    // `full_composicao` guarda produto_id e variante_id PRÓPRIOS — é ela que
+    // descreve o trio do kit. Trocar a referência do anúncio e deixá-la para
+    // trás faria o plano montar um card da referência ANTIGA e a fábrica
+    // cortar a peça errada; é o mesmo defeito que o zeramento de
+    // `variante_id` logo acima evita, pela porta de outra tabela. Apagar
+    // obriga a registrar de novo, que é o certo: o kit de outra referência é
+    // outro kit.
+    const { rows: itensDoAnuncio } = await client.query(
+      'SELECT id, produto_id FROM full_itens WHERE anuncio_id = $1', [anuncioId]
+    );
+    const mudouReferencia = itensDoAnuncio.some((i) => String(i.produto_id ?? '') !== String(produtoId ?? ''));
+    let composicoesRemovidas = 0;
+    if (mudouReferencia && itensDoAnuncio.length > 0) {
+      const { rowCount } = await client.query(
+        'DELETE FROM full_composicao WHERE full_item_id = ANY($1::int[])',
+        [itensDoAnuncio.map((i) => i.id)]
+      );
+      composicoesRemovidas = rowCount;
+    }
+
     // A variante de cada cor, pelo mesmo casamento que a varredura usa —
     // inclusive para o SKU de kit (ver casarVariantes em lib/full.js).
     if (produtoId != null) {
@@ -684,13 +536,277 @@ router.put('/anuncios/:anuncioId/vinculo', async (req, res, next) => {
         : `Vinculou o anúncio ${rows[0].anuncio_id_externo} à referência ${produtoId} pela aba Full`,
       sucesso: true,
     });
-    res.json({ ...rows[0], itensAtualizados });
+    res.json({ ...rows[0], itensAtualizados, composicoesRemovidas });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     next(err);
   } finally {
     client.release();
   }
+});
+
+// ---------------------------------------------------------------------------
+// Composição do kit anunciado
+// ---------------------------------------------------------------------------
+// O que sai da expedição quando UMA unidade daquela variação é vendida.
+// Existe para o kit sortido — três camisas de cores diferentes —, que o
+// padrão de SKU da casa não descreve (ver migration 0074).
+router.get('/itens/:id/composicao', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const { rows: item } = await pool.query(
+      `SELECT fi.id, fi.produto_id, fi.variante_id, fi.sku_externo, fi.pecas_por_unidade,
+              fi.anuncio_id, av.cor, av.tamanho, p.referencia
+         FROM full_itens fi
+         LEFT JOIN produtos p ON p.id = fi.produto_id
+         LEFT JOIN anuncio_variacoes av
+                ON av.anuncio_id = fi.anuncio_id AND av.variacao_id_externa = fi.variacao_id_externa
+        WHERE fi.id = $1`,
+      [id]
+    );
+    if (item.length === 0) return res.status(404).json({ error: 'Item do Full não encontrado.' });
+
+    const composicao = (await full.carregarComposicao(pool, [id])).get(id) || [];
+
+    // As cores e tamanhos que existem no cadastro daquela referência, para a
+    // tela oferecer escolha em vez de campo livre — campo livre aqui vira
+    // cor que não existe e ordem de produção sem variante.
+    const { rows: variantes } = await pool.query(
+      `SELECT ev.id, ev.produto_id, ev.cor, ev.tamanho, ev.quantidade
+         FROM estoque_variantes ev
+        WHERE ev.produto_id = $1 AND ev.ativo
+        ORDER BY ev.cor, ev.tamanho`,
+      [item[0].produto_id]
+    );
+
+    res.json({
+      item: {
+        id: item[0].id,
+        produtoId: item[0].produto_id,
+        referencia: item[0].referencia,
+        sku: item[0].sku_externo,
+        cor: item[0].cor,
+        tamanho: item[0].tamanho,
+        pecasPorUnidade: item[0].pecas_por_unidade ?? 1,
+      },
+      composicao,
+      variantes,
+      // O que a tela oferece quando ainda não há nada registrado: o padrão do
+      // SKU, para ser ajustado — e não um formulário em branco.
+      sugestao: composicao.length > 0 ? null : {
+        produtoId: item[0].produto_id,
+        cor: item[0].cor || '',
+        tamanho: item[0].tamanho || '',
+        quantidade: item[0].pecas_por_unidade ?? 1,
+      },
+    });
+  } catch (err) { next(err); }
+});
+
+// Grava a composição de uma variação. `aplicar_em_todas` repete a mesma
+// composição nas outras variações do MESMO anúncio, trocando o tamanho pelo
+// de cada uma — é o caso normal: o trio de cores é o mesmo, o que muda é o
+// tamanho, e registrar dez vezes à mão seria o caminho para ninguém
+// registrar nenhuma.
+router.put('/itens/:id/composicao', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const id = Number(req.params.id);
+    const linhas = Array.isArray(req.body?.linhas) ? req.body.linhas : [];
+    const aplicarEmTodas = req.body?.aplicar_em_todas === true;
+
+    // Ao repetir nas outras variações o TAMANHO de cada linha é trocado pelo
+    // da variação alvo. Duas linhas que só se distinguem pelo tamanho viram
+    // a mesma linha — e a chave única as fundiria somando as quantidades, em
+    // silêncio. Recusar é melhor que fundir: o kit sortido é definido por
+    // cor, e um trio que depende do tamanho de cada peça precisa ser gravado
+    // variação por variação.
+    if (aplicarEmTodas) {
+      const porCor = new Set();
+      for (const l of linhas) {
+        const chave = `${l.produto_id ?? l.produtoId}|${String(l.cor ?? '').trim().toUpperCase()}`;
+        if (porCor.has(chave)) {
+          return res.status(400).json({
+            error: 'Duas linhas têm a mesma referência e a mesma cor, mudando só o tamanho. '
+              + 'Ao repetir nas outras variações o tamanho é trocado pelo de cada uma, e as duas virariam uma só. '
+              + 'Grave esta variação sozinha, ou junte as duas linhas.',
+          });
+        }
+        porCor.add(chave);
+      }
+    }
+
+    const { rows: item } = await client.query(
+      'SELECT id, anuncio_id, produto_id FROM full_itens WHERE id = $1', [id]
+    );
+    if (item.length === 0) return res.status(404).json({ error: 'Item do Full não encontrado.' });
+
+    for (const l of linhas) {
+      if (!full.inteiro(l.produto_id ?? l.produtoId)) {
+        return res.status(400).json({ error: 'Cada linha da composição precisa de uma referência.' });
+      }
+      if (!(full.inteiro(l.quantidade) > 0)) {
+        return res.status(400).json({ error: 'Cada linha da composição precisa de uma quantidade maior que zero.' });
+      }
+    }
+
+    // Os itens que recebem a composição: só este, ou todos os do anúncio.
+    let alvos = [id];
+    let porTamanho = new Map();
+    if (aplicarEmTodas && item[0].anuncio_id) {
+      const { rows } = await client.query(
+        `SELECT fi.id, av.tamanho
+           FROM full_itens fi
+           LEFT JOIN anuncio_variacoes av
+                  ON av.anuncio_id = fi.anuncio_id AND av.variacao_id_externa = fi.variacao_id_externa
+          WHERE fi.anuncio_id = $1`,
+        [item[0].anuncio_id]
+      );
+      alvos = rows.map((r) => r.id);
+      porTamanho = new Map(rows.map((r) => [r.id, r.tamanho]));
+    }
+
+    // Quantas variações JÁ tinham composição própria e vão ser sobrescritas.
+    // Vai na resposta para a tela poder avisar ANTES — o toggle "repetir nas
+    // outras" apagava trios já registrados sem uma palavra.
+    const { rows: [jaTinham] } = await client.query(
+      `SELECT COUNT(DISTINCT full_item_id)::int AS total
+         FROM full_composicao WHERE full_item_id = ANY($1::int[]) AND full_item_id <> $2`,
+      [alvos, id]
+    );
+
+    await client.query('BEGIN');
+    // Regrava do zero: a composição é uma lista curta e fechada, e um
+    // "atualizar o que mudou" aqui só criaria caminhos para sobrar linha
+    // antiga dentro de um kit que foi remontado.
+    await client.query('DELETE FROM full_composicao WHERE full_item_id = ANY($1::int[])', [alvos]);
+
+    for (const alvoId of alvos) {
+      // Ao repetir nas outras variações, o TAMANHO é o daquela variação — o
+      // trio de cores é o mesmo, o tamanho é o que muda.
+      const tamanhoDoAlvo = alvos.length > 1 ? porTamanho.get(alvoId) : null;
+      let ordem = 0;
+      for (const l of linhas) {
+        ordem += 1;
+        await client.query(
+          `INSERT INTO full_composicao (full_item_id, produto_id, cor, tamanho, quantidade, ordem, criado_por)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (full_item_id, produto_id, cor, tamanho) DO UPDATE SET
+             quantidade = full_composicao.quantidade + EXCLUDED.quantidade,
+             atualizado_em = now()`,
+          [
+            alvoId,
+            full.inteiro(l.produto_id ?? l.produtoId),
+            String(l.cor ?? '').trim(),
+            alvos.length > 1 ? String(tamanhoDoAlvo ?? l.tamanho ?? '').trim() : String(l.tamanho ?? '').trim(),
+            full.inteiro(l.quantidade),
+            ordem,
+            req.user?.id || null,
+          ]
+        );
+      }
+    }
+
+    await full.casarComposicao(client, alvos);
+    await client.query('COMMIT');
+
+    await registrar(req, {
+      acao: 'editar', entidade: 'full_composicao', entidadeId: id,
+      descricao: `Registrou a composição de ${alvos.length} variação(ões) do Full: ${linhas.length} linha(s)`,
+      sucesso: true,
+    });
+
+    const composicao = (await full.carregarComposicao(pool, [id])).get(id) || [];
+    res.json({ composicao, aplicadaEm: alvos.length, sobrescreveu: jaTinham?.total || 0 });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Vendas do anúncio, dia a dia
+// ---------------------------------------------------------------------------
+// A quantidade vendida, que é o número que a dona pediu para ver com clareza
+// — e por cor e tamanho, que é como a produção pensa.
+router.get('/anuncios/:integracaoId/:anuncioIdExterno/vendas', async (req, res, next) => {
+  try {
+    const integracaoId = Number(req.params.integracaoId);
+    const anuncioIdExterno = String(req.params.anuncioIdExterno);
+    const dias = Math.min(730, Math.max(7, full.inteiro(req.query?.dias, 90)));
+
+    const [serie, grade, resumo] = await Promise.all([
+      pool.query(
+        `SELECT pv.data_pedido AS data,
+                SUM(pi.quantidade)::numeric AS unidades,
+                SUM(pi.total)::numeric AS receita,
+                COUNT(DISTINCT COALESCE(pv.pack_id_marketplace, pv.id::text)) AS pedidos
+           FROM pedido_itens pi
+           JOIN pedidos_venda pv ON pv.id = pi.pedido_id
+          WHERE pi.anuncio_id_marketplace = $2
+            AND pv.origem_integracao_id = $1
+            AND pv.situacao <> 'cancelado' AND pv.cancelado_em IS NULL
+            AND COALESCE(pv.operacao, 'Venda') NOT IN ('Devolução', 'Troca')
+            AND pv.data_pedido > ${full.HOJE_SQL} - $3::int
+          GROUP BY 1 ORDER BY 1`,
+        [integracaoId, anuncioIdExterno, dias]
+      ),
+      pool.query(
+        `SELECT COALESCE(pi.cor, '') AS cor, COALESCE(pi.tamanho, '') AS tamanho,
+                SUM(pi.quantidade)::numeric AS unidades,
+                SUM(pi.total)::numeric AS receita
+           FROM pedido_itens pi
+           JOIN pedidos_venda pv ON pv.id = pi.pedido_id
+          WHERE pi.anuncio_id_marketplace = $2
+            AND pv.origem_integracao_id = $1
+            AND pv.situacao <> 'cancelado' AND pv.cancelado_em IS NULL
+            AND COALESCE(pv.operacao, 'Venda') NOT IN ('Devolução', 'Troca')
+            AND pv.data_pedido > ${full.HOJE_SQL} - $3::int
+          GROUP BY 1, 2 ORDER BY 3 DESC`,
+        [integracaoId, anuncioIdExterno, dias]
+      ),
+      pool.query(
+        `SELECT SUM(pi.quantidade)::numeric AS unidades,
+                SUM(pi.total)::numeric AS receita,
+                COUNT(DISTINCT COALESCE(pv.pack_id_marketplace, pv.id::text)) AS pedidos,
+                COUNT(DISTINCT pv.data_pedido) AS dias_com_venda,
+                MIN(pv.data_pedido) AS primeira, MAX(pv.data_pedido) AS ultima
+           FROM pedido_itens pi
+           JOIN pedidos_venda pv ON pv.id = pi.pedido_id
+          WHERE pi.anuncio_id_marketplace = $2
+            AND pv.origem_integracao_id = $1
+            AND pv.situacao <> 'cancelado' AND pv.cancelado_em IS NULL
+            AND COALESCE(pv.operacao, 'Venda') NOT IN ('Devolução', 'Troca')
+            AND pv.data_pedido > ${full.HOJE_SQL} - $3::int`,
+        [integracaoId, anuncioIdExterno, dias]
+      ),
+    ]);
+
+    res.json({
+      dias,
+      serie: serie.rows.map((r) => ({
+        data: full.dataIso(r.data),
+        unidades: Number(r.unidades) || 0,
+        receita: Number(r.receita) || 0,
+        pedidos: Number(r.pedidos) || 0,
+      })),
+      grade: grade.rows.map((r) => ({
+        cor: r.cor, tamanho: r.tamanho,
+        unidades: Number(r.unidades) || 0,
+        receita: Number(r.receita) || 0,
+      })),
+      resumo: {
+        unidades: Number(resumo.rows[0]?.unidades) || 0,
+        receita: Number(resumo.rows[0]?.receita) || 0,
+        pedidos: Number(resumo.rows[0]?.pedidos) || 0,
+        diasComVenda: Number(resumo.rows[0]?.dias_com_venda) || 0,
+        primeira: full.dataIso(resumo.rows[0]?.primeira),
+        ultima: full.dataIso(resumo.rows[0]?.ultima),
+      },
+    });
+  } catch (err) { next(err); }
 });
 
 // ---------------------------------------------------------------------------
@@ -882,6 +998,61 @@ router.put('/envios/:id', async (req, res, next) => {
     }
     res.json(rows[0]);
   } catch (err) { next(err); }
+});
+
+// Diagnóstico da API de remessas do Mercado Livre.
+//
+// A dona relatou que os envios não foram puxados. A causa provável está
+// registrada desde a entrega: a forma do caminho de remessas do ML tem mais de
+// uma versão documentada e o portal de desenvolvedor deles recusa leitura
+// automatizada, então o caminho certo para ESTA conta nunca foi confirmado.
+//
+// Esta rota tenta todos os caminhos conhecidos com o token da casa e devolve o
+// que cada um respondeu — status, chaves da resposta e uma amostra. É a
+// diferença entre "não respondeu" e "responde neste caminho, com este
+// formato": com o resultado em mãos, a leitura passa a ser uma linha de
+// código, não um chute.
+router.post('/diagnostico-envios', async (req, res, next) => {
+  try {
+    const integracaoId = full.inteiro(req.body?.integracao_id);
+    if (!integracaoId) return res.status(400).json({ error: 'Escolha a loja.' });
+
+    const { rows } = await pool.query('SELECT * FROM integracoes_marketplace WHERE id = $1', [integracaoId]);
+    const integracao = rows[0];
+    if (!integracao) return res.status(404).json({ error: 'Loja não encontrada.' });
+    if (integracao.marketplace !== 'mercado_livre') {
+      return res.status(400).json({
+        error: 'O diagnóstico existe para o Mercado Livre. A Shopee não expõe histórico de remessa ao FBS pela API do vendedor.',
+      });
+    }
+
+    await garantirTokenValido(integracao);
+    // Um inventory_id real da loja, para testar também o caminho por unidade
+    // de estoque — que, quando responde, é melhor que o de remessa.
+    const { rows: umItem } = await pool.query(
+      `SELECT inventory_id FROM full_itens
+        WHERE origem_integracao_id = $1 AND inventory_id IS NOT NULL AND no_full
+        LIMIT 1`,
+      [integracaoId]
+    );
+
+    const tentativas = await mercadoLivre.diagnosticarEnviosFullML({
+      accessToken: integracao.access_token,
+      sellerId: integracao.conta_externa_id,
+      inventoryId: umItem[0]?.inventory_id || null,
+    });
+
+    res.json({
+      loja: integracao.nome,
+      sellerId: integracao.conta_externa_id,
+      inventoryIdTestado: umItem[0]?.inventory_id || null,
+      tentativas,
+      funcionou: tentativas.filter((t) => t.ok).map((t) => t.caminho),
+    });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
 });
 
 // ---------------------------------------------------------------------------
