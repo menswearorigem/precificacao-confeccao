@@ -252,7 +252,13 @@ async function main() {
   }
 
   console.log('\n8. Exportação no formato da planilha');
-  const livro = await montarPlanilhaAnuncios({ produtoIds: null, janelaAdsDias: 30 });
+  // Esta seção confere o FORMATO do arquivo (cabeçalho, mesclas, fórmulas,
+  // vermelho de "NÃO ESTÁ ANUNCIADO") — não o corte por venda recente, que a
+  // suíte dedicada `testar-exportacao-anuncios.js` já cobre à exaustão. Os
+  // produtos semeados aqui não têm pedido nenhum, então o corte padrão (só
+  // quem vendeu nos últimos 30 dias) tiraria todos e a planilha sairia vazia;
+  // `vendidosEmDias: 0` desliga o corte, do jeito que a própria função prevê.
+  const livro = await montarPlanilhaAnuncios({ produtoIds: null, janelaAdsDias: 30, vendidosEmDias: 0 });
   const ws = livro.getWorksheet('Planilha1');
   ok(Boolean(ws), 'a planilha sai com a aba "Planilha1"');
 
