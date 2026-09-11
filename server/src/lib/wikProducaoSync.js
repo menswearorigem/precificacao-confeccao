@@ -193,8 +193,6 @@ async function diagnosticarGradeOp(opBruto) {
   let sessao;
   try { sessao = await obterSessao(integracao); }
   catch (e) { return { erro: `não consegui abrir sessão no Wik: ${e.message}` }; }
-  try { await wikWeb.trocarEmpresa(sessao, MATRIZ_EMP_ID); } catch (e) { /* segue */ }
-
   const tentativas = [];
   async function probe(rotulo, url) {
     try {
@@ -226,17 +224,24 @@ async function diagnosticarGradeOp(opBruto) {
   }
 
   const idEnc = encodeURIComponent(op);
-  await probe('sem statusTela', `/OrdemProducao/Create/?id=${idEnc}`);
-  for (const st of [1, 2, 4, 0, 3, 5]) {
-    await probe(`statusTela=${st}`, `/OrdemProducao/Create/?id=${idEnc}&statusTela=${st}`);
+  // Testa em CADA empresa (a página reflete a empresa ativa da sessão), e em
+  // cada uma, sem e com statusTela — pra ver onde a grade realmente aparece.
+  for (const emp of EMPRESAS_GRADE) {
+    try { await wikWeb.trocarEmpresa(sessao, emp); } catch { /* segue */ }
+    await probe(`emp ${emp} · sem statusTela`, `/OrdemProducao/Create/?id=${idEnc}`);
+    for (const st of [1, 2, 4, 0]) {
+      await probe(`emp ${emp} · statusTela=${st}`, `/OrdemProducao/Create/?id=${idEnc}&statusTela=${st}`);
+    }
   }
+  try { await wikWeb.trocarEmpresa(sessao, MATRIZ_EMP_ID); } catch { /* segue */ }
 
-  // O que o parser REAL extrai hoje (passa pela mesma ordemProducaoDetalhe do sync)
+  // O que o sync REAL extrai hoje (mesma busca com fallback de empresa)
   let real = null;
   try {
-    const det = await wikWeb.ordemProducaoDetalhe(sessao, op);
+    const det = await detalheDaOpComGrade(sessao, op);
     real = { situacao: det.cabecalho?.situacao ?? null, itens_grade: (det.grade || []).length };
   } catch (e) { real = { erro: e.message }; }
+  try { await wikWeb.trocarEmpresa(sessao, MATRIZ_EMP_ID); } catch { /* segue */ }
 
   // O que está gravado aqui pra essa OP
   let noHub = null;
@@ -252,6 +257,25 @@ async function diagnosticarGradeOp(opBruto) {
   } catch (e) { noHub = { erro: e.message }; }
 
   return { op, empresa: MATRIZ_EMP_ID, parser_real: real, no_hub: noHub, tentativas };
+}
+
+// A página de detalhe da OP (/OrdemProducao/Create) reflete a EMPRESA ATIVA da
+// sessão — o ?empId= é ignorado (ver a nota do endpoint interno). O apontamento
+// é puxado na matriz e mostra a produção do grupo todo, mas a OP em si pode ser
+// de outra empresa (ex.: OG* = Origem/202). Aberta sob a matriz, a OP de outra
+// empresa volta SEM grade. Então: tenta a grade na matriz e, se vier vazia,
+// troca a empresa ativa e tenta de novo, parando na primeira que trouxer grade.
+// Tudo somente leitura.
+const EMPRESAS_GRADE = [MATRIZ_EMP_ID, 202, 198, 193];
+async function detalheDaOpComGrade(sessao, op) {
+  let ultimo = null;
+  for (const emp of EMPRESAS_GRADE) {
+    await wikWeb.trocarEmpresa(sessao, emp);
+    const det = await wikWeb.ordemProducaoDetalhe(sessao, op);
+    ultimo = det;
+    if (det.grade && det.grade.length > 0) return det;
+  }
+  return ultimo || { cabecalho: {}, grade: [] };
 }
 
 // OPs do Wik que ainda precisam de grade (mais NOVAS primeiro — é o que a casa
@@ -341,17 +365,19 @@ async function sincronizarProducaoAgora() {
     const alvo = await opsComGradePendente(GRADE_CAP);
     for (const { ordemId, op } of alvo) {
       try {
-        const det = await wikWeb.ordemProducaoDetalhe(sessao, op);
+        const det = await detalheDaOpComGrade(sessao, op);
         await atualizarGradeDaOp(ordemId, det);
-        resumo.gradesLidas += 1;
+        if (det.grade && det.grade.length > 0) resumo.gradesLidas += 1;
       } catch (e) {
         if (e.sessaoExpirada) {
           sessao = await renovarSessao(integracao);
-          try { const det = await wikWeb.ordemProducaoDetalhe(sessao, op); await atualizarGradeDaOp(ordemId, det); resumo.gradesLidas += 1; }
+          try { const det = await detalheDaOpComGrade(sessao, op); await atualizarGradeDaOp(ordemId, det); if (det.grade && det.grade.length > 0) resumo.gradesLidas += 1; }
           catch (e2) { resumo.erros.push(`OP ${op}: ${e2.message}`); }
         } else { resumo.erros.push(`OP ${op}: ${e.message}`); }
       }
     }
+    // Deixa a sessão de volta na matriz pro que vier depois.
+    try { await wikWeb.trocarEmpresa(sessao, MATRIZ_EMP_ID); } catch { /* segue */ }
 
     await poolReal.query(
       `UPDATE integracoes_wik SET producao_status = 'idle', producao_ultima_sincronizacao = now(), producao_erro = $2 WHERE id = $1`,
