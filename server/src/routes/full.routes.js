@@ -202,10 +202,25 @@ router.get('/', async (req, res, next) => {
         anuncios: lista.length,
         // Peças lá dentro. NULO vira ausente, não zero: uma loja cujo saldo
         // não pôde ser lido não pode aparecer com "0 peças no Full".
-        pecasNoFull: somaOuNulo(lista.map((a) => a.saldo.disponivel)),
-        emTransito: somaOuNulo(lista.map((a) => a.saldo.emTransito)),
+        // DUAS medidas, e as duas dizem o nome.
+        //
+        // Somar o saldo de vários anúncios num número só exige uma moeda
+        // comum, e a moeda comum é a PEÇA: somar 362 kits com 40 camisas
+        // dava 402 de coisa nenhuma. As unidades vão junto porque é o que a
+        // expedição conta na caixa e o que o painel do marketplace mostra.
+        pecasNoFull: somaOuNulo(lista.map((a) => (a.saldo.disponivel == null
+          ? null : a.saldo.disponivel * (a.pecasPorUnidade || 1)))),
+        unidadesNoFull: somaOuNulo(lista.map((a) => a.saldo.disponivel)),
+        temKit: lista.some((a) => a.ehKit),
+        emTransito: somaOuNulo(lista.map((a) => (a.saldo.emTransito == null
+          ? null : a.saldo.emTransito * (a.pecasPorUnidade || 1)))),
         precisamRepor: comEnvio.length,
-        pecasAEnviar: comEnvio.reduce((s, a) => s + (a.reposicao.precisaEnviar || 0), 0),
+        // Em PEÇAS, para poder ser comparada com o saldo do galpão na mesma
+        // frase da tela — que também é em peças.
+        pecasAEnviar: comEnvio.reduce(
+          (s, a) => s + ((a.reposicao.precisaEnviar || 0) * (a.pecasPorUnidade || 1)), 0
+        ),
+        unidadesAEnviar: comEnvio.reduce((s, a) => s + (a.reposicao.precisaEnviar || 0), 0),
         emRuptura: lista.filter((a) => a.reposicao.urgencia === 'ruptura').length,
         atrasados: lista.filter((a) => a.reposicao.urgencia === 'atrasado').length,
         semMedida: lista.filter((a) => a.velocidade.porDia == null).length,
@@ -328,54 +343,112 @@ router.post('/plano', async (req, res, next) => {
     const semMedida = [];
 
     for (const a of escolhidos) {
-      if (!a.produtoId) { semVinculo.push(a); continue; }
-      if (a.velocidade.porDia == null) semMedida.push(a);
+      // As cores que TÊM referência. Desde que a varredura passou a resolver
+      // o SKU por variação, um anúncio pode ter parte das cores vinculada e
+      // parte não — e cada cor pode até apontar referências diferentes.
+      const comReferencia = a.unidades.filter((u) => (u.produtoId ?? a.produtoId) != null);
 
-      if (!porProduto.has(a.produtoId)) {
-        porProduto.set(a.produtoId, {
-          produtoId: a.produtoId,
-          referencia: a.referencia,
-          descricao: a.produtoDescricao,
-          temFoto: a.produtoTemFoto,
-          anuncios: [],
-          linhas: new Map(),
+      // Anúncio sem NENHUMA referência não é descartado em silêncio.
+      //
+      // Ele não pode virar ordem de produção — sem saber qual peça é, não há
+      // o que cortar. Mas ele TEM uma quantidade a enviar, e ela é a resposta
+      // à pergunta que trouxe a pessoa até aqui. Descartá-lo fazia o plano
+      // abrir com "A enviar 0 · Já na casa 0 · A produzir 0" e a mensagem
+      // "Nada a produzir", que é falsa: há 998 unidades a mandar. Pior, mudar
+      // o período não mexia em número nenhum, e a tela parecia quebrada.
+      if (comReferencia.length === 0) {
+        semVinculo.push({
+          chave: a.chave,
+          titulo: a.titulo,
+          anuncioIdExterno: a.anuncioIdExterno,
+          lojaNome: a.lojaNome,
+          marketplace: a.marketplace,
+          anuncioId: a.anuncioId,
+          sku: a.unidades.map((u) => u.sku).filter(Boolean)[0] || null,
+          aEnviar: a.reposicao.precisaEnviar,
+          pecasPorUnidade: a.pecasPorUnidade,
+          pecasAEnviar: a.reposicao.precisaEnviar != null
+            ? a.reposicao.precisaEnviar * (a.pecasPorUnidade || 1)
+            : null,
+          dataLimiteEnvio: a.reposicao.dataLimiteEnvio,
+          diasAlvo: a.reposicao.diasAlvo,
         });
+        continue;
       }
-      const alvo = porProduto.get(a.produtoId);
-      alvo.anuncios.push({
-        chave: a.chave,
-        titulo: a.titulo,
-        lojaNome: a.lojaNome,
-        marketplace: a.marketplace,
-        aEnviar: a.reposicao.precisaEnviar,
-        dataLimiteEnvio: a.reposicao.dataLimiteEnvio,
-        dataPrecisaEstarLa: a.reposicao.dataPrecisaEstarLa,
-        velocidadeDia: a.velocidade.porDia,
-        baseVelocidade: a.velocidade.base,
-        diasAlvo: a.reposicao.diasAlvo,
-        rateio: a.unidades[0]?.participacaoOrigem || null,
-      });
+      if (a.velocidade.porDia == null) semMedida.push(a);
 
       for (const u of a.unidades) {
         if (u.ignorarReposicao) continue;
-        // A quantidade por cor vem REPARTIDA do total do anúncio (ver
-        // montarAnuncio): assim a soma das linhas do plano é exatamente o
-        // número que o cartão mostra, múltiplo de envio incluído.
-        const enviar = u.precisaEnviarUnidade || 0;
+        const produtoId = u.produtoId ?? a.produtoId;
+        if (produtoId == null) continue;
+
+        if (!porProduto.has(produtoId)) {
+          porProduto.set(produtoId, {
+            produtoId,
+            referencia: null,
+            descricao: null,
+            temFoto: false,
+            anuncios: [],
+            linhas: new Map(),
+          });
+        }
+        const alvo = porProduto.get(produtoId);
+        // A referência e a descrição do produto vêm do anúncio quando ele é o
+        // dono dela; para uma cor de referência diferente, ficam nulas até a
+        // consulta de nomes lá embaixo.
+        if (produtoId === a.produtoId) {
+          alvo.referencia = alvo.referencia ?? a.referencia;
+          alvo.descricao = alvo.descricao ?? a.produtoDescricao;
+          alvo.temFoto = alvo.temFoto || Boolean(a.produtoTemFoto);
+        }
+        if (!alvo.anuncios.some((x) => x.chave === a.chave)) {
+          alvo.anuncios.push({
+            chave: a.chave,
+            titulo: a.titulo,
+            lojaNome: a.lojaNome,
+            marketplace: a.marketplace,
+            aEnviar: a.reposicao.precisaEnviar,
+            pecasAEnviar: a.reposicao.precisaEnviar != null
+              ? a.reposicao.precisaEnviar * (a.pecasPorUnidade || 1)
+              : null,
+            pecasPorUnidade: a.pecasPorUnidade,
+            dataLimiteEnvio: a.reposicao.dataLimiteEnvio,
+            dataPrecisaEstarLa: a.reposicao.dataPrecisaEstarLa,
+            velocidadeDia: a.velocidade.porDia,
+            baseVelocidade: a.velocidade.base,
+            diasAlvo: a.reposicao.diasAlvo,
+            rateio: a.unidades[0]?.participacaoOrigem || null,
+          });
+        }
+
+        // Da moeda do Full para a moeda da fábrica: a quantidade a enviar é
+        // em UNIDADES DO ANÚNCIO (kits, quando for kit) e a grade de produção
+        // é em PEÇAS. Multiplicar aqui é o que evita mandar cortar um terço
+        // do necessário num anúncio de kit de 3 (ver migration 0073).
+        const unidadesAEnviar = u.precisaEnviarUnidade || 0;
+        const enviar = unidadesAEnviar * (u.pecasPorUnidade || 1);
         if (enviar <= 0) continue;
+
         const cor = u.cor || '';
         const tamanho = u.tamanho || '';
         // A chave é NORMALIZADA. Duas lojas cadastram a mesma cor de jeitos
         // diferentes ("Azul Marinho" e "AZUL MARINHO"), e agrupar pelo texto
         // cru criava duas linhas para a MESMA variante — cada uma descontando
-        // o mesmo saldo da casa, que é justamente o que este trecho existe
-        // para evitar.
+        // o mesmo saldo da casa.
         const chave = `${normalizar(cor)}|${normalizar(tamanho)}`;
         const linha = alvo.linhas.get(chave) || {
           cor,
           tamanho,
           varianteId: u.varianteId ?? null,
+          // A chave de dedupe do saldo do galpão vem da UNIDADE: quando o
+          // saldo é o da referência inteira (item lido no nível do anúncio, ou
+          // cor sem variante casada), a chave é o PRODUTO — senão cada cor
+          // prometeria de novo a mesma prateleira.
+          estoqueCasaChave: u.estoqueCasaChave || null,
+          estoqueCasaOrigem: u.estoqueCasaOrigem || null,
           aEnviar: 0,
+          unidadesAEnviar: 0,
+          pecasPorUnidade: u.pecasPorUnidade || 1,
           estoqueCasa: u.estoqueCasa,
           estoqueCasaReservado: u.estoqueCasaReservado,
           // Sem cor/tamanho lidos da plataforma não dá para montar grade: a
@@ -385,14 +458,32 @@ router.post('/plano', async (req, res, next) => {
           origemRateio: u.participacaoOrigem,
         };
         linha.aEnviar += enviar;
+        linha.unidadesAEnviar += unidadesAEnviar;
         if (linha.varianteId == null && u.varianteId != null) linha.varianteId = u.varianteId;
+        if (linha.estoqueCasaChave == null) linha.estoqueCasaChave = u.estoqueCasaChave || null;
         if (linha.estoqueCasa == null) linha.estoqueCasa = u.estoqueCasa;
         alvo.linhas.set(chave, linha);
       }
     }
 
-    // Desconta o estoque da casa uma única vez por variante, mesmo quando a
-    // mesma peça alimenta duas lojas: a prateleira é uma só.
+    // Nome das referências que entraram por uma COR, e não pelo anúncio.
+    const semNome = [...porProduto.values()].filter((p) => !p.referencia).map((p) => p.produtoId);
+    if (semNome.length > 0) {
+      const { rows: nomes } = await pool.query(
+        `SELECT p.id, p.referencia, p.descricao, (pf.produto_id IS NOT NULL) AS tem_foto
+           FROM produtos p LEFT JOIN produto_fotos pf ON pf.produto_id = p.id
+          WHERE p.id = ANY($1::int[])`,
+        [semNome]
+      );
+      for (const n of nomes) {
+        const alvo = porProduto.get(n.id);
+        if (!alvo) continue;
+        alvo.referencia = n.referencia;
+        alvo.descricao = n.descricao;
+        alvo.temFoto = n.tem_foto;
+      }
+    }
+
     // A prateleira é UMA só: a mesma variante pode alimentar duas lojas, e
     // cada peça dela só pode ser prometida uma vez. Este mapa é o que impede
     // que o saldo da casa seja descontado duas vezes e a ordem de produção
@@ -401,7 +492,12 @@ router.post('/plano', async (req, res, next) => {
     const produtos = [...porProduto.values()].map((p) => {
       const linhas = [...p.linhas.values()].map((l) => {
         const bruto = usarEstoqueCasa && l.estoqueCasa != null ? Math.max(0, Number(l.estoqueCasa)) : 0;
-        const chaveCasa = l.varianteId != null ? `v${l.varianteId}` : `p${p.produtoId}|${normalizar(l.cor)}|${normalizar(l.tamanho)}`;
+        // A chave vem da UNIDADE (v<variante> ou p<produto>). Montá-la aqui
+        // com cor e tamanho fazia cada cor de um anúncio sem variante casada
+        // receber o saldo INTEIRO da referência — 18 linhas prometendo as
+        // mesmas 200 peças, e o "a produzir" caindo para zero.
+        const chaveCasa = l.estoqueCasaChave
+          || (l.varianteId != null ? `v${l.varianteId}` : `p${p.produtoId}`);
         const jaUsado = casaJaPrometida.get(chaveCasa) || 0;
         const disponivelCasa = Math.max(0, bruto - jaUsado);
         const daCasa = Math.min(l.aEnviar, disponivelCasa);
@@ -413,11 +509,14 @@ router.post('/plano', async (req, res, next) => {
         };
       }).sort((a, b) => (a.cor || '').localeCompare(b.cor || '') || (a.tamanho || '').localeCompare(b.tamanho || ''));
 
+      // Tudo em PEÇAS, menos `unidadesAEnviar`, que é o número que a
+      // expedição vai contar na caixa.
       const totais = linhas.reduce((acc, l) => ({
         aEnviar: acc.aEnviar + l.aEnviar,
+        unidadesAEnviar: acc.unidadesAEnviar + l.unidadesAEnviar,
         daCasa: acc.daCasa + l.daCasa,
         aProduzir: acc.aProduzir + l.aProduzir,
-      }), { aEnviar: 0, daCasa: 0, aProduzir: 0 });
+      }), { aEnviar: 0, unidadesAEnviar: 0, daCasa: 0, aProduzir: 0 });
 
       const datas = p.anuncios.map((a) => a.dataLimiteEnvio).filter(Boolean).sort();
       return {
@@ -428,6 +527,7 @@ router.post('/plano', async (req, res, next) => {
         anuncios: p.anuncios,
         linhas,
         totais,
+        ehKit: linhas.some((l) => (l.pecasPorUnidade || 1) > 1),
         dataLimiteEnvio: datas[0] || null,
         // A grade pronta para POST /api/producao/ordens. O formato é o que
         // aquela rota já espera — nenhuma rota nova, nenhuma permissão nova.
@@ -452,9 +552,21 @@ router.post('/plano', async (req, res, next) => {
       produtos,
       totais: produtos.reduce((acc, p) => ({
         aEnviar: acc.aEnviar + p.totais.aEnviar,
+        unidadesAEnviar: acc.unidadesAEnviar + p.totais.unidadesAEnviar,
         daCasa: acc.daCasa + p.totais.daCasa,
         aProduzir: acc.aProduzir + p.totais.aProduzir,
-      }), { aEnviar: 0, daCasa: 0, aProduzir: 0 }),
+      }), {
+        // O "a enviar" começa com o que os anúncios SEM referência precisam:
+        // eles não entram na produção, mas entram no total do que a expedição
+        // tem de despachar.
+        aEnviar: semVinculo.reduce((acc, a) => acc + (a.pecasAEnviar || 0), 0),
+        unidadesAEnviar: semVinculo.reduce((acc, a) => acc + (a.aEnviar || 0), 0),
+        daCasa: 0,
+        aProduzir: 0,
+      }),
+      // Fora da produção, mas com número: é o que a expedição precisa mandar
+      // desses anúncios assim que alguém vincular o SKU.
+      naoVinculados: semVinculo,
       // As ressalvas vão na resposta, não num aviso solto na tela: quem
       // exportar o plano leva as ressalvas junto.
       ressalvas: {
@@ -467,6 +579,118 @@ router.post('/plano', async (req, res, next) => {
       },
     });
   } catch (err) { next(err); }
+});
+
+// ---------------------------------------------------------------------------
+// Vincular o anúncio a uma referência, sem sair daqui
+// ---------------------------------------------------------------------------
+// Sem referência, o item do Full não tem saldo de casa nem plano de produção —
+// e mandar a pessoa até a aba Anúncios, achar o anúncio de novo e voltar era o
+// caminho mais longo entre o problema e a solução, justamente na tela que
+// mostra o problema.
+//
+// A busca devolve SÓ id, referência e descrição. Não é a rota de produtos (que
+// exige o módulo Produto e devolve custo e margem): quem cuida do Full precisa
+// saber o NOME da peça e nada mais — o mesmo raciocínio de /api/full/lojas.
+router.get('/referencias', async (req, res, next) => {
+  try {
+    const busca = String(req.query?.busca || '').trim();
+    const { rows } = await pool.query(
+      `SELECT p.id, p.referencia, p.descricao,
+              (pf.produto_id IS NOT NULL) AS tem_foto
+         FROM produtos p
+         LEFT JOIN produto_fotos pf ON pf.produto_id = p.id
+        WHERE ($1 = '' OR p.referencia ILIKE $2 OR p.descricao ILIKE $2)
+        ORDER BY p.referencia
+        LIMIT 40`,
+      [busca, `%${busca}%`]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// Grava o vínculo no ANÚNCIO (é lá que ele mora, migration 0045) e leva a
+// mesma referência para os itens do Full daquele anúncio, para a tela
+// responder na hora em vez de esperar a próxima varredura.
+router.put('/anuncios/:anuncioId/vinculo', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const anuncioId = Number(req.params.anuncioId);
+    const corpo = req.body || {};
+    // Um PUT sem a chave é pedido malformado, não "desvincular". Sem esta
+    // trava, um corpo vazio (ou a chave escrita de outro jeito) apagava o
+    // vínculo em silêncio.
+    if (!('produto_id' in corpo) && !('produtoId' in corpo)) {
+      return res.status(400).json({
+        error: 'Informe "produto_id" — use null explicitamente para remover o vínculo.',
+      });
+    }
+    const produtoId = corpo.produto_id ?? corpo.produtoId ?? null;
+
+    if (produtoId != null) {
+      const { rows } = await client.query('SELECT id, referencia FROM produtos WHERE id = $1', [produtoId]);
+      if (rows.length === 0) return res.status(400).json({ error: 'Referência não encontrada.' });
+    }
+
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `UPDATE anuncios_marketplace
+          SET produto_id = $2,
+              vinculo_origem = CASE WHEN $2::int IS NULL THEN NULL ELSE 'manual' END,
+              atualizado_em = now()
+        WHERE id = $1
+      RETURNING id, produto_id, anuncio_id_externo`,
+      [anuncioId, produtoId]
+    );
+    if (rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Anúncio não encontrado.' });
+    }
+
+    // `variante_id` é zerado junto de propósito. Sem isso, trocar a
+    // referência de A para B deixava as cores que não casassem com B
+    // apontando para variantes de A — e a ordem de produção do produto B
+    // nasceria com variante do produto A dentro. Ele é recasado logo abaixo,
+    // contra a referência nova.
+    const { rowCount: itensAtualizados } = await client.query(
+      `UPDATE full_itens
+          SET produto_id = $2, variante_id = NULL, vinculo_manual = TRUE, atualizado_em = now()
+        WHERE anuncio_id = $1`,
+      [anuncioId, produtoId]
+    );
+
+    // A variante de cada cor, pelo mesmo casamento que a varredura usa —
+    // inclusive para o SKU de kit (ver casarVariantes em lib/full.js).
+    if (produtoId != null) {
+      const { rows: itens } = await client.query(
+        'SELECT id FROM full_itens WHERE anuncio_id = $1', [anuncioId]
+      );
+      await full.casarVariantes(client, itens.map((i) => i.id));
+    }
+
+    // O mesmo histórico que a aba de Anúncios grava — o vínculo é do anúncio,
+    // e quem for olhar o histórico dele tem de ver esta alteração.
+    await client.query(
+      `INSERT INTO anuncio_historico (anuncio_id, campo, valor_antes, valor_depois, origem, usuario_id)
+       VALUES ($1, 'vínculo com o cadastro', NULL, $2, 'hbn_hub', $3)`,
+      [anuncioId, produtoId == null ? 'removido' : String(produtoId), req.user?.id || null]
+    );
+    await client.query('COMMIT');
+
+    await registrar(req, {
+      acao: 'editar', entidade: 'anuncio', entidadeId: anuncioId,
+      descricao: produtoId == null
+        ? `Removeu o vínculo do anúncio ${rows[0].anuncio_id_externo} pela aba Full`
+        : `Vinculou o anúncio ${rows[0].anuncio_id_externo} à referência ${produtoId} pela aba Full`,
+      sucesso: true,
+    });
+    res.json({ ...rows[0], itensAtualizados });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -621,7 +845,7 @@ router.post('/envios', async (req, res, next) => {
 
     await registrar(req, {
       acao: 'criar', entidade: 'full_envio', entidadeId: envio.id,
-      descricao: `Registrou remessa ao fulfillment: ${total} peças em ${itens.length} item(ns)`,
+      descricao: `Registrou remessa ao fulfillment: ${total} unidade(s) de anúncio em ${itens.length} item(ns)`,
       sucesso: true,
     });
     res.status(201).json(envio);

@@ -3,7 +3,7 @@ import {
   Warehouse, RefreshCw, X, ExternalLink, Factory, Truck, AlertTriangle,
   Timer, CalendarClock, TrendingUp, TrendingDown, LayoutGrid, Table2,
   Settings2, Send, Info, CheckCircle2, Ban, Sparkles, History, Printer,
-  Boxes, ArrowRight, Flame,
+  Boxes, ArrowRight, Flame, Layers, Link2, Search,
 } from 'lucide-react';
 import {
   AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine,
@@ -47,9 +47,13 @@ import { usePaletaGrafico } from '../lib/coresGrafico';
 // diferentes, e quem decide precisa saber qual está lendo.
 
 const URGENCIAS = {
-  ruptura: { rotulo: 'Zerado no Full', tom: 'perigo', Icone: Flame, peso: 5 },
-  atrasado: { rotulo: 'Envio atrasado', tom: 'perigo', Icone: AlertTriangle, peso: 4 },
-  urgente: { rotulo: 'Mandar esta semana', tom: 'atencao', Icone: CalendarClock, peso: 3 },
+  ruptura: { rotulo: 'Zerado no Full', tom: 'perigo', Icone: Flame, peso: 6 },
+  atrasado: { rotulo: 'Envio atrasado', tom: 'perigo', Icone: AlertTriangle, peso: 5 },
+  urgente: { rotulo: 'Mandar esta semana', tom: 'atencao', Icone: CalendarClock, peso: 4 },
+  // O anúncio como um todo está abastecido, mas alguma COR já zerou lá
+  // dentro. Não é ruptura do anúncio (dizer isso com 362 peças no Full seria
+  // mentira) e também não é "tudo bem".
+  cor_zerada: { rotulo: 'Cor zerada no Full', tom: 'atencao', Icone: Layers, peso: 3 },
   planejar: { rotulo: 'Planejar envio', tom: 'neutro', Icone: Truck, peso: 2 },
   ok: { rotulo: 'Abastecido', tom: 'bom', Icone: CheckCircle2, peso: 1 },
   ignorado: { rotulo: 'Fora da reposição', tom: 'neutro', Icone: Ban, peso: 0 },
@@ -60,6 +64,7 @@ const OPCOES_URGENCIA = [
   { valor: 'ruptura', rotulo: 'Zerado no Full' },
   { valor: 'atrasado', rotulo: 'Envio atrasado' },
   { valor: 'urgente', rotulo: 'Mandar esta semana' },
+  { valor: 'cor_zerada', rotulo: 'Cor zerada no Full' },
   { valor: 'planejar', rotulo: 'Planejar envio' },
   { valor: 'ok', rotulo: 'Abastecido' },
   { valor: 'sem_medida', rotulo: 'Sem venda para medir' },
@@ -178,9 +183,39 @@ function tempoNoFull(dias) {
   return `há ${meses} meses`;
 }
 
-function textoBaseVelocidade(velocidade) {
+// Uma data de prazo que já passou não pode ser apresentada como prazo. O
+// painel mostrava "as peças têm que estar lá em 21/08" com 21/08 no mês
+// passado, o que não quer dizer nada — o que a pessoa precisa ler é que o
+// prazo venceu e há quantos dias.
+function Prazo({ data, hoje, sufixoFuturo }) {
+  if (!data) return <>—</>;
+  const dias = hoje ? diasEntreIso(hoje, data) : null;
+  if (dias == null) return <>{dataBr(data)}</>;
+  if (dias < 0) {
+    return (
+      <span className="full-prazo-vencido" title={`Venceu em ${dataBr(data)}`}>
+        venceu há {Math.abs(dias)} {Math.abs(dias) === 1 ? 'dia' : 'dias'}
+      </span>
+    );
+  }
+  return <>{dataBr(data)}{sufixoFuturo || ''}</>;
+}
+
+// Dias entre duas datas ISO, do jeito que o servidor calcula (meio-dia UTC,
+// para o horário de verão não tirar nem pôr um dia).
+function diasEntreIso(de, ate) {
+  const a = new Date(`${de}T12:00:00Z`).getTime();
+  const b = new Date(`${ate}T12:00:00Z`).getTime();
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  return Math.round((b - a) / 86400000);
+}
+
+// A unidade importa: num anúncio de kit, o Full conta KITS e a fábrica conta
+// PEÇAS. Escrever "pç/dia" onde o número é de kits foi o que escondeu um erro
+// de três vezes na cobertura (ver migration 0073).
+function textoBaseVelocidade(velocidade, ehKit) {
   if (velocidade?.porDia == null) return 'sem venda na base medida';
-  return `${numeroBr(velocidade.porDia, 2)} pç/dia · ${velocidade.rotuloBase}`;
+  return `${numeroBr(velocidade.porDia, 2)} ${ehKit ? 'kit' : 'pç'}/dia · ${velocidade.rotuloBase}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -246,7 +281,7 @@ function FaixaLojasFull({ lojas, onSincronizar, sincronizando }) {
 // ---------------------------------------------------------------------------
 // O cartão
 // ---------------------------------------------------------------------------
-function CartaoFull({ anuncio, marcado, onMarcar, onAbrir }) {
+function CartaoFull({ anuncio, marcado, onMarcar, onAbrir, hoje }) {
   const chave = chaveDaPlataforma(anuncio.marketplace);
   const r = anuncio.reposicao;
   const enviar = r.precisaEnviar;
@@ -297,7 +332,7 @@ function CartaoFull({ anuncio, marcado, onMarcar, onAbrir }) {
                 afirmativo que este aviso existe para evitar. */}
             {anuncio.leitura?.completa === false && anuncio.saldo.disponivel != null && '≥ '}
             {anuncio.saldo.disponivel != null ? formatQtd(anuncio.saldo.disponivel) : '—'}
-            <small>no Full</small>
+            <small>{anuncio.ehKit ? 'kits no Full' : 'no Full'}</small>
           </span>
           <span title="Peças já despachadas e ainda não disponíveis lá dentro">
             <Truck size={11} /> {anuncio.saldo.emTransito != null ? formatQtd(anuncio.saldo.emTransito) : '—'}
@@ -318,8 +353,12 @@ function CartaoFull({ anuncio, marcado, onMarcar, onAbrir }) {
 
         <BarraCobertura reposicao={r} velocidade={anuncio.velocidade} />
 
+        {/* Com a barra já dizendo "sem medida de venda", repetir a mesma
+            frase aqui embaixo era ruído. Só aparece quando há o que dizer. */}
         <div className="full-card-velocidade" title={anuncio.velocidade.motivo}>
-          {textoBaseVelocidade(anuncio.velocidade)}
+          {anuncio.velocidade.porDia != null
+            ? textoBaseVelocidade(anuncio.velocidade, anuncio.ehKit)
+            : (anuncio.referencia ? '' : ' ')}
           {anuncio.velocidade.base === 'geral' && anuncio.velocidade.porDia != null && (
             <span className="full-tag-base" title={anuncio.velocidade.motivo}>venda geral</span>
           )}
@@ -330,11 +369,14 @@ function CartaoFull({ anuncio, marcado, onMarcar, onAbrir }) {
         {enviar > 0 ? (
           <>
             <span className="full-card-enviar">
-              <Send size={12} /> mandar <b>{formatQtd(enviar)}</b> peças
+              <Send size={12} /> mandar <b>{formatQtd(enviar)}</b>{' '}
+              {anuncio.ehKit
+                ? <>kits <small>({formatQtd(enviar * anuncio.pecasPorUnidade)} peças)</small></>
+                : 'peças'}
             </span>
             <span className="full-card-quando">
               {r.dataLimiteEnvio
-                ? <>sair daqui até <b>{dataBr(r.dataLimiteEnvio)}</b></>
+                ? <>sair daqui até <b><Prazo data={r.dataLimiteEnvio} hoje={hoje} /></b></>
                 : 'sem data calculável'}
             </span>
           </>
@@ -361,7 +403,7 @@ function CartaoFull({ anuncio, marcado, onMarcar, onAbrir }) {
 // ---------------------------------------------------------------------------
 // A tabela (para varrer muita coisa de uma vez)
 // ---------------------------------------------------------------------------
-function TabelaFull({ itens, marcados, onMarcar, onAbrir }) {
+function TabelaFull({ itens, marcados, onMarcar, onAbrir, hoje }) {
   return (
     <div className="data-table-outer">
       <div className="data-table-wrap">
@@ -418,7 +460,7 @@ function TabelaFull({ itens, marcados, onMarcar, onAbrir }) {
                 </td>
                 <td className="num">{a.reposicao.estoqueMinimo != null ? formatQtd(a.reposicao.estoqueMinimo) : '—'}</td>
                 <td className="num"><b>{a.reposicao.precisaEnviar ? formatQtd(a.reposicao.precisaEnviar) : '—'}</b></td>
-                <td>{a.reposicao.dataLimiteEnvio ? dataBr(a.reposicao.dataLimiteEnvio) : '—'}</td>
+                <td><Prazo data={a.reposicao.dataLimiteEnvio} hoje={hoje} /></td>
                 <td><SeloUrgencia urgencia={a.reposicao.urgencia} compacto /></td>
               </tr>
             ))}
@@ -524,7 +566,7 @@ function PainelFull({ alvo, janela, diasAlvo, onFechar, onAlterado }) {
           {erro && <div className="login-error">{erro}</div>}
           {!dado ? <Skeleton height={240} /> : (
             <>
-              {aba === 'resumo' && <AbaResumoFull a={a} />}
+              {aba === 'resumo' && <AbaResumoFull a={a} hoje={dado.hoje} onVinculado={() => { recarregar(); onAlterado(); }} />}
               {aba === 'estoque' && <AbaEstoqueFull a={a} curva={dado.curva} />}
               {aba === 'envios' && <AbaEnviosFull a={a} envios={dado.envios} onAlterado={() => { recarregar(); onAlterado(); }} />}
               {aba === 'variacoes' && <AbaVariacoesFull a={a} />}
@@ -546,7 +588,7 @@ function Linha({ rotulo, valor, ajuda, forte }) {
   );
 }
 
-function AbaResumoFull({ a }) {
+function AbaResumoFull({ a, hoje, onVinculado }) {
   const r = a.reposicao;
   const d = a.desempenho;
   const tendencia = d.tendencia;
@@ -571,24 +613,56 @@ function AbaResumoFull({ a }) {
         </div>
       </div>
 
+      {a.reposicao.coresZeradas?.parcial && (
+        <div className="full-aviso">
+          <Layers size={14} />
+          <span>
+            <b>{a.reposicao.coresZeradas.quantidade} de {a.reposicao.coresZeradas.total} cores</b> já estão zeradas
+            dentro do centro de distribuição{a.reposicao.coresZeradas.nomes.length > 0
+              ? <> ({a.reposicao.coresZeradas.nomes.join(', ')})</> : null}.
+            O anúncio como um todo ainda tem saldo — os números acima são do anúncio inteiro. A aba
+            <b> Cores e tamanhos</b> mostra cor por cor.
+          </span>
+        </div>
+      )}
+
+      {a.ehKit && (
+        <div className="full-aviso full-aviso-info">
+          <Info size={14} />
+          <span>
+            Este anúncio é vendido em <b>kit de {a.pecasPorUnidade}</b>. O centro de distribuição conta
+            <b> unidades do anúncio</b> (kits), então saldo, velocidade, mínimo e "mandar" estão em kits. O plano
+            de produção converte para peças — uma unidade lá dentro são {a.pecasPorUnidade} peças aqui.
+          </span>
+        </div>
+      )}
+
+      {!a.referencia && <VincularReferencia anuncio={a} onVinculado={onVinculado} />}
+
       <div className="card-head">O que fazer</div>
       <div className="full-blocos">
         <div className="full-bloco destaque">
           <span className="full-bloco-rotulo">Mandar</span>
           <span className="full-bloco-valor">{r.precisaEnviar != null ? formatQtd(r.precisaEnviar) : '—'}</span>
-          <small>peças, para o envio durar {r.diasAlvo} dias</small>
+          <small>
+            {a.ehKit
+              ? <>kits — {formatQtd((r.precisaEnviar || 0) * a.pecasPorUnidade)} peças —, para o envio durar {r.diasAlvo} dias</>
+              : <>peças, para o envio durar {r.diasAlvo} dias</>}
+          </small>
         </div>
         <div className="full-bloco">
           <span className="full-bloco-rotulo">Peças têm que estar lá</span>
-          <span className="full-bloco-valor">{r.dataPrecisaEstarLa ? dataBr(r.dataPrecisaEstarLa) : '—'}</span>
-          <small>quando o saldo encosta no mínimo</small>
+          <span className="full-bloco-valor"><Prazo data={r.dataPrecisaEstarLa} hoje={hoje} /></span>
+          <small>quando o saldo encosta no mínimo de {formatQtd(r.estoqueMinimo || 0)} peças</small>
         </div>
         <div className="full-bloco">
           <span className="full-bloco-rotulo">Sair daqui até</span>
-          <span className="full-bloco-valor">{r.dataLimiteEnvio ? dataBr(r.dataLimiteEnvio) : '—'}</span>
+          <span className="full-bloco-valor"><Prazo data={r.dataLimiteEnvio} hoje={hoje} /></span>
           <small>
             {r.diasAteLimite != null
-              ? (r.diasAteLimite < 0 ? `${Math.abs(r.diasAteLimite)} dias atrasado` : `faltam ${r.diasAteLimite} dias`)
+              ? (r.diasAteLimite < 0
+                ? `o prazo já venceu — descontando ${a.parametros.lead_time_dias} dias de recebimento`
+                : `faltam ${r.diasAteLimite} dias`)
               : `descontando ${a.parametros.lead_time_dias} dias de recebimento`}
           </small>
         </div>
@@ -606,7 +680,15 @@ function AbaResumoFull({ a }) {
       </div>
 
       <div className="card-head">Onde estão as peças</div>
-      <Linha rotulo="Disponível no Full" valor={a.saldo.disponivel != null ? formatQtd(a.saldo.disponivel) : '—'} forte />
+      <Linha
+        rotulo={a.ehKit ? 'Disponível no Full (kits)' : 'Disponível no Full'}
+        valor={a.saldo.disponivel != null
+          ? (a.ehKit
+            ? `${formatQtd(a.saldo.disponivel)} · ${formatQtd(a.saldo.disponivel * a.pecasPorUnidade)} peças`
+            : formatQtd(a.saldo.disponivel))
+          : '—'}
+        forte
+      />
       <Linha
         rotulo="Indisponível no Full"
         valor={a.saldo.indisponivel != null ? formatQtd(a.saldo.indisponivel) : '—'}
@@ -647,15 +729,19 @@ function AbaResumoFull({ a }) {
 
       <div className="card-head">Como foi o desempenho</div>
       <Linha
-        rotulo={`Vendas em peças (${a.velocidade.rotuloBase})`}
-        valor={d.vendasDaBase != null ? formatQtd(d.vendasDaBase) : '—'}
-        ajuda={'É o número que a velocidade usou — a mesma base escrita no rótulo. '
-          + 'Venda em kit entra pelas peças da referência que este anúncio vende, não pela linha do pedido.'}
+        rotulo={`Vendas ${a.ehKit ? 'em kits' : 'em peças'} (${a.velocidade.rotuloBase})`}
+        valor={d.vendasDaBase != null
+          ? (a.ehKit
+            ? `${formatQtd(d.vendasDaBase)} · ${formatQtd(d.vendasDaBase * a.pecasPorUnidade)} peças`
+            : formatQtd(d.vendasDaBase))
+          : '—'}
+        ajuda={'É o número que a velocidade usou — a mesma base escrita no rótulo, e na mesma unidade que o '
+          + 'centro de distribuição conta.'}
         forte
       />
       <Linha
         rotulo="Vendas na janela recente"
-        valor={`${formatQtd(d.vendasJanela)} peças`}
+        valor={`${formatQtd(d.vendasJanela)} ${a.ehKit ? 'kits' : 'peças'}`}
         ajuda="A janela recente, para comparar com o período anterior logo abaixo."
       />
       <Linha
@@ -672,7 +758,7 @@ function AbaResumoFull({ a }) {
       <Linha
         rotulo="Vendas acumuladas do anúncio"
         valor={d.vendasTotalAnuncio != null
-          ? `${formatQtd(d.vendasTotalAnuncio)} peças${d.unidadesTotal != null ? ` · ${formatQtd(d.unidadesTotal)} vendas` : ''}`
+          ? `${formatQtd(d.vendasTotalAnuncio)} ${a.ehKit ? 'kits' : 'peças'}${d.pecasTotal != null && a.ehKit ? ` · ${formatQtd(d.pecasTotal)} peças` : ''}`
           : '—'}
         ajuda="Peças e vendas são medidas diferentes: um kit de três é uma venda e três peças."
       />
@@ -696,6 +782,93 @@ function AbaResumoFull({ a }) {
           + (d.primeiroRetrato ? `O primeiro retrato desta peça é de ${dataBr(d.primeiroRetrato)}.` : '')}
       />
     </>
+  );
+}
+
+// Vincular o anúncio a uma referência sem sair da tela.
+//
+// Sem vínculo, o item do Full não tem saldo de casa nem plano de produção — e
+// é aqui, olhando o anúncio, que a pessoa percebe que falta. Mandá-la à aba
+// Anúncios para achar o mesmo anúncio de novo era o caminho mais longo entre
+// o problema e a solução.
+function VincularReferencia({ anuncio, onVinculado }) {
+  const [busca, setBusca] = useState('');
+  const [opcoes, setOpcoes] = useState([]);
+  const [carregando, setCarregando] = useState(false);
+  const [gravando, setGravando] = useState(false);
+  const [erro, setErro] = useState('');
+
+  const skuLido = anuncio.unidades.map((u) => u.sku).filter(Boolean)[0] || null;
+
+  useEffect(() => {
+    if (busca.trim().length < 2) { setOpcoes([]); return undefined; }
+    // Espera a pessoa parar de digitar: uma consulta por tecla encheria o
+    // servidor de buscas que ninguém vai ler.
+    const t = setTimeout(() => {
+      setCarregando(true);
+      api.get(`/full/referencias?busca=${encodeURIComponent(busca.trim())}`)
+        .then(setOpcoes)
+        .catch((e) => setErro(e.message))
+        .finally(() => setCarregando(false));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [busca]);
+
+  async function vincular(produtoId) {
+    setGravando(true);
+    setErro('');
+    try {
+      await api.put(`/full/anuncios/${anuncio.anuncioId}/vinculo`, { produto_id: produtoId });
+      onVinculado();
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setGravando(false);
+    }
+  }
+
+  return (
+    <div className="full-vincular">
+      <div className="full-vincular-topo">
+        <Link2 size={14} />
+        <div>
+          <b>Este anúncio não está vinculado a nenhuma referência</b>
+          <small>
+            Sem vínculo não há saldo da casa nem plano de produção — o cálculo de quanto mandar continua valendo,
+            mas não dá para saber o que produzir.
+            {skuLido
+              ? <> O SKU lido da plataforma foi <code>{skuLido}</code>, e ele não bateu com nenhuma referência do cadastro.</>
+              : <> A plataforma não devolveu SKU para este anúncio, então não havia por onde casar.</>}
+          </small>
+        </div>
+      </div>
+      <div className="full-vincular-busca">
+        <Search size={13} />
+        <input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Procurar referência ou descrição…"
+          aria-label="Procurar a referência do cadastro"
+        />
+      </div>
+      {carregando && <Skeleton height={18} />}
+      {opcoes.length > 0 && (
+        <ul className="full-vincular-lista">
+          {opcoes.map((p) => (
+            <li key={p.id}>
+              <button type="button" disabled={gravando} onClick={() => vincular(p.id)}>
+                <b>{p.referencia}</b>
+                <span>{p.descricao}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {busca.trim().length >= 2 && !carregando && opcoes.length === 0 && (
+        <p className="full-nota" style={{ borderTop: 0, paddingTop: 0 }}>Nenhuma referência encontrada com esse texto.</p>
+      )}
+      {erro && <div className="login-error" style={{ marginTop: 8 }}>{erro}</div>}
+    </div>
   );
 }
 
@@ -831,7 +1004,13 @@ function AbaEnviosFull({ a, envios, onAlterado }) {
 
       <div className="card-head" style={{ marginTop: 18 }}>Registrar um envio</div>
       <form onSubmit={registrar} className="full-form-envio">
-        <Field label="Peças despachadas">
+        <Field
+          label={a.ehKit ? `Unidades despachadas (kits de ${a.pecasPorUnidade})` : 'Peças despachadas'}
+          hint={a.ehKit
+            ? `O centro de distribuição conta unidades do anúncio. Informe KITS — ${quantidade
+              ? `${formatQtd(Number(quantidade) * a.pecasPorUnidade)} peças` : 'a conversão aparece aqui'}.`
+            : undefined}
+        >
           <input
             type="number"
             min="1"
@@ -849,8 +1028,9 @@ function AbaEnviosFull({ a, envios, onAlterado }) {
       </form>
       {erro && <div className="login-error" style={{ marginTop: 8 }}>{erro}</div>}
       <p className="full-nota">
-        O registro vale por anúncio inteiro, na primeira variação. Ele existe para a data do último envio não se
-        perder quando a plataforma não devolve o histórico dela.
+        O registro vale por anúncio inteiro, na primeira variação, e na MESMA unidade que o marketplace conta
+        (unidades do anúncio — kits, quando for kit). É o que faz o "a caminho" abater a reposição sem sobrar nem
+        faltar. Ele existe para a data do último envio não se perder quando a plataforma não devolve o histórico.
       </p>
     </>
   );
@@ -1164,7 +1344,17 @@ function ModalPlano({ alvos, janela, diasAlvoInicial, onFechar }) {
               <div className="full-bloco">
                 <span className="full-bloco-rotulo">A enviar</span>
                 <span className="full-bloco-valor">{formatQtd(plano.totais.aEnviar)}</span>
-                <small>peças que o Full precisa receber</small>
+                <small>
+                  peças que o Full precisa receber
+                  {plano.totais.unidadesAEnviar !== plano.totais.aEnviar && (
+                    <> — <b>{formatQtd(plano.totais.unidadesAEnviar)}</b> unidades de anúncio, porque há kit
+                    entre elas</>
+                  )}
+                  {plano.naoVinculados?.length > 0 && (
+                    <> — {formatQtd(plano.naoVinculados.reduce((acc, x) => acc + (x.pecasAEnviar ?? x.aEnviar ?? 0), 0))}{' '}
+                    delas são de anúncios sem referência</>
+                  )}
+                </small>
               </div>
               <div className="full-bloco">
                 <span className="full-bloco-rotulo">Já na casa</span>
@@ -1178,11 +1368,53 @@ function ModalPlano({ alvos, janela, diasAlvoInicial, onFechar }) {
               </div>
             </div>
 
+            {/* Anúncios sem referência: têm quantidade a enviar, mas não podem
+                virar ordem de produção. Aparecem ANTES do resto porque é o
+                que está travando o plano. */}
+            {plano.naoVinculados?.length > 0 && (
+              <div className="full-plano-travados">
+                <div className="card-head">Precisam de vínculo antes de virar produção</div>
+                <p className="page-sub" style={{ marginTop: 0 }}>
+                  Estes anúncios têm quantidade a enviar calculada, mas não estão ligados a nenhuma referência do
+                  cadastro — sem saber qual peça é, não há o que produzir. Abra o anúncio na tela e use
+                  "Vincular referência"; o plano passa a incluí-los na hora.
+                </p>
+                {plano.naoVinculados.map((a) => (
+                  <div key={a.chave} className="full-plano-travado">
+                    <span className="full-plano-chip">
+                      <SeloPlataforma chave={chaveDaPlataforma(a.marketplace)} size={12} />
+                      {a.lojaNome}
+                    </span>
+                    <div className="full-plano-travado-corpo">
+                      <b>{a.titulo || a.anuncioIdExterno}</b>
+                      <small>
+                        {a.sku ? <>SKU lido: <code>{a.sku}</code></> : 'a plataforma não devolveu SKU'}
+                        {' · '}envio para durar {a.diasAlvo} dias
+                      </small>
+                    </div>
+                    <div className="full-plano-travado-num">
+                      <b>{a.aEnviar != null ? formatQtd(a.aEnviar) : '—'}</b>
+                      <small>
+                        a enviar
+                        {a.pecasPorUnidade > 1 && a.pecasAEnviar != null
+                          && <> · {formatQtd(a.pecasAEnviar)} peças</>}
+                      </small>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {plano.produtos.length === 0 && (
               <EstadoVazio
-                Icone={CheckCircle2}
-                titulo="Nada a produzir"
-                descricao="Com este período, nenhum dos anúncios escolhidos precisa de peça nova. Aumente o período para ver o que seria preciso."
+                Icone={plano.naoVinculados?.length > 0 ? Link2 : CheckCircle2}
+                titulo={plano.naoVinculados?.length > 0
+                  ? 'Nada a produzir — falta o vínculo'
+                  : 'Nada a produzir'}
+                descricao={plano.naoVinculados?.length > 0
+                  ? 'Os anúncios escolhidos precisam de envio, mas nenhum deles está ligado a uma referência do '
+                    + 'cadastro. Assim que o SKU for vinculado, o plano passa a dizer quanto produzir de cada cor.'
+                  : 'Com este período, nenhum dos anúncios escolhidos precisa de peça nova. Aumente o período para ver o que seria preciso.'}
               />
             )}
 
@@ -1196,13 +1428,17 @@ function ModalPlano({ alvos, janela, diasAlvoInicial, onFechar }) {
                       {p.anuncios.map((an) => (
                         <span key={an.chave} className="full-plano-chip">
                           <SeloPlataforma chave={chaveDaPlataforma(an.marketplace)} size={12} />
-                          {an.lojaNome} · {formatQtd(an.aEnviar || 0)} pçs
+                          {an.lojaNome} · {formatQtd(an.pecasAEnviar ?? an.aEnviar ?? 0)} pçs
+                          {an.pecasPorUnidade > 1 && <> ({formatQtd(an.aEnviar || 0)} kits)</>}
                         </span>
                       ))}
                     </div>
                   </div>
                   <div className="full-plano-numeros">
-                    <span>enviar <b>{formatQtd(p.totais.aEnviar)}</b></span>
+                    <span>
+                      enviar <b>{formatQtd(p.totais.aEnviar)}</b> pçs
+                      {p.ehKit && <> ({formatQtd(p.totais.unidadesAEnviar)} kits)</>}
+                    </span>
                     <span>da casa <b>{formatQtd(p.totais.daCasa)}</b></span>
                     <span className="destaque">produzir <b>{formatQtd(p.totais.aProduzir)}</b></span>
                     {p.dataLimiteEnvio && (
@@ -1265,8 +1501,8 @@ function ModalPlano({ alvos, janela, diasAlvoInicial, onFechar }) {
                 <div className="card-head">O que este plano não conseguiu medir</div>
                 {plano.ressalvas.semVinculo.length > 0 && (
                   <p>
-                    <b>{plano.ressalvas.semVinculo.length} anúncio(s) sem referência no cadastro</b> ficaram de fora:
-                    sem saber qual peça é, não há o que produzir. Vincule o SKU na aba Anúncios.
+                    <b>{plano.ressalvas.semVinculo.length} anúncio(s) sem referência no cadastro</b> entraram no
+                    total a enviar, mas ficaram de fora da produção — estão listados acima, um a um.
                   </p>
                 )}
                 {plano.ressalvas.semMedida.length > 0 && (
@@ -1725,6 +1961,9 @@ export default function FullPage() {
             rotulo="Peças no Full"
             valor={resumo.pecasNoFull != null ? formatQtd(resumo.pecasNoFull) : '—'}
             explicacao={`Distribuídas em ${formatQtd(resumo.anuncios)} anúncio(s).`
+              + (resumo.temKit && resumo.unidadesNoFull != null
+                ? ` São ${formatQtd(resumo.unidadesNoFull)} unidades de anúncio — há kit no recorte, e o marketplace conta unidades, não peças.`
+                : '')
               + (resumo.emTransito ? ` Outras ${formatQtd(resumo.emTransito)} peças estão a caminho.` : '')}
           />
           <IndicadorDestaque
@@ -1732,7 +1971,9 @@ export default function FullPage() {
             tom={resumo.precisamRepor > 0 ? 'atencao' : undefined}
             rotulo="Precisam de envio"
             valor={formatQtd(resumo.precisamRepor)}
-            explicacao={`Somam ${formatQtd(resumo.pecasAEnviar)} peças para o envio durar ${diasAlvoEfetivo} — `
+            explicacao={`Somam ${formatQtd(resumo.pecasAEnviar)} peças para o envio durar ${diasAlvoEfetivo}`
+              + (resumo.temKit ? ` (${formatQtd(resumo.unidadesAEnviar)} unidades de anúncio)` : '')
+              + ' — '
               + `${resumo.estoqueCasa != null ? `há ${formatQtd(resumo.estoqueCasa)} peças dessas referências no galpão.` : 'o saldo do galpão não pôde ser lido.'}`}
           />
           <IndicadorDestaque
@@ -1844,6 +2085,7 @@ export default function FullPage() {
               <CartaoFull
                 key={a.chave}
                 anuncio={a}
+                hoje={dados?.hoje}
                 marcado={marcados.has(a.chave)}
                 onMarcar={() => alternarMarca(a.chave)}
                 onAbrir={() => setAberto(a)}
@@ -1859,6 +2101,7 @@ export default function FullPage() {
             marcados={marcados}
             onMarcar={alternarMarca}
             onAbrir={setAberto}
+            hoje={dados?.hoje}
           />
           <Paginacao {...tabela} />
         </>

@@ -408,7 +408,141 @@ function montar(unidades, { transito = new Map(), mix = MIX_IGUAL } = {}) {
   ok(a.unidades[0].precisaEnviarUnidade > 0, 'o número por cor é o precisaEnviarUnidade');
 }
 
-console.log('\n7. Utilidades de data');
+{
+  // O caso que apareceu no primeiro uso real: o anúncio tem 362 peças no
+  // Full, mas UMA cor de três está zerada. A primeira versão trazia a data da
+  // pior cor para o topo, e o painel mostrava "21,4 dias de estoque" logo
+  // acima de "as peças têm que estar lá em 21/08" — uma data do mês passado.
+  // Dois números do mesmo bloco falando de coisas diferentes.
+  const a = montar([
+    unidade(1, 'PRETO', { estoque_disponivel: 200 }),
+    unidade(2, 'BRANCO', { estoque_disponivel: 162 }),
+    unidade(3, 'VERDE', { estoque_disponivel: 0 }),
+  ]);
+  igual(a.saldo.disponivel, 362, 'o anúncio tem 362 peças no Full');
+  igual(a.reposicao.urgencia, 'cor_zerada', 'a urgência é "cor zerada", não "zerado no Full"');
+  igual(a.reposicao.coresZeradas.quantidade, 1, 'uma cor zerada');
+  igual(a.reposicao.coresZeradas.total, 3, 'de três');
+  igual(a.reposicao.coresZeradas.parcial, true, 'e sobra saldo nas outras');
+  ok(a.reposicao.coresZeradas.nomes.includes('VERDE M'), 'a cor zerada é nomeada para a tela');
+  // As datas do topo são do ANÚNCIO: 362 peças, 6 pç/dia, mínimo 120.
+  // (362 − 120) / 6 = 40 dias até encostar no mínimo.
+  ok(a.reposicao.dataPrecisaEstarLa > HOJE, 'a data de estar lá é FUTURA, como a cobertura do anúncio indica');
+  ok(a.reposicao.dataLimiteEnvio > HOJE, 'e a data de saída daqui também');
+  perto(a.reposicao.coberturaDias, 362 / 6, 'a cobertura continua sendo a do anúncio inteiro', 0.05);
+}
+{
+  // Todas zeradas: aí sim o anúncio está em ruptura, e não é "cor zerada".
+  const a = montar([unidade(1, 'PRETO'), unidade(2, 'BRANCO'), unidade(3, 'VERDE')]);
+  igual(a.reposicao.urgencia, 'ruptura', 'com tudo zerado, a urgência é ruptura');
+  igual(a.reposicao.coresZeradas.parcial, false, 'e não é um caso de "algumas cores"');
+}
+{
+  // O mínimo do anúncio e a data do anúncio saem do MESMO número: a soma do
+  // mínimo de cada cor. Antes a tela mostrava um mínimo e calculava a data
+  // com outro, por causa do arredondamento por cor.
+  const a = montar([
+    unidade(1, 'PRETO', { estoque_disponivel: 200 }),
+    unidade(2, 'BRANCO', { estoque_disponivel: 200 }),
+    unidade(3, 'VERDE', { estoque_disponivel: 200 }),
+  ]);
+  const somaCores = a.unidades.reduce((s, u) => s + u.estoqueMinimo, 0);
+  igual(a.reposicao.estoqueMinimo, somaCores, 'o mínimo do anúncio é a soma do mínimo de cada cor');
+  // 600 peças, 6/dia, mínimo somado -> (600 - minimo)/6 dias até encostar.
+  const diasEsperados = Math.floor((600 - somaCores) / 6);
+  igual(a.reposicao.dataPrecisaEstarLa, full.somarDias(HOJE, diasEsperados),
+    'e a data é calculada com esse MESMO mínimo');
+}
+
+console.log('\n7. Kit: o Full conta unidades, a fábrica conta peças');
+{
+  // O caso real: "Kit 3 Camisa Gola Polo", 362 unidades no Full. Uma unidade
+  // lá dentro são TRÊS camisas. Antes de 0073, a venda era contada em peças
+  // contra um saldo em kits e a cobertura saía três vezes menor.
+  const kitU = (id, cor) => unidade(id, cor, {
+    estoque_disponivel: 362, pecas_por_unidade: 3, pecas_por_unidade_origem: 'sku',
+    sku_externo: `KIT-3-OG1190-${cor}-M`, estoque_casa: 0,
+  });
+  const a = full.montarAnuncio({
+    unidades: [kitU(1, 'PRETO')],
+    // 107 KITS vendidos em 30 dias -> 3,57 kits/dia.
+    vendas: {
+      janela: 107, total: 107, anterior: null, receita: 16039,
+      unidadesJanela: 107, unidadesTotal: 107, pecasJanela: 321, pecasTotal: 321,
+      primeira: '2026-08-12', ultima: HOJE,
+    },
+    mix: [], params, snapshots: new Map(), pontas: new Map(), transito: new Map(),
+    hoje: HOJE, diasAlvoPedido: 60, janelaDias: 30,
+  });
+  igual(a.ehKit, true, 'o anúncio é reconhecido como kit');
+  igual(a.pecasPorUnidade, 3, 'com 3 peças por unidade, lido do SKU');
+  perto(a.velocidade.porDia, 107 / 30, 'a velocidade é em KITS por dia, não em peças');
+  // 362 kits / 3,567 kits-dia = 101,5 dias.
+  perto(a.reposicao.coberturaDias, 362 / (107 / 30), 'a cobertura compara kits com kits', 0.1);
+  ok(a.reposicao.coberturaDias > 100, 'e dá mais de 100 dias — não os 34 de uma conta com unidades trocadas');
+  // Mínimo: 3,567 x 20 dias = 72 kits. 362 já cobre, então não precisa mandar.
+  igual(a.reposicao.precisaEnviar, 0, 'com 362 kits e 60 dias de alvo, não precisa mandar nada');
+  igual(a.reposicao.urgencia, 'ok', 'e a situação é abastecido');
+}
+{
+  // Agora com o saldo apertado, para conferir a conversão do envio.
+  const a = full.montarAnuncio({
+    unidades: [unidade(1, 'PRETO', {
+      estoque_disponivel: 0, pecas_por_unidade: 3, sku_externo: 'KIT-3-OG1190-PRETO-M', estoque_casa: 0,
+    })],
+    vendas: {
+      janela: 60, total: 60, anterior: null, receita: 9000,
+      unidadesJanela: 60, unidadesTotal: 60, pecasJanela: 180, pecasTotal: 180,
+      primeira: '2026-06-01', ultima: HOJE,
+    },
+    mix: [], params, snapshots: new Map(), pontas: new Map(), transito: new Map(),
+    hoje: HOJE, diasAlvoPedido: 60, janelaDias: 30,
+  });
+  // 2 kits/dia x 60 dias + mínimo (2 x 20 = 40) = 160 kits.
+  igual(a.reposicao.precisaEnviar, 160, 'manda 160 KITS');
+  igual(a.unidades[0].precisaEnviarUnidade * a.unidades[0].pecasPorUnidade, 480,
+    'que a produção lê como 480 peças');
+}
+
+console.log('\n8. A prateleira é uma só');
+{
+  // O defeito: quando o item do Full não tem variante casada (todo kit caía
+  // nisso), o saldo da casa vinha da REFERÊNCIA INTEIRA e era repetido em
+  // cada linha. Com 3 cores prometendo as mesmas 200 peças, o "a produzir"
+  // caía para zero e a fábrica não cortava nada.
+  //
+  // A chave de dedupe agora vem da UNIDADE: sem variante, ela é o PRODUTO.
+  const a = montar([
+    unidade(1, 'PRETO', { variante_id: null, produto_id: 7, estoque_casa: 200, estoque_casa_origem: 'referencia' }),
+    unidade(2, 'BRANCO', { variante_id: null, produto_id: 7, estoque_casa: 200, estoque_casa_origem: 'referencia' }),
+    unidade(3, 'VERDE', { variante_id: null, produto_id: 7, estoque_casa: 200, estoque_casa_origem: 'referencia' }),
+  ]);
+  const chaves = new Set(a.unidades.map((u) => u.estoqueCasaChave));
+  igual(chaves.size, 1, 'as três cores compartilham UMA chave de saldo da casa');
+  igual([...chaves][0], 'p7', 'e a chave é a referência, não a cor');
+}
+{
+  // Com variante casada, cada cor tem a sua prateleira e a chave é própria.
+  const a = montar([
+    unidade(1, 'PRETO', { estoque_casa: 40, estoque_casa_origem: 'variante' }),
+    unidade(2, 'BRANCO', { estoque_casa: 30, estoque_casa_origem: 'variante' }),
+  ]);
+  const chaves = a.unidades.map((u) => u.estoqueCasaChave);
+  igual(new Set(chaves).size, 2, 'cada cor com variante tem chave própria');
+  igual(chaves[0], 'v1', 'e a chave é a variante');
+}
+{
+  // Cada cor pode apontar uma referência própria, desde que a varredura
+  // resolve o SKU por variação.
+  const a = montar([
+    unidade(1, 'PRETO', { produto_id: 7 }),
+    unidade(2, 'BRANCO', { produto_id: 9 }),
+  ]);
+  igual(a.unidades[0].produtoId, 7, 'a variação carrega a referência dela');
+  igual(a.unidades[1].produtoId, 9, 'e a outra carrega a sua');
+}
+
+console.log('\n9. Utilidades de data');
 igual(full.diasEntre('2026-09-11', '2026-10-01'), 20, 'diasEntre conta 20 dias');
 igual(full.somarDias('2026-09-11', -10), '2026-09-01', 'somarDias anda para trás');
 igual(full.arredondarParaMultiplo(0, 24), 0, 'zero não vira uma caixa cheia');

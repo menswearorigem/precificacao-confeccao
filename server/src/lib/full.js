@@ -238,7 +238,11 @@ function medirVelocidade({ vendas, diasNoFull, janelaDias, hoje }) {
 // ---------------------------------------------------------------------------
 // A conta de reposição de um anúncio
 // ---------------------------------------------------------------------------
-function calcularReposicao({ saldo, velocidade, params, diasAlvo, minimoManual, hoje }) {
+// `minimoEfetivo` existe para o nível do ANÚNCIO: lá o mínimo é a soma do
+// mínimo de cada cor (cada uma arredondada para cima), e não o cálculo feito
+// sobre a velocidade somada — os dois diferem por alguns itens. Sem este
+// parâmetro, a tela mostrava um mínimo e as datas eram calculadas com outro.
+function calcularReposicao({ saldo, velocidade, params, diasAlvo, minimoManual, minimoEfetivo, hoje }) {
   const disponivel = saldo.disponivel;
   const emTransito = saldo.emTransito || 0;
   const porDia = velocidade.porDia;
@@ -250,7 +254,9 @@ function calcularReposicao({ saldo, velocidade, params, diasAlvo, minimoManual, 
   // para ficar vendável. Sem velocidade medida não há mínimo calculável — e
   // um mínimo chutado é pior que nenhum.
   const minimoCalculado = porDia != null ? Math.ceil(porDia * diasDeMinimo) : null;
-  const minimo = minimoManual != null ? minimoManual : minimoCalculado;
+  const minimo = minimoEfetivo != null
+    ? minimoEfetivo
+    : (minimoManual != null ? minimoManual : minimoCalculado);
 
   const cobertura = porDia != null && disponivel != null ? disponivel / porDia : null;
   const dataRuptura = cobertura != null ? somarDias(hoje, Math.floor(cobertura)) : null;
@@ -310,7 +316,7 @@ function calcularReposicao({ saldo, velocidade, params, diasAlvo, minimoManual, 
 // existe se a plataforma devolveu visitas, tendência só existe se as duas
 // janelas têm venda, e dias sem estoque só contam os dias EFETIVAMENTE
 // retratados (a tela mostra o denominador junto).
-function medirDesempenho({ vendas, anuncio, snapshots, diasNoFull, velocidadeMedida }) {
+function medirDesempenho({ vendas, anuncio, snapshots, diasNoFull, velocidadeMedida, pecasPorUnidade = 1 }) {
   const janela = numero(vendas?.janela) || 0;
   const anterior = numero(vendas?.anterior);
   const visitas = numero(anuncio?.visitas);
@@ -329,8 +335,14 @@ function medirDesempenho({ vendas, anuncio, snapshots, diasNoFull, velocidadeMed
     // número ao lado do rótulo da base — antes ela escrevia o rótulo da base
     // geral com o número da janela recente ao lado, e as duas leituras não
     // batiam.
+    // O número da base medida, na moeda do Full: unidades do anúncio.
     vendasDaBase: numero(velocidadeMedida?.pecas),
     baseDias: velocidadeMedida?.dias ?? null,
+    // E o espelho em peças, derivado do MESMO câmbio que o resto da tela usa.
+    pecasJanela: numero(vendas?.janela) != null && pecasPorUnidade
+      ? Number(vendas.janela) * pecasPorUnidade : null,
+    pecasTotal: numero(vendas?.total) != null && pecasPorUnidade
+      ? Number(vendas.total) * pecasPorUnidade : null,
     vendasTotalAnuncio: numero(vendas?.total),
     receitaJanela: numero(vendas?.receita),
     // Ticket médio é receita ÷ VENDAS (linhas), não ÷ peças: num anúncio de
@@ -392,6 +404,7 @@ async function carregarItens(db, { integracaoIds, marketplaces, busca, incluirSa
             fi.no_full, fi.desde, fi.visto_em, fi.saiu_em,
             fi.estoque_disponivel, fi.estoque_indisponivel, fi.estoque_total, fi.estoque_em_transito,
             fi.estoque_minimo_manual, fi.dias_cobertura_manual, fi.ignorar_reposicao,
+            fi.pecas_por_unidade, fi.pecas_por_unidade_origem, fi.vinculo_manual,
             fi.status_full, fi.status_externo,
             a.titulo, a.preco, a.status AS status_anuncio, a.url, a.foto_url,
             a.visitas, a.vendas_total AS vendas_plataforma,
@@ -459,51 +472,30 @@ async function carregarVendas(db, chaves, { janelaDias }) {
   const { rows } = await db.query(
     `SELECT pv.origem_integracao_id AS integracao_id,
             pi.anuncio_id_marketplace AS anuncio_id_externo,
-            -- PEÇAS: é o que se compara com saldo e é o que se manda produzir.
-            SUM(pi.quantidade * kp.fator)
-              FILTER (WHERE pv.data_pedido > ${HOJE_SQL} - $3::int) AS janela,
-            SUM(pi.quantidade * kp.fator) FILTER (
+            -- TUDO AQUI É EM UNIDADES DO ANÚNCIO — a moeda do lado do Full.
+            --
+            -- O centro de distribuição do marketplace conta unidades do
+            -- anúncio: num "Kit 3", uma unidade lá dentro são três camisas.
+            -- Velocidade, cobertura, mínimo e quanto mandar são todos desse
+            -- lado. Medir a venda em peças contra um saldo em kits dividia a
+            -- cobertura por três, calada (ver migration 0073).
+            --
+            -- A conversão para PEÇAS não acontece aqui: ela é feita uma vez
+            -- só, com a coluna full_itens.pecas_por_unidade. Ter duas fontes
+            -- para o mesmo câmbio (uma pela composição do kit, outra pelo SKU) era
+            -- garantia de as duas divergirem — e de a tela afirmar "kit de 3"
+            -- ao lado de "500 kits · 500 peças".
+            SUM(pi.quantidade) FILTER (WHERE pv.data_pedido > ${HOJE_SQL} - $3::int) AS janela,
+            SUM(pi.quantidade) FILTER (
               WHERE pv.data_pedido > ${HOJE_SQL} - ($3::int * 2)
                 AND pv.data_pedido <= ${HOJE_SQL} - $3::int) AS anterior,
-            SUM(pi.quantidade * kp.fator) AS total,
-            SUM(pi.quantidade * kp.fator)
-              FILTER (WHERE pv.data_pedido > ${HOJE_SQL} - 365) AS teto_geral,
-            -- UNIDADES VENDIDAS: a linha do pedido, sem multiplicar pelo kit.
-            -- São duas medidas diferentes e misturá-las estraga dois números:
-            -- conversão (venda ÷ visitas) e ticket médio (receita ÷ venda)
-            -- precisam de unidades, não de peças — senão um "KIT 3" com 10
-            -- vendas e 100 visitas mostra 30% de conversão e um ticket de um
-            -- terço do preço.
-            SUM(pi.quantidade) AS unidades_total,
-            SUM(pi.quantidade) FILTER (WHERE pv.data_pedido > ${HOJE_SQL} - $3::int) AS unidades_janela,
+            SUM(pi.quantidade) AS total,
+            SUM(pi.quantidade) FILTER (WHERE pv.data_pedido > ${HOJE_SQL} - 365) AS teto_geral,
             SUM(pi.total) FILTER (WHERE pv.data_pedido > ${HOJE_SQL} - $3::int) AS receita,
             MIN(pv.data_pedido) AS primeira,
             MAX(pv.data_pedido) AS ultima
        FROM pedido_itens pi
        JOIN pedidos_venda pv ON pv.id = pi.pedido_id
-       -- O anúncio, para saber QUAL referência este anúncio vende. É o que
-       -- permite contar, dentro de um kit de várias referências, só as peças
-       -- da referência deste anúncio.
-       LEFT JOIN anuncios_marketplace a
-              ON a.origem_integracao_id = pv.origem_integracao_id
-             AND a.anuncio_id_externo = pi.anuncio_id_marketplace
-       LEFT JOIN LATERAL (
-         -- Venda em KIT conta as PEÇAS do kit, não a linha do pedido — é o
-         -- mesmo defeito que lib/vendasEmPecas.js documenta (o caso OG1620):
-         -- um "KIT-3" vendido uma vez são 3 peças saindo do estoque, e sem
-         -- isto a velocidade sai 3x menor e a ordem de produção nasce curta.
-         --
-         -- Mas conta só as peças DESTA referência: um kit "camiseta +
-         -- bermuda + boné" vendido pelo anúncio da camiseta são 3 peças
-         -- saindo do estoque e UMA camiseta. Multiplicar pelo kit inteiro
-         -- mandaria cortar o triplo de camiseta.
-         SELECT COALESCE(SUM(ki.quantidade), 1)::numeric AS fator
-           FROM kits_manuais_itens ki
-          WHERE pi.kit_id IS NOT NULL
-            AND ki.kit_id = pi.kit_id
-            AND a.produto_id IS NOT NULL
-            AND ki.produto_id = a.produto_id
-       ) kp ON TRUE
       WHERE pi.anuncio_id_marketplace = ANY($2::text[])
         AND pv.origem_integracao_id = ANY($1::int[])
         AND pv.situacao <> 'cancelado' AND pv.cancelado_em IS NULL
@@ -522,8 +514,8 @@ async function carregarVendas(db, chaves, { janelaDias }) {
       receita: numero(r.receita),
       total: numero(r.total) || 0,
       tetoGeral: numero(r.teto_geral),
-      unidadesJanela: numero(r.unidades_janela) || 0,
-      unidadesTotal: numero(r.unidades_total) || 0,
+      unidadesJanela: numero(r.janela) || 0,
+      unidadesTotal: numero(r.total) || 0,
       primeira: r.primeira,
       ultima: r.ultima,
     });
@@ -661,6 +653,42 @@ async function carregarEnvios(db, itemIds, { limite = 60 } = {}) {
   }));
 }
 
+
+// O casamento do item do Full com a VARIANTE do cadastro.
+//
+// Mora aqui, e não copiado em dois lugares, porque a varredura e a tela de
+// vínculo precisam casar exatamente do mesmo jeito — duas cópias divergiriam
+// na primeira correção.
+//
+// O detalhe que faltava: o SKU de KIT. "KIT-3-OG1190-PRETO-M" normaliza para
+// KIT3OG1190PRETOM e nunca batia com referência||cor||tamanho, então TODO
+// item de kit ficava sem variante para sempre — e, sem variante, o saldo do
+// galpão caía para o da referência inteira e era prometido de novo a cada
+// cor, fazendo o plano concluir que não havia nada a produzir.
+//
+// O prefixo KIT<n> é retirado antes de comparar. Isso NÃO é casar por
+// descrição (REGRA 2): cor e tamanho aqui saem do próprio SKU, que é campo
+// estruturado, com o padrão que a casa usa.
+const SQL_CASAR_VARIANTE = `
+  UPDATE full_itens fi
+     SET variante_id = ev.id, atualizado_em = now()
+    FROM estoque_variantes ev
+    JOIN produtos p ON p.id = ev.produto_id
+   WHERE fi.id = ANY($1::int[])
+     AND fi.produto_id IS NOT NULL
+     AND ev.produto_id = fi.produto_id
+     AND fi.sku_externo IS NOT NULL
+     AND regexp_replace(
+           upper(regexp_replace(fi.sku_externo, '[^A-Za-z0-9]', '', 'g')),
+           '^KIT[0-9]+', '')
+         = upper(regexp_replace(p.referencia || ev.cor || ev.tamanho, '[^A-Za-z0-9]', '', 'g'))
+     AND fi.variante_id IS DISTINCT FROM ev.id`;
+
+async function casarVariantes(db, itemIds) {
+  if (!itemIds || itemIds.length === 0) return 0;
+  const { rowCount } = await db.query(SQL_CASAR_VARIANTE, [itemIds]);
+  return rowCount;
+}
 
 // Peças JÁ DESPACHADAS e ainda não confirmadas lá dentro, segundo o nosso
 // registro — não o da plataforma.
@@ -905,12 +933,21 @@ function montarAnuncio({ unidades, vendas, mix, params, snapshots, pontas, trans
       cor: u.cor,
       tamanho: u.tamanho,
       varianteId: u.variante_id,
+      // A referência DESTA variação. Desde que a varredura passou a resolver
+      // o SKU por variação, um anúncio pode ter variações de referências
+      // diferentes — e o plano precisa agrupar por esta, não pela do anúncio.
+      produtoId: u.produto_id ?? null,
+      vinculoManual: Boolean(u.vinculo_manual),
       estoqueCasa: u.estoque_casa != null ? Number(u.estoque_casa) : null,
       estoqueCasaReservado: u.estoque_casa_reservado != null ? Number(u.estoque_casa_reservado) : null,
       // 'variante' = saldo da cor/tamanho exatos. 'referencia' = saldo da
       // referência inteira, porque o Full desta loja é lido no nível do
       // anúncio (Shopee) e não há variante para casar. A tela diz qual é.
       estoqueCasaOrigem: u.estoque_casa_origem || null,
+      // O câmbio entre as duas moedas: quantas PEÇAS da nossa referência
+      // cabem em UMA unidade do anúncio (3 num kit de 3, 1 no resto).
+      pecasPorUnidade: inteiro(u.pecas_por_unidade) ?? 1,
+      pecasPorUnidadeOrigem: u.pecas_por_unidade_origem || null,
       // A chave que impede a mesma peça física de ser contada (ou prometida)
       // duas vezes quando alimenta dois anúncios.
       estoqueCasaChave: u.variante_id != null
@@ -991,18 +1028,48 @@ function montarAnuncio({ unidades, vendas, mix, params, snapshots, pontas, trans
     // mão; no caso misto o número existe, mas não é um valor que alguém
     // digitou, e a tela não pode dizer que foi.
     minimoManual: todosManuais ? somaOuNulo(minimosEfetivos) : null,
+    // E a conta usa a soma do mínimo de cada cor — o MESMO número que a tela
+    // mostra —, para a data e o mínimo do topo virem do mesmo lugar.
+    minimoEfetivo: somaOuNulo(minimosEfetivos),
     hoje,
   });
 
   // A data que manda é a da variação que quebra PRIMEIRO: um anúncio com a
   // cor campeã zerada já está perdendo venda, mesmo com as outras cheias.
-  const datasLimite = detalhes.map((d) => d.dataLimiteEnvio).filter(Boolean).sort();
-  const datasNaPrateleira = detalhes.map((d) => d.dataPrecisaEstarLa).filter(Boolean).sort();
-  const urgenciaPeso = { ruptura: 5, atrasado: 4, urgente: 3, planejar: 2, ok: 1, sem_medida: 0 };
-  const urgencia = detalhes.reduce(
-    (pior, d) => (urgenciaPeso[d.urgencia] > urgenciaPeso[pior] ? d.urgencia : pior),
-    reposicao.urgencia
-  );
+  // ---- As datas do anúncio são do ANÚNCIO ----------------------------------
+  //
+  // A primeira versão trazia para o topo a data da variação que quebra
+  // primeiro, com o argumento de que um anúncio com a cor campeã zerada já
+  // está perdendo venda. O argumento continua verdadeiro, mas o efeito na
+  // tela era incoerente e assustou quem leu: o painel mostrava "21,4 dias de
+  // estoque" e, dois centímetros abaixo, "as peças têm que estar lá em
+  // 21/08" — uma data do mês passado —, porque uma cor de doze já estava
+  // zerada. Dois números do mesmo bloco falando de coisas diferentes sem
+  // dizer isso.
+  //
+  // Agora o bloco do topo é todo do MESMO nível: cobertura, mínimo e datas do
+  // anúncio inteiro. A cor zerada não sumiu — virou um aviso próprio, com
+  // nome e contagem, que aponta para a aba Cores e tamanhos.
+  const comSaldoLido = detalhes.filter((d) => d.disponivel != null);
+  const zeradas = comSaldoLido.filter((d) => Number(d.disponivel) === 0);
+  const coresZeradas = {
+    quantidade: zeradas.length,
+    total: comSaldoLido.length,
+    // Só é "algumas cores zeradas" quando SOBRA alguma: com todas zeradas o
+    // anúncio inteiro está em ruptura, e quem diz isso é a urgência.
+    parcial: zeradas.length > 0 && zeradas.length < comSaldoLido.length,
+    nomes: zeradas.map((d) => [d.cor, d.tamanho].filter(Boolean).join(' ')).filter(Boolean).slice(0, 6),
+  };
+
+  const urgenciaPeso = {
+    ruptura: 6, atrasado: 5, urgente: 4, cor_zerada: 3, planejar: 2, ok: 1, sem_medida: 0,
+  };
+  // A urgência é a do anúncio. A única coisa que a variação acrescenta é o
+  // estado `cor_zerada`, e ele nunca REBAIXA o que o anúncio já dizia.
+  const urgencia = coresZeradas.parcial
+      && urgenciaPeso[reposicao.urgencia] < urgenciaPeso.cor_zerada
+    ? 'cor_zerada'
+    : reposicao.urgencia;
 
   const diasRetratados = Math.max(0, ...unidades.map((u) => snapshots.get(u.id)?.dias || 0));
   const diasZerado = Math.max(0, ...unidades.map((u) => snapshots.get(u.id)?.diasZerado || 0));
@@ -1016,6 +1083,7 @@ function montarAnuncio({ unidades, vendas, mix, params, snapshots, pontas, trans
     snapshots: { dias: diasRetratados, diasZerado, hoje },
     diasNoFull,
     velocidadeMedida: velocidade,
+    pecasPorUnidade: Math.max(...detalhes.map((d) => d.pecasPorUnidade || 1), 1),
   });
 
   const pontasDoAnuncio = unidades
@@ -1056,6 +1124,11 @@ function montarAnuncio({ unidades, vendas, mix, params, snapshots, pontas, trans
     saldo,
     estoqueCasa,
     estoqueCasaReservado,
+    // Quantas peças tem uma unidade deste anúncio. Quando é mais de 1 — um
+    // kit — a tela escreve as DUAS medidas lado a lado, porque "mandar 998"
+    // significa coisas muito diferentes para a expedição e para o corte.
+    pecasPorUnidade: Math.max(...detalhes.map((d) => d.pecasPorUnidade || 1), 1),
+    ehKit: detalhes.some((d) => (d.pecasPorUnidade || 1) > 1),
     // A tela precisa disto para não afirmar um total que não mediu.
     leitura: {
       unidades: unidades.length,
@@ -1068,17 +1141,13 @@ function montarAnuncio({ unidades, vendas, mix, params, snapshots, pontas, trans
     ignorado,
     reposicao: {
       ...reposicao,
-      // O mínimo mostrado é sempre a soma do efetivo por cor, manual ou não.
-      estoqueMinimo: somaOuNulo(minimosEfetivos) ?? reposicao.estoqueMinimo,
       estoqueMinimoParcial: !todosManuais
         && unidades.some((u) => inteiro(u.estoque_minimo_manual) != null),
+      urgencia: ignorado ? 'ignorado' : urgencia,
+      coresZeradas,
       // A soma das cores vence a conta do anúncio inteiro: é ela que a
       // expedição vai separar, e as duas precisam ser o MESMO número na tela.
       precisaEnviar: totalAEnviar != null ? totalAEnviar : reposicao.precisaEnviar,
-      dataLimiteEnvio: datasLimite[0] || reposicao.dataLimiteEnvio,
-      dataPrecisaEstarLa: datasNaPrateleira[0] || reposicao.dataPrecisaEstarLa,
-      diasAteLimite: datasLimite[0] ? diasEntre(hoje, datasLimite[0]) : reposicao.diasAteLimite,
-      urgencia: ignorado ? 'ignorado' : urgencia,
     },
     desempenho: {
       ...desempenho,
@@ -1116,5 +1185,7 @@ module.exports = {
   carregarEnvios,
   carregarEmTransitoRegistrado,
   carregarPontasDeEnvio,
+  casarVariantes,
+  SQL_CASAR_VARIANTE,
   distribuirInteiros,
 };

@@ -22,8 +22,10 @@
 const pool = require('../db/pool');
 const mercadoLivre = require('./marketplaces/mercadoLivre');
 const shopee = require('./marketplaces/shopee');
-const { garantirTokenValido } = require('./marketplaceSync');
+const { garantirTokenValido, partirSkuKit } = require('./marketplaceSync');
+const { montarIndiceReferencias, resolverProdutoPeloSku } = require('./anunciosSync');
 const { hojeEmBrasilia, diaSqlBrasilia } = require('./dataBrasil');
+const { casarVariantes } = require('./full');
 
 // O "hoje" de toda gravação desta varredura, em SQL e no fuso da empresa.
 //
@@ -123,7 +125,7 @@ async function unidadesComSaldo(integracao, anuncio) {
 // ---------------------------------------------------------------------------
 // Gravação do item e do retrato do dia
 // ---------------------------------------------------------------------------
-async function gravarItem(client, integracao, anuncio, unidade) {
+async function gravarItem(client, integracao, anuncio, unidade, indiceReferencias) {
   const saldo = unidade.saldo;
   // `statusFullPorSaldo` mora na biblioteca do Mercado Livre mas é função
   // pura sobre o saldo já normalizado — vale para as duas plataformas, e
@@ -132,22 +134,65 @@ async function gravarItem(client, integracao, anuncio, unidade) {
     ? mercadoLivre.statusFullPorSaldo(saldo)
     : 'desconhecido';
 
+  // A REFERÊNCIA do item no Full.
+  //
+  // Herdar o vínculo do anúncio não basta. No Mercado Livre o SKU costuma
+  // morar na VARIAÇÃO, não no anúncio — e a varredura de Anúncios resolve o
+  // vínculo olhando o anúncio primeiro. Quando o anúncio não tem SKU no nível
+  // dele (o caso dos kits: o anúncio é "Kit 3 Camisa Polo" e o SKU só existe
+  // por cor), o anúncio fica sem referência e, até aqui, o item do Full
+  // ficava junto — sem referência não há saldo da casa, não há plano de
+  // produção e não há o que produzir.
+  //
+  // Então o item do Full tenta de novo, com o SKU DELE. O casamento é o
+  // mesmo: SKU exato, pelos dois padrões da casa ("REF-COR-TAM" e
+  // "KIT-N-REF-COR-TAM"), nunca por descrição (REGRA 2).
+  // Vínculo definido à mão VENCE a varredura (migration 0073). Sem esta
+  // leitura, a passada seguinte — de 3 em 3 horas — desfaria em silêncio a
+  // correção de quem arrumou uma referência errada, ou a remoção deliberada
+  // de um vínculo.
+  const { rows: anteriores } = await client.query(
+    `SELECT produto_id, vinculo_manual FROM full_itens
+      WHERE origem_integracao_id = $1 AND anuncio_id_externo = $2 AND variacao_id_externa = $3`,
+    [integracao.id, anuncio.anuncio_id_externo, unidade.variacaoIdExterna || '']
+  );
+  const manual = anteriores[0]?.vinculo_manual === true;
+
+  let produtoId = manual ? (anteriores[0]?.produto_id ?? null) : (anuncio.produto_id ?? null);
+  if (!manual && produtoId == null && indiceReferencias && unidade.skuExterno) {
+    produtoId = resolverProdutoPeloSku(indiceReferencias, {
+      skuExterno: unidade.skuExterno,
+      variacoes: [],
+    }).produtoId;
+  }
+
+  // PEÇAS POR UNIDADE DO ANÚNCIO (ver migration 0073).
+  //
+  // O Full conta unidades do anúncio; a fábrica corta peças. Num "KIT-3-..."
+  // uma unidade no centro de distribuição são três camisas. O padrão de SKU
+  // da casa carrega esse número, e é dele que ele sai — nunca do título do
+  // anúncio (REGRA 2: "Kit 3" no texto não é dado, é descrição).
+  const kit = partirSkuKit(unidade.skuExterno);
+  const pecasPorUnidade = kit?.quantidade > 0 ? kit.quantidade : null;
+
   const { rows } = await client.query(
     `INSERT INTO full_itens (
         origem_integracao_id, marketplace, anuncio_id, anuncio_id_externo,
         variacao_id_externa, inventory_id, sku_externo, produto_id,
         no_full, desde, visto_em, saiu_em,
         estoque_disponivel, estoque_indisponivel, estoque_total, estoque_em_transito,
-        status_full, status_externo, detalhe, atualizado_em)
+        status_full, status_externo, detalhe,
+        pecas_por_unidade, pecas_por_unidade_origem, atualizado_em)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
              TRUE, ${HOJE_SQL}, ${HOJE_SQL}, NULL,
-             $9, $10, $11, $12, $13, $14, $15, now())
+             $9, $10, $11, $12, $13, $14, $15, $16, $17, now())
      ON CONFLICT (origem_integracao_id, anuncio_id_externo, variacao_id_externa) DO UPDATE SET
        anuncio_id = EXCLUDED.anuncio_id,
        marketplace = EXCLUDED.marketplace,
        inventory_id = COALESCE(EXCLUDED.inventory_id, full_itens.inventory_id),
        sku_externo = COALESCE(EXCLUDED.sku_externo, full_itens.sku_externo),
-       produto_id = EXCLUDED.produto_id,
+       -- O vínculo manual sobrevive à varredura.
+       produto_id = CASE WHEN full_itens.vinculo_manual THEN full_itens.produto_id ELSE EXCLUDED.produto_id END,
        no_full = TRUE,
        -- A data de entrada NUNCA é reescrita: um item que saiu do Full e
        -- voltou continua tendo a primeira data como origem da contagem. Se
@@ -163,21 +208,24 @@ async function gravarItem(client, integracao, anuncio, unidade) {
        status_full = EXCLUDED.status_full,
        status_externo = EXCLUDED.status_externo,
        detalhe = EXCLUDED.detalhe,
+       pecas_por_unidade = EXCLUDED.pecas_por_unidade,
+       pecas_por_unidade_origem = EXCLUDED.pecas_por_unidade_origem,
        atualizado_em = now()
      RETURNING id`,
     [
       integracao.id, integracao.marketplace, anuncio.id, anuncio.anuncio_id_externo,
-      unidade.variacaoIdExterna || '', unidade.inventoryId, unidade.skuExterno, anuncio.produto_id,
+      unidade.variacaoIdExterna || '', unidade.inventoryId, unidade.skuExterno, produtoId,
       saldo?.disponivel ?? null, saldo?.indisponivel ?? null,
       saldo?.total ?? null, saldo?.emTransito ?? null,
       status, unidade.erro || null,
       JSON.stringify(saldo?.detalhe ?? null),
+      pecasPorUnidade, pecasPorUnidade != null ? 'sku' : null,
     ]
   );
   const fullItemId = rows[0].id;
 
-  // Vínculo com a variante do cadastro. Pelo mesmo caminho que a aba de
-  // Anúncios já resolveu (SKU exato) — nunca por cor/tamanho parecidos.
+  // Vínculo com a variante do cadastro, por SKU exato — agora também para o
+  // SKU de KIT, que antes nunca casava (ver casarVariantes em lib/full.js).
   await client.query(
     `UPDATE full_itens fi
         SET variante_id = av.variante_id
@@ -189,6 +237,7 @@ async function gravarItem(client, integracao, anuncio, unidade) {
         AND fi.variante_id IS DISTINCT FROM av.variante_id`,
     [fullItemId, anuncio.id, unidade.variacaoIdExterna || '']
   );
+  await casarVariantes(client, [fullItemId]);
 
   // O retrato do dia. Uma leitura a mais no mesmo dia ATUALIZA a linha em vez
   // de criar outra — o histórico é por dia, não por clique.
@@ -489,9 +538,14 @@ async function sincronizarFullDaIntegracao(integracaoId) {
     try {
       await client.query('BEGIN');
 
+      // O índice referência → produto, montado UMA vez por varredura (o mesmo
+      // que a aba de Anúncios usa). Referência ambígua fica de fora dele, para
+      // não vincular no escuro.
+      const indiceReferencias = await montarIndiceReferencias(client);
+
       const vistos = [];
       for (const { anuncio, unidade } of lidos) {
-        const id = await gravarItem(client, integracao, anuncio, unidade);
+        const id = await gravarItem(client, integracao, anuncio, unidade, indiceReferencias);
         vistos.push(id);
       }
 

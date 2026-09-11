@@ -8022,3 +8022,68 @@ table.grade-matriz { width: auto; min-width: 0; }
   width: 100%; font-size: 10px; font-weight: 600; color: var(--warning);
 }
 .full-periodo-padrao { font-weight: 500; color: var(--ink-faint); font-size: 10.5px; }
+
+/* ---- ajustes de 11/09/2026, depois do primeiro uso real ---- */
+
+/* Prazo vencido. A tela mostrava "as peças têm que estar lá em 21/08" com a
+   data no mês passado: uma data de prazo que já passou não é um prazo, é um
+   atraso, e tem de ser lida como atraso. */
+.full-prazo-vencido { color: var(--danger); font-size: 0.78em; font-weight: 700; }
+
+/* Vincular a referência sem sair do painel. */
+.full-vincular {
+  border: 1px dashed var(--warning-ring);
+  background: color-mix(in srgb, var(--warning-bg) 55%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 11px 13px; margin-bottom: 16px;
+}
+.full-vincular-topo { display: flex; gap: 9px; align-items: flex-start; }
+.full-vincular-topo svg { flex: 0 0 auto; margin-top: 2px; color: var(--warning); }
+.full-vincular-topo b { font-size: 12.5px; display: block; }
+.full-vincular-topo small { display: block; font-size: 11px; color: var(--ink-soft); line-height: 1.5; margin-top: 2px; }
+.full-vincular code {
+  font-family: var(--font-mono); font-size: 10.5px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px;
+}
+.full-vincular-busca {
+  display: flex; align-items: center; gap: 7px; margin-top: 10px;
+  background: var(--field-bg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 5px 9px;
+}
+.full-vincular-busca svg { color: var(--ink-faint); flex: 0 0 auto; }
+.full-vincular-busca input { border: 0; background: transparent; flex: 1; font: inherit; font-size: 12px; outline: none; color: var(--ink); }
+.full-vincular-lista { list-style: none; margin: 8px 0 0; padding: 0; max-height: 190px; overflow-y: auto; }
+.full-vincular-lista li + li { border-top: 1px solid var(--border-soft); }
+.full-vincular-lista button {
+  width: 100%; text-align: left; background: transparent; border: 0; cursor: pointer;
+  padding: 7px 8px; border-radius: var(--radius-sm); font: inherit;
+  display: flex; gap: 10px; align-items: baseline;
+}
+.full-vincular-lista button:hover { background: var(--row-hover); }
+.full-vincular-lista b { font-family: var(--font-mono); font-size: 12px; color: var(--ink); }
+.full-vincular-lista span { font-size: 11px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Anúncios que travam o plano por falta de vínculo. */
+.full-plano-travados {
+  border: 1px dashed var(--warning-ring);
+  background: color-mix(in srgb, var(--warning-bg) 45%, transparent);
+  border-radius: var(--radius); padding: 12px; margin-bottom: 14px;
+}
+.full-plano-travado {
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  padding: 8px 0; border-top: 1px solid var(--border-soft);
+}
+.full-plano-travado-corpo { flex: 1; min-width: 160px; }
+.full-plano-travado-corpo b { font-size: 12px; display: block; }
+.full-plano-travado-corpo small { font-size: 10.5px; color: var(--ink-soft); }
+.full-plano-travado-num { text-align: right; }
+.full-plano-travado-num b {
+  font-family: var(--font-mono); font-size: 17px; font-weight: 700; color: var(--ink); display: block;
+}
+.full-plano-travado-num small { font-size: 10px; color: var(--ink-faint); }
+/* Aviso informativo (não é atenção): explica uma unidade de medida, não
+   avisa de um problema. */
+.full-aviso-info {
+  background: var(--info-bg); color: var(--info); border-color: var(--info-ring);
+}
+.full-card-enviar small { font-family: var(--font-mono); font-size: 10px; color: var(--ink-soft); font-weight: 500; }
