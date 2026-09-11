@@ -65,7 +65,7 @@ export default function WikImportarProdutosCard() {
     setConfirmando(true);
     setErro('');
     try {
-      const data = await api.post('/wik/produtos/confirmar', { criar: preview.criar });
+      const data = await api.post('/wik/produtos/confirmar', { criar: preview.criar, enriquecer: preview.enriquecer || [] });
       setResultado(data);
       setPreview(null);
     } catch (err) {
@@ -106,6 +106,13 @@ export default function WikImportarProdutosCard() {
         aqui (não duplica). Além disso, roda sozinho a cada 6 horas pra pegar produtos recém-lançados
         no Wik sem precisar clicar em nada — os botões abaixo são só pra conferir ou forçar agora.
       </p>
+      <p className="page-sub" style={{ marginTop: -6, marginBottom: 14 }}>
+        Também <strong>completa os produtos que já existem aqui</strong> com o que o Wik tem a mais, sem
+        sobrescrever nada seu: preenche marca/categoria só onde estiver em branco, vincula o Id do Wik
+        (usado na Ficha de Custo) e acrescenta variantes de grade (cor × tamanho) que ainda não existem.
+        O <strong>saldo das variantes que já existem não é tocado</strong> — esse número é a sua contagem
+        física do galpão, não a do Wik.
+      </p>
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <button className="btn btn-primary" onClick={atualizarAgora} disabled={sincronizandoAgora || loading}>
@@ -132,8 +139,19 @@ export default function WikImportarProdutosCard() {
           </div>
           <p>
             {resultado.produtosCriados} produto(s) novo(s) criado(s), {resultado.variantesCriadas} variante(s) de estoque criada(s).
-            {resultado.ignorados.length > 0 && ` ${resultado.ignorados.length} referência(s) já existiam e foram ignoradas.`}
+            {resultado.ignorados && resultado.ignorados.length > 0 && ` ${resultado.ignorados.length} referência(s) já existiam.`}
           </p>
+          {resultado.enriquecimento && (
+            resultado.enriquecimento.produtosCompletados > 0 ? (
+              <p style={{ marginTop: 6 }}>
+                Nos produtos que já existiam: {resultado.enriquecimento.classificacoesPreenchidas} com marca/categoria
+                preenchida, {resultado.enriquecimento.wikProdIdsVinculados} vinculado(s) ao Id do Wik e{' '}
+                {resultado.enriquecimento.variantesCriadas} variante(s) de grade nova(s) acrescentada(s).
+              </p>
+            ) : (
+              <p style={{ marginTop: 6 }}>Os produtos que já existiam aqui já estavam completos — nada a acrescentar.</p>
+            )
+          )}
         </div>
       )}
 
@@ -145,6 +163,21 @@ export default function WikImportarProdutosCard() {
             <div><span className="field-label">Já existentes (ignorados)</span><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{preview.resumo.jaExistentesIgnorados}</div></div>
             <div><span className="field-label">Sem marca/categoria</span><div className="mono" style={{ fontSize: 18, fontWeight: 700, color: preview.resumo.semMarcaOuCategoria > 0 ? 'var(--danger)' : undefined }}>{preview.resumo.semMarcaOuCategoria}</div></div>
           </div>
+
+          {preview.resumo.existentesParaEnriquecer > 0 && (
+            <div className="card" style={{ marginBottom: 12, borderColor: 'var(--accent-ring, var(--success-ring))' }}>
+              <div className="card-head">A completar nos produtos que já existem aqui</div>
+              <div className="form-grid">
+                <div><span className="field-label">Produtos a completar</span><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{preview.resumo.existentesParaEnriquecer}</div></div>
+                <div><span className="field-label">Marca/categoria em branco</span><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{preview.resumo.classificacaoParaPreencher}</div></div>
+                <div><span className="field-label">Vincular Id do Wik</span><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{preview.resumo.wikProdIdParaVincular}</div></div>
+                <div><span className="field-label">Variantes de grade novas</span><div className="mono" style={{ fontSize: 18, fontWeight: 700, color: 'var(--success)' }}>{preview.resumo.variantesNovasEmExistentes}</div></div>
+              </div>
+              <p className="page-sub" style={{ marginTop: 8, marginBottom: 0 }}>
+                Tudo aditivo: nada que você já preencheu é sobrescrito, e o saldo das variantes atuais não muda.
+              </p>
+            </div>
+          )}
 
           {preview.resumo.semMarcaOuCategoria > 0 && (
             <div className="login-error" style={{ marginBottom: 12 }}>
@@ -163,25 +196,40 @@ export default function WikImportarProdutosCard() {
             </div>
           )}
 
-          <table className="data-table" style={{ marginBottom: 10 }}>
-            <thead><tr><th>Referência</th><th>Descrição</th><th>Marca</th><th>Categoria</th><th>Variantes</th></tr></thead>
-            <tbody>
-              {preview.criar.slice(0, 200).map((p, i) => (
-                <tr key={i}>
-                  <td className="mono">{p.referencia}</td>
-                  <td>{p.descricao}</td>
-                  <td>{p.marca || '—'}</td>
-                  <td>{p.categoria || '—'}</td>
-                  <td className="mono">{p.variantes.length}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {preview.criar.length > 200 && <p className="page-sub">Mostrando 200 de {preview.criar.length}.</p>}
+          {preview.criar.length > 0 && (
+            <>
+              <table className="data-table" style={{ marginBottom: 10 }}>
+                <thead><tr><th>Referência</th><th>Descrição</th><th>Marca</th><th>Categoria</th><th>Variantes</th></tr></thead>
+                <tbody>
+                  {preview.criar.slice(0, 200).map((p, i) => (
+                    <tr key={i}>
+                      <td className="mono">{p.referencia}</td>
+                      <td>{p.descricao}</td>
+                      <td>{p.marca || '—'}</td>
+                      <td>{p.categoria || '—'}</td>
+                      <td className="mono">{p.variantes.length}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {preview.criar.length > 200 && <p className="page-sub">Mostrando 200 de {preview.criar.length}.</p>}
+            </>
+          )}
 
-          <button className="btn btn-primary" onClick={confirmar} disabled={confirmando || preview.criar.length === 0}>
-            {confirmando ? 'Gravando…' : `Confirmar importação de ${preview.criar.length} produto(s)`}
-          </button>
+          {(() => {
+            const nCriar = preview.criar.length;
+            const nEnriquecer = (preview.enriquecer || []).length;
+            const rotulo = nCriar > 0 && nEnriquecer > 0
+              ? `Confirmar: criar ${nCriar} e completar ${nEnriquecer} produto(s)`
+              : nCriar > 0
+                ? `Confirmar importação de ${nCriar} produto(s)`
+                : `Confirmar: completar ${nEnriquecer} produto(s) existente(s)`;
+            return (
+              <button className="btn btn-primary" onClick={confirmar} disabled={confirmando || (nCriar === 0 && nEnriquecer === 0)}>
+                {confirmando ? 'Gravando…' : rotulo}
+              </button>
+            );
+          })()}
         </div>
       )}
     </div>

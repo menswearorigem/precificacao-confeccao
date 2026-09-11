@@ -102,15 +102,60 @@ async function montarPreviewProdutos(integracao, empIds = EMP_IDS_PADRAO) {
     variantesPorReferencia.get(v.referencia).push({ cor: v.cor, tamanho: v.tamanho, quantidade: v.quantidade });
   }
 
-  const { rows: existentesRows } = await pool.query('SELECT referencia FROM produtos');
-  const existentes = new Set(existentesRows.map((r) => r.referencia));
+  // Puxa os produtos existentes JUNTO com as variantes que já têm aqui, numa
+  // consulta só — precisamos das duas coisas pra saber (a) o que ainda dá pra
+  // completar no cadastro do produto e (b) quais cor×tamanho do Wik ainda não
+  // existem aqui. O LEFT JOIN traz uma linha por variante (ou uma linha com
+  // variante nula, quando o produto não tem nenhuma).
+  const { rows: existentesRows } = await pool.query(
+    `SELECT p.id, p.referencia, p.marca, p.categoria, p.wik_prod_id,
+            ev.cor, ev.tamanho
+       FROM produtos p
+       LEFT JOIN estoque_variantes ev ON ev.produto_id = p.id`
+  );
+  const existentes = new Set();
+  const infoLocalPorRef = new Map();   // referencia -> { id, marca, categoria, wikProdId }
+  const variantesLocaisPorRef = new Map(); // referencia -> Set("COR::TAM")
+  for (const r of existentesRows) {
+    existentes.add(r.referencia);
+    if (!infoLocalPorRef.has(r.referencia)) {
+      infoLocalPorRef.set(r.referencia, {
+        id: r.id, marca: r.marca, categoria: r.categoria, wikProdId: r.wik_prod_id,
+      });
+    }
+    if (r.cor !== null || r.tamanho !== null) {
+      if (!variantesLocaisPorRef.has(r.referencia)) variantesLocaisPorRef.set(r.referencia, new Set());
+      variantesLocaisPorRef.get(r.referencia).add(`${normalizar(r.cor)}::${normalizar(r.tamanho)}`);
+    }
+  }
 
   const ativos = [...porReferencia.entries()].filter(([, info]) => info.ativa);
 
   const criar = [];
+  const enriquecer = []; // produtos que já existem aqui e onde dá pra ACRESCENTAR (nunca sobrescrever)
   let semClassificacao = 0;
   for (const [referencia, info] of ativos) {
-    if (existentes.has(referencia)) continue; // já existe localmente, não duplica
+    if (existentes.has(referencia)) {
+      // Já existe: só juntamos o que falta, de forma aditiva.
+      const local = infoLocalPorRef.get(referencia) || {};
+      const marcaNova = (!local.marca && info.marca) ? info.marca : null;
+      const categoriaNova = (!local.categoria && info.categoria) ? info.categoria : null;
+      const wikProdIdNovo = (!local.wikProdId && info.wikProdId) ? info.wikProdId : null;
+      const jaTem = variantesLocaisPorRef.get(referencia) || new Set();
+      const variantesNovas = (variantesPorReferencia.get(referencia) || [])
+        .filter((v) => !jaTem.has(`${normalizar(v.cor)}::${normalizar(v.tamanho)}`));
+      if (marcaNova || categoriaNova || wikProdIdNovo || variantesNovas.length > 0) {
+        enriquecer.push({
+          referencia,
+          produtoId: local.id,
+          marcaNova,
+          categoriaNova,
+          wikProdIdNovo,
+          variantesNovas,
+        });
+      }
+      continue; // não duplica o produto
+    }
     if (!info.marca) semClassificacao += 1;
     criar.push({
       referencia,
@@ -122,17 +167,90 @@ async function montarPreviewProdutos(integracao, empIds = EMP_IDS_PADRAO) {
     });
   }
 
+  const variantesNovasTotal = enriquecer.reduce((s, e) => s + e.variantesNovas.length, 0);
+
   return {
     criar,
+    enriquecer,
     resumo: {
       totalProdutosWik: ativos.length,
       novosParaCriar: criar.length,
       jaExistentesIgnorados: ativos.length - criar.length,
+      // Do que já existe aqui, quantos dá pra completar e com o quê:
+      existentesParaEnriquecer: enriquecer.length,
+      classificacaoParaPreencher: enriquecer.filter((e) => e.marcaNova || e.categoriaNova).length,
+      wikProdIdParaVincular: enriquecer.filter((e) => e.wikProdIdNovo).length,
+      variantesNovasEmExistentes: variantesNovasTotal,
       semMarcaOuCategoria: semClassificacao,
       totalVariantesConsolidadas: estoqueMaxPorChave.size,
       produtoGetDisponivel,
     },
   };
+}
+
+// Completa produtos que JÁ EXISTEM aqui com o que veio do Wik, de forma
+// estritamente ADITIVA — nunca sobrescreve dado que o Hub já tem:
+//   • marca/categoria só entram onde o campo está vazio (COALESCE mantém o atual);
+//   • wik_prod_id só é preenchido quando ainda está nulo;
+//   • variantes cor×tamanho novas são inseridas (ON CONFLICT DO NOTHING).
+// O saldo das variantes que já existem NÃO é tocado — esse número é a contagem
+// física do galpão (bipagem), e o Wik não é a fonte de verdade dele aqui.
+async function aplicarEnriquecimentoProdutos(enriquecer) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    let produtosCompletados = 0;
+    let classificacoesPreenchidas = 0;
+    let wikProdIdsVinculados = 0;
+    let variantesCriadas = 0;
+
+    for (const item of enriquecer || []) {
+      if (!item.produtoId) continue;
+      if (item.marcaNova || item.categoriaNova || item.wikProdIdNovo) {
+        const { rowCount } = await client.query(
+          `UPDATE produtos SET
+             marca = COALESCE(marca, $2),
+             categoria = COALESCE(categoria, $3),
+             wik_prod_id = COALESCE(wik_prod_id, $4),
+             updated_at = now()
+           WHERE id = $1`,
+          [item.produtoId, item.marcaNova, item.categoriaNova, item.wikProdIdNovo]
+        );
+        if (rowCount > 0) {
+          if (item.marcaNova || item.categoriaNova) classificacoesPreenchidas += 1;
+          if (item.wikProdIdNovo) wikProdIdsVinculados += 1;
+        }
+      }
+      for (const v of item.variantesNovas || []) {
+        const ean = await resolverEan(client, item.referencia, v.cor, v.tamanho);
+        const { rows: varianteRows } = await client.query(
+          `INSERT INTO estoque_variantes (produto_id, cor, tamanho, ean, quantidade)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (produto_id, cor, tamanho) DO NOTHING RETURNING id`,
+          [item.produtoId, v.cor, v.tamanho, ean, v.quantidade]
+        );
+        if (varianteRows.length > 0) {
+          variantesCriadas += 1;
+          if (Number(v.quantidade) !== 0) {
+            await client.query(
+              `INSERT INTO estoque_movimentos (variante_id, tipo, quantidade, quantidade_resultante, motivo)
+               VALUES ($1, 'importacao', $2, $2, 'Variante nova trazida do Wik Sistemas')`,
+              [varianteRows[0].id, v.quantidade]
+            );
+          }
+        }
+      }
+      produtosCompletados += 1;
+    }
+
+    await client.query('COMMIT');
+    return { produtosCompletados, classificacoesPreenchidas, wikProdIdsVinculados, variantesCriadas };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // Cria de fato os produtos + variantes de estoque a partir do resultado do
@@ -221,12 +339,16 @@ async function sincronizarProdutosAgora() {
   try {
     const preview = await montarPreviewProdutos(integracao);
     const aplicado = await aplicarImportacaoProdutos(preview.criar);
+    // Além de criar os produtos novos, completa os que já existem aqui com o
+    // que o Wik tem a mais (marca/categoria vazias, wik_prod_id, grade nova) —
+    // tudo aditivo, então rodar sozinho periodicamente continua seguro.
+    const enriquecido = await aplicarEnriquecimentoProdutos(preview.enriquecer);
     await pool.query(
       `UPDATE integracoes_wik SET produtos_import_status = 'idle', produtos_import_resultado = NULL, atualizado_em = now() WHERE id = $1`,
       [integracao.id]
     );
     await registrarSucessoWik(integracao.id);
-    return { ...aplicado, ...preview.resumo };
+    return { ...aplicado, enriquecimento: enriquecido, ...preview.resumo };
   } catch (err) {
     await pool.query(
       `UPDATE integracoes_wik SET produtos_import_status = 'erro', produtos_import_erro = $1, atualizado_em = now() WHERE id = $2`,
@@ -239,4 +361,4 @@ async function sincronizarProdutosAgora() {
   }
 }
 
-module.exports = { montarPreviewProdutos, aplicarImportacaoProdutos, sincronizarProdutosAgora, EMP_IDS_PADRAO };
+module.exports = { montarPreviewProdutos, aplicarImportacaoProdutos, aplicarEnriquecimentoProdutos, sincronizarProdutosAgora, EMP_IDS_PADRAO };

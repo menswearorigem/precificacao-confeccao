@@ -6,7 +6,7 @@ const {
   criarOpcoesToken, registrarTentativaWik, registrarFalhaWik, registrarSucessoWik, calcularStatusToken, corrigirJobsPresos,
   reservarJobWik, liberarJobWik, mensagemJobOcupado, esquecerTokenEmMemoria,
 } = require('../lib/wikSync');
-const { montarPreviewProdutos, aplicarImportacaoProdutos, sincronizarProdutosAgora } = require('../lib/wikProdutosImport');
+const { montarPreviewProdutos, aplicarImportacaoProdutos, aplicarEnriquecimentoProdutos, sincronizarProdutosAgora } = require('../lib/wikProdutosImport');
 const { montarPreviewFichaCusto, aplicarImportacaoFichaCusto, sincronizarFichaCustoAgora } = require('../lib/wikFichaCustoImport');
 
 const router = express.Router();
@@ -346,6 +346,9 @@ router.post('/produtos/confirmar', async (req, res, next) => {
   try {
     const body = req.body || {};
     const resultado = await aplicarImportacaoProdutos(body.criar || []);
+    // Aplica também o que dá pra completar nos produtos que já existem aqui
+    // (marca/categoria vazias, wik_prod_id, grade nova) — tudo aditivo.
+    const enriquecimento = await aplicarEnriquecimentoProdutos(body.enriquecer || []);
 
     const integracao = await buscarIntegracao();
     if (integracao) {
@@ -355,7 +358,7 @@ router.post('/produtos/confirmar', async (req, res, next) => {
       );
     }
 
-    res.json(resultado);
+    res.json({ ...resultado, enriquecimento });
   } catch (err) {
     next(err);
   }
