@@ -4,29 +4,37 @@
 // biblioteca `xlsx` do front não escreve estilo nem imagem).
 //
 // ---------------------------------------------------------------------------
-// REVISÃO DE 11/09/2026 — as correções que o dono apontou na primeira versão
+// SEGUNDA REVISÃO — 11/09/2026 (print do dono: "quero desse jeito")
 // ---------------------------------------------------------------------------
-// 1. UMA linha por loja, não uma por variação. A grade agora é FIXA: 8 linhas
-//    por bloco (4 plataformas × 2 marcas). Quando a mesma loja tem vários
-//    anúncios do mesmo produto (cada variação virando um anúncio), entra o
-//    anúncio PRINCIPAL — o que mais vendeu nos últimos 30 dias — e os demais
-//    viram uma nota na célula, para o dado não sumir sem aviso (REGRA 2).
-// 2. Grade fixa de plataforma em G:H — linhas 3-4 SHOPEE, 5-6 MERCADO LIVRE,
-//    7-8 SHEIN, 9-10 TIKTOK, cada par mesclado e centralizado.
-// 3. Coluna I alternando ORIGEM (3) / HOGGAR (4) e repetindo até a linha 10.
-// 4. F2 com "M" (masculino) ou "F" (feminino).
-// 5. O "(+30%)" saía `=J3+(J3*0%)` quando a ficha de custo não tinha o
-//    acréscimo calculado. Agora o padrão da casa é 42,9% — `=J3+(J3*42,9%)`.
-// 6. A foto não é mais esticada: entra no tamanho da área reservada,
-//    respeitando a proporção original e centralizada no espaço.
-// 7. Larguras em PIXEL: A–F 23px, G–I 60px, J–U 50px. Todas as linhas 18px.
-// 8. Só entram os anúncios que VENDERAM nos últimos 30 dias.
-// 9. Ordem por referência: o menor número primeiro.
-// 10. Kit vem junto da referência dele, logo DEPOIS do bloco de unitário, do
-//     kit menor para o maior.
+// O dono mandou um print da planilha do jeito que ela tem que ficar. As
+// mudanças desta rodada, em cima da revisão anterior do mesmo dia:
 //
-// O que já estava certo e não foi mexido: a foto, o valor que o cliente paga,
-// o valor recebido, o lucro, o % e as cores.
+//  A. O KIT virou UM BLOCO SÓ por referência, com todos os tamanhos dentro.
+//     Antes saía um bloco por tamanho de kit. Agora o bloco de kit tem, para
+//     cada loja, uma linha por tamanho (KIT - 2, KIT - 3, KIT - 5), e as
+//     colunas de loja mudam: G = plataforma, H = marca, I = o tamanho do kit.
+//  B. A REFERÊNCIA é a MESMA nos dois blocos (sem sufixo "· KIT 2"). É assim
+//     que se sabe que eles são o mesmo produto — o que muda é o NOME:
+//     "CAM. GOLA POLO FIO 30" no unitário, "KIT CAMISETA GOLA POLO MC" no kit.
+//  C. O Nº (coluna A) aparece só no bloco do unitário. O bloco de kit não
+//     repete o número.
+//  D. Loja onde o produto NÃO está anunciado fica EM BRANCO. Saiu o
+//     "NÃO ESTÁ ANUNCIADO" em vermelho: a moldura continua, a linha fica vazia
+//     e a planilha não é alterada.
+//  E. A FOTO passou a ser a do ANÚNCIO: a imagem mais recente do anúncio que
+//     mais vendeu nos últimos 30 dias naquele bloco. Por isso o bloco de kit
+//     mostra a foto do kit (as cinco peças) e o de unitário mostra a peça
+//     sozinha. Sem foto de anúncio, cai na foto do cadastro (`produto_fotos`).
+//  F. CORES: uma por linha, na faixa R:U, só o nome da cor.
+//  G. O NOME ocupa G:I (mesclado), tanto no cabeçalho quanto na linha do
+//     produto.
+//
+// O que veio da revisão anterior e continua valendo: grade fixa de 8 lugares
+// de loja (4 plataformas × 2 marcas), G:H com a plataforma mesclada de duas em
+// duas no bloco do unitário, coluna I com ORIGEM/HOGGAR, gênero em F, o
+// "(+30%)" em 42,9% quando a ficha de custo não traz o acréscimo, foto sem
+// esticar, larguras em pixel (A–F 23px, G–I 60px, J–U 50px, linhas 18px),
+// só anúncio que vendeu nos últimos 30 dias, e a ordem por menor número.
 //
 // REGRA 1: nenhuma conta de preço é feita aqui. As fórmulas vão pra planilha
 // COMO FÓRMULA (é o Excel que calcula, igual hoje), e o percentual do
@@ -34,18 +42,18 @@
 // Precificação usa —, caindo no padrão da casa (42,9%) só quando a ficha não
 // tem esse número.
 //
-// REGRA 2: o que não se sabe fica em branco ou escrito por extenso, nunca
-// preenchido com zero ou com estimativa. Loja onde o produto não está
-// anunciado recebe "NÃO ESTÁ ANUNCIADO" em vermelho, como o dono pediu.
+// REGRA 2: o que não se sabe fica em branco, nunca preenchido com zero ou com
+// estimativa.
 const { idsDoFiltro, chavesDoFiltro } = require('./filtrosMulti');
 const ExcelJS = require('exceljs');
 const pool = require('../db/pool');
 const { calcularProduto, pctImpostosEmpresa } = require('./calc');
 const { getCalcContext } = require('./calcContext');
 const { partirSkuKit } = require('./marketplaceSync');
+const { paraHttps } = require('./fotoMarketplace');
 
-// Ordem das plataformas na planilha — a mesma do arquivo modelo e a mesma que
-// o dono descreveu ao fixar as linhas 3 a 10.
+// Ordem das plataformas na planilha — a mesma do arquivo modelo e a mesma do
+// print: SHOPEE, MERCADO LIVRE, SHEIN, TIKTOK.
 const PLATAFORMAS = [
   { chave: 'shopee', rotulo: 'SHOPEE' },
   { chave: 'mercado_livre', rotulo: 'MERCADO LIVRE' },
@@ -57,26 +65,38 @@ const PLATAFORMAS = [
 // repetindo até I10).
 const MARCAS = ['ORIGEM', 'HOGGAR'];
 
-// 4 plataformas × 2 marcas = 8 linhas de loja por bloco, sempre.
-const LINHAS_DE_LOJA = PLATAFORMAS.length * MARCAS.length;
+// 4 plataformas × 2 marcas = 8 lugares de loja.
+const LUGARES_DE_LOJA = PLATAFORMAS.length * MARCAS.length;
 
 // Acréscimo padrão do custo de produção quando a ficha não traz o número.
-// Era 0% (o erro que o dono apontou: `=J3+(J3*0%)`).
 const PCT_ACRESCIMO_PADRAO = 42.9;
 
 // Geometria pedida, em PIXEL. O Excel guarda largura em caracteres e altura
-// em pontos — a conversão está em `larguraEmCaracteres` / `alturaEmPontos`.
+// em pontos — conversão em `larguraEmCaracteres` / `alturaEmPontos`.
 const LARGURA_PX = { referencia: 23, loja: 60, valores: 50 };
 const ALTURA_LINHA_PX = 18;
 const COLUNAS_REFERENCIA = ['A', 'B', 'C', 'D', 'E', 'F'];
 const COLUNAS_LOJA = ['G', 'H', 'I'];
 const COLUNAS_VALORES = ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'];
-// A coluna V (ADS) não estava na lista do dono — fica como estava.
+// A coluna V (ADS) não estava na lista de larguras do dono — fica como estava.
 const LARGURA_ADS_CARACTERES = 14.57;
 
-// Área reservada para a foto: A..F de largura por 8 linhas de altura.
+// Largura da área da foto: A..F. A altura muda com o tamanho do bloco.
 const FOTO_LARGURA_PX = COLUNAS_REFERENCIA.length * LARGURA_PX.referencia; // 138
-const FOTO_ALTURA_PX = LINHAS_DE_LOJA * ALTURA_LINHA_PX; // 144
+
+// Títulos das colunas de valor, do print.
+const TITULOS_UNITARIO = [
+  ['J', 'PROD.'], ['K', '(+30%)'], ['L', 'CLIE. PG'], ['M', 'V. RECE.'],
+  ['N', 'LUCRO'], ['O', '%'], ['P', 'PLATAF'], ['Q', '%'],
+];
+const TITULOS_KIT = [
+  ['J', 'PROD.'], ['K', '(+30%)'], ['L', 'V. ANU'], ['M', 'V. RECE.'],
+  ['N', 'V. UND.'], ['O', 'L. UND.'], ['P', 'L.TOTAL'], ['Q', '%'],
+  ['R', 'PLATAF'], ['S', '%'],
+];
+// Colunas que ficam com a moldura e sem valor quando a loja não anuncia.
+const VALORES_UNITARIO = ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q'];
+const VALORES_KIT = ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S'];
 
 const FONTE = { name: 'Calibri', size: 7, bold: true };
 const FONTE_VERMELHA = { ...FONTE, color: { argb: 'FFFF0000' } };
@@ -89,12 +109,12 @@ const ESQUERDA = { horizontal: 'left', vertical: 'center' };
 const MEIO = { vertical: 'center' };
 
 // Fórmulas de "V. RECE." (valor que a plataforma repassa), copiadas letra por
-// letra do arquivo modelo. `col` é a coluna do preço anunciado (L no bloco
-// individual, M no bloco de kit) e `linha` o número da linha.
+// letra do arquivo modelo. `col` é a coluna do preço anunciado (L nos dois
+// blocos, depois do rearranjo do print) e `linha` o número da linha.
 //
 // Mercado Livre não tem fórmula no modelo: lá o valor é digitado à mão,
 // porque a taxa depende do anúncio (clássico/premium, frete grátis, faixa de
-// preço) e não de uma regra fechada. Mantido assim — ver `valorRecebidoML`.
+// preço) e não de uma regra fechada.
 const FORMULA_RECEBIDO = {
   shopee: (col, l) => `IF(${col}${l}<=79.99,${col}${l}-(${col}${l}*20%)-4,`
     + `IF(${col}${l}<=99.99,${col}${l}-(${col}${l}*14%)-16,`
@@ -123,12 +143,21 @@ function alturaEmPontos(pixels) {
 }
 
 // ---------------------------------------------------------------------------
-// Tamanho natural da imagem — para encaixar sem esticar
+// Imagem: formato e tamanho natural, para encaixar sem esticar
 // ---------------------------------------------------------------------------
+function formatoDaImagem(buffer) {
+  if (!buffer || buffer.length < 12) return null;
+  if (buffer.readUInt32BE(0) === 0x89504e47) return 'png';
+  if (buffer[0] === 0xff && buffer[1] === 0xd8) return 'jpeg';
+  if (buffer.toString('ascii', 0, 3) === 'GIF') return 'gif';
+  // WebP e BMP: o ExcelJS não os aceita como extensão, então são recusados
+  // aqui em vez de virarem uma imagem quebrada dentro do arquivo (REGRA 2).
+  return null;
+}
+
 // Lê largura e altura direto do cabeçalho do arquivo. É só leitura de bytes,
-// não decodifica a imagem, e cobre os formatos que as plataformas e o cadastro
-// usam (JPEG, PNG, GIF, WebP, BMP). Devolve null quando não reconhece — e aí a
-// foto entra encaixada num quadrado, nunca esticada.
+// não decodifica a imagem. Devolve null quando não reconhece — e aí a foto
+// entra encaixada num quadrado, nunca esticada.
 function dimensoesDaImagem(buffer) {
   if (!buffer || buffer.length < 24) return null;
 
@@ -158,10 +187,7 @@ function dimensoesDaImagem(buffer) {
       };
     }
     if (tipo === 'VP8 ' && buffer.length >= 30) {
-      return {
-        largura: buffer.readUInt16LE(26) & 0x3fff,
-        altura: buffer.readUInt16LE(28) & 0x3fff,
-      };
+      return { largura: buffer.readUInt16LE(26) & 0x3fff, altura: buffer.readUInt16LE(28) & 0x3fff };
     }
     if (tipo === 'VP8L' && buffer.length >= 25) {
       const bits = buffer.readUInt32LE(21);
@@ -243,7 +269,7 @@ function semAcento(texto) {
 // Gênero da peça (coluna F). Só é preenchido quando o cadastro ou o TÍTULO DO
 // ANÚNCIO diz isso com todas as letras — nada de adivinhar por nome de
 // produto (REGRA 2). Em branco, a fórmula da Shein devolve "" e a célula fica
-// visivelmente vazia pra ser preenchida à mão, como já é hoje.
+// visivelmente vazia pra ser preenchida à mão.
 function generoDoProduto(produto, titulosDeAnuncio = []) {
   const texto = semAcento([
     produto.descricao, produto.categoria, produto.linha, produto.marca, produto.colecao,
@@ -326,11 +352,11 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
   const posJanelaAds = i;
   const posVendidos = i + 1;
 
-  // `vendas_30d` é o corte que o dono pediu: só entra na planilha o anúncio
-  // que VENDEU na janela. A contagem ignora pedido cancelado — pedido
-  // cancelado não é venda — e é feita pelo banco com CURRENT_DATE, não pelo
-  // relógio do Node (o servidor roda em UTC e, à noite no horário de Brasília,
-  // "hoje" calculado aqui já seria o dia seguinte).
+  // `v` é o corte que o dono pediu: só entra na planilha o anúncio que VENDEU
+  // na janela. A contagem ignora pedido cancelado — pedido cancelado não é
+  // venda — e é feita pelo banco com CURRENT_DATE, não pelo relógio do Node (o
+  // servidor roda em UTC e, à noite no horário de Brasília, "hoje" calculado
+  // aqui já seria o dia seguinte).
   const { rows: anuncios } = await pool.query(
     `SELECT a.*, im.nome AS loja_nome, e.nome AS empresa_nome,
             ads.custo_30d, ads.receita_30d,
@@ -388,23 +414,20 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
     [...vals, janelaAdsDias, vendidosEmDias > 0 ? vendidosEmDias : 36500]
   );
 
-  // O corte de "vendeu nos últimos N dias". Com `vendidosEmDias = 0` a
-  // planilha volta a trazer todo o catálogo filtrado — é o que a tela usava
-  // antes, mantido como escape.
+  // O corte de "vendeu nos últimos N dias". Com `vendidosEmDias = 0` a planilha
+  // volta a trazer todo o catálogo filtrado — é o que a tela usava antes,
+  // mantido como escape.
   const anunciosNaJanela = vendidosEmDias > 0
     ? anuncios.filter((a) => Number(a.unidades_vendidas) > 0)
     : anuncios;
 
   const idsProduto = [...new Set(anunciosNaJanela.map((a) => a.produto_id).filter(Boolean))];
-  const vazio = {
-    lojas,
-    anuncios: anunciosNaJanela,
-    produtos: [],
-    calculoPorProduto: new Map(),
-    fotos: new Map(),
-    coresPorProduto: new Map(),
-  };
-  if (idsProduto.length === 0) return vazio;
+  if (idsProduto.length === 0) {
+    return {
+      lojas, anuncios: anunciosNaJanela, produtos: [],
+      calculoPorProduto: new Map(), fotos: new Map(), coresPorProduto: new Map(),
+    };
+  }
 
   const { rows: produtos } = await pool.query(
     `SELECT p.*, e.regime_tributario, e.icms, e.pis, e.cofins, e.ipi, e.iss,
@@ -436,10 +459,9 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
     }));
   }
 
-  // CORES do bloco: cor + saldo, vindo do NOSSO estoque (é o que a planilha
-  // modelo traz: "PRETO XAD.55"). Cor sem saldo cadastrado sai só com o nome.
+  // CORES: só o nome, uma por linha, como no print. Vem do NOSSO estoque.
   const { rows: variantes } = await pool.query(
-    `SELECT ev.produto_id, ev.cor, SUM(ev.quantidade) AS saldo
+    `SELECT ev.produto_id, ev.cor
        FROM estoque_variantes ev
       WHERE ev.produto_id = ANY($1) AND ev.ativo
       GROUP BY ev.produto_id, ev.cor
@@ -449,12 +471,12 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
   const coresPorProduto = new Map();
   for (const v of variantes) {
     if (!coresPorProduto.has(v.produto_id)) coresPorProduto.set(v.produto_id, []);
-    const saldo = Number(v.saldo);
-    coresPorProduto.get(v.produto_id).push(
-      Number.isFinite(saldo) && saldo !== 0 ? `${v.cor} ${Math.round(saldo)}` : String(v.cor || '')
-    );
+    const nome = String(v.cor || '').trim();
+    if (nome) coresPorProduto.get(v.produto_id).push(nome.toUpperCase());
   }
 
+  // Foto do cadastro — o plano B quando o anúncio não tem foto que dê pra
+  // baixar.
   const { rows: fotosRows } = await pool.query(
     'SELECT produto_id, dados, mime_type FROM produto_fotos WHERE produto_id = ANY($1)',
     [idsProduto]
@@ -465,16 +487,77 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
 }
 
 // ---------------------------------------------------------------------------
-// Da lista de anúncios para a GRADE FIXA de 8 linhas
+// Foto do anúncio — "a imagem mais recente do produto mais vendido nos 30 dias"
 // ---------------------------------------------------------------------------
-// A correção nº 1 do dono mora aqui. Antes, cada anúncio virava uma linha — e
-// como cada variação de cor/tamanho pode ser um anúncio próprio, a mesma
-// referência ocupava dez linhas na mesma loja. Agora a grade tem oito lugares
-// (4 plataformas × 2 marcas) e cada lugar recebe UM anúncio: o principal.
-//
+// Baixa a foto do anúncio da CDN do marketplace. Falha (rede, 404, formato que
+// o Excel não aceita) NÃO derruba a exportação: devolve null e o bloco cai na
+// foto do cadastro, ou fica com "sem foto cadastrada" (REGRA 2).
+const LIMITE_FOTO_BYTES = 5 * 1024 * 1024;
+const TEMPO_LIMITE_FOTO_MS = 8000;
+
+async function baixarFoto(url, cache) {
+  const endereco = paraHttps(url);
+  if (!endereco || !/^https:\/\//.test(endereco)) return null;
+  if (cache.has(endereco)) return cache.get(endereco);
+
+  let resultado = null;
+  try {
+    const corte = AbortSignal.timeout
+      ? AbortSignal.timeout(TEMPO_LIMITE_FOTO_MS)
+      : undefined;
+    const resposta = await fetch(endereco, { signal: corte });
+    if (resposta.ok) {
+      const tamanho = Number(resposta.headers.get('content-length'));
+      if (!Number.isFinite(tamanho) || tamanho <= LIMITE_FOTO_BYTES) {
+        const dados = Buffer.from(await resposta.arrayBuffer());
+        const extensao = formatoDaImagem(dados);
+        if (extensao && dados.length <= LIMITE_FOTO_BYTES) resultado = { dados, extensao };
+      }
+    }
+  } catch {
+    resultado = null;
+  }
+  cache.set(endereco, resultado);
+  return resultado;
+}
+
+// O anúncio que manda na foto do bloco: o que mais vendeu na janela; empatou,
+// o atualizado mais recentemente na plataforma.
+function anuncioDaFoto(anuncios) {
+  const comFoto = anuncios.filter((a) => a && a.foto_url);
+  if (comFoto.length === 0) return null;
+  return [...comFoto].sort((a, b) => {
+    const va = Number(a.unidades_vendidas) || 0;
+    const vb = Number(b.unidades_vendidas) || 0;
+    if (va !== vb) return vb - va;
+    const da = new Date(a.atualizado_em_plataforma || a.ultima_sincronizacao || 0).getTime();
+    const db = new Date(b.atualizado_em_plataforma || b.ultima_sincronizacao || 0).getTime();
+    if (da !== db) return db - da;
+    return (b.id || 0) - (a.id || 0);
+  })[0];
+}
+
+// A foto de um bloco, já pronta pro ExcelJS: primeiro a do anúncio campeão de
+// vendas, depois a do cadastro.
+async function fotoDoBloco(anunciosDoBloco, fotoCadastro, cache) {
+  const campeao = anuncioDaFoto(anunciosDoBloco);
+  if (campeao) {
+    const baixada = await baixarFoto(campeao.foto_url, cache);
+    if (baixada) return baixada;
+  }
+  if (fotoCadastro?.dados) {
+    const extensao = formatoDaImagem(fotoCadastro.dados)
+      || (fotoCadastro.mime_type?.includes('png') ? 'png' : 'jpeg');
+    return { dados: fotoCadastro.dados, extensao };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Da lista de anúncios para a grade de 8 lugares de loja
+// ---------------------------------------------------------------------------
 // Principal = o que mais vendeu na janela; empatou, o de maior preço (é o
-// anúncio "cheio", não o de teste); empatou de novo, o mais recente. As outras
-// variações não somem sem aviso: viram uma nota na célula.
+// anúncio "cheio", não o de teste); empatou de novo, o mais recente.
 function escolherPrincipal(candidatos) {
   return [...candidatos].sort((a, b) => {
     const va = Number(a.unidades_vendidas) || 0;
@@ -487,22 +570,22 @@ function escolherPrincipal(candidatos) {
   })[0];
 }
 
-// Monta o mapa `plataforma|marca` → { anuncio, alternativos } de um produto,
-// para um tamanho de kit (null = unitário).
-function montarGrade(anunciosDoProduto, lojas, quantidadeKit) {
+function quantidadeDoKit(anuncio) {
+  const kit = partirSkuKit(anuncio.sku_externo || '');
+  return kit ? kit.quantidade : null;
+}
+
+// Monta o mapa `plataforma|marca` → { anuncio, alternativos } de um conjunto de
+// anúncios já filtrado por tamanho (unitário ou um tamanho de kit).
+function montarGrade(anunciosDoTamanho, lojas) {
   const grade = new Map();
-  const doTamanho = anunciosDoProduto.filter((a) => {
-    const kit = partirSkuKit(a.sku_externo || '');
-    const qtd = kit ? kit.quantidade : null;
-    return qtd === quantidadeKit;
-  });
 
   for (const plataforma of PLATAFORMAS) {
     for (const marca of MARCAS) {
-      const candidatos = doTamanho.filter((a) => {
+      const candidatos = anunciosDoTamanho.filter((a) => {
         if (a.marketplace !== plataforma.chave) return false;
         const loja = lojas.find((l) => l.id === a.origem_integracao_id)
-          || { nome: a.loja_nome, empresa_nome: a.empresa_nome, marketplace: a.marketplace };
+          || { nome: a.loja_nome, empresa_nome: a.empresa_nome };
         return marcaDaLoja(loja) === marca;
       });
       if (candidatos.length === 0) {
@@ -519,40 +602,35 @@ function montarGrade(anunciosDoProduto, lojas, quantidadeKit) {
 
   // Loja ativa sem marca reconhecida (integração sem empresa vinculada e nome
   // que não diz ORIGEM nem HOGGAR): o anúncio não some. Ele ocupa o primeiro
-  // lugar vago da plataforma dele e leva uma nota dizendo de que loja veio —
-  // é preferível à alternativa, que seria chutar a marca (REGRA 2).
-  for (const anuncio of doTamanho) {
-    const jaEstá = [...grade.values()].some((c) => c
+  // lugar vago da plataforma dele e leva nota dizendo de que loja veio — é
+  // preferível a chutar a marca (REGRA 2).
+  for (const anuncio of anunciosDoTamanho) {
+    const jaEsta = [...grade.values()].some((c) => c
       && (c.anuncio === anuncio || c.alternativos.includes(anuncio)));
-    if (jaEstá) continue;
+    if (jaEsta) continue;
     const plataforma = PLATAFORMAS.find((p) => p.chave === anuncio.marketplace);
     if (!plataforma) continue;
     const vago = MARCAS.find((m) => grade.get(`${plataforma.chave}|${m}`) == null);
     if (!vago) continue;
     grade.set(`${plataforma.chave}|${vago}`, {
-      anuncio,
-      alternativos: [],
-      marcaIndefinida: anuncio.loja_nome || null,
+      anuncio, alternativos: [], marcaIndefinida: anuncio.loja_nome || null,
     });
   }
 
   return grade;
 }
 
-// Os tamanhos de kit que a referência tem, do menor para o maior. O unitário
-// (null) sempre existe e vem primeiro — é o que o dono pediu: "colocar ele
-// junto da sua referência depois dos unitários, logo abaixo, e do kit menor
-// pro maior".
+// Os tamanhos de kit que a referência tem, do menor para o maior.
 function tamanhosDeKit(anunciosDoProduto) {
   const tamanhos = new Set();
   for (const anuncio of anunciosDoProduto) {
-    const kit = partirSkuKit(anuncio.sku_externo || '');
-    if (kit) tamanhos.add(kit.quantidade);
+    const qtd = quantidadeDoKit(anuncio);
+    if (qtd != null) tamanhos.add(qtd);
   }
-  return [null, ...[...tamanhos].sort((a, b) => a - b)];
+  return [...tamanhos].sort((a, b) => a - b);
 }
 
-// Texto da coluna ADS (que substituiu OBSERVAÇÃO).
+// Texto da coluna ADS.
 function textoAds(anuncio) {
   if (!anuncio) return '';
   const custo = Number(anuncio.custo_30d);
@@ -592,122 +670,62 @@ function notaDaCelula(celula) {
 }
 
 // ---------------------------------------------------------------------------
-// Bloco de um produto (unitário ou de um tamanho de kit)
+// Peças comuns aos dois blocos
 // ---------------------------------------------------------------------------
-function escreverBloco(ws, { numero, produto, grade, calculo, cores, foto, quantidadeKit, livro, titulosDeAnuncio }) {
-  const ehKit = quantidadeKit != null;
-  const linhaCabecalho = ws.rowCount + (ws.rowCount === 0 ? 1 : 2);
-  const linhaProduto = linhaCabecalho + 1;
-  // Grade fixa: as 8 linhas de loja existem sempre. No primeiro bloco isso dá
-  // exatamente as linhas 3 a 10 que o dono descreveu.
-  const primeiraLinhaLoja = linhaProduto + 1;
-  const ultimaLinhaLoja = primeiraLinhaLoja + LINHAS_DE_LOJA - 1;
+function escreverCabecalhoBloco(ws, linha) {
+  estiloCelula(ws.getCell(`A${linha}`), { fonte: FONTE_VERMELHA, alinhamento: CENTRO }).value = 'Nº';
+  ws.mergeCells(`B${linha}:F${linha}`);
+  estiloCelula(ws.getCell(`B${linha}`), { alinhamento: ESQUERDA }).value = 'REFERÊNCIA';
+  ws.mergeCells(`G${linha}:I${linha}`);
+  estiloCelula(ws.getCell(`G${linha}`), { alinhamento: ESQUERDA }).value = 'NOME';
+}
 
-  // ---- cabeçalho do bloco
-  estiloCelula(ws.getCell(`A${linhaCabecalho}`), { fonte: FONTE_VERMELHA, alinhamento: CENTRO }).value = 'Nº';
-  ws.mergeCells(`B${linhaCabecalho}:F${linhaCabecalho}`);
-  estiloCelula(ws.getCell(`B${linhaCabecalho}`), { alinhamento: ESQUERDA }).value = 'REFERÊNCIA';
-  estiloCelula(ws.getCell(`G${linhaCabecalho}`)).value = 'NOME';
+// A linha do produto: número (só no bloco do unitário), referência, gênero,
+// nome e os títulos das colunas de valor.
+function escreverLinhaProduto(ws, { linha, numero, referencia, genero, nome, titulos }) {
+  const celNumero = estiloCelula(ws.getCell(`A${linha}`), { fonte: FONTE_VERMELHA, alinhamento: CENTRO });
+  // O bloco de kit NÃO repete o Nº: é a mesma referência do bloco de cima, e é
+  // pela referência que se sabe que os dois são o mesmo produto.
+  celNumero.value = numero == null ? '' : numero;
 
-  // ---- linha do produto (nº, referência, gênero, nome + títulos das colunas)
-  estiloCelula(ws.getCell(`A${linhaProduto}`), { fonte: FONTE_VERMELHA, alinhamento: CENTRO }).value = numero;
-  ws.mergeCells(`B${linhaProduto}:E${linhaProduto}`);
-  // O bloco de kit repete a referência com o tamanho do kit colado, pra ficar
-  // claro de quem ele é ao olhar a coluna.
-  estiloCelula(ws.getCell(`B${linhaProduto}`), { alinhamento: ESQUERDA }).value = ehKit
-    ? `${produto.referencia} · KIT ${quantidadeKit}`
-    : produto.referencia;
-  // F2 (e a mesma célula em cada bloco): "M" de masculino, "F" de feminino.
-  const genero = generoDoProduto(produto, titulosDeAnuncio);
-  const celGenero = estiloCelula(ws.getCell(`F${linhaProduto}`), { fonte: { ...FONTE, size: 9 }, alinhamento: CENTRO });
+  ws.mergeCells(`B${linha}:E${linha}`);
+  estiloCelula(ws.getCell(`B${linha}`), { alinhamento: ESQUERDA }).value = referencia;
+
+  const celGenero = estiloCelula(ws.getCell(`F${linha}`), { fonte: { ...FONTE, size: 9 }, alinhamento: CENTRO });
   celGenero.value = genero || '';
   if (!genero) {
     celGenero.note = 'Nem o cadastro do produto nem os títulos dos anúncios dizem se a peça é '
       + 'masculina ou feminina. Escreva M ou F aqui: a fórmula do valor recebido da Shein '
       + 'lê esta célula (R$ 4 masculino, R$ 5 feminino).';
   }
-  estiloCelula(ws.getCell(`G${linhaProduto}`)).value = produto.descricao || '';
 
-  const titulos = ehKit
-    ? [['K', 'PROD.'], ['L', '(+30%)'], ['M', 'V. ANU'], ['N', 'V. RECE.'], ['O', 'V. UND.'],
-      ['P', 'L. UND.'], ['Q', 'L.TOTAL'], ['R', '%'], ['S', 'PLATAF'], ['T', '%']]
-    : [['J', 'PROD.'], ['K', '(+30%)'], ['L', 'CLIE. PG'], ['M', 'V. RECE.'], ['N', 'LUCRO'],
-      ['O', '%'], ['P', 'PLATAF'], ['Q', '%']];
+  ws.mergeCells(`G${linha}:I${linha}`);
+  estiloCelula(ws.getCell(`G${linha}`), { alinhamento: ESQUERDA }).value = nome || '';
+
   for (const [col, texto] of titulos) {
-    const vermelho = texto === '(+30%)' || (col === 'Q' && !ehKit);
-    estiloCelula(ws.getCell(`${col}${linhaProduto}`), {
-      fonte: vermelho ? FONTE_VERMELHA : FONTE,
+    estiloCelula(ws.getCell(`${col}${linha}`), {
+      fonte: texto === '(+30%)' ? FONTE_VERMELHA : FONTE,
       alinhamento: CENTRO,
     }).value = texto;
   }
-  if (ehKit) {
-    estiloCelula(ws.getCell(`J${linhaProduto}`), { alinhamento: CENTRO }).value = 'KIT';
-    ws.mergeCells(`U${linhaProduto}:V${linhaProduto}`);
-    estiloCelula(ws.getCell(`U${linhaProduto}`), { alinhamento: CENTRO }).value = 'ADS (30 dias)';
-  } else {
-    ws.mergeCells(`R${linhaProduto}:U${linhaProduto}`);
-    estiloCelula(ws.getCell(`R${linhaProduto}`), { alinhamento: CENTRO }).value = 'CORES';
-    estiloCelula(ws.getCell(`V${linhaProduto}`), { alinhamento: CENTRO }).value = 'ADS (30 dias)';
-  }
-
-  // ---- área da foto (A..F ao longo das 8 linhas de loja)
-  ws.mergeCells(`A${primeiraLinhaLoja}:F${ultimaLinhaLoja}`);
-  const celFoto = ws.getCell(`A${primeiraLinhaLoja}`);
-  celFoto.border = BORDA_FINA;
-  celFoto.alignment = CENTRO;
-  if (foto) {
-    inserirFoto(ws, livro, foto, primeiraLinhaLoja);
-  } else {
-    celFoto.value = 'sem foto cadastrada';
-    celFoto.font = { ...FONTE, bold: false, italic: true, color: { argb: 'FF96897A' } };
-  }
-
-  // ---- as 8 linhas de loja, na ordem fixa
-  let linha = primeiraLinhaLoja;
-  for (const plataforma of PLATAFORMAS) {
-    const primeiraDaPlataforma = linha;
-    for (const marca of MARCAS) {
-      const celula = grade.get(`${plataforma.chave}|${marca}`);
-      // Coluna I: ORIGEM na primeira linha do par, HOGGAR na segunda —
-      // repetindo até a última.
-      estiloCelula(ws.getCell(`I${linha}`), { alinhamento: ESQUERDA }).value = marca;
-      escreverLinhaLoja(ws, { celula, plataforma, linha, linhaProduto, calculo, ehKit, quantidadeKit });
-      linha += 1;
-    }
-    // G:H mesclado nas DUAS linhas da plataforma, com o nome centralizado.
-    ws.mergeCells(`G${primeiraDaPlataforma}:H${linha - 1}`);
-    estiloCelula(ws.getCell(`G${primeiraDaPlataforma}`), { alinhamento: CENTRO }).value = plataforma.rotulo;
-  }
-
-  // ---- cores (só no bloco individual; no de kit a coluna não existe)
-  if (!ehKit) escreverCores(ws, cores, primeiraLinhaLoja, ultimaLinhaLoja);
-
-  // Alturas: todas as linhas do bloco com 18 pixels.
-  for (let l = linhaCabecalho; l <= ultimaLinhaLoja; l += 1) {
-    ws.getRow(l).height = alturaEmPontos(ALTURA_LINHA_PX);
-  }
-
-  // Lucro negativo em vermelho — é a mesma regra que já existe no arquivo do
-  // dono.
-  const colLucro = ehKit ? 'Q' : 'N';
-  const colPct = ehKit ? 'R' : 'O';
-  ws.addConditionalFormatting({
-    ref: `${colLucro}${primeiraLinhaLoja}:${colPct}${ultimaLinhaLoja}`,
-    rules: [
-      { type: 'cellIs', operator: 'lessThan', formulae: ['0'], priority: 1, style: { font: { color: { argb: 'FF9C0006' } }, fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFFFC7CE' } } } },
-      { type: 'cellIs', operator: 'greaterThanOrEqual', formulae: ['0'], priority: 2, style: { font: { color: { argb: 'FF006100' } } } },
-    ],
-  });
-
-  return ultimaLinhaLoja;
 }
 
 // A foto entra NO TAMANHO da área reservada, sem esticar: o maior retângulo
-// que cabe em A..F × 8 linhas mantendo a proporção original, centralizado.
-// (Antes ela era ancorada de canto a canto — o que deforma a peça.)
-function inserirFoto(ws, livro, foto, primeiraLinhaLoja) {
-  const extensao = foto.mime_type?.includes('png') ? 'png' : 'jpeg';
-  const imagemId = livro.addImage({ buffer: foto.dados, extension: extensao });
+// que cabe em A..F × (as linhas do bloco) mantendo a proporção, centralizado.
+function inserirFoto(ws, livro, foto, primeira, ultima) {
+  ws.mergeCells(`A${primeira}:F${ultima}`);
+  const celFoto = ws.getCell(`A${primeira}`);
+  celFoto.border = BORDA_FINA;
+  celFoto.alignment = CENTRO;
+
+  if (!foto) {
+    celFoto.value = 'sem foto cadastrada';
+    celFoto.font = { ...FONTE, bold: false, italic: true, color: { argb: 'FF96897A' } };
+    return;
+  }
+
+  const imagemId = livro.addImage({ buffer: foto.dados, extension: foto.extensao });
+  const alturaCaixa = (ultima - primeira + 1) * ALTURA_LINHA_PX;
 
   const natural = dimensoesDaImagem(foto.dados);
   // Sem cabeçalho legível, o palpite menos arriscado é o quadrado — que é o
@@ -715,134 +733,33 @@ function inserirFoto(ws, livro, foto, primeiraLinhaLoja) {
   const largura0 = natural?.largura > 0 ? natural.largura : 1;
   const altura0 = natural?.altura > 0 ? natural.altura : 1;
 
-  const escala = Math.min(FOTO_LARGURA_PX / largura0, FOTO_ALTURA_PX / altura0);
+  const escala = Math.min(FOTO_LARGURA_PX / largura0, alturaCaixa / altura0);
   const largura = Math.max(1, Math.round(largura0 * escala));
   const altura = Math.max(1, Math.round(altura0 * escala));
 
   // A sobra vira recuo, em fração de coluna e de linha, pra foto ficar no meio
   // do espaço em vez de encostada no canto.
   const recuoCol = ((FOTO_LARGURA_PX - largura) / 2) / LARGURA_PX.referencia;
-  const recuoLin = ((FOTO_ALTURA_PX - altura) / 2) / ALTURA_LINHA_PX;
+  const recuoLin = ((alturaCaixa - altura) / 2) / ALTURA_LINHA_PX;
 
   ws.addImage(imagemId, {
-    tl: { col: recuoCol, row: (primeiraLinhaLoja - 1) + recuoLin },
+    tl: { col: recuoCol, row: (primeira - 1) + recuoLin },
     ext: { width: largura, height: altura },
     editAs: 'oneCell',
   });
 }
 
-// CORES em R..U, duas por linha, como no arquivo modelo. Com a grade fixa em 8
-// linhas cabem 16 cores; o que passar disso é somado na última célula, em vez
-// de sumir da planilha (REGRA 2).
-function escreverCores(ws, cores, primeiraLinhaLoja, ultimaLinhaLoja) {
-  const vagas = (ultimaLinhaLoja - primeiraLinhaLoja + 1) * 2;
-  const lista = cores.length > vagas
-    ? [...cores.slice(0, vagas - 1), `+${cores.length - vagas + 1}: ${cores.slice(vagas - 1).join(' · ')}`]
-    : cores;
-
-  for (let idx = 0; idx < lista.length; idx += 1) {
-    const linhaCor = primeiraLinhaLoja + Math.floor(idx / 2);
-    if (linhaCor > ultimaLinhaLoja) break;
-    const parEsquerda = idx % 2 === 0;
-    const faixa = parEsquerda ? `R${linhaCor}:S${linhaCor}` : `T${linhaCor}:U${linhaCor}`;
-    ws.mergeCells(faixa);
-    estiloCelula(ws.getCell(faixa.split(':')[0]), {
-      alinhamento: parEsquerda ? ESQUERDA : CENTRO,
-    }).value = lista[idx];
-  }
-  // Moldura nas células de cor que ficaram vazias.
-  for (let l = primeiraLinhaLoja; l <= ultimaLinhaLoja; l += 1) {
-    for (const faixa of [`R${l}:S${l}`, `T${l}:U${l}`]) {
-      const cel = ws.getCell(faixa.split(':')[0]);
-      if (cel.value == null) {
-        if (!cel.isMerged) ws.mergeCells(faixa);
-        estiloCelula(cel, { alinhamento: CENTRO });
-      }
-    }
-  }
-}
-
-function escreverLinhaLoja(ws, { celula, plataforma, linha, linhaProduto, calculo, ehKit, quantidadeKit }) {
-  // Loja onde o produto não está anunciado: a linha existe, e diz isso em
-  // vermelho, na frente — foi o pedido explícito do dono.
-  if (!celula) {
-    // O aviso ocupa só as colunas de VALOR (J..Q no bloco individual, J..T no
-    // de kit). Não pode invadir R..U no bloco individual, que é onde ficam as
-    // CORES do produto — elas valem para o produto inteiro, não para a loja
-    // que deixou de anunciar (e mesclar por cima estouraria o merge das
-    // cores).
-    const colFim = ehKit ? 'T' : 'Q';
-    ws.mergeCells(`J${linha}:${colFim}${linha}`);
-    estiloCelula(ws.getCell(`J${linha}`), {
-      fonte: FONTE_VERMELHA,
-      alinhamento: ESQUERDA,
-    }).value = 'NÃO ESTÁ ANUNCIADO';
-    // A coluna de ADS da linha continua existindo, vazia e com moldura.
-    if (ehKit) {
-      ws.mergeCells(`U${linha}:V${linha}`);
-      estiloCelula(ws.getCell(`U${linha}`), { alinhamento: CENTRO });
-    } else {
-      estiloCelula(ws.getCell(`V${linha}`), { alinhamento: CENTRO });
-    }
-    return;
-  }
-
-  const { anuncio } = celula;
-  const pct = percentualDaFormula(calculo);
-  const custoProducao = Number(calculo?.custoTotal?.subtotalProducao);
-  const precoAnunciado = anuncio.preco != null ? Number(anuncio.preco) : null;
-  const nota = notaDaCelula(celula);
-
-  if (ehKit) {
-    const celKit = estiloCelula(ws.getCell(`J${linha}`), { alinhamento: CENTRO });
-    celKit.value = `KIT - ${quantidadeKit}`;
-    if (nota) celKit.note = nota;
-    estiloCelula(ws.getCell(`K${linha}`), { formato: '0.00' }).value = Number.isFinite(custoProducao) ? custoProducao : null;
-    // "(+30%)" do bloco de kit — mesma conta, uma coluna à direita.
-    estiloCelula(ws.getCell(`L${linha}`), { fonte: FONTE_VERMELHA, formato: '0.00' }).value = {
-      formula: `K${linha}+(K${linha}*${pct}%)`,
-    };
-    estiloCelula(ws.getCell(`M${linha}`), { formato: '0.00' }).value = precoAnunciado;
-    escreverValorRecebido(ws, { col: 'N', precoCol: 'M', linha, linhaProduto, plataforma, anuncio });
-    const qtd = quantidadeKit || 1;
-    estiloCelula(ws.getCell(`O${linha}`), { formato: '0.00' }).value = { formula: `(N${linha}/${qtd})` };
-    estiloCelula(ws.getCell(`P${linha}`), { formato: '0.00' }).value = { formula: `(O${linha}-L${linha})` };
-    estiloCelula(ws.getCell(`Q${linha}`), { formato: '0.00' }).value = { formula: `(P${linha}*${qtd})` };
-    estiloCelula(ws.getCell(`R${linha}`), { formato: '0.0' }).value = { formula: `((Q${linha}/N${linha})*100)` };
-    estiloCelula(ws.getCell(`S${linha}`), { formato: '0.0' }).value = { formula: `(M${linha}-N${linha})` };
-    estiloCelula(ws.getCell(`T${linha}`), { alinhamento: CENTRO, formato: '0.0' }).value = { formula: `((S${linha}/M${linha})*100)` };
-    ws.mergeCells(`U${linha}:V${linha}`);
-    estiloCelula(ws.getCell(`U${linha}`), {
-      fonte: { ...FONTE, bold: false },
-      alinhamento: { horizontal: 'left', vertical: 'center', wrapText: true },
-    }).value = textoAds(anuncio);
-    return;
-  }
-
-  const celCusto = estiloCelula(ws.getCell(`J${linha}`), { formato: '0.00' });
-  celCusto.value = Number.isFinite(custoProducao) ? custoProducao : null;
-  if (nota) celCusto.note = nota;
-  // A correção do dono: a fórmula do "(+30%)" agora sai `=J3+(J3*42,9%)`
-  // quando a ficha de custo não traz o acréscimo — antes saía `*0%`.
-  estiloCelula(ws.getCell(`K${linha}`), { fonte: FONTE_VERMELHA, formato: '0.00' }).value = {
-    formula: `J${linha}+(J${linha}*${pct}%)`,
-  };
-  estiloCelula(ws.getCell(`L${linha}`), { formato: '0.00' }).value = precoAnunciado;
-  escreverValorRecebido(ws, { col: 'M', precoCol: 'L', linha, linhaProduto, plataforma, anuncio });
-  estiloCelula(ws.getCell(`N${linha}`), { formato: '0.00' }).value = { formula: `(M${linha}-K${linha})` };
-  estiloCelula(ws.getCell(`O${linha}`), { alinhamento: CENTRO, formato: '0.0' }).value = { formula: `(N${linha}/L${linha})*100` };
-  estiloCelula(ws.getCell(`P${linha}`), { alinhamento: CENTRO, formato: '0.0' }).value = { formula: `(L${linha}-M${linha})` };
-  estiloCelula(ws.getCell(`Q${linha}`), { fonte: FONTE_VERMELHA, alinhamento: CENTRO, formato: '0.0' }).value = { formula: `((P${linha}/L${linha})*100)` };
-  estiloCelula(ws.getCell(`V${linha}`), {
-    fonte: { ...FONTE, bold: false },
-    alinhamento: { horizontal: 'left', vertical: 'center', wrapText: true },
-  }).value = textoAds(anuncio);
+// Linha de loja sem anúncio: EM BRANCO. O dono foi explícito — "se não está
+// anunciado deixa em branco, não altere a planilha". Sobra a moldura, que é o
+// que mantém a grade de pé.
+function escreverLinhaVazia(ws, linha, colunas) {
+  for (const col of colunas) estiloCelula(ws.getCell(`${col}${linha}`), { alinhamento: CENTRO });
 }
 
 // "V. RECE." — fórmula onde a plataforma tem regra fechada; número observado
-// onde não tem (Mercado Livre). Nunca uma estimativa nossa: quando não há
-// nem regra nem venda conciliada, a célula fica vazia pra ser preenchida à
-// mão, exatamente como na planilha de hoje, e ganha uma nota dizendo por quê.
+// onde não tem (Mercado Livre). Nunca uma estimativa nossa: quando não há nem
+// regra nem venda conciliada, a célula fica vazia pra ser preenchida à mão, e
+// ganha uma nota dizendo por quê.
 function escreverValorRecebido(ws, { col, precoCol, linha, linhaProduto, plataforma, anuncio }) {
   const cel = estiloCelula(ws.getCell(`${col}${linha}`), { formato: '0.00' });
   const montar = FORMULA_RECEBIDO[plataforma.chave];
@@ -860,6 +777,201 @@ function escreverValorRecebido(ws, { col, precoCol, linha, linhaProduto, platafo
   cel.value = null;
   cel.note = 'Preencher à mão: o Mercado Livre não tem regra fechada de taxa e ainda não há '
     + 'pedido conciliado deste anúncio para ler o valor repassado.';
+}
+
+// Lucro negativo em vermelho — a mesma regra que já existe no arquivo do dono.
+function marcarLucro(ws, colInicio, colFim, primeira, ultima) {
+  ws.addConditionalFormatting({
+    ref: `${colInicio}${primeira}:${colFim}${ultima}`,
+    rules: [
+      { type: 'cellIs', operator: 'lessThan', formulae: ['0'], priority: 1, style: { font: { color: { argb: 'FF9C0006' } }, fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFFFC7CE' } } } },
+      { type: 'cellIs', operator: 'greaterThanOrEqual', formulae: ['0'], priority: 2, style: { font: { color: { argb: 'FF006100' } } } },
+    ],
+  });
+}
+
+function ajustarAlturas(ws, primeira, ultima) {
+  for (let l = primeira; l <= ultima; l += 1) ws.getRow(l).height = alturaEmPontos(ALTURA_LINHA_PX);
+}
+
+// ---------------------------------------------------------------------------
+// Bloco do UNITÁRIO — 10 linhas: cabeçalho, produto e 8 lugares de loja
+// ---------------------------------------------------------------------------
+function escreverBlocoUnitario(ws, { numero, produto, grade, calculo, cores, foto, livro, genero }) {
+  const linhaCabecalho = ws.rowCount + (ws.rowCount === 0 ? 1 : 2);
+  const linhaProduto = linhaCabecalho + 1;
+  const primeira = linhaProduto + 1;
+  const ultima = primeira + LUGARES_DE_LOJA - 1;
+
+  escreverCabecalhoBloco(ws, linhaCabecalho);
+  escreverLinhaProduto(ws, {
+    linha: linhaProduto,
+    numero,
+    referencia: produto.referencia,
+    genero,
+    nome: produto.descricao || '',
+    titulos: TITULOS_UNITARIO,
+  });
+  // CORES ocupa R:U; ADS fica sozinha em V.
+  ws.mergeCells(`R${linhaProduto}:U${linhaProduto}`);
+  estiloCelula(ws.getCell(`R${linhaProduto}`), { alinhamento: CENTRO }).value = 'CORES';
+  estiloCelula(ws.getCell(`V${linhaProduto}`), { alinhamento: CENTRO }).value = 'ADS (30 dias)';
+
+  inserirFoto(ws, livro, foto, primeira, ultima);
+
+  const pct = percentualDaFormula(calculo);
+  const custoProducao = Number(calculo?.custoTotal?.subtotalProducao);
+
+  let linha = primeira;
+  for (const plataforma of PLATAFORMAS) {
+    const primeiraDaPlataforma = linha;
+    for (const marca of MARCAS) {
+      // Coluna I: ORIGEM na primeira linha do par, HOGGAR na segunda.
+      estiloCelula(ws.getCell(`I${linha}`), { alinhamento: ESQUERDA }).value = marca;
+
+      const celula = grade.get(`${plataforma.chave}|${marca}`);
+      if (!celula) {
+        escreverLinhaVazia(ws, linha, VALORES_UNITARIO);
+        estiloCelula(ws.getCell(`V${linha}`), { alinhamento: CENTRO });
+      } else {
+        const { anuncio } = celula;
+        const celCusto = estiloCelula(ws.getCell(`J${linha}`), { formato: '0.00' });
+        celCusto.value = Number.isFinite(custoProducao) ? custoProducao : null;
+        const nota = notaDaCelula(celula);
+        if (nota) celCusto.note = nota;
+
+        estiloCelula(ws.getCell(`K${linha}`), { fonte: FONTE_VERMELHA, formato: '0.00' }).value = {
+          formula: `J${linha}+(J${linha}*${pct}%)`,
+        };
+        estiloCelula(ws.getCell(`L${linha}`), { formato: '0.00' }).value = anuncio.preco != null ? Number(anuncio.preco) : null;
+        escreverValorRecebido(ws, { col: 'M', precoCol: 'L', linha, linhaProduto, plataforma, anuncio });
+        estiloCelula(ws.getCell(`N${linha}`), { formato: '0.00' }).value = { formula: `(M${linha}-K${linha})` };
+        estiloCelula(ws.getCell(`O${linha}`), { alinhamento: CENTRO, formato: '0.0' }).value = { formula: `(N${linha}/L${linha})*100` };
+        estiloCelula(ws.getCell(`P${linha}`), { alinhamento: CENTRO, formato: '0.0' }).value = { formula: `(L${linha}-M${linha})` };
+        estiloCelula(ws.getCell(`Q${linha}`), { fonte: FONTE_VERMELHA, alinhamento: CENTRO, formato: '0.0' }).value = { formula: `((P${linha}/L${linha})*100)` };
+        estiloCelula(ws.getCell(`V${linha}`), {
+          fonte: { ...FONTE, bold: false },
+          alinhamento: { horizontal: 'left', vertical: 'center', wrapText: true },
+        }).value = textoAds(anuncio);
+      }
+      linha += 1;
+    }
+    // G:H mesclado nas DUAS linhas da plataforma, com o nome centralizado.
+    ws.mergeCells(`G${primeiraDaPlataforma}:H${linha - 1}`);
+    estiloCelula(ws.getCell(`G${primeiraDaPlataforma}`), { alinhamento: CENTRO }).value = plataforma.rotulo;
+  }
+
+  escreverCores(ws, cores, primeira, ultima);
+  ajustarAlturas(ws, linhaCabecalho, ultima);
+  marcarLucro(ws, 'N', 'O', primeira, ultima);
+  return ultima;
+}
+
+// CORES: uma por linha, na faixa R:U, só o nome — como no print. Sobrando
+// cor além das linhas do bloco, a última célula junta o resto em vez de
+// deixar a cor sumir da planilha (REGRA 2).
+function escreverCores(ws, cores, primeira, ultima) {
+  const vagas = ultima - primeira + 1;
+  const lista = cores.length > vagas
+    ? [...cores.slice(0, vagas - 1), cores.slice(vagas - 1).join(' · ')]
+    : cores;
+
+  for (let l = primeira; l <= ultima; l += 1) {
+    const faixa = `R${l}:U${l}`;
+    ws.mergeCells(faixa);
+    estiloCelula(ws.getCell(`R${l}`), { alinhamento: ESQUERDA }).value = lista[l - primeira] ?? null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Bloco do KIT — um bloco só, com todos os tamanhos dentro
+// ---------------------------------------------------------------------------
+// Para cada um dos 8 lugares de loja há uma linha por tamanho de kit. G leva a
+// plataforma e H a marca, ambos mesclados na altura do grupo; I leva "KIT - n".
+function escreverBlocoKit(ws, { produto, gradePorTamanho, tamanhos, calculo, foto, livro, genero, nomeDoKit }) {
+  const linhaCabecalho = ws.rowCount + (ws.rowCount === 0 ? 1 : 2);
+  const linhaProduto = linhaCabecalho + 1;
+  const primeira = linhaProduto + 1;
+  const ultima = primeira + (LUGARES_DE_LOJA * tamanhos.length) - 1;
+
+  escreverCabecalhoBloco(ws, linhaCabecalho);
+  escreverLinhaProduto(ws, {
+    linha: linhaProduto,
+    // Sem Nº: a referência é a mesma do bloco de cima.
+    numero: null,
+    referencia: produto.referencia,
+    genero,
+    nome: nomeDoKit,
+    titulos: TITULOS_KIT,
+  });
+  ws.mergeCells(`T${linhaProduto}:V${linhaProduto}`);
+  estiloCelula(ws.getCell(`T${linhaProduto}`), { alinhamento: CENTRO }).value = 'ADS (30 dias)';
+
+  inserirFoto(ws, livro, foto, primeira, ultima);
+
+  const pct = percentualDaFormula(calculo);
+  const custoProducao = Number(calculo?.custoTotal?.subtotalProducao);
+
+  let linha = primeira;
+  for (const plataforma of PLATAFORMAS) {
+    const primeiraDaPlataforma = linha;
+    for (const marca of MARCAS) {
+      const primeiraDaMarca = linha;
+      for (const quantidade of tamanhos) {
+        estiloCelula(ws.getCell(`I${linha}`), { alinhamento: CENTRO }).value = `KIT - ${quantidade}`;
+
+        const celula = gradePorTamanho.get(quantidade)?.get(`${plataforma.chave}|${marca}`);
+        if (!celula) {
+          escreverLinhaVazia(ws, linha, VALORES_KIT);
+          ws.mergeCells(`T${linha}:V${linha}`);
+          estiloCelula(ws.getCell(`T${linha}`), { alinhamento: CENTRO });
+        } else {
+          const { anuncio } = celula;
+          const celCusto = estiloCelula(ws.getCell(`J${linha}`), { formato: '0.00' });
+          celCusto.value = Number.isFinite(custoProducao) ? custoProducao : null;
+          const nota = notaDaCelula(celula);
+          if (nota) celCusto.note = nota;
+
+          estiloCelula(ws.getCell(`K${linha}`), { fonte: FONTE_VERMELHA, formato: '0.00' }).value = {
+            formula: `J${linha}+(J${linha}*${pct}%)`,
+          };
+          estiloCelula(ws.getCell(`L${linha}`), { formato: '0.00' }).value = anuncio.preco != null ? Number(anuncio.preco) : null;
+          escreverValorRecebido(ws, { col: 'M', precoCol: 'L', linha, linhaProduto, plataforma, anuncio });
+          estiloCelula(ws.getCell(`N${linha}`), { formato: '0.00' }).value = { formula: `(M${linha}/${quantidade})` };
+          estiloCelula(ws.getCell(`O${linha}`), { formato: '0.00' }).value = { formula: `(N${linha}-K${linha})` };
+          estiloCelula(ws.getCell(`P${linha}`), { formato: '0.00' }).value = { formula: `(O${linha}*${quantidade})` };
+          estiloCelula(ws.getCell(`Q${linha}`), { alinhamento: CENTRO, formato: '0.0' }).value = { formula: `((P${linha}/M${linha})*100)` };
+          estiloCelula(ws.getCell(`R${linha}`), { formato: '0.00' }).value = { formula: `(L${linha}-M${linha})` };
+          estiloCelula(ws.getCell(`S${linha}`), { alinhamento: CENTRO, formato: '0.0' }).value = { formula: `((R${linha}/L${linha})*100)` };
+          ws.mergeCells(`T${linha}:V${linha}`);
+          estiloCelula(ws.getCell(`T${linha}`), {
+            fonte: { ...FONTE, bold: false },
+            alinhamento: { horizontal: 'left', vertical: 'center', wrapText: true },
+          }).value = textoAds(anuncio);
+        }
+        linha += 1;
+      }
+      // H: a marca, mesclada na altura dos tamanhos daquela loja.
+      if (linha - 1 > primeiraDaMarca) ws.mergeCells(`H${primeiraDaMarca}:H${linha - 1}`);
+      estiloCelula(ws.getCell(`H${primeiraDaMarca}`), { alinhamento: CENTRO }).value = marca;
+    }
+    // G: a plataforma, mesclada na altura das duas marcas.
+    if (linha - 1 > primeiraDaPlataforma) ws.mergeCells(`G${primeiraDaPlataforma}:G${linha - 1}`);
+    estiloCelula(ws.getCell(`G${primeiraDaPlataforma}`), { alinhamento: CENTRO }).value = plataforma.rotulo;
+  }
+
+  ajustarAlturas(ws, linhaCabecalho, ultima);
+  marcarLucro(ws, 'O', 'Q', primeira, ultima);
+  return ultima;
+}
+
+// O nome do bloco de kit. Vem do TÍTULO do anúncio de kit que mais vendeu — é
+// o nome que o kit tem de verdade na loja ("KIT CAMISETA GOLA POLO MC"). Sem
+// título, monta a partir da descrição do cadastro.
+function nomeDoKitDoProduto(anunciosDeKit, produto) {
+  const campeao = escolherPrincipal(anunciosDeKit.filter((a) => a.titulo));
+  if (campeao?.titulo) return String(campeao.titulo).toUpperCase();
+  return `KIT ${produto.descricao || produto.referencia || ''}`.trim().toUpperCase();
 }
 
 // ---------------------------------------------------------------------------
@@ -901,27 +1013,58 @@ async function montarPlanilhaAnuncios({
     return livro;
   }
 
+  // As fotos dos anúncios são baixadas uma vez por endereço, não por bloco.
+  const cacheDeFotos = new Map();
   let numero = 1;
+
   for (const produto of dados.produtos) {
-    const anunciosDoProduto = dados.anuncios.filter((a) => a.produto_id === produto.id);
-    const titulosDeAnuncio = anunciosDoProduto.map((a) => a.titulo).filter(Boolean);
-    const cores = dados.coresPorProduto.get(produto.id) || [];
-    const foto = dados.fotos.get(produto.id) || null;
+    const doProduto = dados.anuncios.filter((a) => a.produto_id === produto.id);
+    const unitarios = doProduto.filter((a) => quantidadeDoKit(a) == null);
+    const deKit = doProduto.filter((a) => quantidadeDoKit(a) != null);
+
+    const genero = generoDoProduto(produto, doProduto.map((a) => a.titulo).filter(Boolean));
     const calculo = dados.calculoPorProduto.get(produto.id);
+    const fotoCadastro = dados.fotos.get(produto.id) || null;
 
-    // Unitário primeiro; os kits logo abaixo, do menor pro maior, com o MESMO
-    // Nº — é a mesma referência, e o dono pediu o kit junto dela.
-    for (const quantidadeKit of tamanhosDeKit(anunciosDoProduto)) {
-      const grade = montarGrade(anunciosDoProduto, dados.lojas, quantidadeKit);
-      // Um tamanho de kit sem nenhum anúncio não vira bloco de oito linhas
-      // vazias. O unitário sempre sai, porque é o retrato da referência.
-      const temAlgo = [...grade.values()].some(Boolean);
-      if (!temAlgo && quantidadeKit != null) continue;
-
-      escreverBloco(ws, {
-        numero, produto, grade, calculo, cores, foto, quantidadeKit, livro, titulosDeAnuncio,
+    // Bloco do unitário — só existe se a referência tem anúncio de unidade.
+    if (unitarios.length > 0) {
+      escreverBlocoUnitario(ws, {
+        numero,
+        produto,
+        grade: montarGrade(unitarios, dados.lojas),
+        calculo,
+        cores: dados.coresPorProduto.get(produto.id) || [],
+        // A foto do bloco é a do anúncio de unidade que mais vendeu.
+        foto: await fotoDoBloco(unitarios, fotoCadastro, cacheDeFotos),
+        livro,
+        genero,
       });
     }
+
+    // Bloco do kit, logo abaixo, com todos os tamanhos do menor pro maior.
+    const tamanhos = tamanhosDeKit(deKit);
+    if (tamanhos.length > 0) {
+      const gradePorTamanho = new Map();
+      for (const quantidade of tamanhos) {
+        gradePorTamanho.set(
+          quantidade,
+          montarGrade(deKit.filter((a) => quantidadeDoKit(a) === quantidade), dados.lojas)
+        );
+      }
+      escreverBlocoKit(ws, {
+        produto,
+        gradePorTamanho,
+        tamanhos,
+        calculo,
+        // E a do bloco de kit é a do anúncio de KIT que mais vendeu — por isso
+        // ela mostra o kit montado, e não a peça sozinha.
+        foto: await fotoDoBloco(deKit, fotoCadastro, cacheDeFotos),
+        livro,
+        genero,
+        nomeDoKit: nomeDoKitDoProduto(deKit, produto),
+      });
+    }
+
     numero += 1;
   }
 
@@ -938,10 +1081,14 @@ module.exports = {
   chaveDeOrdem,
   marcaDaLoja,
   dimensoesDaImagem,
+  formatoDaImagem,
   larguraEmCaracteres,
   alturaEmPontos,
   tamanhosDeKit,
+  quantidadeDoKit,
   escolherPrincipal,
+  anuncioDaFoto,
+  nomeDoKitDoProduto,
   PCT_ACRESCIMO_PADRAO,
   PLATAFORMAS,
   MARCAS,
