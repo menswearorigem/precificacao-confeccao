@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, ChevronRight, Search, Users } from 'lucide-react';
+import { Plus, ChevronRight, Search, Users, DownloadCloud } from 'lucide-react';
 import { api } from '../api/client';
 import DataTable from '../components/DataTable';
 import { SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazio } from '../components/ui';
@@ -45,6 +45,26 @@ export default function ClientesListPage() {
   const [busca, setBusca] = useState('');
   const [loading, setLoading] = useState(true);
   const [erroCarga, setErroCarga] = useState('');
+  const [impWik, setImpWik] = useState(false);
+  const [avisoWik, setAvisoWik] = useState('');
+
+  // Estado próprio (não `erroCarga`): load(), chamado logo abaixo, zera
+  // erroCarga no próprio início — reaproveitar o mesmo estado apagaria esta
+  // mensagem antes de ela chegar a aparecer na tela.
+  async function importarWik() {
+    setImpWik(true); setAvisoWik('');
+    try {
+      const r = await api.post('/clientes/importar-wik', {});
+      const p = [];
+      if (r.criados) p.push(`${r.criados} criados`);
+      if (r.vinculados) p.push(`${r.vinculados} vinculados`);
+      if (r.atualizados) p.push(`${r.atualizados} atualizados`);
+      if (r.jaExistiam) p.push(`${r.jaExistiam} já existiam`);
+      setAvisoWik(`Clientes do Wik: ${p.join(', ') || (r.pulado || 'nada a importar')}.`);
+      load();
+    } catch (e) { setAvisoWik('Erro: ' + e.message); }
+    finally { setImpWik(false); }
+  }
 
   function load() {
     setLoading(true);
@@ -79,11 +99,17 @@ export default function ClientesListPage() {
       {erroCarga && <p className="login-error">{erroCarga}</p>}
         <div style={{ display: 'flex', gap: 8 }}>
           <BotaoExportar nomeBase="clientes" colunas={COLUNAS_EXPORTACAO} itens={tabela.itensOrdenados} disabled={tabela.totalItens === 0} />
+          <button type="button" className="btn btn-ghost" onClick={importarWik} disabled={impWik}
+            title="Importa os clientes do Wik pela API. Editar um cliente aqui desliga a sincronização dele.">
+            <DownloadCloud size={14} /> {impWik ? 'Importando…' : 'Importar do Wik'}
+          </button>
           <Link to="/clientes/novo" className="btn btn-primary">
             <Plus size={14} /> Novo cliente
           </Link>
         </div>
       </div>
+
+      {avisoWik && <p className="aviso-inline" style={{ marginBottom: 8 }}>{avisoWik}</p>}
 
       <div className="card" style={{ marginBottom: 16 }}>
         <form onSubmit={handleBuscaSubmit} style={{ display: 'flex', gap: 8 }}>

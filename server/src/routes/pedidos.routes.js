@@ -16,6 +16,14 @@ const { aplicarTabelaPreco, carregarTabelaParaProduto, precoFinalPorPeca, tabela
 const produtosRoutes = require('./produtos.routes');
 
 const router = express.Router();
+
+// Descolamento do Wik: venda importada do Wik (origem 'wik') para de sincronizar
+// ao ser editada à mão. Só toca vendas do Wik; marketplace e manuais não mudam.
+router.use('/:id', async (req, res, next) => {
+  if (req.method === 'GET' || !/^\d+$/.test(req.params.id)) return next();
+  try { await pool.query("UPDATE pedidos_venda SET sincroniza_wik = FALSE, updated_at = now() WHERE id = $1 AND origem = 'wik' AND sincroniza_wik = TRUE", [req.params.id]); } catch (_) {}
+  next();
+});
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Canais que informam quanto o marketplace de fato repassou pela venda —
@@ -2715,5 +2723,16 @@ router.post('/:id/cancelar', async (req, res, next) => {
 // EXATAMENTE a mesma conta de lucro — em vez de escrever uma segunda, que
 // divergiria da primeira no primeiro ajuste feito só de um lado.
 router.calcularRelatorioPedidos = calcularRelatorioPedidos;
+
+
+// Importa as VENDAS do Wik pela API (venda_get + vendas_itens_get). Janela de
+// dias configurável; idempotente por (empresa, PedId); venda editada descola.
+router.post('/importar-wik-vendas', async (req, res) => {
+  try {
+    const { importarVendasAgora } = require('../lib/wikVendasImport');
+    const dias = Number(req.body?.dias) > 0 ? Number(req.body.dias) : 30;
+    res.json(await importarVendasAgora({ dias }));
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
 
 module.exports = router;

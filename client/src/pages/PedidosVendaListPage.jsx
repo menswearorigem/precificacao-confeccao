@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Plus, Search, ClipboardList, ChevronRight, User, Tags, LayoutGrid, List as ListIcon,
-} from 'lucide-react';
+  Plus, Search, ClipboardList, ChevronRight, User, Tags, LayoutGrid, List as ListIcon, DownloadCloud} from 'lucide-react';
 import { api } from '../api/client';
 import { brl, formatQtd, dataBr } from '../lib/format';
 import {
@@ -80,6 +79,8 @@ export default function PedidosVendaListPage() {
   const [loading, setLoading] = useState(true);
   const [erroCarga, setErroCarga] = useState('');
   const [criando, setCriando] = useState(false);
+  const [impWik, setImpWik] = useState(false);
+  const [avisoWik, setAvisoWik] = useState('');
 
   useEffect(() => {
     Promise.all([
@@ -98,6 +99,20 @@ export default function PedidosVendaListPage() {
   // trocar o período duas vezes rápido podia deixar a lista mostrando o
   // resultado do filtro ANTIGO, com a barra de filtros dizendo outra coisa.
   const geracao = useRef(0);
+
+  async function importarVendasWik() {
+    setImpWik(true); setAvisoWik('');
+    try {
+      const r = await api.post('/pedidos/importar-wik-vendas', { dias: 30 });
+      const p = [];
+      if (r.criadas) p.push(`${r.criadas} criadas`);
+      if (r.atualizadas) p.push(`${r.atualizadas} atualizadas`);
+      if (r.jaExistiam) p.push(`${r.jaExistiam} já existiam`);
+      setAvisoWik(`Vendas do Wik (30 dias): ${p.join(', ') || (r.pulado || 'nada a importar')}.`);
+      load();
+    } catch (e) { setAvisoWik('Erro: ' + e.message); }
+    finally { setImpWik(false); }
+  }
 
   function load() {
     const minha = ++geracao.current;
@@ -220,6 +235,10 @@ export default function PedidosVendaListPage() {
             itens={tabela.itensOrdenados}
             disabled={tabela.totalItens === 0}
           />
+          <button type="button" className="btn btn-ghost" onClick={importarVendasWik} disabled={impWik}
+            title="Puxa as vendas do Wik pela API (últimos 30 dias). Editar uma venda aqui desliga a sincronização dela.">
+            <DownloadCloud size={14} /> {impWik ? 'Puxando…' : 'Puxar do Wik'}
+          </button>
           <button className="btn btn-primary" onClick={novoPedido} disabled={criando}>
             <Plus size={14} /> {criando ? 'Abrindo…' : 'Nova venda'}
           </button>
@@ -305,6 +324,7 @@ export default function PedidosVendaListPage() {
 
       <ChipsFiltros itens={chips} onLimparTudo={limparFiltros} />
 
+      {avisoWik && <p className="aviso-inline" style={{ marginBottom: 8 }}>{avisoWik}</p>}
       <AvisoDeFalha mensagem={erroCarga} aoTentarDeNovo={load} />
 
       {!loading && resumo.semVendedor > 0 && (

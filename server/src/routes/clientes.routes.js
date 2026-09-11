@@ -3,6 +3,14 @@ const pool = require('../db/pool');
 
 const router = express.Router();
 
+// Descolamento do Wik: cliente importado do Wik para de sincronizar ao ser
+// editado à mão (qualquer escrita em /:id).
+router.use('/:id', async (req, res, next) => {
+  if (req.method === 'GET' || !/^\d+$/.test(req.params.id)) return next();
+  try { await pool.query('UPDATE clientes SET sincroniza_wik = FALSE, updated_at = now() WHERE id = $1 AND sincroniza_wik = TRUE', [req.params.id]); } catch (_) {}
+  next();
+});
+
 const EDITABLE_FIELDS = [
   'tipo_pessoa',
   'nome',
@@ -257,6 +265,16 @@ router.delete('/:id', async (req, res, next) => {
     }
     next(err);
   }
+});
+
+
+// Importa os clientes do Wik pela API (cliente_get, tipo Cliente). Cria os que
+// faltam, vincula os de mesmo CNPJ/nome, não sobrescreve os editados.
+router.post('/importar-wik', async (_req, res) => {
+  try {
+    const { importarClientesAgora } = require('../lib/wikVendasImport');
+    res.json(await importarClientesAgora());
+  } catch (e) { res.status(502).json({ error: e.message }); }
 });
 
 module.exports = router;

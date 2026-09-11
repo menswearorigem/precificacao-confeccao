@@ -186,6 +186,9 @@ const CAMINHO_POR_ENDPOINT = {
   materiaprima_get: 'wiki_v2',
   categoria_get: 'wiki_v2',
   cor_get: 'wiki_v2',
+  cliente_get: 'wiki_v2',
+  venda_get: 'wiki_v2',
+  vendas_itens_get: 'wiki_v2',
 };
 
 function baseDoEndpoint(path) {
@@ -383,9 +386,43 @@ async function listarOperacoes(tokenBox, opcoes) {
   return Array.isArray(data.retorno) ? data.retorno : [];
 }
 
+
+// ── Clientes (cliente_get) ──────────────────────────────────────────────────
+// Lista pessoas cadastradas. Paginado (campo `pagina`). Devolve TODOS os tipos
+// (CliTpCliente): 1 Cliente · 2 Fornecedor · 3 Assessor · 4 Funcionário ·
+// 5 Vendedor — filtrar do nosso lado. Datas exigem `tipoData` (1=cadastro,
+// 2=alteração) quando passadas.
+async function listarClientes(tokenBox, { pagina = 1, dataInicio, dataFinal, tipoData = 1 } = {}, opcoes) {
+  const params = { pagina };
+  if (dataInicio) { params.dataInicio = dataInicio; params.dataFinal = dataFinal; params.tipoData = tipoData; }
+  const data = await chamarApi('cliente_get', tokenBox, params, opcoes);
+  const r = data.retorno;
+  return Array.isArray(r) ? r : (r ? [r] : []);
+}
+
+// ── Vendas (venda_get / vendas_itens_get) ───────────────────────────────────
+// venda_get: lista enxuta por período (empId obrigatório). Campos: Operacao,
+// Cliente, Situacao, PedId, PedValorLiq.
+async function listarVendas(tokenBox, { empId, dataInicial, dataFinal } = {}, opcoes) {
+  const params = { empId };
+  if (dataInicial) params.datainicial = dataInicial;
+  if (dataFinal) params.datafinal = dataFinal;
+  const data = await chamarApi('venda_get', tokenBox, params, opcoes);
+  const r = data.retorno;
+  return Array.isArray(r) ? r : (r ? [r] : []);
+}
+// vendas_itens_get: venda detalhada com itens e grade (empId obrigatório; `id`
+// para uma venda só). Sem filtro de data — por isso puxamos por `id`.
+async function buscarVendaItens(tokenBox, { empId, id } = {}, opcoes) {
+  const data = await chamarApi('vendas_itens_get', tokenBox, { empId, id }, opcoes);
+  const r = data.retorno;
+  return Array.isArray(r) ? r : (r ? [r] : []);
+}
+
 module.exports = {
   login, criarTokenBox, listarCategorias, listarProdutos, listarSaldoEstoque, buscarProdutoPorReferencia,
   buscarInsumosFichaTecnica, buscarOperacoesFichaTecnica, buscarMateriaPrima, listarOperacoes,
+  listarClientes, listarVendas, buscarVendaItens,
   zerarContadorChamadas, contadorChamadas,
   chamarBrutoDiagnostico, CAMINHO_POR_ENDPOINT,
 };
