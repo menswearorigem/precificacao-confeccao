@@ -209,6 +209,17 @@ async function importarCentrosCusto(sessao, emp, resumo) {
 // As contas bancárias do Wik viram `fin_contas`. `GrpEmpId` decide de qual CNPJ
 // a conta é — o extrato da matriz mostra contas de outras empresas, então
 // carimbar tudo na empresa do ciclo criaria conta duplicada no CNPJ errado.
+// Pega o primeiro campo preenchido dentre vários nomes possíveis — o grid do
+// Wik varia o nome exato de agência/conta/banco entre telas, então tentamos os
+// candidatos conhecidos em vez de fixar um só (e ainda guardamos a linha crua).
+function primeiroCampo(obj, nomes) {
+  for (const n of nomes) {
+    const v = obj[n];
+    if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+  }
+  return null;
+}
+
 async function importarContasBancarias(sessao, emp, mapaEmpresas, resumo) {
   const linhas = await wikWeb.contasBancarias(sessao);
   for (const l of linhas) {
@@ -217,15 +228,40 @@ async function importarContasBancarias(sessao, emp, mapaEmpresas, resumo) {
     const empWik = Number(l.GrpEmpId) || emp.wik_emp_id;
     const empresaId = mapaEmpresas.get(empWik) || emp.id;
     const ehCaixa = Number(l.GrpContaCaixa) === 1 || /caixa|tesouraria/i.test(String(l.GrpDescicao || ''));
+
+    // Campos com nome variável: tentamos os candidatos e, no fim, a linha crua
+    // (wik_dados) guarda tudo — o dono pediu "com todas as informações".
+    const agencia = primeiroCampo(l, ['GrpAg', 'GrpAgencia', 'GrpAgenciaConta', 'Agencia']);
+    const conta = primeiroCampo(l, ['GrpCc', 'GrpConta', 'GrpContaCorrente', 'GrpNumConta', 'Conta']);
+    const bancoNome = primeiroCampo(l, ['GrpBanco', 'GrpBancoNome', 'BancoDescricao', 'Banco']);
+    const bancoCod = primeiroCampo(l, ['GrpBancoCodigo', 'GrpBancoTabId', 'GrpBancoId']);
+    const cedente = primeiroCampo(l, ['GrpCedente', 'GrpCedenteBoleto']);
+    const carteira = primeiroCampo(l, ['GrpCarteira', 'GrpCarteiraBoleto']);
+    const nnIni = primeiroCampo(l, ['GrpNossonumIni', 'GrpNossoNumeroIni']);
+    const nnFin = primeiroCampo(l, ['GrpNossonumFin', 'GrpNossoNumeroFin']);
+    const wikTipo = primeiroCampo(l, ['GrpTipo', 'GrpTipoConta', 'GrpTipoDescricao']);
+    const contaMatriz = (l.blContaMatriz === true || Number(l.blContaMatriz) === 1);
+
     await pool.query(
-      `INSERT INTO fin_contas (empresa_id, nome, tipo, banco_codigo, agencia, conta, ativo, wik_emp_id, wik_grp_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO fin_contas
+         (empresa_id, nome, tipo, banco_codigo, banco_nome, agencia, conta, ativo,
+          wik_tipo, cedente, carteira, nosso_numero_ini, nosso_numero_fin, conta_matriz,
+          wik_dados, wik_emp_id, wik_grp_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
        ON CONFLICT (wik_emp_id, wik_grp_id) WHERE wik_grp_id IS NOT NULL
-       DO UPDATE SET nome = EXCLUDED.nome, tipo = EXCLUDED.tipo, agencia = EXCLUDED.agencia,
-                     conta = EXCLUDED.conta, ativo = EXCLUDED.ativo`,
+       DO UPDATE SET nome = EXCLUDED.nome, tipo = EXCLUDED.tipo,
+                     banco_codigo = EXCLUDED.banco_codigo, banco_nome = EXCLUDED.banco_nome,
+                     agencia = EXCLUDED.agencia, conta = EXCLUDED.conta, ativo = EXCLUDED.ativo,
+                     wik_tipo = EXCLUDED.wik_tipo, cedente = EXCLUDED.cedente,
+                     carteira = EXCLUDED.carteira, nosso_numero_ini = EXCLUDED.nosso_numero_ini,
+                     nosso_numero_fin = EXCLUDED.nosso_numero_fin, conta_matriz = EXCLUDED.conta_matriz,
+                     wik_dados = EXCLUDED.wik_dados`,
       [empresaId, texto(l.GrpDescicao, 120) || `Conta ${grpId}`, ehCaixa ? 'caixa' : 'bancaria',
-        texto(l.GrpBancoTabId, 5), texto(l.GrpAg, 15), texto(l.GrpCc, 25),
-        l.blContaAtiva !== false, empWik, grpId]
+        texto(bancoCod, 5), texto(bancoNome, 80), texto(agencia, 15), texto(conta, 25),
+        l.blContaAtiva !== false,
+        texto(wikTipo, 40), texto(cedente, 80), texto(carteira, 20),
+        texto(nnIni, 30), texto(nnFin, 30), contaMatriz,
+        JSON.stringify(l), empWik, grpId]
     );
     resumo.contas += 1;
   }
@@ -588,6 +624,57 @@ async function importarExtrato(sessao, emp, janela, mapas, resumo) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// CONCILIAÇÃO JÁ FEITA NO WIK — trazer o que o Wik já casou (pedido do dono)
+// ═══════════════════════════════════════════════════════════════════════════
+// No Wik, cada baixa de título gera o lançamento no extrato: título e banco já
+// nascem casados lá dentro. O Hub importa os dois lados (a baixa via
+// contas a pagar/receber, a linha via extrato), mas até agora não LIGAVA um ao
+// outro — então tudo aparecia como "a conciliar" no Hub, e o dono teria que
+// refazer à mão o que o Wik já fez.
+//
+// Aqui ligamos os dois usando o que já temos: uma linha de extrato do Wik e uma
+// baixa do Wik na MESMA conta, MESMA data e MESMO valor são o mesmo movimento —
+// e como os dois lados vêm do MESMO sistema, o casamento é muito mais seguro do
+// que o de OFX (onde os dados vêm de fontes diferentes). Só concilia quando há
+// exatamente UMA baixa candidata (sem ambiguidade) e ela ainda não está ligada
+// a outra linha — o resto fica pro conciliador do Hub, como antes. Respeita
+// `wik_travado` (linha mexida à mão aqui não é tocada) e é idempotente.
+async function conciliarExtratoComBaixasWik(emp, resumo) {
+  const { rows: linhas } = await pool.query(
+    `SELECT e.id, e.conta_id, e.data_lancamento, ABS(e.valor) AS valor
+       FROM fin_extrato_bancario e
+       JOIN fin_contas c ON c.id = e.conta_id
+      WHERE e.wik_ext_id IS NOT NULL AND e.conciliado_em IS NULL AND e.baixa_id IS NULL
+        AND NOT e.wik_travado AND c.wik_emp_id = $1`,
+    [emp.wik_emp_id]
+  );
+  for (const l of linhas) {
+    // Candidatas: baixa do Wik, mesma conta/data, cujo dinheiro efetivo
+    // (principal + juros + multa + tarifa − desconto) bate com a linha, não
+    // estornada e ainda não ligada a nenhuma linha do extrato.
+    const { rows: cand } = await pool.query(
+      `SELECT b.id
+         FROM fin_baixas b
+        WHERE b.conta_id = $1 AND b.data_baixa = $2
+          AND (b.principal + b.juros + b.multa + b.tarifa - b.desconto) = $3
+          AND b.estornada_em IS NULL AND b.wik_ref IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM fin_extrato_bancario x WHERE x.baixa_id = b.id)
+        LIMIT 2`,
+      [l.conta_id, l.data_lancamento, l.valor]
+    );
+    if (cand.length === 1) {
+      const { rowCount } = await pool.query(
+        `UPDATE fin_extrato_bancario
+            SET baixa_id = $2, conciliado_em = now()
+          WHERE id = $1 AND conciliado_em IS NULL AND baixa_id IS NULL AND NOT wik_travado`,
+        [l.id, cand[0].id]
+      );
+      if (rowCount > 0) resumo.conciliadas += 1;
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // A JANELA — "puxar tudo" sem derrubar o servidor deles
 // ═══════════════════════════════════════════════════════════════════════════
 // O dono pediu o histórico inteiro. Pedir 3 anos de uma vez seria uma consulta
@@ -630,6 +717,7 @@ function resumoVazio() {
     pagar_detalhes_pendentes: 0, pagar_sem_categoria: 0,
     receber_vistos: 0, receber_titulos: 0, receber_baixas: 0, receber_travados: 0,
     extrato_vistos: 0, extrato_linhas: 0, extrato_travados: 0, extrato_sem_conta: 0,
+    conciliadas: 0,
     empresas_sem_mapa: [], erros: [],
   };
 }
@@ -684,6 +772,9 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
       await importarContasPagar(sessao, emp, janela, mapas, resumo);
       await importarContasReceber(sessao, emp, janela, mapas, resumo);
       await importarExtrato(sessao, emp, janela, mapas, resumo);
+      // Depois de ter os dois lados (baixas + extrato), liga o que o Wik já
+      // conciliou — assim não cai tudo como "a conciliar" no Hub.
+      await conciliarExtratoComBaixasWik(emp, resumo);
     }
 
     resumo.segundos = Math.round((Date.now() - t0) / 1000);

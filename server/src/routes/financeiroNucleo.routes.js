@@ -80,7 +80,8 @@ router.post('/centros-custo', async (req, res, next) => {
 // já consumia o retorno do POST (e os testes) lê `.id`. Os dois nomes saem
 // juntos: nada que já funcionava precisa mudar de campo.
 const COLUNAS_CONTA = `s.*, s.conta_id AS id, c.banco_codigo, c.banco_nome, c.agencia, c.conta,
-         c.ativo, c.saldo_inicial_data, c.wik_grp_id, e.nome AS empresa_nome`;
+         c.ativo, c.saldo_inicial_data, c.wik_grp_id, c.wik_tipo, c.cedente, c.carteira,
+         c.nosso_numero_ini, c.nosso_numero_fin, c.conta_matriz, c.wik_dados, e.nome AS empresa_nome`;
 
 router.get('/contas', async (req, res, next) => {
   try {
