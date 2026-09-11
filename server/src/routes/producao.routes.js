@@ -24,7 +24,7 @@ const {
 const locais = require('../lib/estoqueLocais');
 const produtoGrade = require('../lib/produtoGrade');
 const calendarioProducao = require('../lib/producaoCalendario');
-const { sincronizarProducaoAgora } = require('../lib/wikProducaoSync');
+const { sincronizarProducaoAgora, diagnosticarGradeOp } = require('../lib/wikProducaoSync');
 
 const router = express.Router();
 
@@ -55,6 +55,18 @@ router.post('/wik/sincronizar', async (req, res, next) => {
     res.json(r);
   } catch (err) {
     res.status(422).json({ error: err.message });
+  }
+});
+
+// DIAGNÓSTICO da grade de UMA OP (somente leitura, não grava nada). Ex.:
+// GET /producao/wik/diagnostico/7045 — mostra o que a página da OP no Wik
+// devolve com cada statusTela, pra achar por que a grade volta vazia.
+router.get('/wik/diagnostico/:op', async (req, res) => {
+  try {
+    const rel = await diagnosticarGradeOp(req.params.op);
+    res.json(rel);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

@@ -179,6 +179,81 @@ async function upsertOpsDoApontamento(porOp) {
   return res;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// DIAGNÓSTICO — por que uma OP volta sem grade (somente leitura, não grava nada)
+// ═══════════════════════════════════════════════════════════════════════════
+// Abre a página da OP no Wik com cada `statusTela` e conta o que veio, pra a
+// gente ver a causa em vez de adivinhar: se o input `ListaItens` aparece, qual
+// o tamanho do JSON, quantos itens de grade dão, e qual situação a página lê.
+// Também mostra o que está gravado aqui pra essa OP (grade e wik_grade_em).
+async function diagnosticarGradeOp(opBruto) {
+  const op = Number(opBruto);
+  const integracao = await buscarIntegracao();
+  if (!integracao || !integracao.ativo) return { erro: 'sem integração ativa do Wik' };
+  let sessao;
+  try { sessao = await obterSessao(integracao); }
+  catch (e) { return { erro: `não consegui abrir sessão no Wik: ${e.message}` }; }
+  try { await wikWeb.trocarEmpresa(sessao, MATRIZ_EMP_ID); } catch (e) { /* segue */ }
+
+  const tentativas = [];
+  async function probe(rotulo, url) {
+    try {
+      const html = await wikWeb.getHtml(sessao, url);
+      const temInput = /(?:name|id)="ListaItens"/i.test(html);
+      const m = html.match(/(?:name|id)="ListaItens"[^>]*\bvalue="([^"]*)"/i)
+             || html.match(/\bvalue="([^"]*)"[^>]*(?:name|id)="ListaItens"/i);
+      const bruto = m ? m[1] : '';
+      let gradeLen = 0; let amostra = null;
+      if (bruto) {
+        try {
+          const dec = bruto.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+          const arr = JSON.parse(dec);
+          const filt = (Array.isArray(arr) ? arr : []).filter((g) => g && g.OpriTamanho);
+          gradeLen = filt.length;
+          amostra = filt[0] || (Array.isArray(arr) ? arr[0] : null) || null;
+        } catch { gradeLen = -1; /* -1 = tinha valor mas não deu pra ler JSON */ }
+      }
+      const sit = (html.match(/name="OprSituacao"[^>]*\bvalue="([^"]*)"/i) || [])[1]
+               || (html.match(/id="OprSituacao"[\s\S]{0,400}?<option[^>]*\bselected[^>]*\bvalue="([^"]*)"/i) || [])[1]
+               || null;
+      tentativas.push({
+        rotulo, tamanho_html: html.length, tem_ListaItens: temInput,
+        json_len: bruto.length, itens_grade: gradeLen, situacao_lida: sit, amostra,
+      });
+    } catch (e) {
+      tentativas.push({ rotulo, erro: e.message, sessao_expirada: !!e.sessaoExpirada });
+    }
+  }
+
+  const idEnc = encodeURIComponent(op);
+  await probe('sem statusTela', `/OrdemProducao/Create/?id=${idEnc}`);
+  for (const st of [1, 2, 4, 0, 3, 5]) {
+    await probe(`statusTela=${st}`, `/OrdemProducao/Create/?id=${idEnc}&statusTela=${st}`);
+  }
+
+  // O que o parser REAL extrai hoje (passa pela mesma ordemProducaoDetalhe do sync)
+  let real = null;
+  try {
+    const det = await wikWeb.ordemProducaoDetalhe(sessao, op);
+    real = { situacao: det.cabecalho?.situacao ?? null, itens_grade: (det.grade || []).length };
+  } catch (e) { real = { erro: e.message }; }
+
+  // O que está gravado aqui pra essa OP
+  let noHub = null;
+  try {
+    const { rows } = await poolReal.query(
+      `SELECT o.id AS ordem_id, o.wik_op, o.origem, o.sincroniza_wik, o.wik_grade_em,
+              (SELECT COUNT(*)::int FROM ordem_producao_grade g WHERE g.ordem_id = o.id) AS linhas_grade
+         FROM ordens_producao o
+        WHERE o.wik_emp_id = $1 AND o.wik_op = $2`,
+      [MATRIZ_EMP_ID, op]
+    );
+    noHub = rows[0] || 'nenhuma OP com esse wik_op no Hub';
+  } catch (e) { noHub = { erro: e.message }; }
+
+  return { op, empresa: MATRIZ_EMP_ID, parser_real: real, no_hub: noHub, tentativas };
+}
+
 // OPs do Wik que ainda precisam de grade (mais NOVAS primeiro — é o que a casa
 // olha). Só as que ainda sincronizam.
 async function opsComGradePendente(limite) {
@@ -291,4 +366,4 @@ async function sincronizarProducaoAgora() {
   }
 }
 
-module.exports = { sincronizarProducaoAgora, obterSessao, buscarIntegracao };
+module.exports = { sincronizarProducaoAgora, diagnosticarGradeOp, obterSessao, buscarIntegracao };
