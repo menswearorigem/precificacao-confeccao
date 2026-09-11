@@ -276,8 +276,18 @@ async function main() {
   ok(textos.includes('REFERÊNCIA') && textos.includes('NOME'), 'o cabeçalho do bloco é o do modelo');
   ok(textos.includes('SHOPEE') && textos.includes('MERCADO LIVRE') && textos.includes('SHEIN') && textos.includes('TIKTOK'),
     'as quatro plataformas aparecem, na ordem do modelo');
-  ok(textos.some((t) => t.includes('NÃO ESTÁ ANUNCIADO')), 'loja sem o anúncio recebe "NÃO ESTÁ ANUNCIADO"');
-  ok(vermelhos.some((t) => t.includes('NÃO ESTÁ ANUNCIADO')), '...e esse texto está em VERMELHO');
+  // Segunda revisão (11/09/2026): loja sem anúncio ficou EM BRANCO — saiu o
+  // "NÃO ESTÁ ANUNCIADO" em vermelho. A moldura continua, pra grade não abrir
+  // buraco; é o que distingue uma célula em branco DE PROPÓSITO de uma que o
+  // ExcelJS nunca tocou.
+  ok(!textos.some((t) => t.includes('NÃO ESTÁ ANUNCIADO')), 'loja sem anúncio NÃO recebe mais "NÃO ESTÁ ANUNCIADO"');
+  let achouBrancoComMoldura = false;
+  ws.eachRow((linha) => {
+    linha.eachCell({ includeEmpty: false }, (cel) => {
+      if (cel.value == null && cel.border && /^[J-S]\d+$/.test(cel.address || '')) achouBrancoComMoldura = true;
+    });
+  });
+  ok(achouBrancoComMoldura, 'e a linha fica em branco com a moldura, não some da grade');
   ok(textos.includes('(+30%)'), 'a coluna "(+30%)" existe');
   ok(textos.some((t) => t.startsWith('ADS')), 'a coluna de OBSERVAÇÃO virou a de ADS');
   ok(textos.some((t) => t.includes('ROAS') || t.includes('Sem Ads')), 'a coluna de ADS traz ROAS/gasto');
