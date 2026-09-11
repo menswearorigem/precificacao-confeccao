@@ -8,8 +8,7 @@ import {
   LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer, Activity,
   Banknote, Ruler, MapPin, Gauge, Bookmark, PackageCheck, FileSpreadsheet,
   Inbox, Radar,
-  Megaphone, BadgePercent,
-} from 'lucide-react';
+  Megaphone, BadgePercent, Scissors} from 'lucide-react';
 
 export const MODULES = [
   {
@@ -102,6 +101,11 @@ export const MODULES = [
       // de existir ordem aberta -- e e' a tela que responde se a ordem que ja'
       // esta' aberta resolve a falta ou chega curta.
       { to: '/producao/projecao', label: 'Projeção de Estoque', icon: PackageCheck },
+      // Materia-prima (11/09/2026). E' a ultima da fila porque e' a ultima
+      // pergunta da cadeia: depois de saber o que produzir e o que ja' esta'
+      // vindo, sobra saber se ha' tecido para fazer. Mesmo modulo `producao`
+      // -- nenhuma chave de permissao nova (REGRA 4).
+      { to: '/producao/materia-prima', label: 'Matéria-Prima', icon: Scissors },
     ],
   },
   {

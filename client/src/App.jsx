@@ -65,6 +65,7 @@ import MovimentacaoProducaoPage from './pages/MovimentacaoProducaoPage';
 import OrdensServicoPage from './pages/OrdensServicoPage';
 import CargaProducaoPage from './pages/CargaProducaoPage';
 import ProjecaoEstoquePage from './pages/ProjecaoEstoquePage';
+import MateriaPrimaPage from './pages/MateriaPrimaPage';
 import InsumosPage from './pages/InsumosPage';
 import PromocoesPage from './pages/PromocoesPage';
 import FullPage from './pages/FullPage';
@@ -171,6 +172,11 @@ function AppRoutes() {
                   <Route path="/producao/ordens-servico" element={<OrdensServicoPage />} />
                   <Route path="/producao/carga" element={<CargaProducaoPage />} />
                   <Route path="/producao/projecao" element={<ProjecaoEstoquePage />} />
+                  {/* Materia-prima (11/09/2026): estoque minimo de TECIDO por
+                      referencia e por cor, no formato da planilha da casa.
+                      Depois da Projecao porque le' o mesmo "em producao" dela e
+                      responde a pergunta seguinte: da' para produzir isso? */}
+                  <Route path="/producao/materia-prima" element={<MateriaPrimaPage />} />
                   <Route path="/estoque/locais" element={<EstoqueLocaisPage />} />
                   {/* Reserva de estoque (09/09/2026): saldo × disponível.
                       Mesmo módulo `estoque` das demais telas de saldo —

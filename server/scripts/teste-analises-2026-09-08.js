@@ -21,7 +21,14 @@ function ok(c, d, det) {
   else { falhou += 1; console.log(`  ✗ ${d}${det ? ` — ${det}` : ''}`); }
 }
 const perto = (a, b, tol = 0.005) => Number.isFinite(a) && Math.abs(a - b) <= tol;
-const HOJE = new Date('2026-09-08T12:00:00Z');
+// CORRIGIDO 11/09/2026 — esta constante estava presa em '2026-09-08T12:00:00Z'
+// enquanto a funcao testada (`paradoHaDias`) mede contra a data de HOJE. O
+// efeito: a fixture envelhecia um dia por dia, e a assercao de 20 dias vinha
+// 20 no dia 08, 22 no dia 10 e 23 no dia 11. Era o teste que dependia de
+// "hoje", nao o codigo. Todas as datas do arquivo ja' sao RELATIVAS
+// (`diasAtras(n)`), entao ancorar em agora mantem cada uma com a distancia
+// que ela promete e nenhuma outra assercao muda.
+const HOJE = new Date();
 const diasAtras = (n) => new Date(HOJE.getTime() - n * 86400000).toISOString();
 
 // ===========================================================================

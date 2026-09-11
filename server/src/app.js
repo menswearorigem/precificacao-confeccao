@@ -48,6 +48,7 @@ const producaoRoutes = require('./routes/producao.routes');
 const producaoMovimentacaoRoutes = require('./routes/producaoMovimentacao.routes');
 const producaoInsumosRoutes = require('./routes/producaoInsumos.routes');
 const producaoProjecaoRoutes = require('./routes/producaoProjecao.routes');
+const producaoMateriaPrimaRoutes = require('./routes/producaoMateriaPrima.routes');
 const faccoesRoutes = require('./routes/faccoes.routes');
 const produtoGradeRoutes = require('./routes/produtoGrade.routes');
 const mixTributarioRoutes = require('./routes/mixTributario.routes');
@@ -235,6 +236,13 @@ function createApp() {
   // so LE ordem e saldo; a unica escrita e a baixa parcial da grade, que ja
   // exige a mesma permissao de quem mexe em ordem de producao.
   app.use('/api/producao-projecao', requireAuth, requireModulo(['producao', 'estoque']), producaoProjecaoRoutes);
+  // Materia-prima: estoque minimo de tecido por referencia e por cor, e o
+  // pedido de compra (11/09/2026). Mesma chave de modulo das demais abas de
+  // producao -- quem decide o que produzir e' quem descobre que vai faltar
+  // tecido, e o pedido de compra sai dessa descoberta. Nenhuma permissao nova
+  // (REGRA 4). `/api/insumos` nao serve: aquela vive sob `compras` e daria 403
+  // justamente para o time de producao, que e' quem usa esta aba.
+  app.use('/api/producao-materia-prima', requireAuth, requireModulo(['producao', 'estoque']), producaoMateriaPrimaRoutes);
   // Cadastro de FACÇÃO e das categorias dela (09/09/2026). Mesma chave da
   // Produção: quem movimenta peça para a facção é quem sabe quem ela é, e a
   // dono pediu explicitamente para poder criar a facção NA HORA de gerar a

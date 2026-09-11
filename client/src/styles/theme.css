@@ -8350,3 +8350,83 @@ table.grade-matriz { width: auto; min-width: 0; }
 }
 .imp-previa-barra .btn { color: #fff; border-color: rgba(255,255,255,.4); }
 @media print { .imp-previa-barra { display: none !important; } }
+
+/* ---------------------------------------------------------------------------
+   Produção › Matéria-Prima (11/09/2026)
+
+   A tela repete a organização da planilha: um bloco por referência, com as
+   quatro matrizes cor × tamanho lado a lado e o quadro do tecido à direita.
+   Reaproveita as classes `.pe-*` da Projeção de Estoque — é a mesma grade, com
+   a mesma régua de tamanho e o mesmo swatch de cor, e duas telas da Produção
+   que mostram a mesma grade com aparências diferentes seriam duas telas que
+   parecem de sistemas diferentes.
+--------------------------------------------------------------------------- */
+.mp-blocos { display: flex; gap: 18px; align-items: flex-start; }
+.mp-bloco { flex: 0 0 auto; }
+.mp-bloco > h4 {
+  margin: 0 0 6px; font-size: 9.5px; font-weight: 700; letter-spacing: .13em;
+  text-transform: uppercase; color: var(--muted);
+}
+.mp-bloco.mp-destaque > h4 { color: var(--leather); }
+
+/* A faixa de parâmetros do bloco — o cabeçalho AF4/AI4/AJ da planilha. */
+.mp-params {
+  display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: flex-end;
+  padding: 11px 14px; background: var(--surface-alt);
+  border: 1px solid var(--border-soft); border-radius: 8px; margin-bottom: 14px;
+}
+.mp-param { display: flex; flex-direction: column; gap: 3px; }
+.mp-param > label {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--muted);
+}
+.mp-param input, .mp-param select {
+  height: 30px; padding: 0 8px; font-size: 13px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.mp-param input[type="number"] { width: 92px; text-align: right; }
+.mp-param .mp-unid { font-size: 11px; color: var(--muted); margin-left: 5px; }
+.mp-param-largo select { min-width: 260px; }
+.mp-sujo { border-color: var(--warning-ring) !important; background: var(--warning-bg) !important; }
+
+/* O quadro do tecido: uma linha por cor, a decisão de compra à direita. */
+.mp-tecido th.mp-hped { background: var(--leather-deep); }
+.mp-tecido td.mp-ped { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; padding-right: 11px !important; }
+.mp-tecido td.mp-ped-sim { color: var(--danger); }
+.mp-tecido td.mp-ped-nao { color: var(--border); }
+.mp-tecido select.mp-depara { max-width: 190px; height: 26px; font-size: 12px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--ink); }
+.mp-tecido input.mp-saldo { width: 88px; height: 26px; text-align: right; font-size: 12px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface); color: var(--ink); font-variant-numeric: tabular-nums; }
+
+.mp-selo {
+  display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; border-radius: 3px; padding: 1px 5px; margin-left: 6px; white-space: nowrap;
+}
+.mp-selo-sugerida { color: var(--info); background: var(--info-bg); }
+.mp-selo-confirmada { color: var(--success); background: var(--success-bg); }
+.mp-selo-pendente { color: var(--warning); background: var(--warning-bg); }
+.mp-selo-dividido { color: var(--leather); background: var(--surface-alt); box-shadow: inset 0 0 0 1px var(--border-soft); }
+
+.mp-sit { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; font-size: 12px; white-space: nowrap; }
+.mp-sit-comprar { color: var(--danger); }
+.mp-sit-atrasado { color: var(--danger); }
+.mp-sit-atencao { color: var(--warning); }
+.mp-sit-ok { color: var(--success); }
+.mp-sit-sem_calculo { color: var(--muted); }
+
+.mp-contrib { font-size: 12px; color: var(--muted); padding: 8px 14px; background: var(--surface-alt); }
+.mp-contrib b { color: var(--ink); font-weight: 600; }
+
+.mp-aviso {
+  display: flex; gap: 9px; align-items: flex-start; font-size: 12.5px; line-height: 1.5;
+  color: var(--muted); padding: 9px 12px; background: var(--surface-alt);
+  border-left: 3px solid var(--border); border-radius: 0 6px 6px 0; margin-bottom: 8px;
+}
+.mp-aviso svg { flex: 0 0 auto; margin-top: 2px; }
+
+@media (max-width: 900px) {
+  .mp-blocos { flex-direction: column; }
+  .mp-bloco { width: 100%; }
+  .mp-params { flex-direction: column; align-items: stretch; }
+  .mp-param input[type="number"] { width: 100%; }
+}
