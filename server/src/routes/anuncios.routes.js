@@ -28,6 +28,17 @@ const { paraHttps } = require('../lib/fotoMarketplace');
 
 const router = express.Router();
 
+// Janela de VENDA da exportação: a planilha só leva o anúncio que vendeu nos
+// últimos N dias (30 por padrão — o pedido do dono em 11/09/2026). Texto que
+// não é número é descartado em vez de virar NaN, e `0` desliga o corte.
+function janelaDeVendas(req) {
+  const bruto = req.query?.vendidos_em_dias;
+  if (bruto == null || String(bruto).trim() === '') return 30;
+  const dias = Number(String(bruto).trim());
+  if (!Number.isFinite(dias) || dias < 0) return 30;
+  return Math.min(Math.trunc(dias), 3650);
+}
+
 const JANELA_ADS_PADRAO = 30;
 
 const ISO_DATA = /^\d{4}-\d{2}-\d{2}$/;
@@ -820,6 +831,10 @@ router.get('/exportacao/planilha', async (req, res, next) => {
       // que o dono lê. O calendário da tela não muda o formato do arquivo:
       // quando há intervalo escolhido, ele é convertido em número de dias.
       janelaAdsDias: janelaAds(req).dias,
+      // A planilha traz só o que VENDEU na janela — 30 dias por padrão, que é
+      // o pedido do dono. `vendidos_em_dias=0` desliga o corte e volta a
+      // exportar o catálogo filtrado inteiro, pra quem quiser a lista cheia.
+      vendidosEmDias: janelaDeVendas(req),
     });
 
     const hoje = new Date().toLocaleDateString('pt-BR').replaceAll('/', '-');
