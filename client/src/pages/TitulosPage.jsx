@@ -154,6 +154,8 @@ function FaixaWik({ aoSincronizar }) {
   const [st, setSt] = useState(null);
   const [rodando, setRodando] = useState(false);
   const [msg, setMsg] = useState('');
+  const [ativando, setAtivando] = useState(false);
+  const [dias, setDias] = useState('');
 
   async function carregar() {
     try { setSt(await api.get(`${BASE}/wik/status`)); } catch { setSt(null); }
@@ -161,10 +163,9 @@ function FaixaWik({ aoSincronizar }) {
   useEffect(() => { carregar(); }, []);
 
   const integ = st?.integracao;
-  if (!integ || !integ.financeiro_ativo) return null;
-
-  const carregando = !integ.financeiro_carga_inicial_fim;
-  const ultima = integ.financeiro_ultima_sincronizacao;
+  // Sem credencial do Wik cadastrada não há o que ligar (a credencial nasce em
+  // Configurações → Integrações). Aí sim a faixa some por completo.
+  if (!integ) return null;
 
   async function sincronizar() {
     setMsg('');
@@ -177,6 +178,64 @@ function FaixaWik({ aoSincronizar }) {
       setMsg(mensagemErro(err));
     } finally { setRodando(false); }
   }
+
+  // Importação DESLIGADA (nasce assim de propósito): mostra o painel para ligar.
+  // Puxar o histórico de um ERP é decisão de gente, então fica atrás deste botão
+  // — mas o botão PRECISA existir em algum lugar, e este é o lugar (a própria
+  // tela do Financeiro, "como cadastro normal de cada aba já existente").
+  if (!integ.financeiro_ativo) {
+    async function ativar() {
+      setMsg('');
+      setAtivando(true);
+      try {
+        const corpo = {};
+        const n = Number(dias);
+        if (Number.isFinite(n) && n > 0) corpo.dias_retro = n;
+        await api.put(`${BASE}/wik/config`, { ativo: true, ...corpo });
+        // Liga e já dispara a primeira importação, sem esperar o ciclo automático.
+        await api.post(`${BASE}/wik/sincronizar`, {});
+        await carregar();
+        if (aoSincronizar) aoSincronizar();
+      } catch (err) {
+        setMsg(mensagemErro(err));
+      } finally { setAtivando(false); }
+    }
+    return (
+      <div className="card no-print" style={{ marginBottom: 14, borderColor: 'var(--accent-ring, var(--success-ring))' }}>
+        <div className="card-head"><Cloud size={14} /> Importar o financeiro do Wik</div>
+        <p className="page-sub" style={{ marginTop: -4, marginBottom: 10 }}>
+          A importação do financeiro do Wik (contas a pagar e a receber, extrato bancário, plano de
+          contas e centros de custo) começa <strong>desligada</strong> — puxar o histórico inteiro de um
+          ERP é decisão sua, não algo que roda sozinho sem você mandar. Ligue aqui para começar. Depois de
+          ligado, ele se atualiza sozinho a cada ciclo e o histórico vai andando para trás em fatias.
+        </p>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span className="field-label">Trazer os últimos … dias</span>
+            <input
+              type="number" min="1" className="input" style={{ width: 140 }}
+              placeholder={String(integ.financeiro_dias_retro || 45)}
+              value={dias} onChange={(e) => setDias(e.target.value)}
+            />
+          </label>
+          <button type="button" className="btn btn-primary" onClick={ativar} disabled={ativando}>
+            <RefreshCw size={13} className={ativando ? 'girando' : undefined} />
+            {ativando ? 'Ligando e importando…' : 'Ativar e importar do Wik'}
+          </button>
+        </div>
+        {st.semMapa?.length > 0 && (
+          <div className="stamp sm tone-atencao" style={{ marginTop: 10, display: 'inline-flex' }}>
+            Empresa(s) sem Id do Wik configurado: {st.semMapa.join(', ')} — os títulos dela(s) não serão
+            importados até o Id ser preenchido (em vez de cair no CNPJ errado).
+          </div>
+        )}
+        {msg && <div className="login-error" style={{ marginTop: 10 }}>{msg}</div>}
+      </div>
+    );
+  }
+
+  const carregando = !integ.financeiro_carga_inicial_fim;
+  const ultima = integ.financeiro_ultima_sincronizacao;
 
   return (
     <div className="faixa-wik no-print">

@@ -154,7 +154,7 @@ async function upsertOpsDoApontamento(porOp) {
            (produto_id, situacao, origem, sincroniza_wik, wik_emp_id, wik_op,
             wik_etapas, wik_atrasada, data_prevista, quantidade_planejada, wik_sincronizado_em)
          VALUES ($1, 'em_producao', 'wik', TRUE, $2, $3, $4, $5, $6, $7, now())
-         ON CONFLICT (wik_emp_id, wik_op) DO UPDATE SET
+         ON CONFLICT (wik_emp_id, wik_op) WHERE wik_op IS NOT NULL DO UPDATE SET
             produto_id = EXCLUDED.produto_id,
             wik_etapas = EXCLUDED.wik_etapas,
             wik_atrasada = EXCLUDED.wik_atrasada,
