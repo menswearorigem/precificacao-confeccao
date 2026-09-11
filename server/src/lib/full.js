@@ -703,11 +703,33 @@ async function carregarComposicao(db, itemIds) {
   const { rows } = await db.query(
     `SELECT fc.full_item_id, fc.id, fc.produto_id, fc.cor, fc.tamanho,
             fc.variante_id, fc.quantidade, fc.ordem,
-            p.referencia, p.descricao,
+            p.referencia, p.descricao, pc.hex,
             evd.disponivel AS estoque_casa, evd.reservado AS estoque_casa_reservado
        FROM full_composicao fc
        JOIN produtos p ON p.id = fc.produto_id
        LEFT JOIN vw_estoque_disponivel evd ON evd.variante_id = fc.variante_id
+       -- A cor de tela da cor, quando cadastrada (migration 0066). É o que
+       -- faz a bolinha do relatório de remessa ser a cor certa em vez de um
+       -- quadrado neutro.
+       --
+       -- LATERAL COM LIMIT 1, E NÃO UM JOIN SIMPLES.
+       -- produto_cores só é única pelo TEXTO da cor (migration 0063), e o
+       -- mesmo produto pode ter "Azul Marinho" e "AZUL MARINHO" cadastradas —
+       -- a conclusão de O.P. e o sincronismo de grade inserem a grafia crua.
+       -- Casando por cor NORMALIZADA, um join comum devolveria DUAS linhas
+       -- para a mesma linha de composição, e cada peça do kit seria contada
+       -- duas vezes: a facção receberia ordem de cortar o dobro daquela cor.
+       -- A linha de qualidade (eh_qualidade) fica de fora: não é cor.
+       LEFT JOIN LATERAL (
+         SELECT c.hex
+           FROM produto_cores c
+          WHERE c.produto_id = fc.produto_id
+            AND c.eh_qualidade = FALSE
+            AND upper(regexp_replace(translate(c.cor, 'ÁÀÃÂÄÉÊËÍÏÓÕÔÖÚÜÇáàãâäéêëíïóõôöúüç', 'AAAAAEEEIIOOOOUUCaaaaaeeeiioooouuc'), '[^A-Za-z0-9]', '', 'g'))
+                = upper(regexp_replace(translate(fc.cor, 'ÁÀÃÂÄÉÊËÍÏÓÕÔÖÚÜÇáàãâäéêëíïóõôöúüç', 'AAAAAEEEIIOOOOUUCaaaaaeeeiioooouuc'), '[^A-Za-z0-9]', '', 'g'))
+          ORDER BY (c.hex IS NULL), c.ativo DESC, c.id
+          LIMIT 1
+       ) pc ON TRUE
       WHERE fc.full_item_id = ANY($1::int[])
       ORDER BY fc.full_item_id, fc.ordem, fc.id`,
     [itemIds]
@@ -724,6 +746,7 @@ async function carregarComposicao(db, itemIds) {
       cor: r.cor,
       tamanho: r.tamanho,
       varianteId: r.variante_id,
+      hex: r.hex || null,
       quantidade: Number(r.quantidade) || 0,
       estoqueCasa: numero(r.estoque_casa),
       estoqueCasaReservado: numero(r.estoque_casa_reservado),
@@ -1034,6 +1057,10 @@ function montarAnuncio({ unidades, vendas, mix, params, snapshots, pontas, trans
       diasCoberturaManual: inteiro(u.dias_cobertura_manual),
       participacao: p.participacao,
       participacaoOrigem: p.origem,
+      // O que ESTA variação vendeu na base que a velocidade usou. É a coluna
+      // "VENDIDO" do relatório de remessa — e sai da mesma repartição que
+      // reparte o envio, para as duas colunas contarem a mesma história.
+      vendasNaBase: velocidade.pecas != null ? Math.round(velocidade.pecas * p.participacao) : null,
       velocidadeDia: porDiaUnidade,
       ...conta,
       // O `precisaEnviar` que vem de `conta` é arredondado ao múltiplo de
@@ -1245,6 +1272,12 @@ function montarPlano({ escolhidos, usarEstoqueCasa = true }) {
   const porProduto = new Map();
   const semVinculo = [];
   const semMedida = [];
+  // As variações que ficaram de fora da grade por não saberem qual peça são.
+  // Um anúncio pode estar PARCIALMENTE vinculado — duas cores resolvidas e a
+  // terceira não. Descartá-las em silêncio fazia a folha da grade afirmar
+  // "é a mesma remessa da folha anterior" com peças a menos, e a facção
+  // cortava curto.
+  const foraDaGrade = [];
 
   for (const a of escolhidos) {
     // As cores que TÊM referência. Desde que a varredura passou a resolver
@@ -1310,6 +1343,9 @@ function montarPlano({ escolhidos, usarEstoqueCasa = true }) {
         ? u.composicao.map((c) => ({
           produtoId: c.produtoId,
           cor: c.cor,
+          // A cor de tela viaja junto até a grade impressa: é ela que faz a
+          // bolinha do papel ser a cor certa em vez de um quadrado neutro.
+          hex: c.hex || null,
           tamanho: c.tamanho,
           varianteId: c.varianteId,
           estoqueCasa: c.estoqueCasa,
@@ -1334,8 +1370,22 @@ function montarPlano({ escolhidos, usarEstoqueCasa = true }) {
 
       for (const c of composicao) {
         const produtoId = c.produtoId;
-        if (produtoId == null) continue;
         const enviar = unidadesAEnviar * (c.quantidade || 0);
+        if (produtoId == null) {
+          if (enviar > 0) {
+            foraDaGrade.push({
+              chave: a.chave,
+              titulo: a.titulo,
+              lojaNome: a.lojaNome,
+              sku: u.sku || null,
+              cor: c.cor || null,
+              tamanho: c.tamanho || null,
+              unidadesAEnviar,
+              pecasAEnviar: enviar,
+            });
+          }
+          continue;
+        }
         if (enviar <= 0) continue;
 
         if (!porProduto.has(produtoId)) {
@@ -1396,6 +1446,7 @@ function montarPlano({ escolhidos, usarEstoqueCasa = true }) {
         const chave = `${normalizar(c.cor)}|${normalizar(c.tamanho)}`;
         const linha = alvo.linhas.get(chave) || {
           cor: c.cor,
+          hex: c.hex || null,
           tamanho: c.tamanho,
           varianteId: c.varianteId ?? null,
           estoqueCasaChave: c.estoqueCasaChave || null,
@@ -1413,6 +1464,7 @@ function montarPlano({ escolhidos, usarEstoqueCasa = true }) {
         };
         linha.aEnviar += enviar;
         if (linha.varianteId == null && c.varianteId != null) linha.varianteId = c.varianteId;
+        if (!linha.hex && c.hex) linha.hex = c.hex;
         if (linha.estoqueCasaChave == null) linha.estoqueCasaChave = c.estoqueCasaChave || null;
         if (linha.estoqueCasa == null) linha.estoqueCasa = c.estoqueCasa;
         alvo.linhas.set(chave, linha);
@@ -1481,7 +1533,7 @@ function montarPlano({ escolhidos, usarEstoqueCasa = true }) {
   }).sort((a, b) => b.totais.aProduzir - a.totais.aProduzir);
 
 
-  return { produtos, semVinculo, semMedida };
+  return { produtos, semVinculo, semMedida, foraDaGrade };
 }
 
 module.exports = {

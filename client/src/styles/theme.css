@@ -8001,16 +8001,15 @@ table.grade-matriz { width: auto; min-width: 0; }
   .full-selecao-acoes { margin-left: 0; width: 100%; }
 }
 
-/* Impressão do plano de produção: o modal vira a folha. O resto da tela sai
-   de cena — imprimir a página inteira com filtros e menu é o que faz alguém
-   desistir de usar o botão. */
-@media print {
-  .full-modal { max-height: none; overflow: visible; box-shadow: none; border: 0; }
-  .viagem-modal-overlay { position: static; background: none; padding: 0; display: block; }
-  .shell-sidebar, .shell-header, .full-modal-rodape, .full-plano-acoes,
-  .full-periodo .modo-exibicao, .icon-btn { display: none !important; }
-  .full-plano-produto { break-inside: avoid; }
-}
+/* A IMPRESSÃO DO PLANO NÃO É MAIS A TELA.
+   Antes, imprimir era esticar o modal e mandar para o papel. Isso saía do
+   jeito que a tela é, não do jeito que o papel precisa ser — e a folha da
+   facção não é a mesma folha da expedição. Hoje o papel é um documento
+   próprio (#impressao-full, no fim deste arquivo), montado num portal fora
+   da árvore do modal. As regras que faziam o modal virar folha foram
+   removidas de propósito: mantê-las deixava o modal no FLUXO da impressão,
+   e um modal de 6 A4 de altura escondido por `visibility` continua ocupando
+   altura e gerando páginas em branco no fim do trabalho. */
 
 /* Leitura incompleta: quando parte das variações não teve o saldo lido, o
    número do cartão é um PISO e não o total. O "≥" na frente e o aviso no
@@ -8137,3 +8136,217 @@ table.grade-matriz { width: auto; min-width: 0; }
   border: 1px solid var(--danger-ring); border-radius: var(--radius-sm);
   padding: 8px 10px;
 }
+
+/* ===========================================================================
+   O PAPEL DA REMESSA AO FULL (11/09/2026)
+   ===========================================================================
+   Duas folhas A4: o kit montado (para quem despacha) e o kit desmembrado
+   (para quem corta).
+
+   POR QUE AS CORES SÃO ESCRITAS AQUI, E NÃO OS TOKENS DO SISTEMA
+   O documento é o modelo aprovado pela dona, em papel. Ele tem de sair igual
+   no tema claro e no escuro — um relatório que muda de cor conforme o tema da
+   tela de quem imprimiu não é um documento, é um acidente. Por isso os
+   valores são fixos: é o único lugar do sistema em que isso é proposital.
+
+   Fora da impressão o bloco fica escondido: ele existe só para o papel. */
+#impressao-full { display: none; }
+
+@media print {
+  /* O RESTO DA APLICAÇÃO SAI DO FLUXO, e não apenas de vista.
+     `visibility: hidden` esconde mas NÃO tira do fluxo: o modal continua
+     ocupando a altura dele e gerando quebras de página, e um plano com seis
+     referências mandava três ou quatro folhas em branco atrás do relatório.
+     O app inteiro mora em #root (main.jsx) e o documento é irmão dele, filho
+     direto do <body> pelo portal — então esconder #root por `display` derruba
+     a tela inteira sem alcançar o papel. */
+  #root { display: none !important; }
+  #impressao-full {
+    display: block !important;
+    /* Em FLUXO NORMAL, não absoluto: dentro de um bloco posicionado a
+       fragmentação de página é pouco confiável, e é `break-before: page`
+       que separa a folha do kit montado da folha da grade. */
+    position: static; width: 100%;
+    background: #ffffff;
+  }
+  /* A PRÉVIA ABERTA NÃO PODE MANDAR NA IMPRESSÃO.
+     A prévia é `position: fixed` com rolagem própria — e caixa fixa com
+     rolagem imprime só o que cabe na primeira dobra. Quem apertar Ctrl+P
+     com a prévia aberta receberia uma folha só, com a segunda cortada.
+     A regra da prévia tem a MESMA especificidade e está escrita depois
+     desta, então venceria por ordem: por isso aqui vai `!important`. É o
+     que garante que o papel saia inteiro, com prévia aberta ou fechada. */
+  #impressao-full.imp-visivel {
+    position: static !important; inset: auto !important;
+    width: 100% !important;
+    overflow: visible !important; padding: 0 !important; z-index: auto !important;
+  }
+  /* A barra de "fechar prévia" é da tela, não do papel. */
+  .imp-previa-barra { display: none !important; }
+  @page { size: A4 portrait; margin: 12mm 10mm; }
+  html, body { background: #ffffff !important; }
+}
+
+/* Pré-visualização na tela, quando alguém quiser conferir antes de imprimir. */
+#impressao-full.imp-visivel {
+  display: block; position: fixed; inset: 0; z-index: 3000;
+  background: #ffffff; overflow-y: auto; padding: 24px;
+}
+
+.imp-doc {
+  color: #3a2a1e;
+  font-family: var(--font-body);
+  font-size: 9.5pt;
+  line-height: 1.45;
+  background: #ffffff;
+}
+.imp-folha { padding: 0 1mm 4mm; }
+.imp-quebra { break-before: page; page-break-before: always; }
+
+/* ---- cabeçalho ---- */
+.imp-cabeca {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding-bottom: 8px; border-bottom: 2.5px solid #5a4030; margin-bottom: 12px;
+}
+.imp-logo { width: 52px; height: 52px; object-fit: contain; flex: 0 0 auto; }
+.imp-titulo { flex: 1; min-width: 0; }
+.imp-titulo h1 {
+  margin: 0; font-family: var(--font-display); font-size: 17pt; line-height: 1.15;
+  color: #2f2118; font-weight: 700; letter-spacing: -0.01em;
+}
+.imp-titulo p {
+  margin: 3px 0 0; font-size: 8pt; letter-spacing: .1em; font-weight: 600; color: #8a7561;
+}
+.imp-cabeca-direita { text-align: right; font-size: 7.5pt; color: #8a7561; line-height: 1.6; }
+
+/* ---- caixa de introdução ---- */
+.imp-intro {
+  background: #f7f1e8; border-left: 4px solid #b08a5e;
+  padding: 7px 11px; font-size: 8pt; line-height: 1.5; margin-bottom: 10px;
+}
+
+.imp-secao {
+  font-size: 8.5pt; font-weight: 700; letter-spacing: .09em; color: #5a4030;
+  margin: 10px 0 6px; display: flex; align-items: center; gap: 10px;
+}
+.imp-secao::after { content: ''; flex: 1; height: 1px; background: #d8c7b2; }
+
+/* ---- cartão do kit ---- */
+.imp-kit {
+  display: flex; border: 1px solid #d8c7b2; border-radius: 5px;
+  overflow: hidden; margin-bottom: 6px; break-inside: avoid; page-break-inside: avoid;
+}
+.imp-kit-num {
+  flex: 0 0 34px; background: #4a3527; color: #ffffff;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-size: 16pt; font-weight: 700;
+}
+.imp-kit:nth-of-type(2) .imp-kit-num { background: #5a4030; }
+.imp-kit:nth-of-type(3) .imp-kit-num { background: #6b5040; }
+.imp-kit:nth-of-type(4) .imp-kit-num { background: #7d6151; }
+.imp-kit:nth-of-type(n+5) .imp-kit-num { background: #8d7262; }
+.imp-kit-corpo { flex: 1; padding: 6px 10px 7px; min-width: 0; }
+.imp-kit-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.imp-kit-nome { font-size: 10.5pt; font-weight: 700; color: #2f2118; }
+/* De qual anúncio e de qual loja é este cartão — só aparece quando há mais de
+   um anúncio no papel, que é quando a pergunta existe. */
+.imp-kit-origem { display: block; font-size: 7pt; font-weight: 500; color: #8a7561; margin-top: 1px; }
+/* O que não foi lido é escrito como não lido, nunca como um traço mudo que
+   parece um tamanho (REGRA 2). */
+.imp-vazio { font-style: italic; font-weight: 500; color: #a08a70; }
+.imp-kit-total { text-align: right; white-space: nowrap; }
+.imp-kit-total b { display: block; font-family: var(--font-display); font-size: 14pt; color: #2f2118; line-height: 1.1; }
+.imp-kit-total span { font-size: 7pt; color: #8a7561; }
+
+.imp-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 5px 0 6px; }
+.imp-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: #f3ece2; border-radius: 999px; padding: 2px 9px 2px 3px;
+  font-size: 7.5pt; font-weight: 600; color: #4a3527;
+}
+.imp-bolinha {
+  width: 13px; height: 13px; border-radius: 50%; flex: 0 0 auto;
+  background: #b9aa97; border: 1px solid rgba(0, 0, 0, .18);
+}
+.imp-bolinha-vazia { background: repeating-linear-gradient(45deg, #ded3c4 0 3px, #cdbfad 3px 6px); }
+
+/* ---- tabela do kit ---- */
+.imp-tabela { width: 100%; border-collapse: collapse; font-size: 8pt; }
+.imp-tabela th {
+  text-align: left; font-size: 6.6pt; letter-spacing: .07em; font-weight: 700;
+  color: #8a7561; padding: 2px 6px; border-bottom: 1px solid #d8c7b2;
+}
+.imp-tabela td { padding: 2.1px 6px; border-bottom: 1px solid #ece3d6; }
+.imp-tabela .n, .imp-grade .n { text-align: right; font-variant-numeric: tabular-nums; }
+.imp-tabela th.n { text-align: right; }
+.imp-tam { font-weight: 700; color: #2f2118; }
+/* A coluna que a expedição vai executar ganha fundo — é a mesma marcação do
+   modelo aprovado. */
+.imp-tabela .destaque { background: #f7ece5; font-weight: 700; color: #2f2118; }
+.imp-total td { font-weight: 700; border-top: 1.5px solid #d8c7b2; border-bottom: 0; color: #2f2118; }
+
+/* ---- faixa de indicadores ---- */
+.imp-kpis { display: flex; gap: 7px; margin: 9px 0; break-inside: avoid; }
+.imp-kpi {
+  flex: 1; background: #4a3527; color: #ffffff; border-radius: 5px;
+  padding: 8px 6px; text-align: center;
+}
+.imp-kpi b { display: block; font-family: var(--font-display); font-size: 14pt; line-height: 1.1; }
+.imp-kpi span { display: block; font-size: 6.3pt; letter-spacing: .07em; margin-top: 3px; opacity: .85; }
+
+.imp-caixa {
+  background: #f7f1e8; border: 1px solid #e4d8c7; border-radius: 5px;
+  padding: 7px 11px; font-size: 7.8pt; line-height: 1.5; color: #6b5744;
+}
+.imp-caixa-alerta { background: #fbeee8; border-color: #dcb39c; color: #7a3f26; margin-top: 12px; }
+
+.imp-obs-titulo {
+  font-size: 7.8pt; font-weight: 700; letter-spacing: .08em; color: #5a4030; margin: 10px 0 4px;
+}
+.imp-obs { margin: 0; padding-left: 14px; font-size: 7.2pt; line-height: 1.5; color: #6b5744; }
+.imp-obs li { margin-bottom: 2px; }
+.imp-obs li.imp-alerta { color: #8a2f18; font-weight: 600; }
+
+.imp-rodape {
+  display: flex; justify-content: space-between; gap: 12px;
+  margin-top: 8px; padding-top: 5px; border-top: 1px solid #e4d8c7;
+  font-size: 6.8pt; color: #a08d78;
+}
+
+/* ---- folha 2: a grade ---- */
+.imp-produto { margin-bottom: 14px; break-inside: avoid; page-break-inside: avoid; }
+.imp-produto-cabeca {
+  display: flex; justify-content: space-between; align-items: flex-end; gap: 14px;
+  padding-bottom: 6px; border-bottom: 1.5px solid #d8c7b2; margin-bottom: 9px;
+}
+.imp-produto-cabeca b { font-family: var(--font-mono); font-size: 11pt; color: #2f2118; }
+.imp-produto-cabeca small { display: block; font-size: 8pt; color: #8a7561; }
+.imp-produto-num { display: flex; gap: 12px; font-size: 7.5pt; color: #6b5744; white-space: nowrap; }
+.imp-produto-num b { font-family: var(--font-mono); font-size: 10pt; color: #2f2118; }
+.imp-produto-num .imp-forte b { color: #9c4a1c; }
+
+.imp-grade-bloco { margin-bottom: 10px; break-inside: avoid; }
+.imp-grade-titulo {
+  font-size: 7.5pt; font-weight: 700; letter-spacing: .07em; color: #5a4030;
+  margin-bottom: 4px; display: flex; align-items: baseline; gap: 8px;
+}
+.imp-grade-titulo small { font-weight: 500; letter-spacing: 0; color: #a08d78; font-size: 7pt; }
+.imp-grade { width: 100%; border-collapse: collapse; font-size: 8pt; }
+.imp-grade th {
+  background: #f3ece2; font-size: 6.8pt; letter-spacing: .06em; font-weight: 700;
+  color: #6b5744; padding: 3px 5px; border: 1px solid #ded3c4; text-align: left;
+}
+.imp-grade td { padding: 3px 5px; border: 1px solid #ece3d6; font-variant-numeric: tabular-nums; }
+.imp-grade-cor { display: flex; align-items: center; gap: 6px; font-weight: 600; color: #2f2118; }
+.imp-grade .imp-zero { color: #c4b6a3; }
+.imp-grade .imp-grade-tot { background: #f7f1e8; font-weight: 700; }
+.imp-grade .imp-total td { background: #f3ece2; border-top: 1.5px solid #c9b79f; }
+/* A barra da prévia some na impressão — ela é da tela, não do papel. */
+.imp-previa-barra {
+  position: sticky; top: 0; z-index: 2; display: flex; gap: 12px;
+  align-items: center; justify-content: space-between;
+  background: #4a3527; color: #fff; padding: 8px 14px; border-radius: 6px; margin-bottom: 18px;
+  font-size: 12px;
+}
+.imp-previa-barra .btn { color: #fff; border-color: rgba(255,255,255,.4); }
+@media print { .imp-previa-barra { display: none !important; } }

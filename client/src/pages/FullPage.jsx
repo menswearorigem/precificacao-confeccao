@@ -3,7 +3,7 @@ import {
   Warehouse, RefreshCw, X, ExternalLink, Factory, Truck, AlertTriangle,
   Timer, CalendarClock, TrendingUp, TrendingDown, LayoutGrid, Table2,
   Settings2, Send, Info, CheckCircle2, Ban, Sparkles, History, Printer,
-  Boxes, ArrowRight, Flame, Layers, Link2, Search, ShoppingBag, Plus, Trash2, Copy,
+  Boxes, ArrowRight, Flame, Layers, Link2, Search, ShoppingBag, Plus, Trash2, Eye,
 } from 'lucide-react';
 import {
   AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine,
@@ -14,6 +14,7 @@ import {
   IndicadorDestaque, Paginacao, Checkbox, Toggle, Field, BotaoExportar,
 } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
+import FullRemessaImpressao from '../components/FullRemessaImpressao';
 import { useTabela } from '../lib/useTabela';
 import { brl, numeroBr, formatQtd, dataBr, tempoRelativo } from '../lib/format';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
@@ -929,9 +930,20 @@ function AbaComposicaoFull({ a, onGravado }) {
     api.get(`/full/itens/${itemId}/composicao`)
       .then((r) => {
         setDados(r);
-        setLinhas(r.composicao.length > 0
-          ? r.composicao.map((c) => ({ produtoId: c.produtoId, cor: c.cor, tamanho: c.tamanho, quantidade: c.quantidade }))
-          : (r.sugestao ? [{ ...r.sugestao }] : []));
+        if (r.composicao.length > 0) {
+          setLinhas(r.composicao.map((c) => ({
+            produtoId: c.produtoId, cor: c.cor, tamanho: c.tamanho, quantidade: c.quantidade,
+          })));
+        } else if (r.sugestao?.linhas) {
+          // A sugestão veio do NOME da variação ("Preto-Marinho-Marrom"), com
+          // todas as partes batendo com cores do cadastro. Já é o trio certo
+          // na maioria dos casos — falta só conferir e gravar.
+          setLinhas(r.sugestao.linhas.map((l) => ({ ...l })));
+        } else if (r.sugestao) {
+          setLinhas([{ ...r.sugestao }]);
+        } else {
+          setLinhas([]);
+        }
       })
       .catch((e) => setErro(e.message));
   }, [itemId]);
@@ -1002,6 +1014,15 @@ function AbaComposicaoFull({ a, onGravado }) {
         tira o que cortar — sem isto, ele supõe que o kit é de uma cor só e manda o triplo de uma, zero das
         outras.
       </p>
+      {dados?.sugestao?.origem === 'nome-da-variacao' && (
+        <div className="full-aviso full-aviso-info">
+          <Info size={14} />
+          <span>
+            As linhas abaixo vieram do <b>nome da variação</b> — cada parte bateu com uma cor do cadastro desta
+            referência. Confira e grave; nada foi gravado sozinho.
+          </span>
+        </div>
+      )}
 
       {a.unidades.length > 1 && (
         <Field label="Variação do anúncio" hint="A composição é por variação. Grave uma e mande repetir nas outras.">
@@ -1656,6 +1677,7 @@ function ModalPlano({ alvos, janela, diasAlvoInicial, onFechar }) {
   const [erro, setErro] = useState('');
   const [abrindo, setAbrindo] = useState(null);
   const [abertas, setAbertas] = useState({});
+  const [conferindoPapel, setConferindoPapel] = useState(false);
 
   const montar = useCallback(async () => {
     setCarregando(true);
@@ -1719,6 +1741,22 @@ function ModalPlano({ alvos, janela, diasAlvoInicial, onFechar }) {
     } finally {
       setAbrindo(null);
     }
+  }
+
+  // A IMPRESSÃO.
+  //
+  // `window.print()` no modal não funcionava, e não era ajuste de CSS: o modal
+  // é `position: fixed` dentro de um overlay com rolagem interna. Elemento
+  // fixo imprime UMA página e o resto é cortado — saía a primeira dobra e
+  // mais nada. Agora quem vai para o papel é um documento próprio, montado
+  // num portal no <body> (ver components/FullRemessaImpressao.jsx).
+  //
+  // O `setTimeout` não é superstição: o navegador precisa de um quadro para
+  // aplicar o CSS de impressão antes de abrir a caixa de diálogo. Sem ele, o
+  // Chrome abre a prévia com o documento ainda invisível.
+  function imprimir() {
+    setConferindoPapel(false);
+    setTimeout(() => window.print(), 60);
   }
 
   const colunasExportacao = [
@@ -1789,6 +1827,21 @@ function ModalPlano({ alvos, janela, diasAlvoInicial, onFechar }) {
         </div>
 
         {erro && <div className="login-error">{erro}</div>}
+
+        {plano && (
+          <FullRemessaImpressao
+            /* OS ANÚNCIOS RECALCULADOS pela própria rota do plano — e não os
+               `alvos`, que são o retrato do painel com o período do FILTRO da
+               página. Quando alguém troca o período aqui dentro, é o plano que
+               recalcula; imprimir a partir de `alvos` fazia a folha do kit
+               montado sair com os números antigos e a folha da grade com os
+               novos, no mesmo grampo. */
+            anuncios={plano.anuncios?.length ? plano.anuncios : alvos}
+            plano={plano}
+            visivel={conferindoPapel}
+            onFechar={() => setConferindoPapel(false)}
+          />
+        )}
 
         {carregando ? <Skeleton height={220} /> : plano && (
           <>
@@ -1989,7 +2042,16 @@ function ModalPlano({ alvos, janela, diasAlvoInicial, onFechar }) {
 
             <div className="full-modal-rodape">
               <BotaoExportar nomeBase="plano_producao_full" colunas={colunasExportacao} itens={linhasExportacao} />
-              <button className="btn btn-ghost" onClick={() => window.print()}><Printer size={14} /> Imprimir</button>
+              <button
+                className="btn btn-ghost"
+                onClick={() => setConferindoPapel((v) => !v)}
+                title="Ver o papel como ele vai sair, antes de mandar imprimir"
+              >
+                <Eye size={14} /> {conferindoPapel ? 'Fechar prévia' : 'Ver o papel'}
+              </button>
+              <button className="btn btn-primary" onClick={imprimir} disabled={!plano?.produtos}>
+                <Printer size={14} /> Imprimir remessa
+              </button>
               <button className="btn btn-ghost" onClick={onFechar}>Fechar</button>
             </div>
           </>

@@ -342,7 +342,7 @@ router.post('/plano', async (req, res, next) => {
     // Agrupa por REFERÊNCIA: duas lojas podem vender o mesmo produto, e a
     // produção é uma só. Somar aqui é o que evita abrir duas ordens da mesma
     // peça na mesma semana.
-    const { produtos, semVinculo, semMedida } = montarPlano({ escolhidos, usarEstoqueCasa });
+    const { produtos, semVinculo, semMedida, foraDaGrade } = montarPlano({ escolhidos, usarEstoqueCasa });
 
     // Nome das referências que entraram por uma PEÇA do kit, e não pelo
     // anúncio — o kit sortido pode misturar referências.
@@ -364,11 +364,62 @@ router.post('/plano', async (req, res, next) => {
       }
     }
 
+    // A COR DE TELA DE CADA LINHA DA GRADE.
+    //
+    // A composição registrada já traz o hex, mas a maioria das linhas nasce
+    // do padrão do SKU, que não passa por lá — e sem isto a grade impressa
+    // saía com TODAS as bolinhas hachuradas, que é o desenho reservado a
+    // "cor sem cadastro" (REGRA 3: hachura é estado, não identificação).
+    // Resolve-se aqui, numa consulta só, para as linhas que ainda não têm.
+    const faltamHex = [];
+    for (const p of produtos) {
+      for (const l of p.linhas) {
+        if (!l.hex && l.cor) faltamHex.push({ produtoId: p.produtoId, cor: l.cor });
+      }
+    }
+    if (faltamHex.length > 0) {
+      const { rows: cores } = await pool.query(
+        `SELECT DISTINCT ON (c.produto_id, chave) c.produto_id, c.hex,
+                upper(regexp_replace(translate(c.cor, 'ÁÀÃÂÄÉÊËÍÏÓÕÔÖÚÜÇáàãâäéêëíïóõôöúüç', 'AAAAAEEEIIOOOOUUCaaaaaeeeiioooouuc'), '[^A-Za-z0-9]', '', 'g')) AS chave
+           FROM produto_cores c
+          WHERE c.produto_id = ANY($1::int[])
+            AND c.eh_qualidade = FALSE
+            AND c.hex IS NOT NULL
+          ORDER BY c.produto_id, chave, c.ativo DESC, c.id`,
+        [[...new Set(faltamHex.map((x) => x.produtoId))]]
+      );
+      // A chave é produto + cor normalizada. A normalização do SQL acima
+      // (translate de acentos + tira o que não é alfanumérico + maiúsculas)
+      // é a mesma que normalizar() faz aqui no JS — é o que faz "Marrom Café"
+      // do cadastro encontrar "MARROM CAFE" da linha.
+      const porChave = new Map(cores.map((c) => [`${c.produto_id}|${c.chave}`, c.hex]));
+      for (const p of produtos) {
+        for (const l of p.linhas) {
+          if (l.hex || !l.cor) continue;
+          l.hex = porChave.get(`${p.produtoId}|${normalizar(l.cor)}`) || null;
+        }
+      }
+    }
+
     res.json({
       hoje,
+      // OS ANÚNCIOS RECALCULADOS, e não os que a tela já tinha em mãos.
+      //
+      // O painel (GET /full) foi montado com o período do FILTRO da página.
+      // Quando alguém abre o plano e digita outro período, é ESTA rota que
+      // recalcula — e o papel da remessa é impresso a partir daqui. Sem isto,
+      // a folha do kit montado saía com os números do filtro e a folha da
+      // grade com os do período escolhido: duas folhas grampeadas juntas
+      // mandando produzir quantidades diferentes.
+      anuncios: escolhidos,
       // A lista dos períodos que de fato entraram no plano. O número único
       // só existe quando é único de verdade.
       diasAlvoUsados: [...new Set(escolhidos.map((a) => a.reposicao.diasAlvo))].sort((a, b) => a - b),
+      // Idem para a JANELA de vendas: cada loja pode medir num período
+      // diferente, e o papel não pode carimbar "últimos 30 dias" sobre
+      // números de 90 (REGRA 2).
+      janelasUsadas: [...new Set(escolhidos.map((a) => a.velocidade?.dias).filter((d) => d != null))]
+        .sort((a, b) => a - b),
       diasAlvo: diasAlvo ?? null,
       janelaDias: janelaDias ?? null,
       produtos,
@@ -406,6 +457,10 @@ router.post('/plano', async (req, res, next) => {
         // sortido isso manda cortar o triplo de uma cor e nenhuma das outras.
         composicaoSuposta: produtos.flatMap((p) => p.linhas.filter((l) => l.origemComposicao === 'sku')
           .map((l) => ({ referencia: p.referencia, cor: l.cor, tamanho: l.tamanho, aEnviar: l.aEnviar }))),
+        // Variações de anúncios PARCIALMENTE vinculados: o anúncio entrou no
+        // plano, mas esta cor não sabe qual peça é e ficou fora da grade. Sem
+        // dizer isto, a grade impressa some com peças sem avisar ninguém.
+        foraDaGrade,
       },
     });
   } catch (err) { next(err); }
@@ -545,6 +600,44 @@ router.put('/anuncios/:anuncioId/vinculo', async (req, res, next) => {
   }
 });
 
+// Divide o nome da variação nas cores que o compõem.
+//
+// "Preto-Marinho-Marrom" e "Preto · Marinho · Marrom" viram três peças. Só
+// vale quando TODAS as partes existem como cor do cadastro daquela
+// referência — uma parte que não bate derruba a divisão inteira, porque meia
+// divisão é pior que nenhuma.
+function sugerirComposicao(item, variantes) {
+  const padrao = [{
+    produtoId: item.produto_id,
+    cor: item.cor || '',
+    tamanho: item.tamanho || '',
+    quantidade: item.pecas_por_unidade ?? 1,
+    origem: 'sku',
+  }];
+  if (!item.cor || !item.produto_id) return padrao[0];
+
+  const partes = String(item.cor).split(/[-·/|+]|\s{2,}/).map((x) => x.trim()).filter(Boolean);
+  if (partes.length < 2) return padrao[0];
+
+  const coresDoCadastro = new Map(
+    (variantes || []).map((v) => [normalizar(v.cor), v.cor])
+  );
+  const casadas = partes.map((x) => coresDoCadastro.get(normalizar(x)));
+  if (casadas.some((c) => !c)) return padrao[0];
+
+  // Uma peça de cada cor, no tamanho da variação — que é o kit sortido da
+  // casa. Se o SKU disser outra quantidade, a pessoa ajusta.
+  return {
+    origem: 'nome-da-variacao',
+    linhas: casadas.map((cor) => ({
+      produtoId: item.produto_id,
+      cor,
+      tamanho: item.tamanho || '',
+      quantidade: 1,
+    })),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Composição do kit anunciado
 // ---------------------------------------------------------------------------
@@ -591,14 +684,14 @@ router.get('/itens/:id/composicao', async (req, res, next) => {
       },
       composicao,
       variantes,
-      // O que a tela oferece quando ainda não há nada registrado: o padrão do
-      // SKU, para ser ajustado — e não um formulário em branco.
-      sugestao: composicao.length > 0 ? null : {
-        produtoId: item[0].produto_id,
-        cor: item[0].cor || '',
-        tamanho: item[0].tamanho || '',
-        quantidade: item[0].pecas_por_unidade ?? 1,
-      },
+      // O que a tela oferece quando ainda não há nada registrado.
+      //
+      // O nome da variação do kit sortido JÁ é a combinação: a loja cadastra
+      // "Preto-Marinho-Marrom". Quando ele se divide em partes que batem, uma
+      // a uma, com cores do cadastro daquela referência, a divisão não é um
+      // chute — é o que está escrito. A sugestão vem pronta e cabe à pessoa
+      // confirmar; nada é gravado sozinho (REGRA 2).
+      sugestao: composicao.length > 0 ? null : sugerirComposicao(item[0], variantes),
     });
   } catch (err) { next(err); }
 });

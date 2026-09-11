@@ -651,6 +651,56 @@ function varComposicao(id, trio, precisaEnviarUnidade) {
   igual(p.anuncios[0].pecasAEnviar, 300, 'o chip do anúncio mostra as peças DESTA referência');
 }
 {
+  // VINCULAÇÃO PARCIAL: duas cores sabem que peça são, a terceira não.
+  //
+  // A terceira não pode virar ordem de produção — mas também não pode sumir
+  // em silêncio, ou a grade impressa manda cortar menos do que a remessa
+  // precisa e ninguém fica sabendo.
+  const trio = [
+    { produtoId: 7, cor: 'PRETO', tamanho: 'M', varianteId: 11, quantidade: 1, estoqueCasa: 0 },
+    { produtoId: 7, cor: 'BRANCO', tamanho: 'M', varianteId: 12, quantidade: 1, estoqueCasa: 0 },
+    { produtoId: null, cor: 'CINZA', tamanho: 'M', varianteId: null, quantidade: 1, estoqueCasa: 0 },
+  ];
+  const r = full.montarPlano({ escolhidos: [anuncioDeKit({ unidades: [varComposicao(1, trio, 100)] })] });
+  igual(r.produtos[0].linhas.length, 2, 'só as duas cores com referência entram na grade');
+  igual(r.produtos[0].totais.aEnviar, 200, 'e a grade soma 200 peças, não 300');
+  igual(r.foraDaGrade.length, 1, 'a terceira é registrada como fora da grade');
+  igual(r.foraDaGrade[0].cor, 'CINZA', 'com a cor, para o papel dizer qual é');
+  igual(r.foraDaGrade[0].pecasAEnviar, 100, 'e as 100 peças que faltam na conta da facção');
+  igual(r.semVinculo.length, 0, 'o anúncio NÃO vai para semVinculo: ele entrou no plano');
+}
+{
+  // A COR DE TELA tem de chegar ao papel.
+  //
+  // A grade impressa desenha uma bolinha por cor. Sem o hex vindo junto da
+  // composição, toda bolinha saía cinza e o relatório de remessa perdia o
+  // que a expedição usa para conferir de relance. O hex viaja: cadastro →
+  // composição → linha do plano → bolinha.
+  const trio = [
+    { produtoId: 7, cor: 'PRETO', tamanho: 'M', varianteId: 11, quantidade: 1, estoqueCasa: 0, hex: '#111111' },
+    { produtoId: 7, cor: 'BRANCO', tamanho: 'M', varianteId: 12, quantidade: 1, estoqueCasa: 0, hex: '#FFFFFF' },
+    // Cor sem hex cadastrado: a linha sai com hex nulo e a tela desenha a
+    // bolinha vazia, em vez de inventar uma cor (REGRA 2).
+    { produtoId: 7, cor: 'CINZA', tamanho: 'M', varianteId: 13, quantidade: 1, estoqueCasa: 0 },
+  ];
+  const r = full.montarPlano({ escolhidos: [anuncioDeKit({ unidades: [varComposicao(1, trio, 10)] })] });
+  const porCor = new Map(r.produtos[0].linhas.map((l) => [l.cor, l]));
+  igual(porCor.get('PRETO').hex, '#111111', 'a cor de tela do preto chega à linha da grade');
+  igual(porCor.get('BRANCO').hex, '#FFFFFF', 'e a do branco também');
+  igual(porCor.get('CINZA').hex, null, 'cor sem hex cadastrado sai nula, sem cor inventada');
+}
+{
+  // Duas variações da MESMA cor, uma com hex e outra sem: a linha é uma só
+  // (a chave é normalizada) e fica com o hex que existe, em qualquer ordem.
+  const semHex = [{ produtoId: 7, cor: 'Azul Marinho', tamanho: 'M', varianteId: 11, quantidade: 1, estoqueCasa: 0 }];
+  const comHex = [{ produtoId: 7, cor: 'AZUL MARINHO', tamanho: 'M', varianteId: 11, quantidade: 1, estoqueCasa: 0, hex: '#1B2A4A' }];
+  const r = full.montarPlano({
+    escolhidos: [anuncioDeKit({ unidades: [varComposicao(1, semHex, 10), varComposicao(2, comHex, 10)] })],
+  });
+  igual(r.produtos[0].linhas.length, 1, 'a mesma cor escrita de dois jeitos vira uma linha só');
+  igual(r.produtos[0].linhas[0].hex, '#1B2A4A', 'e a linha fica com a cor de tela que existe');
+}
+{
   // Kit que mistura DUAS referências: cada card tem de mostrar só as peças
   // dele — repetir o total do anúncio nos dois fazia somar o dobro.
   const trio = [
