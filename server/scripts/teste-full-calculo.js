@@ -1,0 +1,418 @@
+// Teste do cálculo da aba Marketplace › Full (11/09/2026).
+//
+//   node server/scripts/teste-full-calculo.js
+//
+// Roda SEM banco de propósito: tudo o que ele prova é função pura de
+// lib/full.js — a regra dos 30 dias, o mínimo, a data limite de saída, a
+// quantidade a mandar e a repartição do envio entre as cores. São justamente
+// as contas que, se estiverem erradas, mandam produzir peça a mais ou deixam
+// o anúncio cair sem ninguém perceber.
+//
+// O que ele prova:
+//   1. anúncio com 30+ dias no Full mede pela JANELA RECENTE;
+//   2. anúncio com menos de 30 dias mede pela VENDA GERAL, incluindo o
+//      período anterior à entrada no Full — que é a regra pedida;
+//   3. sem venda nenhuma a velocidade volta NULA, não zero;
+//   4. o mínimo é a venda do prazo de recebimento + segurança;
+//   5. a data limite de saída é a data do mínimo MENOS o prazo de
+//      recebimento;
+//   6. a quantidade a mandar cobre o período escolhido + o mínimo, descontando
+//      o que está lá e o que está a caminho, e respeita o múltiplo;
+//   7. estoque acima do necessário devolve ZERO ("não precisa"), que é
+//      diferente de nulo ("não sei");
+//   8. a repartição entre cores soma 100% e a cor sem venda não fica zerada
+//      nem estoura o total;
+//   9. sem venda por cor, a repartição é por igual E SE DECLARA como tal.
+const full = require('../src/lib/full');
+
+let passou = 0;
+let falhou = 0;
+function ok(c, d, det) {
+  if (c) { passou += 1; console.log(`  ✓ ${d}`); }
+  else { falhou += 1; console.log(`  ✗ ${d}${det ? ` — ${det}` : ''}`); }
+}
+function perto(a, b, d, tol = 0.001) {
+  ok(a != null && Math.abs(Number(a) - Number(b)) <= tol, d, `esperado ${b}, veio ${a}`);
+}
+function igual(a, b, d) { ok(a === b, d, `esperado ${JSON.stringify(b)}, veio ${JSON.stringify(a)}`); }
+
+const HOJE = '2026-09-11';
+
+console.log('\n1. A regra dos 30 dias');
+{
+  // 120 peças em 30 dias = 4/dia, num anúncio que está no Full há 90 dias.
+  const v = full.medirVelocidade({
+    vendas: { janela: 120, total: 900, primeira: '2025-01-10' },
+    diasNoFull: 90, janelaDias: 30, hoje: HOJE,
+  });
+  igual(v.base, 'full', 'com 90 dias no Full, mede pela venda recente');
+  perto(v.porDia, 4, 'a velocidade é 120 ÷ 30 = 4 peças/dia');
+}
+{
+  // Entrou no Full há 12 dias. A venda do anúncio começou em 13/07/2026 —
+  // 61 dias de vida até hoje, 122 peças. A regra manda usar a venda GERAL.
+  const v = full.medirVelocidade({
+    vendas: { janela: 20, total: 122, primeira: '2026-07-13' },
+    diasNoFull: 12, janelaDias: 30, hoje: HOJE,
+  });
+  igual(v.base, 'geral', 'com 12 dias no Full, mede pela venda geral do anúncio');
+  perto(v.porDia, 122 / 61, 'usa a vida inteira do anúncio, não só o tempo no Full');
+  ok(v.motivo.includes('não estava lá'), 'o motivo explica que conta o período fora do Full');
+}
+{
+  const v = full.medirVelocidade({ vendas: { janela: 0, total: 0, primeira: null }, diasNoFull: 60, janelaDias: 30, hoje: HOJE });
+  igual(v.porDia, null, 'sem venda, a velocidade é NULA e não zero');
+}
+
+console.log('\n2. Mínimo, datas e quantidade a mandar');
+const params = {
+  dias_cobertura_alvo: 60, lead_time_dias: 10, dias_seguranca: 10,
+  multiplo_envio: 1, janela_vendas_dias: 30,
+};
+{
+  // 4 peças/dia, 200 no Full, nada a caminho, envio para durar 60 dias.
+  const r = full.calcularReposicao({
+    saldo: { disponivel: 200, emTransito: 0 },
+    velocidade: { porDia: 4 }, params, diasAlvo: 60, minimoManual: null, hoje: HOJE,
+  });
+  igual(r.estoqueMinimo, 80, 'o mínimo é 4/dia × (10 + 10) dias = 80 peças');
+  perto(r.coberturaDias, 50, '200 ÷ 4 = 50 dias de cobertura');
+  igual(r.dataRuptura, '2026-10-31', 'zera 50 dias depois de hoje');
+  // (200 - 80) / 4 = 30 dias até encostar no mínimo -> 11/10.
+  igual(r.dataPrecisaEstarLa, '2026-10-11', 'as peças têm que estar lá quando o saldo encosta no mínimo');
+  igual(r.dataLimiteEnvio, '2026-10-01', 'a caixa tem que sair 10 dias antes disso');
+  // 4 × 60 + 80 - 200 - 0 = 120.
+  igual(r.precisaEnviar, 120, 'mandar 120 peças para durar 60 dias além do mínimo');
+  igual(r.urgencia, 'planejar', 'com 20 dias de folga, é planejamento e não urgência');
+}
+{
+  // O que já está a caminho abate o envio — senão a casa manda duas vezes.
+  const r = full.calcularReposicao({
+    saldo: { disponivel: 200, emTransito: 50 },
+    velocidade: { porDia: 4 }, params, diasAlvo: 60, minimoManual: null, hoje: HOJE,
+  });
+  igual(r.precisaEnviar, 70, 'as 50 peças a caminho saem da conta do envio');
+}
+{
+  const r = full.calcularReposicao({
+    saldo: { disponivel: 2000, emTransito: 0 },
+    velocidade: { porDia: 4 }, params, diasAlvo: 60, minimoManual: null, hoje: HOJE,
+  });
+  igual(r.precisaEnviar, 0, 'estoque de sobra devolve ZERO, não negativo');
+  igual(r.urgencia, 'ok', 'e a situação é "abastecido"');
+}
+{
+  const r = full.calcularReposicao({
+    saldo: { disponivel: 0, emTransito: 0 },
+    velocidade: { porDia: 4 }, params, diasAlvo: 60, minimoManual: null, hoje: HOJE,
+  });
+  igual(r.urgencia, 'ruptura', 'saldo zero é ruptura, o pior estado');
+}
+{
+  const r = full.calcularReposicao({
+    saldo: { disponivel: 200, emTransito: 0 },
+    velocidade: { porDia: null }, params, diasAlvo: 60, minimoManual: null, hoje: HOJE,
+  });
+  igual(r.estoqueMinimo, null, 'sem velocidade medida não se chuta mínimo');
+  igual(r.precisaEnviar, null, 'nem quantidade a mandar');
+  igual(r.urgencia, 'sem_medida', 'e a tela diz que não há medida, em vez de dizer "ok"');
+}
+{
+  const r = full.calcularReposicao({
+    saldo: { disponivel: 200, emTransito: 0 },
+    velocidade: { porDia: 4 }, params: { ...params, multiplo_envio: 24 },
+    diasAlvo: 60, minimoManual: null, hoje: HOJE,
+  });
+  igual(r.precisaEnviar, 120, '120 já é múltiplo de 24 — não sobe à toa');
+}
+{
+  const r = full.calcularReposicao({
+    saldo: { disponivel: 210, emTransito: 0 },
+    velocidade: { porDia: 4 }, params: { ...params, multiplo_envio: 24 },
+    diasAlvo: 60, minimoManual: null, hoje: HOJE,
+  });
+  igual(r.precisaEnviar, 120, '110 peças arredondam para a caixa fechada de 24 (120)');
+}
+{
+  const r = full.calcularReposicao({
+    saldo: { disponivel: 200, emTransito: 0 },
+    velocidade: { porDia: 4 }, params, diasAlvo: 60, minimoManual: 300, hoje: HOJE,
+  });
+  igual(r.estoqueMinimo, 300, 'o mínimo definido à mão vence o calculado');
+  igual(r.urgencia, 'atrasado', 'abaixo do mínimo à mão, o envio já está atrasado');
+}
+
+console.log('\n3. Repartição do envio entre as cores');
+{
+  const unidades = [
+    { variante_id: 1, cor: 'PRETO', tamanho: 'M' },
+    { variante_id: 2, cor: 'BRANCO', tamanho: 'M' },
+  ];
+  const mix = [
+    { varianteId: 1, cor: 'PRETO', tamanho: 'M', quantidade: 75 },
+    { varianteId: 2, cor: 'BRANCO', tamanho: 'M', quantidade: 25 },
+  ];
+  const p = full.repartirEntreUnidades(unidades, mix);
+  perto(p[0].participacao, 0.75, 'a cor que vendeu 75% recebe 75% do envio');
+  perto(p[1].participacao, 0.25, 'e a outra, 25%');
+  perto(p[0].participacao + p[1].participacao, 1, 'as participações somam 100%');
+}
+{
+  // A terceira cor acabou de entrar e não tem venda. Ela não pode ficar
+  // zerada para sempre — mas também não pode inflar o total.
+  const unidades = [
+    { variante_id: 1, cor: 'PRETO', tamanho: 'M' },
+    { variante_id: 2, cor: 'BRANCO', tamanho: 'M' },
+    { variante_id: 3, cor: 'VERDE', tamanho: 'M' },
+  ];
+  const mix = [
+    { varianteId: 1, cor: 'PRETO', tamanho: 'M', quantidade: 75 },
+    { varianteId: 2, cor: 'BRANCO', tamanho: 'M', quantidade: 25 },
+  ];
+  const p = full.repartirEntreUnidades(unidades, mix);
+  ok(p[2].participacao > 0, 'a cor nova não fica com zero');
+  ok(p[2].participacao <= p[1].participacao + 1e-9, 'mas não recebe mais que a cor de menor venda');
+  perto(p.reduce((s, x) => s + x.participacao, 0), 1, 'o total continua sendo 100%');
+  igual(p[2].origem, 'sem_venda', 'e a origem da participação dela é declarada');
+}
+{
+  // Sem venda por cor nenhuma: divide por igual e DIZ que dividiu por igual.
+  const unidades = [{ variante_id: 1, cor: 'PRETO' }, { variante_id: 2, cor: 'BRANCO' }];
+  const p = full.repartirEntreUnidades(unidades, []);
+  perto(p[0].participacao, 0.5, 'sem venda medida, divide por igual');
+  igual(p[0].origem, 'igual', 'e marca a divisão como "por igual" para a tela avisar');
+}
+{
+  // Sem variante_id, casa por cor e tamanho normalizados (acento e traço não
+  // podem separar "AZUL MARINHO" de "azul-marinho").
+  const unidades = [{ variante_id: null, cor: 'Azul Marinho', tamanho: 'GG' }];
+  const mix = [{ varianteId: null, cor: 'azul-marinho', tamanho: 'gg', quantidade: 40 }];
+  const p = full.repartirEntreUnidades(unidades, mix);
+  igual(p[0].origem, 'grade', 'casa pela grade quando não há variante vinculada');
+  perto(p[0].participacao, 1, 'e fica com o envio inteiro');
+}
+
+console.log('\n4. NULO não pode virar zero');
+{
+  // O defeito mais caro que este arquivo já teve: `Number(null)` é 0, então
+  // uma coluna NULA (= "ninguém definiu") virava um mínimo DEFINIDO como
+  // zero, e o mínimo calculado nunca era usado. O sistema pedia um terço das
+  // peças e atrasava a data limite em vinte dias, calado.
+  igual(full.inteiro(null), null, 'inteiro(null) é NULO, não 0');
+  igual(full.inteiro(undefined), null, 'inteiro(undefined) é NULO');
+  igual(full.inteiro(''), null, 'inteiro("") é NULO — campo vazio não é zero');
+  igual(full.inteiro(null, 60), 60, 'inteiro(null, padrão) devolve o padrão');
+  igual(full.inteiro('45'), 45, 'texto numérico continua virando número');
+  igual(full.inteiro(0), 0, 'e o zero de verdade continua sendo zero');
+  igual(full.numero(null), null, 'numero(null) é NULO');
+
+  // O caso completo, do jeito que a rota chama: coluna nula no banco.
+  const r = full.calcularReposicao({
+    saldo: { disponivel: 200, emTransito: 0 },
+    velocidade: { porDia: 4 }, params,
+    diasAlvo: 60, minimoManual: full.inteiro(null), hoje: HOJE,
+  });
+  igual(r.estoqueMinimo, 80, 'com a coluna NULA, vale o mínimo CALCULADO');
+  igual(r.precisaEnviar, 120, 'e a quantidade a mandar volta a ser a certa');
+  igual(r.dataLimiteEnvio, '2026-10-01', 'e a data limite não atrasa');
+}
+
+console.log('\n5. A soma das cores é exatamente o total do anúncio');
+{
+  // O múltiplo de envio é aplicado UMA vez, no total, e repartido de volta.
+  const partes = full.distribuirInteiros(120, [50, 30, 20.4]);
+  igual(partes.reduce((s, x) => s + x, 0), 120, 'as partes somam o total, sem sobra nem falta');
+  ok(partes.every((x) => x >= 0), 'nenhuma parte fica negativa');
+  igual(full.distribuirInteiros(0, [1, 2]).join(','), '0,0', 'total zero reparte zero');
+  igual(full.distribuirInteiros(10, [0, 0]).join(','), '0,0', 'sem peso não se inventa repartição');
+  const uma = full.distribuirInteiros(7, [1]);
+  igual(uma[0], 7, 'com uma variação só, ela leva tudo');
+}
+
+console.log('\n6. O anúncio inteiro montado (montarAnuncio)');
+
+// Um anúncio de 3 cores, do jeito que a consulta devolve as linhas.
+function unidade(id, cor, extra = {}) {
+  return {
+    id,
+    origem_integracao_id: 1,
+    marketplace: 'mercado_livre',
+    anuncio_id: 10,
+    anuncio_id_externo: 'MLB111',
+    variacao_id_externa: String(id),
+    inventory_id: `INV${id}`,
+    sku_externo: `OG1190${cor}M`,
+    produto_id: 7,
+    variante_id: id,
+    no_full: true,
+    desde: '2026-01-10',
+    visto_em: HOJE,
+    saiu_em: null,
+    estoque_disponivel: 0,
+    estoque_indisponivel: 0,
+    estoque_total: 0,
+    estoque_em_transito: null,
+    estoque_minimo_manual: null,
+    dias_cobertura_manual: null,
+    ignorar_reposicao: false,
+    status_full: 'sem_estoque',
+    status_externo: null,
+    titulo: 'Camiseta Dry',
+    preco: 79.9,
+    referencia: 'OG1190',
+    loja_nome: 'Origem',
+    cor,
+    tamanho: 'M',
+    estoque_casa: 0,
+    estoque_casa_reservado: 0,
+    ...extra,
+  };
+}
+
+const MIX_IGUAL = [
+  { varianteId: 1, cor: 'PRETO', tamanho: 'M', quantidade: 60 },
+  { varianteId: 2, cor: 'BRANCO', tamanho: 'M', quantidade: 60 },
+  { varianteId: 3, cor: 'VERDE', tamanho: 'M', quantidade: 60 },
+];
+
+function montar(unidades, { transito = new Map(), mix = MIX_IGUAL } = {}) {
+  return full.montarAnuncio({
+    unidades,
+    // 180 peças em 30 dias = 6/dia no anúncio, 2/dia por cor.
+    vendas: { janela: 180, total: 1800, unidadesJanela: 180, unidadesTotal: 1800, receita: 14382, primeira: '2025-06-01', ultima: HOJE },
+    mix,
+    params,
+    snapshots: new Map(),
+    pontas: new Map(),
+    transito,
+    hoje: HOJE,
+    diasAlvoPedido: 60,
+    janelaDias: 30,
+  });
+}
+
+{
+  const a = montar([unidade(1, 'PRETO'), unidade(2, 'BRANCO'), unidade(3, 'VERDE')]);
+  // Por cor: 2/dia × 60 dias + mínimo (2 × 20 = 40) − 0 = 160. Três cores = 480.
+  igual(a.reposicao.precisaEnviar, 480, 'sem nada a caminho, o anúncio pede 480 peças');
+  const somaCores = a.unidades.reduce((s, u) => s + (u.precisaEnviarUnidade || 0), 0);
+  igual(somaCores, a.reposicao.precisaEnviar, 'a soma das cores é EXATAMENTE o total do cartão');
+  igual(a.reposicao.urgencia, 'ruptura', 'com saldo zero, o anúncio está em ruptura');
+  igual(a.leitura.completa, true, 'todas as variações tiveram saldo lido');
+}
+{
+  // O defeito que a revisão pegou: a expedição registra a remessa no ANÚNCIO
+  // (o formulário grava na primeira variação). Se o crédito ficasse preso
+  // nela, as outras duas cores continuariam pedindo a remessa inteira de
+  // novo, e o cartão pediria 320 em vez de 180.
+  const transito = new Map([[1, { pecas: 300, desde: '2026-09-09' }]]);
+  const a = montar([unidade(1, 'PRETO'), unidade(2, 'BRANCO'), unidade(3, 'VERDE')], { transito });
+  igual(a.reposicao.precisaEnviar, 180, '480 menos as 300 já despachadas = 180 (o crédito é do anúncio, não da cor)');
+  igual(a.saldo.emTransito, 300, 'e o cartão mostra as 300 peças a caminho');
+  const somaCores = a.unidades.reduce((s, u) => s + (u.precisaEnviarUnidade || 0), 0);
+  igual(somaCores, 180, 'a soma das cores acompanha o desconto');
+}
+{
+  // A plataforma já enxerga a mesma remessa: não pode descontar duas vezes.
+  const transito = new Map([[1, { pecas: 300, desde: '2026-09-09' }]]);
+  const a = montar([
+    unidade(1, 'PRETO', { estoque_em_transito: 100 }),
+    unidade(2, 'BRANCO', { estoque_em_transito: 100 }),
+    unidade(3, 'VERDE', { estoque_em_transito: 100 }),
+  ], { transito });
+  igual(a.saldo.emTransito, 300, 'a caminho continua sendo 300, não 600');
+  // Cada cor já descontou 100 (2×60 + 40 − 100 = 60); 3 × 60 = 180, e o
+  // crédito registrado não abate nada por cima porque já estava contado.
+  igual(a.reposicao.precisaEnviar, 180, 'a mesma remessa não é descontada duas vezes');
+}
+{
+  // Variação sem saldo lido: o total vira um PISO e a tela precisa saber.
+  const a = montar([
+    unidade(1, 'PRETO', { estoque_disponivel: 120 }),
+    unidade(2, 'BRANCO', { estoque_disponivel: null, status_externo: 'inventory_id ausente' }),
+    unidade(3, 'VERDE', { estoque_disponivel: 40 }),
+  ]);
+  igual(a.leitura.completa, false, 'a leitura é declarada incompleta');
+  igual(a.leitura.naoLidas, 1, 'com uma variação não lida de três');
+  igual(a.saldo.disponivel, 160, 'e o saldo mostrado é a soma do que foi lido');
+  ok(a.leitura.motivos.length === 1, 'o motivo da falha vai junto para a tela');
+}
+{
+  // Peça em fim de linha fica fora da reposição, mas continua na tela.
+  const a = montar([
+    unidade(1, 'PRETO'),
+    unidade(2, 'BRANCO', { ignorar_reposicao: true }),
+    unidade(3, 'VERDE'),
+  ]);
+  igual(a.unidades[1].precisaEnviarUnidade, 0, 'a variação ignorada não recebe peça nenhuma');
+  igual(a.reposicao.precisaEnviar, 320, 'e o total do anúncio cai para as duas cores restantes');
+}
+{
+  // Múltiplo de envio: arredonda UMA vez, no total, e reparte de volta.
+  const a = full.montarAnuncio({
+    unidades: [unidade(1, 'PRETO'), unidade(2, 'BRANCO'), unidade(3, 'VERDE')],
+    vendas: { janela: 180, total: 1800, unidadesJanela: 180, unidadesTotal: 1800, receita: 14382, primeira: '2025-06-01', ultima: HOJE },
+    mix: MIX_IGUAL,
+    params: { ...params, multiplo_envio: 50 },
+    snapshots: new Map(), pontas: new Map(), transito: new Map(),
+    hoje: HOJE, diasAlvoPedido: 60, janelaDias: 30,
+  });
+  igual(a.reposicao.precisaEnviar, 500, '480 sobe para a caixa fechada de 50 (500)');
+  igual(a.unidades.reduce((s, u) => s + u.precisaEnviarUnidade, 0), 500,
+    'e as cores somam 500, não 3 arredondamentos separados');
+}
+
+{
+  // Mínimo à mão em UMA cor só: não pode virar o mínimo do anúncio inteiro.
+  // Era um caminho de perda de dado em um clique — a aba Ajustes oferecia o
+  // total encolhido de volta no campo, pronto para ser regravado por cima das
+  // cores certas.
+  const a = montar([
+    unidade(1, 'PRETO', { estoque_minimo_manual: 10 }),
+    unidade(2, 'BRANCO'),
+    unidade(3, 'VERDE'),
+  ]);
+  igual(a.reposicao.estoqueMinimoManual, null, 'com só uma cor definida à mão, o anúncio NÃO tem mínimo manual');
+  igual(a.reposicao.estoqueMinimoParcial, true, 'e a tela é avisada de que o mínimo é misto');
+  // 10 (à mão) + 40 + 40 (calculados) = 90.
+  igual(a.reposicao.estoqueMinimo, 90, 'o mínimo do anúncio é a soma do efetivo de cada cor');
+}
+{
+  // Todas à mão: aí sim o anúncio tem mínimo definido à mão.
+  const a = montar([
+    unidade(1, 'PRETO', { estoque_minimo_manual: 10 }),
+    unidade(2, 'BRANCO', { estoque_minimo_manual: 20 }),
+    unidade(3, 'VERDE', { estoque_minimo_manual: 30 }),
+  ]);
+  igual(a.reposicao.estoqueMinimoManual, 60, 'com todas definidas à mão, o anúncio soma 60');
+  igual(a.reposicao.estoqueMinimoParcial, false, 'e nada é parcial');
+}
+{
+  // O saldo da casa lido no nível da REFERÊNCIA (caso da Shopee) é declarado,
+  // e a chave de dedupe passa a ser o produto — senão a mesma prateleira
+  // contaria duas vezes ao lado do anúncio do Mercado Livre.
+  const a = montar([
+    unidade(1, 'PRETO', {
+      variante_id: null, estoque_casa: 65, estoque_casa_origem: 'referencia', produto_id: 7,
+    }),
+  ], { mix: [] });
+  igual(a.unidades[0].estoqueCasaOrigem, 'referencia', 'a origem do saldo da casa é declarada');
+  igual(a.unidades[0].estoqueCasaChave, 'p7', 'e a dedupe passa a ser pela referência');
+}
+{
+  // O campo por cor que arredondava por conta própria não sai mais na
+  // resposta: quem lesse `precisaEnviar` de uma variação somaria mais do que
+  // o cartão mostra.
+  const a = montar([unidade(1, 'PRETO'), unidade(2, 'BRANCO'), unidade(3, 'VERDE')]);
+  igual(a.unidades[0].precisaEnviar, undefined, 'a variação não devolve um "precisaEnviar" próprio');
+  ok(a.unidades[0].precisaEnviarUnidade > 0, 'o número por cor é o precisaEnviarUnidade');
+}
+
+console.log('\n7. Utilidades de data');
+igual(full.diasEntre('2026-09-11', '2026-10-01'), 20, 'diasEntre conta 20 dias');
+igual(full.somarDias('2026-09-11', -10), '2026-09-01', 'somarDias anda para trás');
+igual(full.arredondarParaMultiplo(0, 24), 0, 'zero não vira uma caixa cheia');
+igual(full.arredondarParaMultiplo(1, 24), 24, 'uma peça vira a caixa fechada');
+
+console.log(`\n${passou} passaram, ${falhou} falharam\n`);
+process.exit(falhou === 0 ? 0 : 1);

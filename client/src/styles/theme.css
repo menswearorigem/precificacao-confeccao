@@ -7601,3 +7601,424 @@ table.grade-matriz { width: auto; min-width: 0; }
 }
 .faixa-wik .faixa-wik-sep { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 .faixa-wik strong { color: var(--ink); font-weight: 600; }
+
+/* ===========================================================================
+   MARKETPLACE › FULL (11/09/2026)
+   ===========================================================================
+   A tela do estoque que está dentro do centro de distribuição do marketplace.
+   Reaproveita a linguagem visual da aba de Anúncios de propósito — é a mesma
+   equipe, a mesma cabeça, a mesma tinta por plataforma (tokens --mkt-*).
+
+   O que ela acrescenta é UMA ideia visual nova: a barra de cobertura. Ela
+   responde "está apertado?" antes de qualquer número ser lido, e usa as cores
+   de ESTADO (--success/--warning/--danger), nunca as de plataforma — a cor da
+   loja identifica, a cor do estado avisa. Misturar as duas foi o defeito que
+   a REGRA 3 existe para evitar. */
+
+/* ---- faixa de lojas ---- */
+.full-lojas {
+  display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.full-loja {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--surface);
+  box-shadow: var(--shadow-xs); min-width: 220px;
+}
+.full-loja.plataforma-mercado_livre { background: var(--mkt-meli-suave); border-color: color-mix(in srgb, var(--mkt-meli-edge) 40%, var(--border)); }
+.full-loja.plataforma-shopee { background: var(--mkt-shopee-suave); border-color: color-mix(in srgb, var(--mkt-shopee-edge) 40%, var(--border)); }
+.full-loja.plataforma-tiktok_shop { background: var(--mkt-tiktok-suave); }
+.full-loja.plataforma-shein { background: var(--mkt-shein-suave); }
+.full-loja.sem-leitura { opacity: 0.72; }
+.full-loja-corpo { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.full-loja-corpo strong { font-size: 12.5px; }
+.full-loja-numeros { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.full-loja-data { font-size: 10px; color: var(--ink-faint); }
+.full-loja-aviso { font-size: 10.5px; font-weight: 600; color: var(--warning); }
+.full-loja-erro { font-size: 10.5px; font-weight: 600; color: var(--danger); }
+
+/* ---- barra de modo / ordenação / seleção ---- */
+.full-barra-topo {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.full-ordenar { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-soft); }
+.full-selecao-acoes { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.full-filtro-alvo {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11.5px; color: var(--ink-soft);
+  padding: 0 8px; border: 1px dashed var(--border); border-radius: var(--radius-sm);
+}
+.full-toggle-inline { display: inline-flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--ink-soft); }
+
+/* ---- grade de cartões ---- */
+.full-grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(252px, 1fr));
+  gap: 16px;
+}
+
+.full-card {
+  position: relative;
+  display: flex; flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+  box-shadow: var(--shadow-xs);
+  transition: box-shadow 160ms var(--ease), transform 160ms var(--ease);
+  text-align: left;
+}
+.full-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.full-card:focus-within, .full-card.selecionado { box-shadow: 0 0 0 2px var(--terracotta), var(--shadow-sm); }
+.full-card.plataforma-mercado_livre { background: var(--mkt-meli-suave); }
+.full-card.plataforma-shopee { background: var(--mkt-shopee-suave); }
+.full-card.plataforma-tiktok_shop { background: var(--mkt-tiktok-suave); }
+.full-card.plataforma-shein { background: var(--mkt-shein-suave); }
+
+/* A faixa do topo diz a PLATAFORMA, como na aba de Anúncios — até o cartão
+   ficar urgente. Aí ela passa a dizer o ESTADO, porque um cartão zerado
+   precisa ser achado de longe e a plataforma dele já está escrita no selo
+   sobre a foto. */
+.full-card-faixa { height: 3px; flex: 0 0 auto; background: var(--border); }
+.plataforma-mercado_livre > .full-card-faixa { background: var(--mkt-meli-edge); }
+.plataforma-shopee > .full-card-faixa { background: var(--mkt-shopee-edge); }
+.plataforma-tiktok_shop > .full-card-faixa { background: var(--mkt-tiktok-edge); }
+.plataforma-shein > .full-card-faixa { background: var(--mkt-shein-edge); }
+.full-card.urgencia-ruptura > .full-card-faixa,
+.full-card.urgencia-atrasado > .full-card-faixa { background: var(--danger-ring); height: 4px; }
+.full-card.urgencia-urgente > .full-card-faixa { background: var(--warning-ring); height: 4px; }
+
+.full-card-alvo {
+  position: absolute; inset: 0; z-index: 1;
+  border: 0; background: transparent; cursor: pointer;
+  font: inherit; color: transparent; padding: 0;
+}
+.full-card-alvo:focus-visible { outline: 2px solid var(--terracotta); outline-offset: -3px; border-radius: var(--radius); }
+.full-card-foto, .full-card-corpo, .full-card-acao { position: relative; }
+.full-card-loja, .full-card-selecao, .full-card-tempo { z-index: 2; }
+
+.full-card-foto { aspect-ratio: 1 / 1; background: var(--surface-alt); overflow: hidden; }
+.full-card-foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.full-foto-vazia {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  color: var(--ink-soft);
+  font-family: var(--font-mono); font-size: 15px; font-weight: 700; letter-spacing: .04em;
+  text-align: center; padding: 8px;
+}
+.full-foto-vazia small { font-family: var(--font-body); font-size: 10px; font-weight: 500; color: var(--ink-faint); letter-spacing: 0; }
+
+.full-card-loja {
+  position: absolute; top: 7px; left: 7px;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px 3px 4px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 600;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border); box-shadow: var(--shadow-xs);
+  max-width: calc(100% - 52px);
+}
+.full-card-loja span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.full-card-selecao {
+  position: absolute; top: 7px; right: 7px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 2px; display: flex; box-shadow: var(--shadow-xs);
+}
+/* Há quanto tempo está no Full: a informação mais pedida da tela, e por isso
+   ela fica SOBRE a foto, não perdida numa linha de texto. */
+.full-card-tempo {
+  position: absolute; bottom: 7px; left: 7px;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 8px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--border);
+  box-shadow: var(--shadow-xs);
+  font-size: 10px; font-weight: 600; color: var(--ink-soft);
+}
+
+.full-card-corpo { padding: 11px 12px 9px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.full-card-titulo {
+  font-size: 12.5px; line-height: 1.35; margin: 0; font-weight: 500; color: var(--ink);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  min-height: 2.7em;
+}
+.full-card-ref {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-soft);
+  display: flex; justify-content: space-between; gap: 8px; align-items: baseline;
+}
+.full-card-preco { font-weight: 700; color: var(--ink); font-size: 12px; }
+
+/* Os três saldos, lado a lado: no Full, a caminho, na casa. É a leitura que
+   responde "dá pra mandar hoje?" sem abrir nada. */
+.full-card-saldos {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+  padding: 7px 0; border-top: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft);
+}
+.full-card-saldos span {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: 13px; font-weight: 700; color: var(--ink);
+}
+.full-card-saldos span svg { color: var(--ink-faint); }
+.full-card-saldos small {
+  font-family: var(--font-body); font-size: 9.5px; font-weight: 500;
+  color: var(--ink-faint); letter-spacing: .01em;
+}
+
+/* ---- a barra de cobertura ---- */
+.full-barra { display: flex; align-items: center; gap: 8px; }
+.full-barra-trilho {
+  position: relative; flex: 1; height: 7px; border-radius: 999px;
+  background: var(--surface-alt); border: 1px solid var(--border-soft); overflow: visible;
+}
+.full-barra-preenchida {
+  position: absolute; inset: 0 auto 0 0; height: 100%;
+  border-radius: 999px; background: var(--ink-faint);
+  transition: width 200ms var(--ease);
+}
+.full-barra.tom-bom .full-barra-preenchida { background: var(--success-ring); }
+.full-barra.tom-atencao .full-barra-preenchida { background: var(--warning-ring); }
+.full-barra.tom-perigo .full-barra-preenchida { background: var(--danger-ring); }
+/* A marca do mínimo: o traço que diz onde a reposição já devia ter saído. */
+.full-barra-marca {
+  position: absolute; top: -3px; bottom: -3px; width: 2px;
+  background: var(--ink); opacity: .55; border-radius: 2px;
+}
+.full-barra-rotulo {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: 11px; font-weight: 700; color: var(--ink-soft); min-width: 46px; text-align: right;
+}
+.full-barra-vazia {
+  font-size: 10.5px; color: var(--ink-faint); font-style: italic;
+  padding: 3px 0;
+}
+
+.full-card-velocidade {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: 10px; color: var(--ink-faint);
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+/* O selo que diz que a velocidade veio da venda GERAL, e não da venda no
+   Full. É a regra dos 30 dias aparecendo no cartão — sem isso, dois cartões
+   com "dura 12 dias" pareceriam medidos do mesmo jeito. */
+.full-tag-base {
+  font-family: var(--font-body); font-size: 9px; font-weight: 700;
+  padding: 1px 6px; border-radius: 4px;
+  background: var(--info-bg); color: var(--info); border: 1px solid var(--info-ring);
+}
+
+.full-card-acao {
+  margin-top: auto;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 12px; border-top: 1px solid var(--border-soft);
+}
+.plataforma-mercado_livre > .full-card-acao { background: color-mix(in srgb, var(--mkt-meli-edge) 9%, transparent); }
+.plataforma-shopee > .full-card-acao { background: color-mix(in srgb, var(--mkt-shopee-edge) 9%, transparent); }
+.plataforma-tiktok_shop > .full-card-acao { background: color-mix(in srgb, var(--mkt-tiktok-edge) 12%, transparent); }
+.plataforma-shein > .full-card-acao { background: color-mix(in srgb, var(--mkt-shein-edge) 9%, transparent); }
+.full-card-enviar {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; color: var(--ink); font-weight: 500;
+}
+.full-card-enviar b { font-family: var(--font-mono); font-size: 13.5px; }
+.full-card-enviar.sem { color: var(--ink-faint); font-style: italic; }
+.full-card-quando { font-size: 10.5px; color: var(--ink-soft); width: 100%; }
+
+/* ---- selo de urgência ---- */
+.full-selo {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .01em;
+  padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+  background: var(--surface-alt); color: var(--ink-soft); border: 1px solid var(--border);
+}
+.full-selo.compacto { font-size: 9.5px; padding: 2px 7px; margin-left: auto; }
+.full-selo.tom-bom { background: var(--success-bg); color: var(--success); border-color: var(--success-ring); }
+.full-selo.tom-atencao { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-ring); }
+.full-selo.tom-perigo { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-ring); }
+
+/* ---- tabela ---- */
+.full-tabela .num { text-align: right; font-variant-numeric: tabular-nums; }
+.full-linha-titulo { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.full-linha-foto {
+  width: 34px; height: 34px; border-radius: 6px; overflow: hidden; flex: 0 0 auto;
+  background: var(--surface-alt); display: block;
+}
+.full-linha-foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.full-linha-foto .full-foto-vazia { font-size: 8px; }
+.full-linha-foto .full-foto-vazia small { display: none; }
+.full-linha-titulo b { display: block; font-size: 12px; font-weight: 600; }
+.full-linha-titulo small { display: block; font-size: 10px; color: var(--ink-faint); }
+.full-linha-loja { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; white-space: nowrap; }
+.full-linha-zerada > td { background: color-mix(in srgb, var(--danger-bg) 45%, transparent); }
+
+/* ---- painel ---- */
+.full-painel .full-resumo-topo { display: flex; gap: 14px; margin-bottom: 16px; }
+.full-resumo-foto {
+  width: 108px; flex: 0 0 auto; border-radius: var(--radius-sm); overflow: hidden;
+  background: var(--surface-alt); align-self: flex-start;
+}
+.full-resumo-foto img { width: 100%; display: block; }
+.full-resumo-cabeca { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.full-resumo-grande {
+  font-family: var(--font-display); font-size: 19px; line-height: 1.25; color: var(--ink);
+}
+.full-resumo-grande b { font-size: 26px; font-weight: 700; }
+.full-resumo-motivo { margin: 0; font-size: 11px; color: var(--ink-soft); line-height: 1.45; }
+.full-sem-medida { color: var(--ink-faint); font-style: italic; }
+
+.full-blocos { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.full-bloco {
+  padding: 10px 12px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface-alt);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.full-bloco.destaque { border-color: var(--terracotta); background: var(--accent-softer); }
+.full-bloco-rotulo { font-size: 10px; font-weight: 700; color: var(--ink-faint); text-transform: uppercase; letter-spacing: .05em; }
+.full-bloco-valor {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: 20px; font-weight: 700; color: var(--ink); line-height: 1.15;
+}
+.full-bloco small { font-size: 10px; color: var(--ink-soft); line-height: 1.35; }
+
+.full-linha-dado {
+  display: flex; justify-content: space-between; gap: 12px; align-items: baseline;
+  padding: 6px 0; border-bottom: 1px dashed var(--border-soft); font-size: 12px;
+}
+.full-linha-dado > span { color: var(--ink-soft); }
+.full-linha-dado > b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+.full-linha-dado > b.forte { font-size: 14px; }
+.full-sobe { color: var(--success); display: inline-flex; align-items: center; gap: 3px; }
+.full-desce { color: var(--danger); display: inline-flex; align-items: center; gap: 3px; }
+
+.full-nota {
+  margin: 10px 0 0; font-size: 10.5px; color: var(--ink-faint); line-height: 1.5;
+  padding-top: 8px; border-top: 1px dashed var(--border-soft);
+}
+.full-aviso {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 9px 12px; border-radius: var(--radius-sm);
+  background: var(--warning-bg); color: var(--warning);
+  border: 1px solid var(--warning-ring);
+  font-size: 11.5px; line-height: 1.45; margin-bottom: 12px;
+}
+.full-aviso svg { flex: 0 0 auto; margin-top: 1px; }
+
+/* ---- linha do tempo de envios ---- */
+.full-timeline { display: flex; flex-direction: column; }
+.full-timeline-item { display: flex; gap: 12px; padding-bottom: 14px; position: relative; }
+.full-timeline-item::before {
+  content: ''; position: absolute; left: 4px; top: 14px; bottom: 0; width: 1px; background: var(--border);
+}
+.full-timeline-item:last-child::before { display: none; }
+.full-timeline-ponto {
+  width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; margin-top: 4px;
+  background: var(--terracotta); border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--terracotta);
+}
+/* Remessa deduzida tem ponto VAZADO: à distância já se vê que aquela linha
+   não é um registro, é uma conclusão. */
+.full-timeline-item.origem-inferido .full-timeline-ponto { background: var(--surface); box-shadow: 0 0 0 1px var(--ink-faint); }
+.full-timeline-corpo { flex: 1; min-width: 0; }
+.full-timeline-topo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+.full-timeline-id { font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); }
+.full-timeline-numeros {
+  display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+  font-size: 11px; color: var(--ink-soft); margin-top: 2px;
+}
+.full-timeline-prazo { font-size: 10.5px; color: var(--ink-faint); margin-top: 2px; }
+.full-timeline-obs { margin: 4px 0 0; font-size: 10.5px; color: var(--ink-faint); line-height: 1.45; }
+.full-selo-origem {
+  font-size: 9.5px; font-weight: 700; padding: 1px 7px; border-radius: 4px;
+  background: var(--surface-alt); color: var(--ink-soft); border: 1px solid var(--border);
+}
+.full-selo-origem.origem-plataforma { background: var(--success-bg); color: var(--success); border-color: var(--success-ring); }
+.full-selo-origem.origem-inferido { background: transparent; color: var(--ink-faint); border-style: dashed; }
+.full-status-envio { font-size: 10px; text-transform: lowercase; color: var(--ink-faint); }
+.full-form-envio { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.full-toggle-linha { display: flex; gap: 10px; align-items: flex-start; margin: 12px 0 16px; }
+.full-toggle-linha small { display: block; font-size: 10.5px; color: var(--ink-soft); line-height: 1.45; margin-top: 2px; }
+
+/* ---- modais ---- */
+.full-modal { max-width: 960px; width: 100%; max-height: 88vh; overflow-y: auto; }
+.full-modal.estreito { max-width: 640px; }
+.full-modal-topo { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 14px; }
+.full-modal-topo h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; }
+.full-modal-rodape { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 16px; }
+
+/* O seletor de período do envio: a peça central do plano, e por isso ela é a
+   primeira coisa dentro do modal — a quantidade a produzir é consequência
+   dela, não o contrário. */
+.full-periodo {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 12px; border-radius: var(--radius-sm);
+  background: var(--surface-alt); border: 1px solid var(--border); margin-bottom: 14px;
+}
+.full-periodo-rotulo { font-size: 12px; font-weight: 600; color: var(--ink); }
+.full-periodo-livre { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-soft); }
+.full-periodo-livre input { width: 72px; }
+.full-periodo-casa { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--ink-soft); margin-left: auto; }
+
+.full-plano-totais { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.full-plano-produto {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 12px; margin-bottom: 14px; background: var(--surface);
+}
+.full-plano-cabeca { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; }
+.full-plano-cabeca b { font-family: var(--font-mono); font-size: 13px; }
+.full-plano-cabeca small { display: block; font-size: 11px; color: var(--ink-soft); }
+.full-plano-anuncios { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.full-plano-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10.5px; padding: 2px 8px; border-radius: 999px;
+  background: var(--surface-alt); border: 1px solid var(--border); color: var(--ink-soft);
+}
+.full-plano-numeros { display: flex; gap: 14px; flex-wrap: wrap; align-items: baseline; font-size: 11px; color: var(--ink-soft); }
+.full-plano-numeros b { font-family: var(--font-mono); font-size: 15px; color: var(--ink); }
+.full-plano-numeros .destaque b { color: var(--terracotta); }
+.full-plano-prazo { display: inline-flex; align-items: center; gap: 4px; color: var(--warning); font-weight: 600; }
+.full-plano-acoes { display: flex; justify-content: flex-end; margin-top: 10px; }
+.full-ordem-ok { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--success); }
+.full-ressalvas {
+  border: 1px dashed var(--border); border-radius: var(--radius-sm);
+  padding: 10px 12px; background: var(--surface-alt);
+}
+.full-ressalvas p { margin: 6px 0 0; font-size: 11.5px; color: var(--ink-soft); line-height: 1.5; }
+
+.full-param-loja { border-top: 1px solid var(--border-soft); padding-top: 12px; margin-top: 12px; }
+.full-param-cabeca { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.full-param-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 10px; }
+
+.full-premissas {
+  margin-top: 18px; padding: 12px 14px; border-radius: var(--radius-sm);
+  background: var(--surface-alt); border: 1px solid var(--border-soft);
+  font-size: 11px; color: var(--ink-soft); line-height: 1.6;
+}
+
+/* No celular o cartão perde a grade de três saldos lado a lado — em 360px ela
+   fica com número colado em número. Vira duas linhas. */
+@media (max-width: 560px) {
+  .full-grade { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+  .full-card-saldos { grid-template-columns: repeat(2, 1fr); row-gap: 6px; }
+  .full-periodo-casa { margin-left: 0; }
+  .full-selecao-acoes { margin-left: 0; width: 100%; }
+}
+
+/* Impressão do plano de produção: o modal vira a folha. O resto da tela sai
+   de cena — imprimir a página inteira com filtros e menu é o que faz alguém
+   desistir de usar o botão. */
+@media print {
+  .full-modal { max-height: none; overflow: visible; box-shadow: none; border: 0; }
+  .viagem-modal-overlay { position: static; background: none; padding: 0; display: block; }
+  .shell-sidebar, .shell-header, .full-modal-rodape, .full-plano-acoes,
+  .full-periodo .modo-exibicao, .icon-btn { display: none !important; }
+  .full-plano-produto { break-inside: avoid; }
+}
+
+/* Leitura incompleta: quando parte das variações não teve o saldo lido, o
+   número do cartão é um PISO e não o total. O "≥" na frente e o aviso no
+   rodapé existem para que ninguém leia um piso como número fechado. */
+.full-card-saldos span.full-saldo-parcial { color: var(--warning); }
+.full-card-saldos span.full-saldo-parcial svg { color: var(--warning); }
+.full-card-parcial {
+  display: inline-flex; align-items: center; gap: 4px;
+  width: 100%; font-size: 10px; font-weight: 600; color: var(--warning);
+}
+.full-periodo-padrao { font-weight: 500; color: var(--ink-faint); font-size: 10.5px; }

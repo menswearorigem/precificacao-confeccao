@@ -1423,6 +1423,180 @@ async function removerTodasOfertasML({ accessToken, sellerId, anuncioId }) {
   );
 }
 
+
+// ===========================================================================
+// FULFILLMENT — o Full do Mercado Livre (aba Marketplace › Full, 11/09/2026)
+// ===========================================================================
+// Tudo daqui para baixo é LEITURA do estoque que está no centro de
+// distribuição do Mercado Livre. Nada abaixo desta linha é chamado pelo
+// sincronismo de pedidos, pela Lucratividade, pelo Financeiro ou pela aba de
+// Anúncios — as funções acima continuam exatamente como estavam.
+//
+// O que é confirmado e o que não é (REGRA 2, dito aqui para não se perder):
+//
+//   · `shipping.logistic_type === 'fulfillment'` no item é o campo que diz se
+//     o anúncio está no Full. Ele JÁ VEM na resposta de item que a aba de
+//     Anúncios guarda em `bruto` — ou seja, saber QUEM está no Full não custa
+//     nenhuma chamada nova de API;
+//   · `inventory_id` (no item e, quando há variação, em cada variação) é o
+//     código do estoque dentro do centro de distribuição;
+//   · `/inventories/{inventory_id}/stock/fulfillment` devolve o saldo naquele
+//     centro. É a única chamada nova que a varredura de saldo faz;
+//   · o HISTÓRICO DE REMESSAS (`/inbound-shipments/...`) tem duas formas
+//     documentadas e o portal de desenvolvedor do ML responde 403 à leitura
+//     automatizada, então o caminho exato NÃO está confirmado contra a conta
+//     real. A função abaixo tenta os caminhos conhecidos, em ordem, e devolve
+//     `{ envios: [], aviso }` quando nenhum responde — nunca um array vazio
+//     mudo, que a tela mostraria como "nunca foi enviado nada".
+
+// O item está no Full? Lê do item CRU já gravado — não faz chamada nenhuma.
+function ehFullML(item) {
+  const tipo = item?.shipping?.logistic_type || item?.shipping?.logistic?.type || null;
+  return String(tipo || '').toLowerCase() === 'fulfillment';
+}
+
+// As unidades de estoque do Full de um item: uma por variação quando houver,
+// uma só quando não houver. `inventoryId` NULO significa "o item diz que está
+// no Full mas não veio o código do estoque" — a tela mostra isso como saldo
+// não lido, em vez de zero (REGRA 2).
+function unidadesFullML(item) {
+  const variacoes = Array.isArray(item?.variations) ? item.variations : [];
+  if (variacoes.length > 0) {
+    return variacoes.map((v) => ({
+      variacaoIdExterna: String(v.id),
+      inventoryId: v.inventory_id ? String(v.inventory_id) : null,
+      skuExterno: extrairAtributo(v.attributes, 'SELLER_SKU') || v.seller_custom_field || null,
+      cor: extrairAtributo(v.attribute_combinations, 'COLOR')
+        || extrairAtributo(v.attribute_combinations, 'MAIN_COLOR') || null,
+      tamanho: extrairAtributo(v.attribute_combinations, 'SIZE') || null,
+    }));
+  }
+  return [{
+    variacaoIdExterna: '',
+    inventoryId: item?.inventory_id ? String(item.inventory_id) : null,
+    skuExterno: extrairSku(item, null),
+    cor: null,
+    tamanho: null,
+  }];
+}
+
+// A que "em trânsito" corresponde cada situação de estoque indisponível que o
+// ML devolve em `not_available_detail`. Situação fora desta lista continua
+// contando como INDISPONÍVEL (é o que ela é), mas não é somada ao trânsito —
+// chamar de "a caminho" o que está danificado faria o sistema mandar menos
+// peça do que precisa.
+const STATUS_EM_TRANSITO_ML = new Set(['transfer', 'in_transit', 'inbound', 'to_be_received']);
+
+// Saldo de uma unidade de estoque no centro de distribuição.
+async function buscarEstoqueFullML({ accessToken, inventoryId }) {
+  const data = await chamarApi(`/inventories/${inventoryId}/stock/fulfillment`, accessToken);
+  const detalhe = Array.isArray(data?.not_available_detail) ? data.not_available_detail : [];
+  const emTransito = detalhe
+    .filter((d) => STATUS_EM_TRANSITO_ML.has(String(d?.status || '').toLowerCase()))
+    .reduce((soma, d) => soma + (Number(d?.quantity) || 0), 0);
+  return {
+    inventoryId: String(inventoryId),
+    disponivel: data?.available_quantity != null ? Number(data.available_quantity) : null,
+    indisponivel: data?.not_available_quantity != null ? Number(data.not_available_quantity) : null,
+    total: data?.total != null ? Number(data.total) : null,
+    emTransito: detalhe.length ? emTransito : null,
+    detalhe: data || null,
+  };
+}
+
+// Situação de estoque do item no Full, em UMA palavra, derivada do saldo —
+// não de um campo da plataforma, porque ela não devolve um.
+function statusFullPorSaldo(saldo) {
+  if (!saldo || saldo.disponivel == null) return 'desconhecido';
+  if (Number(saldo.disponivel) > 0) return 'ativo';
+  if (Number(saldo.emTransito || 0) > 0) return 'a_caminho';
+  return 'sem_estoque';
+}
+
+// Histórico de remessas enviadas ao Full.
+//
+// Tenta os caminhos conhecidos em ordem e para no primeiro que responder.
+// Nenhum respondendo, devolve o AVISO — a diferença entre "esta conta nunca
+// mandou remessa" e "não consegui perguntar" é exatamente o tipo de coisa que
+// esta casa não deixa o sistema chutar.
+const CAMINHOS_REMESSA_ML = [
+  (sellerId) => `/inbound-shipments/search?seller_id=${sellerId}&limit=50`,
+  (sellerId) => `/stock/fulfillment/operations/search?seller_id=${sellerId}&limit=50`,
+];
+
+const STATUS_REMESSA_ML = {
+  draft: 'rascunho',
+  ready_to_ship: 'em_transito',
+  shipped: 'em_transito',
+  in_transit: 'em_transito',
+  receiving: 'em_transito',
+  received: 'recebido',
+  closed: 'recebido',
+  finished: 'recebido',
+  cancelled: 'cancelado',
+  canceled: 'cancelado',
+};
+
+function soData(valor) {
+  if (!valor) return null;
+  const texto = String(valor);
+  return /^\d{4}-\d{2}-\d{2}/.test(texto) ? texto.slice(0, 10) : null;
+}
+
+function mapearRemessaML(remessa) {
+  const statusCru = String(remessa?.status || remessa?.shipment_status || '').toLowerCase();
+  const itens = (remessa?.items || remessa?.inbound_items || []).map((i) => ({
+    anuncioIdExterno: i.item_id ? String(i.item_id) : null,
+    variacaoIdExterna: i.variation_id ? String(i.variation_id) : '',
+    inventoryId: i.inventory_id ? String(i.inventory_id) : null,
+    skuExterno: i.seller_sku || i.sku || null,
+    quantidadeEnviada: Number(i.quantity ?? i.sent_quantity ?? 0) || 0,
+    quantidadeRecebida: i.received_quantity != null ? Number(i.received_quantity) : null,
+  }));
+  return {
+    envioIdExterno: String(remessa?.id ?? remessa?.shipment_id ?? ''),
+    status: STATUS_REMESSA_ML[statusCru] || 'desconhecido',
+    statusExterno: remessa?.status || remessa?.shipment_status || null,
+    criadoEmPlataforma: remessa?.date_created || remessa?.created_at || null,
+    enviadoEm: soData(remessa?.date_shipped || remessa?.shipped_at || remessa?.date_created),
+    previsaoEm: soData(remessa?.estimated_arrival || remessa?.eta),
+    recebidoEm: soData(remessa?.date_received || remessa?.received_at),
+    quantidadeEnviada: itens.reduce((s, i) => s + i.quantidadeEnviada, 0) || null,
+    quantidadeRecebida: itens.some((i) => i.quantidadeRecebida != null)
+      ? itens.reduce((s, i) => s + (i.quantidadeRecebida || 0), 0)
+      : null,
+    itens,
+    bruto: remessa,
+  };
+}
+
+async function buscarEnviosFullML({ accessToken, sellerId }) {
+  const tentativas = [];
+  for (const montar of CAMINHOS_REMESSA_ML) {
+    const caminho = montar(sellerId);
+    try {
+      const data = await chamarApi(caminho, accessToken);
+      const lista = data?.results || data?.shipments || data?.data || [];
+      if (!Array.isArray(lista)) {
+        tentativas.push(`${caminho}: resposta sem lista de remessas`);
+        continue;
+      }
+      return { envios: lista.map(mapearRemessaML), aviso: null, caminho };
+    } catch (err) {
+      tentativas.push(`${caminho}: ${err.message}`);
+    }
+  }
+  return {
+    envios: [],
+    // O texto vai inteiro para a tela. Um "não deu" genérico obrigaria quem
+    // for investigar a abrir o log do servidor.
+    aviso: 'A API de remessas do Mercado Livre não respondeu nesta conta. '
+      + 'O histórico continua sendo montado pelas remessas registradas à mão e pela variação do saldo diário. '
+      + `Tentativas: ${tentativas.join(' · ')}`,
+    caminho: null,
+  };
+}
+
 module.exports = {
   buildAuthorizeUrl,
   trocarCodigoPorToken,
@@ -1465,4 +1639,11 @@ module.exports = {
   listarRelatoriosLiberacoes,
   baixarRelatorioLiberacoes,
   mapearRelatorioLiberacoes,
+  // Fulfillment (aba Full, 11/09/2026)
+  ehFullML,
+  unidadesFullML,
+  buscarEstoqueFullML,
+  statusFullPorSaldo,
+  buscarEnviosFullML,
+  mapearRemessaML,
 };

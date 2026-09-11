@@ -2,6 +2,7 @@ require('dotenv').config();
 const createApp = require('./app');
 const { sincronizarTodasAtivas } = require('./lib/marketplaceSync');
 const { sincronizarExtratoTodasAtivas } = require('./lib/financeiroExtrato');
+const { sincronizarFullTodasAtivas } = require('./lib/fullSync');
 const { sincronizarEstoqueAgora, renovarTokenWikSeNecessario } = require('./lib/wikSync');
 const { sincronizarProdutosAgora } = require('./lib/wikProdutosImport');
 const { sincronizarFichaCustoAgora } = require('./lib/wikFichaCustoImport');
@@ -49,6 +50,17 @@ const WIK_TOKEN_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 // minutos seria desperdício puro. 30min também é o cooldown interno da
 // própria sincronização (COOLDOWN_MS em financeiroExtrato.js).
 const EXTRATO_SYNC_INTERVAL_MS = 30 * 60 * 1000;
+// Fulfillment (aba Marketplace › Full, 11/09/2026). 3h, e a razão é que este
+// laço tem uma função que os outros não têm: ele GRAVA O RETRATO DO DIA do
+// saldo no centro de distribuição — o histórico que nenhuma plataforma
+// devolve e do qual saem "está no Full há N dias", "ficou zerado N dias" e a
+// dedução de chegada de remessa. Rodar uma vez por dia bastaria para o
+// retrato; 3h existe para o servidor poder ficar algumas horas fora do ar sem
+// abrir buraco na série, porque um dia sem retrato é um dia que não volta.
+//
+// O custo é baixo: uma chamada por unidade de estoque no Full, e só das lojas
+// que têm fulfillment. Não toca a API de pedidos nem a de Ads.
+const FULL_SYNC_INTERVAL_MS = 3 * 60 * 60 * 1000;
 
 // Roda as duas em sequência (nunca em paralelo) porque o Wik não permite
 // duas sessões simultâneas com o mesmo login.
@@ -89,6 +101,17 @@ app.listen(PORT, () => {
   setInterval(() => {
     sincronizarExtratoTodasAtivas().catch((err) => console.error('[financeiro-extrato]', err.message));
   }, EXTRATO_SYNC_INTERVAL_MS);
+
+  // Fulfillment. Espera 4min na subida para entrar DEPOIS do primeiro ciclo
+  // de pedidos e do extrato: os três usam o mesmo token de marketplace, e
+  // disputá-lo no primeiro minuto é a única forma conhecida de fazer uma
+  // renovação de token concorrer consigo mesma.
+  setTimeout(() => {
+    sincronizarFullTodasAtivas().catch((err) => console.error('[full-sync]', err.message));
+  }, 4 * 60 * 1000);
+  setInterval(() => {
+    sincronizarFullTodasAtivas().catch((err) => console.error('[full-sync]', err.message));
+  }, FULL_SYNC_INTERVAL_MS);
 
   // Renovação do token do Wik SÓ POR AGENDA — nunca em reação a erro (ver
   // comentário completo em wikSync.js). Roda ANTES do primeiro ciclo de

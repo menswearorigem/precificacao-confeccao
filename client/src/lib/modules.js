@@ -149,6 +149,13 @@ export const MODULES = [
       { to: '/marketplace/romaneio', label: 'Romaneio', icon: ClipboardList, grupo: 'Dia a dia' },
       { to: '/marketplace/pedidos', label: 'Pedidos', icon: ClipboardList, grupo: 'Dia a dia' },
       { to: '/marketplace/anuncios', label: 'Anúncios', icon: Store, grupo: 'Catálogo' },
+      // Full (11/09/2026). Fica no grupo Catálogo, colado em Anúncios, porque
+      // é a mesma pergunta vista pelo lado do ESTOQUE que está dentro do
+      // marketplace: quais anúncios estão no fulfillment, quanto tempo o
+      // saldo de lá ainda dura e quanto precisa ser mandado. Mesma chave
+      // `marketplace` que o backend já exige em /api/full; nenhuma permissão
+      // nova (REGRA 4).
+      { to: '/marketplace/full', label: 'Full', icon: Warehouse, grupo: 'Catálogo' },
       // Promoções (06/09/2026): a mesma pergunta dos Anúncios ("como está o
       // meu catálogo na loja?") vista pelo lado do preço promocional.
       { to: '/marketplace/promocoes', label: 'Promoções', icon: Tag, grupo: 'Catálogo' },

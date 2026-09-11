@@ -41,6 +41,7 @@ const produtoMarketplaceRoutes = require('./routes/produtoMarketplace.routes');
 const anunciosRoutes = require('./routes/anuncios.routes');
 const etiquetasRoutes = require('./routes/etiquetas.routes');
 const promocoesRoutes = require('./routes/promocoes.routes');
+const fullRoutes = require('./routes/full.routes');
 const insumosRoutes = require('./routes/insumos.routes');
 const estoqueMinimoRoutes = require('./routes/estoqueMinimo.routes');
 const producaoRoutes = require('./routes/producao.routes');
@@ -183,6 +184,13 @@ function createApp() {
   // Anúncios: é a mesma pessoa que cuida de um e de outro, e nenhuma
   // permissão existente muda por causa desta rota nova (REGRA 4).
   app.use('/api/promocoes', requireAuth, requireModulo('marketplace'), promocoesRoutes);
+  // Aba Marketplace › Full (11/09/2026). Mesmo módulo de permissão de
+  // Anúncios e Promoções, pelo mesmo motivo: é a mesma pessoa que cuida do
+  // catálogo nas três. Nenhuma permissão existente muda (REGRA 4) — e o
+  // "plano de produção" desta aba NÃO abre ordem por conta própria: ele
+  // devolve a grade e a tela chama /api/producao/ordens, que continua
+  // exigindo o módulo Produção de quem clicar.
+  app.use('/api/full', requireAuth, requireModulo('marketplace'), fullRoutes);
   // Insumos e nota fiscal de entrada (06/09/2026). Ficam sob o modulo
   // `compras` -- e' quem compra que lanca nota e cadastra materia-prima.
   // Nenhuma permissao existente muda por causa desta rota nova (REGRA 4).

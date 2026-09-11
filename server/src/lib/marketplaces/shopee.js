@@ -1837,7 +1837,58 @@ async function apagarRelampagoShopee({ partnerId, partnerKey, accessToken, shopI
   });
 }
 
+
+// ===========================================================================
+// FULFILLMENT — o FBS da Shopee (aba Marketplace › Full, 11/09/2026)
+// ===========================================================================
+// A Shopee não tem uma API de "estoque no armazém" separada como o Mercado
+// Livre: o saldo do armazém dela vem DENTRO da própria resposta de item, em
+// `stock_info_v2.shopee_stock` — uma linha por armazém. `seller_stock` é o
+// oposto: o que está com o vendedor.
+//
+// Consequência que a tela declara por escrito: na Shopee o Full é lido no
+// nível do ANÚNCIO, não da variação. O saldo por variação existe (mora em
+// `model.stock_info_v2`), mas só na resposta de variações, que a varredura de
+// Anúncios não guarda — e pedi-la de novo item a item custaria uma chamada
+// por anúncio a cada leitura. Preferimos ler menos e dizer o que se está
+// lendo a inventar um rateio por cor (REGRA 2).
+
+function somaEstoqueShopee(lista) {
+  if (!Array.isArray(lista) || lista.length === 0) return null;
+  return lista.reduce((soma, l) => soma + (Number(l?.stock ?? l?.quantity ?? 0) || 0), 0);
+}
+
+// O item está no FBS? Está se houver QUALQUER saldo declarado em armazém da
+// Shopee. Ausência da chave é "não é FBS"; presença com zero é "é FBS e está
+// zerado" — que são coisas diferentes e a tela mostra diferente.
+function ehFullShopee(item) {
+  const armazens = item?.stock_info_v2?.shopee_stock;
+  return Array.isArray(armazens) && armazens.length > 0;
+}
+
+function saldoFullShopee(item) {
+  const armazens = item?.stock_info_v2?.shopee_stock;
+  const disponivel = somaEstoqueShopee(armazens);
+  const reservado = item?.stock_info_v2?.summary_info?.total_reserved_stock;
+  return {
+    inventoryId: null,
+    disponivel,
+    // "Reservado" na Shopee é pedido pago e ainda não despachado — não é peça
+    // avariada. Vai para indisponível porque é o que ele é: não vendável de
+    // novo.
+    indisponivel: reservado != null ? Number(reservado) : null,
+    total: disponivel != null ? disponivel + (Number(reservado) || 0) : null,
+    // A Shopee não separa "a caminho do armazém" na resposta de item.
+    // NULO, e não zero: zero afirmaria que não há nada a caminho.
+    emTransito: null,
+    detalhe: item?.stock_info_v2 || null,
+  };
+}
+
 module.exports = {
+  // Fulfillment (aba Full, 11/09/2026)
+  ehFullShopee,
+  saldoFullShopee,
   buildAuthorizeUrl,
   trocarCodigoPorToken,
   renovarToken,

@@ -67,6 +67,7 @@ import CargaProducaoPage from './pages/CargaProducaoPage';
 import ProjecaoEstoquePage from './pages/ProjecaoEstoquePage';
 import InsumosPage from './pages/InsumosPage';
 import PromocoesPage from './pages/PromocoesPage';
+import FullPage from './pages/FullPage';
 import MixTributarioPage from './pages/MixTributarioPage';
 import EstoqueParadoPage from './pages/EstoqueParadoPage';
 import EstoqueLocaisPage from './pages/EstoqueLocaisPage';
@@ -201,6 +202,7 @@ function AppRoutes() {
                   <Route path="/vendas/lucratividade-classica" element={<RelatorioLucratividadePage origemFiltro="manual" />} />
                   <Route path="/marketplace/anuncios" element={<AnunciosPage />} />
                   <Route path="/marketplace/promocoes" element={<PromocoesPage />} />
+                  <Route path="/marketplace/full" element={<FullPage />} />
                   <Route path="/marketplace/pedidos" element={<PedidosListPage origemFiltro="marketplace" />} />
                   <Route path="/marketplace/lucratividade" element={<RelatorioLucratividadePage origemFiltro="marketplace" />} />
                   <Route path="/marketplace/metricas" element={<MetricasMarketplacePage />} />
