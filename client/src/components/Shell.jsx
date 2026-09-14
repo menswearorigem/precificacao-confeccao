@@ -1,8 +1,8 @@
-import { Fragment, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { LogOut, Menu, X, ChevronsLeft, ChevronsRight, Sun, Moon, Rows3, AlignJustify, HelpCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { getVisibleModules } from '../lib/modules';
+import { getVisibleModules, getEntradasVisiveis, acharEntradaAtiva } from '../lib/modules';
 import { useTema } from '../lib/useTema';
 import { useDensidade } from '../contexts/DensidadeContext';
 import BuscaGlobal from './BuscaGlobal';
@@ -29,6 +29,10 @@ export default function Shell({ children }) {
   const densidadeCtx = useDensidade();
   const visibleModules = getVisibleModules(user);
   const activeModule = findActiveModule(location.pathname, visibleModules);
+  // Entradas de menu do módulo aberto (o segundo nível) e qual delas está
+  // acesa — é ela que decide se existe um terceiro nível.
+  const entradas = activeModule ? getEntradasVisiveis(activeModule, user) : [];
+  const entradaAtiva = acharEntradaAtiva(entradas, location.pathname);
   const [menuAberto, setMenuAberto] = useState(false);
   const [sidebarColapsado, setSidebarColapsado] = useState(
     () => localStorage.getItem(CHAVE_SIDEBAR_COLAPSADO) === '1'
@@ -156,37 +160,61 @@ export default function Shell({ children }) {
         <div className="shell-content">
           {activeModule ? (
             <>
-              {/* Grupos dentro do submenu (09/09/2026).
-                  Módulos como Estoque (10 abas) e Marketplace (9) eram uma
-                  fileira lisa de links: nada dizia que "Bipagem" é tela de
-                  todo dia e "Importar EAN" é tela de uma vez por mês, então
-                  achar a certa custava ler a linha inteira. O rótulo de grupo
-                  aparece só quando o módulo declara `grupo` nas páginas — e
-                  fecha a limitação que o redesenho de Configurações registrou
-                  em modules.js: os quatro grupos existiam no comentário e não
-                  na tela. Nada aqui muda rota nem permissão (REGRA 4): é a
-                  MESMA lista de páginas, na mesma ordem em que o módulo a
-                  declara. */}
-              {activeModule.pages.length > 1 && (
+              {/* Segundo nível: as ENTRADAS do módulo (14/09/2026).
+                  Era a lista lisa de todas as páginas — 11 no Estoque, 12 no
+                  Marketplace, 11 no Financeiro e 11 em Configurações — numa
+                  barra que não cabia na tela e escondia de 2 a 5 telas fora da
+                  borda direita, sem seta nem sombra. Agora são de 1 a 5
+                  entradas por módulo, e a entrada que reúne mais de uma tela
+                  abre a fileira de baixo. Nada aqui muda rota nem permissão
+                  (REGRA 4): `mod.pages` continua sendo a mesma lista de
+                  sempre, só que agrupada para exibição. */}
+              {entradas.length > 1 && (
               <div className="shell-submenu">
-                {activeModule.pages.map(({ to, label, icon: Icon, grupo }, indice) => {
-                  const grupoAnterior = indice > 0 ? activeModule.pages[indice - 1].grupo : null;
-                  const abreGrupo = grupo && grupo !== grupoAnterior;
+                {entradas.map((entrada) => {
+                  const Icon = entrada.icon;
+                  const ativa = entradaAtiva === entrada;
+                  const destino = entrada.paginas ? entrada.paginas[0].to : entrada.to;
                   return (
-                    <Fragment key={to}>
-                      {abreGrupo && <span className="submenu-grupo">{grupo}</span>}
-                      <NavLink
-                        to={to}
-                        end={to === '/estoque' || to === '/compras'}
-                        className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}
-                      >
-                        <Icon size={15} />
-                        {label}
-                      </NavLink>
-                    </Fragment>
+                    // <Link> e não <NavLink> de propósito: o NavLink acrescenta
+                    // o "active" dele por cima do nosso, e aí
+                    // `/producao/projecao` acendia "Ordens de Produção" (rota
+                    // `/producao`, que é prefixo) junto com "Planejamento" —
+                    // duas entradas acesas ao mesmo tempo. Quem decide o aceso
+                    // aqui é `acharEntradaAtiva`, que escolhe a rota mais
+                    // específica.
+                    <Link
+                      key={entrada.label + destino}
+                      to={destino}
+                      className={'nav-link' + (ativa ? ' active' : '')}
+                      aria-current={ativa ? 'page' : undefined}
+                    >
+                      <Icon size={15} />
+                      {entrada.label}
+                    </Link>
                   );
                 })}
               </div>
+              )}
+
+              {/* Terceiro nível: só aparece quando a entrada aberta reúne mais
+                  de uma tela. É deliberadamente menor e mais discreto que a
+                  fileira de cima — o olho tem que enxergar primeiro ONDE está
+                  (a entrada) e só depois QUAL ângulo (a tela). */}
+              {entradaAtiva?.paginas && (
+                <div className="shell-subsubmenu" aria-label={`Telas de ${entradaAtiva.label}`}>
+                  {entradaAtiva.paginas.map(({ to, label, icon: Icon }) => (
+                    <NavLink
+                      key={to}
+                      to={to}
+                      end={to === '/compras'}
+                      className={({ isActive }) => 'subnav-link' + (isActive ? ' active' : '')}
+                    >
+                      <Icon size={13} />
+                      {label}
+                    </NavLink>
+                  ))}
+                </div>
               )}
 
               <main className="shell-main">{children}</main>

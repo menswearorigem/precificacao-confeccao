@@ -71,16 +71,27 @@ export default function ManuBotao() {
       // não arriscar mostrar o balão em todo carregamento de página.
     }
     if (jaViu) return undefined;
-    const abrirTimer = setTimeout(() => setBalaoVisivel(true), 600);
-    const fecharTimer = setTimeout(() => marcarApresentada(), 8600);
+    const abrirTimer = setTimeout(() => {
+      setBalaoVisivel(true);
+      // Grava JÁ que o balão foi mostrado, e não só quando ele fecha
+      // (14/09/2026). Antes a marca só era gravada no timer de 8,6s: quem
+      // trocasse de tela antes disso — e trocar de tela em menos de 8
+      // segundos é o normal de quem está trabalhando — nunca chegava lá, e
+      // o balão reaparecia em TODA página, para sempre, tapando o canto
+      // inferior direito (coluna de rastreio do Romaneio, botão "Mover" em
+      // Onde Está a Peça, últimas linhas de Contas a Pagar). Apareceu em 78
+      // de 78 telas na varredura.
+      marcarApresentada(false);
+    }, 600);
+    const fecharTimer = setTimeout(() => setBalaoVisivel(false), 8600);
     return () => {
       clearTimeout(abrirTimer);
       clearTimeout(fecharTimer);
     };
   }, []);
 
-  function marcarApresentada() {
-    setBalaoVisivel(false);
+  function marcarApresentada(fechar = true) {
+    if (fechar) setBalaoVisivel(false);
     try {
       localStorage.setItem(CHAVE_APRESENTADA, '1');
     } catch {

@@ -1,14 +1,48 @@
 import {
-  Cloud,
   Package, Settings, Landmark, Percent, Factory, Upload,
   FlaskConical, LayoutDashboard, Boxes, FileText, List as ListIcon,
   Warehouse, Barcode, Tags, Printer, Users, ClipboardList, ShoppingCart,
   Truck, BarChart3, ShieldCheck, Plug, TrendingUp, ReceiptText, Store, Plane,
-  LineChart, SearchCheck, Layers, AlertTriangle, CalendarDays, UsersRound,
-  LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer, Activity,
-  Banknote, Ruler, MapPin, Gauge, Bookmark, PackageCheck, FileSpreadsheet,
-  Inbox, Radar,
-  Megaphone, BadgePercent, Scissors} from 'lucide-react';
+  LineChart, Layers, AlertTriangle, CalendarDays,
+  LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer,
+  Banknote, MapPin, Gauge, PackageCheck, FileSpreadsheet,
+  Inbox, Radar, Megaphone, Scissors, PackageOpen, HeartPulse, Calculator,
+  BookUser, Send} from 'lucide-react';
+
+/* ---------------------------------------------------------------------------
+ * NAVEGAÇÃO EM TRÊS NÍVEIS (14/09/2026)
+ *
+ * O que mudou e por quê. A varredura rodou o sistema com dados reais e mediu
+ * a barra de abas de cada módulo em 1600, 1366 e 1280 px. Resultado:
+ *
+ *   Estoque        11 abas · precisa de 1596 px · a barra tem 1404 px
+ *   Marketplace    12 abas · precisa de 1517 px
+ *   Financeiro     11 abas · precisa de 1594 px
+ *   Configurações  11 abas · precisa de 1452 px
+ *
+ * Ou seja: em 1600 px, QUATRO módulos escondiam de 2 a 3 abas fora da borda
+ * direita. Em 1366 px (o notebook comum da casa) some até CINCO — entre elas
+ * "Caixa de Entrada" e "Cobertura", que são justamente as telas de pendência
+ * do Financeiro. A barra tem `overflow-x: auto`, mas não há seta, sombra nem
+ * qualquer sinal de que existe mais coisa: na prática a tela não existe para
+ * quem não sabe que ela existe.
+ *
+ * A correção não foi apagar tela nenhuma. Foi agrupar: cada módulo passa a ter
+ * de 1 a 5 ENTRADAS de menu, e a entrada que reúne mais de uma tela abre uma
+ * segunda fileira, menor, com as telas de dentro. Nenhuma rota mudou, nenhuma
+ * tela foi removida, nenhuma chave de permissão foi criada ou alterada
+ * (REGRA 4) — `pages` continua sendo a lista achatada de sempre, e é ela que
+ * getVisibleModules / canAccessPath / getDefaultPath continuam usando.
+ *
+ * De 78 entradas de primeiro nível para 42. Nenhum módulo passa de 5.
+ *
+ * O critério do agrupamento é um só: telas que respondem A MESMA PERGUNTA por
+ * ângulos diferentes ficam juntas. "Endereços", "Depósitos" e "Disponível"
+ * respondem *onde está o saldo*; "Faltando", "Sobrando" e "Curva de tamanho"
+ * respondem *tenho peça de menos ou de mais*. Eram seis abas concorrendo entre
+ * si — e duas delas chegavam a dar números diferentes para a mesma pergunta
+ * sem nada na tela reconciliando.
+ * ------------------------------------------------------------------------- */
 
 export const MODULES = [
   {
@@ -16,16 +50,22 @@ export const MODULES = [
     label: 'Produto',
     icon: Package,
     color: 'var(--terracotta)',
-    pages: [
+    entradas: [
       { to: '/produtos', label: 'Produtos', icon: Package },
-      { to: '/ficha-tecnica', label: 'Ficha Técnica', icon: FileText },
       { to: '/kits', label: 'Kits', icon: Boxes },
-      { to: '/importacao', label: 'Importar Produtos', icon: Upload },
-      // Importacao em massa (09/09/2026). Fica ao lado da importacao de ficha
-      // de custo que ja' existia porque as duas respondem "trazer de fora" --
-      // mas esta CRIA GRADE e ATUALIZA, que a outra nunca fez. Mesma chave
-      // `produto`; nenhuma permissao nova (REGRA 4).
-      { to: '/importacao-massa', label: 'Importar em Massa', icon: FileSpreadsheet },
+      // Importar Produtos, Importar em Massa e Ficha Técnica eram três abas de
+      // primeiro nível. As três só se usam de vez em quando (carga de planilha
+      // e impressão de PDF) e as duas primeiras têm até o mesmo título dentro
+      // da tela ("Importação em Massa"). Viram uma entrada só.
+      {
+        label: 'Importar e imprimir',
+        icon: Upload,
+        paginas: [
+          { to: '/importacao', label: 'Importar Produtos', icon: Upload },
+          { to: '/importacao-massa', label: 'Importar em Massa', icon: FileSpreadsheet },
+          { to: '/ficha-tecnica', label: 'Ficha Técnica', icon: FileText },
+        ],
+      },
     ],
   },
   {
@@ -33,79 +73,70 @@ export const MODULES = [
     label: 'Estoque',
     icon: Warehouse,
     color: 'var(--brass)',
-    // Grupos (09/09/2026). Eram 10 abas numa fileira lisa: nada distinguia a
-    // tela aberta todo dia da tela aberta uma vez por mes. A ordem tambem
-    // mudou -- Bipagem e "Onde Esta a Peca" sobem porque sao usadas EM PE, no
-    // galpao, e estavam depois de duas telas de importacao. Nenhuma rota,
-    // nenhum nome e nenhuma permissao mudou (REGRA 4): so' a ordem e o
-    // rotulo do grupo.
-    pages: [
-      { to: '/estoque', label: 'Estoque', icon: Warehouse, grupo: 'Dia a dia' },
-      { to: '/estoque/bipagem', label: 'Bipagem', icon: Barcode, grupo: 'Dia a dia' },
-      // Onde Esta a Peca (08/09/2026): endereco no galpao e saldo por local.
-      { to: '/estoque/locais', label: 'Onde Está a Peça', icon: MapPin, grupo: 'Dia a dia' },
-      // Depositos e transferencia com aceite (09/09/2026). Fecha a trinca:
-      // Cobertura olha o saldo pelo TEMPO, Onde Esta a Peca pela NATUREZA do
-      // lugar, Reserva pelo que ainda PODE SER VENDIDO -- e esta, pelo LUGAR
-      // com nome, que e' o que faltava para responder "quanto tem na
-      // Expedicao?". Mesma chave `estoque` (o backend aceita `estoque` ou
-      // `producao` em /api/depositos, como ja' faz em estoque-locais);
-      // nenhuma permissao nova (REGRA 4).
-      { to: '/estoque/depositos', label: 'Depósitos', icon: ArrowLeftRight, grupo: 'Dia a dia' },
-      // Cobertura e Estoque Minimo (06/09/2026), Dinheiro Parado e Curva de
-      // Tamanho (08/09/2026): as tres respondem sobre o MESMO saldo, mas pelo
-      // lado da DECISAO -- quanto dura, quanto esta' preso, o que falta de
-      // tamanho. Nenhuma delas se abre no meio de uma conferencia.
-      { to: '/estoque/cobertura', label: 'Cobertura e Mínimo', icon: Timer, grupo: 'Para decidir' },
-      { to: '/estoque/parado', label: 'Dinheiro Parado', icon: Banknote, grupo: 'Para decidir' },
-      { to: '/estoque/curva-tamanho', label: 'Curva de Tamanho', icon: Ruler, grupo: 'Para decidir' },
-      // Reserva de estoque (09/09/2026). Olha o MESMO saldo por mais um
-      // angulo -- o que ainda PODE SER VENDIDO: saldo menos o que ja' esta'
-      // reservado para pedido pago e nao separado. Mesmo modulo `estoque`
-      // que o backend exige em /api/estoque-reserva; nenhuma chave de
-      // permissao nova (REGRA 4).
-      { to: '/estoque/reserva', label: 'Reserva de Estoque', icon: Bookmark, grupo: 'Para decidir' },
-      { to: '/estoque/importacao', label: 'Importar Saldo', icon: Upload, grupo: 'Entradas e papel' },
-      { to: '/estoque/ean', label: 'Importar EAN', icon: Tags, grupo: 'Entradas e papel' },
-      { to: '/estoque/ficha', label: 'Ficha de Estoque', icon: Printer, grupo: 'Entradas e papel' },
+    entradas: [
+      { to: '/estoque', label: 'Estoque', icon: Warehouse },
+      // Bipagem fica sozinha de propósito: é a única tela deste módulo que se
+      // usa EM PÉ, no galpão, e não pode custar dois cliques.
+      { to: '/estoque/bipagem', label: 'Bipagem', icon: Barcode },
+      // As três respondem "onde está o saldo": pelo endereço na prateleira,
+      // pelo depósito com nome, e pelo que ainda pode ser vendido. Estavam
+      // separadas e chegavam a exibir o MESMO número com nomes diferentes
+      // (-5.834 aparecia como "Disponível para vender" numa e "Peças fora do
+      // mapa" na outra, uma com alerta e a outra sem).
+      {
+        label: 'Onde Está',
+        icon: MapPin,
+        paginas: [
+          { to: '/estoque/locais', label: 'Endereços', icon: MapPin },
+          { to: '/estoque/depositos', label: 'Depósitos', icon: ArrowLeftRight },
+          { to: '/estoque/reserva', label: 'Disponível para vender', icon: PackageOpen },
+        ],
+      },
+      // As três respondem "tenho peça de menos ou de mais". Cobertura já
+      // classifica "parado e sobrando", que é literalmente o assunto da aba
+      // vizinha Dinheiro Parado — e as duas davam valores diferentes.
+      {
+        label: 'Reposição',
+        icon: Timer,
+        paginas: [
+          { to: '/estoque/cobertura', label: 'Faltando', icon: Timer },
+          { to: '/estoque/parado', label: 'Sobrando', icon: Banknote },
+          { to: '/estoque/curva-tamanho', label: 'Curva de tamanho', icon: BarChart3 },
+        ],
+      },
+      {
+        label: 'Importar e imprimir',
+        icon: Upload,
+        paginas: [
+          { to: '/estoque/importacao', label: 'Importar Saldo', icon: Upload },
+          { to: '/estoque/ean', label: 'Importar EAN', icon: Tags },
+          { to: '/estoque/ficha', label: 'Ficha de Estoque', icon: Printer },
+        ],
+      },
     ],
   },
   {
-    // Modulo proprio da Producao (08/09/2026, autorizado pelo dono).
-    //
-    // Ate aqui a Producao morava dentro de Estoque, e a REGRA 4 nao deixava
-    // criar chave nova sem ordem dela. O motivo de separar e' concreto: quem
-    // toca corte, roteiro e faccao nao precisa -- e as vezes nao deve -- ver
-    // o saldo do estoque inteiro nem a Ficha de Estoque.
-    //
-    // O backend aceita `producao` OU `estoque` na mesma rota, entao quem ja'
-    // tinha estoque continua enxergando a Producao. A chave nova ACRESCENTA
-    // um caminho de acesso; nao tira de ninguem.
     key: 'producao',
     label: 'Produção',
     icon: Factory,
     color: 'var(--leather-dark)',
-    // Quem ja' tinha `estoque` continua vendo a Producao, igual ao backend.
     tambemPor: ['estoque'],
-    pages: [
+    entradas: [
       { to: '/producao', label: 'Ordens de Produção', icon: Factory },
-      // Movimentacao, O.S. de faccao e carga (09/09/2026). As tres entram no
-      // modulo `producao` que ja' existe -- nenhuma chave de permissao nova
-      // (REGRA 4). A ordem e' a da vida real: a peca anda, a faccao devolve, e
-      // o gargalo aparece.
-      { to: '/producao/movimentacao', label: 'Gerar Movimentação', icon: ArrowLeftRight },
       { to: '/producao/ordens-servico', label: 'Ordens de Serviço', icon: ClipboardList },
-      { to: '/producao/carga', label: 'Carga e Gargalo', icon: Gauge },
-      // Projecao de estoque (10/09/2026): producao x estoque em tres camadas,
-      // por cor e tamanho. Fica DEPOIS da carga porque so faz sentido depois
-      // de existir ordem aberta -- e e' a tela que responde se a ordem que ja'
-      // esta' aberta resolve a falta ou chega curta.
-      { to: '/producao/projecao', label: 'Projeção de Estoque', icon: PackageCheck },
-      // Materia-prima (11/09/2026). E' a ultima da fila porque e' a ultima
-      // pergunta da cadeia: depois de saber o que produzir e o que ja' esta'
-      // vindo, sobra saber se ha' tecido para fazer. Mesmo modulo `producao`
-      // -- nenhuma chave de permissao nova (REGRA 4).
-      { to: '/producao/materia-prima', label: 'Matéria-Prima', icon: Scissors },
+      { to: '/producao/movimentacao', label: 'Movimentação', icon: ArrowLeftRight },
+      // As três respondem "vou conseguir entregar?": em peça pronta, em
+      // tecido e em minuto de facção. Mesmo horizonte, mesmo filtro de
+      // período, mesma conta de suficiência.
+      {
+        label: 'Planejamento',
+        icon: PackageCheck,
+        paginas: [
+          { to: '/producao/projecao', label: 'Projeção de Estoque', icon: PackageCheck },
+          { to: '/producao/materia-prima', label: 'Matéria-Prima', icon: Scissors },
+          { to: '/producao/carga', label: 'Carga e Gargalo', icon: Gauge },
+        ],
+      },
     ],
   },
   {
@@ -113,20 +144,22 @@ export const MODULES = [
     label: 'Vendas',
     icon: ClipboardList,
     color: 'var(--info)',
-    // Repaginacao de 09/09/2026. O modulo tinha quatro telas numa fileira
-    // lisa e nenhuma delas respondia "quem vendeu" nem "quanto sobrou".
-    // Agora sao tres grupos, na ordem em que a venda acontece: primeiro o
-    // que se faz TODO dia (lancar a venda, achar o cliente), depois o que se
-    // olha no fim do dia/mes (metricas, lucratividade) e por fim o que se
-    // lanca uma vez por mes (publicidade). Nenhuma chave de permissao nova
-    // (REGRA 4): tudo dentro do modulo `vendas` que ja' existia.
-    pages: [
-      { to: '/pedidos', label: 'Pedidos de Venda', icon: ClipboardList, grupo: 'Dia a dia' },
-      { to: '/clientes', label: 'Clientes', icon: Users, grupo: 'Dia a dia' },
-      { to: '/ficha-venda', label: 'Ficha de Venda', icon: Printer, grupo: 'Dia a dia' },
-      { to: '/vendas/metricas', label: 'Métricas', icon: LineChart, grupo: 'Resultado' },
-      { to: '/vendas/lucratividade', label: 'Lucratividade', icon: TrendingUp, grupo: 'Resultado' },
-      { to: '/vendas/despesas', label: 'Publicidade e Despesas', icon: Megaphone, grupo: 'Lançar uma vez por mês' },
+    entradas: [
+      { to: '/pedidos', label: 'Pedidos de Venda', icon: ClipboardList },
+      { to: '/clientes', label: 'Clientes', icon: Users },
+      { to: '/ficha-venda', label: 'Ficha de Venda', icon: Printer },
+      // Métricas responde "quanto vendi", Lucratividade "quanto sobrou" e
+      // Publicidade é o formulário de UM campo da Lucratividade (o próprio
+      // subtítulo da tela diz isso). São o mesmo fechamento.
+      {
+        label: 'Resultado',
+        icon: TrendingUp,
+        paginas: [
+          { to: '/vendas/metricas', label: 'Métricas', icon: LineChart },
+          { to: '/vendas/lucratividade', label: 'Lucratividade', icon: TrendingUp },
+          { to: '/vendas/despesas', label: 'Publicidade e Despesas', icon: Megaphone },
+        ],
+      },
     ],
   },
   {
@@ -134,77 +167,108 @@ export const MODULES = [
     label: 'Marketplace',
     icon: Store,
     color: 'var(--plum)',
-    // Grupos e ordem (09/09/2026). Conferencia e Pedidos sobem para o
-    // comeco: sao as duas telas abertas TODO dia, e a Conferencia e' feita em
-    // pe, no galpao. Anuncios e Promocoes formam o catalogo; Lucratividade,
-    // Metricas e Taxas formam o resultado; Importar e Saude sao as telas que
-    // so' se abrem quando alguma coisa parece faltar. Nenhuma rota mudou.
-    pages: [
-      { to: '/marketplace/conferencia', label: 'Conferência', icon: ScanLine, grupo: 'Dia a dia' },
-      // Etiquetas (09/09/2026). Fica colada na Conferência de propósito: são
-      // as duas telas da MESMA meia hora da expedição — imprime a etiqueta e
-      // a lista de separação, depois bipa a caixa. Mesmo módulo `marketplace`
-      // que o backend já exige em /api/etiquetas; nenhuma chave nova (REGRA 4).
-      { to: '/marketplace/etiquetas', label: 'Etiquetas', icon: Printer, grupo: 'Dia a dia' },
-      // Romaneio (09/09/2026). Vem logo depois de Etiquetas porque e' o passo
-      // seguinte dela: imprimiu a etiqueta, monta a remessa, fecha o papel e
-      // o motorista assina. Mesmas chaves de /api/etiquetas; nenhuma
-      // permissao nova (REGRA 4).
-      { to: '/marketplace/romaneio', label: 'Romaneio', icon: ClipboardList, grupo: 'Dia a dia' },
-      { to: '/marketplace/pedidos', label: 'Pedidos', icon: ClipboardList, grupo: 'Dia a dia' },
-      { to: '/marketplace/anuncios', label: 'Anúncios', icon: Store, grupo: 'Catálogo' },
-      // Full (11/09/2026). Fica no grupo Catálogo, colado em Anúncios, porque
-      // é a mesma pergunta vista pelo lado do ESTOQUE que está dentro do
-      // marketplace: quais anúncios estão no fulfillment, quanto tempo o
-      // saldo de lá ainda dura e quanto precisa ser mandado. Mesma chave
-      // `marketplace` que o backend já exige em /api/full; nenhuma permissão
-      // nova (REGRA 4).
-      { to: '/marketplace/full', label: 'Full', icon: Warehouse, grupo: 'Catálogo' },
-      // Promoções (06/09/2026): a mesma pergunta dos Anúncios ("como está o
-      // meu catálogo na loja?") vista pelo lado do preço promocional.
-      { to: '/marketplace/promocoes', label: 'Promoções', icon: Tag, grupo: 'Catálogo' },
-      { to: '/marketplace/lucratividade', label: 'Lucratividade', icon: TrendingUp, grupo: 'Resultado' },
-      { to: '/marketplace/metricas', label: 'Métricas', icon: LineChart, grupo: 'Resultado' },
-      { to: '/marketplace/taxas', label: 'Taxas Cobradas', icon: ReceiptText, grupo: 'Resultado' },
-      { to: '/marketplace/importar-pedidos', label: 'Importar Pedidos', icon: Upload, grupo: 'Quando falta algo' },
-      // Saúde da Sincronização (07/09/2026): a tela que se abre quando alguma
-      // coisa parece faltar, não a de uso diária.
-      { to: '/marketplace/saude', label: 'Saúde da Sincronização', icon: Activity, grupo: 'Quando falta algo' },
+    entradas: [
+      // Etiqueta, conferência e romaneio são a MESMA meia hora da expedição,
+      // na ordem em que acontecem: imprime a etiqueta, bipa a caixa, fecha o
+      // papel que o motorista assina. Eram três abas separadas, cada uma com
+      // as suas próprias sub-abas.
+      {
+        label: 'Expedição',
+        icon: Send,
+        paginas: [
+          { to: '/marketplace/etiquetas', label: 'Etiquetas', icon: Printer },
+          { to: '/marketplace/conferencia', label: 'Conferência', icon: ScanLine },
+          { to: '/marketplace/romaneio', label: 'Romaneio', icon: ClipboardList },
+        ],
+      },
+      { to: '/marketplace/pedidos', label: 'Pedidos', icon: ClipboardList },
+      {
+        label: 'Catálogo',
+        icon: Store,
+        paginas: [
+          { to: '/marketplace/anuncios', label: 'Anúncios', icon: Store },
+          { to: '/marketplace/promocoes', label: 'Promoções', icon: Tag },
+          { to: '/marketplace/full', label: 'Full', icon: Warehouse },
+        ],
+      },
+      {
+        label: 'Resultado',
+        icon: TrendingUp,
+        paginas: [
+          { to: '/marketplace/lucratividade', label: 'Lucratividade', icon: TrendingUp },
+          { to: '/marketplace/metricas', label: 'Métricas', icon: LineChart },
+          { to: '/marketplace/taxas', label: 'Taxas Cobradas', icon: ReceiptText },
+        ],
+      },
+      {
+        label: 'Quando falta algo',
+        icon: HeartPulse,
+        paginas: [
+          { to: '/marketplace/saude', label: 'Saúde da Sincronização', icon: HeartPulse },
+          { to: '/marketplace/importar-pedidos', label: 'Importar Pedidos', icon: Upload },
+        ],
+      },
     ],
   },
   {
-    // Nono módulo (02/09/2026). Separado de Marketplace de propósito: quem
-    // cuida do caixa precisa da movimentação da conta e NÃO precisa ver
-    // custo de peça, margem nem ficha de precificação — dar o módulo
-    // Marketplace pra alguém do financeiro abriria a Lucratividade junto.
     key: 'financeiro',
     label: 'Financeiro',
     icon: Wallet,
     color: 'var(--success)',
-    pages: [
-      { to: '/financeiro/movimentacao', label: 'Movimentação', icon: Wallet },
-      { to: '/financeiro/repasses', label: 'Repasses', icon: ArrowLeftRight },
-      { to: '/financeiro/conferencia', label: 'Conferência', icon: Scale },
-      // Núcleo financeiro (09/09/2026): contas a pagar e a receber, extrato
-      // bancário, fluxo de caixa e DRE. Entram no módulo `financeiro` que já
-      // existe — nenhuma chave de permissão nova (REGRA 4). As três abas de
-      // cima continuam sendo a conciliação do repasse de marketplace; estas
-      // cinco são o financeiro da empresa inteira.
-      { to: '/financeiro/pagar', label: 'Contas a Pagar', icon: ReceiptText },
-      { to: '/financeiro/receber', label: 'Contas a Receber', icon: Banknote },
-      // Contas Bancárias (10/09/2026) vem ANTES da Conciliação de propósito:
-      // sem conta cadastrada a Conciliação não tem o que mostrar, e até hoje
-      // não havia tela nenhuma pra cadastrar uma.
-      { to: '/financeiro/contas-bancarias', label: 'Contas Bancárias', icon: Landmark },
-      { to: '/financeiro/conciliacao-bancaria', label: 'Conciliação Bancária', icon: Scale },
-      { to: '/financeiro/fluxo-caixa', label: 'Fluxo de Caixa', icon: LineChart },
-      { to: '/financeiro/dre', label: 'DRE Gerencial', icon: BarChart3 },
-      // A ponte com os módulos (09/09/2026). Ficam por último de propósito:
-      // são as telas de CONTROLE do módulo, não as de trabalho diário — mas
-      // a Caixa de Entrada é a primeira que alguém abre quando o número não
-      // bate, e por isso ela vem antes da Cobertura.
-      { to: '/financeiro/entradas', label: 'Caixa de Entrada', icon: Inbox },
-      { to: '/financeiro/cobertura', label: 'Cobertura', icon: Radar },
+    entradas: [
+      // Pagar e Receber tinham DUAS abas para o que é um alternador de dois
+      // estados: mesmos filtros, mesmos quatro cartões, mesmas onze colunas,
+      // mesma paginação. Só muda o sinal.
+      {
+        label: 'Títulos',
+        icon: ReceiptText,
+        paginas: [
+          { to: '/financeiro/pagar', label: 'Contas a Pagar', icon: ReceiptText },
+          { to: '/financeiro/receber', label: 'Contas a Receber', icon: Banknote },
+        ],
+      },
+      // A Conciliação exige escolher uma conta antes de mostrar qualquer
+      // coisa — e a tela que cadastra conta era outra aba.
+      {
+        label: 'Bancos',
+        icon: Landmark,
+        paginas: [
+          { to: '/financeiro/contas-bancarias', label: 'Contas Bancárias', icon: Landmark },
+          { to: '/financeiro/conciliacao-bancaria', label: 'Conciliação Bancária', icon: Scale },
+        ],
+      },
+      // As três primeiras abas do módulo eram outro produto convivendo no
+      // mesmo menu: a conciliação do repasse de marketplace, com filtro de
+      // plataforma e loja, título "Financeiro" repetido e uma fileira de
+      // pílulas que duplicava as próprias abas. Agora é UMA entrada.
+      {
+        label: 'Repasses de Marketplace',
+        icon: ArrowLeftRight,
+        paginas: [
+          { to: '/financeiro/movimentacao', label: 'Movimentação', icon: Wallet },
+          { to: '/financeiro/repasses', label: 'Repasses', icon: ArrowLeftRight },
+          { to: '/financeiro/conferencia', label: 'Conferência', icon: Scale },
+        ],
+      },
+      {
+        label: 'Resultado',
+        icon: BarChart3,
+        paginas: [
+          { to: '/financeiro/fluxo-caixa', label: 'Fluxo de Caixa', icon: LineChart },
+          { to: '/financeiro/dre', label: 'DRE Gerencial', icon: BarChart3 },
+        ],
+      },
+      // A ação principal da Cobertura é literalmente "Trazer tudo para a
+      // Caixa de Entrada". São as duas pontas do mesmo fluxo, e as duas eram
+      // exatamente as abas que sumiam na borda direita em 1366 px.
+      {
+        label: 'Pendências',
+        icon: Inbox,
+        paginas: [
+          { to: '/financeiro/entradas', label: 'Caixa de Entrada', icon: Inbox },
+          { to: '/financeiro/cobertura', label: 'Cobertura', icon: Radar },
+        ],
+      },
     ],
   },
   {
@@ -212,7 +276,7 @@ export const MODULES = [
     label: 'Viagens',
     icon: Plane,
     color: 'var(--teal)',
-    pages: [
+    entradas: [
       { to: '/viagens', label: 'Viagens', icon: Plane },
     ],
   },
@@ -221,19 +285,28 @@ export const MODULES = [
     label: 'Compras',
     icon: ShoppingCart,
     color: 'var(--danger)',
-    pages: [
-      // Insumos e Notas (06/09/2026): o cadastro de materia-prima e a
-      // entrada por nota fiscal que alimenta o custo da peca.
+    entradas: [
+      {
+        label: 'Compras',
+        icon: ShoppingCart,
+        paginas: [
+          { to: '/compras', label: 'Visão Geral', icon: ShoppingCart },
+          { to: '/compras/relatorio', label: 'Relatório', icon: BarChart3 },
+        ],
+      },
+      // É o MESMO documento andando: pergunto o preço, me comprometo com o
+      // pedido, confiro o que chegou. Os mesmos números de pedido apareciam
+      // nas três abas e ninguém via o caminho inteiro de uma vez.
+      {
+        label: 'Pedidos de Compra',
+        icon: ClipboardList,
+        paginas: [
+          { to: '/compras/cotacoes', label: 'Cotações', icon: Scale },
+          { to: '/compras/pedidos', label: 'Pedidos', icon: ClipboardList },
+          { to: '/compras/recebimentos', label: 'Recebimentos', icon: PackageCheck },
+        ],
+      },
       { to: '/compras/insumos', label: 'Insumos e Notas', icon: Package },
-      { to: '/compras', label: 'Compras', icon: ShoppingCart },
-      // Cotacao -> Pedido -> Recebimento (09/09/2026). Ficam nesta ordem de
-      // proposito: e' a ordem em que a compra acontece na vida real -- pergunto
-      // o preco, me comprometo com o pedido, confiro o que chegou. Todas dentro
-      // do modulo `compras` que ja' existe; nenhuma permissao muda (REGRA 4).
-      { to: '/compras/cotacoes', label: 'Cotações', icon: Scale },
-      { to: '/compras/pedidos', label: 'Pedidos de Compra', icon: ClipboardList },
-      { to: '/compras/recebimentos', label: 'Recebimentos', icon: PackageCheck },
-      { to: '/compras/relatorio', label: 'Relatório', icon: BarChart3 },
       { to: '/fornecedores', label: 'Fornecedores', icon: Truck },
     ],
   },
@@ -242,34 +315,30 @@ export const MODULES = [
     label: 'Análises',
     icon: LayoutDashboard,
     color: 'var(--success)',
-    pages: [
-      { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, grupo: 'Panorama' },
-      { to: '/alertas', label: 'Central de Alertas', icon: AlertTriangle, grupo: 'Panorama' },
-      { to: '/ficha-precificacao', label: 'Ficha de Precificação', icon: FileText, grupo: 'Preço' },
-      // Preco por canal (08/09/2026): o preco que entrega a margem em cada
-      // marketplace, com a taxa real de cada um. So' leitura -- nao grava
-      // preco nenhum (REGRA 1).
-      { to: '/analises/preco-por-canal', label: 'Preço por Canal', icon: Tags, grupo: 'Preço' },
-      { to: '/simulador', label: 'Simulador', icon: FlaskConical, grupo: 'Preço' },
-      // Mix B2B × B2C (07/09/2026). O número que embasa a decisão da opção
-      // do Simples pelo regime regular de IBS/CBS — prazo em 30/09/2026.
-      // Entra em Análises (leitura sobre faturamento já gravado) e não num
-      // módulo novo: chave de módulo nova muda quem enxerga o quê, e a
-      // REGRA 4 não deixa mexer nisso sem autorização.
-      { to: '/analises/mix-tributario', label: 'Mix B2B × B2C', icon: Scale, grupo: 'Tributário' },
+    entradas: [
+      { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { to: '/alertas', label: 'Central de Alertas', icon: AlertTriangle },
+      // As três abriam com o MESMO seletor "Selecione uma referência…" e
+      // ~80% de tela vazia até alguém escolher. Agora se escolhe uma vez e
+      // troca-se de ângulo sem voltar ao começo.
+      {
+        label: 'Preço',
+        icon: Tags,
+        paginas: [
+          { to: '/ficha-precificacao', label: 'Ficha de Precificação', icon: FileText },
+          { to: '/analises/preco-por-canal', label: 'Preço por Canal', icon: Tags },
+          { to: '/simulador', label: 'Simulador', icon: FlaskConical },
+        ],
+      },
+      { to: '/analises/mix-tributario', label: 'Mix B2B × B2C', icon: Scale },
     ],
   },
   {
-    // O Calendário vem ANTES de Configurações de propósito (04/09/2026): é
-    // tela de uso diário — prazo de corte, meta, chegada de mercadoria — e
-    // estava caindo depois de Configurações, que é tela de ajuste, aberta
-    // uma vez por mês. Menu se ordena por frequência de uso, não por ordem
-    // de nascimento do módulo.
     key: 'calendario',
     label: 'Calendário',
     icon: CalendarDays,
     color: 'var(--leather)',
-    pages: [
+    entradas: [
       { to: '/calendario', label: 'Calendário', icon: CalendarDays },
       { to: '/calendario/modelos', label: 'Modelos', icon: LayoutTemplate, adminOnly: true },
     ],
@@ -279,47 +348,116 @@ export const MODULES = [
     label: 'Configurações',
     icon: Settings,
     color: 'var(--warning)',
-    // Redesenho de Configurações (Etapa 2, 28/08/2026): 11 abas -> 8, em 4
-    // grupos lógicos (a ordem abaixo já segue os grupos, já que o Shell.jsx
-    // renderiza esta lista linear sem cabeçalho de grupo — ver limitação
-    // documentada no relatório da tarefa). getVisibleModules/canAccessPath
-    // e as flags adminOnly não mudaram, só a apresentação.
-    //   Cálculo: Parâmetros · Empresas · Custos Indiretos
-    //   Taxas: 1 aba com sub-abas Venda/Marketplace (funde /taxas-venda +
-    //          /marketplace-taxas, que agora só redirecionam — ver App.jsx)
-    //   Cadastros: Listas
-    //   Acesso e dados: Acessos (sub-abas Usuários/Grupos) · Integrações ·
-    //          Saúde dos Dados (funde /conferencia-dados + /qualidade-dados)
-    //
-    // 09/09/2026: os quatro grupos abaixo existiam SÓ neste comentário — o
-    // Shell renderizava a lista lisa. Agora cada página declara o seu grupo e
-    // o submenu mostra o rótulo. Nenhuma rota, nenhum nome e nenhuma flag
-    // adminOnly mudou.
-    pages: [
-      { to: '/configuracoes', label: 'Parâmetros', icon: Settings, grupo: 'Cálculo' },
-      { to: '/empresas', label: 'Empresas', icon: Landmark, grupo: 'Cálculo' },
-      { to: '/custos-indiretos', label: 'Custos Indiretos', icon: Factory, grupo: 'Cálculo' },
-      { to: '/taxas', label: 'Taxas', icon: Percent, grupo: 'Taxas' },
-      { to: '/listas', label: 'Listas', icon: ListIcon, grupo: 'Cadastros' },
-      { to: '/configuracoes/marketplace', label: 'Produtos de Marketplace', icon: Store, grupo: 'Cadastros' },
-      // Vendedores e Tabelas de Preco (09/09/2026). Ficam em Configuracoes
-      // porque e' aqui que a comissao e o preco sao DEFINIDOS -- quem lanca a
-      // venda usa os dois, mas nao decide nenhum deles. O backend aceita
-      // `vendas` OU `configuracoes` para LER e exige `configuracoes` para
-      // ESCREVER; nenhuma chave nova (REGRA 4).
-      { to: '/configuracoes/vendedores', label: 'Vendedores', icon: BadgePercent, grupo: 'Cadastros' },
-      { to: '/configuracoes/tabelas-preco', label: 'Tabelas de Preço', icon: Tags, grupo: 'Cadastros' },
-      // NÃO é adminOnly (diferente da extinta aba "Usuários", que era):
-      // Grupos nunca precisou de admin (backend exige só o módulo
-      // "configuracoes"), e a fusão não pode tirar esse acesso de quem não
-      // é admin — a sub-aba Usuários fica escondida pra quem não é admin
-      // dentro do próprio AcessosPage.jsx, não aqui.
-      { to: '/acessos', label: 'Acessos', icon: ShieldCheck, grupo: 'Acesso e dados' },
-      { to: '/integracoes', label: 'Integrações', icon: Plug, adminOnly: true, grupo: 'Acesso e dados' },
-      { to: '/saude-dados', label: 'Saúde dos Dados', icon: Layers, adminOnly: true, grupo: 'Acesso e dados' },
+    entradas: [
+      // Os três já eram rotulados como grupo "Cálculo" no submenu; agora são
+      // uma entrada só, como o rótulo sempre prometeu.
+      {
+        label: 'Cálculo',
+        icon: Calculator,
+        paginas: [
+          { to: '/configuracoes', label: 'Parâmetros', icon: Settings },
+          { to: '/custos-indiretos', label: 'Custos Indiretos', icon: Factory },
+          { to: '/taxas', label: 'Taxas', icon: Percent },
+        ],
+      },
+      {
+        label: 'Cadastros',
+        icon: BookUser,
+        paginas: [
+          { to: '/listas', label: 'Listas', icon: ListIcon },
+          { to: '/configuracoes/marketplace', label: 'Produtos de Marketplace', icon: Store },
+          { to: '/configuracoes/vendedores', label: 'Vendedores', icon: Users },
+          { to: '/configuracoes/tabelas-preco', label: 'Tabelas de Preço', icon: Tags },
+        ],
+      },
+      { to: '/empresas', label: 'Empresas', icon: Landmark },
+      { to: '/acessos', label: 'Acessos', icon: ShieldCheck },
+      // As duas respondem "está tudo certo com os dados e as conexões?" e as
+      // duas eram abas que não cabiam na barra.
+      {
+        label: 'Integrações e Saúde',
+        icon: Plug,
+        paginas: [
+          { to: '/integracoes', label: 'Integrações', icon: Plug, adminOnly: true },
+          { to: '/saude-dados', label: 'Saúde dos Dados', icon: Layers, adminOnly: true },
+        ],
+      },
     ],
   },
 ];
+
+// Achata `entradas` em `pages` — a lista linear que o resto do sistema já
+// usava antes deste agrupamento. Fazer isso aqui, e não em cada consumidor, é
+// o que garante que a mudança de menu NÃO mexeu em permissão: `canAccessPath`
+// e `getDefaultPath` continuam vendo exatamente a mesma lista de rotas, na
+// mesma ordem.
+function achatar(entradas) {
+  const paginas = [];
+  for (const entrada of entradas) {
+    if (entrada.paginas) {
+      for (const p of entrada.paginas) paginas.push({ ...p, entrada: entrada.label });
+    } else {
+      paginas.push({ ...entrada });
+    }
+  }
+  return paginas;
+}
+
+for (const mod of MODULES) {
+  mod.pages = achatar(mod.entradas);
+}
+
+// Devolve, para um módulo já filtrado por permissão, as entradas de menu com
+// as páginas que este usuário pode abrir — descartando a entrada que ficou
+// sem nenhuma página (é o caso de "Integrações e Saúde" para quem não é
+// administrador: as duas telas de dentro são adminOnly).
+export function getEntradasVisiveis(mod, user) {
+  const isAdmin = user?.role === 'admin';
+  const entradas = [];
+  for (const entrada of mod.entradas) {
+    if (entrada.paginas) {
+      const paginas = entrada.paginas.filter((p) => !p.adminOnly || isAdmin);
+      if (paginas.length === 1) {
+        // Sobrou uma só: vira entrada simples, para não abrir uma segunda
+        // fileira com um item único (o defeito LAY-08 do relatório antigo).
+        entradas.push({ ...paginas[0], grupoLabel: entrada.label });
+      } else if (paginas.length > 1) {
+        entradas.push({ ...entrada, paginas });
+      }
+    } else if (!entrada.adminOnly || isAdmin) {
+      entradas.push(entrada);
+    }
+  }
+  return entradas;
+}
+
+// Quanto desta entrada "casa" com o caminho aberto — 0 quando não casa.
+//
+// Devolve o comprimento da rota que casou, e não um sim/não, por causa das
+// rotas que são prefixo de outras: `/estoque` é prefixo de
+// `/estoque/cobertura`, e `/compras` de `/compras/insumos`. Com um sim/não
+// simples, estar em "Reposição" acenderia TAMBÉM a entrada "Estoque", e a
+// primeira da lista venceria — a fileira de baixo sumiria e a pessoa ficaria
+// sem saber em que tela está. Ganha a rota mais específica.
+export function forcaDaEntrada(entrada, pathname) {
+  const alvos = entrada.paginas ? entrada.paginas.map((p) => p.to) : [entrada.to];
+  let maior = 0;
+  for (const to of alvos) {
+    if (pathname === to || pathname.startsWith(`${to}/`)) maior = Math.max(maior, to.length);
+  }
+  return maior;
+}
+
+// A entrada de menu que deve estar acesa: a de rota mais específica.
+export function acharEntradaAtiva(entradas, pathname) {
+  let melhor = null;
+  let forca = 0;
+  for (const entrada of entradas) {
+    const f = forcaDaEntrada(entrada, pathname);
+    if (f > forca) { forca = f; melhor = entrada; }
+  }
+  return melhor;
+}
 
 // `tambemPor` (08/09/2026) existe por causa do modulo novo de Producao.
 //

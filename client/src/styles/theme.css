@@ -675,14 +675,21 @@ button, input, select, textarea { font-family: inherit; }
     var(--bg);
 }
 
+/* A fileira de entradas do módulo (14/09/2026).
+   `flex-wrap: wrap` no lugar de `overflow-x: auto`: a barra rolava de lado
+   sem seta, sem sombra e sem qualquer sinal de que havia mais coisa, então
+   em 1366 px o Financeiro simplesmente não tinha "Caixa de Entrada" nem
+   "Cobertura" — a tela existia e ninguém achava. Depois do agrupamento
+   nenhum módulo passa de 5 entradas, e mesmo assim a quebra de linha fica
+   como rede de segurança: aba escondida nunca mais. */
 .shell-submenu, .shell-nav {
   flex-shrink: 0;
   display: flex;
+  flex-wrap: wrap;
   gap: 2px;
   padding: 11px 20px 0;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  overflow-x: auto;
 }
 
 .nav-link {
@@ -705,13 +712,60 @@ button, input, select, textarea { font-family: inherit; }
 .nav-link:hover { background: var(--border-soft); color: var(--ink); }
 .nav-link.active { color: var(--terracotta); border-bottom-color: var(--terracotta); background: linear-gradient(180deg, transparent, var(--accent-softer)); }
 
+/* Terceiro nível: as telas de dentro da entrada aberta (14/09/2026).
+   Menor, mais claro e com pílula em vez de aba, de propósito — o segundo
+   nível diz ONDE você está, este diz por QUAL ângulo você está olhando. Se
+   os dois tivessem o mesmo peso, voltaríamos ao problema de origem: uma
+   fileira comprida em que nada distingue a tela de todo dia da tela de uma
+   vez por mês. */
+.shell-subsubmenu {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 20px;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border);
+}
+.subnav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-decoration: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.subnav-link:hover { background: var(--border-soft); color: var(--ink); }
+.subnav-link.active {
+  background: var(--surface);
+  border-color: var(--terracotta);
+  color: var(--terracotta);
+}
+
 .shell-main {
   flex: 1;
   background: transparent;
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
+  /* Faixa reservada para o botão flutuante da Manu (14/09/2026). O botão tem
+     56px e mora fixo no canto inferior direito; sem esta reserva ele cobre a
+     ÚLTIMA LINHA de toda lista longa — e a última linha de uma lista ordenada
+     por urgência costuma ser justamente a que interessa. Vai em
+     scroll-padding-bottom + padding do conteúdo, e não em margem do botão,
+     porque o problema não é onde o botão está: é o conteúdo poder terminar
+     debaixo dele. */
+  scroll-padding-bottom: 84px;
 }
+.shell-main > .page,
+.shell-main > .page-wide { padding-bottom: 84px; }
 
 .mobile-menu-btn {
   display: none;
@@ -1434,6 +1488,30 @@ table.data-table .select-custom-lista { font-size: 12.5px; }
 }
 .btn-primary:hover { box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.18); filter: brightness(1.05); }
 .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+/* `.btn` sozinho, sem variante (14/09/2026).
+   `.btn` é só a BASE — tamanho, espaçamento, transição — e não pinta nada:
+   fundo transparente e borda transparente. Em 28 lugares ele foi usado sem
+   variante, e todos os 28 são a AÇÃO PRINCIPAL da tela: "Nova ordem", "Nova
+   promoção", "Nova facção", "Gravar movimentação", "Gerar o título",
+   "Salvar consumo por tamanho", "Importar nota fiscal", "Confirmar".
+   O efeito na tela é a hierarquia ao contrário: em Produção, "Nova ordem"
+   é o botão MENOS visível da barra, enquanto "Atualizar" e "Puxar do Wik"
+   — que são secundários — aparecem brancos com borda. Quem chega na tela
+   para abrir uma ordem procura o botão mais apagado.
+   Em vez de mexer em 28 arquivos, o botão sem variante passa a vestir o
+   primário: é o que ele sempre quis dizer. Quem quiser secundário continua
+   escrevendo `btn btn-ghost` ou `btn-sec`, como as outras 200 ocorrências. */
+.btn:not(.btn-primary):not(.btn-ghost):not(.btn-danger):not(.btn-dashed):not(.btn-icone):not(.btn-sec) {
+  background: linear-gradient(155deg, var(--btn-primary-from) 0%, var(--btn-primary-to) 100%);
+  color: var(--btn-primary-ink);
+  box-shadow: var(--shadow-xs), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+.btn:not(.btn-primary):not(.btn-ghost):not(.btn-danger):not(.btn-dashed):not(.btn-icone):not(.btn-sec):hover:not(:disabled) {
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  filter: brightness(1.05);
+}
+.btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
 
 .btn-ghost { background: var(--surface); border-color: var(--border); color: var(--ink); }
 .btn-ghost:hover { background: var(--border-soft); border-color: var(--ink-faint); }
@@ -2340,7 +2418,7 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
 
 @media print {
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-  .shell-header, .shell-sidebar, .shell-submenu, .no-print { display: none !important; }
+  .shell-header, .shell-sidebar, .shell-submenu, .shell-subsubmenu, .no-print { display: none !important; }
   /* .shell-main agora rola por dentro (overflow-y:auto com altura travada em
      100vh) pra manter cabeçalho/menu fixos na tela — na impressão isso
      cortaria o conteúdo na altura da janela, então volta a fluir normal. */
@@ -3840,10 +3918,13 @@ table.ficha-doc-tabela {
 /* ---------- 3. submenu de páginas: mostrar que rola ---------- */
 
 @media (max-width: 860px) {
-  .shell-submenu, .shell-nav {
-    /* Estes menus têm até 10 itens; no celular viram uma faixa rolável.
-       Sem barra visível (atrapalha) mas COM encaixe por item e um degradê
-       na borda direita, para não parecer que o menu acabou ali. */
+  .shell-submenu, .shell-nav, .shell-subsubmenu {
+    /* No celular a faixa volta a ser rolável em vez de quebrar em três
+       linhas e comer meia tela antes do conteúdo. Sem barra visível
+       (atrapalha) mas COM encaixe por item e um degradê na borda direita,
+       para não parecer que o menu acabou ali. */
+    flex-wrap: nowrap;
+    overflow-x: auto;
     scroll-snap-type: x proximity;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-x: contain;
@@ -3853,8 +3934,13 @@ table.ficha-doc-tabela {
     -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 22px), transparent 100%);
     mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 22px), transparent 100%);
   }
-  .shell-submenu::-webkit-scrollbar, .shell-nav::-webkit-scrollbar { display: none; }
+  .shell-submenu::-webkit-scrollbar,
+  .shell-nav::-webkit-scrollbar,
+  .shell-subsubmenu::-webkit-scrollbar { display: none; }
   .nav-link { scroll-snap-align: start; min-height: 42px; padding: 10px 13px; }
+  /* Alvo de toque: 32px de altura não se acerta com o polegar no galpão. */
+  .subnav-link { scroll-snap-align: start; min-height: 38px; padding: 8px 14px; }
+  .shell-subsubmenu { padding: 6px 14px; }
 }
 
 /* ---------- 4. coluna de conteúdo ---------- */
@@ -5993,14 +6079,28 @@ input[aria-invalid='true']:focus { border-color: var(--danger); box-shadow: 0 0 
 /* ---- Linha clicável dentro de um cartão -----------------------------------
    Existia como estilo inline solto no Dashboard ("Vendas por Canal"). Virou
    classe pra deixar de ser um botão sem className e sem anel de foco. */
-.linha-clicavel {
+/* `:not(tr)` (14/09/2026) — esta classe nasceu para uma LINHA DENTRO DE UM
+   CARTÃO (o "Vendas por Canal" do Dashboard, que era um <button>), e depois
+   foi reaproveitada em 11 lugares como className de <tr>. Em <tr>,
+   `display: flex` tira a linha do layout de tabela: o corpo passa a calcular
+   as larguras por conta própria e o cabeçalho pelas dele, e as duas coisas
+   deixam de bater.
+   Medido no navegador em Produção › Ordens de Produção: o <th> "OP" com
+   728px de largura sobre um <td> de 35px; "REFERÊNCIA" pousado em x=986
+   enquanto a referência está em x=293. Nenhuma coluna sob o próprio rótulo,
+   em Ordens de Produção, Ordens de Serviço, Insumos, Facções, Romaneio,
+   Depósitos, Conferência, Movimentação e Importação em Massa.
+   O conserto é de escopo, não de layout: fora de <tr> a classe continua
+   exatamente como era; em <tr> ela volta a ser só o que sempre quis ser —
+   cursor e realce ao passar o mouse. */
+.linha-clicavel:not(tr) {
   display: flex; align-items: center; justify-content: space-between;
   width: 100%; padding: 10px 0; text-align: left;
   background: none; border: none; border-bottom: 1px solid var(--border-soft);
-  color: inherit; font: inherit; cursor: pointer;
-  transition: background 0.15s var(--ease);
+  color: inherit; font: inherit;
 }
-.linha-clicavel:hover { background: var(--surface-alt); }
+.linha-clicavel { cursor: pointer; transition: background 0.15s var(--ease); }
+.linha-clicavel:not(tr):hover { background: var(--surface-alt); }
 .aviso-inline {
   display: flex; align-items: flex-start; gap: 7px;
   font-size: 12.5px; padding: 9px 13px; border-radius: var(--radius-sm);
@@ -6024,6 +6124,10 @@ input[aria-invalid='true']:focus { border-color: var(--danger); box-shadow: 0 0 
 
 .linha-clicavel { cursor: pointer; }
 .linha-clicavel:hover { background: var(--border-soft); }
+/* Em <tr> o realce vai na CÉLULA: `background` no <tr> é ignorado por vários
+   navegadores quando a célula tem fundo próprio (zebra), e era mais um
+   motivo de a linha clicável parecer morta em tabela. */
+tr.linha-clicavel:hover > * { background: var(--border-soft); }
 .linha-nova { background: color-mix(in srgb, var(--brass) 8%, transparent); }
 
 /* Rodapé fixo do painel lateral: as ações de uma ordem de produção não podem
