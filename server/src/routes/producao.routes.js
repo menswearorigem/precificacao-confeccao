@@ -24,7 +24,10 @@ const {
 const locais = require('../lib/estoqueLocais');
 const produtoGrade = require('../lib/produtoGrade');
 const calendarioProducao = require('../lib/producaoCalendario');
-const { sincronizarProducaoAgora, diagnosticarGradeOp } = require('../lib/wikProducaoSync');
+const {
+  sincronizarProducaoAgora, diagnosticarGradeOp,
+  alimentarGradeDaOp, alimentarGradeMarketplace,
+} = require('../lib/wikProducaoSync');
 
 const router = express.Router();
 
@@ -65,6 +68,32 @@ router.get('/wik/diagnostico/:op', async (req, res) => {
   try {
     const rel = await diagnosticarGradeOp(req.params.op);
     res.json(rel);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Alimenta a grade de UMA OP (op por op). Sem corpo → puxa do Wik (com fallback
+// de empresa). Com corpo { grade:[{cor,tamanho,qtd,produzidas?,segunda?}] } →
+// grava esses números à mão (e desliga a sincronização daquela OP).
+// Ex.: POST /producao/wik/grade-op/7045   (puxa do Wik)
+router.post('/wik/grade-op/:op', async (req, res) => {
+  try {
+    const gradeManual = Array.isArray(req.body?.grade) ? req.body.grade : null;
+    const out = await alimentarGradeDaOp(req.params.op, { gradeManual });
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Alimenta a grade de TODAS as OPs do Wik de produto de MARKETPLACE de uma vez.
+// Ex.: POST /producao/wik/grade-marketplace   (body opcional { soSemGrade:false } refaz todas)
+router.post('/wik/grade-marketplace', async (req, res) => {
+  try {
+    const soSemGrade = req.body?.soSemGrade !== false;
+    const out = await alimentarGradeMarketplace({ soSemGrade });
+    res.json(out);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

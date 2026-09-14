@@ -278,6 +278,122 @@ async function detalheDaOpComGrade(sessao, op) {
   return ultimo || { cabecalho: {}, grade: [] };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ALIMENTAR A GRADE DE UMA OP — manual, op por op (pedido do dono, 14/09/2026)
+// ═══════════════════════════════════════════════════════════════════════════
+// Preenche a grade (cor × tamanho × peças) de UMA OP que já existe no Hub
+// (achada pelo número wik_op). Duas fontes:
+//   • `gradeManual` = [{cor,tamanho,qtd, produzidas?, segunda?}] → usa esses
+//     números (quando o Wik não devolve ou pra corrigir à mão);
+//   • sem gradeManual → puxa do Wik com o fallback de empresa (matriz/202/198/193).
+// NÃO reserva insumo e NÃO cria OP nova — grava só ordem_producao_grade e os
+// totais. Grade manual DESLIGA a sincronização daquela OP (o manual assume);
+// grade puxada do Wik mantém a sincronização.
+async function alimentarGradeDaOp(op, { gradeManual = null, integracao = null } = {}) {
+  const opNum = Number(op);
+  if (!Number.isFinite(opNum)) return { erro: 'OP inválida' };
+
+  const { rows: ordens } = await poolReal.query(
+    `SELECT id, wik_op FROM ordens_producao
+      WHERE origem = 'wik' AND wik_op = $1
+      ORDER BY (wik_emp_id = $2) DESC, id DESC LIMIT 1`,
+    [opNum, MATRIZ_EMP_ID]
+  );
+  if (!ordens[0]) return { op: opNum, erro: `OP ${opNum} não existe no Hub como OP do Wik.` };
+  const ordemId = ordens[0].id;
+
+  let linhas; let manual = false;
+  if (Array.isArray(gradeManual) && gradeManual.length) {
+    manual = true;
+    linhas = gradeManual.map((g) => ({
+      cor: String(g.cor || '').slice(0, 60),
+      tamanho: String(g.tamanho ?? g.tam ?? '').slice(0, 20),
+      qp: so(g.qtd ?? g.planejada ?? g.quantidade_planejada),
+      qr: so(g.produzidas ?? g.quantidade_produzida),
+      ld: so(g.segunda ?? g.quantidade_segunda),
+    })).filter((g) => g.tamanho);
+  } else {
+    const integ = integracao || await buscarIntegracao();
+    if (!integ || !integ.ativo) return { op: opNum, erro: 'sem integração Wik ativa e nenhuma grade manual enviada' };
+    let sessao = await obterSessao(integ);
+    let det;
+    try { det = await detalheDaOpComGrade(sessao, opNum); }
+    catch (e) {
+      if (e.sessaoExpirada) { sessao = await renovarSessao(integ); det = await detalheDaOpComGrade(sessao, opNum); }
+      else return { op: opNum, ordemId, erro: e.message };
+    }
+    linhas = (det.grade || []).map((g) => ({
+      cor: String(g.CorDescricao || '').slice(0, 60),
+      tamanho: String(g.OpriTamanho).slice(0, 20),
+      qp: so(g.OpriQtdPrevista), qr: so(g.OpriQtdRealizada), ld: so(g.OpriQtdLd),
+    })).filter((g) => g.tamanho);
+    try { await wikWeb.trocarEmpresa(sessao, MATRIZ_EMP_ID); } catch { /* segue */ }
+  }
+
+  if (!linhas.length) {
+    return { op: opNum, ordemId, gravadas: 0, aviso: 'nenhuma linha de grade (o Wik voltou vazio e nenhuma grade manual foi enviada)' };
+  }
+
+  const client = await poolReal.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM ordem_producao_grade WHERE ordem_id = $1', [ordemId]);
+    let prev = 0; let real = 0; let seg = 0;
+    for (const g of linhas) {
+      prev += g.qp; real += g.qr; seg += g.ld;
+      await client.query(
+        `INSERT INTO ordem_producao_grade (ordem_id, cor, tamanho, quantidade_planejada, quantidade_produzida, quantidade_segunda)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (ordem_id, cor, tamanho) DO UPDATE SET
+           quantidade_planejada = EXCLUDED.quantidade_planejada,
+           quantidade_produzida = EXCLUDED.quantidade_produzida,
+           quantidade_segunda = EXCLUDED.quantidade_segunda`,
+        [ordemId, g.cor, g.tamanho, g.qp, g.qr, g.ld]
+      );
+    }
+    // Grade manual desliga a sincronização (o manual manda); grade puxada do
+    // Wik mantém como está.
+    const setSinc = manual ? ', sincroniza_wik = FALSE' : '';
+    await client.query(
+      `UPDATE ordens_producao SET
+         quantidade_planejada = $2, quantidade_produzida = $3, quantidade_segunda = $4,
+         wik_grade_em = now(), atualizado_em = now()${setSinc}
+       WHERE id = $1`,
+      [ordemId, prev, real, seg]
+    );
+    await client.query('COMMIT');
+    return { op: opNum, ordemId, gravadas: linhas.length, planejadas: prev, produzidas: real, segunda: seg, manual };
+  } catch (e) { await client.query('ROLLBACK'); throw e; }
+  finally { client.release(); }
+}
+
+// Alimenta a grade de TODAS as OPs do Wik cujo produto é de marketplace (o dono
+// pediu "as do marketplace primeiro"). Puxa cada uma do Wik, uma de cada vez.
+async function alimentarGradeMarketplace({ limite = 200, soSemGrade = true } = {}) {
+  const integracao = await buscarIntegracao();
+  if (!integracao || !integracao.ativo) return { erro: 'sem integração Wik ativa' };
+  const filtroGrade = soSemGrade
+    ? 'AND NOT EXISTS (SELECT 1 FROM ordem_producao_grade g WHERE g.ordem_id = o.id)'
+    : '';
+  const { rows } = await poolReal.query(
+    `SELECT o.wik_op, p.referencia
+       FROM ordens_producao o
+       JOIN produtos p ON p.id = o.produto_id
+      WHERE o.origem = 'wik' AND o.wik_op IS NOT NULL AND p.marketplace = TRUE ${filtroGrade}
+      ORDER BY o.wik_op DESC LIMIT $1`,
+    [limite]
+  );
+  const res = { total: rows.length, comGrade: 0, vazias: 0, erros: [], detalhe: [] };
+  for (const r of rows) {
+    try {
+      const out = await alimentarGradeDaOp(r.wik_op, { integracao });
+      if (out.gravadas > 0) { res.comGrade += 1; res.detalhe.push({ op: r.wik_op, ref: r.referencia, linhas: out.gravadas, pecas: out.planejadas }); }
+      else { res.vazias += 1; res.detalhe.push({ op: r.wik_op, ref: r.referencia, vazia: true }); }
+    } catch (e) { res.erros.push(`OP ${r.wik_op}: ${e.message}`); }
+  }
+  return res;
+}
+
 // OPs do Wik que ainda precisam de grade (mais NOVAS primeiro — é o que a casa
 // olha). Só as que ainda sincronizam.
 async function opsComGradePendente(limite) {
@@ -392,4 +508,8 @@ async function sincronizarProducaoAgora() {
   }
 }
 
-module.exports = { sincronizarProducaoAgora, diagnosticarGradeOp, obterSessao, buscarIntegracao };
+module.exports = {
+  sincronizarProducaoAgora, diagnosticarGradeOp,
+  alimentarGradeDaOp, alimentarGradeMarketplace,
+  obterSessao, buscarIntegracao,
+};
