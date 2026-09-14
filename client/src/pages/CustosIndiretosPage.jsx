@@ -3,7 +3,7 @@ import { Plus, Trash2, ChevronDown, ChevronRight, Home, Monitor, Briefcase, Truc
 import { api } from '../api/client';
 import { AvisoDeFalha, NumInput } from '../components/ui';
 import BarraAlteracoes from '../components/BarraAlteracoes';
-import { brl, pct } from '../lib/format';
+import { brl, pct, plural } from '../lib/format';
 import { CampoTextoLimitado } from '../components/campos';
 
 function normalizarTexto(v) {
@@ -172,7 +172,7 @@ export default function CustosIndiretosPage() {
         <div className="cfg-simulador-campo">
           <span className="cfg-simulador-campo-label">Total fixo do mês</span>
           <strong className="mono" style={{ fontSize: 20 }}>{brl(totalMensalRascunho)}</strong>
-          <span className="page-sub" style={{ margin: 0, fontSize: 11 }}>{itensRascunho.length} item(ns) lançado(s)</span>
+          <span className="page-sub" style={{ margin: 0, fontSize: 11 }}>{plural(itensRascunho.length, 'item', 'itens')} lançado(s)</span>
         </div>
         <div style={{ fontSize: 20, color: 'var(--ink-faint)' }}>÷</div>
         <div className="cfg-simulador-campo">
@@ -198,7 +198,7 @@ export default function CustosIndiretosPage() {
                 {aberto ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 <g.Icone size={15} />
                 {g.label}
-                <span className="page-sub" style={{ margin: 0, fontWeight: 400 }}>{g.itens.length} item(ns)</span>
+                <span className="page-sub" style={{ margin: 0, fontWeight: 400 }}>{plural(g.itens.length, 'item', 'itens')}</span>
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <strong className="mono">{brl(g.subtotal)}</strong>

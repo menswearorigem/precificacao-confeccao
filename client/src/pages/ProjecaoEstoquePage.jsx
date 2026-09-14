@@ -11,7 +11,7 @@ import {
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoTresMeses } from '../lib/periodos';
 import { useTabela } from '../lib/useTabela';
-import { formatQtd, dataBr } from '../lib/format';
+import { formatQtd, dataBr, plural } from '../lib/format';
 import { montarDefinicaoProjecao } from '../lib/projecaoRelatorio';
 import { gerarPdfProjecao } from '../lib/projecaoPdf';
 import { gerarXlsx } from '../lib/relatorio';
@@ -213,7 +213,7 @@ function Camadas({ dados: r, tamanhos }) {
             {r.diasHorizonte == null
               ? 'Sem data prevista nas ordens — só o teto bruto pode ser calculado'
               : r.atrasada
-                ? `Ordem vencida há ${r.diasAtraso} dia(s): não há janela de venda a descontar, então o Líquido sai igual ao Bruto`
+                ? `Ordem vencida há ${plural(r.diasAtraso, 'dia')}: não há janela de venda a descontar, então o Líquido sai igual ao Bruto`
                 : `Teto bruto e, ao lado, o líquido: descontando a venda prevista dos próximos ${r.diasHorizonte} dias`}
           </span>
         </div>
@@ -279,7 +279,7 @@ function Camadas({ dados: r, tamanhos }) {
         {r.atrasada ? (
           <p className="pe-ressalva pe-ressalva-alerta">
             <CalendarClock size={13} />
-            A data prevista mais distante desta referência venceu há <b>{r.diasAtraso} dia(s)</b>.
+            A data prevista mais distante desta referência venceu há <b>{plural(r.diasAtraso, 'dia')}</b>.
             Uma ordem vencida não chega hoje — enquanto a data não for replanejada, o Líquido
             não tem janela para descontar e sai igual ao Bruto.
           </p>
@@ -463,7 +463,7 @@ export default function ProjecaoEstoquePage() {
         <div className="pe-kpi pe-kpi-prod">
           <span className="pe-kl"><Factory size={13} /> Em produção</span>
           <strong>+{carregando ? '—' : formatQtd(totais?.producao || 0)}</strong>
-          <small>{referencias.length} referência(s) com ordem viva</small>
+          <small>{plural(referencias.length, 'referência')} com ordem viva</small>
         </div>
         <div className="pe-kpi pe-kpi-proj">
           <span className="pe-kl"><PackageCheck size={13} /> Projetado</span>
@@ -541,7 +541,7 @@ export default function ProjecaoEstoquePage() {
                         <small>Projetado</small>{formatQtd(r.totais.bruto)}
                       </span>
                       {r.atrasada ? (
-                        <span className="pe-card-num pe-card-atraso" title={`Ordem vencida há ${r.diasAtraso} dia(s)`}>
+                        <span className="pe-card-num pe-card-atraso" title={`Ordem vencida há ${plural(r.diasAtraso, 'dia')}`}>
                           <small>Atraso</small>{r.diasAtraso}d
                         </span>
                       ) : null}

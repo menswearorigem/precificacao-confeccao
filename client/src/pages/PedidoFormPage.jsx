@@ -8,7 +8,7 @@ import { api } from '../api/client';
 import { somAcerto, somErro } from '../lib/somConferencia';
 import { Field, NumInput, Select, DateInput, Skeleton } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
-import { brl, pct, formatQtd } from '../lib/format';
+import { brl, pct, formatQtd, plural } from '../lib/format';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import LeitorCamera from '../components/LeitorCamera';
 import { CampoNome, CampoTelefone, CampoCpfCnpj, CampoDesconto } from '../components/campos';
@@ -212,7 +212,7 @@ export default function PedidoFormPage() {
       if (data.reaplicacao?.semPreco?.length > 0) {
         setRetorno({
           ok: false,
-          texto: `Refiz ${data.reaplicacao.atualizados} item(ns). Ficaram como estavam (sem preço no cadastro): ${data.reaplicacao.semPreco.join(', ')}.`,
+          texto: `Refiz ${plural(data.reaplicacao.atualizados, 'item', 'itens')}. Ficaram como estavam (sem preço no cadastro): ${data.reaplicacao.semPreco.join(', ')}.`,
         });
       } else {
         setRetorno({ ok: true, texto: `Preços refeitos em ${data.reaplicacao?.atualizados || 0} item(ns).` });
@@ -523,7 +523,7 @@ export default function PedidoFormPage() {
             </button>
           )}
           {pedido.situacao !== 'aberto' && (
-            <button type="button" className="btn btn-ghost" onClick={() => window.print()}>
+            <button type="button" className="btn btn-ghost" onClick={() => window.print()} title="Abre a impressão do navegador — de lá dá para salvar em PDF">
               <Printer size={14} /> Imprimir
             </button>
           )}
@@ -795,7 +795,7 @@ export default function PedidoFormPage() {
         <div className="card-head-linha">
           <div className="card-head">Itens da venda ({formatQtd(itens.length)})</div>
           {itens.length > 0 && (
-            <span className="page-sub" style={{ margin: 0 }}>{formatQtd(totalPecas)} peça(s)</span>
+            <span className="page-sub" style={{ margin: 0 }}>{plural(totalPecas, 'peça')}</span>
           )}
         </div>
 

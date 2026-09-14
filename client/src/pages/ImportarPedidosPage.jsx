@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Upload, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { api } from '../api/client';
-import { brl } from '../lib/format';
+import { brl, plural } from '../lib/format';
 import { Select, Checkbox } from '../components/ui';
 import FileDropzone from '../components/FileDropzone';
 
@@ -104,7 +104,7 @@ export default function ImportarPedidosPage() {
             <CheckCircle2 size={14} /> Importação concluída
           </div>
           <p>
-            {resultado.pedidosImportados} pedido(s) importado(s)
+            {plural(resultado.pedidosImportados, 'pedido')} importado(s)
             {resultado.pedidosIgnorados > 0 && `, ${resultado.pedidosIgnorados} ignorado(s) (já existiam)`}.
           </p>
         </div>
@@ -152,7 +152,7 @@ export default function ImportarPedidosPage() {
             </tbody>
           </table>
           <button type="button" className="btn btn-primary" style={{ marginTop: 14 }} onClick={handleConfirmar} disabled={loading || selecionados.size === 0}>
-            {loading ? 'Gravando…' : `Importar ${selecionados.size} pedido(s) selecionado(s)`}
+            {loading ? 'Gravando…' : `Importar ${plural(selecionados.size, 'pedido')} selecionado(s)`}
           </button>
         </div>
       )}

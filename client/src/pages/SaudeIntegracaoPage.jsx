@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Activity, RefreshCw, AlertTriangle, PlugZap, PackageX, CheckCircle2,
-  RotateCw, Archive, Info, Clock, ChevronDown, ChevronRight,
+  RotateCw, Archive, Info, Clock, ChevronDown, ChevronRight, Plug,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { EstadoVazio, Select, Skeleton, IndicadorDestaque } from '../components/ui';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
-import { brl, formatQtd, tempoRelativo, dataBr } from '../lib/format';
+import { brl, formatQtd, tempoRelativo, dataBr, plural } from '../lib/format';
 
 // Marketplace › Saúde da Sincronização.
 //
@@ -130,8 +131,8 @@ export default function SaudeIntegracaoPage() {
               valor={brl(resumo.valor.total)}
               explicacao={
                 resumo.valor.semValor > 0
-                  ? `Soma de ${formatQtd(resumo.valor.comValor)} pedido(s). Outros ${formatQtd(resumo.valor.semValor)} não têm valor conhecido e NÃO entraram como R$ 0,00 — o total real é maior.`
-                  : `Soma dos itens de ${formatQtd(resumo.valor.comValor)} pedido(s), como o marketplace mandou.`
+                  ? `Soma de ${plural(resumo.valor.comValor, 'pedido')}. Outros ${formatQtd(resumo.valor.semValor)} não têm valor conhecido e NÃO entraram como R$ 0,00 — o total real é maior.`
+                  : `Soma dos itens de ${plural(resumo.valor.comValor, 'pedido')}, como o marketplace mandou.`
               }
             />
             <IndicadorDestaque
@@ -167,19 +168,31 @@ export default function SaudeIntegracaoPage() {
                       <td><SeloSituacao situacao={c.situacao} /></td>
                       <td className="mono">{tempoRelativo(c.ultima_sincronizacao)}</td>
                       <td className="ink-soft">{c.situacao.motivo || '—'}</td>
+                      {/* 14/09/2026: a linha oferecia "Sincronizar agora" mesmo
+                          quando o motivo era "a conexão nunca foi autorizada" —
+                          e sincronizar sem autorização falha de novo, pelo mesmo
+                          motivo. O botão passa a ser o que RESOLVE: quando falta
+                          autorização, leva para Integrações, que é onde se
+                          autoriza; nos outros casos continua sincronizando. */}
                       <td className="num">
-                        <button
-                          type="button"
-                          className="btn-sec"
-                          disabled={ocupado === `conexao-${c.id}` || !c.ativo}
-                          onClick={() => acao(
-                            `conexao-${c.id}`,
-                            () => api.post(`/saude-integracao/conexoes/${c.id}/sincronizar`),
-                            'Ciclo concluído.'
-                          )}
-                        >
-                          <RotateCw size={14} className={ocupado === `conexao-${c.id}` ? 'girando' : ''} /> Sincronizar agora
-                        </button>
+                        {['sem_autorizacao', 'token_vencido'].includes(c.situacao.situacao) ? (
+                          <Link to="/integracoes" className="btn-sec">
+                            <Plug size={14} /> Autorizar
+                          </Link>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn-sec"
+                            disabled={ocupado === `conexao-${c.id}` || !c.ativo}
+                            onClick={() => acao(
+                              `conexao-${c.id}`,
+                              () => api.post(`/saude-integracao/conexoes/${c.id}/sincronizar`),
+                              'Ciclo concluído.'
+                            )}
+                          >
+                            <RotateCw size={14} className={ocupado === `conexao-${c.id}` ? 'girando' : ''} /> Sincronizar agora
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

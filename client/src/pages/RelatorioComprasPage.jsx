@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, Info, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Printer, Info, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, formatQtd, numeroBr, dataBr } from '../lib/format';
+import { brl, formatQtd, numeroBr, dataBr, plural } from '../lib/format';
 import {
   Select, Field, IndicadorDestaque, BotaoRelatorio, ChipsFiltros,
 } from '../components/ui';
@@ -131,7 +131,7 @@ export default function RelatorioComprasPage() {
   const rankingFornecedores = useMemo(() => (
     (relatorio?.porFornecedor || []).slice(0, 12).map((f) => ({
       rotulo: f.fornecedor_nome,
-      detalhe: `${formatQtd(f.quantidade)} compra(s)`,
+      detalhe: `${plural(f.quantidade, 'compra')}`,
       valor: Number(f.total),
       id: f.fornecedor_id,
     }))
@@ -140,7 +140,7 @@ export default function RelatorioComprasPage() {
   const rankingPagamento = useMemo(() => (
     (relatorio?.porFormaPagamento || []).map((f) => ({
       rotulo: f.forma,
-      detalhe: `${formatQtd(f.quantidade)} compra(s)`,
+      detalhe: `${plural(f.quantidade, 'compra')}`,
       valor: Number(f.total),
     }))
   ), [relatorio]);
@@ -176,10 +176,6 @@ export default function RelatorioComprasPage() {
   return (
     <div className="page-wide">
       <div className="no-print">
-        <button className="btn btn-ghost" style={{ marginBottom: 14 }} onClick={() => navigate('/compras')}>
-          <ArrowLeft size={14} /> Voltar para compras
-        </button>
-
         <div className="pagina-topo">
           <div>
             <h1>Relatório de Compras</h1>
@@ -195,7 +191,7 @@ export default function RelatorioComprasPage() {
               descricaoResumo="Os indicadores, os dois gráficos e as quebras por categoria, fornecedor, pagamento e situação."
               descricaoCompleto="O resumo mais a evolução mês a mês, o comparativo, todas as compras, os itens um a um e o ranking de itens."
             />
-            <button className="btn btn-ghost" onClick={() => window.print()}>
+            <button className="btn btn-ghost" onClick={() => window.print()} title="Abre a impressão do navegador — de lá dá para salvar em PDF">
               <Printer size={14} /> Imprimir
             </button>
           </div>
@@ -265,10 +261,10 @@ export default function RelatorioComprasPage() {
           <div className="nota-precisao">
             <Info size={14} />
             <span>
-              Calculado sobre <strong>{formatQtd(relatorio.quantidadeCompras)} compra(s)</strong> e{' '}
-              <strong>{formatQtd(relatorio.quantidadeItens)} item(ns)</strong>.
+              Calculado sobre <strong>{plural(relatorio.quantidadeCompras, 'compra')}</strong> e{' '}
+              <strong>{plural(relatorio.quantidadeItens, 'item', 'itens')}</strong>.
               {relatorio.quantidadeCancelada > 0 && (
-                <> {formatQtd(relatorio.quantidadeCancelada)} compra(s) cancelada(s), somando {brl(relatorio.totalCancelado)}, ficaram de fora.</>
+                <> {plural(relatorio.quantidadeCancelada, 'compra')} cancelada(s), somando {brl(relatorio.totalCancelado)}, ficaram de fora.</>
               )}
               {relatorio.comparativo && (
                 <> O comparativo usa {textoPeriodo(relatorio.comparativo.periodo.inicio, relatorio.comparativo.periodo.fim)} — a mesma quantidade de dias, logo antes.</>
@@ -293,7 +289,7 @@ export default function RelatorioComprasPage() {
               refGrafico={refEvolucao}
               altura={280}
               vazio={evolucao.length === 0 ? 'Nenhuma compra no período.' : null}
-              rodape={evolucao.length > 0 ? `${formatQtd(evolucao.length)} dia(s) com compra no período.` : null}
+              rodape={evolucao.length > 0 ? `${plural(evolucao.length, 'dia')} com compra no período.` : null}
             >
               <GraficoEvolucao dados={evolucao} series={[{ chave: 'total', nome: 'Comprado' }]} altura={280} />
             </CartaoGrafico>
@@ -404,7 +400,7 @@ export default function RelatorioComprasPage() {
           <div className="card" style={{ marginTop: 16 }}>
             <div className="card-head-linha">
               <div className="card-head">Compras no período</div>
-              <span className="page-sub" style={{ margin: 0 }}>{formatQtd(relatorio.compras.length)} lançamento(s)</span>
+              <span className="page-sub" style={{ margin: 0 }}>{plural(relatorio.compras.length, 'lançamento')}</span>
             </div>
             <DataTable>
               <table className="data-table">

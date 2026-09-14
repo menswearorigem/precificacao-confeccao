@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DensidadeProvider } from './contexts/DensidadeContext';
@@ -7,92 +7,112 @@ import { ConfirmDialogRoot } from './components/ConfirmDialog';
 import { canAccessPath, getDefaultPath } from './lib/modules';
 import { instalarCliqueDoMeio } from './lib/novaAba';
 import LoginPage from './pages/LoginPage';
+
+// ---------------------------------------------------------------------------
+// Carregamento por rota (14/09/2026).
+//
+// O pacote de JavaScript era UM arquivo de 2,88 MB (766 KB comprimidos), com
+// as 86 telas do sistema dentro dele — tudo baixado antes da primeira tela
+// aparecer. Isso é o que a pessoa da expedição espera no 4G do galpão para
+// abrir a Bipagem, e é banda do Render em cada visita nova (a conta que já
+// derrubou o plano uma vez).
+//
+// Com `lazy`, cada tela vira um pedaço próprio e só desce quando alguém abre
+// aquela rota. A tela de login continua estática de propósito: ela é a
+// primeira coisa que carrega, e não faria sentido pedir um segundo arquivo
+// para mostrar um formulário de duas linhas.
+//
+// `Suspense` com um fallback vazio, e não um spinner: as telas já trazem os
+// próprios esqueletos de carregamento, e um spinner de meio segundo entre a
+// casca e o esqueleto pisca mais do que informa.
+// ---------------------------------------------------------------------------
+const ConfiguracoesPage = lazy(() => import('./pages/ConfiguracoesPage'));
+const EmpresasPage = lazy(() => import('./pages/EmpresasPage'));
+const ListasPage = lazy(() => import('./pages/ListasPage'));
+const CustosIndiretosPage = lazy(() => import('./pages/CustosIndiretosPage'));
+const IntegracoesPage = lazy(() => import('./pages/IntegracoesPage'));
+const TaxasPage = lazy(() => import('./pages/TaxasPage'));
+const AcessosPage = lazy(() => import('./pages/AcessosPage'));
+const SaudeDadosPage = lazy(() => import('./pages/SaudeDadosPage'));
+const ProdutosMarketplacePage = lazy(() => import('./pages/ProdutosMarketplacePage'));
+const CalendarioPage = lazy(() => import('./pages/CalendarioPage'));
+const TemplatesCalendarioPage = lazy(() => import('./pages/TemplatesCalendarioPage'));
+const EventoImpressaoPage = lazy(() => import('./pages/EventoImpressaoPage'));
+const ProdutosListPage = lazy(() => import('./pages/ProdutosListPage'));
+const ProdutoFichaPage = lazy(() => import('./pages/ProdutoFichaPage'));
+const ImportacaoPage = lazy(() => import('./pages/ImportacaoPage'));
+const ImportacaoMassaPage = lazy(() => import('./pages/ImportacaoMassaPage'));
+const SimuladorPage = lazy(() => import('./pages/SimuladorPage'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const FichaPrecificacaoPage = lazy(() => import('./pages/FichaPrecificacaoPage'));
+const AlertasPage = lazy(() => import('./pages/AlertasPage'));
+const KitsPage = lazy(() => import('./pages/KitsPage'));
+const FichaTecnicaPage = lazy(() => import('./pages/FichaTecnicaPage'));
+const FichaVendaPage = lazy(() => import('./pages/FichaVendaPage'));
+const EstoquePage = lazy(() => import('./pages/EstoquePage'));
+const BipagemPage = lazy(() => import('./pages/BipagemPage'));
+const EstoqueImportacaoPage = lazy(() => import('./pages/EstoqueImportacaoPage'));
+const EstoqueEanImportacaoPage = lazy(() => import('./pages/EstoqueEanImportacaoPage'));
+const FichaEstoquePage = lazy(() => import('./pages/FichaEstoquePage'));
+const ClientesListPage = lazy(() => import('./pages/ClientesListPage'));
+const ClienteFichaPage = lazy(() => import('./pages/ClienteFichaPage'));
+const PedidosListPage = lazy(() => import('./pages/PedidosListPage'));
+const PedidosVendaListPage = lazy(() => import('./pages/PedidosVendaListPage'));
+const PedidoFormPage = lazy(() => import('./pages/PedidoFormPage'));
+const MetricasVendasPage = lazy(() => import('./pages/MetricasVendasPage'));
+const LucratividadeVendasPage = lazy(() => import('./pages/LucratividadeVendasPage'));
+const DespesasVendasPage = lazy(() => import('./pages/DespesasVendasPage'));
+const VendedoresPage = lazy(() => import('./pages/VendedoresPage'));
+const TabelasPrecoPage = lazy(() => import('./pages/TabelasPrecoPage'));
+const FornecedoresListPage = lazy(() => import('./pages/FornecedoresListPage'));
+const FornecedorFichaPage = lazy(() => import('./pages/FornecedorFichaPage'));
+const ComprasListPage = lazy(() => import('./pages/ComprasListPage'));
+const CompraFormPage = lazy(() => import('./pages/CompraFormPage'));
+const RelatorioComprasPage = lazy(() => import('./pages/RelatorioComprasPage'));
+const CotacoesPage = lazy(() => import('./pages/CotacoesPage'));
+const PedidosCompraPage = lazy(() => import('./pages/PedidosCompraPage'));
+const RecebimentosPage = lazy(() => import('./pages/RecebimentosPage'));
+const RelatorioLucratividadePage = lazy(() => import('./pages/RelatorioLucratividadePage'));
+const MetricasMarketplacePage = lazy(() => import('./pages/MetricasMarketplacePage'));
+const AnunciosPage = lazy(() => import('./pages/AnunciosPage'));
+const CoberturaEstoquePage = lazy(() => import('./pages/CoberturaEstoquePage'));
+const ProducaoPage = lazy(() => import('./pages/ProducaoPage'));
+const MovimentacaoProducaoPage = lazy(() => import('./pages/MovimentacaoProducaoPage'));
+const OrdensServicoPage = lazy(() => import('./pages/OrdensServicoPage'));
+const CargaProducaoPage = lazy(() => import('./pages/CargaProducaoPage'));
+const ProjecaoEstoquePage = lazy(() => import('./pages/ProjecaoEstoquePage'));
+const MateriaPrimaPage = lazy(() => import('./pages/MateriaPrimaPage'));
+const InsumosPage = lazy(() => import('./pages/InsumosPage'));
+const PromocoesPage = lazy(() => import('./pages/PromocoesPage'));
+const FullPage = lazy(() => import('./pages/FullPage'));
+const MixTributarioPage = lazy(() => import('./pages/MixTributarioPage'));
+const EstoqueParadoPage = lazy(() => import('./pages/EstoqueParadoPage'));
+const EstoqueLocaisPage = lazy(() => import('./pages/EstoqueLocaisPage'));
+const ReservaEstoquePage = lazy(() => import('./pages/ReservaEstoquePage'));
+const DepositosPage = lazy(() => import('./pages/DepositosPage'));
+const CurvaTamanhoPage = lazy(() => import('./pages/CurvaTamanhoPage'));
+const PrecoPorCanalPage = lazy(() => import('./pages/PrecoPorCanalPage'));
+const SaudeIntegracaoPage = lazy(() => import('./pages/SaudeIntegracaoPage'));
+const RelatorioTaxasPage = lazy(() => import('./pages/RelatorioTaxasPage'));
+const ImportarPedidosPage = lazy(() => import('./pages/ImportarPedidosPage'));
+const ConferenciaPedidosPage = lazy(() => import('./pages/ConferenciaPedidosPage'));
+const EtiquetasPage = lazy(() => import('./pages/EtiquetasPage'));
+const RomaneioPage = lazy(() => import('./pages/RomaneioPage'));
+const FinanceiroPage = lazy(() => import('./pages/FinanceiroPage'));
+const TitulosPage = lazy(() => import('./pages/TitulosPage'));
+const ConciliacaoBancariaPage = lazy(() => import('./pages/ConciliacaoBancariaPage'));
+const ContasBancariasPage = lazy(() => import('./pages/ContasBancariasPage'));
+const FluxoCaixaPage = lazy(() => import('./pages/FluxoCaixaPage'));
+const DrePage = lazy(() => import('./pages/DrePage'));
+const CaixaEntradaFinanceiroPage = lazy(() => import('./pages/CaixaEntradaFinanceiroPage'));
+const CoberturaFinanceiraPage = lazy(() => import('./pages/CoberturaFinanceiraPage'));
+const ViagensListPage = lazy(() => import('./pages/ViagensListPage'));
+const ViagemDetailPage = lazy(() => import('./pages/ViagemDetailPage'));
+const AjudaPage = lazy(() => import('./pages/AjudaPage'));
+
 import EsqueciSenhaPage from './pages/EsqueciSenhaPage';
 import RedefinirSenhaPage from './pages/RedefinirSenhaPage';
-import ConfiguracoesPage from './pages/ConfiguracoesPage';
-import EmpresasPage from './pages/EmpresasPage';
-import ListasPage from './pages/ListasPage';
-import CustosIndiretosPage from './pages/CustosIndiretosPage';
-import IntegracoesPage from './pages/IntegracoesPage';
-import TaxasPage from './pages/TaxasPage';
-import AcessosPage from './pages/AcessosPage';
-import SaudeDadosPage from './pages/SaudeDadosPage';
-import ProdutosMarketplacePage from './pages/ProdutosMarketplacePage';
-import CalendarioPage from './pages/CalendarioPage';
-import TemplatesCalendarioPage from './pages/TemplatesCalendarioPage';
-import EventoImpressaoPage from './pages/EventoImpressaoPage';
-import ProdutosListPage from './pages/ProdutosListPage';
-import ProdutoFichaPage from './pages/ProdutoFichaPage';
-import ImportacaoPage from './pages/ImportacaoPage';
-import ImportacaoMassaPage from './pages/ImportacaoMassaPage';
-import SimuladorPage from './pages/SimuladorPage';
-import DashboardPage from './pages/DashboardPage';
-import FichaPrecificacaoPage from './pages/FichaPrecificacaoPage';
-import AlertasPage from './pages/AlertasPage';
-import KitsPage from './pages/KitsPage';
-import FichaTecnicaPage from './pages/FichaTecnicaPage';
-import FichaVendaPage from './pages/FichaVendaPage';
-import EstoquePage from './pages/EstoquePage';
-import BipagemPage from './pages/BipagemPage';
-import EstoqueImportacaoPage from './pages/EstoqueImportacaoPage';
-import EstoqueEanImportacaoPage from './pages/EstoqueEanImportacaoPage';
-import FichaEstoquePage from './pages/FichaEstoquePage';
-import ClientesListPage from './pages/ClientesListPage';
-import ClienteFichaPage from './pages/ClienteFichaPage';
-import PedidosListPage from './pages/PedidosListPage';
-import PedidosVendaListPage from './pages/PedidosVendaListPage';
-import PedidoFormPage from './pages/PedidoFormPage';
 // Repaginação do módulo Vendas (09/09/2026).
-import MetricasVendasPage from './pages/MetricasVendasPage';
-import LucratividadeVendasPage from './pages/LucratividadeVendasPage';
-import DespesasVendasPage from './pages/DespesasVendasPage';
-import VendedoresPage from './pages/VendedoresPage';
-import TabelasPrecoPage from './pages/TabelasPrecoPage';
-import FornecedoresListPage from './pages/FornecedoresListPage';
-import FornecedorFichaPage from './pages/FornecedorFichaPage';
-import ComprasListPage from './pages/ComprasListPage';
-import CompraFormPage from './pages/CompraFormPage';
-import RelatorioComprasPage from './pages/RelatorioComprasPage';
-import CotacoesPage from './pages/CotacoesPage';
-import PedidosCompraPage from './pages/PedidosCompraPage';
-import RecebimentosPage from './pages/RecebimentosPage';
-import RelatorioLucratividadePage from './pages/RelatorioLucratividadePage';
-import MetricasMarketplacePage from './pages/MetricasMarketplacePage';
-import AnunciosPage from './pages/AnunciosPage';
-import CoberturaEstoquePage from './pages/CoberturaEstoquePage';
-import ProducaoPage from './pages/ProducaoPage';
-import MovimentacaoProducaoPage from './pages/MovimentacaoProducaoPage';
-import OrdensServicoPage from './pages/OrdensServicoPage';
-import CargaProducaoPage from './pages/CargaProducaoPage';
-import ProjecaoEstoquePage from './pages/ProjecaoEstoquePage';
-import MateriaPrimaPage from './pages/MateriaPrimaPage';
-import InsumosPage from './pages/InsumosPage';
-import PromocoesPage from './pages/PromocoesPage';
-import FullPage from './pages/FullPage';
-import MixTributarioPage from './pages/MixTributarioPage';
-import EstoqueParadoPage from './pages/EstoqueParadoPage';
-import EstoqueLocaisPage from './pages/EstoqueLocaisPage';
-import ReservaEstoquePage from './pages/ReservaEstoquePage';
-import DepositosPage from './pages/DepositosPage';
-import CurvaTamanhoPage from './pages/CurvaTamanhoPage';
-import PrecoPorCanalPage from './pages/PrecoPorCanalPage';
-import SaudeIntegracaoPage from './pages/SaudeIntegracaoPage';
-import RelatorioTaxasPage from './pages/RelatorioTaxasPage';
-import ImportarPedidosPage from './pages/ImportarPedidosPage';
-import ConferenciaPedidosPage from './pages/ConferenciaPedidosPage';
-import EtiquetasPage from './pages/EtiquetasPage';
-import RomaneioPage from './pages/RomaneioPage';
-import FinanceiroPage from './pages/FinanceiroPage';
-import TitulosPage from './pages/TitulosPage';
-import ConciliacaoBancariaPage from './pages/ConciliacaoBancariaPage';
-import ContasBancariasPage from './pages/ContasBancariasPage';
-import FluxoCaixaPage from './pages/FluxoCaixaPage';
-import DrePage from './pages/DrePage';
-import CaixaEntradaFinanceiroPage from './pages/CaixaEntradaFinanceiroPage';
-import CoberturaFinanceiraPage from './pages/CoberturaFinanceiraPage';
-import ViagensListPage from './pages/ViagensListPage';
-import ViagemDetailPage from './pages/ViagemDetailPage';
-import AjudaPage from './pages/AjudaPage';
 
 function RequireAuth({ loading, user, children }) {
   const location = useLocation();
@@ -135,6 +155,9 @@ function AppRoutes() {
           <RequireAuth loading={loading} user={user}>
             <RequireModuloDaRota user={user}>
               <Shell>
+                {/* O fallback é vazio de propósito — ver a nota sobre `lazy`
+                    no topo do arquivo. */}
+                <Suspense fallback={null}>
                 <Routes>
                   <Route path="/produtos" element={<ProdutosListPage />} />
                   <Route path="/produtos/:id" element={<ProdutoFichaPage />} />
@@ -296,6 +319,7 @@ function AppRoutes() {
                   <Route path="/ajuda" element={<AjudaPage />} />
                   <Route path="*" element={<Navigate to={getDefaultPath(user) || '/produtos'} replace />} />
                 </Routes>
+                </Suspense>
               </Shell>
             </RequireModuloDaRota>
           </RequireAuth>

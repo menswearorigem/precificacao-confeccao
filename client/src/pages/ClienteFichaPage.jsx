@@ -4,7 +4,7 @@ import { ArrowLeft, Save, Trash2, MapPinCheck, ShoppingBag, CalendarDays } from 
 import { api } from '../api/client';
 import { Field, NumInput, Select, Checkbox, Toggle, Skeleton, IndicadorDestaque } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
-import { brl, formatQtd, dataBr } from '../lib/format';
+import { brl, formatQtd, dataBr, plural } from '../lib/format';
 import { CampoNome, CampoNomeFantasia, CampoCpfCnpj, CampoTelefone, CampoEmail, CampoCep, CampoCidade, CampoUf } from '../components/campos';
 
 function emptyCliente() {
@@ -324,7 +324,7 @@ function HistoricoDoCliente({ clienteId }) {
         <div className="card-head">Histórico de compras</div>
         <p className="ink-soft" style={{ margin: 0 }}>
           Este cliente ainda não tem nenhum pedido no sistema
-          {r.canceladosQuantidade > 0 && ` (há ${formatQtd(r.canceladosQuantidade)} pedido(s) cancelado(s), que não entram na conta)`}.
+          {r.canceladosQuantidade > 0 && ` (há ${plural(r.canceladosQuantidade, 'pedido')} cancelado(s), que não entram na conta)`}.
         </p>
       </div>
     );
@@ -352,7 +352,7 @@ function HistoricoDoCliente({ clienteId }) {
 
       {r.canceladosQuantidade > 0 && (
         <p className="ink-soft ajuda-bloco">
-          {formatQtd(r.canceladosQuantidade)} pedido(s) cancelado(s) ficaram FORA de todos os
+          {plural(r.canceladosQuantidade, 'pedido')} cancelado(s) ficaram FORA de todos os
           números acima — somar cancelado com faturado inflaria o total deste cliente.
         </p>
       )}

@@ -6,7 +6,7 @@ import { confirmar } from './ConfirmDialog';
 import FotoProduto from './FotoProduto';
 import FileDropzone from './FileDropzone';
 import GradeVariacoes from './GradeVariacoes';
-import { dataBr } from '../lib/format';
+import { dataBr, plural } from '../lib/format';
 
 const STATUS_OPCOES = [
   { valor: 'nao_iniciado', rotulo: 'Não iniciado' },
@@ -807,7 +807,7 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
               <p className="page-sub" style={{ marginBottom: 4 }}>
                 Li <strong>{resumoOp.arquivo}</strong>
                 {resumoOp.numeroOp && <> · OP <span className="mono">{resumoOp.numeroOp}</span></>}
-                {resumoOp.linhasGrade > 0 && <> · {resumoOp.linhasGrade} linha(s) de grade</>}
+                {resumoOp.linhasGrade > 0 && <> · {plural(resumoOp.linhasGrade, 'linha')} de grade</>}
                 {resumoOp.quantidade !== null && <> · <span className="mono">{resumoOp.quantidade}</span> peças no total</>}
               </p>
             )}

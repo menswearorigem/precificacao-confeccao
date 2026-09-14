@@ -4,9 +4,10 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import {
-  EstadoVazio, Skeleton, IndicadorDestaque, Select, Field, NumInput, CampoBusca, Checkbox,
+  EstadoVazio, Skeleton, IndicadorDestaque, Select, Field, NumInput, CampoBusca, Checkbox, Paginacao,
 } from '../components/ui';
-import { formatQtd, dataBr, tempoRelativo } from '../lib/format';
+import { formatQtd, dataBr, tempoRelativo, plural } from '../lib/format';
+import { useTabela } from '../lib/useTabela';
 
 // Estoque › Onde Está a Peça.
 //
@@ -51,7 +52,7 @@ function PainelMover({ item, locais, fornecedores, onFechar, onPronto }) {
         fornecedor_destino_id: fornDestino || null,
         motivo,
       });
-      onPronto(r.aviso || `${formatQtd(quantidade)} peça(s) movida(s).`);
+      onPronto(r.aviso || `${plural(quantidade, 'peça')} movida(s).`);
     } catch (e) {
       setErro(e.message);
     } finally {
@@ -140,6 +141,20 @@ export default function EstoqueLocaisPage() {
   const [editandoEndereco, setEditandoEndereco] = useState(null);
   const [textoEndereco, setTextoEndereco] = useState('');
 
+  // Ordenação e paginação na URL, igual ao resto do sistema. Sem isto a tela
+  // renderizava as 639 variantes de uma vez (medido na varredura de
+  // 14/09/2026), cada linha com dois botões.
+  const tabela = useTabela(dados?.itens || [], {
+    colunas: {
+      referencia: (i) => i.referencia,
+      cor: (i) => i.cor,
+      tamanho: (i) => i.tamanho,
+      total: (i) => Number(i.total || 0),
+      disponivel: (i) => Number(i.disponivel || 0),
+    },
+    colunaPadrao: 'referencia',
+  });
+
   const carregar = useCallback(async () => {
     setCarregando(true);
     setErro('');
@@ -185,7 +200,7 @@ export default function EstoqueLocaisPage() {
     setErro('');
     try {
       const r = await api.post('/estoque-locais/enderecar-lote', { confirmar: true });
-      setAviso(`${r.variantes} variante(s) endereçadas no galpão. ${r.aviso}`);
+      setAviso(`${plural(r.variantes, 'variante')} endereçadas no galpão. ${r.aviso}`);
       await carregar();
     } catch (e) { setErro(e.message); }
   }
@@ -215,10 +230,19 @@ export default function EstoqueLocaisPage() {
       {r && (
         <div className="indicadores-linha">
           <IndicadorDestaque rotulo="Total no estoque" valor={formatQtd(r.total)} explicacao="Tudo que é nosso, esteja onde estiver." />
+          {/* 14/09/2026: chamava-se "Disponível para vender" e saía em cinza
+              mesmo quando ficava NEGATIVO — enquanto a tela de Depósitos
+              pintava o mesmo tipo de número de vermelho. Dois nomes e dois
+              tratamentos para a mesma aritmética, em abas vizinhas. Aqui o
+              rótulo passa a dizer qual subtração é esta (o que está AQUI
+              DENTRO), e o número ganha o alerta que faltava. */}
           <IndicadorDestaque
-            rotulo="Disponível para vender"
+            rotulo="Aqui dentro, pronto para vender"
             valor={formatQtd(r.disponivel)}
-            explicacao="Total menos o que está fora daqui. É este número que sustenta o prazo prometido ao cliente."
+            tom={r.disponivel < 0 ? 'prejuizo' : undefined}
+            explicacao={r.disponivel < 0
+              ? `Deu negativo: há ${formatQtd(r.excedenteEnderecado || 0)} peça(s) endereçadas a mais do que existem no estoque. É defeito de lançamento — resolva antes de confiar neste número.`
+              : 'Total menos o que está em facção, trânsito ou com terceiro. Não desconta reserva: isso é a tela Disponível para vender.'}
           />
           <IndicadorDestaque
             rotulo="Fora daqui"
@@ -238,7 +262,7 @@ export default function EstoqueLocaisPage() {
 
       {r?.variantesInconsistentes > 0 && (
         <p className="erro-inline">
-          {r.variantesInconsistentes} variante(s) têm mais peça endereçada do que peça no estoque.
+          {plural(r.variantesInconsistentes, 'variante')} têm mais peça endereçada do que peça no estoque.
           Isto é defeito de lançamento, não arredondamento — use o filtro e resolva antes de confiar
           no disponível.
         </p>
@@ -246,7 +270,7 @@ export default function EstoqueLocaisPage() {
       {r?.variantesComNegativo > 0 && (
         <p className="aviso-inline">
           <AlertTriangle size={14} />
-          {r.variantesComNegativo} variante(s) com saldo negativo em algum local: saiu mais peça de lá
+          {plural(r.variantesComNegativo, 'variante')} com saldo negativo em algum local: saiu mais peça de lá
           do que havia. Confira as remessas de facção dessas referências.
         </p>
       )}
@@ -298,8 +322,14 @@ export default function EstoqueLocaisPage() {
         <EstadoVazio Icone={MapPin} titulo="Nenhuma variante nesse filtro" descricao="Ajuste a busca ou desmarque os filtros." />
       )}
 
+      {/* Paginação (14/09/2026). Esta lista renderizava TODAS as variantes de
+          uma vez — 639 linhas na medição da varredura, cada uma com botão de
+          editar endereço e botão de mover. No celular do galpão isso é a tela
+          travando ao abrir. Ordenação e página moram na URL, como nas outras
+          listas do sistema. */}
       {!carregando && dados?.itens.length > 0 && (
         <div className="card">
+          <Paginacao {...tabela} posicao="topo" />
           <div className="tabela-rolagem">
             <table className="tabela-nota">
               <thead>
@@ -310,7 +340,7 @@ export default function EstoqueLocaisPage() {
                 </tr>
               </thead>
               <tbody>
-                {dados.itens.map((i) => (
+                {tabela.itensPagina.map((i) => (
                   <tr key={i.varianteId} className={i.inconsistente ? 'linha-prejuizo' : (i.naoEnderecado > 0 ? 'linha-pendente' : undefined)}>
                     <td className="mono">{i.referencia}</td>
                     <td>{i.cor}</td>

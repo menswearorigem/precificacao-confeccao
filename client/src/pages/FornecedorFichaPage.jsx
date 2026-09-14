@@ -4,7 +4,7 @@ import {
   ArrowLeft, Save, Trash2, MapPinCheck, Wallet, ShoppingCart, Receipt, CalendarClock, Info,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, formatQtd, dataBr, qtdFracionaria } from '../lib/format';
+import { brl, formatQtd, dataBr, qtdFracionaria, plural } from '../lib/format';
 import {
   Field, Select, Checkbox, Toggle, IndicadorDestaque, BotaoRelatorio, BotaoExportar,
 } from '../components/ui';
@@ -196,7 +196,7 @@ export default function FornecedorFichaPage() {
     (historico?.porFormaPagamento || []).map((f) => ({
       rotulo: f.forma,
       valor: Number(f.total || 0),
-      detalhe: `${formatQtd(f.quantidade)} compra(s)`,
+      detalhe: `${plural(f.quantidade, 'compra')}`,
     }))
   ), [historico]);
 
@@ -555,7 +555,7 @@ export default function FornecedorFichaPage() {
               <div className="nota-precisao">
                 <Info size={14} />
                 <span>
-                  Os gráficos consideram <strong>{formatQtd(fornecedor.compras_qtd)} compra(s) não cancelada(s)</strong>
+                  Os gráficos consideram <strong>{plural(fornecedor.compras_qtd, 'compra')} não cancelada(s)</strong>
                   {fornecedor.compras_canceladas > 0 && <> — {formatQtd(fornecedor.compras_canceladas)} cancelada(s) aparecem na lista abaixo, mas fora de qualquer soma</>}.
                 </span>
               </div>
@@ -638,7 +638,7 @@ export default function FornecedorFichaPage() {
               <div className="card" style={{ marginTop: 16 }}>
                 <div className="card-head-linha">
                   <div className="card-head">Todas as compras</div>
-                  <span className="page-sub" style={{ margin: 0 }}>{formatQtd(historico.compras.length)} lançamento(s)</span>
+                  <span className="page-sub" style={{ margin: 0 }}>{plural(historico.compras.length, 'lançamento')}</span>
                 </div>
                 <DataTable>
                   <table className="data-table">

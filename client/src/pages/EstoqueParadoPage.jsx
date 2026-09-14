@@ -6,7 +6,7 @@ import { api } from '../api/client';
 import {
   EstadoVazio, Skeleton, IndicadorDestaque, Select, Field,
 } from '../components/ui';
-import { brl, pct, formatQtd } from '../lib/format';
+import { brl, pct, formatQtd, plural } from '../lib/format';
 
 // Estoque › Dinheiro parado.
 //
@@ -109,8 +109,8 @@ export default function EstoqueParadoPage() {
           {r.totalEhPiso && (
             <p className="aviso-inline">
               <AlertTriangle size={14} />
-              O valor acima é um PISO, não o número final: {formatQtd(r.pecasSemCusto)} peça(s)
-              de {r.variantesSemCusto} variante(s) estão paradas em referências sem custo
+              O valor acima é um PISO, não o número final: {plural(r.pecasSemCusto, 'peça')}
+              de {plural(r.variantesSemCusto, 'variante')} estão paradas em referências sem custo
               calculado, e por isso não entram no total em R$. Elas aparecem na lista abaixo.
             </p>
           )}

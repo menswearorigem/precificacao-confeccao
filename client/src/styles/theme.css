@@ -8688,3 +8688,119 @@ table.grade-matriz { width: auto; min-width: 0; }
   .mp-params { flex-direction: column; align-items: stretch; }
   .mp-param input[type="number"], .mp-param select { width: 100%; min-width: 0; }
 }
+
+/* ---------------------------------------------------------------------------
+   Alternador pagar/receber dentro da tela de Títulos (14/09/2026).
+   `.segmentado` foi escrito para <button>; aqui os itens são <Link>, porque a
+   natureza vive na rota. Mesmo desenho, com o alvo de toque que um link
+   inline não teria.
+   ------------------------------------------------------------------------ */
+.segmentado.titulos-natureza { display: inline-flex; margin-bottom: 14px; }
+.segmentado.titulos-natureza a {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 16px; font-size: 13px; font-weight: 600;
+  color: var(--ink-soft); text-decoration: none; background: transparent;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.segmentado.titulos-natureza a + a { border-left: 1px solid var(--border); }
+.segmentado.titulos-natureza a:hover { background: var(--row-hover); color: var(--ink); }
+.segmentado.titulos-natureza a.ativo { background: var(--terracotta); color: var(--on-accent); }
+
+/* ---------------------------------------------------------------------------
+   Coluna fora da tela: dizer, e não só sugerir (14/09/2026).
+
+   A varredura mediu cinco telas com a tabela mais larga que o cartão que a
+   contém — Contas a Pagar com 1411 px num cartão de 1238, Cobertura com 1487,
+   Contas a Receber com 1397, Fornecedores com 1313, Caixa de Entrada com
+   1289. Todas rolavam de lado; nenhuma dizia isso. A sombra de borda que já
+   existia é discreta demais para ser lida como affordance.
+   ------------------------------------------------------------------------ */
+.data-table-aviso-rolagem {
+  display: flex; align-items: center; gap: 5px; justify-content: flex-end;
+  margin: 0 0 6px; font-size: 11.5px; color: var(--ink-faint);
+  font-family: var(--font-body); user-select: none;
+}
+.data-table-aviso-rolagem svg { flex-shrink: 0; }
+
+/* As tabelas feitas à mão (`.tabela-nota` dentro de `.tabela-rolagem`) não
+   passam pelo componente DataTable e não tinham sombra nenhuma. Aqui ela vem
+   só de CSS: dois degradês presos às bordas com `background-attachment:
+   local` nos brancos e `scroll` nas sombras — o truque clássico, sem JS e sem
+   listener de scroll por tabela. */
+.tabela-rolagem {
+  background:
+    linear-gradient(90deg, var(--surface) 30%, transparent) left center / 24px 100% no-repeat local,
+    linear-gradient(270deg, var(--surface) 30%, transparent) right center / 24px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgba(42, 29, 16, 0.14), transparent) left center / 14px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgba(42, 29, 16, 0.14), transparent) right center / 14px 100% no-repeat scroll;
+}
+/* A sombra do modo escuro tem de ser mais forte — o tom da sombra clara some
+   sobre o fundo couro. Os dois seletores cobrem os três estados do tema: a
+   escolha explícita (data-theme) e o "sistema", que não carimba nada. */
+:root[data-theme="dark"] .tabela-rolagem {
+  background-image:
+    linear-gradient(90deg, var(--surface) 30%, transparent),
+    linear-gradient(270deg, var(--surface) 30%, transparent),
+    radial-gradient(farthest-side at 0 50%, rgba(0, 0, 0, 0.45), transparent),
+    radial-gradient(farthest-side at 100% 50%, rgba(0, 0, 0, 0.45), transparent);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .tabela-rolagem {
+    background-image:
+      linear-gradient(90deg, var(--surface) 30%, transparent),
+      linear-gradient(270deg, var(--surface) 30%, transparent),
+      radial-gradient(farthest-side at 0 50%, rgba(0, 0, 0, 0.45), transparent),
+      radial-gradient(farthest-side at 100% 50%, rgba(0, 0, 0, 0.45), transparent);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Celular: encurtar o caminho até o primeiro dado (14/09/2026).
+
+   Medido na varredura, em 390 px, em Pedidos de Venda — o módulo que mais vai
+   viver no celular: da borda de cima até o primeiro pedido havia ~1.600 px de
+   cromo. Título, três linhas de explicação, cinco botões, quatro cartões de
+   número empilhados um em cima do outro, seletor de período, busca, dois
+   selects, o botão Filtros, duas contagens e a paginação. A venda, que é o
+   conteúdo, começava fora de duas telas de rolagem.
+
+   Duas mudanças, nenhuma delas escondendo informação:
+
+   1. Os cartões de número viram uma FAIXA ROLÁVEL de lado em vez de uma pilha
+      vertical. Quatro cartões empilhados custam ~560 px de altura; a faixa
+      custa ~120 px e mostra o primeiro e meio do segundo, que é o sinal de
+      que há mais para o lado.
+   2. O parágrafo de explicação da tela encolhe de corpo e entrelinha — sem
+      cortar palavra nenhuma, porque texto escondido sem jeito de abrir troca
+      um problema por outro.
+   ------------------------------------------------------------------------ */
+@media (max-width: 720px) {
+  .indicadores-faixa,
+  .indicadores-linha {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    /* Sangra até a borda da tela para o cartão cortado ficar evidente. */
+    margin-left: calc(-1 * max(14px, env(safe-area-inset-left)));
+    margin-right: calc(-1 * max(14px, env(safe-area-inset-right)));
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+  .indicadores-faixa::-webkit-scrollbar,
+  .indicadores-linha::-webkit-scrollbar { display: none; }
+  .indicadores-faixa > *,
+  .indicadores-linha > * {
+    flex: 0 0 78vw;
+    max-width: 320px;
+    scroll-snap-align: start;
+  }
+
+  /* O parágrafo de explicação encolhe, mas NÃO é cortado: texto escondido sem
+     jeito de abrir é pior do que texto longo. Menor corpo e menos entrelinha
+     tiram cerca de um terço da altura dele sem tirar uma palavra. */
+  .page-sub { font-size: 12.5px; line-height: 1.45; margin-bottom: 10px; }
+}

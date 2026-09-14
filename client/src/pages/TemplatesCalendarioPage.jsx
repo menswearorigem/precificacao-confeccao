@@ -3,6 +3,7 @@ import { Plus, Trash2, X, LayoutTemplate } from 'lucide-react';
 import { api } from '../api/client';
 import { Select, Checkbox, Toggle, EstadoVazio } from '../components/ui';
 import { CampoTextoLimitado } from '../components/campos';
+import { rotuloCampo } from '../lib/format';
 
 const TIPOS_CAMPO = [
   { valor: 'texto', rotulo: 'Texto' },
@@ -92,7 +93,7 @@ function FormularioTemplate({ template, onSalvar, onCancelar }) {
             <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
               <input
                 style={{ flex: 2 }}
-                placeholder="Nome do campo (ex.: cor_tecido)"
+                placeholder="Nome do campo (ex.: Cor do tecido)"
                 value={campo.nome}
                 onChange={(e) => atualizarCampo(idx, { nome: e.target.value })}
               />
@@ -229,7 +230,7 @@ export default function TemplatesCalendarioPage() {
           <div>
             <div style={{ fontWeight: 600 }}>{t.nome}{NOMES_FIXOS.includes(t.nome) && <span className="page-sub" style={{ marginLeft: 8 }}>(modelo fixo)</span>}</div>
             <div className="page-sub" style={{ margin: 0 }}>
-              {t.campos.length === 0 ? 'Sem campos extras' : t.campos.map((c) => c.nome).join(', ')}
+              {t.campos.length === 0 ? 'Sem campos extras' : t.campos.map((c) => rotuloCampo(c.nome)).join(' · ')}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

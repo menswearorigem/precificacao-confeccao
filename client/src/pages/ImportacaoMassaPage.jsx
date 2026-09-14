@@ -9,7 +9,7 @@ import {
 } from '../components/ui';
 import FileDropzone from '../components/FileDropzone';
 import { confirmar } from '../components/ConfirmDialog';
-import { tempoRelativo } from '../lib/format';
+import { tempoRelativo, plural } from '../lib/format';
 
 // Produto › Importar em massa.
 //
@@ -105,7 +105,7 @@ export default function ImportacaoMassaPage() {
   async function aplicar() {
     const imp = aberta.importacao;
     const ok = await confirmar(
-      `Serão criadas ${imp.total_criar} e atualizadas ${imp.total_atualizar} linha(s). `
+      `Serão criadas ${imp.total_criar} e atualizadas ${plural(imp.total_atualizar, 'linha')}. `
       + `${imp.total_ignorar} já estão como a planilha pede e ${imp.total_erro} não entram. `
       + 'Depois de aplicar ainda dá para desfazer.',
       { titulo: 'Aplicar esta importação?', confirmarTexto: 'Aplicar', perigo: false }
@@ -136,7 +136,7 @@ export default function ImportacaoMassaPage() {
       // numa outra linha do histórico). Então o recado do desfazer é escrito
       // DEPOIS dele — antes, ele saía da tela no mesmo instante em que nascia.
       await abrir(aberta.importacao.id);
-      setSucesso(`${r.revertidas.length} linha(s) voltaram ao estado anterior.`);
+      setSucesso(`${plural(r.revertidas.length, 'linha')} voltaram ao estado anterior.`);
       setAvisos(r.mantidas.map((m) => `${m.chave}: ${m.motivo}`));
       carregar();
     } catch (e) { setErro(mensagem(e)); }

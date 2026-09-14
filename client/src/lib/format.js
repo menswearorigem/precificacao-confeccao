@@ -90,3 +90,67 @@ export function tempoRelativo(valor) {
   if (diffDias < 7) return prefixo(`${diffDias} d`);
   return data.toLocaleDateString('pt-BR');
 }
+
+// ---------------------------------------------------------------------------
+// Rótulo humano de um módulo do sistema (14/09/2026).
+//
+// A ponte financeira guarda o módulo de origem como a CHAVE do módulo —
+// `configuracoes`, `producao`, `marketplace` — e a Caixa de Entrada e a
+// Cobertura despejavam essa chave direto numa coluna chamada "MÓDULO": em
+// caixa baixa, sem acento, exatamente como está no banco. `configuracoes` sem
+// cedilha aparecendo para quem opera o financeiro.
+//
+// Fica aqui, e não em cada tela, porque são cinco lugares renderizando o mesmo
+// campo — e porque a chave continua sendo a chave: só a exibição muda.
+const ROTULO_MODULO = {
+  produto: 'Produto',
+  estoque: 'Estoque',
+  producao: 'Produção',
+  vendas: 'Vendas',
+  marketplace: 'Marketplace',
+  financeiro: 'Financeiro',
+  compras: 'Compras',
+  viagens: 'Viagens',
+  analises: 'Análises',
+  calendario: 'Calendário',
+  configuracoes: 'Configurações',
+};
+
+export function rotuloModulo(chave) {
+  if (!chave) return '—';
+  return ROTULO_MODULO[String(chave)] || String(chave);
+}
+
+// Plural sem "(s)". O sistema tinha 1.187 ocorrências de "(s)" e "(es)" nos
+// textos — "31 compra(s)", "24 DIA(S)", "50 etapa(s)" — que é o sistema
+// pedindo para a pessoa fazer a concordância por ele.
+//   plural(1, 'pedido')            -> '1 pedido'
+//   plural(3, 'pedido')            -> '3 pedidos'
+//   plural(2, 'compra', 'compras') -> '2 compras'
+export function plural(n, singular, pluralForma) {
+  const q = Number(n) || 0;
+  const palavra = q === 1 ? singular : (pluralForma || `${singular}s`);
+  return `${formatQtd(q)} ${palavra}`;
+}
+
+// Nome de campo técnico virando texto de gente (14/09/2026).
+// Os dois modelos fixos do Calendário guardam os campos com o nome da coluna
+// (`fornecedor_id`, `tipo_adicao`, `cor_tecido`, `valor_alvo`) e a tela de
+// Modelos imprimia essa lista como subtítulo do cartão — era a única
+// informação que o cartão carregava. O dado continua o mesmo; só a exibição
+// deixa de ser em linguagem de banco.
+const NOMES_DE_CAMPO = {
+  fornecedor_id: 'Fornecedor',
+  tipo_adicao: 'Tipo de adição',
+  cor_tecido: 'Cor do tecido',
+  valor_alvo: 'Valor da meta',
+  quantidade: 'Quantidade',
+};
+
+export function rotuloCampo(nome) {
+  const chave = String(nome || '').trim();
+  if (!chave) return '';
+  if (NOMES_DE_CAMPO[chave]) return NOMES_DE_CAMPO[chave];
+  const limpo = chave.replace(/_id$/, '').replace(/[_-]+/g, ' ').trim();
+  return limpo.charAt(0).toUpperCase() + limpo.slice(1);
+}

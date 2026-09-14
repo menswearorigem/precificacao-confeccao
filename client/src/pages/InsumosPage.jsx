@@ -12,7 +12,7 @@ import {
 } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import { useTabela } from '../lib/useTabela';
-import { brl, pct, formatQtd, numeroBr, tempoRelativo } from '../lib/format';
+import { brl, pct, formatQtd, numeroBr, tempoRelativo, plural } from '../lib/format';
 import { CampoTextoLimitado } from '../components/campos';
 
 // Compras › Insumos e Notas.
@@ -874,7 +874,7 @@ function FichasDefasadas({ onAplicou }) {
 
       {impedidas.length > 0 && (
         <div className="insumo-avisos">
-          <p><AlertTriangle size={13} /> {impedidas.length} linha(s) não puderam ser comparadas:</p>
+          <p><AlertTriangle size={13} /> {plural(impedidas.length, 'linha')} não puderam ser comparadas:</p>
           {impedidas.slice(0, 5).map((l) => (
             <p key={l.material_id} className="insumo-impedida">
               <strong>{l.referencia}</strong> · {l.insumo_nome} — {l.impedimento}
@@ -973,7 +973,7 @@ export default function InsumosPage() {
         <div className="insumo-resultado card">
           <h3 className="card-titulo"><Check size={16} /> Nota lançada</h3>
           <p>
-            {resultado.custosAtualizados.length} insumo(s) tiveram o custo atualizado a partir dela.
+            {plural(resultado.custosAtualizados.length, 'insumo')} tiveram o custo atualizado a partir dela.
           </p>
           <ul>
             {resultado.custosAtualizados.map((c) => (

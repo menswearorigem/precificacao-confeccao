@@ -13,7 +13,7 @@ import FotoProduto from '../components/FotoProduto';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoTresMeses } from '../lib/periodos';
 import { useTabela } from '../lib/useTabela';
-import { brl, formatQtd, numeroBr, dataBr } from '../lib/format';
+import { brl, formatQtd, numeroBr, dataBr, plural } from '../lib/format';
 
 // Estoque › Cobertura e Reposição.
 //
@@ -75,11 +75,19 @@ const SECOES = [
   {
     chave: 'sobrando',
     blocos: ['sobrando', 'parado'],
-    rotulo: 'Parado e sobrando',
-    curto: 'Parado',
+    // 14/09/2026: chamava-se "Parado e sobrando" e dizia "é dinheiro preso" —
+    // e não é. Esta conta mede ESTOQUE ACIMA DO CICLO (saldo maior que 3x o
+    // que a reposição pede), sem olhar idade nenhuma. Quem produz em lote de
+    // facção tem, por construção, mais de 1,7 mês de venda na prateleira, então
+    // as referências que MAIS vendem caíam aqui e o cartão somava o miolo do
+    // estoque vivo como se fosse encalhe. Dinheiro preso de verdade — peça sem
+    // venda há 91 dias — é a tela Dinheiro Parado, que mede por idade e por
+    // variante. As duas contas estão certas; o rótulo é que mentia.
+    rotulo: 'Acima do ciclo',
+    curto: 'Acima do ciclo',
     Icone: PauseCircle,
     tom: 'neutro',
-    descricao: 'Estoque muito acima do que o ciclo pede, ou sem venda nenhuma na janela. É dinheiro preso.',
+    descricao: 'Saldo acima de 3× o que o ciclo de reposição pede, ou sem venda na janela. Mede excesso de cobertura, não idade: quanto dinheiro está preso em peça que não vende fica em Estoque › Dinheiro parado, que é outra conta.',
   },
   {
     chave: 'ok',
@@ -172,7 +180,7 @@ function FaixaDaGrade({ total, zeradas }) {
   if (!total) return <span className="ink-faint">—</span>;
   const cheias = total - zeradas;
   const titulo = zeradas > 0
-    ? `${zeradas} de ${total} variante(s) desta referência estão zeradas. Clique para abrir a grade por cor e tamanho.`
+    ? `${zeradas} de ${plural(total, 'variante')} desta referência estão zeradas. Clique para abrir a grade por cor e tamanho.`
     : `As ${total} variantes têm saldo. Clique para abrir a grade por cor e tamanho.`;
   // Até 24 quadradinhos; acima disso vira barra proporcional, senão a faixa
   // ocuparia meia tela numa referência de 56 variantes.
@@ -416,7 +424,7 @@ function DetalheDaLinha({ linha, periodo, parametros, aoSalvarReposicao }) {
               <dt>Vende por dia</dt>
               <dd>
                 {linha.venda_media_dia != null
-                  ? `${numeroBr(linha.venda_media_dia, 2)} peça/dia — ${formatQtd(linha.pecas_vendidas)} peça(s) na janela${linha.pecas_vendidas_em_kit > 0 ? `, das quais ${formatQtd(linha.pecas_vendidas_em_kit)} saíram em kit` : ''}`
+                  ? `${numeroBr(linha.venda_media_dia, 2)} peça/dia — ${plural(linha.pecas_vendidas, 'peça')} na janela${linha.pecas_vendidas_em_kit > 0 ? `, das quais ${formatQtd(linha.pecas_vendidas_em_kit)} saíram em kit` : ''}`
                   : 'sem venda medida na janela'}
               </dd>
             </div>
@@ -480,7 +488,7 @@ function DetalheDaLinha({ linha, periodo, parametros, aoSalvarReposicao }) {
               <div>
                 <dt>Ressalva</dt>
                 <dd className="ressalva">
-                  Ficou sem estoque em {linha.semanas_zeradas} semana(s) da janela. A venda medida é menor que a demanda real — este mínimo está otimista.
+                  Ficou sem estoque em {plural(linha.semanas_zeradas, 'semana')} da janela. A venda medida é menor que a demanda real — este mínimo está otimista.
                 </dd>
               </div>
             )}
@@ -601,7 +609,7 @@ export default function CoberturaEstoquePage() {
       pecasSemana: soma(produzir, (l) => l.produzir?.valor),
       pecasMes: soma(programar, (l) => l.produzir?.valor),
       pecasParadas: soma(parado, (l) => l.excesso?.pecas),
-      dinheiroParado: soma(parado, (l) => l.excesso?.valor),
+      custoDoExcedente: soma(parado, (l) => l.excesso?.valor),
       semValorDeParado: parado.some((l) => l.excesso?.pecas > 0 && l.excesso?.valor == null),
     };
   }, [porSecao]);
@@ -815,7 +823,7 @@ export default function CoberturaEstoquePage() {
           const destaque = {
             produzir_agora: resumo.pecasSemana > 0 ? `${formatQtd(resumo.pecasSemana)} peças` : null,
             programar: resumo.pecasMes > 0 ? `${formatQtd(resumo.pecasMes)} peças` : null,
-            sobrando: resumo.dinheiroParado > 0 ? brl(resumo.dinheiroParado) : (resumo.pecasParadas > 0 ? `${formatQtd(resumo.pecasParadas)} peças` : null),
+            sobrando: resumo.custoDoExcedente > 0 ? `${brl(resumo.custoDoExcedente)} acima do ciclo` : (resumo.pecasParadas > 0 ? `${formatQtd(resumo.pecasParadas)} peças` : null),
             ok: null,
             sem_calculo: null,
           }[s.chave];
@@ -844,7 +852,7 @@ export default function CoberturaEstoquePage() {
         <p className="cobertura-alerta">
           <AlertTriangle size={14} />
           <span>
-            <strong>{formatQtd(resumo.faltando)} referência(s) estão zeradas agora</strong> e venderam{' '}
+            <strong>{plural(resumo.faltando, 'referência')} estão zeradas agora</strong> e venderam{' '}
             {brl(resumo.receitaEmRisco)} na janela. Enquanto estiverem assim, essa venda não está acontecendo.
           </span>
         </p>
@@ -964,7 +972,7 @@ export default function CoberturaEstoquePage() {
                                 )}
                                 <span className={`selo ${sit.tom}`}>{sit.rotulo}</span>
                                 {l.censura_de_demanda && (
-                                  <span className="selo tone-atencao" title={`Ficou sem estoque em ${l.semanas_zeradas} semana(s) da janela — a venda medida é menor que a real.`}>
+                                  <span className="selo tone-atencao" title={`Ficou sem estoque em ${plural(l.semanas_zeradas, 'semana')} da janela — a venda medida é menor que a real.`}>
                                     ficou sem estoque
                                   </span>
                                 )}

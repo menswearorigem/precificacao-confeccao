@@ -136,7 +136,14 @@ router.get('/panorama', async (req, res, next) => {
          COALESCE((SELECT SUM(quantidade) FROM estoque_variante_saldos WHERE deposito_id IS NULL AND local <> 'transito'), 0) AS pecas_sem_deposito,
          COALESCE((SELECT SUM(quantidade) FROM insumo_saldos WHERE deposito_id IS NULL AND local <> 'transito'), 0) AS insumos_sem_deposito,
          COALESCE((SELECT SUM(ev.quantidade) FROM estoque_variantes ev WHERE ev.ativo), 0) AS total_pecas,
-         COALESCE((SELECT SUM(quantidade) FROM estoque_variante_saldos), 0) AS pecas_detalhadas,
+         -- 14/09/2026: esta soma não filtrava \`ev.ativo\` e a de cima filtra.
+         -- Saldo endereçado de variante inativada entrava só de um lado da
+         -- subtração e fazia "fora do mapa" ficar negativo sozinho, sem
+         -- nenhum defeito de lançamento por trás. Os dois lados passam a
+         -- olhar o mesmo universo.
+         COALESCE((SELECT SUM(s.quantidade) FROM estoque_variante_saldos s
+                     JOIN estoque_variantes ev2 ON ev2.id = s.variante_id
+                    WHERE ev2.ativo), 0) AS pecas_detalhadas,
          COALESCE((SELECT SUM(quantidade) FROM estoque_variante_saldos WHERE local = 'transito'), 0) AS pecas_em_transito`
     );
     const s = solto[0];

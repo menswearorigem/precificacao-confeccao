@@ -4,7 +4,7 @@ import { Upload, CheckCircle2, AlertTriangle, FileSpreadsheet } from 'lucide-rea
 import { api } from '../api/client';
 import { Select } from '../components/ui';
 import FileDropzone from '../components/FileDropzone';
-import { brl, qtdFracionaria } from '../lib/format';
+import { brl, qtdFracionaria, plural } from '../lib/format';
 
 export default function ImportacaoPage() {
   const fileRef = useRef(null);
@@ -109,8 +109,8 @@ export default function ImportacaoPage() {
             <CheckCircle2 size={14} /> Importação concluída
           </div>
           <p>
-            {resultado.criados} produto(s) criado(s), {resultado.atualizados} atualizado(s).{' '}
-            {resultado.referenciasComMateriaisAtualizados} referência(s) com materiais gravados,{' '}
+            {plural(resultado.criados, 'produto')} criado(s), {resultado.atualizados} atualizado(s).{' '}
+            {plural(resultado.referenciasComMateriaisAtualizados, 'referência')} com materiais gravados,{' '}
             {resultado.referenciasComCustosAtualizados} com custos industriais gravados.
           </p>
           <Link to="/produtos" className="btn btn-ghost">Ver produtos</Link>

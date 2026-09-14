@@ -6,10 +6,11 @@ import {
 import { api } from '../api/client';
 import {
   EstadoVazio, Skeleton, IndicadorDestaque, Select, Field, NumInput,
-  CampoBusca, ChipsFiltros, Checkbox,
+  CampoBusca, ChipsFiltros, Checkbox, Paginacao,
 } from '../components/ui';
+import { useTabela } from '../lib/useTabela';
 import { confirmar } from '../components/ConfirmDialog';
-import { formatQtd, tempoRelativo } from '../lib/format';
+import { formatQtd, tempoRelativo, plural } from '../lib/format';
 
 // Marketplace › Romaneio.
 //
@@ -78,6 +79,18 @@ export default function RomaneioPage() {
         .some((c) => String(c || '').toLowerCase().includes(alvo)));
   }, [coleta, busca]);
 
+  const tabelaPendentes = useTabela(pendentes, {
+    colunas: {
+      numero: (i) => Number(i.numero || 0),
+      canal: (i) => i.canal || i.canal_venda,
+      situacao: (i) => i.situacao_coleta,
+      coletar: (i) => i.coletar_ate || '',
+      faturado: (i) => i.faturado_em || '',
+    },
+    colunaPadrao: 'coletar',
+    prefixo: 'pend',
+  });
+
   async function novoRomaneio() {
     setErro(''); setSucesso('');
     try {
@@ -102,7 +115,7 @@ export default function RomaneioPage() {
         pedidos: selecionados.map((id) => ({ pedido_id: id })),
       });
       setSelecionados([]);
-      setSucesso(`${r.entraram.length} pedido(s) no romaneio.`);
+      setSucesso(`${plural(r.entraram.length, 'pedido')} no romaneio.`);
       // ⚠️ Os recusados sobem como aviso, um por um, com o motivo. Somar "2 de
       // 5 entraram" e calar sobre os 3 é o que faz a caixa ficar para trás sem
       // ninguém notar.
@@ -224,7 +237,7 @@ export default function RomaneioPage() {
 
       {coleta?.resumo.sem_prazo > 0 && (
         <p className="aviso-inline">
-          <AlertTriangle size={14} /> {formatQtd(coleta.resumo.sem_prazo)} pedido(s) estão em canais
+          <AlertTriangle size={14} /> {plural(coleta.resumo.sem_prazo, 'pedido')} estão em canais
           sem prazo de coleta cadastrado. Eles não entram na conta de atraso — o sistema não chuta um
           prazo que não conhece. Cadastre o prazo do canal para eles passarem a ser cobrados.
         </p>
@@ -251,6 +264,11 @@ export default function RomaneioPage() {
         {!carregando && pendentes.length === 0 && (
           <EstadoVazio Icone={PackageCheck} titulo="Nada esperando coleta" descricao="Todo pedido faturado já está num romaneio." />
         )}
+        {/* Paginação (14/09/2026). A lista vinha com `.slice(0, 300)` cru: um
+            teto invisível que SOME com o resto sem avisar ninguém — pior que
+            não paginar, porque a pessoa acha que viu tudo. Medido na varredura:
+            288 linhas renderizadas de uma vez. Agora pagina de verdade, e a
+            contagem diz quantos há no total. */}
         {!carregando && pendentes.length > 0 && (
           <>
             <div className="painel-acoes-inline">
@@ -264,6 +282,7 @@ export default function RomaneioPage() {
               </button>
               {!aberto && <span className="ink-soft">Abra ou crie um romaneio para poder mandar.</span>}
             </div>
+            <Paginacao {...tabelaPendentes} posicao="topo" />
             <div className="tabela-rolagem">
               <table className="tabela-nota">
                 <thead>
@@ -273,7 +292,7 @@ export default function RomaneioPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pendentes.slice(0, 300).map((i) => {
+                  {tabelaPendentes.itensPagina.map((i) => {
                     const s = COLETA[i.situacao_coleta] || {};
                     return (
                       <tr key={i.pedido_id}>
@@ -297,6 +316,7 @@ export default function RomaneioPage() {
                 </tbody>
               </table>
             </div>
+            <Paginacao {...tabelaPendentes} posicao="rodape" />
           </>
         )}
       </div>
@@ -345,7 +365,7 @@ export default function RomaneioPage() {
           </div>
 
           <p className="ink-soft">
-            {formatQtd(noRomaneio.length)} pedido(s) ·
+            {plural(noRomaneio.length, 'pedido')} ·
             {' '}{formatQtd(noRomaneio.reduce((s, i) => s + Number(i.volumes || 1), 0))} volume(s)
             {aberto.romaneio.coletado_em && (
               <> · levado por <strong>{ouTraco(aberto.romaneio.motorista)}</strong>
@@ -355,7 +375,7 @@ export default function RomaneioPage() {
 
           {Number(aberto.romaneio.sem_rastreio) > 0 && (
             <p className="aviso-inline">
-              <AlertTriangle size={14} /> {formatQtd(aberto.romaneio.sem_rastreio)} pedido(s) sem
+              <AlertTriangle size={14} /> {plural(aberto.romaneio.sem_rastreio, 'pedido')} sem
               código de rastreio. Eles vão para o papel escritos como <strong>SEM RASTREIO</strong> —
               é uma pergunta a se fazer antes de o motorista sair, não depois.
             </p>

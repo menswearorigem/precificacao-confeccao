@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Search, X, Printer } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, qtdFracionaria } from '../lib/format';
@@ -6,11 +7,48 @@ import { brl, qtdFracionaria } from '../lib/format';
 const MAX_REFERENCIAS = 5;
 
 export default function FichaTecnicaPage() {
+  const [searchParams] = useSearchParams();
   const [busca, setBusca] = useState('');
   const [resultados, setResultados] = useState([]);
   const [selecionadas, setSelecionadas] = useState([]);
   const [fichas, setFichas] = useState([]);
   const [erro, setErro] = useState('');
+
+  // Chegar aqui já com as referências escolhidas (14/09/2026).
+  //
+  // Esta tela era uma aba fixa do menu que abria com UM campo de busca e ~78%
+  // de tela vazia: para imprimir cinco fichas era preciso lembrar as cinco
+  // referências de cabeça e digitar uma a uma. Ao mesmo tempo, a lista de
+  // Produtos já tinha caixa de seleção em cada linha, e a seleção não levava a
+  // lugar nenhum além de marcar/desmarcar marketplace.
+  //
+  // Agora a lista manda as referências pela URL (?referencias=OG1620,OG1621) e
+  // a ficha já abre pronta para gerar. Quem entra pelo menu continua tendo a
+  // busca de sempre — nada foi tirado.
+  useEffect(() => {
+    const refs = (searchParams.get('referencias') || '').split(',').map((r) => r.trim()).filter(Boolean);
+    if (refs.length === 0) return;
+    let cancelado = false;
+    (async () => {
+      try {
+        const achados = [];
+        for (const ref of refs.slice(0, MAX_REFERENCIAS)) {
+          const lista = await api.get(`/produtos?busca=${encodeURIComponent(ref)}`);
+          const exato = (lista || []).find((p) => String(p.referencia).toUpperCase() === ref.toUpperCase());
+          if (exato) achados.push(exato);
+        }
+        if (cancelado) return;
+        setSelecionadas(achados);
+        if (refs.length > MAX_REFERENCIAS) {
+          setErro(`Você mandou ${refs.length} referências e a ficha gera até ${MAX_REFERENCIAS} por vez — as ${MAX_REFERENCIAS} primeiras entraram.`);
+        }
+      } catch {
+        // Busca falhou: a tela continua utilizável pela busca manual.
+      }
+    })();
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleBuscar(e) {
     e.preventDefault();
@@ -91,8 +129,8 @@ export default function FichaTecnicaPage() {
             Gerar fichas ({selecionadas.length})
           </button>
           {fichas.length > 0 && (
-            <button type="button" className="btn btn-ghost" style={{ marginLeft: 8 }} onClick={() => window.print()}>
-              <Printer size={14} /> Imprimir / Exportar PDF
+            <button type="button" className="btn btn-ghost" style={{ marginLeft: 8 }} onClick={() => window.print()} title="Abre a impressão do navegador — de lá dá para salvar em PDF">
+              <Printer size={14} /> Imprimir
             </button>
           )}
         </div>

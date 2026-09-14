@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Plus, Search, ClipboardList, ChevronRight, User, Tags, LayoutGrid, List as ListIcon, DownloadCloud} from 'lucide-react';
 import { api } from '../api/client';
-import { brl, formatQtd, dataBr } from '../lib/format';
+import { brl, formatQtd, dataBr, plural } from '../lib/format';
 import {
   Select, SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazio,
   FiltrosAvancados, ChipsFiltros, AvisoDeFalha, Skeleton,
@@ -251,7 +251,7 @@ export default function PedidosVendaListPage() {
             <span className="stat-card-label">Vendido no período</span>
             <span className="stat-card-value">{brl(resumo.total)}</span>
             <span className="stat-card-delta" style={{ color: 'var(--ink-faint)', fontWeight: 500 }}>
-              {formatQtd(resumo.pedidos)} pedido(s) · {formatQtd(resumo.pecas)} peça(s)
+              {plural(resumo.pedidos, 'pedido')} · {plural(resumo.pecas, 'peça')}
             </span>
           </div>
         </div>
@@ -266,7 +266,7 @@ export default function PedidosVendaListPage() {
             <span className="stat-card-label">Ainda em aberto</span>
             <span className="stat-card-value">{brl(resumo.emAberto)}</span>
             <span className="stat-card-delta" style={{ color: 'var(--ink-faint)', fontWeight: 500 }}>
-              {formatQtd(resumo.abertos)} pedido(s) sem faturar
+              {plural(resumo.abertos, 'pedido')} sem faturar
             </span>
           </div>
         </div>
@@ -331,7 +331,7 @@ export default function PedidosVendaListPage() {
         <div className="aviso-inline" style={{ marginBottom: 12 }}>
           <User size={14} />
           <span>
-            {formatQtd(resumo.semVendedor)} pedido(s) deste período estão sem vendedor vinculado —
+            {plural(resumo.semVendedor, 'pedido')} deste período estão sem vendedor vinculado —
             eles contam no faturamento, mas ficam de fora do relatório de comissão.
           </span>
         </div>
@@ -389,7 +389,7 @@ export default function PedidosVendaListPage() {
                 <div className="venda-pedido-rodape">
                   <div className="venda-pedido-valor">
                     {brl(p.total_liquido)}
-                    <small>{formatQtd(p.quantidade_pecas)} peça(s){p.forma_pagamento ? ` · ${p.forma_pagamento}` : ''}</small>
+                    <small>{plural(p.quantidade_pecas, 'peça')}{p.forma_pagamento ? ` · ${p.forma_pagamento}` : ''}</small>
                   </div>
                   <ChevronRight size={18} style={{ color: 'var(--ink-soft)' }} />
                 </div>

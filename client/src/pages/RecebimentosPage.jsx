@@ -4,7 +4,7 @@ import {
   XCircle, FileText, Info, X, Trash2, Truck,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, dataBr, formatQtd, qtdFracionaria } from '../lib/format';
+import { brl, dataBr, formatQtd, qtdFracionaria, plural } from '../lib/format';
 import DataTable from '../components/DataTable';
 import {
   SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazio,
@@ -422,7 +422,7 @@ function Conferencia({ detalhe, onVoltar, onAtualizar }) {
       <div className="card">
         <div className="card-head-linha">
           <div className="card-head">O que chegou</div>
-          <span className="page-sub" style={{ margin: 0 }}>{formatQtd(linhas.length)} linha(s)</span>
+          <span className="page-sub" style={{ margin: 0 }}>{plural(linhas.length, 'linha')}</span>
         </div>
         <DataTable>
           <table className="data-table">
@@ -537,7 +537,7 @@ function Conferencia({ detalhe, onVoltar, onAtualizar }) {
             valor={qtdFracionaria(totais.qtdRecebida)}
             tom={temDivergencia ? 'atencao' : undefined}
             explicacao={temDivergencia
-              ? `Soma do que a doca contou. ${formatQtd(totais.divergentes)} linha(s) não bateram com o pedido.`
+              ? `Soma do que a doca contou. ${plural(totais.divergentes, 'linha')} não bateram com o pedido.`
               : 'Soma do que a doca contou. Bateu com o pedido, linha por linha.'}
           />
           <IndicadorDestaque
@@ -558,7 +558,7 @@ function Conferencia({ detalhe, onVoltar, onAtualizar }) {
           <span>
             As duas colunas ficam lado a lado de propósito: o pedido <strong>não</strong> é reescrito
             para o que chegou. A diferença é o que permite cobrar o fornecedor.
-            {totais.semPedido > 0 && <> {formatQtd(totais.semPedido)} linha(s) chegaram sem estar no pedido — elas contam como divergência.</>}
+            {totais.semPedido > 0 && <> {plural(totais.semPedido, 'linha')} chegaram sem estar no pedido — elas contam como divergência.</>}
           </span>
         </div>
       </div>

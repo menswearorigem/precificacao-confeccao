@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Printer, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, pct } from '../lib/format';
+import { brl, pct, plural } from '../lib/format';
 import { Select, MultiSelect, ThOrdenavel, Paginacao, Checkbox, BotaoExportar } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
@@ -168,7 +168,7 @@ export default function RelatorioTaxasPage() {
               <BotaoExportar nomeBase="taxas-marketplace" colunas={COLUNAS_EXPORTACAO} itens={tabela.itensOrdenados} disabled={tabela.totalItens === 0} />
             )}
             {relatorio && (
-              <button className="btn btn-ghost" onClick={() => window.print()}>
+              <button className="btn btn-ghost" onClick={() => window.print()} title="Abre a impressão do navegador — de lá dá para salvar em PDF">
                 <Printer size={14} /> Imprimir
               </button>
             )}
@@ -187,7 +187,7 @@ export default function RelatorioTaxasPage() {
         <>
           {relatorio.pendentesSemTaxa > 0 && (
             <div className="aviso-compacto tone-atencao">
-              {relatorio.pendentesSemTaxa} pedido(s) do período com tarifa não informada ainda (a Shopee só libera
+              {plural(relatorio.pendentesSemTaxa, 'pedido')} do período com tarifa não informada ainda (a Shopee só libera
               depois que o pedido é liquidado financeiramente; no Mercado Livre, o backfill automático tenta de
               novo a cada ciclo) — não entraram nesta lista como "divergente", pra não acusar diferença falsa
               comparando contra tarifa zero.

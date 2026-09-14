@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ShieldCheck, ChevronRight, Layers } from 'lucide-react';
 import { api } from '../api/client';
-import { formatQtd, pct } from '../lib/format';
+import { formatQtd, pct, plural } from '../lib/format';
 import { Skeleton } from '../components/ui';
 
 function Resumo({ label, valor, tom }) {
@@ -29,7 +29,7 @@ function ListaRefs({ produtos, limite = 30 }) {
           </tr>
         ))}
         {excedente > 0 && (
-          <tr><td colSpan={3} style={{ textAlign: 'center', color: 'var(--ink-faint)', fontSize: 12.5 }}>e mais {formatQtd(excedente)} referência(s)…</td></tr>
+          <tr><td colSpan={3} style={{ textAlign: 'center', color: 'var(--ink-faint)', fontSize: 12.5 }}>e mais {plural(excedente, 'referência')}…</td></tr>
         )}
       </tbody>
     </table>

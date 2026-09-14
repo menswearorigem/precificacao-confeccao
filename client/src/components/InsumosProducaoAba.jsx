@@ -27,7 +27,7 @@ import {
 } from './ui';
 import { confirmar } from './ConfirmDialog';
 import { useTabela } from '../lib/useTabela';
-import { brl, formatQtd, numeroBr } from '../lib/format';
+import { brl, formatQtd, numeroBr, plural } from '../lib/format';
 
 const TIPO_INSUMO = {
   tecido: 'Tecido', aviamento: 'Aviamento', embalagem: 'Embalagem',
@@ -331,7 +331,7 @@ function Vinculos({ onMudou }) {
       return;
     }
     const segue = await confirmar(
-      `${previa.total} linha(s) de ficha têm o nome EXATAMENTE igual ao de um insumo cadastrado. `
+      `${plural(previa.total, 'linha')} de ficha têm o nome EXATAMENTE igual ao de um insumo cadastrado. `
       + 'Só essas serão vinculadas — nome parecido não entra. Vincular agora?',
       { titulo: 'Vincular por nome exato', confirmarTexto: 'Vincular', perigo: false }
     );
@@ -521,7 +521,7 @@ function Distribuicao({ onMudou }) {
       ? dados.valor_a_mover
       : dados.planos.filter((p) => marcados.has(p.produto_id)).reduce((s, p) => s + p.delta, 0);
     const segue = await confirmar(
-      `${ids.length} referência(s) vão ter ${brl(total)} tirados do custo industrial e lançados como matéria-prima na ficha. `
+      `${plural(ids.length, 'referência')} vão ter ${brl(total)} tirados do custo industrial e lançados como matéria-prima na ficha. `
       + 'O custo de produção de cada peça continua o mesmo — muda só onde o custo está. '
       + 'Depois de gravar, o sistema relê do banco e confere referência por referência; se alguma mudar de custo, nada é gravado.',
       { titulo: 'Redistribuir o custo', confirmarTexto: 'Redistribuir', perigo: false }
@@ -582,7 +582,7 @@ function Distribuicao({ onMudou }) {
           Aceitar insumos com unidade ainda não confirmada
         </label>
         <button type="button" className="btn btn-primary" disabled={aplicando || marcadosAplicaveis.length === 0} onClick={aplicar}>
-          <ArrowLeftRight size={14} /> Redistribuir {formatQtd(marcadosAplicaveis.length)} referência(s)
+          <ArrowLeftRight size={14} /> Redistribuir {plural(marcadosAplicaveis.length, 'referência')}
         </button>
       </div>
 
@@ -758,8 +758,8 @@ function PreencherTudo({ aceitarPalpite, onFeito }) {
         return;
       }
       const segue = await confirmar(
-        `${previa.vinculos_criados} linha(s) de ficha serão ligadas ao insumo de mesmo nome, e `
-        + `${previa.referencias_preenchidas} referência(s) terão ${brl(previa.valor_movido)} tirados do custo industrial `
+        `${plural(previa.vinculos_criados, 'linha')} de ficha serão ligadas ao insumo de mesmo nome, e `
+        + `${plural(previa.referencias_preenchidas, 'referência')} terão ${brl(previa.valor_movido)} tirados do custo industrial `
         + 'e lançados como matéria-prima na ficha.\n\n'
         + 'O custo de produção de cada peça NÃO muda — muda só onde o custo está. '
         + `A maior diferença é de ${brl(previa.maior_diferenca, 4)}, e o sistema recusa qualquer coisa acima de meio centavo.\n\n`
@@ -801,7 +801,7 @@ function PreencherTudo({ aceitarPalpite, onFeito }) {
         <div className="preencher-tudo-resultado">
           {resultado.confirmado && (
             <p className="aviso-inline aviso-bom">
-              <Check size={14} /> Pronto: {formatQtd(resultado.referencias_preenchidas)} referência(s) preenchidas,
+              <Check size={14} /> Pronto: {plural(resultado.referencias_preenchidas, 'referência')} preenchidas,
               {' '}{brl(resultado.valor_movido)} movidos do custo industrial para a ficha. Maior mudança no custo
               da peça: {brl(resultado.maior_diferenca, 4)}.
             </p>

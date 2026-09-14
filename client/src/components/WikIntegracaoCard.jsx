@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2, AlertTriangle, RefreshCw, Save } from 'lucide-react';
 import { api } from '../api/client';
 import { Field } from './ui';
-import { formatQtd } from '../lib/format';
+import { formatQtd, plural } from '../lib/format';
 import { CampoEmail } from './campos';
 
 function hoje(iso) {
@@ -350,14 +350,14 @@ export default function WikIntegracaoCard() {
           <div className="card-head" style={{ color: 'var(--success)' }}>
             <CheckCircle2 size={14} /> Sincronização concluída
           </div>
-          <p>{resultadoSync.criados} variante(s) nova(s), {resultadoSync.atualizados} atualizada(s).</p>
+          <p>{plural(resultadoSync.criados, 'variante')} nova(s), {resultadoSync.atualizados} atualizada(s).</p>
         </div>
       )}
 
       {preview && (
         <>
           <p className="page-sub">
-            {preview.resumo.totalLinhasWik} linha(s) recebida(s) do Wik. {preview.resumo.variantesCriar} nova(s),{' '}
+            {plural(preview.resumo.totalLinhasWik, 'linha')} recebida(s) do Wik. {preview.resumo.variantesCriar} nova(s),{' '}
             {preview.resumo.variantesAtualizar} com mudança de saldo, {preview.resumo.totalErros} com erro.
             Nada foi gravado ainda.
           </p>

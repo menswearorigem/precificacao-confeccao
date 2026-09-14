@@ -5,7 +5,7 @@ import {
   CheckCircle2, AlertTriangle, Trash2, Info, X,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, dataBr, formatQtd, qtdFracionaria } from '../lib/format';
+import { brl, dataBr, formatQtd, qtdFracionaria, plural } from '../lib/format';
 import DataTable from '../components/DataTable';
 import {
   SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazio,
@@ -496,7 +496,7 @@ function Detalhe({ detalhe, onVoltar, onAtualizar }) {
     try {
       const r = await api.post(`/cotacoes/${cotacao.id}/gerar-pedidos`, {});
       const quantos = r.pedidos?.length || 0;
-      setAviso(`${formatQtd(quantos)} pedido(s) de compra criado(s) — um por fornecedor vencedor. Eles nascem em rascunho e ainda precisam ser aprovados.`);
+      setAviso(`${plural(quantos, 'pedido')} de compra criado(s) — um por fornecedor vencedor. Eles nascem em rascunho e ainda precisam ser aprovados.`);
       const atual = await api.get(`/cotacoes/${cotacao.id}`);
       onAtualizar(atual);
     } catch (err) {
@@ -580,7 +580,7 @@ function Detalhe({ detalhe, onVoltar, onAtualizar }) {
         <div className="card-head-linha">
           <div className="card-head">Matriz de comparação</div>
           <span className="page-sub" style={{ margin: 0 }}>
-            {formatQtd(itens.length)} item(ns) × {formatQtd(fornecedores.length)} fornecedor(es)
+            {plural(itens.length, 'item', 'itens')} × {plural(fornecedores.length, 'fornecedor', 'fornecedores')}
           </span>
         </div>
         <p className="page-sub">
@@ -609,7 +609,7 @@ function Detalhe({ detalhe, onVoltar, onAtualizar }) {
                         <strong>{f.fornecedor_nome}</strong>
                         <small>
                           {f.respondido_em ? 'respondeu' : 'sem resposta'}
-                          {f.prazo_entrega_dias ? ` · ${formatQtd(f.prazo_entrega_dias)} dia(s)` : ''}
+                          {f.prazo_entrega_dias ? ` · ${plural(f.prazo_entrega_dias, 'dia')}` : ''}
                           {f.condicao_pagamento ? ` · ${f.condicao_pagamento}` : ''}
                         </small>
                       </span>

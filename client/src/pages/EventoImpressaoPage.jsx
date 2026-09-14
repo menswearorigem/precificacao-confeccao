@@ -38,8 +38,8 @@ export default function EventoImpressaoPage() {
   return (
     <div className="page-wide">
       <div className="no-print" style={{ marginBottom: 14 }}>
-        <button className="btn btn-primary" onClick={() => window.print()}>
-          <Printer size={14} /> Imprimir / Exportar PDF
+        <button className="btn btn-primary" onClick={() => window.print()} title="Abre a impressão do navegador — de lá dá para salvar em PDF">
+          <Printer size={14} /> Imprimir
         </button>
       </div>
 

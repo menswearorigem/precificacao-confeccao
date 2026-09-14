@@ -11,7 +11,7 @@ import {
 } from '../components/ui';
 import { useTabela } from '../lib/useTabela';
 import SeloFinanceiro, { useSelosFinanceiros } from '../components/SeloFinanceiro';
-import { brl, pct, formatQtd, dataBr } from '../lib/format';
+import { brl, pct, formatQtd, dataBr, plural } from '../lib/format';
 
 // Produção › Ordens de Serviço de facção.
 //
@@ -442,7 +442,7 @@ function DetalheOS({ ordemServicoId, etapas, onFechar, onMudou }) {
 
           {quebra > 0 && (
             <p className="aviso-inline">
-              <AlertTriangle size={14} /> {formatQtd(quebra)} peça(s) não voltaram de jeito nenhum
+              <AlertTriangle size={14} /> {plural(quebra, 'peça')} não voltaram de jeito nenhum
               — nem boas, nem como segunda, nem declaradas como perda. É esta a conta a levar para
               a facção; o sistema não a esconde nem a arredonda.
             </p>
@@ -453,8 +453,8 @@ function DetalheOS({ ordemServicoId, etapas, onFechar, onMudou }) {
             onErro={setErro}
             onGerado={async (r) => {
               setAviso(
-                `Título gerado: ${brl(r.titulo.valor_bruto)} bruto, de ${formatQtd(r.base.pecas_boas)} peça(s) boa(s)`
-                + `${Number(r.base.quebra) > 0 ? `. A quebra de ${formatQtd(r.base.quebra)} peça(s) NÃO entrou no valor.` : '.'}`
+                `Título gerado: ${brl(r.titulo.valor_bruto)} bruto, de ${plural(r.base.pecas_boas, 'peça')} boa(s)`
+                + `${Number(r.base.quebra) > 0 ? `. A quebra de ${plural(r.base.quebra, 'peça')} NÃO entrou no valor.` : '.'}`
               );
               await carregar();
               onMudou();
@@ -477,7 +477,7 @@ function DetalheOS({ ordemServicoId, etapas, onFechar, onMudou }) {
               type="button" className="btn-sec"
               onClick={async () => {
                 const motivo = window.prompt(
-                  `Encerrar a O.S. ${os.numero} assumindo a quebra de ${formatQtd(quebra)} peça(s).\n\n`
+                  `Encerrar a O.S. ${os.numero} assumindo a quebra de ${plural(quebra, 'peça')}.\n\n`
                   + 'A quebra continua medida e continua no ranking desta facção — encerrar reconhece '
                   + 'que a peça não volta, não apaga o fato de que ela sumiu.\n\n'
                   + 'O que aconteceu com essas peças?'

@@ -4,11 +4,12 @@ import {
   Radar, AlertTriangle, Info, Inbox, ShieldCheck, ExternalLink, Settings2, Check,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, dataBr, formatQtd, pct } from '../lib/format';
+import { brl, dataBr, formatQtd, pct, rotuloModulo } from '../lib/format';
+import { useTabela } from '../lib/useTabela';
 import DataTable from '../components/DataTable';
 import {
   SkeletonLinhasTabela, EstadoVazio, IndicadorDestaque, Select, Field, NumInput,
-  Checkbox, BotaoExportar,
+  Checkbox, BotaoExportar, Paginacao,
 } from '../components/ui';
 
 // Financeiro › Cobertura.
@@ -92,7 +93,7 @@ function Catalogo({ origens, plano, centros, onSalvo }) {
               const emEdicao = editando === o.codigo;
               return (
                 <tr key={o.codigo} className={o.ativo ? '' : 'linha-apagada'}>
-                  <td>{o.modulo}</td>
+                  <td>{rotuloModulo(o.modulo)}</td>
                   <td>
                     <span className="cel-dupla">
                       <strong>{o.rotulo}</strong>
@@ -186,6 +187,19 @@ export default function CoberturaFinanceiraPage() {
   const [filtroOrigem, setFiltroOrigem] = useState('');
   const [importando, setImportando] = useState(false);
   const [mensagem, setMensagem] = useState('');
+
+  const tabelaDescobertos = useTabela(dados?.descobertos || [], {
+    colunas: {
+      documento: (d) => d.documento,
+      origem: (d) => d.rotulo || d.origem_codigo,
+      contraparte: (d) => d.contraparte_nome || '',
+      data: (d) => d.data || '',
+      valor: (d) => Number(d.valor || 0),
+    },
+    colunaPadrao: 'data',
+    direcaoPadrao: 'desc',
+    prefixo: 'desc',
+  });
 
   const recarrega = useCallback(() => setRecarregar((n) => n + 1), []);
 
@@ -320,7 +334,7 @@ export default function CoberturaFinanceiraPage() {
                   className="clickable-row"
                   onClick={() => setFiltroOrigem(l.origem_codigo === filtroOrigem ? '' : l.origem_codigo)}
                 >
-                  <td>{l.modulo}</td>
+                  <td>{rotuloModulo(l.modulo)}</td>
                   <td>{l.rotulo}</td>
                   <td className="mono">{formatQtd(l.documentos)}</td>
                   <td>
@@ -380,6 +394,11 @@ export default function CoberturaFinanceiraPage() {
             não mostra tudo de uma vez.
           </div>
         )}
+        {/* Paginação (14/09/2026): a varredura mediu 158 linhas renderizadas
+            de uma vez aqui, e o aviso acima já contava que a própria API corta
+            em 500 — ou seja, a tela podia despejar 500 linhas de documento
+            descoberto numa página só. */}
+        <Paginacao {...tabelaDescobertos} posicao="topo" />
         <DataTable>
           <table className="data-table">
             <thead>
@@ -390,12 +409,12 @@ export default function CoberturaFinanceiraPage() {
             </thead>
             <tbody>
               {loading && <SkeletonLinhasTabela colunas={7} />}
-              {!loading && (dados?.descobertos || []).map((d) => (
+              {!loading && tabelaDescobertos.itensPagina.map((d) => (
                 <tr key={`${d.origem_codigo}-${d.origem_id}`}>
                   <td>
                     <span className="cel-dupla">
                       <strong>{d.documento}</strong>
-                      <small>{d.modulo}</small>
+                      <small>{rotuloModulo(d.modulo)}</small>
                     </span>
                   </td>
                   <td>{d.origem_rotulo}</td>

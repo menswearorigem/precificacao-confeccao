@@ -4,7 +4,7 @@ import {
   CheckCircle2, Hourglass, Tags, Cloud,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, dataBr, formatQtd, tempoRelativo } from '../lib/format';
+import { brl, dataBr, formatQtd, tempoRelativo, plural } from '../lib/format';
 import DataTable from '../components/DataTable';
 import {
   SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazio,
@@ -223,7 +223,7 @@ function ModalConciliar({ lancamento, plano, onFechar, onConciliado }) {
                         <td>
                           <span className="cel-dupla">
                             <strong className="mono">{num(s.diferenca_valor) < 0.005 ? 'valor exato' : brl(s.diferenca_valor)}</strong>
-                            <small>{num(s.diferenca_dias) === 0 ? 'mesmo dia' : `${formatQtd(s.diferenca_dias)} dia(s) de diferença`}</small>
+                            <small>{num(s.diferenca_dias) === 0 ? 'mesmo dia' : `${plural(s.diferenca_dias, 'dia')} de diferença`}</small>
                           </span>
                         </td>
                         <td>

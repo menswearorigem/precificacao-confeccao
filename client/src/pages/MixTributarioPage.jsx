@@ -9,7 +9,7 @@ import {
 } from '../components/ui';
 import { CartaoGrafico, GraficoColunas, useRefGrafico, corPorIndice } from '../components/graficos';
 import { usePaletaGrafico } from '../lib/coresGrafico';
-import { brl, pct, formatQtd } from '../lib/format';
+import { brl, pct, formatQtd, plural } from '../lib/format';
 
 // Análises › Mix B2B × B2C.
 //
@@ -131,7 +131,7 @@ export default function MixTributarioPage() {
           <CalendarClock size={18} />
           <div>
             <strong>
-              Faltam {formatQtd(prazo.dias_restantes)} dia(s) para 30/09/2026
+              Faltam {plural(prazo.dias_restantes, 'dia')} para 30/09/2026
             </strong>
             <p>
               {prazo.fonte} Esta tela mede o mix; <strong>ela não recomenda regime tributário</strong> — essa

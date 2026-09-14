@@ -3,8 +3,9 @@ import {
   Gauge, RefreshCw, AlertTriangle, Info, Timer, Trophy, Truck,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { EstadoVazio, Skeleton, IndicadorDestaque } from '../components/ui';
-import { brl, pct, formatQtd, numeroBr } from '../lib/format';
+import { EstadoVazio, Skeleton, IndicadorDestaque, Paginacao } from '../components/ui';
+import { useTabela } from '../lib/useTabela';
+import { brl, pct, formatQtd, numeroBr, plural } from '../lib/format';
 
 // Produção › Carga e gargalo.
 //
@@ -50,6 +51,20 @@ export default function CargaProducaoPage() {
   useEffect(() => { carregar(); }, [carregar]);
 
   const linhas = carga?.carga || [];
+  // Paginação (14/09/2026): a varredura mediu 68 linhas renderizadas de uma
+  // vez, com barra de carga em cada uma e nenhuma contagem na tela.
+  const tabelaCarga = useTabela(linhas, {
+    colunas: {
+      etapa: (l) => l.etapa_nome,
+      onde: (l) => l.fornecedor_nome || '',
+      ordens: (l) => Number(l.ordens || 0),
+      pecas: (l) => Number(l.pecas || 0),
+      minutos: (l) => Number(l.minutos || 0),
+    },
+    colunaPadrao: 'minutos',
+    direcaoPadrao: 'desc',
+    prefixo: 'carga',
+  });
 
   const resumo = useMemo(() => {
     const comTempo = linhas.filter((l) => l.minutos != null);
@@ -134,7 +149,7 @@ export default function CargaProducaoPage() {
           {semTempo > 0 && (
             <p className="aviso-inline">
               <AlertTriangle size={14} />
-              {formatQtd(semTempo)} etapa(s) estão sem tempo no roteiro e por isso NÃO entram na
+              {plural(semTempo, 'etapa')} estão sem tempo no roteiro e por isso NÃO entram na
               conta de minutos. Elas aparecem na lista abaixo escritas como "sem tempo no roteiro",
               não como zero — o tempo delas é desconhecido, e desconhecido não é folga. Para
               incluí-las, cadastre o tempo da operação com o mesmo nome da etapa, no roteiro do
@@ -157,6 +172,7 @@ export default function CargaProducaoPage() {
               />
             ) : (
               <div className="tabela-rolagem">
+                <Paginacao {...tabelaCarga} posicao="topo" />
                 <table className="tabela-nota">
                   <thead>
                     <tr>
@@ -166,7 +182,7 @@ export default function CargaProducaoPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {linhas.map((l) => {
+                    {tabelaCarga.itensPagina.map((l) => {
                       const minutos = l.minutos == null ? null : Number(l.minutos);
                       const largura = maiorCarga > 0 && minutos != null
                         ? Math.max(2, (minutos / maiorCarga) * 100)

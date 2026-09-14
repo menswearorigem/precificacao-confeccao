@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { Field, Select, NumInput, Checkbox, DateInput, IndicadorDestaque } from './ui';
-import { brl, formatQtd, numeroBr } from '../lib/format';
+import { brl, formatQtd, numeroBr, plural } from '../lib/format';
 import { CampoTextoLimitado } from './campos';
 
 // NOVA ORDEM DE PRODUÇÃO — de um produto ou de um KIT.
@@ -630,7 +630,7 @@ export default function NovaOrdemProducao({
                 {componentes.length > 0 && (
                   <p className="ink-soft ajuda-bloco">
                     Total do kit: <strong>{formatQtd(totalKit)}</strong> peça(s) em{' '}
-                    {componentes.length} referência(s).
+                    {plural(componentes.length, 'referência')}.
                   </p>
                 )}
               </>

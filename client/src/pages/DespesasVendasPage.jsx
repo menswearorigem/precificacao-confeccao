@@ -10,7 +10,7 @@ import { Field, Select, NumInput, EstadoVazio, AvisoDeFalha, Skeleton } from '..
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { PRESETS_PERIODO } from '../lib/periodos';
 import { confirmar } from '../components/ConfirmDialog';
-import { brl, pct, formatQtd, hojeIso } from '../lib/format';
+import { brl, pct, formatQtd, hojeIso, plural } from '../lib/format';
 import DataTable from '../components/DataTable';
 import { usePaletaGrafico, corPorIndice } from '../lib/coresGrafico';
 
@@ -285,7 +285,7 @@ export default function DespesasVendasPage() {
                 <span className="stat-card-label">Lançado nos meses</span>
                 <span className="stat-card-value">{brl(dados.totalLancado)}</span>
                 <span className="stat-card-delta" style={{ color: 'var(--ink-faint)', fontWeight: 500 }}>
-                  {formatQtd(dados.itens.length)} lançamento(s)
+                  {plural(dados.itens.length, 'lançamento')}
                 </span>
               </div>
               <CalendarDays size={18} className="stat-card-icone" style={{ color: 'var(--brass)' }} />

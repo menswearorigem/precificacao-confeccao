@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, ChevronRight, Search, PackageSearch, Store, Printer } from 'lucide-react';
+import { Plus, ChevronRight, Search, PackageSearch, Store, Printer, FileText } from 'lucide-react';
 import { api } from '../api/client';
 import { statusToneClass } from '../lib/statusTone';
-import { brl, pct } from '../lib/format';
+import { brl, pct, plural } from '../lib/format';
 import FotoProduto from '../components/FotoProduto';
 import { Select, Checkbox, SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazio } from '../components/ui';
 import DataTable from '../components/DataTable';
@@ -101,6 +101,17 @@ export default function ProdutosListPage() {
     });
   }
 
+  // Manda a seleção para a tela de ficha pela URL. Só as referências — a
+  // ficha faz a própria busca, e assim o link continua sendo copiável.
+  function irParaFicha(rota) {
+    const refs = tabela.itensOrdenados
+      .filter((p) => selecionados.has(p.id))
+      .map((p) => p.referencia)
+      .filter(Boolean);
+    if (refs.length === 0) return;
+    navigate(`${rota}?referencias=${encodeURIComponent(refs.join(','))}`);
+  }
+
   async function aplicarMarketplace(entrar) {
     if (selecionados.size === 0) return;
     setAplicando(true);
@@ -109,7 +120,7 @@ export default function ProdutosListPage() {
       const caminho = entrar ? '/produtos-marketplace' : '/produtos-marketplace/remover';
       const r = await api.post(caminho, { ids: [...selecionados] });
       setAviso(
-        `${r.alterados} produto(s) ${entrar ? 'adicionado(s) à' : 'removido(s) da'} seleção de marketplace.`
+        `${plural(r.alterados, 'produto')} ${entrar ? 'adicionado(s) à' : 'removido(s) da'} seleção de marketplace.`
         + (r.jaEstavam > 0 ? ` ${r.jaEstavam} já ${entrar ? 'estava(m) na' : 'estava(m) fora da'} seleção.` : '')
       );
       load();
@@ -176,7 +187,19 @@ export default function ProdutosListPage() {
 
       {selecionados.size > 0 && (
         <div className="card" style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <strong>{selecionados.size} selecionado(s)</strong>
+          <strong>{selecionados.size === 1 ? '1 selecionado' : `${selecionados.size} selecionados`}</strong>
+          {/* Gerar ficha a partir da seleção (14/09/2026).
+              As caixas de seleção desta lista existiam e só serviam para
+              marcar/desmarcar marketplace. Enquanto isso, Ficha Técnica e
+              Ficha de Estoque eram duas abas fixas do menu que abriam VAZIAS,
+              exigindo digitar referência por referência de cabeça. Agora a
+              seleção leva as referências junto. */}
+          <button type="button" className="btn btn-ghost sm" onClick={() => irParaFicha('/ficha-tecnica')}>
+            <FileText size={13} /> Gerar ficha técnica
+          </button>
+          <button type="button" className="btn btn-ghost sm" onClick={() => irParaFicha('/estoque/ficha')}>
+            <Printer size={13} /> Gerar ficha de estoque
+          </button>
           <button type="button" className="btn btn-primary sm" disabled={aplicando} onClick={() => aplicarMarketplace(true)}>
             <Store size={13} /> Marcar como marketplace
           </button>

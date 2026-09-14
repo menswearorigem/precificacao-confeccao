@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
-import { brl, dataBr, formatQtd, numeroBr } from '../lib/format';
+import { brl, dataBr, formatQtd, numeroBr, plural } from '../lib/format';
 import {
   Select, MultiSelect, Checkbox, ThOrdenavel, Paginacao, BotaoExportar, BotaoRelatorio,
   IndicadorDestaque, EstadoVazio,
@@ -296,7 +296,7 @@ export default function FinanceiroPage({ aba = 'movimentacao' }) {
             >
               <History size={14} /> Reler este período
             </button>
-            <button className="btn btn-ghost" onClick={() => window.print()}>
+            <button className="btn btn-ghost" onClick={() => window.print()} title="Abre a impressão do navegador — de lá dá para salvar em PDF">
               <Printer size={14} /> Imprimir
             </button>
           </div>
@@ -553,7 +553,7 @@ function AbaMovimentacao({ dados, podeAbrirPedido, contexto }) {
           tom={Number(dados.totais.pendente) !== 0 ? 'atencao' : undefined}
           rotulo="Ainda pendente"
           valor={brl(dados.totais.pendente)}
-          explicacao={`${formatQtd(dados.totais.quantidadePendente)} lançamento(s) que a plataforma já reconhece e ainda não soltou. Nunca é somado ao liberado.`}
+          explicacao={`${plural(dados.totais.quantidadePendente, 'lançamento')} que a plataforma já reconhece e ainda não soltou. Nunca é somado ao liberado.`}
         />
         {/* Concluído e em andamento no mesmo cartão: são as duas metades da
             mesma pergunta ("o dinheiro já saiu da plataforma?"), e separados
@@ -582,7 +582,7 @@ function AbaMovimentacao({ dados, podeAbrirPedido, contexto }) {
         refGrafico={refDias}
         altura={280}
         vazio={diasCrescente.length === 0 ? 'Nenhum dia com movimentação no período.' : null}
-        rodape={`${formatQtd(diasCrescente.length)} dia(s) com movimentação · total liberado ${brl(dados.totais.liberado)}`}
+        rodape={`${plural(diasCrescente.length, 'dia')} com movimentação · total liberado ${brl(dados.totais.liberado)}`}
         legenda={plataformasNaTela.map((m, i) => ({
           rotulo: rotuloPlataforma(m),
           valor: brl(totalPorPlataforma[m] || 0),
@@ -616,7 +616,7 @@ function AbaMovimentacao({ dados, podeAbrirPedido, contexto }) {
           <BarraRanking
             itens={porPlataforma.map((p) => ({
               rotulo: rotuloPlataforma(p.marketplace),
-              detalhe: `${formatQtd(p.quantidade)} lançamento(s)`,
+              detalhe: `${plural(p.quantidade, 'lançamento')}`,
               valor: p.total,
             }))}
             vazio="Nenhuma plataforma com movimentação no período."
@@ -631,7 +631,7 @@ function AbaMovimentacao({ dados, podeAbrirPedido, contexto }) {
           plataforma de fato creditou. O <strong>saque</strong> aparece em coluna separada porque não é
           dinheiro que eles deixaram de pagar: é o mesmo dinheiro saindo da plataforma para a conta da
           empresa.{' '}
-          O pendente ({brl(dados.totais.pendente)}, {dados.totais.quantidadePendente} lançamento(s)) fica de
+          O pendente ({brl(dados.totais.pendente)}, {plural(dados.totais.quantidadePendente, 'lançamento')}) fica de
           fora desta tabela de propósito: ainda não é movimentação bancária.
         </p>
         <DataTable>
@@ -1067,7 +1067,7 @@ function AbaConferencia({ dados, contexto }) {
         refGrafico={refComparacao}
         altura={280}
         vazio={comparacao.length === 0 ? 'Nenhum dia do período tem os dois lados para comparar.' : null}
-        rodape={`${formatQtd(comparacao.length)} dia(s) com os dois lados disponíveis.`}
+        rodape={`${plural(comparacao.length, 'dia')} com os dois lados disponíveis.`}
         legenda={[
           { rotulo: 'Extrato da plataforma', cor: corPorIndice(paleta, 0) },
           { rotulo: 'Soma dos pedidos', cor: corPorIndice(paleta, 1) },

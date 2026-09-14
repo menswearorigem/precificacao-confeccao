@@ -94,7 +94,24 @@ function createApp() {
   app.use(forcarHttps);
   app.use(cabecalhosSeguranca);
   app.use('/api', limitadorApi);
-  app.use('/api/auth', limitadorAutenticacao);
+  // O limitador de autenticação conta respostas 401/403 por endereço de
+  // internet. Ele estava montado no caminho inteiro de /api/auth — inclusive
+  // em /me e /status, que TODA tela chama ao abrir e que respondem 401 por
+  // definição quando a sessão caiu.
+  //
+  // O efeito, medido na varredura de 14/09/2026: uma sessão que expira com
+  // algumas abas abertas produz 401 em série sozinha, sem ninguém errar senha
+  // nenhuma. Trinta desses em 15 minutos, e como o escritório inteiro sai por
+  // um IP só, o sistema tranca para todo mundo. Aconteceu durante a varredura.
+  //
+  // O limite continua igual para o que ele existe para proteger — /login,
+  // /setup, /esqueci-senha, /redefinir-senha. Só as duas rotas de leitura de
+  // sessão saem de fora: elas não têm senha para adivinhar.
+  const ROTAS_DE_SESSAO = new Set(['/me', '/status']);
+  app.use('/api/auth', (req, res, next) => {
+    if (ROTAS_DE_SESSAO.has(req.path)) return next();
+    return limitadorAutenticacao(req, res, next);
+  });
 
   // Corpo de requisição: 15MB valia pra TODAS as rotas, inclusive o login —
   // qualquer um podia empurrar 15MB de JSON sem estar logado. Agora o padrão

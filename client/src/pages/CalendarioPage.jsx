@@ -298,8 +298,8 @@ export default function CalendarioPage() {
               <List size={13} /> Lista
             </button>
           </div>
-          <button className="btn btn-ghost" onClick={() => window.print()}>
-            <Printer size={14} /> Imprimir / Exportar PDF
+          <button className="btn btn-ghost" onClick={() => window.print()} title="Abre a impressão do navegador — de lá dá para salvar em PDF">
+            <Printer size={14} /> Imprimir
           </button>
           <button className="btn btn-primary" onClick={() => setModal({ dataPadrao: isoDoDia(hoje) })}>
             <Plus size={14} /> Novo evento

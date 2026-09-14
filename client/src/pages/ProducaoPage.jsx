@@ -17,7 +17,7 @@ import FaccoesAba from '../components/FaccoesAba';
 import InsumosProducaoAba from '../components/InsumosProducaoAba';
 import NovaFaccaoModal from '../components/NovaFaccaoModal';
 import { useTabela } from '../lib/useTabela';
-import { brl, pct, formatQtd, numeroBr, dataBr } from '../lib/format';
+import { brl, pct, formatQtd, numeroBr, dataBr, plural } from '../lib/format';
 import { CampoTextoLimitado } from '../components/campos';
 
 // Estoque › Produção.
@@ -153,7 +153,7 @@ function DetalheOrdem({ ordemId, fornecedores, insumos: catalogoInsumos = [], on
         </header>
 
         <div className="anuncio-painel-corpo">
-          <p className="ink-soft">{ehKit ? `${filhas.length} referência(s)` : ordem.produto_descricao}</p>
+          <p className="ink-soft">{ehKit ? `${plural(filhas.length, 'referência')}` : ordem.produto_descricao}</p>
 
           {/* ---- Datas: são elas que colocam a ordem no calendário ---- */}
           <div className="form-linha">
@@ -388,7 +388,7 @@ function DetalheOrdem({ ordemId, fornecedores, insumos: catalogoInsumos = [], on
                     const r = await api.post(`/producao/ordens/${ordemId}/aplicar-custo-na-ficha`, { confirmar: true });
                     setAviso({
                       tipo: 'ok',
-                      texto: `${r.aplicadas.length} linha(s) da ficha atualizada(s).`
+                      texto: `${plural(r.aplicadas.length, 'linha')} da ficha atualizada(s).`
                         + (r.ignoradas.length ? ` ${r.ignoradas.length} ficaram de fora: ${r.ignoradas.map((x) => `${x.insumo} — ${x.motivo}`).join('; ')}` : ''),
                     });
                     await carregar(); onMudou();
@@ -791,12 +791,12 @@ function Faccao({ fornecedores, insumos, onMudou }) {
           valor={semCusto > 0 ? `${brl(total)} (incompleto)` : brl(total)}
           tom={semCusto > 0 ? 'atencao' : undefined}
           explicacao={semCusto > 0
-            ? `${semCusto} item(ns) sem custo conhecido ficaram de fora deste total. Fora não é zero.`
+            ? `${plural(semCusto, 'item', 'itens')} sem custo conhecido ficaram de fora deste total. Fora não é zero.`
             : 'Nosso material que está na mão de terceiro. Continua sendo estoque da empresa.'}
         />
         <IndicadorDestaque
           rotulo="Peça pronta em facção"
-          valor={pecas ? `${formatQtd(pecas.resumo.pecas)} peça(s)` : '—'}
+          valor={pecas ? `${plural(pecas.resumo.pecas, 'peça')}` : '—'}
           tom={pecas && pecas.resumo.pecas > 0 ? 'atencao' : undefined}
           Icone={Truck}
           explicacao="Peça acabada que saiu daqui e continua sendo nossa. Conta no total do estoque e NÃO conta no disponível para venda."
@@ -992,7 +992,7 @@ function Wip() {
         <p className="aviso-inline">
           <AlertTriangle size={14} />
           Os números acima estão incompletos:
-          {r.semRoteiro > 0 && ` ${r.semRoteiro} ordem(ns) sem roteiro cadastrado (não há sequência para medir);`}
+          {r.semRoteiro > 0 && ` ${plural(r.semRoteiro, 'ordem', 'ordens')} sem roteiro cadastrado (não há sequência para medir);`}
           {r.comApontamentoSolto > 0 && ` ${r.comApontamentoSolto} com apontamento fora do roteiro;`}
           {r.comInconsistencia > 0 && ` ${r.comInconsistencia} com apontamento que não fecha entre etapas.`}
         </p>
@@ -1038,7 +1038,7 @@ function Wip() {
             </h2>
             <span className="ink-soft">
               {o.etapaAtual
-                ? `Parada em ${o.etapaAtual.nome} — ${formatQtd(o.etapaAtual.pecas)} peça(s)${o.etapaAtual.paradoHaDias != null ? `, sem apontamento há ${o.etapaAtual.paradoHaDias} dia(s)` : ''}`
+                ? `Parada em ${o.etapaAtual.nome} — ${plural(o.etapaAtual.pecas, 'peça')}${o.etapaAtual.paradoHaDias != null ? `, sem apontamento há ${plural(o.etapaAtual.paradoHaDias, 'dia')}` : ''}`
                 : 'Sem peça em espera no meio do roteiro'}
             </span>
           </div>
@@ -1066,7 +1066,7 @@ function Wip() {
                       <td className={`num ${e.refugo > 0 ? 'ink-atencao' : ''}`}>{formatQtd(e.refugo)}</td>
                       <td className="num"><strong>{formatQtd(e.emEspera)}</strong></td>
                       <td className="num ink-soft">
-                        {e.paradoHaDias == null ? 'nunca' : `há ${formatQtd(e.paradoHaDias)} dia(s)`}
+                        {e.paradoHaDias == null ? 'nunca' : `há ${plural(e.paradoHaDias, 'dia')}`}
                       </td>
                     </tr>
                   ))}
@@ -1091,7 +1091,7 @@ function Wip() {
                 <ul className="ink-soft ajuda-bloco">
                   {o.foraDoRoteiro.map((f, n) => (
                     <li key={`${f.operacao}-${n}`}>
-                      {f.operacao}{f.quantidade != null ? ` — ${formatQtd(f.quantidade)} peça(s)` : ''}: {f.motivo}
+                      {f.operacao}{f.quantidade != null ? ` — ${plural(f.quantidade, 'peça')}` : ''}: {f.motivo}
                     </li>
                   ))}
                 </ul>
@@ -1383,7 +1383,7 @@ export default function ProducaoPage() {
                         <td className="num">
                           {brl(o.custo_material_reservado)}
                           {Number(o.insumos_sem_custo) > 0 && (
-                            <span className="selo tone-atencao" title={`${o.insumos_sem_custo} insumo(s) sem custo conhecido ficaram de fora deste valor.`}>parcial</span>
+                            <span className="selo tone-atencao" title={`${plural(o.insumos_sem_custo, 'insumo')} sem custo conhecido ficaram de fora deste valor.`}>parcial</span>
                           )}
                         </td>
                         <td className="num">{o.gasto_mao_de_obra != null ? brl(o.gasto_mao_de_obra) : '—'}</td>

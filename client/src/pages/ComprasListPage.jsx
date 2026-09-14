@@ -4,7 +4,7 @@ import {
   Plus, ChevronRight, ShoppingCart, Wallet, Receipt, Users, Clock, Info,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, formatQtd, numeroBr, dataBr } from '../lib/format';
+import { brl, formatQtd, numeroBr, dataBr, plural } from '../lib/format';
 import DataTable from '../components/DataTable';
 import {
   SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, BotaoRelatorio, EstadoVazio,
@@ -228,7 +228,7 @@ export default function ComprasListPage() {
     }
     return [...mapa.values()]
       .sort((a, b) => b.valor - a.valor)
-      .map((f) => ({ ...f, detalhe: `${formatQtd(f.quantidade)} compra(s)` }));
+      .map((f) => ({ ...f, detalhe: `${plural(f.quantidade, 'compra')}` }));
   }, [resumo.ativas]);
 
   // ---- filtros ativos, escritos na tela -----------------------------------
@@ -490,7 +490,7 @@ export default function ComprasListPage() {
           tom={resumo.pendenteQtd > 0 ? 'atencao' : undefined}
           rotulo="Ainda pendente"
           valor={brl(resumo.pendenteValor)}
-          explicacao={`${formatQtd(resumo.pendenteQtd)} compra(s) lançada(s) que ainda não foram marcadas como recebidas.`}
+          explicacao={`${plural(resumo.pendenteQtd, 'compra')} lançada(s) que ainda não foram marcadas como recebidas.`}
         />
       </div>
 
@@ -498,7 +498,7 @@ export default function ComprasListPage() {
         <Info size={14} />
         <span>
           Todos os números desta tela são calculados sobre as{' '}
-          <strong>{formatQtd(resumo.quantidade)} compra(s)</strong> que passaram nos filtros
+          <strong>{plural(resumo.quantidade, 'compra')}</strong> que passaram nos filtros
           {resumo.canceladas > 0 && <> — as {formatQtd(resumo.canceladas)} canceladas aparecem na lista, mas não entram em soma, média nem gráfico</>}.
         </span>
       </div>

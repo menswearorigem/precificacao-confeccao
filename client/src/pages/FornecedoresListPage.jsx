@@ -4,7 +4,7 @@ import {
   Plus, ChevronRight, Truck, Users, Wallet, Clock, Info, CheckCircle2,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, formatQtd, dataBr } from '../lib/format';
+import { brl, formatQtd, dataBr, plural } from '../lib/format';
 import DataTable from '../components/DataTable';
 import {
   SkeletonLinhasTabela, EstadoVazio, ThOrdenavel, Paginacao, BotaoExportar, BotaoRelatorio,
@@ -153,7 +153,7 @@ export default function FornecedoresListPage() {
     }
     return [...mapa.values()]
       .sort((a, b) => b.valor - a.valor)
-      .map((f) => ({ ...f, detalhe: `${formatQtd(f.quantidade)} fornecedor(es) pagos assim` }));
+      .map((f) => ({ ...f, detalhe: `${plural(f.quantidade, 'fornecedor', 'fornecedores')} pagos assim` }));
   }, [fornecedores]);
 
   const maiores = useMemo(() => (
@@ -164,7 +164,7 @@ export default function FornecedoresListPage() {
       .map((f) => ({
         id: f.id,
         rotulo: f.nome,
-        detalhe: `${formatQtd(f.compras_qtd)} compra(s) · ${f.forma_pagamento_comum || 'pagamento não informado'}`,
+        detalhe: `${plural(f.compras_qtd, 'compra')} · ${f.forma_pagamento_comum || 'pagamento não informado'}`,
         valor: Number(f.total_comprado),
       }))
   ), [fornecedores]);

@@ -38,7 +38,7 @@ import {
  *
  * O critério do agrupamento é um só: telas que respondem A MESMA PERGUNTA por
  * ângulos diferentes ficam juntas. "Endereços", "Depósitos" e "Disponível"
- * respondem *onde está o saldo*; "Faltando", "Sobrando" e "Curva de tamanho"
+ * respondem *onde está o saldo*; "O que repor", "Dinheiro parado" e "Curva de tamanho"
  * respondem *tenho peça de menos ou de mais*. Eram seis abas concorrendo entre
  * si — e duas delas chegavam a dar números diferentes para a mesma pergunta
  * sem nada na tela reconciliando.
@@ -99,8 +99,12 @@ export const MODULES = [
         label: 'Reposição',
         icon: Timer,
         paginas: [
-          { to: '/estoque/cobertura', label: 'Faltando', icon: Timer },
-          { to: '/estoque/parado', label: 'Sobrando', icon: Banknote },
+          // 14/09/2026: eram "Faltando" e "Sobrando", e a leitura saía
+          // invertida — a tela de "Faltando" é justamente a que traz o cartão
+          // de estoque sobrando, e a de "Sobrando" mede outra coisa (idade,
+          // não excesso de ciclo). Cada uma passa a se chamar pelo que faz.
+          { to: '/estoque/cobertura', label: 'O que repor', icon: Timer },
+          { to: '/estoque/parado', label: 'Dinheiro parado', icon: Banknote },
           { to: '/estoque/curva-tamanho', label: 'Curva de tamanho', icon: BarChart3 },
         ],
       },
@@ -216,17 +220,16 @@ export const MODULES = [
     icon: Wallet,
     color: 'var(--success)',
     entradas: [
-      // Pagar e Receber tinham DUAS abas para o que é um alternador de dois
+      // Pagar e Receber eram DUAS abas para o que é um alternador de dois
       // estados: mesmos filtros, mesmos quatro cartões, mesmas onze colunas,
-      // mesma paginação. Só muda o sinal.
-      {
-        label: 'Títulos',
-        icon: ReceiptText,
-        paginas: [
-          { to: '/financeiro/pagar', label: 'Contas a Pagar', icon: ReceiptText },
-          { to: '/financeiro/receber', label: 'Contas a Receber', icon: Banknote },
-        ],
-      },
+      // mesma paginação — e o MESMO componente de tela servindo as duas rotas.
+      // Viraram uma entrada só; o interruptor mora dentro da página
+      // (TitulosPage), que é onde ele é útil. `/financeiro/receber` continua
+      // existindo como rota — fica `oculta` para não repetir na barra o
+      // interruptor que já está na tela, mas segue em `pages`, que é o que
+      // `canAccessPath` lê (REGRA 4: ninguém perde acesso).
+      { to: '/financeiro/pagar', label: 'Títulos', icon: ReceiptText },
+      { to: '/financeiro/receber', label: 'Contas a Receber', icon: Banknote, oculta: true },
       // A Conciliação exige escolher uma conta antes de mostrar qualquer
       // coisa — e a tela que cadastra conta era outra aba.
       {
@@ -415,6 +418,10 @@ export function getEntradasVisiveis(mod, user) {
   const isAdmin = user?.role === 'admin';
   const entradas = [];
   for (const entrada of mod.entradas) {
+    // `oculta`: a rota existe e a permissão continua valendo (ela segue em
+    // `pages`), mas ela não ganha lugar na barra — é o caso da rota que a
+    // própria tela já alcança por um interruptor interno.
+    if (entrada.oculta) continue;
     if (entrada.paginas) {
       const paginas = entrada.paginas.filter((p) => !p.adminOnly || isAdmin);
       if (paginas.length === 1) {

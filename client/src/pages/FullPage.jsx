@@ -16,7 +16,7 @@ import {
 import { confirmar } from '../components/ConfirmDialog';
 import FullRemessaImpressao from '../components/FullRemessaImpressao';
 import { useTabela } from '../lib/useTabela';
-import { brl, numeroBr, formatQtd, dataBr, tempoRelativo } from '../lib/format';
+import { brl, numeroBr, formatQtd, dataBr, tempoRelativo, plural } from '../lib/format';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import { SeloPlataforma, nomeDaLoja, chaveDaPlataforma } from '../lib/canalMarketplace';
 import { usePaletaGrafico } from '../lib/coresGrafico';
@@ -837,7 +837,7 @@ function VincularReferencia({ anuncio, onVinculado }) {
         // A composição descreve o trio de UMA referência. Trocada a
         // referência, ela não vale mais — e quem trocou precisa saber que vai
         // ter de registrar de novo, em vez de descobrir na fábrica.
-        setErro(`Vinculado. Atenção: ${r.composicoesRemovidas} linha(s) de composição de kit foram apagadas `
+        setErro(`Vinculado. Atenção: ${plural(r.composicoesRemovidas, 'linha')} de composição de kit foram apagadas `
           + 'porque eram da referência anterior — registre o kit de novo na aba Composição.');
       }
       onVinculado();
@@ -2007,19 +2007,19 @@ function ModalPlano({ alvos, janela, diasAlvoInicial, onFechar }) {
                 <div className="card-head">O que este plano não conseguiu medir</div>
                 {plano.ressalvas.semVinculo.length > 0 && (
                   <p>
-                    <b>{plano.ressalvas.semVinculo.length} anúncio(s) sem referência no cadastro</b> entraram no
+                    <b>{plural(plano.ressalvas.semVinculo.length, 'anúncio')} sem referência no cadastro</b> entraram no
                     total a enviar, mas ficaram de fora da produção — estão listados acima, um a um.
                   </p>
                 )}
                 {plano.ressalvas.semMedida.length > 0 && (
                   <p>
-                    <b>{plano.ressalvas.semMedida.length} anúncio(s) sem venda no período</b> entraram sem quantidade
+                    <b>{plural(plano.ressalvas.semMedida.length, 'anúncio')} sem venda no período</b> entraram sem quantidade
                     calculada — a velocidade deles não pôde ser medida.
                   </p>
                 )}
                 {plano.ressalvas.composicaoSuposta?.length > 0 && (
                   <p className="full-ressalva-forte">
-                    <b>{plano.ressalvas.composicaoSuposta.length} linha(s) supõem que o kit é de uma cor só.</b>{' '}
+                    <b>{plural(plano.ressalvas.composicaoSuposta.length, 'linha')} supõem que o kit é de uma cor só.</b>{' '}
                     Ninguém registrou a composição dessas variações, então o plano repetiu a cor da própria
                     variação. Se o kit for sortido, isto manda cortar o triplo de uma cor e nenhuma das outras —
                     abra o anúncio e preencha a aba <b>Composição</b> antes de abrir a ordem.
@@ -2027,13 +2027,13 @@ function ModalPlano({ alvos, janela, diasAlvoInicial, onFechar }) {
                 )}
                 {plano.ressalvas.rateioPorIgual.length > 0 && (
                   <p>
-                    <b>{plano.ressalvas.rateioPorIgual.length} linha(s)</b> tiveram a grade repartida <b>por igual</b>,
+                    <b>{plural(plano.ressalvas.rateioPorIgual.length, 'linha')}</b> tiveram a grade repartida <b>por igual</b>,
                     por falta de venda registrada por cor e tamanho. Confira antes de cortar.
                   </p>
                 )}
                 {plano.ressalvas.gradeIncerta.length > 0 && (
                   <p>
-                    <b>{plano.ressalvas.gradeIncerta.length} linha(s)</b> vieram da plataforma sem cor nem tamanho e
+                    <b>{plural(plano.ressalvas.gradeIncerta.length, 'linha')}</b> vieram da plataforma sem cor nem tamanho e
                     não entram na ordem — elas aparecem na tabela para serem completadas à mão.
                   </p>
                 )}
@@ -2483,7 +2483,7 @@ export default function FullPage() {
             Icone={Warehouse}
             rotulo="Peças no Full"
             valor={resumo.pecasNoFull != null ? formatQtd(resumo.pecasNoFull) : '—'}
-            explicacao={`Distribuídas em ${formatQtd(resumo.anuncios)} anúncio(s).`
+            explicacao={`Distribuídas em ${plural(resumo.anuncios, 'anúncio')}.`
               + (resumo.temKit && resumo.unidadesNoFull != null
                 ? ` São ${formatQtd(resumo.unidadesNoFull)} unidades de anúncio — há kit no recorte, e o marketplace conta unidades, não peças.`
                 : '')

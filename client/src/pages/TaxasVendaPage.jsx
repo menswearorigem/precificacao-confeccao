@@ -3,7 +3,7 @@ import { Plus, Trash2, ChevronDown, ChevronRight, Search } from 'lucide-react';
 import { api } from '../api/client';
 import { AvisoDeFalha, NumInput, Toggle } from '../components/ui';
 import BarraAlteracoes from '../components/BarraAlteracoes';
-import { brl, pct } from '../lib/format';
+import { brl, pct, plural } from '../lib/format';
 import { CampoTextoLimitado } from '../components/campos';
 
 const VALOR_REFERENCIA = 100;
@@ -208,7 +208,7 @@ export default function TaxasVendaPage() {
         <div style={{ marginTop: 10 }}>
           <button type="button" className="cfg-colapsavel-cabecalho" onClick={() => setMostrarInativas((v) => !v)}>
             {mostrarInativas ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            {mostrarInativas ? `Ocultar ${inativas.length} taxa(s) desativada(s)` : `Mostrar ${inativas.length} taxa(s) desativada(s)`}
+            {mostrarInativas ? `Ocultar ${plural(inativas.length, 'taxa')} desativada(s)` : `Mostrar ${plural(inativas.length, 'taxa')} desativada(s)`}
             <span className="page-sub" style={{ margin: 0 }}>— não entram em nenhum cálculo</span>
           </button>
           {mostrarInativas && (

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
   Plus, X, Wallet, AlertTriangle, CalendarClock, Timer, Info, Undo2, Ban,
   Receipt, CheckCircle2, Trash2, Calculator, Split, Cloud, Lock, RefreshCw, Copy,
+  ReceiptText, Banknote,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, dataBr, formatQtd, numeroBr } from '../lib/format';
+import { brl, dataBr, formatQtd, numeroBr, plural } from '../lib/format';
 import DataTable from '../components/DataTable';
 import {
   SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazio,
@@ -687,7 +688,7 @@ function ModalBaixar({ titulo, contas, onFechar, onBaixado }) {
           {!erroSimulacao && !simulacao && <p className="page-sub">Calculando…</p>}
           {simulacao && (
             <>
-              <Row label="Dias de atraso até a data da baixa" value={simulacao.dias > 0 ? `${formatQtd(simulacao.dias)} dia(s)` : '—'} />
+              <Row label="Dias de atraso até a data da baixa" value={simulacao.dias > 0 ? `${plural(simulacao.dias, 'dia')}` : '—'} />
               <Row label="Multa" value={simulacao.multa ? brl(simulacao.multa) : '—'} />
               <Row label="Juros" value={simulacao.juros ? brl(simulacao.juros) : '—'} />
               <Row label="Saldo + encargos" value={brl(simulacao.total)} strong />
@@ -886,7 +887,7 @@ function ModalDetalhe({ tituloId, onFechar, onMudou }) {
               <Row label="Saldo em aberto" value={brl(t.saldo_aberto)} strong />
               <Row
                 label="Dias de atraso"
-                value={num(t.dias_atraso) > 0 ? `${formatQtd(t.dias_atraso)} dia(s)` : '—'}
+                value={num(t.dias_atraso) > 0 ? `${plural(t.dias_atraso, 'dia')}` : '—'}
               />
             </div>
             {t.situacao === 'cancelado' && (
@@ -1163,7 +1164,7 @@ export default function TitulosPage() {
     <div className="page-wide">
       <div className="pagina-topo no-print">
         <div>
-          <h2>{ehPagar ? 'Contas a pagar' : 'Contas a receber'}</h2>
+          <h2>Títulos</h2>
           <p className="page-sub">
             {ehPagar
               ? 'Tudo que a empresa deve: facção, insumo, aluguel, guia de imposto. O título guarda o bruto; a retenção e a baixa são registros próprios, para o líquido e o razão do contador nunca discordarem.'
@@ -1175,6 +1176,32 @@ export default function TitulosPage() {
             <Plus size={14} /> {ehPagar ? 'Novo título a pagar' : 'Novo título a receber'}
           </button>
         </div>
+      </div>
+
+      {/* Alternador pagar/receber (14/09/2026).
+          Contas a Pagar e Contas a Receber eram DUAS abas do menu para o que é
+          um interruptor de dois estados: mesmos cinco filtros, mesma busca,
+          mesmos quatro cartões (só troca a palavra), mesmas onze colunas,
+          mesma paginação, mesmo componente de tela — este arquivo já servia as
+          duas rotas. Agora é uma tela só.
+          Os <Link> mantêm as duas rotas vivas (permissão, link salvo, histórico
+          do navegador) e, como o componente é o mesmo dos dois lados, o filtro
+          de período, a busca e a página atual sobrevivem à troca. */}
+      <div className="segmentado titulos-natureza no-print" role="group" aria-label="Natureza do título">
+        <Link
+          to="/financeiro/pagar"
+          className={ehPagar ? 'ativo' : undefined}
+          aria-current={ehPagar ? 'page' : undefined}
+        >
+          <ReceiptText size={14} /> Contas a pagar
+        </Link>
+        <Link
+          to="/financeiro/receber"
+          className={!ehPagar ? 'ativo' : undefined}
+          aria-current={!ehPagar ? 'page' : undefined}
+        >
+          <Banknote size={14} /> Contas a receber
+        </Link>
       </div>
 
       <div className="filtros-barra no-print">
@@ -1232,7 +1259,7 @@ export default function TitulosPage() {
           valor={resumo.abertoQtd === 0 ? '—' : brl(resumo.aberto)}
           explicacao={resumo.abertoQtd === 0
             ? 'Nenhum título com saldo em aberto neste recorte. Não é zero: é ausência de título.'
-            : `Soma do saldo ainda não baixado de ${formatQtd(resumo.abertoQtd)} título(s) deste recorte. Cancelado e liquidado ficam de fora.`}
+            : `Soma do saldo ainda não baixado de ${plural(resumo.abertoQtd, 'título')} deste recorte. Cancelado e liquidado ficam de fora.`}
         />
         <IndicadorDestaque
           Icone={AlertTriangle}
@@ -1241,7 +1268,7 @@ export default function TitulosPage() {
           valor={resumo.vencidoQtd === 0 ? '—' : brl(resumo.vencido)}
           explicacao={resumo.vencidoQtd === 0
             ? 'Nada venceu sem ser pago neste recorte.'
-            : `${formatQtd(resumo.vencidoQtd)} título(s) passaram do vencimento e ainda têm saldo. É a fila que gera juros e multa.`}
+            : `${plural(resumo.vencidoQtd, 'título')} passaram do vencimento e ainda têm saldo. É a fila que gera juros e multa.`}
         />
         <IndicadorDestaque
           Icone={CalendarClock}
@@ -1250,13 +1277,13 @@ export default function TitulosPage() {
           valor={resumo.proximosQtd === 0 ? '—' : brl(resumo.proximos)}
           explicacao={resumo.proximosQtd === 0
             ? 'Nenhum vencimento na próxima semana dentro deste recorte.'
-            : `${formatQtd(resumo.proximosQtd)} título(s) vencem de hoje até daqui a sete dias. É o dinheiro que precisa estar em conta nesta semana.`}
+            : `${plural(resumo.proximosQtd, 'título')} vencem de hoje até daqui a sete dias. É o dinheiro que precisa estar em conta nesta semana.`}
         />
         <IndicadorDestaque
           Icone={Timer}
           tom={resumo.pior ? 'negativo' : undefined}
           rotulo="Maior atraso"
-          valor={resumo.pior ? `${formatQtd(resumo.pior.dias_atraso)} dia(s)` : '—'}
+          valor={resumo.pior ? `${plural(resumo.pior.dias_atraso, 'dia')}` : '—'}
           explicacao={resumo.pior
             ? `${contraparteDe(resumo.pior) || 'Sem contraparte'} · ${brl(resumo.pior.saldo_aberto)} vencidos em ${dataBr(dataIso(resumo.pior.data_vencimento))}. É o título mais antigo ainda em aberto.`
             : 'Nenhum título em atraso neste recorte — por isso não há um "pior caso" para mostrar.'}
@@ -1331,7 +1358,7 @@ export default function TitulosPage() {
                     <td className="mono">{num(t.saldo_aberto) ? brl(t.saldo_aberto) : '—'}</td>
                     <td>
                       {atraso > 0
-                        ? <span className="stamp sm tone-prejuizo">{formatQtd(atraso)} dia(s)</span>
+                        ? <span className="stamp sm tone-prejuizo">{plural(atraso, 'dia')}</span>
                         : <span className="mono">—</span>}
                     </td>
                     <td>

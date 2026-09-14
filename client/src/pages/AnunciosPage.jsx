@@ -16,7 +16,7 @@ import {
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { confirmar } from '../components/ConfirmDialog';
 import { useTabela } from '../lib/useTabela';
-import { brl, numeroBr, formatQtd, tempoRelativo, dataBr } from '../lib/format';
+import { brl, numeroBr, formatQtd, tempoRelativo, dataBr, plural } from '../lib/format';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import { SeloPlataforma, nomeDaLoja, chaveDaPlataforma, PREFIXO_PLATAFORMA } from '../lib/canalMarketplace';
 import { usePaletaGrafico } from '../lib/coresGrafico';
@@ -501,7 +501,7 @@ export default function AnunciosPage() {
     const ids = [...marcados];
     const verbo = situacao === 'ativo' ? 'ativar' : 'pausar';
     const ok = await confirmar(
-      `${ids.length} anúncio(s) vão ser ${situacao === 'ativo' ? 'ativados' : 'pausados'} nas plataformas agora. `
+      `${plural(ids.length, 'anúncio')} vão ser ${situacao === 'ativo' ? 'ativados' : 'pausados'} nas plataformas agora. `
       + 'A alteração vai para o ar e fica registrada no histórico com o seu nome.',
       { titulo: `Confirmar ${verbo} em massa`, confirmarTexto: `Sim, ${verbo}`, perigo: true }
     );
@@ -513,7 +513,7 @@ export default function AnunciosPage() {
       const r = await api.post('/anuncios/situacao-em-lote', { confirmar: true, situacao, ids });
       setAviso(
         r.falhas.length === 0
-          ? `${r.alterados} anúncio(s) alterados na plataforma.`
+          ? `${plural(r.alterados, 'anúncio')} alterados na plataforma.`
           : `${r.alterados} de ${r.total} alterados. ${r.falhas.length} recusado(s) pela plataforma: `
             + r.falhas.slice(0, 3).map((f) => f.erro).join('; ')
       );
@@ -546,7 +546,7 @@ export default function AnunciosPage() {
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn btn-ghost" onClick={exportar} disabled={anuncios.length === 0}>
-            <Download size={14} /> Exportar planilha
+            <Download size={14} /> Exportar
           </button>
           <button className="btn btn-primary" onClick={() => sincronizar(null)} disabled={sincronizando}>
             <RefreshCw size={14} className={sincronizando ? 'girando' : ''} />
@@ -850,7 +850,7 @@ export default function AnunciosPage() {
                 <ArrowLeft size={13} /> Voltar para o agrupado
               </button>
               <span className="page-sub" style={{ margin: 0 }}>
-                {anunciosVisiveis.length} anúncio(s) de{' '}
+                {plural(anunciosVisiveis.length, 'anúncio')} de{' '}
                 <strong className="mono">{anunciosVisiveis[0]?.referencia || 'sem referência'}</strong>
                 {' '}na <strong>{nomeDaLoja({
                   marketplace: anunciosVisiveis[0]?.marketplace,
@@ -1283,7 +1283,7 @@ function MatrizLojas({ matriz, lojas, semVinculo }) {
       <p className="page-sub" style={{ marginTop: -4, marginBottom: 12 }}>
         Uma linha por produto, uma coluna por plataforma — a organização da planilha da casa.
         Preço e ROAS são os que estão no ar agora.
-        {semVinculo > 0 && ` ${formatQtd(semVinculo)} anúncio(s) sem vínculo ficaram de fora: sem referência não dá para saber de qual produto são.`}
+        {semVinculo > 0 && ` ${plural(semVinculo, 'anúncio')} sem vínculo ficaram de fora: sem referência não dá para saber de qual produto são.`}
         {' '}O lucro e a margem por loja continuam saindo na exportação, que lê o custo pela mesma
         conta da Ficha de Precificação.
       </p>

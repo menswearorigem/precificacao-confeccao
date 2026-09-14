@@ -7,7 +7,7 @@ import {
   User, Tags, CreditCard, Layers, Target,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, pct, formatQtd, dataBr } from '../lib/format';
+import { brl, pct, formatQtd, dataBr, plural } from '../lib/format';
 import {
   Select, StatCard, AvisoDeFalha, Skeleton, ThOrdenavel, ThGrupoOrdenavel,
   Paginacao, BotaoExportar,
@@ -236,7 +236,7 @@ export default function LucratividadeVendasPage() {
           </p>
         </div>
         <div className="pagina-topo-acoes">
-          <button className="btn btn-ghost" onClick={() => window.print()}>
+          <button className="btn btn-ghost" onClick={() => window.print()} title="Abre a impressão do navegador — de lá dá para salvar em PDF">
             <Printer size={14} /> Imprimir
           </button>
         </div>
@@ -390,7 +390,7 @@ export default function LucratividadeVendasPage() {
                       <Info size={14} />
                       <span>
                         Fora desta conta, há <strong>{brl(t.comissaoForaDoLucro)}</strong> de comissão
-                        devida em {formatQtd(t.pedidosComComissaoForaDoLucro)} pedido(s) que ficaram de
+                        devida em {plural(t.pedidosComComissaoForaDoLucro, 'pedido')} que ficaram de
                         fora do lucro (item sem custo cadastrado). Esse valor <strong>é pago</strong> —
                         só não tem lucro apurado contra o qual ser descontado. Total a pagar no período:{' '}
                         <strong>{brl(t.comissaoTotal)}</strong>.
@@ -428,7 +428,7 @@ export default function LucratividadeVendasPage() {
                             <Info size={14} />
                             <span>
                               <strong>{formatQtd(t.pedidosExcluidosPorCustoIncompleto)}</strong> de{' '}
-                              {formatQtd(t.totalPedidosPeriodo)} pedido(s) ficaram fora do total porque
+                              {plural(t.totalPedidosPeriodo, 'pedido')} ficaram fora do total porque
                               têm item sem custo cadastrado. Eles continuam na aba Pedidos, marcados —
                               entrar com custo zero inflaria a margem.
                             </span>

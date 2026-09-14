@@ -8,7 +8,7 @@ import { api } from '../api/client';
 import { Field } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import FotoProduto from '../components/FotoProduto';
-import { brl, pct, formatQtd } from '../lib/format';
+import { brl, pct, formatQtd, plural } from '../lib/format';
 import { CampoDesconto } from '../components/campos';
 
 const SITUACAO_LABEL = { planejamento: 'Planejamento', em_andamento: 'Em andamento', finalizada: 'Finalizada' };
@@ -612,7 +612,7 @@ function VendasDaViagem({ viagemId, recarregar }) {
       <div className="card-head">
         <ShoppingBag size={14} style={{ verticalAlign: -2, marginRight: 5 }} />
         Vendas desta viagem
-        {vendas && <span className="ink-faint" style={{ fontWeight: 400 }}> · {formatQtd(ativas.length)} venda(s)</span>}
+        {vendas && <span className="ink-faint" style={{ fontWeight: 400 }}> · {plural(ativas.length, 'venda')}</span>}
       </div>
 
       {erro && <p className="login-error">{erro}</p>}
@@ -681,7 +681,7 @@ function VendasDaViagem({ viagemId, recarregar }) {
 
       {canceladas.length > 0 && (
         <p className="ink-soft ajuda-bloco" style={{ marginTop: 10 }}>
-          {formatQtd(canceladas.length)} venda(s) desta viagem foram canceladas e não entram nos
+          {plural(canceladas.length, 'venda')} desta viagem foram canceladas e não entram nos
           totais acima. Elas continuam no módulo de Pedidos, para o histórico.
         </p>
       )}

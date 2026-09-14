@@ -7,7 +7,7 @@ import {
   PackageMinus, Search, User, Tags, Layers, CreditCard, Percent, Info, Flame, Clock,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, pct, formatQtd, dataBr } from '../lib/format';
+import { brl, pct, formatQtd, dataBr, plural } from '../lib/format';
 import { Select, StatCard, AvisoDeFalha, Skeleton, ThOrdenavel, Paginacao, BotaoExportar } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { PRESETS_PERIODO } from '../lib/periodos';
@@ -140,17 +140,17 @@ function VisaoGeralTab({ filtros }) {
       <div className="stat-strip">
         <StatCard label="Já faturado" value={brl(atual.valorFaturado)}>
           <span className="stat-card-delta" style={{ color: 'var(--ink-faint)', fontWeight: 500 }}>
-            {formatQtd(atual.pedidosFaturados)} pedido(s)
+            {plural(atual.pedidosFaturados, 'pedido')}
           </span>
         </StatCard>
         <StatCard label="Ainda em aberto" value={brl(atual.valorEmAberto)} variant={atual.valorEmAberto > 0 ? 'warning' : undefined}>
           <span className="stat-card-delta" style={{ color: 'var(--ink-faint)', fontWeight: 500 }}>
-            {formatQtd(atual.pedidosAbertos)} pedido(s) sem faturar
+            {plural(atual.pedidosAbertos, 'pedido')} sem faturar
           </span>
         </StatCard>
         <StatCard label="Cancelado" value={brl(atual.valorVendasCanceladas)} variant={atual.pedidosCancelados > 0 ? 'danger' : undefined}>
           <span className="stat-card-delta" style={{ color: 'var(--ink-faint)', fontWeight: 500 }}>
-            {formatQtd(atual.pedidosCancelados)} pedido(s)
+            {plural(atual.pedidosCancelados, 'pedido')}
           </span>
         </StatCard>
         <StatCard label="Desconto concedido" value={brl(atual.descontoConcedido)}>
@@ -282,7 +282,7 @@ function VendedoresTab({ filtros }) {
         >
           {semVendedor && (
             <span className="stat-card-delta" style={{ color: 'var(--ink-faint)', fontWeight: 500 }}>
-              {formatQtd(semVendedor.pedidosValidos)} pedido(s) fora da comissão
+              {plural(semVendedor.pedidosValidos, 'pedido')} fora da comissão
             </span>
           )}
         </StatCard>
@@ -430,7 +430,7 @@ function ProdutosTab({ filtros, busca }) {
         {porClasse.map((c) => (
           <StatCard key={c.classe} label={`Classe ${c.classe}`} value={brl(c.faturado)}>
             <span className="stat-card-delta" style={{ color: 'var(--ink-faint)', fontWeight: 500 }}>
-              {formatQtd(c.referencias)} referência(s)
+              {plural(c.referencias, 'referência')}
             </span>
           </StatCard>
         ))}
@@ -566,7 +566,7 @@ function ClientesTab({ filtros, busca }) {
         >
           {dados.semCadastro && (
             <span className="stat-card-delta" style={{ color: 'var(--ink-faint)', fontWeight: 500 }}>
-              {formatQtd(dados.semCadastro.pedidos)} pedido(s)
+              {plural(dados.semCadastro.pedidos, 'pedido')}
             </span>
           )}
         </StatCard>

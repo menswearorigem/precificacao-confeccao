@@ -7,7 +7,7 @@ import { confirmar } from '../components/ConfirmDialog';
 import DataTable from '../components/DataTable';
 import IndicadoresEstoque from '../components/IndicadoresEstoque';
 import WikStatusBanner from '../components/WikStatusBanner';
-import { formatQtd } from '../lib/format';
+import { formatQtd, plural } from '../lib/format';
 
 function EanEditavel({ variante, onFeito }) {
   const [editando, setEditando] = useState(false);
@@ -235,7 +235,7 @@ function CorrigirEmMassa() {
             <p className="page-sub">Nenhuma variante encontrada com {campo} = "{valorAtual}".</p>
           ) : (
             <>
-              <p className="page-sub">{encontradas.length} variante(s) encontrada(s):</p>
+              <p className="page-sub">{plural(encontradas.length, 'variante')} encontrada(s):</p>
               <table className="data-table" style={{ marginBottom: 10 }}>
                 <thead><tr><th>Referência</th><th>Descrição</th><th>Cor</th><th>Tamanho</th></tr></thead>
                 <tbody>
@@ -250,7 +250,7 @@ function CorrigirEmMassa() {
                   <input value={valorNovo} onChange={(e) => setValorNovo(e.target.value)} style={{ width: 160 }} />
                 </Field>
                 <button type="button" className="btn btn-primary" onClick={aplicar} disabled={aplicando || !valorNovo.trim()}>
-                  {aplicando ? 'Aplicando…' : `Aplicar em ${encontradas.length} variante(s)`}
+                  {aplicando ? 'Aplicando…' : `Aplicar em ${plural(encontradas.length, 'variante')}`}
                 </button>
               </div>
             </>
@@ -262,7 +262,7 @@ function CorrigirEmMassa() {
 
       {resultado && (
         <div style={{ marginTop: 10 }}>
-          <div className="stamp sm tone-saudavel" style={{ display: 'inline-flex' }}>{resultado.corrigidas} variante(s) corrigida(s).</div>
+          <div className="stamp sm tone-saudavel" style={{ display: 'inline-flex' }}>{plural(resultado.corrigidas, 'variante')} corrigida(s).</div>
           {resultado.conflitos.length > 0 && (
             <div className="login-error" style={{ marginTop: 8 }}>
               {resultado.conflitos.length} não puderam ser corrigidas (já existe uma variante igual na mesma referência):
@@ -382,7 +382,7 @@ export default function EstoquePage() {
   }
 
   async function excluirSelecionadas() {
-    if (!(await confirmar(`Excluir ${selecionadas.size} variante(s) selecionada(s)? As que já tiverem venda registrada não serão excluídas.`))) return;
+    if (!(await confirmar(`Excluir ${plural(selecionadas.size, 'variante')} selecionada(s)? As que já tiverem venda registrada não serão excluídas.`))) return;
     setErro('');
     setAplicandoEmMassa(true);
     let excluidas = 0;
@@ -443,7 +443,7 @@ export default function EstoquePage() {
         <label className="toggle" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
           <Toggle checked={somenteMarketplace} onChange={() => setSomenteMarketplace((v) => !v)} />
           <Store size={14} /> Somente produtos do marketplace
-          {somenteMarketplace && <span className="page-sub" style={{ margin: 0 }}>({produtos.length} referência(s))</span>}
+          {somenteMarketplace && <span className="page-sub" style={{ margin: 0 }}>({plural(produtos.length, 'referência')})</span>}
         </label>
         <form onSubmit={handleBuscar} style={{ display: 'flex', gap: 8 }}>
           <input

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Search, X, Printer, Store, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl } from '../lib/format';
+import { brl, plural } from '../lib/format';
 
 // Quantas referências vão em cada chamada de /estoque/ficha quando a seleção
 // é montada à mão. Sem isso, uma seleção grande viraria uma URL de milhares
@@ -60,7 +60,33 @@ export default function FichaEstoquePage() {
     if (searchParams.get('marketplace') === '1') {
       setSearchParams({}, { replace: true });
       carregarMarketplace();
+      return;
     }
+    // 14/09/2026: mesmo caminho, agora vindo da SELEÇÃO da lista de Produtos
+    // (?referencias=OG1620,OG1621). Era a outra metade da tela que abria
+    // vazia: o atalho "todos do marketplace" já existia, mas quem queria três
+    // referências específicas tinha de digitar as três.
+    const refs = (searchParams.get('referencias') || '').split(',').map((r) => r.trim()).filter(Boolean);
+    if (refs.length === 0) return;
+    setSearchParams({}, { replace: true });
+    let cancelado = false;
+    (async () => {
+      setCarregando(true);
+      try {
+        const achados = [];
+        for (const ref of refs) {
+          const lista = await api.get(`/produtos?busca=${encodeURIComponent(ref)}`);
+          const exato = (lista || []).find((p) => String(p.referencia).toUpperCase() === ref.toUpperCase());
+          if (exato) achados.push(exato);
+        }
+        if (!cancelado) setSelecionadas(achados);
+      } catch {
+        // Busca falhou: a busca manual continua valendo.
+      } finally {
+        if (!cancelado) setCarregando(false);
+      }
+    })();
+    return () => { cancelado = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -160,7 +186,7 @@ export default function FichaEstoquePage() {
 
           {loteMarketplace && (
             <p className="page-sub" style={{ margin: '0 0 8px' }}>
-              Seleção completa do marketplace carregada — {selecionadas.length} referência(s).
+              Seleção completa do marketplace carregada — {plural(selecionadas.length, 'referência')}.
             </p>
           )}
 
@@ -185,8 +211,8 @@ export default function FichaEstoquePage() {
             {gerando ? 'Gerando…' : `Gerar fichas (${selecionadas.length})`}
           </button>
           {fichas.length > 0 && (
-            <button type="button" className="btn btn-ghost" style={{ marginLeft: 8 }} onClick={() => window.print()}>
-              <Printer size={14} /> Imprimir / Exportar PDF
+            <button type="button" className="btn btn-ghost" style={{ marginLeft: 8 }} onClick={() => window.print()} title="Abre a impressão do navegador — de lá dá para salvar em PDF">
+              <Printer size={14} /> Imprimir
             </button>
           )}
 

@@ -4,7 +4,7 @@ import { ChevronDown, ChevronUp, Pencil, Plug, Plus, RefreshCw, Trash2 } from 'l
 import { api } from '../api/client';
 import { Field, NumInput, Select, Toggle } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
-import { tempoRelativo } from '../lib/format';
+import { tempoRelativo, plural } from '../lib/format';
 import WikIntegracaoCard from '../components/WikIntegracaoCard';
 import WikImportarProdutosCard from '../components/WikImportarProdutosCard';
 import WikImportarFichaCustoCard from '../components/WikImportarFichaCustoCard';
@@ -202,8 +202,8 @@ export default function IntegracoesPage() {
     setSincronizandoId(id);
     try {
       const resultado = await api.post(`/integracoes/${id}/sincronizar`, {});
-      const cancelados = resultado.pedidosCancelados > 0 ? ` ${resultado.pedidosCancelados} pedido(s) cancelado(s) no marketplace foi(ram) atualizado(s) aqui também.` : '';
-      setAviso(`${resultado.pedidosImportados} pedido(s) novo(s) importado(s) (${resultado.pedidosEncontrados} encontrado(s) no total).${cancelados}`);
+      const cancelados = resultado.pedidosCancelados > 0 ? ` ${plural(resultado.pedidosCancelados, 'pedido')} cancelado(s) no marketplace foi(ram) atualizado(s) aqui também.` : '';
+      setAviso(`${plural(resultado.pedidosImportados, 'pedido')} novo(s) importado(s) (${resultado.pedidosEncontrados} encontrado(s) no total).${cancelados}`);
       load();
     } catch (err) {
       setErro(err.message);

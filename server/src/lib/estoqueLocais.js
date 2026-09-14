@@ -225,6 +225,13 @@ function panorama(conciliacoes) {
     disponivel: validas.reduce((s, c) => s + c.disponivel, 0),
     emTerceiro: validas.reduce((s, c) => s + c.emTerceiro, 0),
     naoEnderecado: validas.reduce((s, c) => s + Math.max(0, c.naoEnderecado), 0),
+    // 14/09/2026: o excesso endereçado precisa SAIR daqui em peças, e não só
+    // como contagem de variantes. `naoEnderecado` é clampado em zero logo
+    // acima, então quando há mais peça endereçada do que peça no estoque o
+    // erro some da caixa "Ainda sem lugar" e reaparece inteiro, sem
+    // explicação, dentro de `disponivel` — que é o número que a tela mostra
+    // negativo. Com este campo a tela consegue dizer de quanto é o buraco.
+    excedenteEnderecado: validas.reduce((s, c) => s + Math.max(0, -c.naoEnderecado), 0),
     variantesNaoEnderecadas: validas.filter((c) => !c.completo && c.naoEnderecado > 0).length,
     variantesInconsistentes: validas.filter((c) => c.inconsistente).length,
     variantesComNegativo: validas.filter((c) => c.negativos.length > 0).length,

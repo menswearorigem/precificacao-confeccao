@@ -8,7 +8,7 @@ import {
   EstadoVazio, Select, Skeleton, IndicadorDestaque, NumInput, Field, DateInput,
 } from '../components/ui';
 import NovaFaccaoModal from '../components/NovaFaccaoModal';
-import { brl, formatQtd, dataBr, numeroBr, uid } from '../lib/format';
+import { brl, formatQtd, dataBr, numeroBr, uid, plural } from '../lib/format';
 
 // Produção › Gerar Movimentação.
 //
@@ -740,7 +740,7 @@ export default function MovimentacaoProducaoPage() {
             <Check size={14} />
             {formatQtd(resultado.movimentos.length)} movimento(s) gravado(s)
             {resultado.ordensServico.length > 0
-              ? ` e ${formatQtd(resultado.ordensServico.length)} ordem(ns) de serviço criada(s): ${resultado.ordensServico.map((os) => `O.S. ${os.numero}`).join(', ')}.`
+              ? ` e ${plural(resultado.ordensServico.length, 'ordem', 'ordens')} de serviço criada(s): ${resultado.ordensServico.map((os) => `O.S. ${os.numero}`).join(', ')}.`
               : '.'}
           </p>
           {resultado.avisos.map((a, i) => (
@@ -832,7 +832,7 @@ export default function MovimentacaoProducaoPage() {
                   <option value="entrada">Entrada no fluxo — a peça ainda não está em etapa nenhuma</option>
                   {origens.map((o) => (
                     <option key={o.chave} value={o.chave}>
-                      {o.etapa_nome}{o.fornecedor_nome ? ` · ${o.fornecedor_nome}` : ''} — {formatQtd(o.pecas)} peça(s)
+                      {o.etapa_nome}{o.fornecedor_nome ? ` · ${o.fornecedor_nome}` : ''} — {plural(o.pecas, 'peça')}
                     </option>
                   ))}
                 </Select>
@@ -960,7 +960,7 @@ export default function MovimentacaoProducaoPage() {
             </button>
             <span className="ink-soft">
               {totalPecas > 0
-                ? `${formatQtd(totalPecas)} peça(s) em ${formatQtd(destinos.length)} destino(s).`
+                ? `${plural(totalPecas, 'peça')} em ${formatQtd(destinos.length)} destino(s).`
                 : 'Digite a quantidade de pelo menos uma linha da grade.'}
             </span>
           </div>

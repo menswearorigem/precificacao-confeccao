@@ -3,7 +3,7 @@ import {
   Landmark, TrendingDown, ArrowDownCircle, ArrowUpCircle, AlertTriangle, Info,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, dataBr, formatQtd } from '../lib/format';
+import { brl, dataBr, formatQtd, plural } from '../lib/format';
 import DataTable from '../components/DataTable';
 import {
   BotaoExportar, EstadoVazio, IndicadorDestaque, Field, Select, DateInput,
@@ -269,7 +269,7 @@ export default function FluxoCaixaPage() {
         vazio={dias.length === 0
           ? 'Nenhum título vence e nenhuma baixa acontece neste período — não há o que projetar.'
           : null}
-        rodape={`${formatQtd(dias.length)} dia(s) com movimento no período.`}
+        rodape={`${plural(dias.length, 'dia')} com movimento no período.`}
         legenda={[
           { rotulo: 'Previsto (títulos em aberto)', valor: brl(resumo.aReceber - resumo.aPagar), cor: corPorIndice(paleta, 0) },
           { rotulo: 'Realizado (baixas)', valor: brl(resumo.recebido - resumo.pago), cor: corPorIndice(paleta, 1) },
@@ -294,7 +294,7 @@ export default function FluxoCaixaPage() {
           ? 'Sem título vencendo no período, o acumulado seria uma linha reta no saldo atual — não há projeção a fazer.'
           : null}
         rodape={resumo.primeiroNegativo
-          ? `O caixa fica negativo pela primeira vez em ${dataBr(resumo.primeiroNegativo.data)}, e passa ${formatQtd(resumo.diasNegativos)} dia(s) no vermelho dentro do período.`
+          ? `O caixa fica negativo pela primeira vez em ${dataBr(resumo.primeiroNegativo.data)}, e passa ${plural(resumo.diasNegativos, 'dia')} no vermelho dentro do período.`
           : 'Nenhuma barra vermelha: o acumulado não fica negativo em nenhum dia deste período.'}
       >
         <GraficoColunas
@@ -308,7 +308,7 @@ export default function FluxoCaixaPage() {
       <div className="card">
         <div className="card-head-linha">
           <div className="card-head">Dia a dia</div>
-          <span className="page-sub" style={{ margin: 0 }}>{formatQtd(dias.length)} dia(s) com movimento</span>
+          <span className="page-sub" style={{ margin: 0 }}>{plural(dias.length, 'dia')} com movimento</span>
         </div>
         <p className="page-sub" style={{ marginTop: 0 }}>
           Um traço quer dizer que não houve nada daquele tipo no dia — não que o valor foi zero. A linha em

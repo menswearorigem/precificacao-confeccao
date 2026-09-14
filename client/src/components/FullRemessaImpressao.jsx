@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import logoHbnHub from '../assets/logo-hbn-hub.png';
-import { dataBr, formatQtd, numeroBr } from '../lib/format';
+import { dataBr, formatQtd, numeroBr, plural } from '../lib/format';
 
 // O PAPEL DA REMESSA AO FULL (11/09/2026).
 //
@@ -335,7 +335,7 @@ function FolhaKitMontado({ anuncios, plano }) {
         )}
         {plano.ressalvas?.composicaoSuposta?.length > 0 && (
           <li className="imp-alerta">
-            Atenção: {plano.ressalvas.composicaoSuposta.length} linha(s) supõem que o kit é de uma cor só, porque a
+            Atenção: {plural(plano.ressalvas.composicaoSuposta.length, 'linha')} supõem que o kit é de uma cor só, porque a
             composição daquelas variações não foi registrada. Confira antes de cortar.
           </li>
         )}
@@ -493,7 +493,7 @@ function FolhaDesmembrado({ anuncios, plano }) {
 
       {plano.naoVinculados?.length > 0 && (
         <div className="imp-caixa imp-caixa-alerta">
-          <b>{plano.naoVinculados.length} anúncio(s) não entraram nesta grade</b> porque não estão ligados a
+          <b>{plural(plano.naoVinculados.length, 'anúncio')} não entraram nesta grade</b> porque não estão ligados a
           nenhuma referência do cadastro — sem saber qual peça é, não há o que cortar. Eles somam{' '}
           {formatQtd(plano.naoVinculados.reduce((s, x) => s + (x.pecasAEnviar ?? x.aEnviar ?? 0), 0))} peças a
           enviar.

@@ -9,7 +9,7 @@ import {
   CampoBusca, ChipsFiltros,
 } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
-import { formatQtd, tempoRelativo } from '../lib/format';
+import { formatQtd, tempoRelativo, plural } from '../lib/format';
 import { CampoTextoLimitado } from '../components/campos';
 
 // Estoque › Depósitos e transferências.
@@ -439,7 +439,7 @@ function PainelAceite({ transferencia, onFechar, onPronto }) {
 
           {faltaConferir.length > 0 && itens && (
             <p className="aviso-inline">
-              <AlertTriangle size={14} /> Faltam {faltaConferir.length} item(ns) sem número. Todos
+              <AlertTriangle size={14} /> Faltam {plural(faltaConferir.length, 'item', 'itens')} sem número. Todos
               precisam de um para o aceite fechar.
             </p>
           )}
@@ -535,9 +535,9 @@ export default function DepositosPage() {
     if (!ok) return;
     try {
       const r = await api.post(`${BASE}/transferencias/${t.id}/baixar-divergencia`, { motivo });
-      setSucesso(`Baixa registrada em ${r.baixados.length} item(ns).`);
+      setSucesso(`Baixa registrada em ${plural(r.baixados.length, 'item', 'itens')}.`);
       if (r.ignorados?.length > 0) {
-        setAvisos([`${r.ignorados.length} item(ns) de insumo não foram baixados: o total de insumo `
+        setAvisos([`${plural(r.ignorados.length, 'item', 'itens')} de insumo não foram baixados: o total de insumo `
           + 'é mantido por outra máquina, e escrever um segundo caminho para o mesmo número é '
           + 'exatamente o que este módulo evita. Ajuste pelo estoque de insumos.']);
       }
@@ -604,12 +604,19 @@ export default function DepositosPage() {
             Icone={MapPin}
             explicacao="Está numa natureza de lugar conhecida, mas ninguém disse em qual depósito. O sistema não chuta — e este número é o tamanho do que ainda falta endereçar."
           />
+          {/* 14/09/2026: quando esta conta inverte de sinal, ela deixa de ser
+              "fora do mapa" — não existe peça fora do mapa negativa. O que há
+              é o contrário: mais peça endereçada do que peça no estoque. O
+              cartão passa a dizer os dois casos pelo nome, com o módulo do
+              número, em vez de mostrar um negativo que ninguém sabe ler. */}
           <IndicadorDestaque
-            rotulo="Peças fora do mapa"
-            valor={formatQtd(panorama.pecasSemLocal)}
+            rotulo={panorama.pecasSemLocal < 0 ? 'Endereçado a mais que o total' : 'Peças fora do mapa'}
+            valor={formatQtd(Math.abs(panorama.pecasSemLocal))}
             tom={panorama.inconsistente ? 'prejuizo' : undefined}
             Icone={AlertTriangle}
-            explicacao="Entram no total do estoque e não aparecem em detalhamento nenhum — nem depósito, nem natureza de lugar. É o saldo antigo, de antes de existir endereçamento. Diferente de 'sem depósito', que ao menos sabe se está aqui ou na facção."
+            explicacao={panorama.pecasSemLocal < 0
+              ? 'Há mais peça endereçada em depósito do que peça no estoque. É defeito de lançamento, e é a mesma conta que faz o "Aqui dentro, pronto para vender" da tela Endereços ficar negativo.'
+              : "Entram no total do estoque e não aparecem em detalhamento nenhum — nem depósito, nem natureza de lugar. É o saldo antigo, de antes de existir endereçamento. Diferente de 'sem depósito', que ao menos sabe se está aqui ou na facção."}
           />
         </div>
       )}
@@ -718,7 +725,7 @@ export default function DepositosPage() {
                     <td className="num">{formatQtd(t.quantidade)}</td>
                     <td className={Number(t.divergencias) > 0 ? 'tone-prejuizo' : ''}>
                       {t.situacao === 'recebida'
-                        ? (Number(t.divergencias) > 0 ? `${t.divergencias} item(ns)` : 'Bateu')
+                        ? (Number(t.divergencias) > 0 ? `${plural(t.divergencias, 'item', 'itens')}` : 'Bateu')
                         : '—'}
                     </td>
                     <td>{tempoRelativo(t.recebido_em || t.enviado_em || t.criado_em)}</td>

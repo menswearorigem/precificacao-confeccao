@@ -3,7 +3,7 @@ import {
   Inbox, X, AlertTriangle, Ban, Undo2, ReceiptText, Info, Clock, Split, Plus, Trash2,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, dataBr, formatQtd, hojeIso } from '../lib/format';
+import { brl, dataBr, formatQtd, hojeIso, rotuloModulo, plural } from '../lib/format';
 import DataTable from '../components/DataTable';
 import {
   SkeletonLinhasTabela, EstadoVazio, IndicadorDestaque, CampoBusca, ChipsFiltros,
@@ -509,7 +509,7 @@ export default function CaixaEntradaFinanceiroPage() {
                     className="clickable-row"
                     onClick={() => setOrigem(l.origem_codigo === origem ? '' : l.origem_codigo)}
                   >
-                    <td>{l.modulo}</td>
+                    <td>{rotuloModulo(l.modulo)}</td>
                     <td>{l.origem_rotulo}</td>
                     <td className="mono">{formatQtd(l.abertas)}</td>
                     <td>
@@ -581,7 +581,7 @@ export default function CaixaEntradaFinanceiroPage() {
                   <td>
                     <span className="cel-dupla">
                       <strong>{p.documento || '—'}</strong>
-                      <small>{p.modulo}</small>
+                      <small>{rotuloModulo(p.modulo)}</small>
                     </span>
                   </td>
                   <td>{p.origem_rotulo}</td>
@@ -620,7 +620,7 @@ export default function CaixaEntradaFinanceiroPage() {
                       )}
                       {p.situacao === 'atendida' && (
                         <span className="stamp sm tone-saudavel">
-                          {formatQtd(p.titulos_gerados)} título(s) · {p.valor_atendido != null ? brl(p.valor_atendido) : '—'}
+                          {plural(p.titulos_gerados, 'título')} · {p.valor_atendido != null ? brl(p.valor_atendido) : '—'}
                         </span>
                       )}
                       {p.situacao === 'cancelada' && <span className="stamp sm tone-neutro">cancelada</span>}

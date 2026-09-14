@@ -13,7 +13,14 @@ function GrupoAlerta({ grupo }) {
       <div className="card-head">
         <AlertTriangle size={14} /> {grupo.titulo} ({formatQtd(grupo.total)})
       </div>
-      <p className="page-sub" style={{ margin: '0 0 8px' }}>Limite configurado: {pct(grupo.limite)}.</p>
+      {/* 14/09/2026: o limite era texto morto. A tela aponta que a referência
+          passou do teto e o teto é ajustável — mas quem quisesse conferir ou
+          mudar tinha de sair, achar Configurações › Cálculo › Parâmetros e
+          procurar o campo. Diagnóstico sem saída vira alerta ignorado. */}
+      <p className="page-sub" style={{ margin: '0 0 8px' }}>
+        Limite configurado: {pct(grupo.limite)}.{' '}
+        <Link to="/configuracoes">Mudar em Parâmetros</Link>
+      </p>
       <table className="data-table">
         <thead><tr><th>Referência</th><th>Descrição</th><th>Apurado</th><th>Desvio</th><th /></tr></thead>
         <tbody>

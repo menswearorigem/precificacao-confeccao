@@ -5,7 +5,7 @@ import {
   CheckCircle2, XCircle, Info, X, Truck,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, dataBr, formatQtd, qtdFracionaria } from '../lib/format';
+import { brl, dataBr, formatQtd, qtdFracionaria, plural } from '../lib/format';
 import DataTable from '../components/DataTable';
 import {
   SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazio,
@@ -296,7 +296,7 @@ function Detalhe({ detalhe, confronto, onVoltar, onAtualizar }) {
       <div className="card">
         <div className="card-head-linha">
           <div className="card-head">Confronto: o que foi pedido × o que chegou</div>
-          <span className="page-sub" style={{ margin: 0 }}>{formatQtd(itens.length)} item(ns)</span>
+          <span className="page-sub" style={{ margin: 0 }}>{plural(itens.length, 'item', 'itens')}</span>
         </div>
         <p className="page-sub">
           As duas quantidades ficam lado a lado para sempre — o pedido não é reescrito para o que
@@ -607,7 +607,7 @@ export default function PedidosCompraPage() {
           Icone={Wallet}
           rotulo="Comprometido e não recebido"
           valor={brl(resumo.emAbertoValor)}
-          explicacao={`${formatQtd(resumo.emAbertoQtd)} pedido(s) aprovado(s) ou recebido(s) em parte — dinheiro já prometido ao fornecedor.`}
+          explicacao={`${plural(resumo.emAbertoQtd, 'pedido')} aprovado(s) ou recebido(s) em parte — dinheiro já prometido ao fornecedor.`}
         />
         <IndicadorDestaque
           tom={resumo.atrasadosQtd > 0 ? 'negativo' : undefined}
@@ -615,7 +615,7 @@ export default function PedidosCompraPage() {
           rotulo="Pedidos atrasados"
           valor={formatQtd(resumo.atrasadosQtd)}
           explicacao={resumo.atrasadosQtd > 0
-            ? `${brl(resumo.atrasadosValor)} parados, e o pior atraso é de ${formatQtd(resumo.piorAtraso)} dia(s) contra a data prometida.`
+            ? `${brl(resumo.atrasadosValor)} parados, e o pior atraso é de ${plural(resumo.piorAtraso, 'dia')} contra a data prometida.`
             : 'Nenhum pedido passou da data prometida pelo fornecedor.'}
         />
         <IndicadorDestaque
@@ -669,7 +669,7 @@ export default function PedidosCompraPage() {
                       {atraso === null
                         ? <span style={{ color: 'var(--ink-faint)' }}>sem previsão</span>
                         : atraso > 0
-                          ? <span className="stamp sm tone-prejuizo">{formatQtd(atraso)} dia(s)</span>
+                          ? <span className="stamp sm tone-prejuizo">{plural(atraso, 'dia')}</span>
                           : <span className="mono">—</span>}
                     </td>
                     <td className="mono">{formatQtd(p.qtd_itens)}</td>

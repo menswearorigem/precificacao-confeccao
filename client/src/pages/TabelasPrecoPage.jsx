@@ -5,7 +5,7 @@ import {
 import { api } from '../api/client';
 import { Field, Select, NumInput, Toggle, EstadoVazio, AvisoDeFalha, Skeleton } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
-import { brl, pct, formatQtd } from '../lib/format';
+import { brl, pct, formatQtd, plural } from '../lib/format';
 import DataTable from '../components/DataTable';
 import { CampoDesconto, CampoTextoLimitado } from '../components/campos';
 
@@ -395,7 +395,7 @@ export default function TabelasPrecoPage() {
 
               <div className="vendedor-sub">
                 {t.pedidos_usando > 0
-                  ? `${formatQtd(t.pedidos_usando)} pedido(s) já vendidos com esta tabela`
+                  ? `${plural(t.pedidos_usando, 'pedido')} já vendidos com esta tabela`
                   : 'Ainda não usada em nenhum pedido'}
               </div>
 
@@ -590,7 +590,7 @@ export default function TabelasPrecoPage() {
                     return (
                       <div className={problemas > 0 ? 'aviso-inline' : 'sucesso-inline'} style={{ marginTop: 10 }}>
                         <span>
-                          {formatQtd(resultadoColagem.aplicadas)} referência(s) aplicada(s).
+                          {plural(resultadoColagem.aplicadas, 'referência')} aplicada(s).
                           {resultadoColagem.naoEncontradas?.length > 0 && (
                             <> Não existem no cadastro: <span className="mono">{resultadoColagem.naoEncontradas.join(', ')}</span>.</>
                           )}

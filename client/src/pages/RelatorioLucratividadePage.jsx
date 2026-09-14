@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { usePaletaGrafico, corPorIndice } from '../lib/coresGrafico';
-import { brl, pct, formatQtd } from '../lib/format';
+import { brl, pct, formatQtd, plural } from '../lib/format';
 import { Select, MultiSelect, StatCard, ThOrdenavel, ThGrupoOrdenavel, Paginacao, BotaoExportar } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
@@ -648,7 +648,7 @@ function DuplicatasSuspeitas({ duplicatas }) {
         </button>
       </div>
       <p className="page-sub" style={{ marginTop: 0 }}>
-        Achei {duplicatas.grupos.length} item(ns) com o mesmo SKU, preço e quantidade aparecendo em mais de um
+        Achei {plural(duplicatas.grupos.length, 'item', 'itens')} com o mesmo SKU, preço e quantidade aparecendo em mais de um
         pedido dentro do mesmo pacote do Mercado Livre — pode ser a mesma venda contada duas vezes (até
         <strong className="mono"> {brl(duplicatas.totalPossivelExcesso)}</strong> de receita possivelmente duplicada no período). Ainda não
         corrijo isso sozinho — quero ter mais certeza antes de mexer em número de receita. Se puder, confira um desses
@@ -1072,7 +1072,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
               />
             )}
             {relatorio && (
-              <button className="btn btn-ghost" onClick={() => window.print()}>
+              <button className="btn btn-ghost" onClick={() => window.print()} title="Abre a impressão do navegador — de lá dá para salvar em PDF">
                 <Printer size={14} /> Imprimir resumo
               </button>
             )}
@@ -1099,7 +1099,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
         )}
         {isMarketplace && relatorio?.totalGeral.candidatosDescontoNaoCapturado > 0 && (
           <div className="aviso-compacto tone-atencao">
-            {formatQtd(relatorio.totalGeral.candidatosDescontoNaoCapturado)} pedido(s) marcado(s) "receita candidata"
+            {plural(relatorio.totalGeral.candidatosDescontoNaoCapturado, 'pedido')} marcado(s) "receita candidata"
             (linha na aba Pedidos) — a taxa cobrada, em % da receita gravada, está acima da comissão esperada do
             Mercado Livre, sinal de que pode ter um desconto no fechamento que não saiu da receita. Não corrigi
             sozinho (precisa confirmar contra a API/painel do Mercado Livre qual é o valor certo).
@@ -1109,18 +1109,18 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
           <div className="aviso-compacto tone-saudavel">
             Verificados {resultadoRevinculo.verificados} itens sem vínculo: {resultadoRevinculo.vinculados} foram
             vinculados agora{resultadoRevinculo.semCorrespondencia > 0 ? `, ${resultadoRevinculo.semCorrespondencia} continuam sem correspondência (SKU não bate com nenhuma referência cadastrada — use "Vincular produto" pra fazer manualmente)` : ''}.
-            {resultadoRevinculo.pedidosAtualizados > 0 ? ` ${resultadoRevinculo.pedidosAtualizados} pedido(s) ganharam empresa/% de nota fiscal.` : ''}
+            {resultadoRevinculo.pedidosAtualizados > 0 ? ` ${plural(resultadoRevinculo.pedidosAtualizados, 'pedido')} ganharam empresa/% de nota fiscal.` : ''}
             {resultadoRevinculo.pagamentosCorrigidos > 0
               ? ` Conferidos ${resultadoRevinculo.pagamentosVerificados} pagamentos: ${resultadoRevinculo.pagamentosCorrigidos} estavam com o pagamento errado vinculado (valor recebido será buscado de novo no próximo ciclo).`
               : (resultadoRevinculo.pagamentosVerificados > 0 ? ` Conferidos ${resultadoRevinculo.pagamentosVerificados} pagamentos, nenhum precisou de correção.` : '')}
             {resultadoRevinculo.pedidosVerificadosAnuncio > 0
-              ? ` Conferidos ${resultadoRevinculo.pedidosVerificadosAnuncio} pedido(s) sem ID de anúncio: ${resultadoRevinculo.itensAnuncioCorrigidos} item(ns) foram preenchidos (clique de novo se ainda restarem — corrige em lotes).`
+              ? ` Conferidos ${plural(resultadoRevinculo.pedidosVerificadosAnuncio, 'pedido')} sem ID de anúncio: ${plural(resultadoRevinculo.itensAnuncioCorrigidos, 'item', 'itens')} foram preenchidos (clique de novo se ainda restarem — corrige em lotes).`
               : ''}
             {resultadoRevinculo.pedidosVerificadosPacote > 0
-              ? ` Conferidos ${resultadoRevinculo.pedidosVerificadosPacote} pedido(s) sem dado de pacote: ${resultadoRevinculo.pedidosComPacoteCorrigidos} eram compra em pacote e passam a aparecer agrupados (clique de novo se ainda restarem — corrige em lotes).`
+              ? ` Conferidos ${plural(resultadoRevinculo.pedidosVerificadosPacote, 'pedido')} sem dado de pacote: ${resultadoRevinculo.pedidosComPacoteCorrigidos} eram compra em pacote e passam a aparecer agrupados (clique de novo se ainda restarem — corrige em lotes).`
               : ''}
             {resultadoRevinculo.itensFantasmaRemovidos > 0
-              ? ` Removidos ${resultadoRevinculo.itensFantasmaRemovidos} item(ns) fantasma (mesmo SKU duplicado com valor zerado, de ${resultadoRevinculo.pedidosComItemFantasma} pedido(s)) que estavam cobrando custo sem receita correspondente.`
+              ? ` Removidos ${plural(resultadoRevinculo.itensFantasmaRemovidos, 'item', 'itens')} fantasma (mesmo SKU duplicado com valor zerado, de ${plural(resultadoRevinculo.pedidosComItemFantasma, 'pedido')}) que estavam cobrando custo sem receita correspondente.`
               : ''}
           </div>
         )}
@@ -1224,7 +1224,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                     {relatorio.totalGeral.valorRecebidoSemConfirmacao > 0 && (
                       <div className="row-line">
                         <span>Sem Confirmação Ainda</span>
-                        <span className="mono">{relatorio.totalGeral.valorRecebidoSemConfirmacao} pedido(s)</span>
+                        <span className="mono">{plural(relatorio.totalGeral.valorRecebidoSemConfirmacao, 'pedido')}</span>
                       </div>
                     )}
                     <div className="row-line no-print"><span>Pedidos no Período</span><span className="mono">{relatorio.pedidos.length}</span></div>

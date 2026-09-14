@@ -425,6 +425,24 @@ export function Paginacao({
   setPagina, setTamanho, posicao = 'rodape',
 }) {
   if (totalItens === 0) return null;
+
+  // Lista que cabe inteira numa página não ganha controle de paginação
+  // (14/09/2026). A varredura achou telas com QUATRO linhas exibindo dois
+  // blocos completos de paginação — topo e rodapé — cada um com o seletor de
+  // tamanho, quatro setas e "Página 1 de 1", mais um contador de resultados
+  // fora do cartão: três contagens e oito botões inúteis para quatro linhas.
+  // Some tudo menos a contagem, e no rodapé some até ela, que o topo já deu.
+  if (totalPaginas <= 1 && totalItens <= Math.min(...tamanhos)) {
+    if (posicao === 'rodape') return null;
+    return (
+      <div className={`paginacao-barra paginacao-${posicao}`}>
+        <span className="paginacao-contagem">
+          {totalItens.toLocaleString('pt-BR')} {totalItens === 1 ? 'resultado' : 'resultados'}
+        </span>
+      </div>
+    );
+  }
+
   const paginas = Array.from({ length: totalPaginas }, (_, i) => i + 1);
   return (
     <div className={`paginacao-barra paginacao-${posicao}`}>

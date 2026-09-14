@@ -6,10 +6,11 @@ import {
 import { api } from '../api/client';
 import {
   EstadoVazio, Skeleton, IndicadorDestaque, Select, Field, NumInput,
-  CampoBusca, Checkbox, Toggle, ChipsFiltros,
+  CampoBusca, Checkbox, Toggle, ChipsFiltros, Paginacao,
 } from '../components/ui';
+import { useTabela } from '../lib/useTabela';
 import { confirmar } from '../components/ConfirmDialog';
-import { formatQtd, tempoRelativo } from '../lib/format';
+import { formatQtd, tempoRelativo, plural } from '../lib/format';
 
 // Estoque › Reserva.
 //
@@ -241,7 +242,7 @@ export default function ReservaEstoquePage() {
       await api.post(`${BASE}/reservas/${reserva.id}/liberar`, { motivo: motivoLiberacao });
       setLiberando(null);
       setMotivoLiberacao('');
-      setSucesso(`Reserva de ${formatQtd(reserva.quantidade)} peça(s) liberada. O saldo voltou a ficar disponível.`);
+      setSucesso(`Reserva de ${plural(reserva.quantidade, 'peça')} liberada. O saldo voltou a ficar disponível.`);
       recarregarTudo();
     } catch (e) {
       setErro(e.message);
@@ -249,7 +250,7 @@ export default function ReservaEstoquePage() {
   }
 
   async function consumirReserva(reserva) {
-    const texto = `Consumir dá baixa no estoque de verdade: ${formatQtd(reserva.quantidade)} peça(s) `
+    const texto = `Consumir dá baixa no estoque de verdade: ${plural(reserva.quantidade, 'peça')} `
       + 'saem do saldo do galpão e não voltam.\n\n'
       + 'Reservar apenas segurava a peça — ela continuava lá. Consumir é o movimento de saída, '
       + 'e só deve ser feito quando a peça foi separada e despachada.\n\nConfirma?';
@@ -257,7 +258,7 @@ export default function ReservaEstoquePage() {
     setErro('');
     try {
       await api.post(`${BASE}/reservas/${reserva.id}/consumir`, {});
-      setSucesso(`${formatQtd(reserva.quantidade)} peça(s) baixadas do estoque.`);
+      setSucesso(`${plural(reserva.quantidade, 'peça')} baixadas do estoque.`);
       recarregarTudo();
     } catch (e) {
       setErro(e.message);
@@ -299,6 +300,22 @@ export default function ReservaEstoquePage() {
     return lista.filter((i) => [i.referencia, i.produto_descricao, i.cor, i.tamanho, i.ean, i.localizacao]
       .some((c) => String(c || '').toLowerCase().includes(alvo)));
   }, [disponivel, busca]);
+
+  // Paginação (14/09/2026): a tela abria com TODAS as variantes — 639 na
+  // medição da varredura — sendo que só 15 tinham reserva. 97% de ruído, e a
+  // página inteira renderizada de uma vez.
+  const tabelaDisponivel = useTabela(itensDisponivel, {
+    colunas: {
+      referencia: (i) => i.referencia,
+      cor: (i) => i.cor,
+      tamanho: (i) => i.tamanho,
+      saldo: (i) => Number(i.saldo || 0),
+      reservado: (i) => Number(i.reservado || 0),
+      disponivel: (i) => Number(i.disponivel || 0),
+    },
+    colunaPadrao: 'referencia',
+    prefixo: 'disp',
+  });
 
   const chipsDisponivel = [
     produtoId && {
@@ -358,12 +375,19 @@ export default function ReservaEstoquePage() {
             Icone={Boxes}
             explicacao="Total de peças que estão no estoque e não podem ser vendidas de novo. É exatamente o que o marketplace não deveria enxergar."
           />
+          {/* 14/09/2026: o rótulo dizia "Disponível negativo" e o número é uma
+              CONTAGEM DE VARIANTES, não de peças — do lado de três cartões que
+              contam peça. Pior: o sistema tem três "disponíveis" diferentes, um
+              por tela, e nenhum dizia de qual subtração estava falando. Aqui é
+              saldo menos reserva; em Endereços é saldo menos o que está fora do
+              galpão. O rótulo passa a dizer a unidade, e a explicação, a
+              subtração. */}
           <IndicadorDestaque
-            rotulo="Disponível negativo"
+            rotulo="Variantes com disponível negativo"
             valor={formatQtd(indicadores.variantesNegativas)}
             tom={indicadores.variantesNegativas > 0 ? 'prejuizo' : undefined}
             Icone={ShieldAlert}
-            explicacao="Variantes que já foram vendidas além do que existe no galpão. É peça prometida que não está lá — cada uma vira cancelamento se ninguém produzir ou comprar antes."
+            explicacao="Quantas cor/tamanho já foram vendidas além do que existe. Aqui 'disponível' é saldo menos reserva — não desconta peça que está na facção, que é a conta da tela Endereços."
           />
           <IndicadorDestaque
             rotulo="Peças travadas em reserva parada"
@@ -409,7 +433,7 @@ export default function ReservaEstoquePage() {
 
         {disponivel?.variantes_negativas > 0 && (
           <p className="erro-inline">
-            {formatQtd(disponivel.variantes_negativas)} variante(s) desta lista estão com disponível
+            {plural(disponivel.variantes_negativas, 'variante')} desta lista estão com disponível
             negativo: já se vendeu mais peça do que existe no galpão. Enquanto isso não for
             produzido, comprado ou liberado, algum pedido vai ser cancelado por falta.
           </p>
@@ -428,6 +452,8 @@ export default function ReservaEstoquePage() {
         )}
 
         {!carregandoDisponivel && itensDisponivel.length > 0 && (
+          <>
+          <Paginacao {...tabelaDisponivel} posicao="topo" />
           <div className="tabela-rolagem">
             <table className="tabela-nota">
               <thead>
@@ -444,7 +470,7 @@ export default function ReservaEstoquePage() {
                 </tr>
               </thead>
               <tbody>
-                {itensDisponivel.map((i) => {
+                {tabelaDisponivel.itensPagina.map((i) => {
                   const negativa = Number(i.disponivel) < 0;
                   return (
                     <tr key={i.variante_id} className={negativa ? 'linha-prejuizo' : undefined}>
@@ -471,6 +497,8 @@ export default function ReservaEstoquePage() {
               </tbody>
             </table>
           </div>
+          <Paginacao {...tabelaDisponivel} posicao="rodape" />
+          </>
         )}
       </div>
 
@@ -520,7 +548,7 @@ export default function ReservaEstoquePage() {
         {aba === 'paradas' && paradas && (
           <p className="aviso-inline">
             <AlertTriangle size={14} />
-            {formatQtd(paradas.total_pecas_travadas)} peça(s) travadas em {formatQtd((paradas.reservas || []).length)} reserva(s)
+            {plural(paradas.total_pecas_travadas, 'peça')} travadas em {formatQtd((paradas.reservas || []).length)} reserva(s)
             parada(s) há mais tempo que a política permite. Nada é liberado automaticamente — a
             decisão é de quem opera: ou o pedido voltou a andar, ou a reserva precisa ser liberada
             à mão.
@@ -790,7 +818,7 @@ export default function ReservaEstoquePage() {
             guardarAvisos(r);
             setSucesso(r?.ajustada
               ? 'Reserva já existente para esta origem foi ajustada — não foi somada duas vezes.'
-              : `Reserva de ${formatQtd(r?.reserva?.quantidade)} peça(s) criada. A peça continua no galpão; só saiu do disponível.`);
+              : `Reserva de ${plural(r?.reserva?.quantidade, 'peça')} criada. A peça continua no galpão; só saiu do disponível.`);
             recarregarTudo();
           }}
         />

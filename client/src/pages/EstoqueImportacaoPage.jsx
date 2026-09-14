@@ -1,12 +1,10 @@
 import { useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Upload, CheckCircle2, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { Upload, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { api } from '../api/client';
 import FileDropzone from '../components/FileDropzone';
-import { formatQtd } from '../lib/format';
+import { formatQtd, plural } from '../lib/format';
 
 export default function EstoqueImportacaoPage() {
-  const navigate = useNavigate();
   const fileRef = useRef(null);
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -58,9 +56,6 @@ export default function EstoqueImportacaoPage() {
 
   return (
     <div className="page-wide">
-      <button type="button" className="btn btn-ghost" style={{ marginBottom: 14 }} onClick={() => navigate('/estoque')}>
-        <ArrowLeft size={14} /> Voltar para estoque
-      </button>
 
       <h1>Importar Saldo de Estoque</h1>
       <p className="page-sub">
@@ -88,7 +83,7 @@ export default function EstoqueImportacaoPage() {
           <div className="card-head" style={{ color: 'var(--success)' }}>
             <CheckCircle2 size={14} /> Importação concluída
           </div>
-          <p>{resultado.criados} variante(s) nova(s), {resultado.atualizados} atualizada(s).</p>
+          <p>{plural(resultado.criados, 'variante')} nova(s), {resultado.atualizados} atualizada(s).</p>
         </div>
       )}
 

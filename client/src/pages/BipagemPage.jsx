@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Barcode, CheckCircle2, XCircle, ArrowDownCircle, ArrowUpCircle, ScanLine, AlertTriangle } from 'lucide-react';
+import { Barcode, CheckCircle2, XCircle, ArrowDownCircle, ArrowUpCircle, ScanLine, AlertTriangle } from 'lucide-react';
 import { api } from '../api/client';
 import { Field } from '../components/ui';
 
@@ -13,7 +12,6 @@ import { Field } from '../components/ui';
 const QTD_MAXIMA_POR_LEITURA = 999;
 
 export default function BipagemPage() {
-  const navigate = useNavigate();
   const [tipo, setTipo] = useState('saida');
   const [ean, setEan] = useState('');
   const [quantidade, setQuantidade] = useState(1);
@@ -70,9 +68,6 @@ export default function BipagemPage() {
 
   return (
     <div className="page-wide">
-      <button type="button" className="btn btn-ghost" style={{ marginBottom: 14 }} onClick={() => navigate('/estoque')}>
-        <ArrowLeft size={14} /> Voltar para estoque
-      </button>
 
       <h1><Barcode size={22} style={{ verticalAlign: -3, marginRight: 8 }} />Bipagem</h1>
       <p className="page-sub">

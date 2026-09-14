@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Upload, CheckCircle2, AlertTriangle, ArrowLeft, Trash2, Search, Barcode } from 'lucide-react';
+import { Upload, CheckCircle2, AlertTriangle, Trash2, Search, Barcode } from 'lucide-react';
 import { api } from '../api/client';
 import FileDropzone from '../components/FileDropzone';
 import DataTable from '../components/DataTable';
@@ -138,7 +137,6 @@ function EansGuardados({ chave }) {
 }
 
 export default function EstoqueEanImportacaoPage() {
-  const navigate = useNavigate();
   const fileRef = useRef(null);
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -190,11 +188,8 @@ export default function EstoqueEanImportacaoPage() {
 
   return (
     <div className="page-wide">
-      <button type="button" className="btn btn-ghost" style={{ marginBottom: 14 }} onClick={() => navigate('/estoque')}>
-        <ArrowLeft size={14} /> Voltar para estoque
-      </button>
 
-      <h1>Importar EAN do Sistema Real</h1>
+      <h1>Importar EAN do Wik</h1>
       <p className="page-sub">
         Envie um ou mais arquivos "relListaProd" do Wiki Sistemas (colunas REF, COR, TAM, EAN
         EXTERNO). Se a variante já existe aqui, o EAN dela é atualizado na hora. Se ainda não

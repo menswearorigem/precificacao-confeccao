@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, AlertTriangle, Download, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
-import { brl } from '../lib/format';
+import { brl, plural } from '../lib/format';
 
 export default function WikImportarFichaCustoCard() {
   const [loading, setLoading] = useState(false);
@@ -131,9 +131,9 @@ export default function WikImportarFichaCustoCard() {
             <CheckCircle2 size={14} /> Importação concluída
           </div>
           <p>
-            {resultado.produtosAtualizados} produto(s) com ficha de custo criada ou atualizada — {resultado.materiaisCriados} material(is)
+            {plural(resultado.produtosAtualizados, 'produto')} com ficha de custo criada ou atualizada — {resultado.materiaisCriados} material(is)
             e {resultado.custosCriados} operaç(ões) de custo industrial no total.
-            {resultado.ignorados.length > 0 && ` ${resultado.ignorados.length} produto(s) tinham ficha editada manualmente e foram ignorados (protegidos).`}
+            {resultado.ignorados.length > 0 && ` ${plural(resultado.ignorados.length, 'produto')} tinham ficha editada manualmente e foram ignorados (protegidos).`}
           </p>
         </div>
       )}
@@ -151,7 +151,7 @@ export default function WikImportarFichaCustoCard() {
           {preview.resumo.semCustoTotal > 0 && (
             <div className="login-error" style={{ marginBottom: 12 }}>
               <AlertTriangle size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
-              {preview.resumo.semCustoTotal} produto(s) tinham materiais/operações mas nenhum custo total
+              {plural(preview.resumo.semCustoTotal, 'produto')} tinham materiais/operações mas nenhum custo total
               encontrado (sem tabela de preço no Wik) — serão criados só com a referência de materiais, sem
               nenhum custo. Precisam ser preenchidos manualmente.
             </div>

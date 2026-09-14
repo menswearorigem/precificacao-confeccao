@@ -1,3 +1,4 @@
+import { ChevronRight } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useDensidade } from '../contexts/DensidadeContext';
 
@@ -64,6 +65,18 @@ export default function DataTable({ children, densidade, className = '' }) {
 
   return (
     <div className={classes}>
+      {/* Aviso de que há coluna fora da tela (14/09/2026).
+          A sombra na borda existia, mas a varredura mediu cinco telas com a
+          tabela transbordando o cartão — Contas a Pagar tem 1411 px de tabela
+          num cartão de 1238, e a coluna "Situação" fica cortada no meio do
+          selo — e uma sombra de 24 px não é sinal suficiente de que existe
+          conteúdo ali. Uma frase é. Ela só aparece enquanto ainda há coisa à
+          direita, e some assim que a pessoa rola até o fim. */}
+      {precisaRolar && sombraDir && (
+        <p className="data-table-aviso-rolagem no-print" aria-hidden="true">
+          <ChevronRight size={13} /> Role de lado para ver as outras colunas
+        </p>
+      )}
       <div className="data-table-wrap" ref={wrapRef}>{children}</div>
     </div>
   );

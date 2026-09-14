@@ -91,8 +91,8 @@ export default function FichaVendaPage() {
             Gerar fichas ({selecionadas.length})
           </button>
           {fichas.length > 0 && (
-            <button type="button" className="btn btn-ghost" style={{ marginLeft: 8 }} onClick={() => window.print()}>
-              <Printer size={14} /> Imprimir / Exportar PDF
+            <button type="button" className="btn btn-ghost" style={{ marginLeft: 8 }} onClick={() => window.print()} title="Abre a impressão do navegador — de lá dá para salvar em PDF">
+              <Printer size={14} /> Imprimir
             </button>
           )}
         </div>
