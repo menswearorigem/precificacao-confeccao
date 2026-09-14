@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlaskConical, History } from 'lucide-react';
 import { api } from '../api/client';
 import { AvisoDeFalha, Field, NumInput, Row, Select, EstadoVazio, lerRecentes } from '../components/ui';
-import { brl, pct } from '../lib/format';
+import { brl, pct, brlOuTraco, pctOuTraco } from '../lib/format';
 import { statusToneClass } from '../lib/statusTone';
 
 const AJUSTES_INICIAIS = {
@@ -107,7 +107,7 @@ export default function SimuladorPage() {
             <Row label="% impostos (base)" value={pct(resultado.valoresBase.pctImpostos)} />
             <Row label="% taxas / comissão (base)" value={pct(resultado.valoresBase.pctTaxas)} />
             <Row label="Margem desejada (base)" value={pct(resultado.valoresBase.margemDesejada)} />
-            <Row label="Preço sugerido (base)" value={brl(resultado.valoresBase.precoSugerido)} strong />
+            <Row label="Preço sugerido (base)" value={brlOuTraco(resultado.valoresBase.precoSugerido)} strong />
           </div>
 
           <div className="card" style={{ marginBottom: 16 }}>
@@ -141,28 +141,43 @@ export default function SimuladorPage() {
             <div className="card">
               <div className="card-head">Cenário atual</div>
               <span className={'stamp sm ' + statusToneClass(resultado.atual.status)}>{resultado.atual.status}</span>
+              {/* Os dois cenários podem não ter preço nenhum a formar. Um
+                  "R$ 0,00" de cada lado faria a comparação parecer empate
+                  entre dois cenários que na verdade não existem. */}
+              {resultado.atual.motivoSemPreco && (
+                <p className="page-sub" style={{ marginTop: 6, marginBottom: 0 }}>{resultado.atual.motivoSemPreco}</p>
+              )}
               <div style={{ marginTop: 10 }}>
-                <Row label="Subtotal de produção" value={brl(resultado.atual.subtotalProducao)} />
-                <Row label="Custo total" value={brl(resultado.atual.custoTotalPeca)} />
-                <Row label="Preço sugerido" value={brl(resultado.atual.precoSugerido)} strong />
-                <Row label="Lucro" value={`${brl(resultado.atual.lucroRS)} · ${pct(resultado.atual.lucroPct)}`} />
+                <Row label="Subtotal de produção" value={brlOuTraco(resultado.atual.subtotalProducao)} />
+                <Row label="Custo total" value={brlOuTraco(resultado.atual.custoTotalPeca)} />
+                <Row label="Preço sugerido" value={brlOuTraco(resultado.atual.precoSugerido)} strong />
+                <Row label="Lucro" value={resultado.atual.lucroRS === null ? '—' : `${brl(resultado.atual.lucroRS)} · ${pct(resultado.atual.lucroPct)}`} />
               </div>
             </div>
             <div className="card">
               <div className="card-head">Cenário simulado</div>
               <span className={'stamp sm ' + statusToneClass(resultado.simulado.status)}>{resultado.simulado.status}</span>
+              {resultado.simulado.motivoSemPreco && (
+                <p className="page-sub" style={{ marginTop: 6, marginBottom: 0 }}>{resultado.simulado.motivoSemPreco}</p>
+              )}
               <div style={{ marginTop: 10 }}>
-                <Row label="Subtotal de produção" value={brl(resultado.simulado.subtotalProducao)} />
-                <Row label="Custo total" value={brl(resultado.simulado.custoTotalPeca)} />
-                <Row label="Preço sugerido" value={brl(resultado.simulado.precoSugerido)} strong />
-                <Row label="Lucro" value={`${brl(resultado.simulado.lucroRS)} · ${pct(resultado.simulado.lucroPct)}`} />
+                <Row label="Subtotal de produção" value={brlOuTraco(resultado.simulado.subtotalProducao)} />
+                <Row label="Custo total" value={brlOuTraco(resultado.simulado.custoTotalPeca)} />
+                <Row label="Preço sugerido" value={brlOuTraco(resultado.simulado.precoSugerido)} strong />
+                <Row label="Lucro" value={resultado.simulado.lucroRS === null ? '—' : `${brl(resultado.simulado.lucroRS)} · ${pct(resultado.simulado.lucroPct)}`} />
               </div>
             </div>
           </div>
 
           <div className="total-banner" style={{ marginTop: 16 }}>
             Diferença vs. preço sugerido base
-            <span className="mono">{brl(resultado.simulado.diferencaRS)} ({pct(resultado.simulado.diferencaPct)})</span>
+            {/* O servidor manda `null` quando falta um dos dois preços: aqui
+                "R$ 0,00 (0,0%)" seria lido como "o ajuste não mudou nada". */}
+            <span className="mono">
+              {resultado.simulado.diferencaRS === null
+                ? '— (sem preço em um dos cenários)'
+                : `${brl(resultado.simulado.diferencaRS)} (${pctOuTraco(resultado.simulado.diferencaPct)})`}
+            </span>
           </div>
         </>
       )}

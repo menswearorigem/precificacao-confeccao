@@ -247,7 +247,19 @@ function FaixaLojasFull({ lojas, onSincronizar, sincronizando }) {
               ) : (
                 <span className="full-loja-numeros">
                   <b>{formatQtd(l.anuncios_no_full || 0)}</b> anúncios ·{' '}
+                  <b>{l.unidades_disponiveis != null ? formatQtd(l.unidades_disponiveis) : '—'}</b> unidades ·{' '}
                   <b>{l.pecas_no_full != null ? formatQtd(l.pecas_no_full) : '—'}</b> peças
+                  {/* `SUM` ignora nulo: sem dizer quantas variações não foram
+                      lidas, o total parecia completo mesmo faltando metade —
+                      "não sei" passando por zero. */}
+                  {Number(l.saldo_nao_lido) > 0 && (
+                    <span
+                      className="full-loja-aviso"
+                      title="Variações cujo saldo o centro de distribuição não devolveu nesta leitura. Elas não entram nos totais ao lado, então os dois números são um piso."
+                    >
+                      {formatQtd(l.saldo_nao_lido)} sem saldo lido
+                    </span>
+                  )}
                 </span>
               )}
               <span className="full-loja-data">
@@ -647,6 +659,12 @@ function AbaResumoFull({ a, hoje, onVinculado }) {
             Este anúncio é vendido em <b>kit de {a.pecasPorUnidade}</b>. O centro de distribuição conta
             <b> unidades do anúncio</b> (kits), então saldo, velocidade, mínimo e "mandar" estão em kits. O plano
             de produção converte para peças — uma unidade lá dentro são {a.pecasPorUnidade} peças aqui.
+            {/* De onde saiu o câmbio unidade→peça: composição registrada à
+                mão ou padrão de SKU. É ele que multiplica todo número em
+                peças desta tela, e quem confere precisa saber no que confiar. */}
+            {a.pecasPorUnidadeOrigens?.length > 0 && (
+              <> A medida veio de: {a.pecasPorUnidadeOrigens.join(', ')}.</>
+            )}
           </span>
         </div>
       )}

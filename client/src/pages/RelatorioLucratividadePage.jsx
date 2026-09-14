@@ -1245,6 +1245,17 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                     <div className="row-line strong"><span>Lucro Líquido</span><span className="mono">{brl(relatorio.totalGeral.lucro)}</span></div>
                     <div className="row-line"><span>Margem</span><MargemPill valor={relatorio.totalGeral.margemPct} config={config} semVendas={relatorio.pedidos.length === 0} /></div>
                     <div className="row-line no-print"><span>Pedidos no Período</span><span className="mono">{relatorio.pedidos.length}</span></div>
+                    {/* O selo só existia no recorte de marketplace, mas quem
+                        fica de fora do lucro por não ter custo cadastrado
+                        (`custoIncompleto`) é contado igual na venda direta —
+                        e sem o selo o lucro aqui aparecia como se fosse sobre
+                        todos os pedidos do período. */}
+                    <SeloDeConfianca
+                      considerado={relatorio.totalGeral.pedidosConsiderados}
+                      total={relatorio.totalGeral.totalPedidosPeriodo}
+                      unidade="pedidos"
+                      excluidos={[{ label: 'sem custo de material cadastrado (fora do total acima)', total: relatorio.totalGeral.pedidosExcluidosPorCustoIncompleto }]}
+                    />
                   </>
                 )}
               </div>

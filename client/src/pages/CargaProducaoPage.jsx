@@ -281,7 +281,18 @@ export default function CargaProducaoPage() {
                               ? <span className="ink-faint" title="Nenhuma O.S. desta facção foi concluída com previsão de retorno cadastrada, então não há prazo a julgar.">sem O.S. com prazo</span>
                               : `${formatQtd(f.no_prazo)} de ${formatQtd(comPrazo)}`}
                           </td>
-                          <td className="num">{brl(f.valor_servico)}</td>
+                          {/* O total soma só O.S. com preço cadastrado (a
+                              coluna é NULA sem preço, e o SUM ignora nulo):
+                              sem declarar quantas peças ficaram de fora, um
+                              custo parcial passa por custo do período. */}
+                          <td className="num">
+                            {brl(f.valor_servico)}
+                            {Number(f.custo_peca_pecas_sem_preco) > 0 && (
+                              <small className="ink-faint" style={{ display: 'block' }}>
+                                fora da soma: {formatQtd(f.custo_peca_pecas_sem_preco)} peça(s) em O.S. sem preço
+                              </small>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}

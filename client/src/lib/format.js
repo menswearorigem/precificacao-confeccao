@@ -38,6 +38,20 @@ export const numeroBr = (n, digits = 2) =>
 export const qtdFracionaria = (n) =>
   (Number.isFinite(Number(n)) ? Number(n) : 0).toLocaleString('pt-BR', { maximumFractionDigits: 4 });
 
+// REGRA 2 na tela: "não sei" não é zero.
+//
+// Depois da onda de correções de cálculo (14/09/2026) várias rotas passaram a
+// devolver `null` onde antes mandavam 0 — preço que não existe, custo de
+// referência sem ficha. `brl(null)` escreve "R$ 0,00" e `pct(null)` escreve
+// "0,0%": isso troca uma ausência por um número, que é exatamente o erro que
+// a regra proíbe. Quem pode receber ausência usa estas duas e escreve o
+// MOTIVO ao lado do traço — o traço sozinho ainda não explica nada.
+const ausente = (n) => n === null || n === undefined || n === '' || !Number.isFinite(Number(n));
+
+export const brlOuTraco = (n, casas) => (ausente(n) ? '—' : brl(n, casas));
+
+export const pctOuTraco = (n, digits) => (ausente(n) ? '—' : pct(n, digits));
+
 export const uid = () => Math.random().toString(36).slice(2, 10);
 
 

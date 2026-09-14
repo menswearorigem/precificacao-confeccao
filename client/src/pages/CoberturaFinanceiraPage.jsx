@@ -242,12 +242,23 @@ export default function CoberturaFinanceiraPage() {
     const linhas = dados?.resumo || [];
     const documentos = linhas.reduce((s, l) => s + Number(l.documentos || 0), 0);
     const descobertos = linhas.reduce((s, l) => s + Number(l.descobertos || 0), 0);
-    const valorDescoberto = linhas.reduce((s, l) => s + Number(l.valor_descoberto || 0), 0);
+    // O valor descoberto somava "a pagar" e "a receber" no mesmo número, que
+    // não é dinheiro a sair nem a entrar — e é sobre essa distinção que se
+    // decide o que fazer com o buraco. O resumo já vem quebrado por natureza
+    // (a rota agrupa por origem E natureza), então a quebra é só de leitura.
+    const porNatureza = linhas.reduce((acc, l) => {
+      const v = Number(l.valor_descoberto || 0);
+      if (l.natureza === 'receber') acc.receber += v; else acc.pagar += v;
+      return acc;
+    }, { pagar: 0, receber: 0 });
+    const valorDescoberto = porNatureza.pagar + porNatureza.receber;
     const semValor = linhas.reduce((s, l) => s + Number(l.sem_valor || 0), 0);
     return {
       documentos,
       descobertos,
       valorDescoberto,
+      valorDescobertoPagar: porNatureza.pagar,
+      valorDescobertoReceber: porNatureza.receber,
       semValor,
       fracao: documentos > 0 ? (documentos - descobertos) / documentos : null,
     };
@@ -297,12 +308,18 @@ export default function CoberturaFinanceiraPage() {
           Icone={AlertTriangle}
         />
         <IndicadorDestaque
-          rotulo="Valor descoberto"
-          valor={loading ? '—' : brl(totais.valorDescoberto)}
+          rotulo="Descoberto a pagar"
+          valor={loading ? '—' : brl(totais.valorDescobertoPagar)}
           explicacao={totais.semValor > 0
-            ? `Soma só do que tem valor apurado. ${formatQtd(totais.semValor)} documento(s) sem valor não entram — o número real é maior.`
-            : 'Soma do valor dos documentos que não chegaram ao financeiro.'}
-          tom={totais.valorDescoberto > 0 ? 'prejuizo' : undefined}
+            ? `Dinheiro que deveria SAIR e o financeiro não enxerga. Soma só do que tem valor apurado: ${formatQtd(totais.semValor)} documento(s) sem valor (das duas naturezas) não entram — o número real é maior.`
+            : 'Dinheiro que deveria SAIR e não chegou ao financeiro.'}
+          tom={totais.valorDescobertoPagar > 0 ? 'prejuizo' : undefined}
+        />
+        <IndicadorDestaque
+          rotulo="Descoberto a receber"
+          valor={loading ? '—' : brl(totais.valorDescobertoReceber)}
+          explicacao="Dinheiro que deveria ENTRAR e não chegou ao financeiro. Fica separado do 'a pagar' de propósito: um número só, somando os dois, não é saída nem entrada."
+          tom={totais.valorDescobertoReceber > 0 ? 'prejuizo' : undefined}
         />
         <IndicadorDestaque
           rotulo="Cobertura"
@@ -329,13 +346,21 @@ export default function CoberturaFinanceiraPage() {
             <tbody>
               {loading && <SkeletonLinhasTabela colunas={6} />}
               {!loading && (dados?.resumo || []).map((l) => (
+                // A rota agrupa por (origem_codigo, natureza): a mesma origem
+                // com as duas naturezas rendia duas linhas de chave e rótulo
+                // iguais.
                 <tr
-                  key={l.origem_codigo}
+                  key={`${l.origem_codigo}-${l.natureza}`}
                   className="clickable-row"
                   onClick={() => setFiltroOrigem(l.origem_codigo === filtroOrigem ? '' : l.origem_codigo)}
                 >
                   <td>{rotuloModulo(l.modulo)}</td>
-                  <td>{l.rotulo}</td>
+                  <td>
+                    {l.rotulo}{' '}
+                    <span className={`stamp sm ${l.natureza === 'receber' ? 'tone-saudavel' : 'tone-neutro'}`}>
+                      {l.natureza === 'receber' ? 'a receber' : 'a pagar'}
+                    </span>
+                  </td>
                   <td className="mono">{formatQtd(l.documentos)}</td>
                   <td>
                     {Number(l.descobertos) > 0

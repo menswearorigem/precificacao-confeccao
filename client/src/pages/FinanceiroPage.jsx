@@ -464,17 +464,25 @@ function AbaMovimentacao({ dados, podeAbrirPedido, contexto }) {
     [...dias].reverse().map((d) => ({ ...d, rotulo: dataBr(d.data) }))
   ), [dias]);
 
+  // O SAQUE não é destino de dinheiro: é o mesmo dinheiro mudando de bolso
+  // (marketplace -> banco da casa). Somar a coluna "Total" com ele dentro dava
+  // `liberado − saque`, e não os R$ do cartão "Liberado pelo marketplace" —
+  // numa casa que saca quase tudo, a diferença é a ordem de grandeza do mês.
+  // O gráfico ao lado já o excluía; agora a tabela lê igual e o saque aparece
+  // numa linha declarada FORA do total, em vez de sumir.
+  const porTipoDestino = useMemo(() => porTipo.filter((t) => t.tipo !== 'saque'), [porTipo]);
+  const linhaSaque = useMemo(() => porTipo.find((t) => t.tipo === 'saque') || null, [porTipo]);
+
   // Barras com sinal: o que entrou sobe, o que saiu desce. É a leitura que um
   // leigo faz sem precisar de legenda.
   const barrasTipo = useMemo(() => (
-    porTipo
-      .filter((t) => t.tipo !== 'saque')
+    porTipoDestino
       .map((t) => ({
         rotulo: rotuloTipo(t.tipo),
         total: t.total,
         cor: t.total >= 0 ? paleta.positivo : paleta.negativo,
       }))
-  ), [porTipo, paleta]);
+  ), [porTipoDestino, paleta]);
 
   async function montarRelatorio(tipo) {
     if (!dados) return null;
@@ -680,8 +688,8 @@ function AbaMovimentacao({ dados, podeAbrirPedido, contexto }) {
               <tr><th>Tipo</th><th>Lançamentos</th><th>Total</th><th>Peso no período</th></tr>
             </thead>
             <tbody>
-              {porTipo.map((t) => {
-                const base = porTipo.reduce((s, x) => s + Math.abs(x.total), 0);
+              {porTipoDestino.map((t) => {
+                const base = porTipoDestino.reduce((s, x) => s + Math.abs(x.total), 0);
                 return (
                   <tr key={t.tipo}>
                     <td>{TIPO_LABEL[t.tipo] || t.tipo}</td>
@@ -693,13 +701,23 @@ function AbaMovimentacao({ dados, podeAbrirPedido, contexto }) {
                   </tr>
                 );
               })}
-              {porTipo.length === 0 && <tr><td colSpan="4">Nada no período.</td></tr>}
+              {porTipoDestino.length === 0 && <tr><td colSpan="4">Nada no período.</td></tr>}
+              {linhaSaque && (
+                <tr className="linha-total">
+                  <td>{TIPO_LABEL[linhaSaque.tipo] || linhaSaque.tipo} <span className="page-sub">(fora do total)</span></td>
+                  <td className="mono">{linhaSaque.quantidade.toLocaleString('pt-BR')}</td>
+                  <td className="mono"><ValorAssinado valor={linhaSaque.total} /></td>
+                  <td className="mono">—</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </DataTable>
         <div className="grafico-rodape">
           “Peso no período” usa o valor sem o sinal — senão entrada e saída se anulariam e a coluna não
-          somaria 100%.
+          somaria 100%. O <strong>saque para o banco</strong> aparece à parte e não entra na conta: ele
+          não é destino do dinheiro, é o mesmo dinheiro saindo do marketplace para a conta da casa —
+          somá-lo aqui faria a coluna dar “liberado menos saque” em vez do liberado do período.
         </div>
       </div>
 

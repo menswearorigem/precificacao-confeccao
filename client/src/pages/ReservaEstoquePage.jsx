@@ -27,6 +27,11 @@ import { formatQtd, tempoRelativo, plural } from '../lib/format';
 
 const BASE = '/estoque-reserva';
 
+// Tetos dos `LIMIT` das rotas deste módulo (estoqueReserva.routes.js).
+// Espelhados aqui só para a tela saber avisar quando a lista foi cortada.
+const LIMITE_LISTA = 1000;
+const LIMITE_VENCIDAS = 500;
+
 const SITUACOES = [
   { valor: 'ativa', rotulo: 'Ativas' },
   { valor: 'consumida', rotulo: 'Consumidas' },
@@ -175,6 +180,13 @@ export default function ReservaEstoquePage() {
         variantesNegativas: negativos.variantes_negativas || 0,
         pecasTravadas: vencidas.total_pecas_travadas || 0,
         reservasParadas: (vencidas.reservas || []).length,
+        // As rotas cortam a lista e não devolvem contagem total: os
+        // indicadores são somados sobre o que veio, então quando o corte
+        // bate eles são um PISO. Sem dizer isso, "peças reservadas" seria
+        // lido como o total da casa.
+        truncado: (comReserva.itens || []).length >= LIMITE_LISTA
+          || (negativos.itens || []).length >= LIMITE_LISTA
+          || (vencidas.reservas || []).length >= LIMITE_VENCIDAS,
       });
     } catch (e) {
       setErro(e.message);
@@ -398,6 +410,15 @@ export default function ReservaEstoquePage() {
           />
         </div>
       )}
+      {indicadores?.truncado && (
+        <p className="aviso-inline">
+          <AlertTriangle size={14} />
+          Pelo menos uma das listas que alimentam estes indicadores bateu no teto de consulta
+          ({formatQtd(LIMITE_LISTA)} variantes / {formatQtd(LIMITE_VENCIDAS)} reservas paradas):
+          os números acima são um PISO, não o total. Filtre por referência para ver o recorte
+          completo de uma parte.
+        </p>
+      )}
 
       {/* 2. Disponível ----------------------------------------------------- */}
       <div className="card">
@@ -436,6 +457,14 @@ export default function ReservaEstoquePage() {
             {plural(disponivel.variantes_negativas, 'variante')} desta lista estão com disponível
             negativo: já se vendeu mais peça do que existe no galpão. Enquanto isso não for
             produzido, comprado ou liberado, algum pedido vai ser cancelado por falta.
+          </p>
+        )}
+
+        {(disponivel?.itens || []).length >= LIMITE_LISTA && (
+          <p className="aviso-inline">
+            <AlertTriangle size={14} />
+            A consulta para nas {formatQtd(LIMITE_LISTA)} primeiras variantes deste recorte — há mais
+            estoque além desta lista. Escolha uma referência para ver tudo dela.
           </p>
         )}
 
@@ -552,6 +581,14 @@ export default function ReservaEstoquePage() {
             parada(s) há mais tempo que a política permite. Nada é liberado automaticamente — a
             decisão é de quem opera: ou o pedido voltou a andar, ou a reserva precisa ser liberada
             à mão.
+          </p>
+        )}
+
+        {aba !== 'paradas' && reservas.length >= LIMITE_LISTA && (
+          <p className="aviso-inline">
+            <AlertTriangle size={14} />
+            A consulta para nas {formatQtd(LIMITE_LISTA)} reservas mais recentes — há mais reserva
+            nesta situação do que a lista mostra.
           </p>
         )}
 

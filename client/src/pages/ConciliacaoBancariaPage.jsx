@@ -27,6 +27,10 @@ import { useTabela } from '../lib/useTabela';
 // REGRA 2: linha do OFX que não deu para interpretar NÃO vira zero e não some.
 // Ela volta em `avisos` e esta tela mostra todos eles, um a um.
 
+// Teto do `LIMIT` da rota `/extrato` (financeiroNucleo.routes.js). Espelhado
+// aqui só para a tela saber avisar que a lista pode ter sido cortada.
+const LIMITE_EXTRATO = 1000;
+
 const BASE = '/financeiro-nucleo';
 
 function mensagemErro(err) {
@@ -367,6 +371,13 @@ export default function ConciliacaoBancariaPage() {
 
   const conta = contas.find((c) => String(c.conta_id) === String(contaId)) || null;
 
+  // A rota `/extrato` corta em 1.000 lançamentos e não devolve contagem
+  // total: os cartões acima somam a MESMA lista cortada, então num período
+  // cheio eles viram um piso silencioso. Enquanto o servidor não mandar os
+  // totais agregados (o padrão novo de /titulos), a tela ao menos declara o
+  // corte em vez de apresentar o piso como se fosse o período inteiro.
+  const listaTruncada = extrato.length >= LIMITE_EXTRATO;
+
   const resumo = useMemo(() => {
     const pendentes = extrato.filter((l) => estadoDe(l) === 'pendente');
     return {
@@ -586,6 +597,14 @@ export default function ConciliacaoBancariaPage() {
           pelo tipo do lançamento. Transferência marcada continua aparecendo no filtro “só pendentes”: ela
           não gera baixa nem categoria, só liga os dois lados.
         </p>
+        {listaTruncada && (
+          <div className="aviso-compacto tone-atencao">
+            <AlertTriangle size={14} />
+            A busca para nos {formatQtd(LIMITE_EXTRATO)} lançamentos mais recentes deste recorte, e os
+            cartões acima somam só o que veio — pode haver mais extrato antes disso. Estreite o período
+            ou escolha a conta para ver o resto.
+          </div>
+        )}
         <Paginacao {...tabela} posicao="topo" />
         <DataTable>
           <table className="data-table">

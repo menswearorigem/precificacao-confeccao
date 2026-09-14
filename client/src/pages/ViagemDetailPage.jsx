@@ -8,7 +8,7 @@ import { api } from '../api/client';
 import { Field } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import FotoProduto from '../components/FotoProduto';
-import { brl, pct, formatQtd, plural } from '../lib/format';
+import { brl, pct, formatQtd, plural, brlOuTraco, pctOuTraco } from '../lib/format';
 import { CampoDesconto } from '../components/campos';
 
 const SITUACAO_LABEL = { planejamento: 'Planejamento', em_andamento: 'Em andamento', finalizada: 'Finalizada' };
@@ -132,7 +132,13 @@ export default function ViagemDetailPage() {
         descontoMaximoPct: produto.descontoMaximoPct,
         descontoIdealPct: produto.descontoIdealPct,
         quantidade: 1,
-        valorUnitario: produto.precoIdeal,
+        // Referência sem ficha de custo agora chega com `precoIdeal` NULO
+        // (custoDesconhecido). Usá-lo direto lançava o item no carrinho a
+        // R$ 0,00 — uma peça dada de graça sem ninguém decidir isso. Fica
+        // em branco: o vendedor digita o preço, que é o que ele faria de
+        // qualquer jeito numa peça que o sistema não sabe precificar.
+        valorUnitario: produto.precoIdeal === null || produto.precoIdeal === undefined ? '' : produto.precoIdeal,
+        custoDesconhecido: produto.custoDesconhecido === true,
         descontoPct: 0,
       }];
     });
@@ -147,7 +153,7 @@ export default function ViagemDetailPage() {
   }
 
   const totalCarrinho = useMemo(
-    () => carrinho.reduce((s, it) => s + it.quantidade * it.valorUnitario * (1 - it.descontoPct), 0),
+    () => carrinho.reduce((s, it) => s + it.quantidade * (Number(it.valorUnitario) || 0) * (1 - it.descontoPct), 0),
     [carrinho]
   );
   const totalItensCarrinho = useMemo(() => carrinho.reduce((s, it) => s + it.quantidade, 0), [carrinho]);
@@ -224,11 +230,11 @@ export default function ViagemDetailPage() {
           </div>
           <div className="viagem-stat">
             <span className="viagem-stat-label">Lucro</span>
-            <span className="viagem-stat-value mono">{brl(resumo.lucro)}</span>
+            <span className="viagem-stat-value mono">{brlOuTraco(resumo.lucro)}</span>
           </div>
           <div className="viagem-stat">
             <span className="viagem-stat-label">Margem</span>
-            <span className="viagem-stat-value mono">{pct(resumo.margemPct)}</span>
+            <span className="viagem-stat-value mono">{pctOuTraco(resumo.margemPct)}</span>
           </div>
           <div className="viagem-stat">
             <span className="viagem-stat-label">Peças vendidas</span>
@@ -238,6 +244,21 @@ export default function ViagemDetailPage() {
             <span className="viagem-stat-label">Vendas</span>
             <span className="viagem-stat-value mono">{resumo.totalVendas}</span>
           </div>
+        </div>
+      )}
+
+      {/* Lucro e margem vêm NULOS quando alguma peça vendida não tem ficha de
+          custo: o que falta é o custo, não o lucro. Dizer quantas peças e
+          quais referências ficaram de fora é o que permite ao dono decidir se
+          confia ou se vai cadastrar a ficha que falta. */}
+      {resumo?.custoIncompleto && (
+        <div className="aviso-compacto tone-atencao" style={{ marginBottom: 14 }}>
+          <AlertTriangle size={14} />
+          Lucro e margem desta viagem não podem ser afirmados:{' '}
+          {formatQtd(resumo.pecasSemCusto)} das {formatQtd(resumo.pecasSemCusto + resumo.pecasComCusto)}{' '}
+          peça(s) vendidas estão em referências sem ficha de custo
+          {resumo.referenciasSemCusto?.length > 0 && ` (${resumo.referenciasSemCusto.join(', ')})`}.
+          O “Vendido” acima continua certo — ele não depende de custo.
         </div>
       )}
 
@@ -397,22 +418,31 @@ function ProdutoCard({ produto, limiteEstoqueBaixo, emCarrinhoPorVariante, podeV
       <div className="viagem-produto-precos">
         <div>
           <span className="viagem-produto-precos-label">Mínimo</span>
-          <span className="mono">{brl(produto.precoMinimo)}</span>
+          <span className="mono">{brlOuTraco(produto.precoMinimo)}</span>
         </div>
         <div>
           <span className="viagem-produto-precos-label">Ideal</span>
-          <span className="mono" style={{ fontWeight: 700 }}>{brl(produto.precoIdeal)}</span>
+          <span className="mono" style={{ fontWeight: 700 }}>{brlOuTraco(produto.precoIdeal)}</span>
         </div>
         <div>
           <span className="viagem-produto-precos-label">Desc. ideal</span>
-          <span className="mono">{pct(produto.descontoIdealPct)}</span>
+          <span className="mono">{pctOuTraco(produto.descontoIdealPct)}</span>
         </div>
         <div>
           <span className="viagem-produto-precos-label">Desc. máximo</span>
-          <span className="mono">{pct(produto.descontoMaximoPct)}</span>
+          <span className="mono">{pctOuTraco(produto.descontoMaximoPct)}</span>
         </div>
       </div>
-      <div className="viagem-produto-custo">Custo de produção: <span className="mono">{brl(produto.custoTotalPeca)}</span></div>
+      {/* Piso de negociação inventado é pior que piso nenhum: um "mínimo
+          R$ 0,00" autoriza o vendedor a fechar a peça por qualquer valor. */}
+      <div className="viagem-produto-custo">
+        Custo de produção: <span className="mono">{brlOuTraco(produto.custoTotalPeca)}</span>
+        {produto.custoDesconhecido && (
+          <span style={{ display: 'block', color: 'var(--warning)' }}>
+            sem ficha de custo — esta referência não tem preço mínimo nem desconto máximo calculados
+          </span>
+        )}
+      </div>
 
       <table className="viagem-variantes-tabela">
         <thead>
@@ -482,6 +512,12 @@ function CheckoutModal({ itens, total, onAtualizarItem, onRemoverItem, onClose, 
   }, [buscaCliente]);
 
   async function confirmar() {
+    // Item que ficou sem preço (referência sem ficha de custo, campo em
+    // branco) não pode virar venda de R$ 0,00 sem ninguém ter decidido isso.
+    if (itens.some((it) => it.valorUnitario === '' || it.valorUnitario === null)) {
+      setErro('Há item sem valor unitário informado — preencha o preço antes de fechar a venda.');
+      return;
+    }
     setEnviando(true);
     setErro('');
     try {
@@ -507,8 +543,12 @@ function CheckoutModal({ itens, total, onAtualizarItem, onRemoverItem, onClose, 
 
         <div className="viagem-checkout-itens">
           {itens.map((it) => {
-            const totalItem = it.quantidade * it.valorUnitario * (1 - it.descontoPct);
-            const descontoAcimaDoMaximo = it.descontoPct > it.descontoMaximoPct + 0.0001;
+            const totalItem = it.quantidade * (Number(it.valorUnitario) || 0) * (1 - it.descontoPct);
+            // Sem desconto máximo calculado não há teto a violar: comparar com
+            // `null` marcava QUALQUER desconto como "acima do máximo".
+            const descontoAcimaDoMaximo = it.descontoMaximoPct != null
+              && it.descontoPct > it.descontoMaximoPct + 0.0001;
+            const semPrecoSugerido = it.valorUnitario === '' || it.valorUnitario === null;
             const acimaDoEstoque = it.quantidade > it.estoqueDisponivel;
             return (
               <div className="viagem-checkout-item" key={it.varianteId}>
@@ -529,7 +569,13 @@ function CheckoutModal({ itens, total, onAtualizarItem, onRemoverItem, onClose, 
                   <Field label="Valor Unit.">
                     <input type="number" step="0.01" className="mono"
                       value={it.valorUnitario}
-                      onChange={(e) => onAtualizarItem(it.varianteId, { valorUnitario: Number(e.target.value) || 0 })} />
+                      style={{ borderColor: semPrecoSugerido ? 'var(--danger)' : undefined }}
+                      onChange={(e) => onAtualizarItem(it.varianteId, { valorUnitario: e.target.value === '' ? '' : (Number(e.target.value) || 0) })} />
+                    {semPrecoSugerido && (
+                      <span className="field-hint" style={{ color: 'var(--danger)' }}>
+                        sem preço ideal calculado — informe o valor
+                      </span>
+                    )}
                   </Field>
                   <Field label="Desconto %">
                     <CampoDesconto

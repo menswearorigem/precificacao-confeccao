@@ -44,6 +44,30 @@ function inicioDoAno() {
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
+// Raiz do código de conta, que é como o DRE agrupa.
+//
+// O plano gerencial é hierárquico e começa por dígito ('3.2.01' -> raiz '3').
+// O plano IMPORTADO DO WIK entra prefixado pela empresa ('W202.3.05'), porque
+// os dois CNPJs numerariam igual e `fin_plano.codigo` é único. Cortar no
+// primeiro ponto jogava o plano inteiro do Wik num único "Grupo W202" e a
+// hierarquia do DRE sumia — justamente para quem importa, que é o caso real.
+// Num código prefixado a raiz é o prefixo MAIS o primeiro nível ('W202.3'),
+// que é o código que o próprio importador grava para a conta-pai.
+function raizDoCodigo(codigo) {
+  const partes = String(codigo || '').split('.');
+  if (/^W\d+$/i.test(partes[0]) && partes.length > 1) return `${partes[0]}.${partes[1]}`;
+  return partes[0];
+}
+
+// Quando o plano não tem a conta-pai cadastrada, o rótulo é montado do código.
+// No código prefixado o "W202" é empresa, não nível de conta — dizer isso
+// evita ler o prefixo como se fosse o nome do grupo.
+function rotuloDeRaizSemNome(raiz) {
+  if (!raiz) return 'Sem grupo';
+  const m = /^W(\d+)\.(.+)$/i.exec(raiz);
+  return m ? `Grupo ${m[2]} (Wik, empresa ${m[1]})` : `Grupo ${raiz}`;
+}
+
 const COLUNAS_EXPORTACAO = [
   { rotulo: 'Bloco', valor: (l) => l.bloco },
   { rotulo: 'Grupo', valor: (l) => l.grupo },
@@ -119,10 +143,10 @@ export default function DrePage() {
     const mapa = new Map();
     for (const l of (dados?.linhas || [])) {
       if (!filtro(l)) continue;
-      const raiz = String(l.codigo || '').split('.')[0];
+      const raiz = raizDoCodigo(l.codigo);
       const grupo = mapa.get(raiz) || {
         raiz,
-        nome: nomePorCodigo[raiz] || (raiz ? `Grupo ${raiz}` : 'Sem grupo'),
+        nome: nomePorCodigo[raiz] || rotuloDeRaizSemNome(raiz),
         total: 0,
         itens: [],
       };
@@ -136,6 +160,18 @@ export default function DrePage() {
   const gruposReceita = useMemo(() => agrupar((l) => l.natureza === 'receita'), [agrupar]);
   const gruposVariaveis = useMemo(() => agrupar((l) => l.natureza === 'despesa' && l.variavel), [agrupar]);
   const gruposFixas = useMemo(() => agrupar((l) => l.natureza === 'despesa' && !l.variavel), [agrupar]);
+
+  // Uma mesma raiz do plano pode ter categoria variável E fixa — a semente
+  // tem 3.1 e 3.2 variáveis e 3.3 fixa. O grupo "CUSTO DE PRODUÇÃO" saía
+  // então duas vezes na tabela, com valores diferentes, e como duas fatias de
+  // mesmo rótulo na rosca: o total continua certo, mas a leitura vira
+  // duplicidade. Quando a raiz cai nos dois blocos, o rótulo diz qual parte é.
+  const raizesNosDoisBlocos = useMemo(() => {
+    const fixas = new Set(gruposFixas.map((g) => g.raiz));
+    return new Set(gruposVariaveis.filter((g) => fixas.has(g.raiz)).map((g) => g.raiz));
+  }, [gruposVariaveis, gruposFixas]);
+
+  const rotuloGrupo = (g, parte) => (raizesNosDoisBlocos.has(g.raiz) ? `${g.nome} (${parte})` : g.nome);
 
   const itensExportacao = useMemo(() => {
     const blocos = [
@@ -158,11 +194,17 @@ export default function DrePage() {
   // sabe desenhar fatia negativa, e é por isso que o valor entra sem o sinal —
   // dito na explicação do gráfico, não escondido.
   const composicao = useMemo(() => (
-    [...gruposVariaveis, ...gruposFixas]
-      .map((g) => ({ rotulo: g.nome, valor: Math.abs(g.total) }))
+    [
+      ...gruposVariaveis.map((g) => ({ g, parte: 'parte variável' })),
+      ...gruposFixas.map((g) => ({ g, parte: 'parte fixa' })),
+    ]
+      .map(({ g, parte }) => ({
+        rotulo: raizesNosDoisBlocos.has(g.raiz) ? `${g.nome} (${parte})` : g.nome,
+        valor: Math.abs(g.total),
+      }))
       .filter((g) => g.valor > 0)
       .sort((a, b) => b.valor - a.valor)
-  ), [gruposVariaveis, gruposFixas]);
+  ), [gruposVariaveis, gruposFixas, raizesNosDoisBlocos]);
 
   const margem = num(resumo?.margem_contribuicao);
   const margemFracao = resumo?.margem_contribuicao_fracao;
@@ -363,7 +405,7 @@ export default function DrePage() {
               {gruposVariaveis.map((g) => (
                 <Fragment key={`g-var-${g.raiz}`}>
                   <tr className="linha-total">
-                    <td><strong>{g.raiz} · {g.nome}</strong></td>
+                    <td><strong>{g.raiz} · {rotuloGrupo(g, 'parte variável')}</strong></td>
                     <td className="mono">{brl(g.total)}</td>
                     <td className="mono">{receita > 0 ? pct(g.total / receita) : '—'}</td>
                   </tr>
@@ -387,7 +429,7 @@ export default function DrePage() {
               {gruposFixas.map((g) => (
                 <Fragment key={`g-fix-${g.raiz}`}>
                   <tr className="linha-total">
-                    <td><strong>{g.raiz} · {g.nome}</strong></td>
+                    <td><strong>{g.raiz} · {rotuloGrupo(g, 'parte fixa')}</strong></td>
                     <td className="mono">{brl(g.total)}</td>
                     <td className="mono">{receita > 0 ? pct(g.total / receita) : '—'}</td>
                   </tr>

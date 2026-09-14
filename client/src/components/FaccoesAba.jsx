@@ -545,7 +545,22 @@ export default function FaccoesAba({ etapas = [], produtos = [], onMudou }) {
                   <td className={`num ${Number(f.quebra_fracao) > 0 ? 'ink-prejuizo' : ''}`}>
                     {f.quebra_fracao != null ? pct(f.quebra_fracao, 1) : '—'}
                   </td>
-                  <td className="num">{f.custo_peca_medio != null ? brl(f.custo_peca_medio) : '—'}</td>
+                  {/* A média de custo cobre só as peças que voltaram com preço
+                      cadastrado. Sem dizer quantas ficaram de fora, uma média
+                      parcial passa por média — e é por ela que se escolhe
+                      facção. */}
+                  <td className="num">
+                    {f.custo_peca_medio != null ? brl(f.custo_peca_medio) : '—'}
+                    {Number(f.custo_peca_pecas_sem_preco) > 0 && (
+                      <small
+                        className="ink-faint"
+                        style={{ display: 'block' }}
+                        title="Peças que voltaram boas em O.S. sem preço de serviço cadastrado. Elas não entram na média — fora não é zero."
+                      >
+                        fora da média: {formatQtd(f.custo_peca_pecas_sem_preco)} peça(s) sem preço
+                      </small>
+                    )}
+                  </td>
                   <td className="num">
                     {Number(f.precos_cadastrados) > 0
                       ? formatQtd(f.precos_cadastrados)

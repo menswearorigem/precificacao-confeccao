@@ -33,6 +33,9 @@ import { brl, pct, formatQtd, dataBr, plural } from '../lib/format';
 
 const ROTA = '/producao-movimentacao';
 
+// Teto do `LIMIT` da rota `/ordens-servico` (producaoMovimentacao.routes.js).
+const LIMITE_OS = 500;
+
 const SITUACAO = {
   aberta: { rotulo: 'Aberta', tom: 'tone-neutro' },
   remetida: { rotulo: 'Remetida', tom: 'tone-atencao' },
@@ -620,6 +623,12 @@ export default function OrdensServicoPage() {
     colunas, colunaPadrao: 'quebra', direcaoPadrao: 'desc', tamanhoPadrao: 50, prefixo: 'os',
   });
 
+  // Os cartões acima somam a lista que veio, e a rota corta em 500 O.S. sem
+  // devolver contagem total: num histórico grande "quebra acumulada" e
+  // "serviço apurado" viram piso. Enquanto o servidor não agregar, a tela
+  // declara o corte em vez de deixar o piso passar por retrato.
+  const listaTruncada = lista.length >= LIMITE_OS;
+
   const chips = [
     atrasadas && { chave: 'atrasadas', rotulo: 'Situação', valor: 'só atrasadas', onRemover: () => setAtrasadas(false) },
     comQuebra && { chave: 'quebra', rotulo: 'Quebra', valor: 'só com peça sumida', onRemover: () => setComQuebra(false) },
@@ -708,6 +717,14 @@ export default function OrdensServicoPage() {
       />
 
       {erro && <p className="erro-inline">{erro}</p>}
+
+      {listaTruncada && (
+        <p className="aviso-inline">
+          <AlertTriangle size={14} />
+          A lista para nas {LIMITE_OS} O.S. mais recentes e os indicadores acima contam só essas —
+          pode haver O.S. mais antiga fora da conta. Filtre por situação ou facção para alcançá-las.
+        </p>
+      )}
 
       {carregando && <Skeleton height={260} />}
 

@@ -3,7 +3,7 @@ import { Plus, Trash2, ChevronDown, ChevronRight, Home, Monitor, Briefcase, Truc
 import { api } from '../api/client';
 import { AvisoDeFalha, NumInput } from '../components/ui';
 import BarraAlteracoes from '../components/BarraAlteracoes';
-import { brl, pct, plural } from '../lib/format';
+import { brl, pct, plural, brlOuTraco } from '../lib/format';
 import { CampoTextoLimitado } from '../components/campos';
 
 function normalizarTexto(v) {
@@ -59,9 +59,16 @@ export default function CustosIndiretosPage() {
   useEffect(load, []);
 
   const totalMensalRascunho = useMemo(() => itensRascunho.reduce((s, i) => s + (Number(i.valor_mensal) || 0), 0), [itensRascunho]);
-  const custoPorPecaRascunho = useMemo(() => (
-    Number(producaoRascunho) === 0 ? 0 : totalMensalRascunho / Number(producaoRascunho)
-  ), [totalMensalRascunho, producaoRascunho]);
+  // Mesma regra do servidor (routes/custosIndiretos.routes.js): com despesa
+  // lançada e produção do mês em branco o rateio é INDETERMINADO, não zero —
+  // a tela mostrava "R$ 0,00 por peça" ao lado de R$ 10.000 de despesa e
+  // essa peça entrava em toda ficha barata de menos. A conta é refeita aqui
+  // porque a produção é editável ao vivo, antes de salvar.
+  const custoPorPecaRascunho = useMemo(() => {
+    const producao = Number(producaoRascunho) || 0;
+    if (producao > 0) return totalMensalRascunho / producao;
+    return totalMensalRascunho > 0 ? null : 0;
+  }, [totalMensalRascunho, producaoRascunho]);
 
   const grupos = useMemo(() => {
     const porGrupo = new Map(GRUPOS.map((g) => [g.chave, { ...g, itens: [], subtotal: 0 }]));
@@ -183,8 +190,12 @@ export default function CustosIndiretosPage() {
         <div style={{ fontSize: 20, color: 'var(--ink-faint)' }}>=</div>
         <div className="cfg-simulador-recebe" style={{ background: 'var(--warning-bg, var(--surface-alt))' }}>
           <div className="cfg-simulador-recebe-label" style={{ color: 'var(--terracotta)' }}>Custo indireto por peça</div>
-          <div className="cfg-simulador-recebe-valor" style={{ color: 'var(--terracotta)' }}>{brl(custoPorPecaRascunho)}</div>
-          <div className="page-sub" style={{ margin: 0, fontSize: 10.5 }}>entra no custo de toda peça cadastrada</div>
+          <div className="cfg-simulador-recebe-valor" style={{ color: 'var(--terracotta)' }}>{brlOuTraco(custoPorPecaRascunho)}</div>
+          <div className="page-sub" style={{ margin: 0, fontSize: 10.5 }}>
+            {custoPorPecaRascunho === null
+              ? (servidor.motivoSemCustoPorPeca || 'a produção mensal em peças está em branco, então não dá para ratear o custo indireto por peça. Informe a produção mensal para o rateio voltar a ser calculado.')
+              : 'entra no custo de toda peça cadastrada'}
+          </div>
         </div>
       </div>
 

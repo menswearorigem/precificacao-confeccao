@@ -127,15 +127,30 @@ function casasDecimaisDoStep(step) {
   return ponto === -1 ? 0 : s.length - ponto - 1;
 }
 
-// "1.500,00" ou "1500,00" ou "1500" -> 1500 (number). Um ponto SEM vírgula
-// junto é tratado como separador decimal (não de milhar) — cobre digitação
-// livre tipo "12.5" — enquanto ponto(s) na presença de vírgula são sempre
-// separador de milhar (formato BR de colar valor, ex. "1.500,00").
+// "1.500,00" ou "1500,00" ou "1500" -> 1500 (number).
+//
+// ⚠️ Corrigido em 14/09/2026. A regra antiga tratava QUALQUER ponto sem
+// vírgula como decimal, para aceitar digitação livre tipo "12.5" — e o efeito
+// colateral era um erro de MIL VEZES em campo de dinheiro: "1.500" colado do
+// Wik ou de uma planilha virava 1,5. O pior caso é o preço unitário do item
+// do pedido (peça de R$ 1.500 vendida a R$ 1,50), mas o mesmo valia para
+// frete, acréscimo, preço fixo de tabela, meta e comissão do vendedor, saldo
+// inicial de conta bancária e custo de embalagem.
+//
+// A regra agora é a MESMA de `parseNumeroBR` (server/src/lib/importValidate.js),
+// que a frente de Compras já usava na importação: com vírgula, o ponto é
+// milhar; só com ponto, é milhar apenas quando a string inteira são grupos de
+// 3 dígitos ("1.500" -> 1500), senão é decimal ("12.5" -> 12,5). Duas leituras
+// diferentes de número no mesmo sistema é que não pode existir.
 function textoParaNumero(texto) {
   const s = String(texto ?? '').trim();
   if (s === '' || s === '-') return '';
-  const comVirgula = s.includes(',');
-  const normalizado = comVirgula ? s.replace(/\./g, '').replace(',', '.') : s;
+  let normalizado = s;
+  if (s.includes(',')) {
+    normalizado = s.replace(/\./g, '').replace(',', '.');
+  } else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) {
+    normalizado = s.replace(/\./g, '');
+  }
   const n = Number(normalizado);
   return Number.isNaN(n) ? '' : n;
 }

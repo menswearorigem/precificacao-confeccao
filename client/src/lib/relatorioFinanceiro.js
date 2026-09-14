@@ -54,15 +54,29 @@ export function definicaoMovimentacao({
         dias.reduce((s, d) => s + (d.saque || 0), 0),
       ],
     },
+    // O saque sai desta tabela pelo mesmo motivo da tela: ele não é destino do
+    // dinheiro, é o mesmo dinheiro indo do marketplace para o banco da casa.
+    // Com ele dentro, somar a coluna "Total" dava "liberado menos saque" — e
+    // quem lê o PDF não tem como perceber. Ele continua no relatório, numa
+    // linha declarada fora do total.
     {
       titulo: 'Para onde o dinheiro foi',
-      descricao: 'Cada tipo de lançamento do extrato, somado no período. Valor negativo é saída (publicidade, taxa, devolução).',
+      descricao: 'Cada tipo de lançamento do extrato, somado no período. Valor negativo é saída (publicidade, taxa, devolução). O saque para o banco aparece à parte e NÃO entra no total: ele é o mesmo dinheiro mudando de conta.',
       colunas: [
         { rotulo: 'Tipo', tipo: 'texto' },
         { rotulo: 'Lançamentos', tipo: 'numero' },
         { rotulo: 'Total', tipo: 'moeda' },
       ],
-      linhas: porTipo.map((r) => [rotuloTipo(r.tipo), r.quantidade, r.total]),
+      linhas: [
+        ...porTipo.filter((r) => r.tipo !== 'saque').map((r) => [rotuloTipo(r.tipo), r.quantidade, r.total]),
+        ...porTipo.filter((r) => r.tipo === 'saque')
+          .map((r) => [`${rotuloTipo(r.tipo)} (fora do total)`, r.quantidade, r.total]),
+      ],
+      totais: [
+        'Total (sem o saque)',
+        porTipo.filter((r) => r.tipo !== 'saque').reduce((s, r) => s + Number(r.quantidade || 0), 0),
+        porTipo.filter((r) => r.tipo !== 'saque').reduce((s, r) => s + Number(r.total || 0), 0),
+      ],
     },
     {
       titulo: 'Por plataforma',

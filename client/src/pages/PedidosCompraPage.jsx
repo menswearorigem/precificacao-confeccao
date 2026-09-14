@@ -430,6 +430,9 @@ function Detalhe({ detalhe, confronto, onVoltar, onAtualizar }) {
 // ---------------------------------------------------------------------------
 // A lista
 // ---------------------------------------------------------------------------
+
+// Teto do `LIMIT` da rota `/pedidos-compra` (pedidosCompra.routes.js).
+const LIMITE_PEDIDOS = 500;
 export default function PedidosCompraPage() {
   const [situacoes, setSituacoes] = useState([]);
   const [soAtrasados, setSoAtrasados] = useState(false);
@@ -461,6 +464,12 @@ export default function PedidosCompraPage() {
   }, [params, recarregar]);
 
   const tabela = useTabela(pedidos, { colunas: COLUNAS_ORDENAVEIS, colunaPadrao: 'emissao', direcaoPadrao: 'desc' });
+
+  // A rota corta em 500 pedidos e não devolve contagem total: os cartões
+  // acima somam essa mesma lista, então num histórico grande eles são um
+  // piso, não o retrato. Declarar o corte é o mínimo enquanto o servidor não
+  // mandar os totais agregados (padrão novo de /titulos).
+  const listaTruncada = pedidos.length >= LIMITE_PEDIDOS;
 
   const resumo = useMemo(() => {
     const vivos = pedidos.filter((p) => p.situacao !== 'cancelado');
@@ -639,6 +648,13 @@ export default function PedidosCompraPage() {
           <div className="card-head">Pedidos</div>
           <span className="page-sub" style={{ margin: 0 }}>{tabela.totalItens.toLocaleString('pt-BR')} resultado(s)</span>
         </div>
+        {listaTruncada && (
+          <div className="aviso-compacto tone-atencao">
+            <AlertTriangle size={14} />
+            A busca para nos {LIMITE_PEDIDOS} pedidos mais recentes, e os cartões acima somam só o que
+            veio — pode haver mais pedido antes disso. Filtre por situação ou fornecedor para ver o resto.
+          </div>
+        )}
         <Paginacao {...tabela} posicao="topo" />
         <DataTable>
           <table className="data-table">

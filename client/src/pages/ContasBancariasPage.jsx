@@ -187,9 +187,20 @@ export default function ContasBancariasPage() {
 
   const totais = useMemo(() => {
     const ativas = contas.filter((c) => c.ativo);
+    // O saldo sai quebrado por empresa. Um "saldo somado" dos dois CNPJs não
+    // existe em demonstração nenhuma: cada empresa tem caixa próprio, e o
+    // número somado não é saldo de nenhuma das duas — ninguém pode pagar uma
+    // conta da Origem com o dinheiro da Hebron por causa desse total.
+    const porEmpresa = [...ativas.reduce((mapa, c) => {
+      const nome = c.empresa_nome || 'Sem empresa';
+      mapa.set(nome, (mapa.get(nome) || 0) + Number(c.saldo_atual || 0));
+      return mapa;
+    }, new Map())].map(([nome, saldo]) => ({ nome, saldo }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
     return {
       ativas: ativas.length,
       saldo: ativas.reduce((s, c) => s + Number(c.saldo_atual || 0), 0),
+      porEmpresa,
       doWik: contas.filter((c) => c.wik_grp_id).length,
     };
   }, [contas]);
@@ -278,8 +289,23 @@ export default function ContasBancariasPage() {
         </div>
         <div className="stat-card">
           <div className="stat-card-corpo">
-            <span className="stat-card-label">Saldo somado</span>
-            <span className="stat-card-value">{brl(totais.saldo)}</span>
+            <span className="stat-card-label">
+              {totais.porEmpresa.length > 1 ? 'Saldo em conta, por empresa' : 'Saldo em conta'}
+            </span>
+            {totais.porEmpresa.length > 1 ? (
+              <>
+                {totais.porEmpresa.map((e) => (
+                  <span key={e.nome} className="stat-card-value" style={{ fontSize: 17 }}>
+                    {e.nome}: {brl(e.saldo)}
+                  </span>
+                ))}
+                <span className="page-sub" style={{ margin: 0 }}>
+                  Cada CNPJ tem caixa próprio — os saldos não se somam num número só.
+                </span>
+              </>
+            ) : (
+              <span className="stat-card-value">{brl(totais.saldo)}</span>
+            )}
           </div>
           <Wallet size={18} className="stat-card-icone" style={{ color: 'var(--brass)' }} />
         </div>

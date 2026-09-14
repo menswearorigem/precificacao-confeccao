@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Search, X, Printer, Store, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, plural } from '../lib/format';
+import { brl, plural, brlOuTraco, formatQtd } from '../lib/format';
+import SeloDeConfianca from '../components/SeloDeConfianca';
 
 // Quantas referências vão em cada chamada de /estoque/ficha quando a seleção
 // é montada à mão. Sem isso, uma seleção grande viraria uma URL de milhares
@@ -133,9 +134,19 @@ export default function FichaEstoquePage() {
     }
   }
 
+  // ⚠️ 14/09/2026 — `custoTotal`/`valorTotal` passaram a poder ser NULOS
+  // (referência sem ficha de custo). O `|| 0` antigo somava essas peças como
+  // se valessem R$ 0,00 e o rodapé ainda declarava isso em voz alta
+  // ("entram como zero"), o que espalha o erro em vez de corrigi-lo. Agora
+  // o total soma só o que é somável, e o que sobra é declarado EM PEÇAS —
+  // mesmo tratamento da tela Dinheiro Parado.
   const totalPecas = fichas.reduce((s, f) => s + Number(f.quantidadeTotal || 0), 0);
-  const totalCusto = fichas.reduce((s, f) => s + Number(f.custoTotal || 0), 0);
-  const totalValor = fichas.reduce((s, f) => s + Number(f.valorTotal || 0), 0);
+  const totalCusto = fichas.reduce((s, f) => s + (f.custoTotal === null ? 0 : Number(f.custoTotal) || 0), 0);
+  const totalValor = fichas.reduce((s, f) => s + (f.valorTotal === null ? 0 : Number(f.valorTotal) || 0), 0);
+  const fichasComCusto = fichas.filter((f) => f.custoConhecido);
+  const fichasSemCusto = fichas.filter((f) => !f.custoConhecido);
+  const pecasSemCusto = fichasSemCusto.reduce((s, f) => s + Number(f.pecasSemCusto || 0), 0);
+  const totalEhPiso = pecasSemCusto > 0;
 
   return (
     <div className="page-wide">
@@ -217,11 +228,25 @@ export default function FichaEstoquePage() {
           )}
 
           {fichas.length > 0 && (
-            <p className="page-sub" style={{ margin: '10px 0 0' }}>
-              {fichas.length} ficha(s) · {totalPecas.toLocaleString('pt-BR')} peça(s) ·
-              {' '}custo {brl(totalCusto)} · valor {brl(totalValor)}
-              {' '}<span style={{ opacity: 0.8 }}>(soma das fichas geradas; referências sem custo cadastrado entram como zero)</span>
-            </p>
+            <>
+              <p className="page-sub" style={{ margin: '10px 0 0' }}>
+                {fichas.length} ficha(s) · {formatQtd(totalPecas)} peça(s) ·
+                {' '}custo {brl(totalCusto)}{totalEhPiso ? ' (no mínimo)' : ''} ·
+                {' '}valor {brl(totalValor)}{totalEhPiso ? ' (no mínimo)' : ''}
+              </p>
+              {totalEhPiso && (
+                <p className="page-sub" style={{ margin: '4px 0 0' }}>
+                  Os dois valores são um PISO: {formatQtd(pecasSemCusto)} peça(s) de{' '}
+                  {fichasSemCusto.length} referência(s) sem custo de produção calculado não entram
+                  no R$ — elas continuam contadas em peças e aparecem com “—” na própria ficha.
+                </p>
+              )}
+              <SeloDeConfianca
+                considerado={fichasComCusto.length}
+                total={fichas.length}
+                excluidos={[{ label: 'sem custo de produção calculado', total: fichasSemCusto.length }]}
+              />
+            </>
           )}
         </div>
       </div>
@@ -238,7 +263,10 @@ function hoje() {
 }
 
 function FichaEstoque({ ficha, pagina, totalPaginas }) {
-  const { produto, tamanhos, linhas, totalizador, quantidadeTotal, custoTotal, valorTotal } = ficha;
+  const {
+    produto, tamanhos, linhas, totalizador, quantidadeTotal,
+    custoTotal, valorTotal, motivoSemCusto,
+  } = ficha;
   return (
     <div className="ficha-page ficha-doc-grid card" style={{ marginBottom: 24 }}>
       <div className="ficha-doc-topo">
@@ -292,10 +320,16 @@ function FichaEstoque({ ficha, pagina, totalPaginas }) {
             <thead><tr><th colSpan="2">TOTALIZADOR</th></tr></thead>
             <tbody>
               <tr><td>Qtd. Total:</td><td className="col-total">{quantidadeTotal}</td></tr>
-              <tr><td>Custo Total:</td><td className="col-total">{brl(custoTotal)}</td></tr>
-              <tr><td>Valor Total:</td><td className="col-total">{brl(valorTotal)}</td></tr>
+              {/* Esta folha é conferida no chão da fábrica: "R$ 0,00" seria
+                  lido como "esta referência não vale nada", e não como "o
+                  custo dela nunca foi cadastrado". */}
+              <tr><td>Custo Total:</td><td className="col-total">{brlOuTraco(custoTotal)}</td></tr>
+              <tr><td>Valor Total:</td><td className="col-total">{brlOuTraco(valorTotal)}</td></tr>
             </tbody>
           </table>
+          {motivoSemCusto && (
+            <p className="page-sub" style={{ margin: '6px 0 0' }}>{motivoSemCusto}</p>
+          )}
         </div>
       </div>
     </div>

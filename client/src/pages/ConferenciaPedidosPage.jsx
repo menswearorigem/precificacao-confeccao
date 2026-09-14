@@ -595,7 +595,16 @@ function AbaRelatorio({ recarregarChave }) {
           <span className="stat-card-delta">{r.sem_divergencia} sem nenhuma divergência</span>
         </StatCard>
         <StatCard label="Com divergência" value={r.com_divergencia} variant="warning" Icone={AlertTriangle} />
-        <StatCard label="Peças conferidas" value={r.pecas} Icone={Package} />
+        {/* `pecas` é o que foi BIPADO de verdade; `pecas_esperadas` é o que a
+            caixa prometia. A diferença entre os dois é exatamente a peça que
+            saiu sem conferência — mostrar só o conferido escondia isso. */}
+        <StatCard label="Peças conferidas" value={r.pecas} Icone={Package}>
+          {r.pecas_esperadas != null && (
+            <span className="stat-card-delta">
+              de {r.pecas_esperadas} esperada(s) nas caixas do período
+            </span>
+          )}
+        </StatCard>
       </div>
       <p className="page-sub">
         “Saíram de primeira” conta os pedidos fechados sem nenhuma peça confirmada no olho e sem

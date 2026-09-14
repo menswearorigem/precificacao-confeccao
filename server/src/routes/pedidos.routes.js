@@ -1519,6 +1519,11 @@ router.get('/relatorio-lucratividade/resumo-produto', async (req, res, next) => 
             unidadesVendidas: 0,
             totalFaturado: 0,
             totalCusto: 0,
+            // Unidades cujo custo NÃO se conhece (produto sem ficha). Sem esta
+            // contagem o custo médio por peça seria diluído para baixo pelas
+            // peças que não têm custo nenhum — a REGRA 2 vale também na
+            // agregação, não só na linha do pedido.
+            unidadesSemCusto: 0,
             lucro: 0,
             custoAds: 0,
           });
@@ -1527,7 +1532,12 @@ router.get('/relatorio-lucratividade/resumo-produto', async (req, res, next) => 
         const shareReceita = p.receita > 0 ? it.totalItem / p.receita : 0;
         acc.unidadesVendidas += it.quantidade;
         acc.totalFaturado += it.totalItem;
-        acc.totalCusto += it.quantidade * it.custoUnitario;
+        // `custoUnitario` vem NULO quando o produto não tem ficha de custo, e
+        // `null` coagido pelo `+` viraria zero: o custo médio do produto cairia
+        // sem que nada na tela dissesse por quê. Só soma o que se conhece, e
+        // conta à parte as unidades que ficaram de fora.
+        if (it.custoUnitario == null) acc.unidadesSemCusto += it.quantidade;
+        else acc.totalCusto += it.quantidade * it.custoUnitario;
         // p.lucro já é pós Ads (rateado por dia/anúncio) — aloca junto com o
         // custo de Ads pra dar pra reconstruir os dois: bruto (antes de Ads)
         // e pós Ads, no mesmo padrão do painel de referência.
@@ -1547,7 +1557,15 @@ router.get('/relatorio-lucratividade/resumo-produto', async (req, res, next) => 
           temFoto: x.temFoto,
           unidadesVendidas: x.unidadesVendidas,
           precoMedio: x.unidadesVendidas > 0 ? x.totalFaturado / x.unidadesVendidas : 0,
-          custoUnitarioMedio: x.unidadesVendidas > 0 ? x.totalCusto / x.unidadesVendidas : 0,
+          // Média só sobre as unidades cujo custo se conhece. Dividir pelo
+          // total incluiria as peças sem ficha como se custassem zero, e o
+          // custo médio do produto apareceria menor do que é.
+          custoUnitarioMedio: (x.unidadesVendidas - x.unidadesSemCusto) > 0
+            ? x.totalCusto / (x.unidadesVendidas - x.unidadesSemCusto)
+            : null,
+          // A tela precisa saber que a média é parcial para poder dizer isso.
+          unidadesSemCusto: x.unidadesSemCusto,
+          custoIncompleto: x.unidadesSemCusto > 0,
           totalFaturado: x.totalFaturado,
           representatividadePct: totalFaturadoGeral > 0 ? x.totalFaturado / totalFaturadoGeral : 0,
           lucroBruto,

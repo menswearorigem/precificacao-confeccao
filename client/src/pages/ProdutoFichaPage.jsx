@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Plus, Trash2, Layers, Factory, Wallet, TrendingUp, AlertTriangle,
-  Save, XCircle, CheckCircle2, Package, ArrowLeft, ImagePlus,
+  Save, XCircle, CheckCircle2, Package, ArrowLeft, ImagePlus, Ban,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { Field, NumInput, Row, Select, Toggle } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import { statusToneClass } from '../lib/statusTone';
-import { brl, pct, uid, numeroBr } from '../lib/format';
+import { brl, pct, uid, numeroBr, brlOuTraco, pctOuTraco } from '../lib/format';
 import Lightbox from '../components/Lightbox';
 import HistoricoPrecoCard from '../components/HistoricoPrecoCard';
 import GradeProdutoCard from '../components/GradeProdutoCard';
@@ -39,6 +39,10 @@ const STATUS_ICON = {
   'ATENÇÃO - MARGEM PRÓXIMA DO LIMITE': AlertTriangle,
   'MARGEM SAUDÁVEL': CheckCircle2,
   'MARGEM ELEVADA': TrendingUp,
+  // "SEM PREÇO POSSÍVEL" nasceu na correção do motor de preço e caía no
+  // ícone genérico de pacote, o mesmo de "SEM DADOS". Aqui não falta
+  // cadastro: a conta é que não fecha, e o ícone precisa dizer isso.
+  'SEM PREÇO POSSÍVEL': Ban,
 };
 
 export default function ProdutoFichaPage() {
@@ -395,9 +399,18 @@ export default function ProdutoFichaPage() {
               Preço {produto.preco_informado ? 'praticado' : 'sugerido'}
             </span>
             <span className="mono" style={{ fontSize: 22, fontWeight: 700, color: 'var(--leather-dark)' }}>
-              {brl(c.formacaoPreco.precoAtivo)}
+              {brlOuTraco(c.formacaoPreco.precoAtivo)}
             </span>
           </div>
+        </div>
+      )}
+
+      {/* Sem preço a formar o número grande vira "—": mostrar "R$ 0,00" aqui
+          seria afirmar que a peça vale zero. O motivo vindo do servidor fica
+          logo abaixo porque o traço sozinho não diz o que resolver. */}
+      {c && c.formacaoPreco.precoAtivo === null && c.formacaoPreco.motivoSemPreco && (
+        <div className="aviso-compacto tone-atencao" style={{ marginBottom: 16 }}>
+          <AlertTriangle size={14} /> Sem preço a formar: {c.formacaoPreco.motivoSemPreco}
         </div>
       )}
 
@@ -479,30 +492,39 @@ export default function ProdutoFichaPage() {
             <div className="card-head"><Wallet size={14} /> Custo Total da Peça</div>
             <Row label="Materiais" value={brl(c.custoTotal.totalMateriais)} />
             <Row label="Custo industrial" value={brl(c.custoTotal.totalIndustrial)} />
-            <Row label="Custo indireto (rateio)" value={brl(c.custoTotal.custoIndireto)} />
-            <Row label="Subtotal de produção" value={brl(c.custoTotal.subtotalProducao)} strong />
-            <Row label={`Impostos (${pct(c.custoTotal.pctImpostos)})`} value={brl(c.custoTotal.impostosRS)} />
-            <Row label={`Taxas de venda (${pct(c.custoTotal.pctTaxas)})`} value={brl(c.custoTotal.taxasRS)} />
-            <Row label="Custo total da peça" value={brl(c.custoTotal.custoTotalPeca)} strong big />
+            {/* Rateio indeterminado (produção mensal em branco) e tudo que
+                depende do preço chegam como ausência. Zero aqui barateava a
+                peça em silêncio — o traço obriga a olhar o motivo acima. */}
+            <Row label="Custo indireto (rateio)" value={brlOuTraco(c.custoTotal.custoIndireto)} />
+            <Row label="Subtotal de produção" value={brlOuTraco(c.custoTotal.subtotalProducao)} strong />
+            <Row label={`Impostos (${pct(c.custoTotal.pctImpostos)})`} value={brlOuTraco(c.custoTotal.impostosRS)} />
+            <Row label={`Taxas de venda (${pct(c.custoTotal.pctTaxas)})`} value={brlOuTraco(c.custoTotal.taxasRS)} />
+            <Row label="Custo total da peça" value={brlOuTraco(c.custoTotal.custoTotalPeca)} strong big />
           </div>
 
           <div className="card">
             <div className="card-head"><TrendingUp size={14} /> Formação do Preço</div>
+            {/* `precoSugerido` virou nulo quando não existe preço que entregue
+                a margem (ou quando não há custo de produção): o `.toFixed()`
+                direto no placeholder quebrava a ficha inteira em branco. */}
             <Field label="Preço praticado (opcional — deixe em branco para usar o sugerido)">
               <NumInput
                 value={produto.preco_informado}
                 onChange={(v) => updateProduto({ preco_informado: v })}
                 suffix="R$"
-                placeholder={c.formacaoPreco.precoSugerido.toFixed(2)}
+                placeholder={c.formacaoPreco.precoSugerido === null ? 'sem preço sugerido' : c.formacaoPreco.precoSugerido.toFixed(2)}
               />
             </Field>
-            <Row label="Preço sugerido (margem ideal)" value={brl(c.formacaoPreco.precoSugerido)} strong />
-            <Row label="Preço mínimo aceitável" value={brl(c.formacaoPreco.precoMinimo)} />
-            <Row label="Preço ideal" value={brl(c.formacaoPreco.precoIdeal)} />
-            <Row label="Preço premium" value={brl(c.formacaoPreco.precoPremium)} />
-            <Row label="Preço máximo recomendado" value={brl(c.formacaoPreco.precoMax)} />
-            <Row label="Lucro estimado" value={`${brl(c.formacaoPreco.lucroRS)} · ${pct(c.formacaoPreco.lucroPct)}`} strong />
-            <Row label="Markup (mult.)" value={`${numeroBr(c.formacaoPreco.markupMult)}x`} />
+            {c.formacaoPreco.motivoSemPreco && (
+              <p className="page-sub" style={{ marginTop: 0 }}>{c.formacaoPreco.motivoSemPreco}</p>
+            )}
+            <Row label="Preço sugerido (margem ideal)" value={brlOuTraco(c.formacaoPreco.precoSugerido)} strong />
+            <Row label="Preço mínimo aceitável" value={brlOuTraco(c.formacaoPreco.precoMinimo)} />
+            <Row label="Preço ideal" value={brlOuTraco(c.formacaoPreco.precoIdeal)} />
+            <Row label="Preço premium" value={brlOuTraco(c.formacaoPreco.precoPremium)} />
+            <Row label="Preço máximo recomendado" value={brlOuTraco(c.formacaoPreco.precoMax)} />
+            <Row label="Lucro estimado" value={c.formacaoPreco.lucroRS === null ? '—' : `${brl(c.formacaoPreco.lucroRS)} · ${pct(c.formacaoPreco.lucroPct)}`} strong />
+            <Row label="Markup (mult.)" value={c.formacaoPreco.markupMult === null ? '—' : `${numeroBr(c.formacaoPreco.markupMult)}x`} />
           </div>
         </div>
       )}
@@ -511,16 +533,18 @@ export default function ProdutoFichaPage() {
         <div className="grid-2">
           <div className="card">
             <div className="card-head">Indicadores</div>
-            <Row label="Markup" value={`${numeroBr(c.indicadores.markup)}x`} />
-            <Row label="Margem bruta" value={pct(c.indicadores.margemBruta)} />
-            <Row label="Margem de contribuição" value={brl(c.indicadores.margemContribuicao)} />
-            <Row label="Lucro líquido estimado" value={brl(c.indicadores.lucroLiquidoEstimado)} />
-            <Row label="ROI estimado" value={pct(c.indicadores.roiEstimado)} />
+            {/* Todo indicador derivado do preço vem nulo quando não há preço
+                — "0,0%" de margem seria uma leitura de negócio inventada. */}
+            <Row label="Markup" value={c.indicadores.markup === null ? '—' : `${numeroBr(c.indicadores.markup)}x`} />
+            <Row label="Margem bruta" value={pctOuTraco(c.indicadores.margemBruta)} />
+            <Row label="Margem de contribuição" value={brlOuTraco(c.indicadores.margemContribuicao)} />
+            <Row label="Lucro líquido estimado" value={brlOuTraco(c.indicadores.lucroLiquidoEstimado)} />
+            <Row label="ROI estimado" value={pctOuTraco(c.indicadores.roiEstimado)} />
             <Row label="Custo industrial" value={brl(c.indicadores.custoIndustrial)} />
-            <Row label="Custo administrativo (indireto)" value={brl(c.indicadores.custoAdministrativo)} />
-            <Row label="Peso impostos" value={pct(c.indicadores.pesoImpostos)} />
-            <Row label="Peso taxas" value={pct(c.indicadores.pesoTaxas)} />
-            <Row label="Peso custo indireto" value={pct(c.indicadores.pesoCustoIndireto)} />
+            <Row label="Custo administrativo (indireto)" value={brlOuTraco(c.indicadores.custoAdministrativo)} />
+            <Row label="Peso impostos" value={pctOuTraco(c.indicadores.pesoImpostos)} />
+            <Row label="Peso taxas" value={pctOuTraco(c.indicadores.pesoTaxas)} />
+            <Row label="Peso custo indireto" value={pctOuTraco(c.indicadores.pesoCustoIndireto)} />
           </div>
           <div className="card">
             <div className="card-head"><AlertTriangle size={14} /> Alertas</div>

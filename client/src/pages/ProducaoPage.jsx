@@ -40,6 +40,9 @@ import { CampoTextoLimitado } from '../components/campos';
 // vinculado, tamanho sem consumo, insumo sem custo — os três viram pendência
 // na prévia, e nenhum deles vira zero.
 
+// Teto do `LIMIT` da rota `/producao/ordens` (producao.routes.js).
+const LIMITE_ORDENS = 300;
+
 const SITUACAO = {
   rascunho: { rotulo: 'Rascunho', tom: 'tone-neutro' },
   planejada: { rotulo: 'Planejada', tom: 'tone-elevada' },
@@ -1204,6 +1207,11 @@ export default function ProducaoPage() {
     semCusto: ordens.filter((o) => Number(o.insumos_sem_custo) > 0).length,
   }), [ordens]);
 
+  // A rota `/producao/ordens` corta em 300 e não devolve contagem total: os
+  // indicadores acima contam a mesma lista cortada. Sem este aviso, "ordens
+  // abertas" num histórico grande é um piso apresentado como total.
+  const listaTruncada = ordens.length >= LIMITE_ORDENS;
+
   const colunas = useMemo(() => ({
     numero: (o) => Number(o.numero),
     referencia: (o) => o.referencia,
@@ -1293,6 +1301,15 @@ export default function ProducaoPage() {
       </div>
 
       {erro && <p className="erro-inline">{erro}</p>}
+
+      {listaTruncada && (
+        <p className="aviso-inline">
+          <AlertTriangle size={14} />
+          A lista para nas {LIMITE_ORDENS} ordens mais recentes e os indicadores acima contam só
+          essas — há ordem mais antiga fora da conta. Busque pela referência ou filtre pela situação
+          para alcançá-la.
+        </p>
+      )}
 
       {aba === 'ordens' && (
         <>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Search, X, Printer } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, pct, numeroBr, qtdFracionaria } from '../lib/format';
+import { brl, pct, numeroBr, qtdFracionaria, brlOuTraco } from '../lib/format';
 import { statusToneClass } from '../lib/statusTone';
 
 const MAX_REFERENCIAS = 5;
@@ -191,11 +191,11 @@ function FichaVenda({ ficha, pagina, totalPaginas }) {
             <tbody>
               <tr><td>Matéria-Prima:</td><td className="col-total">{brl(custoTotal.totalMateriais)}</td></tr>
               <tr><td>Industrial:</td><td className="col-total">{brl(custoTotal.totalIndustrial)}</td></tr>
-              <tr><td>Indireto (rateio):</td><td className="col-total">{brl(custoTotal.custoIndireto)}</td></tr>
-              <tr><td>Subtotal de produção:</td><td className="col-total">{brl(custoTotal.subtotalProducao)}</td></tr>
-              <tr><td>Impostos:</td><td className="col-total">{brl(custoTotal.impostosRS)}</td></tr>
-              <tr><td>Taxas:</td><td className="col-total">{brl(custoTotal.taxasRS)}</td></tr>
-              <tr className="linha-forte"><td>Custo total da peça:</td><td className="col-total">{brl(custoTotal.custoTotalPeca)}</td></tr>
+              <tr><td>Indireto (rateio):</td><td className="col-total">{brlOuTraco(custoTotal.custoIndireto)}</td></tr>
+              <tr><td>Subtotal de produção:</td><td className="col-total">{brlOuTraco(custoTotal.subtotalProducao)}</td></tr>
+              <tr><td>Impostos:</td><td className="col-total">{brlOuTraco(custoTotal.impostosRS)}</td></tr>
+              <tr><td>Taxas:</td><td className="col-total">{brlOuTraco(custoTotal.taxasRS)}</td></tr>
+              <tr className="linha-forte"><td>Custo total da peça:</td><td className="col-total">{brlOuTraco(custoTotal.custoTotalPeca)}</td></tr>
             </tbody>
           </table>
         </div>
@@ -204,16 +204,25 @@ function FichaVenda({ ficha, pagina, totalPaginas }) {
           <table>
             <thead><tr><th colSpan="2">FORMAÇÃO DE PREÇO</th></tr></thead>
             <tbody>
-              <tr><td>Preço mínimo aceitável:</td><td className="col-total">{brl(formacaoPreco.precoMinimo)}</td></tr>
-              <tr><td>Preço ideal:</td><td className="col-total">{brl(formacaoPreco.precoIdeal)}</td></tr>
-              <tr><td>Preço premium:</td><td className="col-total">{brl(formacaoPreco.precoPremium)}</td></tr>
-              <tr><td>Markup:</td><td className="col-total">{numeroBr(formacaoPreco.markupMult)}x</td></tr>
-              <tr><td>Lucro estimado:</td><td className="col-total">{brl(formacaoPreco.lucroRS)} ({pct(formacaoPreco.lucroPct)})</td></tr>
-              <tr className="linha-forte"><td>Preço de venda praticado:</td><td className="col-total">{brl(formacaoPreco.precoAtivo)}</td></tr>
+              {/* Esta ficha é impressa e vai para a mesa do vendedor: um
+                  "R$ 0,00" em preço mínimo autorizaria dar a peça de graça.
+                  Sem preço a formar, imprime-se o traço e o motivo abaixo. */}
+              <tr><td>Preço mínimo aceitável:</td><td className="col-total">{brlOuTraco(formacaoPreco.precoMinimo)}</td></tr>
+              <tr><td>Preço ideal:</td><td className="col-total">{brlOuTraco(formacaoPreco.precoIdeal)}</td></tr>
+              <tr><td>Preço premium:</td><td className="col-total">{brlOuTraco(formacaoPreco.precoPremium)}</td></tr>
+              <tr><td>Markup:</td><td className="col-total">{formacaoPreco.markupMult === null ? '—' : `${numeroBr(formacaoPreco.markupMult)}x`}</td></tr>
+              <tr><td>Lucro estimado:</td><td className="col-total">{formacaoPreco.lucroRS === null ? '—' : `${brl(formacaoPreco.lucroRS)} (${pct(formacaoPreco.lucroPct)})`}</td></tr>
+              <tr className="linha-forte"><td>Preço de venda praticado:</td><td className="col-total">{brlOuTraco(formacaoPreco.precoAtivo)}</td></tr>
             </tbody>
           </table>
         </div>
       </div>
+
+      {formacaoPreco.motivoSemPreco && (
+        <p className="page-sub" style={{ marginTop: 10 }}>
+          Sem preço a formar: {formacaoPreco.motivoSemPreco}
+        </p>
+      )}
 
       <div style={{ marginTop: 10, textAlign: 'right' }}>
         <span className={'stamp sm ' + statusToneClass(formacaoPreco.status)}>{formacaoPreco.status}</span>

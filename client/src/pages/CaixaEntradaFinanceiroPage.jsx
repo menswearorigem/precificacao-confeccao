@@ -434,6 +434,18 @@ export default function CaixaEntradaFinanceiroPage() {
 
   const total = resumo?.total;
 
+  // "Valor já estimado" somava a pagar com a receber num número só — que não é
+  // dinheiro a sair nem dinheiro a entrar, e não existe em demonstração
+  // nenhuma. O resumo já vem quebrado por natureza; o cartão passa a mostrar
+  // os dois lados separados, que é como se decide o que fazer com a fila.
+  const valorPorNatureza = useMemo(() => (
+    (resumo?.linhas || []).reduce((acc, l) => {
+      const v = Number(l.valor_aberto || 0);
+      if (l.natureza === 'receber') acc.receber += v; else acc.pagar += v;
+      return acc;
+    }, { pagar: 0, receber: 0 })
+  ), [resumo]);
+
   return (
     <div className="page-wide">
       <div className="pagina-topo no-print">
@@ -464,12 +476,17 @@ export default function CaixaEntradaFinanceiroPage() {
           Icone={Inbox}
         />
         <IndicadorDestaque
-          rotulo="Valor já estimado"
-          valor={total ? brl(total.valor) : '—'}
+          rotulo="A pagar, já estimado"
+          valor={total ? brl(valorPorNatureza.pagar) : '—'}
           explicacao={total && total.sem_valor > 0
-            ? `Soma só do que tem valor. ${formatQtd(total.sem_valor)} pendência(s) ainda sem valor não entram nesta conta — e por isso o número real é maior.`
-            : 'Soma do valor estimado de todas as pendências abertas.'}
-          tom={total && total.valor > 0 ? 'atencao' : undefined}
+            ? `Só pendência de natureza "a pagar", e só o que já tem valor. ${formatQtd(total.sem_valor)} pendência(s) ainda sem valor (das duas naturezas) não entram em conta nenhuma — por isso o número real é maior.`
+            : 'Soma do valor estimado das pendências abertas que vão virar título a pagar.'}
+          tom={total && valorPorNatureza.pagar > 0 ? 'atencao' : undefined}
+        />
+        <IndicadorDestaque
+          rotulo="A receber, já estimado"
+          valor={total ? brl(valorPorNatureza.receber) : '—'}
+          explicacao="Soma do valor estimado das pendências abertas que vão virar título a receber. Fica separada do 'a pagar' de propósito: somar os dois num número só não dá dinheiro a sair nem a entrar."
         />
         <IndicadorDestaque
           rotulo="Travando documento"
@@ -504,13 +521,21 @@ export default function CaixaEntradaFinanceiroPage() {
               </thead>
               <tbody>
                 {resumo.linhas.map((l) => (
+                  // A rota agrupa por (origem_codigo, natureza): uma origem com
+                  // as duas naturezas rendia duas linhas com a MESMA chave e o
+                  // mesmo rótulo — React reclama e quem lê vê duplicidade.
                   <tr
-                    key={l.origem_codigo}
+                    key={`${l.origem_codigo}-${l.natureza}`}
                     className="clickable-row"
                     onClick={() => setOrigem(l.origem_codigo === origem ? '' : l.origem_codigo)}
                   >
                     <td>{rotuloModulo(l.modulo)}</td>
-                    <td>{l.origem_rotulo}</td>
+                    <td>
+                      {l.origem_rotulo}{' '}
+                      <span className={`stamp sm ${l.natureza === 'receber' ? 'tone-saudavel' : 'tone-neutro'}`}>
+                        {l.natureza === 'receber' ? 'a receber' : 'a pagar'}
+                      </span>
+                    </td>
                     <td className="mono">{formatQtd(l.abertas)}</td>
                     <td>
                       {Number(l.travando) > 0

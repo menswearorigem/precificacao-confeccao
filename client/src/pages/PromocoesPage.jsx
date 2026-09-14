@@ -392,8 +392,13 @@ function TabelaPrevia({ previa, editaveis, onEditarPreco, onEditarEstoque, exige
     com_prejuizo: efetivas.filter(({ m }) => m.margem?.prejuizo).length,
     abaixo_do_minimo: efetivas.filter(({ m }) => m.margem?.abaixoDoMinimo && !m.margem?.prejuizo).length,
     sem_margem_calculavel: efetivas.filter(({ m }) => m.indisponivel).length,
+    // Renúncia é medida contra o preço CORRENTE (o que o anúncio cobra hoje),
+    // não contra `preco_atual`, que é a BASE do desconto. Num anúncio já com
+    // desconto no ar — base R$ 125,00, corrente R$ 100,00, promocional
+    // R$ 100,00 — a base dizia "renúncia de R$ 25,00" onde a receita não muda
+    // em nada. Mesma conta do servidor (promocoes.routes.js).
     renuncia_por_peca: aplicaveis.reduce(
-      (s, { linha }) => s + (linha.preco_atual != null ? (linha.preco_atual - linha.preco_promocional) : 0), 0
+      (s, { linha }) => s + (linha.preco_corrente != null ? (linha.preco_corrente - linha.preco_promocional) : 0), 0
     ),
   };
 
@@ -420,7 +425,7 @@ function TabelaPrevia({ previa, editaveis, onEditarPreco, onEditarEstoque, exige
         <IndicadorDestaque
           rotulo="Desconto total por peça"
           valor={brl(resumo.renuncia_por_peca)}
-          explicacao="Somando uma venda de cada item selecionado. É estimativa, não previsão de venda."
+          explicacao="Diferença entre o que o anúncio cobra HOJE e o preço promocional, somando uma venda de cada item selecionado. É estimativa, não previsão de venda."
         />
         {resumo.sem_margem_calculavel > 0 && (
           <IndicadorDestaque
@@ -463,7 +468,20 @@ function TabelaPrevia({ previa, editaveis, onEditarPreco, onEditarEstoque, exige
                   </div>
                 </td>
                 <td>{[l.cor, l.tamanho].filter(Boolean).join(' · ') || <span className="ink-faint">única</span>}</td>
-                <td className="num">{l.preco_atual != null ? brl(l.preco_atual) : '—'}</td>
+                <td className="num">
+                  {l.preco_atual != null ? brl(l.preco_atual) : '—'}
+                  {/* O desconto pode ter sido aplicado sobre o preço CHEIO
+                      enquanto o anúncio já está com outro preço no ar. Dizer
+                      de onde saiu a base evita a leitura de que "20% de
+                      R$ 100,00 deu R$ 100,00". */}
+                  {l.preco_corrente != null && l.preco_atual != null
+                    && Number(l.preco_corrente) !== Number(l.preco_atual) && (
+                    <small className="ink-faint" style={{ display: 'block' }}>
+                      base: {l.preco_base_origem === 'preco_original' ? 'preço cheio' : 'preço no ar'} ·
+                      {' '}hoje no ar {brl(l.preco_corrente)}
+                    </small>
+                  )}
+                </td>
                 <td className="num">
                   {editaveis
                     ? (
