@@ -286,7 +286,77 @@ const GRANDEZA = {
 
 function mesmaGrandeza(a, b) {
   if (!a || !b) return false;
-  return GRANDEZA[String(a).toLowerCase()] === GRANDEZA[String(b).toLowerCase()];
+  return GRANDEZA[normalizarUnidade(a)] === GRANDEZA[normalizarUnidade(b)];
 }
 
-module.exports = { classificar, normalizar, UNIDADES, GRANDEZA, mesmaGrandeza, REGRAS };
+// ---------------------------------------------------------------------------
+// Conversão de verdade dentro da contagem (14/09/2026)
+// ---------------------------------------------------------------------------
+// `mesmaGrandeza` só responde "as duas contam peças?", e quem chamava concluía
+// daí que o fator era 1. Mas um milheiro são 1.000 peças e um par são 2:
+// tratar milheiro como peça multiplicava o custo da etiqueta por mil, e a
+// ficha saía com R$ 80,00 por etiqueta no lugar de R$ 0,08.
+// Onde o múltiplo é conhecido, converte-se; onde não é (rolo para peça, quilo
+// para metro), devolve `null` — "não sei" nunca pode virar 1 (REGRA 2).
+
+// Como as unidades chegam escritas na NF-e e nas planilhas: "MIL", "PÇ",
+// "UND", "MT". Sem isto, "MIL" e "milheiro" seriam unidades diferentes e o
+// sistema pediria fator de conversão para converter uma coisa nela mesma.
+const SINONIMOS_UNIDADE = {
+  un: ['un', 'und', 'unid', 'unidade', 'unidades', 'uni'],
+  peca: ['pc', 'pca', 'pcs', 'peca', 'pecas'],
+  par: ['par', 'pares', 'pr'],
+  milheiro: ['mil', 'milh', 'mlh', 'milheiro', 'milheiros'],
+  kg: ['kg', 'kgs', 'quilo', 'quilos', 'quilograma', 'quilogramas'],
+  m: ['m', 'mt', 'mts', 'metro', 'metros'],
+  rolo: ['rl', 'rolo', 'rolos'],
+  cone: ['cn', 'cone', 'cones'],
+  l: ['l', 'lt', 'lts', 'litro', 'litros'],
+};
+const MAPA_SINONIMOS = {};
+for (const [canonica, lista] of Object.entries(SINONIMOS_UNIDADE)) {
+  for (const s of lista) MAPA_SINONIMOS[s] = canonica;
+}
+
+// Devolve a unidade na grafia que a casa usa, ou null quando não veio nada.
+// Grafia desconhecida volta como está (normalizada) — inventar uma unidade
+// seria pior do que admitir que não se conhece aquela.
+function normalizarUnidade(u) {
+  const limpa = normalizar(u).toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!limpa) return null;
+  return MAPA_SINONIMOS[limpa] || limpa;
+}
+
+// Quantas peças cabem em cada unidade de contagem. É a única tabela de
+// múltiplos que o sistema conhece de cor; tudo o mais precisa de fator
+// cadastrado no insumo.
+const EQUIVALENTE_EM_PECAS = { un: 1, peca: 1, par: 2, milheiro: 1000 };
+
+// Quantas unidades `para` cabem em 1 unidade `de`.
+//   fatorEntreUnidades('milheiro', 'un') === 1000
+//   fatorEntreUnidades('par', 'un') === 2
+// Devolve null quando o múltiplo não é conhecido.
+function fatorEntreUnidades(de, para) {
+  const a = normalizarUnidade(de);
+  const b = normalizarUnidade(para);
+  if (!a || !b) return null;
+  if (a === b) return 1;
+  const ea = EQUIVALENTE_EM_PECAS[a];
+  const eb = EQUIVALENTE_EM_PECAS[b];
+  if (ea && eb) return ea / eb;
+  return null;
+}
+
+// Multiplicador que leva um CUSTO de `unidadeDeCompra` para `unidadeDeDestino`.
+//   fatorDeCusto('milheiro', 'un') === 0.001  → R$ 80,00/milheiro = R$ 0,08/un
+// É o inverso do fator de quantidade, e existe separado porque trocar um pelo
+// outro é exatamente o erro que este bloco corrige.
+function fatorDeCusto(unidadeDeCompra, unidadeDeDestino) {
+  const f = fatorEntreUnidades(unidadeDeCompra, unidadeDeDestino);
+  return f == null || f === 0 ? null : 1 / f;
+}
+
+module.exports = {
+  classificar, normalizar, UNIDADES, GRANDEZA, mesmaGrandeza, REGRAS,
+  normalizarUnidade, fatorEntreUnidades, fatorDeCusto, EQUIVALENTE_EM_PECAS,
+};

@@ -102,15 +102,44 @@ router.post('/preview', upload.single('file'), async (req, res, next) => {
   }
 });
 
+// ⚠️ Os `|| 0` que havia aqui eram a mesma REGRA 2 violada que a prévia já
+// deixava passar: quantidade ou valor ausente entrava como 0 e a ficha saía
+// afirmando que o material é de graça. A prévia agora recusa a célula vazia,
+// mas esta rota aceita JSON de quem chamar, então a trava é repetida aqui —
+// sem ela, bastaria postar a lista direto para reinstalar o defeito.
+function numeroObrigatorio(valor, campo, referencia, lista) {
+  if (valor === null || valor === undefined || valor === '' || !Number.isFinite(Number(valor))) {
+    lista.push({ referencia, campo, valor: valor ?? null });
+    return null;
+  }
+  return Number(valor);
+}
+
 router.post('/confirmar', async (req, res, next) => {
+  const body = req.body || {};
+  const produtosCriar = body.produtosCriar || [];
+  const produtosAtualizar = body.produtosAtualizar || [];
+  const materiais = body.materiais || [];
+  const custosIndustriais = body.custosIndustriais || [];
+
+  const incompletos = [];
+  for (const m of materiais) {
+    numeroObrigatorio(m.quantidade, 'quantidade', m.referencia, incompletos);
+    numeroObrigatorio(m.valor_unitario, 'valor_unitario', m.referencia, incompletos);
+  }
+  for (const c of custosIndustriais) {
+    numeroObrigatorio(c.valor, 'valor', c.referencia, incompletos);
+  }
+  if (incompletos.length > 0) {
+    return res.status(400).json({
+      error: 'Há linhas sem quantidade ou sem valor. Em branco não é R$ 0,00 — a ficha ficaria dizendo que o material é de graça. '
+        + 'Complete a planilha e importe de novo.',
+      linhasIncompletas: incompletos,
+    });
+  }
+
   const client = await pool.connect();
   try {
-    const body = req.body || {};
-    const produtosCriar = body.produtosCriar || [];
-    const produtosAtualizar = body.produtosAtualizar || [];
-    const materiais = body.materiais || [];
-    const custosIndustriais = body.custosIndustriais || [];
-
     await client.query('BEGIN');
 
     for (const p of produtosCriar) {
@@ -175,7 +204,7 @@ router.post('/confirmar', async (req, res, next) => {
           `INSERT INTO materiais (produto_id, material, unidade, quantidade, valor_unitario, ordem,
                                   insumo_id, consumo_por_peca, perda_pct)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-          [produtoId, m.material || null, m.unidade || null, m.quantidade || 0, m.valor_unitario || 0, ordem,
+          [produtoId, m.material || null, m.unidade || null, Number(m.quantidade), Number(m.valor_unitario), ordem,
            herdado.insumo_id, herdado.consumo_por_peca, herdado.perda_pct]
         );
       }
@@ -192,7 +221,7 @@ router.post('/confirmar', async (req, res, next) => {
         await client.query(
           `INSERT INTO custos_industriais (produto_id, tipo, observacao, valor, ordem)
            VALUES ($1, $2, $3, $4, $5)`,
-          [produtoId, cst.tipo || null, cst.observacao || null, cst.valor || 0, ordem]
+          [produtoId, cst.tipo || null, cst.observacao || null, Number(cst.valor), ordem]
         );
       }
     }

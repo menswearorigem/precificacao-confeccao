@@ -41,6 +41,28 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 // TikTok (REGRA 1).
 const CANAIS_COM_VALOR_RECEBIDO = ['Mercado Livre', 'Shopee', 'TikTok Shop'];
 
+// "Este pedido é de marketplace?" — a pergunta que decide se a venda gera
+// contas a receber própria ou entra pelo repasse da plataforma.
+//
+// Até 14/09/2026 a resposta era só `origem_marketplace`, que SÓ o sincronizador
+// preenche: ele não está em HEADER_FIELDS e portanto não existe no formulário
+// de pedido. Quem digitava a venda preenchia "Canal: Shopee", que ninguém
+// olhava — e a venda virava título aqui E virava título de novo quando o
+// repasse chegasse. Medido: venda de R$ 1.000,00 aparecendo como R$ 2.000,00
+// no DRE, em duas linhas com nomes diferentes (1.1 Venda em marketplace e
+// 1.2 Venda direta), sem que a fila de duplicados visse nada.
+//
+// `CANAIS_MARKETPLACE` vem de mixTributario.js — é a MESMA lista que a
+// migration 0078 usa no bloco 6 da vw_fin_cobertura. Uma lista só, em um lugar
+// só: duas cópias divergiriam no primeiro canal novo.
+const { CANAIS_MARKETPLACE } = require('../lib/mixTributario');
+
+function ehVendaDeMarketplace(pedido) {
+  if (pedido.origem_marketplace) return true;
+  const canal = String(pedido.canal_venda || '').trim().toLowerCase();
+  return canal !== '' && CANAIS_MARKETPLACE.includes(canal);
+}
+
 const HEADER_FIELDS = [
   'data_pedido',
   'cliente_id',
@@ -2778,13 +2800,14 @@ router.post('/:id/faturar', async (req, res, next) => {
     // e é uma TRAVA de verdade: aqui não há mercadoria parada no galpão
     // esperando uma decisão contábil.
     //
-    // Só venda PRÓPRIA. Venda de marketplace (origem_marketplace preenchido)
-    // fica de fora de propósito: lá o dinheiro entra por repasse, e um título
-    // por pedido criaria milhares de títulos que ninguém baixa — e contaria a
-    // mesma receita duas vezes quando o repasse chegasse.
+    // Só venda PRÓPRIA. Venda de marketplace fica de fora de propósito: lá o
+    // dinheiro entra por repasse, e um título por pedido criaria milhares de
+    // títulos que ninguém baixa — e contaria a mesma receita duas vezes quando
+    // o repasse chegasse. Quem responde "é de marketplace?" é
+    // `ehVendaDeMarketplace`, que olha o canal digitado além da origem.
     const pedido = pedidoRows[0];
     let financeiro = null;
-    if (!pedido.origem_marketplace) {
+    if (!ehVendaDeMarketplace(pedido)) {
       const { rows: cli } = await client.query(
         'SELECT nome FROM clientes WHERE id = $1', [pedido.cliente_id]
       );

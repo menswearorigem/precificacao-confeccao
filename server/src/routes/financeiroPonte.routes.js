@@ -164,6 +164,36 @@ router.post('/pendencias/:id/atender', async (req, res, next) => {
       return res.status(400).json({ error: `Esta pendência já está ${p.situacao}.` });
     }
 
+    // ⚠️ O MESMO COMPROMISSO NÃO VIRA DOIS TÍTULOS.
+    //
+    // A situação da pendência não bastava como guarda. Cancelar o documento de
+    // origem cancela a pendência mas NÃO cancela o título que já está firme
+    // (`financeiroPonte.js:346` só cancela os 'previsto', e está certo: dívida
+    // firme não some porque alguém mexeu no cadastro). Reativar o documento
+    // devolvia a pendência para 'aberta' e ela caía aqui de novo — medido em
+    // 14/09/2026: uma compra de R$ 3.000 cancelada e reativada virava
+    // R$ 6.000 em Contas a Pagar e −R$ 6.000 no DRE, com dois títulos
+    // indistinguíveis na tela (mesma descrição, documento, valor e vencimento).
+    //
+    // Quem decide cancelar título é gente, nunca este código. O que ele impede
+    // é a criação do segundo, e diz onde está o primeiro.
+    const { rows: vivos } = await client.query(
+      `SELECT id, numero, valor_bruto, situacao, data_vencimento
+         FROM fin_titulos
+        WHERE origem_tipo = $1 AND origem_id = $2 AND situacao <> 'cancelado'
+        ORDER BY id`,
+      [p.origem_codigo, p.origem_id]
+    );
+    if (vivos.length > 0) {
+      await client.query('ROLLBACK');
+      const lista = vivos.map((t) => `#${t.numero} de ${Number(t.valor_bruto).toFixed(2)} (${t.situacao})`).join(', ');
+      return res.status(409).json({
+        error: `Este documento já tem contas geradas: ${lista}. Gerar de novo contaria o mesmo dinheiro duas vezes. `
+          + 'Se as contas existentes não valem mais, cancele-as primeiro — cancelar é decisão de gente, e fica registrado.',
+        titulosExistentes: vivos,
+      });
+    }
+
     const empresaId = inteiro(b.empresa_id) || p.empresa_id;
     const planoId = inteiro(b.plano_id) || p.plano_id;
     const centroId = inteiro(b.centro_custo_id) || p.centro_custo_id;

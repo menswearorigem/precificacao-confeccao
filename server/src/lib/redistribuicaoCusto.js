@@ -46,7 +46,7 @@
 // Todas as funções aqui são puras: recebem linhas, devolvem plano. Quem grava
 // é a rota, dentro de transação.
 
-const { mesmaGrandeza, normalizar } = require('./insumoUnidade');
+const { mesmaGrandeza, normalizar, fatorDeCusto } = require('./insumoUnidade');
 
 const TOLERANCIA = 0.005; // meio centavo
 
@@ -121,19 +121,34 @@ function custoNaUnidadeDaFicha(linha, insumo) {
     return { valor: custo * fator, fator, base: uInsumo };
   }
 
-  // 4. Unidades da mesma grandeza mas nomes diferentes (un/peça): trata como
-  //    a mesma coisa, com ressalva escrita.
-  if (mesmaGrandeza(uFicha, uInsumo)) {
+  // 4. Múltiplo CONHECIDO entre as duas unidades (un↔peça = 1, par = 2,
+  //    milheiro = 1.000). Antes, bastava as duas serem "contagem" para o custo
+  //    entrar com fator 1 e uma ressalva em texto — e era assim que a etiqueta
+  //    de R$ 8,50 o MILHEIRO entrava na ficha como R$ 8,50 a PEÇA, mil vezes
+  //    mais cara, com o plano saindo aplicável. Agora converte de verdade.
+  const fatorConhecido = fatorDeCusto(uInsumo, uFicha);
+  if (fatorConhecido != null) {
     return {
-      valor: custo, fator: 1, base: uInsumo,
-      ressalva: `a ficha mede em "${uFicha}" e o insumo em "${uInsumo}" — são a mesma grandeza, tratadas como equivalentes.`,
+      valor: custo * fatorConhecido, fator: fatorConhecido, base: uInsumo,
+      ressalva: fatorConhecido === 1
+        ? `a ficha mede em "${uFicha}" e o insumo em "${uInsumo}" — é a mesma contagem com outro nome, tratadas como equivalentes.`
+        : `o insumo é comprado em "${uInsumo}" e a ficha consome em "${uFicha}": 1 ${uInsumo} = ${1 / fatorConhecido} ${uFicha}, então o custo foi dividido por ${1 / fatorConhecido}.`,
     };
   }
 
-  // 5. Grandezas diferentes e sem fator: PARA. Converter quilo em metro no
-  //    chute é exatamente o erro que multiplica ou divide o custo por três.
+  // 5. Sem fator cadastrado e sem múltiplo conhecido: PARA. Vale tanto para
+  //    quilo × metro quanto para rolo × peça — nos dois casos chutar 1 é
+  //    inventar quanto o material custa.
+  if (mesmaGrandeza(uFicha, uInsumo)) {
+    return {
+      valor: null,
+      incompativel: true,
+      motivo: `a ficha mede em "${uFicha}" e o insumo "${insumo.nome}" é comprado em "${uInsumo}". As duas contam a mesma coisa, mas o sistema não sabe quantos "${uFicha}" cabem num "${uInsumo}" e não pode chutar 1. Cadastre a unidade de consumo e o fator na ficha do insumo.`,
+    };
+  }
   return {
     valor: null,
+    incompativel: true,
     motivo: `a ficha mede em "${uFicha}" e o insumo "${insumo.nome}" é comprado em "${uInsumo}". São grandezas diferentes e o insumo não tem fator de conversão cadastrado — converter no chute mudaria o custo por um fator de três. Cadastre a unidade de consumo e o fator na ficha do insumo.`,
   };
 }
@@ -280,7 +295,7 @@ function planejarRedistribuicao({ materiais, custosIndustriais, insumosPorId, op
 
     if (custo.valor === null) {
       linhas.push({ ...base, valor_unitario_novo: atualUnit, custo_novo: custoAtualLinha, mudou: false,
-        situacao: custo.motivo.includes('grandezas diferentes') ? 'unidade_incompativel' : 'insumo_sem_custo',
+        situacao: custo.incompativel ? 'unidade_incompativel' : 'insumo_sem_custo',
         motivo: custo.motivo });
       totalMateriaisNovo += custoAtualLinha;
       pendencias.push(`linha "${m.material || '(sem nome)'}": ${custo.motivo}`);

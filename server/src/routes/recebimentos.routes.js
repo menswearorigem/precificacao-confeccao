@@ -286,7 +286,8 @@ router.post('/:id/conferir', async (req, res, next) => {
     let financeiro = null;
     if (rec.pedido_compra_id) {
       const { rows: pc } = await client.query(
-        'SELECT situacao, numero FROM pedidos_compra WHERE id = $1', [rec.pedido_compra_id]
+        'SELECT situacao, numero, valor_frete, desconto_valor, total_liquido FROM pedidos_compra WHERE id = $1',
+        [rec.pedido_compra_id]
       );
       if (pc[0]?.situacao === 'recebido') {
         const { rows: conf } = await client.query(
@@ -294,13 +295,30 @@ router.post('/:id/conferir', async (req, res, next) => {
             WHERE pedido_compra_id = $1`,
           [rec.pedido_compra_id]
         );
-        const valor = Number(conf[0]?.valor || 0);
+        // A view só sabe Σ(quantidade recebida × valor unitário): ela olha as
+        // LINHAS do pedido e o frete e o desconto não são linha, são do
+        // cabeçalho. Promover só com ela apagava os dois — medido: um pedido de
+        // 100 kg × R$ 19,00 − R$ 100 de desconto + R$ 500 de frete nascia certo
+        // com R$ 2.300,00 na aprovação e virava R$ 1.900,00 depois do
+        // recebimento total, sumindo com R$ 400,00 de dívida real.
+        // O que a mercadoria custou é o que chegou; frete e desconto são do
+        // pedido inteiro e continuam valendo.
+        const mercadoria = Number(conf[0]?.valor || 0);
+        const frete = Number(pc[0].valor_frete || 0);
+        const desconto = Number(pc[0].desconto_valor || 0);
+        const valor = mercadoria + frete - desconto;
         if (valor > 0) {
           financeiro = await ponte.promover(client, {
             origem_codigo: 'pedido_compra',
             origem_id: rec.pedido_compra_id,
             valor_real: valor,
-            detalhe: { base: 'confronto comprado × recebido', valor_recebido: valor },
+            detalhe: {
+              base: 'confronto comprado × recebido, mais o frete e menos o desconto do pedido',
+              valor_recebido: mercadoria,
+              valor_frete: frete,
+              desconto_valor: desconto,
+              total: valor,
+            },
             usuarioId: req.user?.id || null,
           });
         }

@@ -117,12 +117,49 @@ router.get('/extrato', async (req, res, next) => {
         // Entradas e saídas separadas, e o saque separado das duas: com ele
         // dentro, um mês em que entraram R$ 212 mil e foram sacados R$ 209 mil
         // aparece como "R$ 2,5 mil liberados", que responde a pergunta errada.
-        `SELECT l.status, (l.tipo = 'saque') AS eh_saque,
+        // ⚠️ UM SAQUE, UM EVENTO. A Shopee reporta o MESMO saque em duas
+        // transações — `WITHDRAWAL_CREATED` e `WITHDRAWAL_COMPLETED` — com
+        // `transaction_id` diferentes e o mesmo `root_withdrawal_id`, que é o
+        // que vai para `repasse_id_externo`. O repasse já era deduplicado por
+        // ele; o lançamento do extrato, não.
+        //
+        // Medido em 14/09/2026: um saque de R$ 70,90 aparecia como
+        // "Transferido para o banco R$ 70,90" MAIS "Transferência em andamento
+        // R$ 70,90" — R$ 141,80 de dinheiro que saiu uma vez só, enquanto a aba
+        // Repasses mostrava uma linha de R$ 70,90. Duas abas do mesmo módulo
+        // discordando por 2×.
+        //
+        // Aqui o saque é colapsado por `repasse_id_externo` e fica com o
+        // estado mais avançado que ele alcançou (liberado manda sobre
+        // pendente): o dinheiro saiu ou está saindo, nunca as duas coisas. O
+        // `FAILED`/`ROLLBACK` cai no mesmo balde e é o sincronizador que
+        // rebaixa o estado — as linhas continuam todas visíveis na lista
+        // detalhada, que é onde o histórico do saque tem que aparecer.
+        `WITH saque_colapsado AS (
+           SELECT COALESCE(l.repasse_id_externo, l.lancamento_id_externo) AS saque_id,
+                  bool_or(l.status = 'liberado') AS concluido,
+                  MAX(ABS(l.valor)) AS valor,
+                  COUNT(*) AS linhas
+             FROM fin_extrato_lancamentos l ${resumo.where}
+              ${resumo.where ? 'AND' : 'WHERE'} l.tipo = 'saque'
+            GROUP BY COALESCE(l.repasse_id_externo, l.lancamento_id_externo)
+         )
+         SELECT l.status, FALSE AS eh_saque,
                 SUM(l.valor) FILTER (WHERE l.valor > 0) AS entradas,
                 SUM(l.valor) FILTER (WHERE l.valor < 0) AS saidas,
                 SUM(l.valor) AS total, COUNT(*) AS quantidade
            FROM fin_extrato_lancamentos l ${resumo.where}
-          GROUP BY l.status, (l.tipo = 'saque')`,
+            ${resumo.where ? 'AND' : 'WHERE'} l.tipo <> 'saque'
+          GROUP BY l.status
+         UNION ALL
+         SELECT CASE WHEN s.concluido THEN 'liberado' ELSE 'pendente' END AS status,
+                TRUE AS eh_saque,
+                0 AS entradas,
+                -SUM(s.valor) AS saidas,
+                -SUM(s.valor) AS total,
+                COUNT(*) AS quantidade
+           FROM saque_colapsado s
+          GROUP BY s.concluido`,
         resumo.values
       ),
       pool.query(
@@ -288,15 +325,38 @@ router.get('/conciliacao', async (req, res, next) => {
     const condLojaP = condMulti('pv.origem_integracao_id', origem_integracao_id, valsP, 'int');
     if (condLojaP) { condP.push(condLojaP); j = valsP.length + 1; }
 
+    // ⚠️ UM PAGAMENTO, UMA VEZ. O carrinho do Mercado Livre (o "pacote") vira
+    // N pedidos irmãos que compartilham o MESMO pagamento, e o sincronizador
+    // grava em cada um o líquido do PACOTE INTEIRO — de propósito, porque o
+    // que a plataforma informa é por pagamento, não por suborder.
+    //
+    // Somar linha a linha contava o mesmo dinheiro uma vez por anúncio:
+    // medido em 14/09/2026, um carrinho com 3 anúncios e pagamento único de
+    // R$ 300,00 aparecia aqui como R$ 900,00, e a tela acusava uma divergência
+    // de −R$ 600,00 contra o extrato que não existia. Justo na aba que serve
+    // para provar que o extrato bate.
+    //
+    // É o mesmo critério que a Lucratividade já usa (pedidos.routes.js, o
+    // agrupamento por pacote): o líquido entra uma vez por pagamento DISTINTO.
+    // Pedido sem pagamento identificado é o seu próprio pagamento, e por isso
+    // o COALESCE com a chave do pedido — nunca agrupar todos os nulos juntos.
     const { rows: pedidos } = await pool.query(
-      `SELECT (pv.valor_recebido_liberacao_em AT TIME ZONE 'America/Sao_Paulo')::date AS data,
-              pv.origem_marketplace AS marketplace,
-              SUM(pv.valor_recebido_marketplace) AS total_pedidos,
-              COUNT(*) AS quantidade_pedidos
-         FROM pedidos_venda pv
-        WHERE ${condP.join(' AND ')}
-          AND pv.situacao <> 'cancelado'
-        GROUP BY 1, 2`,
+      `SELECT u.data, u.marketplace,
+              SUM(u.valor_recebido_marketplace) AS total_pedidos,
+              COUNT(*) AS quantidade_pedidos,
+              SUM(u.irmaos) AS quantidade_suborders
+         FROM (
+           SELECT DISTINCT ON (COALESCE(pv.pagamento_id_marketplace, 'pedido:' || pv.id))
+                  (pv.valor_recebido_liberacao_em AT TIME ZONE 'America/Sao_Paulo')::date AS data,
+                  pv.origem_marketplace AS marketplace,
+                  pv.valor_recebido_marketplace,
+                  COUNT(*) OVER (PARTITION BY COALESCE(pv.pagamento_id_marketplace, 'pedido:' || pv.id)) AS irmaos
+             FROM pedidos_venda pv
+            WHERE ${condP.join(' AND ')}
+              AND pv.situacao <> 'cancelado'
+            ORDER BY COALESCE(pv.pagamento_id_marketplace, 'pedido:' || pv.id), pv.id
+         ) u
+        GROUP BY u.data, u.marketplace`,
       valsP
     );
 

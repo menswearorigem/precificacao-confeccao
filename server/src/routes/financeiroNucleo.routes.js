@@ -194,6 +194,22 @@ router.delete('/contas/:id', async (req, res, next) => {
 
 // ================================================================= títulos
 
+// Teto da LISTA — não dos totais. Até 14/09/2026 a rota devolvia a lista
+// truncada em 1.000 e mais nada: com 1.200 recebíveis somando R$ 120.000 a
+// aba Contas a Receber mostrava R$ 100.000 (ela soma o que recebeu) enquanto
+// o DRE, que soma no banco, mostrava R$ 120.000. Duas telas do mesmo módulo
+// discordando em R$ 20.000, sem um aviso sequer. Os totais passam a vir
+// agregados em SQL e a lista passa a dizer quando foi cortada.
+const LIMITE_LISTA_TITULOS = 1000;
+
+// O que entra na soma. O título marcado como duplicado (0069) sai do DRE e do
+// fluxo de caixa desde então — mas as duas rotas abaixo somavam tudo, e o
+// financeiro via R$ 7.000 em Contas a Receber para os R$ 3.500 que o DRE já
+// mostrava certos. Marcar duplicidade tem que valer nas quatro telas, não em
+// duas.
+const CONTA_NO_TOTAL = `t.situacao <> 'cancelado' AND s.saldo_aberto > 0 AND t.wik_duplicado_de_id IS NULL`;
+const MARCADO_DUPLICADO = `t.situacao <> 'cancelado' AND s.saldo_aberto > 0 AND t.wik_duplicado_de_id IS NOT NULL`;
+
 router.get('/titulos', async (req, res, next) => {
   try {
     const cond = [];
@@ -217,24 +233,77 @@ router.get('/titulos', async (req, res, next) => {
     }
     const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
 
-    const { rows } = await pool.query(
-      `SELECT t.*, s.valor_retido, s.valor_liquido, s.valor_baixado, s.saldo_aberto, s.dias_atraso,
-              f.nome AS fornecedor_nome, cl.nome AS cliente_nome,
-              p.nome AS plano_nome, p.codigo AS plano_codigo,
-              cc.nome AS centro_custo_nome, e.nome AS empresa_nome
-         FROM fin_titulos t
+    // As duas consultas usam EXATAMENTE o mesmo FROM e o mesmo WHERE: a
+    // primeira devolve a lista (truncada), a segunda soma o conjunto inteiro
+    // no banco. Separá-las é o ponto todo — ver o comentário dos totais.
+    const de = `FROM fin_titulos t
          JOIN vw_fin_titulo_saldo s ON s.titulo_id = t.id
          LEFT JOIN fornecedores f ON f.id = t.fornecedor_id
          LEFT JOIN clientes cl ON cl.id = t.cliente_id
          LEFT JOIN fin_plano p ON p.id = t.plano_id
          LEFT JOIN fin_centros_custo cc ON cc.id = t.centro_custo_id
          LEFT JOIN empresas e ON e.id = t.empresa_id
-         ${where}
-         ORDER BY t.data_vencimento, t.id
-         LIMIT 1000`,
-      params
-    );
-    res.json(rows);
+         ${where}`;
+
+    const [lista, agregado] = await Promise.all([
+      pool.query(
+        // `entra_no_total` viaja junto com a linha porque o título marcado
+        // como duplicado CONTINUA visível — é o que a 0069 promete — e só
+        // não pode ser somado. Quem esconde a linha esconde também o erro.
+        `SELECT t.*, s.valor_retido, s.valor_liquido, s.valor_baixado, s.saldo_aberto, s.dias_atraso,
+                f.nome AS fornecedor_nome, cl.nome AS cliente_nome,
+                p.nome AS plano_nome, p.codigo AS plano_codigo,
+                cc.nome AS centro_custo_nome, e.nome AS empresa_nome,
+                (t.situacao <> 'cancelado'
+                 AND s.saldo_aberto > 0
+                 AND t.wik_duplicado_de_id IS NULL) AS entra_no_total
+           ${de}
+           ORDER BY t.data_vencimento, t.id
+           LIMIT ${LIMITE_LISTA_TITULOS}`,
+        params
+      ),
+      pool.query(
+        `SELECT COUNT(*)::INT AS linhas,
+                COALESCE(SUM(s.saldo_aberto) FILTER (WHERE ${CONTA_NO_TOTAL}), 0) AS aberto,
+                COUNT(*) FILTER (WHERE ${CONTA_NO_TOTAL})::INT AS aberto_titulos,
+                COALESCE(SUM(s.saldo_aberto) FILTER (WHERE ${CONTA_NO_TOTAL} AND s.dias_atraso > 0), 0) AS vencido,
+                COUNT(*) FILTER (WHERE ${CONTA_NO_TOTAL} AND s.dias_atraso > 0)::INT AS vencido_titulos,
+                COALESCE(SUM(s.saldo_aberto) FILTER (
+                  WHERE ${CONTA_NO_TOTAL}
+                    AND t.data_vencimento BETWEEN CURRENT_DATE AND CURRENT_DATE + 7), 0) AS a_vencer_7,
+                COUNT(*) FILTER (
+                  WHERE ${CONTA_NO_TOTAL}
+                    AND t.data_vencimento BETWEEN CURRENT_DATE AND CURRENT_DATE + 7)::INT AS a_vencer_7_titulos,
+                COALESCE(SUM(s.saldo_aberto) FILTER (WHERE ${MARCADO_DUPLICADO}), 0) AS duplicado,
+                COUNT(*) FILTER (WHERE ${MARCADO_DUPLICADO})::INT AS duplicado_titulos,
+                MAX(s.dias_atraso) FILTER (WHERE ${CONTA_NO_TOTAL}) AS pior_atraso
+           ${de}`,
+        params
+      ),
+    ]);
+
+    const a = agregado.rows[0];
+    res.json({
+      titulos: lista.rows,
+      // Truncar a lista sem dizer é mentir sobre o total — a tela avisa. É o
+      // mesmo `listaTruncada` que a aba Movimentação já usa.
+      listaTruncada: lista.rows.length === LIMITE_LISTA_TITULOS,
+      limiteLista: LIMITE_LISTA_TITULOS,
+      totais: {
+        aberto: Number(a.aberto),
+        abertoTitulos: a.aberto_titulos,
+        vencido: Number(a.vencido),
+        vencidoTitulos: a.vencido_titulos,
+        aVencer7: Number(a.a_vencer_7),
+        aVencer7Titulos: a.a_vencer_7_titulos,
+        // Fora dos totais acima, mas NUNCA escondido: a tela mostra o que
+        // ficou de fora por ter sido marcado como duplicado.
+        duplicado: Number(a.duplicado),
+        duplicadoTitulos: a.duplicado_titulos,
+        piorAtraso: a.pior_atraso === null ? null : Number(a.pior_atraso),
+        linhas: a.linhas,
+      },
+    });
   } catch (err) { next(err); }
 });
 
@@ -575,13 +644,20 @@ router.get('/aging', async (req, res, next) => {
   try {
     const natureza = req.query.natureza || 'receber';
     const { rows } = await pool.query(
-      `SELECT faixa,
+      // `wik_duplicado_de_id IS NULL` pelo mesmo motivo da rota de títulos: o
+      // DRE e o fluxo de caixa já ignoram o título marcado como duplicado
+      // desde a 0069, e o aging não ignorava. Com dois títulos de R$ 3.500
+      // para a mesma venda e um deles marcado, o DRE mostrava R$ 3.500 e esta
+      // rota R$ 7.000 — o mesmo dinheiro, duas respostas.
+      `SELECT a.faixa,
               COUNT(*) AS titulos,
-              SUM(saldo_aberto) AS valor
-         FROM vw_fin_aging
-        WHERE natureza = $1 AND saldo_aberto > 0
-        GROUP BY faixa
-        ORDER BY CASE faixa
+              SUM(a.saldo_aberto) AS valor
+         FROM vw_fin_aging a
+         JOIN fin_titulos t ON t.id = a.titulo_id
+        WHERE a.natureza = $1 AND a.saldo_aberto > 0
+          AND t.wik_duplicado_de_id IS NULL
+        GROUP BY a.faixa
+        ORDER BY CASE a.faixa
           WHEN 'a_vencer' THEN 0 WHEN '1_30' THEN 1 WHEN '31_60' THEN 2
           WHEN '61_90' THEN 3 WHEN '91_180' THEN 4 ELSE 5 END`,
       [natureza]

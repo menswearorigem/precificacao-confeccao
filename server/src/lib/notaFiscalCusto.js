@@ -83,14 +83,44 @@ function calcularCustoDaNota(nota, itens, empresa, opcoes = {}) {
   // "esperta" concluía que TODO item já tinha frete próprio e o frete do
   // total da nota nunca era rateado. O custo saía sem frete, calado.
   const temValor = (v) => v != null && Number.isFinite(Number(v));
-  const freteNoItem = itens.some((i) => temValor(i.valorFrete));
-  const outrasNoItem = itens.some((i) => temValor(i.valorOutrasDespesas));
-  const seguroNoItem = itens.some((i) => temValor(i.valorSeguro));
 
-  const freteARatear = freteNoItem ? 0 : soma(nota.valorFrete);
-  const outrasARatear = outrasNoItem ? 0 : soma(nota.valorOutrasDespesas);
-  const seguroARatear = seguroNoItem ? 0 : soma(nota.valorSeguro);
-  const totalARatear = freteARatear + outrasARatear + seguroARatear;
+  // ⚠️ E a decisão é POR ITEM, não pela nota inteira. Com `some()`, bastava UM
+  // item declarar o frete dele para o frete do total deixar de ser rateado
+  // entre TODOS os outros: medido numa nota de R$ 300 de frete com vFrete=100
+  // no item A, B e C ficavam com R$ 0,00 e R$ 200 sumiam do custo.
+  // A conta certa: quem declarou fica com o que declarou; o que sobra do total
+  // da nota é rateado só entre os que não declararam.
+  //
+  // O DESCONTO do cabeçalho entra aqui junto com frete, seguro e outras
+  // despesas. Ele era o único que não era rateado — e por isso a soma dos
+  // custos dos itens dava R$ 2.310,00 numa nota de R$ 2.210,00, com a malha
+  // saindo a R$ 22,00/kg em vez de R$ 21,0476/kg. Desconto no cabeçalho é
+  // abatimento do valor da mercadoria e pertence aos itens tanto quanto o
+  // frete pertence.
+  function distribuir(campo, valorDaNota) {
+    const declarado = itens.map((i) => (temValor(i[campo]) ? Number(i[campo]) : null));
+    const jaNosItens = declarado.reduce((s, v) => s + (v || 0), 0);
+    const restante = Math.max(0, soma(valorDaNota) - jaNosItens);
+    const base = itens.reduce(
+      (s, i, k) => s + (declarado[k] == null && i.entraNoTotal !== false ? soma(i.valorTotal) : 0), 0
+    );
+    const porItem = itens.map((i, k) => {
+      if (declarado[k] != null) return declarado[k];
+      if (!ratearPorValor || base <= 0 || i.entraNoTotal === false) return 0;
+      return restante * (soma(i.valorTotal) / base);
+    });
+    return { porItem, rateado: declarado.map((d) => d == null), restante, base };
+  }
+
+  const frete = distribuir('valorFrete', nota.valorFrete);
+  const outras = distribuir('valorOutrasDespesas', nota.valorOutrasDespesas);
+  const seguro = distribuir('valorSeguro', nota.valorSeguro);
+  const desconto = distribuir('valorDesconto', nota.valorDesconto);
+
+  const freteARatear = frete.restante;
+  const outrasARatear = outras.restante;
+  const seguroARatear = seguro.restante;
+  const totalARatear = freteARatear + outrasARatear + seguroARatear + desconto.restante;
 
   if (totalARatear > 0 && baseRateio <= 0) {
     avisos.push(
@@ -110,7 +140,7 @@ function calcularCustoDaNota(nota, itens, empresa, opcoes = {}) {
     );
   }
 
-  const calculados = itens.map((item) => {
+  const calculados = itens.map((item, indice) => {
     const valorProduto = soma(item.valorTotal);
     const quantidade = Number(item.quantidade);
 
@@ -121,10 +151,10 @@ function calcularCustoDaNota(nota, itens, empresa, opcoes = {}) {
       ? valorProduto / baseRateio
       : 0;
 
-    const freteItem = freteNoItem ? soma(item.valorFrete) : (ratearPorValor ? freteARatear * proporcao : 0);
-    const outrasItem = outrasNoItem ? soma(item.valorOutrasDespesas) : (ratearPorValor ? outrasARatear * proporcao : 0);
-    const seguroItem = seguroNoItem ? soma(item.valorSeguro) : (ratearPorValor ? seguroARatear * proporcao : 0);
-    const descontoItem = soma(item.valorDesconto);
+    const freteItem = frete.porItem[indice];
+    const outrasItem = outras.porItem[indice];
+    const seguroItem = seguro.porItem[indice];
+    const descontoItem = desconto.porItem[indice];
 
     // A decisão por item pode ser sobrescrita na tela (um insumo que vai
     // para uso e consumo não gera crédito nem no Lucro Real). Quando ninguém
@@ -167,7 +197,8 @@ function calcularCustoDaNota(nota, itens, empresa, opcoes = {}) {
         ipiComoCusto: custoIpi,
         icmsSt,
         creditoIcms,
-        rateado: !freteNoItem && ratearPorValor && freteARatear > 0,
+        rateado: frete.rateado[indice] && ratearPorValor && freteARatear > 0,
+        descontoRateado: desconto.rateado[indice] && ratearPorValor && desconto.restante > 0,
         proporcaoNoRateio: proporcao,
       },
       custoTotalItem,
@@ -210,6 +241,7 @@ function calcularCustoDaNota(nota, itens, empresa, opcoes = {}) {
       creditoIpi: ipiCreditado,
       freteRateado: freteARatear,
       despesasRateadas: outrasARatear + seguroARatear,
+      descontoRateado: desconto.restante,
     },
   };
 }

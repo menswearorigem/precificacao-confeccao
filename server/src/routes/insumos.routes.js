@@ -23,6 +23,7 @@ const { hojeEmBrasilia } = require('../lib/dataBrasil');
 const { registrar } = require('../lib/auditoria');
 const { lerNotaFiscal } = require('../lib/nfeParser');
 const { calcularCustoDaNota, custoDoInsumo } = require('../lib/notaFiscalCusto');
+const { normalizarUnidade, fatorEntreUnidades, fatorDeCusto } = require('../lib/insumoUnidade');
 
 const router = express.Router();
 
@@ -38,6 +39,56 @@ function numeroOuNulo(v) {
   if (v === '' || v === null || v === undefined) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+// ---------------------------------------------------------------------------
+// O caminho de conversão que faltava: unidade de COMPRA → unidade da LINHA
+// DA FICHA (14/09/2026)
+// ---------------------------------------------------------------------------
+// "Aplicar na ficha" comparava `insumo.unidade` com `insumo.unidade_consumo` —
+// as duas unidades do próprio insumo — e nunca olhava `materiais.unidade`, que
+// é a unidade em que AQUELA linha consome. Resultado medido: etiqueta comprada
+// a R$ 80,00 o milheiro gravava R$ 80,00 por peça no campo que o motor de
+// preço lê, mil vezes o custo certo, sem nada em `recusados`.
+// Agora a conversão vai de ponta a ponta, e sem fator confiável para esse
+// caminho a linha é RECUSADA com o motivo escrito — recusar é barato, gravar
+// um custo mil vezes errado não é.
+function fatorAteAUnidadeDaFicha(linha) {
+  const uCompra = normalizarUnidade(linha.unidade);
+  const uFicha = normalizarUnidade(linha.unidade_ficha);
+  const uConsumo = normalizarUnidade(linha.unidade_consumo);
+  const fatorCadastrado = linha.fator_conversao != null && Number(linha.fator_conversao) > 0
+    ? Number(linha.fator_conversao) : null;
+
+  if (!uFicha) {
+    return {
+      fator: null,
+      motivo: `a linha da ficha não diz em que unidade consome este insumo, e ele é comprado em "${linha.unidade || '(sem unidade)'}". Sem saber a unidade da ficha não dá para converter o custo. Preencha a unidade da linha.`,
+    };
+  }
+  if (!uCompra) {
+    return { fator: null, motivo: 'o insumo não tem unidade de compra cadastrada — sem ela o custo não quer dizer nada.' };
+  }
+  if (uFicha === uCompra) return { fator: 1, caminho: `${uCompra} = ${uFicha}` };
+
+  // O fator cadastrado no insumo só vale para o caminho que ele declara:
+  // unidade de compra → unidade de consumo. Usá-lo para chegar a outra
+  // unidade qualquer seria aplicar o fator do quilo-para-metro num milheiro.
+  if (uConsumo && uFicha === uConsumo && fatorCadastrado != null) {
+    return { fator: fatorCadastrado, caminho: `${uCompra} → ${uConsumo} pelo fator cadastrado (${fatorCadastrado})` };
+  }
+
+  const conhecido = fatorDeCusto(uCompra, uFicha);
+  if (conhecido != null) {
+    return { fator: conhecido, caminho: `${uCompra} → ${uFicha} por múltiplo conhecido (1 ${uCompra} = ${1 / conhecido} ${uFicha})` };
+  }
+
+  return {
+    fator: null,
+    motivo: `o insumo é comprado em "${linha.unidade}" e esta linha da ficha consome em "${linha.unidade_ficha}". O sistema não sabe quantos "${linha.unidade_ficha}" cabem num "${linha.unidade}"`
+      + (linha.unidade_consumo ? ` (o fator cadastrado leva de "${linha.unidade}" para "${linha.unidade_consumo}", que não é a unidade desta linha)` : '')
+      + '. Cadastre a unidade de consumo e o fator na ficha do insumo, ou acerte a unidade da linha.',
+  };
 }
 
 // ===========================================================================
@@ -253,6 +304,7 @@ router.get('/diagnostico/fichas-defasadas', async (req, res, next) => {
     const { rows } = await pool.query(
       `SELECT m.id AS material_id, m.produto_id, m.material, m.quantidade,
               m.valor_unitario AS valor_na_ficha,
+              m.unidade AS unidade_ficha,
               m.consumo_por_peca,
               i.id AS insumo_id, i.nome AS insumo_nome, i.unidade, i.unidade_consumo,
               i.fator_conversao, i.custo_atual, i.custo_atualizado_em, i.custo_origem,
@@ -264,15 +316,14 @@ router.get('/diagnostico/fichas-defasadas', async (req, res, next) => {
         ORDER BY p.referencia, i.nome`
     );
 
-    // O custo do insumo está na unidade de COMPRA. A ficha consome na unidade
-    // de CONSUMO. Sem o fator, os dois números não são comparáveis — e a
-    // tela precisa dizer isso em vez de comparar quilo com metro.
+    // O custo do insumo está na unidade de COMPRA e a ficha consome na unidade
+    // da LINHA. O diagnóstico usa exatamente o mesmo caminho de conversão que
+    // o "aplicar na ficha" — antes ele olhava só a unidade_consumo do insumo e
+    // dizia "impedimento: nenhum" para uma etiqueta de milheiro comparada com
+    // uma linha em peça, escondendo justamente o erro de mil vezes.
     const linhas = rows.map((r) => {
-      const fator = r.fator_conversao != null ? Number(r.fator_conversao) : null;
-      const precisaConverter = Boolean(r.unidade_consumo && r.unidade_consumo !== r.unidade);
-      const custoNaUnidadeDaFicha = precisaConverter
-        ? (fator != null ? Number(r.custo_atual) * fator : null)
-        : Number(r.custo_atual);
+      const conv = fatorAteAUnidadeDaFicha(r);
+      const custoNaUnidadeDaFicha = conv.fator != null ? Number(r.custo_atual) * conv.fator : null;
 
       const naFicha = r.valor_na_ficha != null ? Number(r.valor_na_ficha) : null;
       const diferenca = custoNaUnidadeDaFicha != null && naFicha != null
@@ -281,11 +332,13 @@ router.get('/diagnostico/fichas-defasadas', async (req, res, next) => {
       return {
         ...r,
         custo_na_unidade_da_ficha: custoNaUnidadeDaFicha,
+        fator_aplicado: conv.fator ?? null,
+        caminho_conversao: conv.caminho || null,
         diferenca,
         diferenca_pct: diferenca != null && naFicha > 0 ? diferenca / naFicha : null,
         // Motivo pelo qual não dá pra comparar, quando é o caso.
-        impedimento: precisaConverter && fator == null
-          ? `O insumo é comprado em ${r.unidade} e consumido em ${r.unidade_consumo}, mas não tem fator de conversão cadastrado.`
+        impedimento: conv.fator == null
+          ? conv.motivo
           : (naFicha == null ? 'A ficha não tem valor unitário para comparar.' : null),
       };
     });
@@ -318,7 +371,7 @@ router.post('/aplicar-na-ficha', async (req, res, next) => {
 
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `SELECT m.id, m.valor_unitario, m.produto_id, p.referencia,
+      `SELECT m.id, m.valor_unitario, m.produto_id, m.unidade AS unidade_ficha, p.referencia,
               i.custo_atual, i.unidade, i.unidade_consumo, i.fator_conversao, i.nome AS insumo_nome
          FROM materiais m
          JOIN insumos i ON i.id = m.insumo_id
@@ -330,18 +383,17 @@ router.post('/aplicar-na-ficha', async (req, res, next) => {
     const aplicados = [];
     const recusados = [];
     for (const linha of rows) {
-      const precisaConverter = Boolean(linha.unidade_consumo && linha.unidade_consumo !== linha.unidade);
-      const fator = linha.fator_conversao != null ? Number(linha.fator_conversao) : null;
-      if (precisaConverter && fator == null) {
-        // Sem fator, aplicar seria trocar quilo por metro no custo da peça.
-        recusados.push({ materialId: linha.id, motivo: 'sem fator de conversão entre a unidade de compra e a de consumo' });
+      const conv = fatorAteAUnidadeDaFicha(linha);
+      if (conv.fator == null) {
+        recusados.push({ materialId: linha.id, referencia: linha.referencia, insumo: linha.insumo_nome, motivo: conv.motivo });
         continue;
       }
-      const novo = precisaConverter ? Number(linha.custo_atual) * fator : Number(linha.custo_atual);
+      const novo = Number(linha.custo_atual) * conv.fator;
       await client.query('UPDATE materiais SET valor_unitario = $2 WHERE id = $1', [linha.id, novo]);
       aplicados.push({
         materialId: linha.id, referencia: linha.referencia, insumo: linha.insumo_nome,
         de: linha.valor_unitario != null ? Number(linha.valor_unitario) : null, para: novo,
+        fator: conv.fator, caminho: conv.caminho,
       });
     }
     await client.query('COMMIT');
@@ -481,6 +533,94 @@ router.post('/notas', async (req, res, next) => {
       ? (await pool.query('SELECT * FROM empresas WHERE id = $1', [empresaId])).rows[0] || null
       : null;
 
+    // -----------------------------------------------------------------
+    // A unidade da NOTA contra a unidade do INSUMO (14/09/2026)
+    // -----------------------------------------------------------------
+    // O fator de conversão vinha da tela com `placeholder="1"` e, em branco,
+    // virava 1 calado. Medido: nota de 100 KG a R$ 20,00/KG lançada contra um
+    // insumo cadastrado em METRO gravava saldo de 100 m e custo de R$ 20,00/m.
+    // Agora: unidade igual (inclusive por sinônimo, "MIL" = milheiro) segue com
+    // fator 1; múltiplo conhecido converte e avisa; e unidade diferente sem
+    // fator PARA a nota, porque inventar o fator falsifica estoque e custo.
+    const { rows: insumoRows } = await pool.query(
+      'SELECT id, nome, unidade FROM insumos WHERE id = ANY($1)',
+      [itens.map((i) => inteiroPositivo(i.insumo_id)).filter(Boolean)]
+    );
+    const insumoPorId = new Map(insumoRows.map((r) => [Number(r.id), r]));
+    const avisosUnidade = [];
+    const semFator = [];
+    const fatorPorItem = new Map();
+    for (const [idx, item] of itens.entries()) {
+      const informado = numeroOuNulo(item.fator_conversao);
+      if (informado != null && informado > 0) { fatorPorItem.set(idx, informado); continue; }
+      const ins = insumoPorId.get(inteiroPositivo(item.insumo_id));
+      const uNota = normalizarUnidade(item.unidade);
+      const uInsumo = normalizarUnidade(ins?.unidade);
+      if (!uNota || !uInsumo || uNota === uInsumo) { fatorPorItem.set(idx, null); continue; }
+      const conhecido = fatorEntreUnidades(uNota, uInsumo);
+      if (conhecido != null) {
+        fatorPorItem.set(idx, conhecido);
+        avisosUnidade.push(
+          `"${item.descricao}": a nota veio em "${item.unidade}" e o insumo "${ins.nome}" é comprado em "${ins.unidade}". `
+          + `Convertido pelo múltiplo conhecido (1 ${uNota} = ${conhecido} ${uInsumo}).`
+        );
+        continue;
+      }
+      semFator.push({
+        descricao: item.descricao,
+        unidade_nota: item.unidade,
+        insumo: ins?.nome || null,
+        unidade_insumo: ins?.unidade || null,
+      });
+    }
+    if (semFator.length > 0) {
+      return res.status(400).json({
+        error: 'A nota está em uma unidade e o insumo é comprado em outra, e ninguém informou o fator de conversão. '
+          + 'Sem o fator, o sistema daria entrada de quilo como se fosse metro e reescreveria o custo com o número errado. '
+          + 'Informe o fator de conversão de cada item antes de lançar.',
+        itensSemFator: semFator,
+      });
+    }
+
+    // -----------------------------------------------------------------
+    // Nota DIGITADA (sem chave de acesso) não pode entrar duas vezes
+    // -----------------------------------------------------------------
+    // A única trava era a unicidade de `chave_acesso`, e o próprio parser avisa
+    // que a chave pode não vir. Medido: a mesma nota de 50 kg lançada duas
+    // vezes devolvia 201 nas duas e deixava 100 kg de saldo. Sem chave, a
+    // identidade da nota é emitente + número + série + emissão + valor.
+    const chaveAcesso = nota.chaveAcesso || nota.chave_acesso || null;
+    if (!chaveAcesso && body.duplicada_confirmada !== true) {
+      const { rows: iguais } = await pool.query(
+        `SELECT id, numero, serie, data_emissao, valor_total FROM notas_fiscais_entrada
+          WHERE chave_acesso IS NULL
+            AND situacao <> 'cancelada'
+            AND COALESCE(numero, '') = COALESCE($1, '')
+            AND COALESCE(serie, '') = COALESCE($2, '')
+            AND COALESCE(regexp_replace(COALESCE(emitente_cnpj, ''), '\\D', '', 'g'), '') = $3
+            AND COALESCE(fornecedor_id, 0) = COALESCE($4, 0)
+            AND data_emissao IS NOT DISTINCT FROM $5::date
+            AND valor_total IS NOT DISTINCT FROM $6::numeric
+          LIMIT 5`,
+        [
+          nota.numero || null, nota.serie || null,
+          String(nota.emitenteCnpj || nota.emitente_cnpj || '').replace(/\D/g, ''),
+          inteiroPositivo(nota.fornecedor_id),
+          nota.dataEmissao || nota.data_emissao || null,
+          numeroOuNulo(nota.valorTotal ?? nota.valor_total),
+        ]
+      );
+      if (iguais.length > 0) {
+        return res.status(409).json({
+          error: 'Já existe uma nota lançada com o mesmo emitente, número, série, data de emissão e valor. '
+            + 'Como esta nota não tem chave de acesso, o sistema não consegue provar que é outra. '
+            + 'Se for mesmo uma segunda nota, confirme e lance de novo.',
+          duplicadaDe: iguais,
+          confirmarCom: 'duplicada_confirmada',
+        });
+      }
+    }
+
     // O custo é recalculado AQUI, no servidor, a partir dos itens enviados —
     // nunca aceito pronto do cliente. Um custo unitário vindo da tela poderia
     // ter sido editado, e ele alimenta a precificação de tudo.
@@ -521,11 +661,11 @@ router.post('/notas', async (req, res, next) => {
     const notaId = notaRows[0].id;
 
     const resultado = [];
-    for (const item of custo.itens) {
+    for (const [idxItem, item] of custo.itens.entries()) {
       const insumoId = inteiroPositivo(item.insumo_id);
       // Quantidade na unidade do INSUMO. Quando a nota vem noutra unidade, o
       // fator é o que a pessoa confirmou na tela — nunca adivinhado.
-      const fator = numeroOuNulo(item.fator_conversao);
+      const fator = fatorPorItem.get(idxItem) ?? null;
       const qtdNota = Number(item.quantidade) || 0;
       const qtdConvertida = fator != null && fator > 0 ? qtdNota * fator : qtdNota;
       const custoUnitarioNaUnidadeDoInsumo = item.custoUnitarioFinal != null && fator != null && fator > 0
@@ -793,7 +933,7 @@ router.post('/notas', async (req, res, next) => {
 
     res.status(201).json({
       nota: notaRows[0], custosAtualizados: resultado, resumo: custo.resumo,
-      avisos: [...custo.avisos, ...avisosFinanceiro],
+      avisos: [...custo.avisos, ...avisosUnidade, ...avisosFinanceiro],
       financeiro,
     });
   } catch (err) {

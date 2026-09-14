@@ -1032,6 +1032,8 @@ export default function TitulosPage() {
   const [busca, setBusca] = useState('');
 
   const [titulos, setTitulos] = useState([]);
+  const [totaisServidor, setTotaisServidor] = useState(null);
+  const [truncada, setTruncada] = useState(false);
   const [empresas, setEmpresas] = useState([]);
   const [plano, setPlano] = useState([]);
   const [centros, setCentros] = useState([]);
@@ -1078,7 +1080,18 @@ export default function TitulosPage() {
     setLoading(true);
     setErro('');
     api.get(`${BASE}/titulos?${params.toString()}`)
-      .then((r) => setTitulos(Array.isArray(r) ? r : []))
+      // A rota devolvia um array cru e passou a devolver `{ titulos, totais,
+      // listaTruncada }` (14/09/2026): os totais agora são somados NO BANCO,
+      // sobre o conjunto inteiro, e não sobre a página que chegou. Com 1.200
+      // recebíveis de R$ 120.000 esta tela mostrava R$ 100.000 — o teto de
+      // 1.000 linhas — enquanto o DRE mostrava os R$ 120.000 certos, e nada
+      // avisava. O array continua aceito para não quebrar em cache antigo.
+      .then((r) => {
+        if (Array.isArray(r)) { setTitulos(r); setTotaisServidor(null); setTruncada(false); return; }
+        setTitulos(Array.isArray(r?.titulos) ? r.titulos : []);
+        setTotaisServidor(r?.totais || null);
+        setTruncada(Boolean(r?.listaTruncada));
+      })
       .catch((err) => setErro(mensagemErro(err)))
       .finally(() => setLoading(false));
   }, [params, recarregar]);
@@ -1093,10 +1106,16 @@ export default function TitulosPage() {
 
   const tabela = useTabela(titulosFiltrados, { colunas: COLUNAS_ORDENAVEIS, colunaPadrao: 'vencimento', direcaoPadrao: 'asc' });
 
-  // Os quatro números da faixa. Todos saem da lista que está na tela — mudar um
-  // filtro muda os números junto, e a explicação de cada cartão diz isso.
+  // Os quatro números da faixa. Quando o servidor manda os totais agregados,
+  // são ELES que valem: somam o conjunto inteiro do filtro, não as 1.000
+  // primeiras linhas, e já deixam de fora o título marcado como duplicado —
+  // que o DRE e o fluxo de caixa ignoram desde a 0069 e esta tela somava.
+  // O recorte por origem (Wik/Hub) é só visual e continua sendo somado aqui,
+  // porque ele não vai ao servidor.
   const resumo = useMemo(() => {
-    const vivos = titulosFiltrados.filter((t) => t.situacao !== 'cancelado' && num(t.saldo_aberto) > 0);
+    const vivos = titulosFiltrados.filter((t) => (
+      t.situacao !== 'cancelado' && num(t.saldo_aberto) > 0 && !t.wik_duplicado_de_id
+    ));
     const limite = emDias(7);
     const hoje = hojeIso();
     const vencidos = vivos.filter((t) => num(t.dias_atraso) > 0);
@@ -1105,7 +1124,7 @@ export default function TitulosPage() {
       return v >= hoje && v <= limite;
     });
     const pior = vivos.reduce((maior, t) => (num(t.dias_atraso) > num(maior?.dias_atraso) ? t : maior), null);
-    return {
+    const daLista = {
       aberto: vivos.reduce((s, t) => s + num(t.saldo_aberto), 0),
       abertoQtd: vivos.length,
       vencido: vencidos.reduce((s, t) => s + num(t.saldo_aberto), 0),
@@ -1113,6 +1132,18 @@ export default function TitulosPage() {
       proximos: proximos.reduce((s, t) => s + num(t.saldo_aberto), 0),
       proximosQtd: proximos.length,
       pior: pior && num(pior.dias_atraso) > 0 ? pior : null,
+    };
+    if (!totaisServidor || origem !== 'todos') return daLista;
+    return {
+      ...daLista,
+      aberto: num(totaisServidor.aberto),
+      abertoQtd: num(totaisServidor.abertoTitulos ?? totaisServidor.aberto_titulos),
+      vencido: num(totaisServidor.vencido),
+      vencidoQtd: num(totaisServidor.vencidoTitulos ?? totaisServidor.vencido_titulos),
+      proximos: num(totaisServidor.aVencer7 ?? totaisServidor.a_vencer_7),
+      proximosQtd: num(totaisServidor.aVencer7Titulos ?? totaisServidor.a_vencer_7_titulos),
+      duplicado: num(totaisServidor.duplicado),
+      duplicadoQtd: num(totaisServidor.duplicadoTitulos ?? totaisServidor.duplicado_titulos),
     };
   }, [titulosFiltrados]);
 
@@ -1308,6 +1339,20 @@ export default function TitulosPage() {
         <p className="page-sub" style={{ marginTop: 0 }}>
           Clique numa linha para ver as retenções, os rateios e o histórico de baixas do título.
         </p>
+        {truncada && (
+          <div className="aviso-compacto tone-atencao">
+            A <strong>lista</strong> está cortada nos {titulos.length} primeiros vencimentos — os
+            cartões acima continuam somando o período inteiro, direto no banco. Estreite o filtro
+            para ver as linhas que faltam.
+          </div>
+        )}
+        {num(resumo.duplicado) > 0 && (
+          <div className="aviso-compacto tone-atencao">
+            {resumo.duplicadoQtd} título(s) somando {brl(resumo.duplicado)} estão marcados como
+            duplicidade e ficam <strong>fora</strong> dos cartões acima — é o mesmo critério do DRE
+            e do Fluxo de Caixa. Eles continuam na lista, com o selo.
+          </div>
+        )}
         <Paginacao {...tabela} posicao="topo" />
         <DataTable>
           <table className="data-table">

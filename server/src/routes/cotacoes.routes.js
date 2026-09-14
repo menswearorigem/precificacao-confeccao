@@ -233,22 +233,61 @@ router.post('/:id/vencedor', async (req, res, next) => {
 
     await client.query('BEGIN');
 
+    // -------------------------------------------------------------------
+    // O barato de verdade é o custo POSTO NA FÁBRICA (14/09/2026)
+    // -------------------------------------------------------------------
+    // A comparação era só `valor_unitario`, embora a tela já colete o frete de
+    // cada proposta. Medido em 100 kg: A cotou R$ 20,00/kg sem frete (R$ 2.000
+    // na porta) e B cotou R$ 19,00/kg + R$ 500 de frete (R$ 2.400). Escolher A,
+    // que é R$ 400 mais barato, era RECUSADO com HTTP 400 exigindo
+    // justificativa; escolher B, o mais caro, passava calado. A trava estava
+    // literalmente invertida, empurrando quem usa para a compra pior.
+    //
+    // O frete é da PROPOSTA INTEIRA, não do item, então entra rateado pelo
+    // valor de cada item daquele fornecedor — o mesmo rateio por valor que a
+    // nota fiscal usa. Numa cotação de um item só, o frete inteiro entra, que é
+    // o caso medido.
     const { rows: cotadas } = await client.query(
-      `SELECT fornecedor_id, valor_unitario FROM cotacao_respostas
-        WHERE cotacao_item_id = $1 AND valor_unitario IS NOT NULL`,
+      `SELECT r.fornecedor_id, r.valor_unitario, ci.quantidade,
+              cf.valor_frete,
+              (SELECT SUM(r2.valor_unitario * ci2.quantidade)
+                 FROM cotacao_respostas r2
+                 JOIN cotacao_itens ci2 ON ci2.id = r2.cotacao_item_id
+                WHERE ci2.cotacao_id = ci.cotacao_id
+                  AND r2.fornecedor_id = r.fornecedor_id
+                  AND r2.valor_unitario IS NOT NULL) AS total_proposta
+         FROM cotacao_respostas r
+         JOIN cotacao_itens ci ON ci.id = r.cotacao_item_id
+         LEFT JOIN cotacao_fornecedores cf
+                ON cf.cotacao_id = ci.cotacao_id AND cf.fornecedor_id = r.fornecedor_id
+        WHERE r.cotacao_item_id = $1 AND r.valor_unitario IS NOT NULL`,
       [cotacao_item_id]
     );
+    const custoPosto = (r) => {
+      const mercadoria = Number(r.valor_unitario) * Number(r.quantidade || 0);
+      const frete = Number(r.valor_frete || 0);
+      const totalProposta = Number(r.total_proposta || 0);
+      const parte = totalProposta > 0 ? mercadoria / totalProposta : 1;
+      return mercadoria + frete * parte;
+    };
+
     const escolhida = cotadas.find((r) => String(r.fornecedor_id) === String(fornecedor_id));
     if (!escolhida) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Este fornecedor não cotou este item.' });
     }
-    const menor = cotadas.reduce((m, r) => (Number(r.valor_unitario) < Number(m.valor_unitario) ? r : m), cotadas[0]);
-    const ehMenor = Number(escolhida.valor_unitario) <= Number(menor.valor_unitario);
+    const menor = cotadas.reduce((m, r) => (custoPosto(r) < custoPosto(m) ? r : m), cotadas[0]);
+    // Meio centavo de folga: o rateio do frete cai em fração e comparar
+    // dinheiro com `<=` puro reprovaria o próprio vencedor por resíduo binário.
+    const ehMenor = custoPosto(escolhida) <= custoPosto(menor) + 0.005;
     if (!ehMenor && !String(motivo_escolha || '').trim()) {
       await client.query('ROLLBACK');
       return res.status(400).json({
-        error: 'Este não é o menor preço cotado. Escreva o motivo da escolha (prazo, qualidade, pagamento).',
+        error: `Este não é o menor custo posto na fábrica: R$ ${custoPosto(escolhida).toFixed(2)} contra `
+          + `R$ ${custoPosto(menor).toFixed(2)} da melhor proposta (preço × quantidade mais o frete). `
+          + 'Escreva o motivo da escolha (prazo, qualidade, pagamento).',
+        custo_escolhido: custoPosto(escolhida),
+        custo_menor: custoPosto(menor),
       });
     }
 
@@ -303,14 +342,44 @@ router.post('/:id/gerar-pedidos', async (req, res, next) => {
       porFornecedor.get(v.fornecedor_id).push(v);
     }
 
+    // O frete que cada fornecedor cotou, para não sumir entre a cotação e o
+    // pedido: `total_liquido` nascia igual a Σ(qtd × unitário) e `valor_frete`
+    // nascia R$ 0,00, então uma proposta de R$ 2.400,00 virava um pedido de
+    // R$ 1.900,00 — R$ 500 que ninguém mais via até a fatura chegar.
+    // O frete cotado é o da entrega inteira daquela proposta, então vai
+    // inteiro para o pedido daquele fornecedor; quando só parte dos itens dele
+    // venceu, isso fica por escrito na observação para alguém renegociar.
+    const { rows: fretes } = await client.query(
+      'SELECT fornecedor_id, valor_frete FROM cotacao_fornecedores WHERE cotacao_id = $1',
+      [req.params.id]
+    );
+    const fretePorFornecedor = new Map(fretes.map((f) => [Number(f.fornecedor_id), Number(f.valor_frete || 0)]));
+    const { rows: cotadosPorFornecedor } = await client.query(
+      `SELECT r.fornecedor_id, COUNT(*)::int AS cotados
+         FROM cotacao_respostas r
+         JOIN cotacao_itens ci ON ci.id = r.cotacao_item_id
+        WHERE ci.cotacao_id = $1 AND r.valor_unitario IS NOT NULL
+        GROUP BY r.fornecedor_id`,
+      [req.params.id]
+    );
+    const cotadosPor = new Map(cotadosPorFornecedor.map((r) => [Number(r.fornecedor_id), Number(r.cotados)]));
+
     const criados = [];
     for (const [fornecedorId, itens] of porFornecedor) {
       const totalBruto = itens.reduce((s, it) => s + Number(it.quantidade) * Number(it.valor_unitario), 0);
+      const valorFrete = fretePorFornecedor.get(Number(fornecedorId)) || 0;
+      const totalLiquido = totalBruto + valorFrete;
+      const parcial = valorFrete > 0 && (cotadosPor.get(Number(fornecedorId)) || 0) > itens.length;
+      const observacao = parcial
+        ? `Frete de R$ ${valorFrete.toFixed(2)} veio da proposta da cotação, que cobria ${cotadosPor.get(Number(fornecedorId))} itens; só ${itens.length} venceram. Confirme o frete com o fornecedor.`
+        : null;
       const { rows: ped } = await client.query(
         `INSERT INTO pedidos_compra
-           (empresa_id, fornecedor_id, cotacao_id, situacao, total_bruto, total_liquido, criado_por)
-         VALUES ($1,$2,$3,'rascunho',$4,$4,$5) RETURNING *`,
-        [empresaId, fornecedorId, req.params.id, totalBruto, req.user?.id || null]
+           (empresa_id, fornecedor_id, cotacao_id, situacao, total_bruto, valor_frete, total_liquido,
+            observacao, criado_por)
+         VALUES ($1,$2,$3,'rascunho',$4,$5,$6,$7,$8) RETURNING *`,
+        [empresaId, fornecedorId, req.params.id, totalBruto, valorFrete, totalLiquido,
+         observacao, req.user?.id || null]
       );
       for (const [idx, it] of itens.entries()) {
         await client.query(

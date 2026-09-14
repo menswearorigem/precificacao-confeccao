@@ -90,9 +90,20 @@ const texto = (v) => (vazio(v) ? null : String(v).trim());
 
 // ⚠️ Nunca `Number(v)` direto: `Number('')` é 0 e `Number(null)` é 0, e os dois
 // virariam "peso zero" — que é uma afirmação, não a ausência de uma.
+//
+// ⚠️ E nunca passar um Number por parser de texto. Era o que acontecia aqui:
+// numa planilha .xlsx a célula de peso chega como Number, `String(0.32)` dá
+// "0.32", o `.replace(/\./g,'')` apagava o ponto e 0,320 kg virava 32 — erro de
+// 100× numa coluna do modelo gerado pelo próprio sistema.
+// A regra do TEXTO agora é uma só para as duas abas de importação e mora em
+// `importValidate.parseNumeroBR`, porque a mesma planilha lida em dois lugares
+// não pode dar dois números ("1.500" dava 1,5 numa aba e 1500 na outra).
+const { parseNumeroBR } = require('./importValidate');
+
 function numero(v) {
   if (vazio(v)) return null;
-  const n = Number(String(v).replace(/\./g, '').replace(',', '.'));
+  if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
+  const n = parseNumeroBR(v);
   return Number.isFinite(n) ? n : undefined; // undefined = veio algo que não é número
 }
 
