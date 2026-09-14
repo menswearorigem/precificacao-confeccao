@@ -173,6 +173,17 @@ async function main() {
   const produto = (await pool.query(
     `INSERT INTO produtos (referencia, descricao) VALUES ('${MARCA}-1', 'CAMISETA DE TESTE') RETURNING id`
   )).rows[0].id;
+  // Custo industrial (14/09/2026): esta referência é a dos pedidos 1, 2 e 3,
+  // que o teste trata como pedidos NORMAIS — o caso "custo incompleto" é o
+  // pedido 4, de propósito, com item sem cadastro nenhum.
+  //
+  // Até aqui ela não tinha ficha, e o teste só funcionava porque o motor
+  // devolvia custo R$ 0,00 para produto sem ficha — que é justamente o defeito
+  // corrigido nesta leva ("não sei" não é "zero"). Sem custo cadastrado, os
+  // três pedidos passariam a ser "custo desconhecido" e as asserções de
+  // comissão perderiam a população que elas querem medir. A ficha abaixo
+  // devolve ao fixture a intenção que ele sempre teve.
+  await pool.query('INSERT INTO custos_industriais (produto_id, tipo, valor) VALUES ($1, $2, $3)', [produto, 'Confecção', 25]);
   const variante = (await pool.query(
     `INSERT INTO estoque_variantes (produto_id, cor, tamanho, quantidade, ean)
      VALUES ($1, '${MARCA}', 'M', 100, '7899999000011') RETURNING id`,
@@ -308,7 +319,14 @@ async function main() {
 
   // Volta o preço para 100 (o teste de comissão depende dele).
   const itemId = (await pool.query('SELECT id FROM pedido_itens WHERE pedido_id = $1', [pedido1])).rows[0].id;
-  await req('PUT', `/api/pedidos/${pedido1}/itens/${itemId}`, { valor_unitario: 100, quantidade: 2, desconto_pct: 0 });
+  // `desconto_valor: 0` junto (14/09/2026): a referência tem desconto de 10%
+  // na tabela de atacado, e agora que ela tem ficha de custo o preço de
+  // partida deixou de ser zero — então o desconto derivado da tabela deixou de
+  // ser zero também. O teste quer a linha limpa em R$ 100 × 2; dizer isso por
+  // inteiro é o que torna o número independente da tabela.
+  await req('PUT', `/api/pedidos/${pedido1}/itens/${itemId}`, {
+    valor_unitario: 100, quantidade: 2, desconto_pct: 0, desconto_valor: 0,
+  });
 
   // ------------------------------------------------------------------
   console.log('\n== 6. PEDIDO SEM VENDEDOR E PEDIDO DE OUTRO VENDEDOR ==');

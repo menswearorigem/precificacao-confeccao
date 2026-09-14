@@ -840,8 +840,20 @@ async function mapaCustoPorProduto(produtoIds, ctx) {
       const materiais = await produtosRoutes.fetchMateriais(pool, id);
       const custosIndustriais = await produtosRoutes.fetchCustosIndustriais(pool, id);
       const calculo = produtosRoutes.buildCalculo(produtoRow, materiais, custosIndustriais, ctx);
+      // REGRA 2: "não sei" não é "zero". Produto sem ficha de custo devolve
+      // subtotal 0, e gravar isso como custo R$ 0,00 fazia o pedido entrar no
+      // consolidado com lucro de 100% — medido em 14/09/2026: 10 vendas, 5 sem
+      // ficha, a tela mostrava lucro R$ 480,00 / 48% onde o real é R$ 90,00 /
+      // 18%, e o selo dizia "10 de 10 pedidos considerados".
+      //
+      // Custo NULO é o que faz `semCusto` marcar o pedido como incompleto e
+      // tirá-lo da margem consolidada, que é o que a Ressalva 2 do
+      // PRECISAO-RESSALVAS.md sempre prometeu. `promocaoMargem.js` já usava
+      // este mesmo critério (`subtotalProducao <= 0` -> sem custo).
+      const subtotal = Number(calculo.custoTotal.subtotalProducao);
+      const custoConhecido = Number.isFinite(subtotal) && subtotal > 0;
       mapa.set(id, {
-        custoPeca: Number(calculo.custoTotal.subtotalProducao) || 0,
+        custoPeca: custoConhecido ? subtotal : null,
         imposto: Number(calculo.custoTotal.impostosRS) || 0,
         // Alíquota de imposto do produto — guardada aqui para o relatório
         // aplicá-la sobre o valor VENDIDO do item, e não sobre o preço de
@@ -849,7 +861,8 @@ async function mapaCustoPorProduto(produtoIds, ctx) {
         pctImpostos: Number(calculo.custoTotal.pctImpostos) || 0,
       });
     } catch {
-      mapa.set(id, { custoPeca: 0, imposto: 0, pctImpostos: 0 });
+      // Falhar em calcular também é "não sei" — nunca "custa zero".
+      mapa.set(id, { custoPeca: null, imposto: 0, pctImpostos: 0 });
     }
   }
   return mapa;
@@ -872,11 +885,17 @@ async function mapaCustoPorKit(kitIds, ctx) {
       let imposto = 0;
       let pctPonderado = 0;
       let pecasNoKit = 0;
+      // Mesma REGRA 2 do mapa de produto: basta UMA peça do kit sem ficha para
+      // o custo do kit inteiro ser desconhecido. Somar as outras e chamar o
+      // resultado de "custo do kit" seria afirmar um número que falta pedaço —
+      // e o pedido entraria no consolidado com margem inflada.
+      let algumaPecaSemFicha = itensKit.length === 0;
       for (const item of itensKit) {
         const produtoRow = await produtosRoutes.fetchProdutoRow(pool, item.produto_id);
         const materiais = await produtosRoutes.fetchMateriais(pool, item.produto_id);
         const custosIndustriais = await produtosRoutes.fetchCustosIndustriais(pool, item.produto_id);
         const calculo = produtosRoutes.buildCalculo(produtoRow, materiais, custosIndustriais, ctx);
+        if (!(Number(calculo.custoTotal.subtotalProducao) > 0)) algumaPecaSemFicha = true;
         custoPeca += (Number(calculo.custoTotal.subtotalProducao) || 0) * item.quantidade;
         imposto += (Number(calculo.custoTotal.impostosRS) || 0) * item.quantidade;
         // A alíquota é do regime da empresa do produto; dentro de um kit ela
@@ -885,9 +904,13 @@ async function mapaCustoPorKit(kitIds, ctx) {
         pctPonderado += (Number(calculo.custoTotal.pctImpostos) || 0) * item.quantidade;
         pecasNoKit += Number(item.quantidade);
       }
-      mapa.set(kitId, { custoPeca, imposto, pctImpostos: pecasNoKit > 0 ? pctPonderado / pecasNoKit : 0 });
+      mapa.set(kitId, {
+        custoPeca: algumaPecaSemFicha ? null : custoPeca,
+        imposto,
+        pctImpostos: pecasNoKit > 0 ? pctPonderado / pecasNoKit : 0,
+      });
     } catch {
-      mapa.set(kitId, { custoPeca: 0, imposto: 0, pctImpostos: 0 });
+      mapa.set(kitId, { custoPeca: null, imposto: 0, pctImpostos: 0 });
     }
   }
   return mapa;
@@ -1121,7 +1144,14 @@ async function calcularRelatorioPedidos({
       // R$ 50,00 em vez de R$ 90,00. Errava para os dois lados. A alíquota vem
       // do próprio cálculo do produto, para não reescrever a regra de tributo.
       const impostoEstimado = itensDoPedido.reduce((s, it) => s + Number(it.total) * (custoDoItem(it)?.pctImpostos || 0), 0);
-      const semCusto = itensDoPedido.some((it) => (it.kit_id ? !mapaCustoKit.has(it.kit_id) : !it.produto_id || !mapaCusto.has(it.produto_id)));
+      // Item sem cadastro nenhum (nem produto, nem kit) já era "sem custo".
+      // O que faltava era o item COM cadastro e SEM ficha, cujo custo agora vem
+      // NULO em vez de R$ 0,00 — ver mapaCustoPorProduto/mapaCustoPorKit.
+      const semCusto = itensDoPedido.some((it) => {
+        if (it.kit_id) return !mapaCustoKit.has(it.kit_id) || mapaCustoKit.get(it.kit_id).custoPeca == null;
+        if (!it.produto_id || !mapaCusto.has(it.produto_id)) return true;
+        return mapaCusto.get(it.produto_id).custoPeca == null;
+      });
       const taxaMarketplace = Number(p.taxa_marketplace) || 0;
       const frete = Number(p.valor_frete) || 0;
       // Base da lucratividade é o valor de VENDA do produto (soma do que
@@ -1260,7 +1290,8 @@ async function calcularRelatorioPedidos({
           tamanho: it.tamanho,
           valorUnitario: Number(it.valor_unitario) || 0,
           totalItem: Number(it.total) || 0,
-          custoUnitario: custoDoItem(it)?.custoPeca || 0,
+          // NULO quando o produto não tem ficha: a tela escreve "—", nunca R$ 0,00.
+          custoUnitario: custoDoItem(it)?.custoPeca ?? null,
           temFoto: it.produto_id ? idsComFoto.has(it.produto_id) : false,
         })),
       };

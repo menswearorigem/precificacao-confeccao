@@ -365,6 +365,40 @@ async function main() {
   });
 
   // ------------------------------------------------------------------
+  console.log('\n== 11. PRODUTO SEM FICHA NÃO ENTRA NA MARGEM COM CUSTO ZERO ==');
+  // O achado nº 1 da varredura, e o padrão que mais se repete no sistema:
+  // "não sei" virando "R$ 0,00" e o lucro subindo junto. Cinco vendas de um
+  // produto COM ficha (custo R$ 20, vende a R$ 100) e cinco de um produto
+  // cadastrado SEM ficha nenhuma, no mesmo dia.
+  //
+  // Antes: as dez entravam no consolidado, as cinco sem ficha com custo
+  // R$ 0,00 e lucro de 100% — e o selo de confiança dizia "10 de 10 pedidos
+  // considerados". Agora as cinco saem do consolidado e são contadas à parte.
+  const prodSemFicha = (await pool.query(
+    `INSERT INTO produtos (referencia, descricao, empresa_id, preco_informado) VALUES ('COR-SF-MARGEM','PECA SEM FICHA (MARGEM)',$1,100) RETURNING id`,
+    [empresa]
+  )).rows[0].id;
+  for (let i = 0; i < 5; i += 1) {
+    await criarPedidoBalcao({ cliente, empresa, data: '2026-11-07', itens: [{ produto, ref: 'COR-A', qtd: 1, vu: 100 }] });
+    await criarPedidoBalcao({ cliente, empresa, data: '2026-11-07', itens: [{ produto: prodSemFicha, ref: 'COR-SF-MARGEM', qtd: 1, vu: 100 }] });
+  }
+  const mix = (await req('GET', '/api/pedidos/relatorio-lucratividade?data_inicio=2026-11-07&data_fim=2026-11-07')).body;
+  const comFichaResp = mix.pedidos.filter((p) => !p.custoIncompleto);
+  const semFichaResp = mix.pedidos.filter((p) => p.custoIncompleto);
+  checa('o pedido do produto SEM ficha é marcado como custo incompleto',
+    semFichaResp.length === 5, { incompletos: semFichaResp.length, total: mix.pedidos.length });
+  checa('…e o pedido do produto COM ficha continua avaliável',
+    comFichaResp.length === 5, comFichaResp.length);
+  checa('o custo unitário do item sem ficha vem NULO, não R$ 0,00',
+    semFichaResp[0]?.itens?.[0]?.custoUnitario === null, semFichaResp[0]?.itens?.[0]?.custoUnitario);
+  checa('o total conta quantos ficaram de fora por custo incompleto',
+    mix.totalGeral.pedidosExcluidosPorCustoIncompleto === 5, mix.totalGeral.pedidosExcluidosPorCustoIncompleto);
+  checa('a receita consolidada é só a dos 5 pedidos avaliáveis (R$ 500,00)',
+    perto(mix.totalGeral.receita, 500), mix.totalGeral.receita);
+  checa('⚠️ e a margem consolidada é a real (R$ 500 − R$ 100 de custo − R$ 30 de imposto)',
+    perto(mix.totalGeral.lucro, 370), { lucro: mix.totalGeral.lucro, esperado: 370 });
+
+  // ------------------------------------------------------------------
   console.log(`\n${ok} ok, ${falhas} falha(s).`);
   await pool.end();
   servidor.close();
