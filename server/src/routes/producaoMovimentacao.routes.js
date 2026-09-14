@@ -627,7 +627,24 @@ router.get('/ranking-faccao', async (req, res, next) => {
                                AND q.previsao_retorno IS NOT NULL
                                AND q.data_retorno <= q.previsao_retorno) AS no_prazo,
               COUNT(*) FILTER (WHERE q.data_retorno IS NOT NULL AND q.previsao_retorno IS NOT NULL) AS concluidas_com_prazo,
-              SUM(q.valor_servico) AS valor_servico
+              SUM(q.valor_servico) AS valor_servico,
+              -- CUSTO POR PEÇA SÓ SOBRE A PEÇA COM PREÇO CONHECIDO — mesma
+              -- correção já feita em faccoes.routes.js. A 0063 fez
+              -- valor_servico ser NULO quando a O.S. saiu sem preço, e o SUM
+              -- ignora o NULO no numerador; dividir esse total pelas peças boas
+              -- TODAS contaria peça que ninguém somou e desfaria a REGRA 2 na
+              -- agregação — o ranking comparava facção com preço contra facção
+              -- sem preço. As duas colunas de cobertura vão junto para a tela
+              -- poder avisar em vez de apresentar média parcial como se fosse a
+              -- média: este é o número que escolhe facção.
+              CASE WHEN SUM(q.retornado_bom) FILTER (WHERE q.valor_por_peca IS NOT NULL) > 0
+                   THEN SUM(q.valor_servico)
+                        / SUM(q.retornado_bom) FILTER (WHERE q.valor_por_peca IS NOT NULL)
+              END AS custo_peca_medio,
+              COALESCE(SUM(q.retornado_bom) FILTER (WHERE q.valor_por_peca IS NOT NULL), 0)
+                AS custo_peca_pecas_com_preco,
+              COALESCE(SUM(q.retornado_bom) FILTER (WHERE q.valor_por_peca IS NULL), 0)
+                AS custo_peca_pecas_sem_preco
          FROM vw_faccao_quebra q
          JOIN fornecedores f ON f.id = q.fornecedor_id
         GROUP BY q.fornecedor_id, f.nome

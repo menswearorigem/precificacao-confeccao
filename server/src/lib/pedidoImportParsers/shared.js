@@ -17,15 +17,28 @@ function textoCelula(valor) {
   return String(valor);
 }
 
+// ⚠️ A regra de número de planilha é UMA SÓ no sistema, e mora em
+// `lib/importValidate.parseNumeroBR` — é a mesma que as duas abas de
+// importação passaram a usar em 14/09/2026.
+//
+// Aqui só havia tratamento para "tem vírgula": um texto com ponto sozinho caía
+// no `parseFloat` e "1.234" virava 1,234 — mil vezes menor — no valor unitário
+// de um pedido importado. Reescrever a regra neste arquivo daria ao sistema um
+// TERCEIRO jeito de ler o mesmo número, que foi como o defeito nasceu do outro
+// lado; então este leitor passa a chamar aquela função.
+//
+// O zero de saída é o contrato antigo desta função, mantido de propósito: os
+// três leitores (`shopeeXlsx`, `mercadoLivreXlsx`, `upsellerXlsx`) somam o
+// retorno direto em frete, comissão e valor unitário.
+const { parseNumeroBR } = require('../importValidate');
+
 function numeroCelula(valor) {
   if (valor === null || valor === undefined || valor === '') return 0;
   if (typeof valor === 'number') return valor;
   const texto = textoCelula(valor).trim();
   if (!texto) return 0;
-  const limpo = texto.replace(/[^\d,.\-]/g, '');
-  if (limpo.includes(',') && limpo.includes('.')) return parseFloat(limpo.replace(/\./g, '').replace(',', '.')) || 0;
-  if (limpo.includes(',')) return parseFloat(limpo.replace(',', '.')) || 0;
-  return parseFloat(limpo) || 0;
+  const n = parseNumeroBR(texto);
+  return Number.isFinite(n) ? n : 0;
 }
 
 // Monta um índice { "cabeçalho normalizado": índiceDaColuna } a partir de

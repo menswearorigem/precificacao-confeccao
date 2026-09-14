@@ -43,6 +43,12 @@ router.get('/', async (req, res, next) => {
 // O painel: quanto do retorno é de cada motivo, e o que ele virou.
 router.get('/panorama', async (req, res, next) => {
   try {
+    // ⚠️ A contagem de devoluções sai de `vw_devolucao_por_motivo_resumo`
+    // (migration 0079), agrupada por (motivo, canal), e NÃO da view por
+    // referência: lá cada devolução aparece uma vez POR REFERÊNCIA, e somar
+    // aquelas contagens dizia "2 devoluções" onde havia uma só com peças de
+    // duas referências. Aqui cada devolução cai numa linha só — um motivo e um
+    // canal por devolução —, então somar por motivo é legítimo.
     const { rows: porMotivo } = await pool.query(
       `SELECT motivo,
               SUM(pecas) AS pecas,
@@ -51,7 +57,7 @@ router.get('/panorama', async (req, res, next) => {
               SUM(COALESCE(pecas_segunda,0)) AS segunda,
               SUM(COALESCE(pecas_descarte,0)) AS descarte,
               SUM(COALESCE(pecas_sem_avaliar,0)) AS sem_avaliar
-         FROM vw_devolucao_por_motivo GROUP BY motivo ORDER BY SUM(pecas) DESC`
+         FROM vw_devolucao_por_motivo_resumo GROUP BY motivo ORDER BY SUM(pecas) DESC`
     );
     const { rows: porReferencia } = await pool.query(
       `SELECT referencia,

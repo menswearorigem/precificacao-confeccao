@@ -159,18 +159,40 @@ function opcoesDaConsulta(q) {
 router.get('/lojas', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
+      // ⚠️ `pecas_no_full` soma PEÇAS, não unidades do anúncio.
+      //
+      // Era `SUM(fi.estoque_disponivel)` — o saldo em UNIDADES — com o nome de
+      // peças: no mesmo painel o cartão da loja dizia "60 peças" e o resumo
+      // logo abaixo dizia 180, porque só o segundo aplicava o câmbio do kit.
+      // O câmbio é o mesmo de lib/full.js: a composição registrada manda, o
+      // padrão de SKU vem depois, e 1 é a suposição de último caso.
+      //
+      // E o saldo NÃO LIDO vai contado à parte: `SUM` ignora NULO, então uma
+      // loja com metade das variações sem leitura aparecia com um total
+      // aparentemente completo — "não sei" virando "zero" (REGRA 2).
       `SELECT im.id, im.marketplace, im.nome, im.ativo,
               (im.access_token IS NOT NULL) AS conectada,
               e.ultima_sincronizacao, e.ultimo_erro, e.ultimo_aviso,
               e.itens_lidos, e.envios_lidos, e.em_andamento,
-              (SELECT COUNT(DISTINCT fi.anuncio_id_externo) FROM full_itens fi
-                WHERE fi.origem_integracao_id = im.id AND fi.no_full) AS anuncios_no_full,
-              (SELECT COUNT(*) FROM full_itens fi
-                WHERE fi.origem_integracao_id = im.id AND fi.no_full) AS unidades_no_full,
-              (SELECT SUM(fi.estoque_disponivel) FROM full_itens fi
-                WHERE fi.origem_integracao_id = im.id AND fi.no_full) AS pecas_no_full
+              f.anuncios_no_full, f.unidades_no_full,
+              f.unidades_disponiveis, f.pecas_no_full, f.saldo_nao_lido
          FROM integracoes_marketplace im
          LEFT JOIN full_sync_estado e ON e.origem_integracao_id = im.id
+         LEFT JOIN LATERAL (
+           SELECT COUNT(DISTINCT fi.anuncio_id_externo) AS anuncios_no_full,
+                  COUNT(*) AS unidades_no_full,
+                  SUM(fi.estoque_disponivel) AS unidades_disponiveis,
+                  SUM(fi.estoque_disponivel
+                      * COALESCE(c.pecas, fi.pecas_por_unidade, 1)) AS pecas_no_full,
+                  COUNT(*) FILTER (WHERE fi.estoque_disponivel IS NULL) AS saldo_nao_lido
+             FROM full_itens fi
+             LEFT JOIN LATERAL (
+               SELECT SUM(fc.quantidade) AS pecas
+                 FROM full_composicao fc
+                WHERE fc.full_item_id = fi.id
+             ) c ON TRUE
+            WHERE fi.origem_integracao_id = im.id AND fi.no_full
+         ) f ON TRUE
         ORDER BY im.marketplace, im.nome`
     );
     res.json(rows.map((r) => ({

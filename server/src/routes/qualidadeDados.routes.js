@@ -21,9 +21,14 @@ const router = express.Router();
 router.get('/', async (req, res, next) => {
   try {
     // ---------- A) referências / produtos ----------
+    // usa_aliquota_media/aliquota_media_pct: mesmo SELECT incompleto de
+    // produtos.routes (corrigido em 14/09/2026). São o PRIMEIRO campo que o
+    // motor (`calc.js`) lê para decidir o imposto — sem eles a empresa de
+    // alíquota média era auditada aqui com imposto 0%, e a própria tela que
+    // existe para denunciar dado ruim produzia o número errado.
     const { rows: produtos } = await pool.query(`
       SELECT p.*, e.nome AS empresa_nome, e.regime_tributario, e.icms, e.pis, e.cofins, e.ipi,
-             e.iss, e.simples_aliquota, e.outros_impostos
+             e.iss, e.simples_aliquota, e.outros_impostos, e.usa_aliquota_media, e.aliquota_media_pct
       FROM produtos p LEFT JOIN empresas e ON e.id = p.empresa_id
     `);
     const totalReferencias = produtos.length;

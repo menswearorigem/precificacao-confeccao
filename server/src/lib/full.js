@@ -1002,6 +1002,22 @@ function montarAnuncio({ unidades, vendas, mix, params, snapshots, pontas, trans
 
   const detalhes = unidades.map((u, i) => {
     const p = participacoes[i];
+    // PEÇAS POR UNIDADE: quem manda é a COMPOSIÇÃO registrada (migration 0075).
+    //
+    // `full_itens.pecas_por_unidade` só é preenchida pela varredura a partir do
+    // padrão de SKU "KIT-N-…". O kit SORTIDO, cuja composição foi registrada à
+    // mão justamente porque o SKU não diz nada, ficava com a coluna nula e o
+    // câmbio unidade→peça virava 1: o resumo mostrava 60 peças no Full onde há
+    // 180, e 100 a enviar onde o plano — na mesma tela — já dizia 300.
+    //
+    // Sem composição E sem padrão de SKU ninguém mediu: a conta segue com 1
+    // (que é o caso da imensa maioria dos anúncios), mas a suposição vai
+    // declarada em `pecasPorUnidadeSuposta` para a tela avisar (REGRA 2).
+    const comp = composicao?.get(u.id) || [];
+    const pecasDaComposicao = comp.length > 0
+      ? comp.reduce((s, c) => s + (Number(c.quantidade) || 0), 0)
+      : 0;
+    const pecasMedidas = pecasDaComposicao > 0 ? pecasDaComposicao : inteiro(u.pecas_por_unidade);
     const porDiaUnidade = velocidade.porDia != null ? velocidade.porDia * p.participacao : null;
     const minimoManual = inteiro(u.estoque_minimo_manual);
     const conta = calcularReposicao({
@@ -1033,12 +1049,15 @@ function montarAnuncio({ unidades, vendas, mix, params, snapshots, pontas, trans
       estoqueCasaOrigem: u.estoque_casa_origem || null,
       // O câmbio entre as duas moedas: quantas PEÇAS da nossa referência
       // cabem em UMA unidade do anúncio (3 num kit de 3, 1 no resto).
-      pecasPorUnidade: inteiro(u.pecas_por_unidade) ?? 1,
-      pecasPorUnidadeOrigem: u.pecas_por_unidade_origem || null,
+      pecasPorUnidade: pecasMedidas ?? 1,
+      pecasPorUnidadeSuposta: pecasMedidas == null,
+      pecasPorUnidadeOrigem: pecasDaComposicao > 0
+        ? 'composicao'
+        : (u.pecas_por_unidade_origem || (pecasMedidas == null ? 'suposto' : null)),
       // O que sai da expedição quando UMA unidade desta variação é vendida.
       // Vazio = ninguém registrou, e o plano cai no padrão do SKU (N peças da
       // própria cor). A tela diz qual dos dois está valendo.
-      composicao: composicao?.get(u.id) || [],
+      composicao: comp,
       // A chave que impede a mesma peça física de ser contada (ou prometida)
       // duas vezes quando alimenta dois anúncios.
       estoqueCasaChave: u.variante_id != null
@@ -1223,6 +1242,12 @@ function montarAnuncio({ unidades, vendas, mix, params, snapshots, pontas, trans
     // kit — a tela escreve as DUAS medidas lado a lado, porque "mandar 998"
     // significa coisas muito diferentes para a expedição e para o corte.
     pecasPorUnidade: Math.max(...detalhes.map((d) => d.pecasPorUnidade || 1), 1),
+    // O câmbio acima é medido quando saiu da composição ou do padrão de SKU, e
+    // SUPOSTO quando ninguém disse nada e a conta usou 1. A tela precisa da
+    // diferença para não afirmar "180 peças no Full" sobre um palpite — é a
+    // mesma distinção que `leitura.completa` faz com o saldo (REGRA 2).
+    pecasPorUnidadeSuposta: detalhes.some((d) => d.pecasPorUnidadeSuposta),
+    pecasPorUnidadeOrigens: [...new Set(detalhes.map((d) => d.pecasPorUnidadeOrigem).filter(Boolean))],
     ehKit: detalhes.some((d) => (d.pecasPorUnidade || 1) > 1 || (d.composicao || []).length > 0),
     // Quantas variações já têm a composição registrada. É o que separa um
     // plano medido de um plano suposto, e a tela escreve a diferença.

@@ -13,6 +13,8 @@
 // tarefa precisa, no mínimo, conseguir vê-la; se também tiver que editar,
 // isso continua vindo da liberação com nível "editar".
 
+const { hojeEmBrasilia } = require('./dataBrasil');
+
 // Fragmento de WHERE reutilizado tanto na listagem quanto (com evento_id
 // fixo) na checagem de um evento só. `alias` é o alias da tabela
 // calendario_eventos na query que for usar isso.
@@ -93,18 +95,24 @@ function paraIsoData(valor) {
   return String(valor).slice(0, 10);
 }
 
+// "Hoje" é o dia em BRASÍLIA, não em UTC. O servidor roda em UTC, e
+// `new Date().toISOString()` vira o DIA SEGUINTE a partir das 21h daqui: às
+// 21h30 de 14/09/2026 um evento com prazo HOJE aparecia ATRASADO e com
+// diasParaPrazo −1, e o de amanhã subia como URGENTE com 0. O cartão
+// "Atrasados" contava, toda noite, os eventos que ainda venciam no dia.
+// `lib/dataBrasil.js` existe exatamente para isto (o cliente já usa o mesmo
+// dia em `format.js`).
 function calcularAtrasado(dataPrevistaFim, status) {
   if (status === 'concluido' || status === 'cancelado') return false;
   const dataIso = paraIsoData(dataPrevistaFim);
   if (!dataIso) return false;
-  const hoje = new Date().toISOString().slice(0, 10);
-  return dataIso < hoje;
+  return dataIso < hojeEmBrasilia();
 }
 
 function diasParaPrazo(dataPrevistaFim) {
   const dataIso = paraIsoData(dataPrevistaFim);
   if (!dataIso) return null;
-  const hoje = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`);
+  const hoje = new Date(`${hojeEmBrasilia()}T00:00:00Z`);
   const prazo = new Date(`${dataIso}T00:00:00Z`);
   return Math.round((prazo.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
 }

@@ -430,7 +430,7 @@ async function montarPrevia({ anuncioIds, regra, promocaoTipo, integracaoId }) {
   }
 
   const { rows: anuncios } = await pool.query(
-    `SELECT a.id, a.anuncio_id_externo, a.titulo, a.preco, a.estoque, a.foto_url,
+    `SELECT a.id, a.anuncio_id_externo, a.titulo, a.preco, a.preco_original, a.estoque, a.foto_url,
             a.marketplace, a.origem_integracao_id, a.produto_id,
             im.nome AS loja_nome, p.referencia
        FROM anuncios_marketplace a
@@ -469,18 +469,47 @@ async function montarPrevia({ anuncioIds, regra, promocaoTipo, integracaoId }) {
   const linhas = [];
   for (const a of anuncios) {
     const vs = varPorAnuncio.get(a.id) || [];
+
+    // A BASE DO DESCONTO É O PREÇO ORIGINAL, QUANDO ELE EXISTE.
+    //
+    // `anuncios_marketplace.preco` é o preço CORRENTE — já com o desconto da
+    // vitrine, quando há um no ar. `preco_original` é o preço "de" (0045), e é
+    // sobre ele que a plataforma calcula o desconto anunciado e mede os
+    // limites de mínimo/máximo da relâmpago da Shopee. Descontando sobre o
+    // corrente, a prévia da criação devolvia R$ 80,00 num anúncio de original
+    // R$ 125,00 e corrente R$ 100,00, enquanto o editor da promoção — que já
+    // parte de `preco_original ?? preco_anuncio` — calculava R$ 100,00: a
+    // mesma regra de 20%, dois preços, e o desconto aplicado duas vezes em
+    // cima do outro.
+    //
+    // Na VARIAÇÃO com preço próprio a base continua sendo o preço dela: o
+    // "de" da plataforma é do anúncio inteiro, e não há original por variação
+    // — emprestar o do anúncio seria inventar um preço que ninguém leu
+    // (REGRA 2). `preco_base_origem` diz qual dos dois valeu, linha a linha.
+    const precoOriginalAnuncio = a.preco_original != null ? Number(a.preco_original) : null;
+    const precoCorrenteAnuncio = a.preco != null ? Number(a.preco) : null;
     const alvos = vs.length > 0
-      ? vs.map((v) => ({
-        variacaoIdExterna: String(v.variacao_id_externa),
-        cor: v.cor, tamanho: v.tamanho,
-        // Preço de partida: o da VARIAÇÃO quando existe, senão o do anúncio.
-        // A Shopee devolve preço só na variação quando o anúncio tem cor.
-        precoBase: v.preco != null ? Number(v.preco) : (a.preco != null ? Number(a.preco) : null),
-        estoque: v.estoque,
-      }))
+      ? vs.map((v) => {
+        const precoVariacao = v.preco != null ? Number(v.preco) : null;
+        const precoCorrente = precoVariacao ?? precoCorrenteAnuncio;
+        // Só o preço do ANÚNCIO tem "de" lido da plataforma.
+        const precoOriginal = precoVariacao != null ? null : precoOriginalAnuncio;
+        return {
+          variacaoIdExterna: String(v.variacao_id_externa),
+          cor: v.cor, tamanho: v.tamanho,
+          precoBase: precoOriginal ?? precoCorrente,
+          precoBaseOrigem: precoOriginal != null ? 'preco_original' : 'preco_corrente',
+          precoOriginal,
+          precoCorrente,
+          estoque: v.estoque,
+        };
+      })
       : [{
         variacaoIdExterna: '', cor: null, tamanho: null,
-        precoBase: a.preco != null ? Number(a.preco) : null,
+        precoBase: precoOriginalAnuncio ?? precoCorrenteAnuncio,
+        precoBaseOrigem: precoOriginalAnuncio != null ? 'preco_original' : 'preco_corrente',
+        precoOriginal: precoOriginalAnuncio,
+        precoCorrente: precoCorrenteAnuncio,
         estoque: a.estoque,
       }];
 
@@ -520,6 +549,11 @@ async function montarPrevia({ anuncioIds, regra, promocaoTipo, integracaoId }) {
       if (margem?.prejuizo) avisos.push('prejuízo neste preço');
       else if (margem?.abaixoDoMinimo) avisos.push('abaixo da margem mínima');
       if (criterios && alvo.precoBase && precoPromocional != null) {
+        // Mínimo e máximo da relâmpago a Shopee mede sobre o preço ORIGINAL —
+        // que é justamente o que `alvo.precoBase` passou a ser quando ele
+        // existe. Medindo sobre o corrente de um anúncio já em promoção, o
+        // aviso de "desconto abaixo do mínimo" saía sobre outro número e a
+        // plataforma recusava o item depois, sem que a prévia tivesse avisado.
         const desconto = (alvo.precoBase - precoPromocional) / alvo.precoBase;
         if (criterios.min_discount != null && desconto * 100 < Number(criterios.min_discount)) {
           avisos.push(`desconto abaixo do mínimo da relâmpago (${criterios.min_discount}%)`);
@@ -547,7 +581,15 @@ async function montarPrevia({ anuncioIds, regra, promocaoTipo, integracaoId }) {
         cor: alvo.cor,
         tamanho: alvo.tamanho,
         estoque: alvo.estoque,
+        // `preco_atual` é a BASE sobre a qual o desconto foi aplicado — o nome
+        // é o que a tela já lê. Ao lado dele vão, explícitos, de onde essa base
+        // saiu e os dois preços lidos da plataforma, para a tela poder escrever
+        // "20% sobre o preço de R$ 125,00" em vez de deixar quem confere
+        // adivinhar por que 20% de R$ 100,00 deu R$ 100,00.
         preco_atual: alvo.precoBase,
+        preco_base_origem: alvo.precoBaseOrigem,
+        preco_original: alvo.precoOriginal,
+        preco_corrente: alvo.precoCorrente,
         preco_promocional: precoPromocional,
         desconto_pct: alvo.precoBase && precoPromocional != null
           ? (alvo.precoBase - precoPromocional) / alvo.precoBase : null,
@@ -572,8 +614,14 @@ async function montarPrevia({ anuncioIds, regra, promocaoTipo, integracaoId }) {
       // Quanto de receita a promoção deixa de fazer se tudo vender uma vez.
       // É estimativa declarada como tal, não previsão: some só as linhas que
       // têm os dois preços.
+      //
+      // Mede contra o preço CORRENTE, e não contra a base do desconto: o que a
+      // casa deixa de receber é a diferença para o que ela cobra HOJE. Num
+      // anúncio já com desconto no ar — base R$ 125,00, corrente R$ 100,00,
+      // promocional R$ 100,00 — usar a base diria "renúncia de R$ 25,00" onde
+      // a receita não muda em nada.
       renuncia_por_peca: aplicaveis.reduce(
-        (s, l) => s + (l.preco_atual != null ? (l.preco_atual - l.preco_promocional) : 0), 0
+        (s, l) => s + (l.preco_corrente != null ? (l.preco_corrente - l.preco_promocional) : 0), 0
       ),
     },
   };

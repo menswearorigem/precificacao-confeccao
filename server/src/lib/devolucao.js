@@ -126,6 +126,13 @@ async function avaliar(client, { devolucaoId, itens, usuarioId }) {
   }
   if (d.situacao === 'cancelada') throw erro('Esta devolução foi cancelada.', 409);
 
+  // ⚠️ `porId` é lido UMA vez, mas `quantidade_lancada` é atualizada DENTRO do
+  // laço (ver o fim da iteração). O mesmo item pode aparecer duas vezes no
+  // mesmo payload — a tela manda a lista inteira e alguém troca o destino de
+  // uma linha repetida —, e lendo o acumulado só aqui a segunda ocorrência
+  // calculava o delta sobre o valor velho: o estoque subia, gravava-se
+  // `quantidade_lancada = 0`, e o cancelamento, que se guia por ela, deixava a
+  // peça fantasma no saldo para sempre.
   const existentes = await client.query(
     'SELECT * FROM devolucao_itens WHERE devolucao_id = $1', [devolucaoId]
   );
@@ -192,6 +199,10 @@ async function avaliar(client, { devolucaoId, itens, usuarioId }) {
         WHERE id = $5`,
       [destino, depositoId, pedido.avaliacao_nota || null, alvo, item.id]
     );
+    // O que acabou de ser gravado passa a ser o acumulado para a PRÓXIMA
+    // ocorrência deste mesmo item no payload — é isto que faz o destino final
+    // da lista valer e o estoque fechar com `quantidade_lancada`.
+    item.quantidade_lancada = alvo;
   }
 
   const { rows: falta } = await client.query(

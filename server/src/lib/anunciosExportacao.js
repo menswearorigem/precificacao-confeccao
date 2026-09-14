@@ -429,9 +429,14 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
     };
   }
 
+  // usa_aliquota_media/aliquota_media_pct: mesmo SELECT incompleto de
+  // produtos.routes (corrigido em 14/09/2026). São o PRIMEIRO campo que o
+  // motor (`calc.js`) lê para decidir o imposto — sem eles a empresa de
+  // alíquota média saía daqui com imposto 0%, e o preço exportado para o
+  // anúncio ficava menor que o da Ficha de Precificação da mesma referência.
   const { rows: produtos } = await pool.query(
     `SELECT p.*, e.regime_tributario, e.icms, e.pis, e.cofins, e.ipi, e.iss,
-            e.simples_aliquota, e.outros_impostos
+            e.simples_aliquota, e.outros_impostos, e.usa_aliquota_media, e.aliquota_media_pct
        FROM produtos p LEFT JOIN empresas e ON e.id = p.empresa_id
       WHERE p.id = ANY($1)`,
     [idsProduto]

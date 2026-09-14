@@ -7,6 +7,13 @@ const {
   calcularAtrasado, diasParaPrazo, registrarHistorico, diffCampos,
 } = require('../lib/calendarioEventos');
 const { lerOrdemDeProducao } = require('../lib/ordemProducaoParser');
+// HOJE_BRASILIA: `CURRENT_DATE` é o dia da SESSÃO do Postgres, que no Render
+// é UTC — a partir das 21h daqui ele já virou amanhã, e o cartão "Atrasados"
+// passava a contar todo evento que ainda vencia hoje. `diaSqlBrasilia` é o
+// mesmo fragmento que o resto do sistema usa para converter no dia daqui.
+const { diaSqlBrasilia } = require('../lib/dataBrasil');
+
+const HOJE_BRASILIA = diaSqlBrasilia('now()');
 
 const router = express.Router();
 // Anexo de evento. A varredura de segurança de 03/09/2026 achou aqui o pior
@@ -275,9 +282,9 @@ router.get('/resumo', async (req, res, next) => {
     }
     const { rows } = await pool.query(
       `SELECT
-         COUNT(*) FILTER (WHERE e.status NOT IN ('concluido','cancelado') AND e.data_prevista_fim < CURRENT_DATE) AS atrasados,
-         COUNT(*) FILTER (WHERE e.status NOT IN ('concluido','cancelado') AND e.data_prevista_fim >= CURRENT_DATE AND e.data_prevista_fim <= CURRENT_DATE + INTERVAL '7 days') AS vencendo_7_dias,
-         COUNT(*) FILTER (WHERE e.status = 'concluido' AND date_trunc('month', e.data_conclusao_real) = date_trunc('month', CURRENT_DATE)) AS concluidos_no_mes
+         COUNT(*) FILTER (WHERE e.status NOT IN ('concluido','cancelado') AND e.data_prevista_fim < ${HOJE_BRASILIA}) AS atrasados,
+         COUNT(*) FILTER (WHERE e.status NOT IN ('concluido','cancelado') AND e.data_prevista_fim >= ${HOJE_BRASILIA} AND e.data_prevista_fim <= ${HOJE_BRASILIA} + INTERVAL '7 days') AS vencendo_7_dias,
+         COUNT(*) FILTER (WHERE e.status = 'concluido' AND date_trunc('month', e.data_conclusao_real) = date_trunc('month', ${HOJE_BRASILIA})) AS concluidos_no_mes
        FROM calendario_eventos e ${where}`,
       values
     );
@@ -316,7 +323,7 @@ router.get('/notificacoes', async (req, res, next) => {
       `SELECT e.id, e.titulo, e.data_prevista_fim, e.status
          FROM calendario_eventos e
         WHERE e.status NOT IN ('concluido','cancelado')
-          AND e.data_prevista_fim <= CURRENT_DATE + ($1 || ' days')::interval
+          AND e.data_prevista_fim <= ${HOJE_BRASILIA} + ($1 || ' days')::interval
           ${visibilidade}
         ORDER BY e.data_prevista_fim ASC`,
       values

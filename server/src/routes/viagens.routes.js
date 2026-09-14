@@ -9,6 +9,10 @@ const pool = require('../db/pool');
 const { registrarMovimento } = require('../lib/estoqueMovimento');
 const { getCalcContext } = require('../lib/calcContext');
 const { recalcularTotais } = require('../lib/pedidoRecalculo');
+const { lerPolitica, disponivelDe } = require('../lib/estoqueReserva');
+const { tabelaPadrao } = require('../lib/tabelaPreco');
+const { CANAIS_MARKETPLACE } = require('../lib/mixTributario');
+const ponte = require('../lib/financeiroPonte');
 const produtosRoutes = require('./produtos.routes');
 
 const router = express.Router();
@@ -25,6 +29,35 @@ function statusEstoque(quantidade, limiteBaixo) {
   return 'disponivel';
 }
 
+// "Esta venda é de marketplace?" — mesma pergunta que `pedidos.routes.js`
+// faz antes de chamar a ponte financeira, e pela mesma razão: venda de
+// marketplace entra pelo repasse e não pode virar título por pedido.
+// A LISTA de canais é a de `mixTributario.js` (uma só no projeto inteiro);
+// o que está duplicado aqui são as duas linhas do teste, porque
+// `pedidos.routes.js` exporta só o router. Venda de viagem nasce com
+// canal_venda 'Viagem' e sem origem_marketplace, então na prática a resposta
+// é sempre "não" — o teste fica pelo mesmo motivo que lá: o dia em que
+// alguém puder escolher o canal da venda na viagem, ele já está certo.
+function ehVendaDeMarketplace(pedido) {
+  if (pedido.origem_marketplace) return true;
+  const canal = String(pedido.canal_venda || '').trim().toLowerCase();
+  return canal !== '' && CANAIS_MARKETPLACE.includes(canal);
+}
+
+// REGRA 2: peça sem ficha de custo não tem preço mínimo de R$ 0,00 nem
+// desconto máximo de 0% — tem "não sei". Devolver zero fazia o card da
+// viagem exibir um piso inventado e mandar o vendedor negociar sobre ele.
+// Mesmo critério de `mapaCustoPorProduto` em pedidos.routes.js:
+// `subtotalProducao <= 0` (ou o cálculo estourar) é ausência, não zero.
+const INFO_SEM_CUSTO = {
+  custoTotalPeca: null,
+  precoMinimo: null,
+  precoIdeal: null,
+  descontoMaximoPct: null,
+  descontoIdealPct: null,
+  custoDesconhecido: true,
+};
+
 // Preço mínimo/ideal e desconto máximo/ideal de um produto, a partir do
 // mesmo motor de cálculo da Ficha de Custo — nada de números digitados à
 // mão, tudo já reflete a margem configurada no sistema.
@@ -34,10 +67,15 @@ async function calcularInfoProduto(produtoId, ctx) {
   const custosIndustriais = await produtosRoutes.fetchCustosIndustriais(pool, produtoId);
   const calculo = produtosRoutes.buildCalculo(produtoRow, materiais, custosIndustriais, ctx);
 
+  const subtotalProducao = Number(calculo.custoTotal.subtotalProducao);
+  if (!Number.isFinite(subtotalProducao) || subtotalProducao <= 0) return INFO_SEM_CUSTO;
+
   const precoIdeal = Number(calculo.formacaoPreco.precoAtivo) || 0;
   const precoMinimo = Number(calculo.formacaoPreco.precoMinimo) || 0;
-  const descontoMaximoPct = precoIdeal > 0 ? Math.max(0, (precoIdeal - precoMinimo) / precoIdeal) : 0;
-  const descontoIdealPct = descontoMaximoPct * (Number(ctx.config.viagem_desconto_ideal_fracao) || 0.5);
+  const descontoMaximoPct = precoIdeal > 0 ? Math.max(0, (precoIdeal - precoMinimo) / precoIdeal) : null;
+  const descontoIdealPct = descontoMaximoPct == null
+    ? null
+    : descontoMaximoPct * (Number(ctx.config.viagem_desconto_ideal_fracao) || 0.5);
 
   return {
     custoTotalPeca: Number(calculo.custoTotal.custoTotalPeca) || 0,
@@ -45,6 +83,7 @@ async function calcularInfoProduto(produtoId, ctx) {
     precoIdeal,
     descontoMaximoPct,
     descontoIdealPct,
+    custoDesconhecido: false,
   };
 }
 
@@ -231,7 +270,8 @@ router.get('/:id/produtos', async (req, res, next) => {
       try {
         info = await calcularInfoProduto(c.produto_id, ctx);
       } catch {
-        info = { custoTotalPeca: 0, precoMinimo: 0, precoIdeal: 0, descontoMaximoPct: 0, descontoIdealPct: 0 };
+        // Falhar em calcular também é "não sei", nunca "custa zero".
+        info = INFO_SEM_CUSTO;
       }
       const variantesDoProduto = variantes
         .filter((v) => v.produto_id === c.produto_id)
@@ -262,6 +302,9 @@ router.get('/:id/produtos', async (req, res, next) => {
         precoIdeal: info.precoIdeal,
         descontoMaximoPct: info.descontoMaximoPct,
         descontoIdealPct: info.descontoIdealPct,
+        // A tela precisa disto para escrever "sem ficha de custo" no lugar do
+        // preço, em vez de mostrar R$ 0,00 com cara de número conferido.
+        custoDesconhecido: info.custoDesconhecido === true,
         statusGeral,
         temFoto: idsComFoto.has(c.produto_id),
         variantes: variantesDoProduto,
@@ -316,6 +359,41 @@ router.post('/:id/vender', async (req, res, next) => {
 
     await client.query('BEGIN');
 
+    // Vendedor e tabela de preço: a MESMA regra do balcão (POST /pedidos),
+    // que já preenche os dois campos que ninguém lembra de digitar. Sem
+    // `vendedor_id` a venda da viagem nunca entrava no relatório de comissão
+    // (ele exige vendedor_id IS NOT NULL) — a viagem é justamente onde o
+    // vendedor trabalha. `empresa_id` a viagem NÃO sabe: 0015_viagens.sql não
+    // tem a coluna, então ele só vem se quem chamou informar. Adivinhar um
+    // CNPJ é o que a 0069 proíbe — sem ele a venda conclui e a pendência
+    // financeira fica na Caixa de Entrada esperando gente (ver mais abaixo).
+    const empresaId = req.body?.empresa_id || null;
+    let vendedorId = req.body?.vendedor_id || null;
+    let vendedorNome = req.body?.vendedor || null;
+    if (!vendedorId && req.user?.id) {
+      const { rows: vendedorRows } = await client.query(
+        'SELECT id, nome FROM vendedores WHERE usuario_id = $1 AND ativo LIMIT 1', [req.user.id]
+      );
+      if (vendedorRows.length > 0) {
+        vendedorId = vendedorRows[0].id;
+        if (!vendedorNome) vendedorNome = vendedorRows[0].nome;
+      }
+    }
+    let tabelaPrecoId = req.body?.tabela_preco_id ?? null;
+    if (req.body?.tabela_preco_id === undefined) {
+      const padrao = await tabelaPadrao();
+      tabelaPrecoId = padrao ? padrao.id : null;
+    }
+
+    // Estoque negativo segue a política do sistema (estoque_politica.negativo,
+    // a mesma que lib/estoqueReserva.js lê): 'bloquear' recusa, 'avisar' vende
+    // e devolve o alerta para a tela, 'livre' não diz nada. Antes a viagem
+    // chamava registrarMovimento sem olhar saldo nenhum: vender 1.000 peças de
+    // quem tinha 95 devolvia HTTP 201 e deixava o saldo em −905, e todo
+    // relatório de cobertura e reposição que lê esse saldo passava a mentir.
+    const politica = await lerPolitica(client);
+    const avisosEstoque = [];
+
     let clienteId = cliente_id || null;
     if (!clienteId && cliente_nome_avulso && cliente_nome_avulso.trim()) {
       const { rows } = await client.query('INSERT INTO clientes (nome, observacoes) VALUES ($1, $2) RETURNING id', [
@@ -326,9 +404,11 @@ router.post('/:id/vender', async (req, res, next) => {
     }
 
     const { rows: pedidoRows } = await client.query(
-      `INSERT INTO pedidos_venda (data_pedido, cliente_id, operacao, canal_venda, forma_pagamento, observacao, origem_viagem_id, situacao)
-       VALUES (CURRENT_DATE, $1, 'Venda', 'Viagem', $2, $3, $4, 'aberto') RETURNING id, numero`,
-      [clienteId, forma_pagamento || null, observacao || null, req.params.id]
+      `INSERT INTO pedidos_venda (data_pedido, cliente_id, empresa_id, vendedor, vendedor_id, tabela_preco_id,
+                                  operacao, canal_venda, forma_pagamento, observacao, origem_viagem_id, situacao)
+       VALUES (CURRENT_DATE, $1, $2, $3, $4, $5, 'Venda', 'Viagem', $6, $7, $8, 'aberto') RETURNING id, numero`,
+      [clienteId, empresaId, vendedorNome, vendedorId, tabelaPrecoId,
+        forma_pagamento || null, observacao || null, req.params.id]
     );
     const pedidoId = pedidoRows[0].id;
 
@@ -346,6 +426,16 @@ router.post('/:id/vender', async (req, res, next) => {
       if (quantidade <= 0) {
         throw Object.assign(new Error(`Quantidade inválida pra ${variante.referencia}.`), { status: 400 });
       }
+      const saldo = await disponivelDe(client, variante.id);
+      const disponivel = saldo ? Number(saldo.disponivel) : Number(variante.quantidade);
+      if (disponivel - quantidade < 0) {
+        const texto = `${variante.referencia} ${variante.cor || ''} ${variante.tamanho || ''}`.trim()
+          + `: há ${disponivel} disponível e esta venda pede ${quantidade}. `
+          + `Faltam ${Math.abs(disponivel - quantidade)}.`;
+        if (politica.negativo === 'bloquear') throw Object.assign(new Error(texto), { status: 409 });
+        if (politica.negativo === 'avisar') avisosEstoque.push(texto);
+      }
+
       const valorUnitario = Number(item.valor_unitario) || 0;
       const descontoPct = Math.min(1, Math.max(0, Number(item.desconto_pct) || 0));
       const brutoItem = quantidade * valorUnitario;
@@ -371,8 +461,54 @@ router.post('/:id/vender', async (req, res, next) => {
     await recalcularTotais(client, pedidoId);
     await client.query(`UPDATE pedidos_venda SET situacao = 'faturado', faturado_em = now() WHERE id = $1`, [pedidoId]);
 
+    // A PONTE FINANCEIRA — a venda da viagem passa pela MESMA porta do balcão.
+    // Antes este endpoint escrevia 'faturado' direto: uma viagem de R$ 1.300,00
+    // ficava com zero título a receber e zero pendência, e o dinheiro não
+    // existia nem no DRE, nem no fluxo de caixa, nem na Caixa de Entrada.
+    //
+    // A diferença para `pedidos.routes.js` é uma só, e é de propósito: lá, a
+    // pendência que não vira título (origem `pedido_venda` é bloqueia_conclusao)
+    // derruba o faturamento com 409. Aqui não — travar a venda pararia o
+    // vendedor na rua, com o cliente na frente, por um CNPJ que ele não tem
+    // como digitar no celular. A venda conclui, a pendência fica ABERTA na
+    // Caixa de Entrada do Financeiro (é exatamente para isso que ela existe) e
+    // o que falta volta na resposta.
+    const { rows: pedidoAtual } = await client.query('SELECT * FROM pedidos_venda WHERE id = $1', [pedidoId]);
+    const pedido = pedidoAtual[0];
+    let financeiro = null;
+    if (!ehVendaDeMarketplace(pedido)) {
+      const { rows: cli } = await client.query('SELECT nome FROM clientes WHERE id = $1', [clienteId]);
+      financeiro = await ponte.registrar(client, {
+        origem_codigo: 'pedido_venda',
+        origem_id: Number(pedidoId),
+        empresa_id: pedido.empresa_id,
+        descricao: `Venda ${pedido.numero} — ${cli[0]?.nome || 'cliente'} (viagem ${viagemRows[0].nome})`,
+        documento: `Pedido ${pedido.numero}`,
+        cliente_id: clienteId,
+        contraparte_nome: cli[0]?.nome || cliente_nome_avulso || null,
+        valor_estimado: Number(pedido.total_liquido) > 0 ? Number(pedido.total_liquido) : null,
+        data_competencia: pedido.data_pedido,
+        data_vencimento: req.body?.data_vencimento || null,
+        plano_id: req.body?.plano_id || null,
+        detalhe: {
+          base: 'venda em viagem',
+          total_liquido: pedido.total_liquido,
+          forma_pagamento: pedido.forma_pagamento,
+          viagem_id: Number(req.params.id),
+          viagem: viagemRows[0].nome,
+        },
+        usuarioId: req.user?.id || null,
+      });
+    }
+
     await client.query('COMMIT');
-    res.status(201).json({ ok: true, pedidoId, numero: pedidoRows[0].numero });
+    res.status(201).json({
+      ok: true,
+      pedidoId,
+      numero: pedidoRows[0].numero,
+      financeiro,
+      avisosEstoque,
+    });
   } catch (err) {
     await client.query('ROLLBACK');
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -407,7 +543,10 @@ router.get('/:id/resumo', async (req, res, next) => {
       [req.params.id]
     );
     if (pedidos.length === 0) {
-      return res.json({ receita: 0, custo: 0, lucro: 0, margemPct: 0, totalVendas: 0, pecasVendidas: 0 });
+      return res.json({
+        receita: 0, custo: 0, lucro: 0, margemPct: 0, totalVendas: 0, pecasVendidas: 0,
+        custoIncompleto: false, pecasComCusto: 0, pecasSemCusto: 0, referenciasSemCusto: [],
+      });
     }
     const { rows: itens } = await pool.query('SELECT * FROM pedido_itens WHERE pedido_id = ANY($1)', [pedidos.map((p) => p.id)]);
 
@@ -420,18 +559,58 @@ router.get('/:id/resumo', async (req, res, next) => {
         const materiais = await produtosRoutes.fetchMateriais(pool, it.produto_id);
         const custosIndustriais = await produtosRoutes.fetchCustosIndustriais(pool, it.produto_id);
         const calculo = produtosRoutes.buildCalculo(produtoRow, materiais, custosIndustriais, ctx);
-        mapaCusto.set(it.produto_id, Number(calculo.custoTotal.custoTotalPeca) || 0);
+        // REGRA 2: peça sem ficha devolve subtotal de produção 0, e somá-la
+        // como custo R$ 0,00 fazia o resumo da viagem exibir lucro de quem
+        // ninguém calculou — medido em 14/09/2026: receita R$ 1.300,00, custo
+        // R$ 300,00, lucro R$ 1.000,00 / margem 76,9%, quando 5 das 15 peças
+        // não tinham custo nenhum. Mesmo critério de `mapaCustoPorProduto`
+        // (pedidos.routes.js): subtotal <= 0, ou o cálculo estourar, é NULO.
+        const subtotal = Number(calculo.custoTotal.subtotalProducao);
+        const custoConhecido = Number.isFinite(subtotal) && subtotal > 0;
+        mapaCusto.set(it.produto_id, custoConhecido ? Number(calculo.custoTotal.custoTotalPeca) || 0 : null);
       } catch {
-        mapaCusto.set(it.produto_id, 0);
+        mapaCusto.set(it.produto_id, null);
       }
     }
 
-    const custo = itens.reduce((s, it) => s + Number(it.quantidade) * (mapaCusto.get(it.produto_id) || 0), 0);
+    let custo = 0;
+    let pecasComCusto = 0;
+    let pecasSemCusto = 0;
+    const referenciasSemCusto = new Set();
+    for (const it of itens) {
+      const qtd = Number(it.quantidade) || 0;
+      const custoPeca = it.produto_id == null ? null : mapaCusto.get(it.produto_id);
+      if (custoPeca == null) {
+        pecasSemCusto += qtd;
+        referenciasSemCusto.add(it.referencia || 'sem referência');
+      } else {
+        custo += qtd * custoPeca;
+        pecasComCusto += qtd;
+      }
+    }
+
     const receita = pedidos.reduce((s, p) => s + Number(p.total_liquido), 0);
     const pecasVendidas = itens.reduce((s, it) => s + Number(it.quantidade), 0);
-    const lucro = receita - custo;
+    // Lucro de uma conta com peça sem custo não é um lucro menor: é um lucro
+    // que não dá para afirmar. Vai NULO junto com o que falta, para a tela
+    // dizer "não sei" e nomear as referências — o `custo` continua sendo o
+    // custo do que se conhece, nunca o custo do total.
+    const custoIncompleto = pecasSemCusto > 0;
+    const lucro = custoIncompleto ? null : receita - custo;
+    const margemPct = custoIncompleto ? null : (receita > 0 ? lucro / receita : 0);
 
-    res.json({ receita, custo, lucro, margemPct: receita > 0 ? lucro / receita : 0, totalVendas: pedidos.length, pecasVendidas });
+    res.json({
+      receita,
+      custo,
+      lucro,
+      margemPct,
+      totalVendas: pedidos.length,
+      pecasVendidas,
+      custoIncompleto,
+      pecasComCusto,
+      pecasSemCusto,
+      referenciasSemCusto: [...referenciasSemCusto],
+    });
   } catch (err) {
     next(err);
   }

@@ -122,6 +122,14 @@ router.get('/:produtoId', async (req, res, next) => {
             margemDesejada: m.valor,
             faixas: ef.faixas,
             config: ctx.config,
+            // As taxas de venda que NÃO são comissão de marketplace (cartão,
+            // antecipação, PIX, boleto, gateway, comissão de vendedor) saem do
+            // preço em QUALQUER canal, junto da comissão da faixa. A lib já
+            // sabia somá-las desde 14/09/2026; faltava a rota passar o número,
+            // e sem ele a tela continuava mostrando R$ 83,32 onde o preço
+            // consistente é R$ 96,14 — 13% barato demais, com a margem
+            // "conferida" ao lado.
+            pctTaxasFinanceiras: ctx.pctTaxas,
           }),
         }));
 
@@ -133,7 +141,10 @@ router.get('/:produtoId', async (req, res, next) => {
           margemDoPrecoPraticado = faixa
             ? {
               preco: precoPraticado,
-              margem: canal.margemRealNoPreco({ preco: precoPraticado, subtotalProducao, pctImpostos, faixa }),
+              margem: canal.margemRealNoPreco({
+              preco: precoPraticado, subtotalProducao, pctImpostos, faixa,
+              pctTaxasFinanceiras: ctx.pctTaxas,
+            }),
               comissaoPct: faixa.pct,
               taxaFixa: faixa.fixo,
             }

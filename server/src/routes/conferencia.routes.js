@@ -541,14 +541,29 @@ router.get('/relatorio', async (req, res, next) => {
     const de = req.query.de || hoje;
     const ate = req.query.ate || hoje;
 
+    // ⚠️ `pecas` é o que foi CONFERIDO de verdade, contado do log de leituras —
+    // não `pecas_esperadas`, que é o número congelado na abertura da caixa.
+    //
+    // Com o esperado no lugar do conferido, uma caixa fechada incompleta
+    // entrava inteira no relatório: 7 de 8 peças bipadas apareciam como 8, e o
+    // número que existe para responder "quanto saiu conferido" afirmava o
+    // contrário do que aconteceu. O esperado continua aqui, em coluna própria,
+    // porque a DIFERENÇA entre os dois é justamente a divergência.
     const { rows: resumo } = await pool.query(
       `SELECT
          COUNT(*)::int AS conferidos,
-         COUNT(*) FILTER (WHERE NOT houve_divergencia)::int AS sem_divergencia,
-         COUNT(*) FILTER (WHERE houve_divergencia)::int AS com_divergencia,
-         COALESCE(SUM(pecas_esperadas), 0)::int AS pecas
-       FROM conferencias_pedido
-       WHERE situacao = 'concluida' AND (concluida_em AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN $1 AND $2`,
+         COUNT(*) FILTER (WHERE NOT cp.houve_divergencia)::int AS sem_divergencia,
+         COUNT(*) FILTER (WHERE cp.houve_divergencia)::int AS com_divergencia,
+         COALESCE(SUM(l.bipadas), 0)::int AS pecas,
+         COALESCE(SUM(cp.pecas_esperadas), 0)::int AS pecas_esperadas
+       FROM conferencias_pedido cp
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*) AS bipadas
+           FROM conferencia_leituras cl
+          WHERE cl.conferencia_id = cp.id
+            AND cl.resultado IN ('ok', 'confirmado_manual')
+       ) l ON TRUE
+       WHERE cp.situacao = 'concluida' AND (cp.concluida_em AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN $1 AND $2`,
       [de, ate]
     );
 
