@@ -65,6 +65,13 @@ const pool = require('../db/pool');
 // acontecer.
 const SITUACOES_VIVAS = ['planejada', 'em_producao'];
 
+// O recorte que tira a ordem MÃE de um kit de qualquer soma de peças.
+// É `tipo <> 'kit'` e NÃO `op_pai_id IS NOT NULL`: `op_pai_id` é nulo em toda
+// ordem comum, e o segundo filtro apagaria a produção da casa inteira. A mãe é
+// a única linha com `tipo = 'kit'` (producao.routes.js, criação do kit), e a
+// conclusão já usa esse mesmo teste para não dar entrada dupla no estoque.
+const SEM_MAE_DE_KIT = "op.tipo <> 'kit'";
+
 // Ordem canônica de tamanho da casa. A mesma de `estoque.routes.js`: em ordem
 // alfabética o GG vem antes do M e a grade fica ilegível.
 const ORDEM_TAMANHOS = [
@@ -93,6 +100,13 @@ function num(v) {
 // `GREATEST(..., 0)` porque apontar mais do que a grade previa é legítimo -
 // sobra de enfesto acontece - e não pode virar produção negativa puxando o
 // projetado para baixo.
+//
+// A ORDEM MÃE DE UM KIT NÃO ENTRA NA SOMA (`SEM_MAE_DE_KIT`). A 0063 fez a
+// mãe nascer com a grade CONSOLIDADA das filhas e com o `produto_id` do
+// primeiro componente. Somar as duas contava cada peça duas vezes e ainda
+// jogava as peças da segunda referência na primeira - um kit de 100 unidades
+// com as referências A e B devolvia A=300 e B=100 onde a mão diz 100 e 100.
+// Quem produz é a filha; a mãe é o retrato do kit, e retrato não se soma.
 async function emProducaoPorVariante({ produtoIds = null, client = pool } = {}) {
   const params = [SITUACOES_VIVAS];
   let filtro = '';
@@ -110,7 +124,7 @@ async function emProducaoPorVariante({ produtoIds = null, client = pool } = {}) 
             COUNT(DISTINCT op.id)::int           AS ordens
        FROM ordens_producao op
        JOIN ordem_producao_grade g ON g.ordem_id = op.id
-      WHERE op.situacao = ANY($1::text[])${filtro}
+      WHERE op.situacao = ANY($1::text[]) AND ${SEM_MAE_DE_KIT}${filtro}
       GROUP BY op.produto_id, g.cor, g.tamanho`,
     params
   );
@@ -169,7 +183,7 @@ async function ordensVivas({ produtoIds = null, client = pool } = {}) {
        FROM ordens_producao op
        LEFT JOIN ordem_producao_grade g ON g.ordem_id = op.id
        LEFT JOIN fornecedores f ON f.id = op.fornecedor_id
-      WHERE op.situacao = ANY($1::text[])${filtro}
+      WHERE op.situacao = ANY($1::text[]) AND ${SEM_MAE_DE_KIT}${filtro}
       GROUP BY op.id, f.nome
       ORDER BY op.data_prevista NULLS LAST, op.numero`,
     params
@@ -214,7 +228,7 @@ async function ordensEncerradasComPendencia({ produtoIds = null, client = pool }
             SUM(GREATEST(g.quantidade_planejada - g.quantidade_produzida - g.quantidade_segunda, 0))::numeric AS pendente
        FROM ordens_producao op
        JOIN ordem_producao_grade g ON g.ordem_id = op.id
-      WHERE op.situacao = 'concluida'${filtro}
+      WHERE op.situacao = 'concluida' AND ${SEM_MAE_DE_KIT}${filtro}
       GROUP BY op.id
      HAVING SUM(GREATEST(g.quantidade_planejada - g.quantidade_produzida - g.quantidade_segunda, 0)) > 0
       ORDER BY op.data_conclusao DESC NULLS LAST
@@ -320,7 +334,7 @@ async function entregaParcialSuspeita({ produtoIds = null, client = pool } = {})
                GREATEST(g.quantidade_planejada - g.quantidade_produzida - g.quantidade_segunda, 0) AS pendente
           FROM ordens_producao op
           JOIN ordem_producao_grade g ON g.ordem_id = op.id
-         WHERE op.situacao = ANY($1::text[])${filtro}
+         WHERE op.situacao = ANY($1::text[]) AND ${SEM_MAE_DE_KIT}${filtro}
      )
      SELECT v.id, v.numero, v.produto_id, v.cor, v.tamanho, v.pendente,
             COALESCE(SUM(GREATEST(m.quantidade, 0)), 0)::numeric AS entradas
@@ -357,6 +371,7 @@ async function entregaParcialSuspeita({ produtoIds = null, client = pool } = {})
 
 module.exports = {
   SITUACOES_VIVAS,
+  SEM_MAE_DE_KIT,
   ORDEM_TAMANHOS,
   pesoTamanho,
   chave,

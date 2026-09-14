@@ -124,10 +124,18 @@ router.get('/panorama', async (req, res, next) => {
               COALESCE(i.insumos, 0) AS insumos,
               (d.natureza = 'proprio') AS vendavel
          FROM depositos d
+         -- ⚠️ local <> 'transito' (14/09/2026). A linha de trânsito nasce já
+         -- com deposito_id = DESTINO (é assim que se responde "o que está a
+         -- caminho da Expedição?"), então sem este filtro a peça na van era
+         -- contada como se já estivesse na Expedição — e AINDA aparecia no
+         -- card "Peças em trânsito". Com 100 peças e 40 enviadas, a tela somava
+         -- 140 para 100 peças reais, e a Expedição prometia peça que ainda
+         -- está na van (é o que a regra 2 do cabeçalho de estoqueDepositos.js
+         -- existe para impedir). O certo é Galpão 60 / Expedição 0 / trânsito 40.
          LEFT JOIN (SELECT deposito_id, SUM(quantidade) AS pecas, COUNT(*) FILTER (WHERE quantidade <> 0) AS variantes
-                      FROM estoque_variante_saldos GROUP BY deposito_id) p ON p.deposito_id = d.id
+                      FROM estoque_variante_saldos WHERE local <> 'transito' GROUP BY deposito_id) p ON p.deposito_id = d.id
          LEFT JOIN (SELECT deposito_id, SUM(quantidade) AS insumos
-                      FROM insumo_saldos GROUP BY deposito_id) i ON i.deposito_id = d.id
+                      FROM insumo_saldos WHERE local <> 'transito' GROUP BY deposito_id) i ON i.deposito_id = d.id
         ORDER BY d.padrao DESC, d.nome`
     );
 
@@ -171,24 +179,54 @@ router.get('/:id/saldo', async (req, res, next) => {
     const dep = await lerDeposito(pool, req.params.id);
     if (!dep) return res.status(404).json({ error: 'Depósito não encontrado.' });
 
+    // ⚠️ s.local <> 'transito' (14/09/2026), pelo mesmo motivo do panorama:
+    // a linha de trânsito é gravada com o depósito de DESTINO, então esta tela
+    // listava como "está aqui dentro" a peça que ainda não desceu da van.
+    // O que está a caminho sai numa lista própria — não some (REGRA 2), só
+    // deixa de ser confundido com o que já chegou.
     const { rows: pecas } = await pool.query(
       `SELECT s.variante_id, s.quantidade, v.cor, v.tamanho, v.ean, v.localizacao,
               p.referencia, p.descricao AS produto
          FROM estoque_variante_saldos s
          JOIN estoque_variantes v ON v.id = s.variante_id
          JOIN produtos p ON p.id = v.produto_id
-        WHERE s.deposito_id = $1 AND s.quantidade <> 0
+        WHERE s.deposito_id = $1 AND s.local <> 'transito' AND s.quantidade <> 0
+        ORDER BY p.referencia, v.cor, v.tamanho`,
+      [dep.id]
+    );
+    const { rows: aCaminho } = await pool.query(
+      `SELECT s.variante_id, s.quantidade, v.cor, v.tamanho, v.ean,
+              p.referencia, p.descricao AS produto
+         FROM estoque_variante_saldos s
+         JOIN estoque_variantes v ON v.id = s.variante_id
+         JOIN produtos p ON p.id = v.produto_id
+        WHERE s.deposito_id = $1 AND s.local = 'transito' AND s.quantidade <> 0
         ORDER BY p.referencia, v.cor, v.tamanho`,
       [dep.id]
     );
     const { rows: insumos } = await pool.query(
       `SELECT s.insumo_id, s.quantidade, i.nome, i.unidade, i.tipo
          FROM insumo_saldos s JOIN insumos i ON i.id = s.insumo_id
-        WHERE s.deposito_id = $1 AND s.quantidade <> 0
+        WHERE s.deposito_id = $1 AND s.local <> 'transito' AND s.quantidade <> 0
         ORDER BY i.nome`,
       [dep.id]
     );
-    res.json({ deposito: dep, pecas, insumos });
+    const { rows: insumosACaminho } = await pool.query(
+      `SELECT s.insumo_id, s.quantidade, i.nome, i.unidade, i.tipo
+         FROM insumo_saldos s JOIN insumos i ON i.id = s.insumo_id
+        WHERE s.deposito_id = $1 AND s.local = 'transito' AND s.quantidade <> 0
+        ORDER BY i.nome`,
+      [dep.id]
+    );
+    res.json({
+      deposito: dep,
+      pecas,
+      insumos,
+      // O que está a caminho DESTE depósito: existe, é nosso, e não está aqui.
+      aCaminho,
+      insumosACaminho,
+      pecasACaminho: aCaminho.reduce((t, r) => t + Number(r.quantidade), 0),
+    });
   } catch (err) { next(err); }
 });
 

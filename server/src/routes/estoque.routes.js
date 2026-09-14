@@ -406,25 +406,61 @@ router.post('/importacao/confirmar', async (req, res, next) => {
       if (rows.length > 0) criados += 1;
     }
 
+    // ⚠️ 14/09/2026: o delta saía de `quantidadeAtual`, que é o saldo lido na
+    // PRÉVIA — uma foto de minutos atrás — e o UPDATE gravava a quantidade
+    // absoluta sem reler nada. Quem vendesse 30 peças entre a prévia e o
+    // "Confirmar" via a venda ser desfeita (80 → 50 → 80 de novo) e a trilha
+    // registrar −20 onde a variação real foi +30. Agora o saldo é RELIDO
+    // dentro da transação, com FOR UPDATE, e o movimento grava a variação que
+    // de fato aconteceu. Reimportar a mesma planilha continua não dobrando:
+    // a quantidade da planilha é destino, não soma.
     let atualizados = 0;
+    const divergencias = [];
     for (const item of atualizar) {
-      const delta = Number(item.quantidadeNova) - Number(item.quantidadeAtual);
+      const { rows: atualRows } = await client.query(
+        'SELECT quantidade FROM estoque_variantes WHERE id = $1 FOR UPDATE',
+        [item.varianteId]
+      );
+      if (atualRows.length === 0) continue;
+      const saldoAgora = Number(atualRows[0].quantidade);
+      const quantidadeNova = Number(item.quantidadeNova);
+      const delta = quantidadeNova - saldoAgora;
+
+      // O saldo mudou depois da prévia. A planilha continua mandando (é uma
+      // contagem física), mas a divergência volta escrita em vez de sumir:
+      // quem importou precisa saber que passou por cima de uma movimentação.
+      const saldoNaPrevia = Number(item.quantidadeAtual);
+      if (Number.isFinite(saldoNaPrevia) && saldoNaPrevia !== saldoAgora) {
+        divergencias.push({
+          varianteId: item.varianteId,
+          referencia: item.referencia ?? null,
+          cor: item.cor ?? null,
+          tamanho: item.tamanho ?? null,
+          saldoNaPrevia,
+          saldoNoConfirmar: saldoAgora,
+          quantidadeNova,
+          variacaoGravada: delta,
+          motivo: 'o saldo mudou entre a prévia e o "Confirmar" — a planilha foi aplicada '
+            + 'sobre o saldo ATUAL, e o movimento gravado é a variação real',
+        });
+      }
+
       await client.query(
         'UPDATE estoque_variantes SET quantidade = $1, updated_at = now() WHERE id = $2',
-        [item.quantidadeNova, item.varianteId]
+        [quantidadeNova, item.varianteId]
       );
       if (delta !== 0) {
         await client.query(
           `INSERT INTO estoque_movimentos (variante_id, tipo, quantidade, quantidade_resultante, motivo)
            VALUES ($1, 'importacao', $2, $3, 'Importação de saldo de estoque')`,
-          [item.varianteId, delta, item.quantidadeNova]
+          [item.varianteId, delta, quantidadeNova]
         );
       }
       atualizados += 1;
     }
 
     await client.query('COMMIT');
-    res.json({ criados, atualizados });
+    res.json({ criados, atualizados, divergencias });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     next(err);
@@ -624,9 +660,15 @@ router.get('/ficha', async (req, res, next) => {
           WHERE produto_id = ANY($1) AND ativo = true ORDER BY cor, tamanho`,
         [idsProdutos]
       ).then((r) => r.rows),
+      // ⚠️ 14/09/2026: `usa_aliquota_media` e `aliquota_media_pct` faltavam
+      // nesta lista. São o PRIMEIRO campo que o motor (`calc.js`) lê para
+      // decidir o imposto: sem eles a empresa que usa alíquota média era
+      // calculada aqui com imposto 0%, e a Ficha de Estoque mostrava um custo
+      // e um preço sugerido menores que os da Ficha de Precificação, com a
+      // mesma referência. Mesma correção já feita em produtos/alertas/kits.
       pool.query(
         `SELECT p.*, e.nome AS empresa_nome, e.regime_tributario, e.icms, e.pis, e.cofins, e.ipi,
-                e.iss, e.simples_aliquota, e.outros_impostos
+                e.iss, e.simples_aliquota, e.outros_impostos, e.usa_aliquota_media, e.aliquota_media_pct
            FROM produtos p LEFT JOIN empresas e ON e.id = p.empresa_id
           WHERE p.id = ANY($1)`,
         [idsProdutos]
@@ -669,20 +711,71 @@ router.get('/ficha', async (req, res, next) => {
       const totalizador = tamanhos.map((_, i) => linhas.reduce((s, l) => s + l.quantidades[i], 0));
       const quantidadeTotal = totalizador.reduce((s, q) => s + q, 0);
 
-      let custoTotal = 0;
-      let valorTotal = 0;
+      // ⚠️ 14/09/2026 — REGRA 2 aplicada aqui. Antes, o `catch {}` engolia a
+      // falha e o `|| 0` transformava referência SEM ficha de custo em peça de
+      // R$ 0,00: com 100 peças com ficha (R$ 1.136,36) e 100 sem, a tela
+      // somava "200 peças · custo R$ 1.136,36", como se as 200 valessem
+      // R$ 5,68 cada — e não havia campo nenhum para a tela avisar. Agora o
+      // que não se sabe volta NULO, com a lista das variantes e o motivo
+      // escrito, do mesmo jeito que `/indicadores` e a tela Dinheiro Parado já
+      // fazem. O certo no exemplo é R$ 1.136,36 para 100 peças, MAIS 100 peças
+      // sem custo conhecido.
+      let custoUnitario = null;
+      let precoUnitario = null;
+      let motivoSemCusto = null;
       try {
         const produtoRow = produtoRowPorId.get(produto.id);
         const materiais = materiaisPorProduto.get(produto.id) || [];
         const custosIndustriais = custosPorProduto.get(produto.id) || [];
         const calculo = produtosRoutes.buildCalculo(produtoRow, materiais, custosIndustriais, ctx);
-        custoTotal = quantidadeTotal * Number(calculo.custoTotal.custoTotalPeca || 0);
-        valorTotal = quantidadeTotal * Number(calculo.formacaoPreco.precoSugerido || 0);
-      } catch {
-        // referência sem custo/precificação cadastrada ainda — mantém 0
+        const c = Number(calculo.custoTotal.custoTotalPeca);
+        const v = Number(calculo.formacaoPreco.precoSugerido);
+        custoUnitario = Number.isFinite(c) && c > 0 ? c : null;
+        precoUnitario = Number.isFinite(v) && v > 0 ? v : null;
+        if (custoUnitario === null) {
+          motivoSemCusto = 'a referência não tem custo de produção calculado (ficha sem material e sem custo industrial), '
+            + 'então estas peças não entram no valor em R$';
+        }
+      } catch (err) {
+        // Custo que NÃO deu para calcular não é custo zero. O motivo volta
+        // escrito para a tela poder dizer o que aconteceu com esta referência.
+        motivoSemCusto = `não foi possível calcular o custo desta referência (${err.message})`;
       }
 
-      fichas.push({ produto, tamanhos, linhas, totalizador, quantidadeTotal, custoTotal, valorTotal });
+      const custoConhecido = custoUnitario !== null;
+      const valorConhecido = precoUnitario !== null;
+      // As variantes com saldo desta referência, para a tela listar quais
+      // peças ficaram de fora do R$ — a mesma lista que a Dinheiro Parado dá.
+      const semCusto = custoConhecido ? [] : variantes
+        .filter((v) => Number(v.quantidade || 0) > 0)
+        .map((v) => ({
+          referencia: produto.referencia,
+          cor: v.cor,
+          tamanho: v.tamanho,
+          saldo: Number(v.quantidade),
+          motivo: motivoSemCusto,
+        }));
+
+      fichas.push({
+        produto,
+        tamanhos,
+        linhas,
+        totalizador,
+        quantidadeTotal,
+        // ⚠️ NULO é "não sei", e é diferente de zero: a tela precisa somar só
+        // o que é somável e dizer o resto em peças.
+        custoTotal: custoConhecido ? quantidadeTotal * custoUnitario : null,
+        valorTotal: valorConhecido ? quantidadeTotal * precoUnitario : null,
+        custoUnitario,
+        precoUnitario,
+        custoConhecido,
+        valorConhecido,
+        // Enquanto isto não for zero, o total em R$ da tela é um PISO.
+        pecasSemCusto: custoConhecido ? 0 : quantidadeTotal,
+        totalEhPiso: !custoConhecido && quantidadeTotal > 0,
+        motivoSemCusto,
+        semCusto,
+      });
     }
     // Com ?referencias= a ordem é a que o usuário montou na tela; com
     // ?marketplace=1 não há ordem informada, então fica a alfabética que veio
@@ -723,9 +816,13 @@ router.get('/indicadores', async (req, res, next) => {
     const produtoIds = [...new Set(variantes.map((v) => v.produto_id))];
     const custoPorProduto = new Map();
     if (produtoIds.length > 0) {
+      // ⚠️ 14/09/2026: mesma falta da Ficha de Estoque, ver o comentário lá em
+      // cima. Sem `usa_aliquota_media`/`aliquota_media_pct` o motor calculava
+      // imposto 0% para empresa em alíquota média, e o "valor em estoque"
+      // destes indicadores saía diferente do da Ficha de Precificação.
       const { rows: produtosRows } = await pool.query(`
         SELECT p.*, e.nome AS empresa_nome, e.regime_tributario, e.icms, e.pis, e.cofins, e.ipi,
-               e.iss, e.simples_aliquota, e.outros_impostos
+               e.iss, e.simples_aliquota, e.outros_impostos, e.usa_aliquota_media, e.aliquota_media_pct
         FROM produtos p LEFT JOIN empresas e ON e.id = p.empresa_id
         WHERE p.id = ANY($1)
       `, [produtoIds]);

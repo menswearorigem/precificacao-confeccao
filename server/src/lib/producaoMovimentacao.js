@@ -441,6 +441,12 @@ async function registrarRetorno(client, { ordemServicoId, itens, etapaDestinoId,
 //
 // A quebra continua medida e continua aparecendo: encerrar não a apaga, só
 // reconhece que ela não vai voltar.
+//
+// E NÃO SE GERA AQUI O MOVIMENTO DE SAÍDA das peças que sobraram. Quem tira a
+// quebra assumida da carga da etapa é a `vw_producao_wip` (migration 0077),
+// pela terceira perna do `fluxo`. Foi escolha declarada: o filtro na view
+// conserta também as O.S. encerradas ANTES dela, que o movimento novo não
+// alcançaria — e fazer os dois subtrairia a mesma peça duas vezes.
 async function encerrarComQuebra(client, { ordemServicoId, motivo, usuarioId }) {
   if (!String(motivo || '').trim()) {
     throw Object.assign(new Error('Escreva o que aconteceu com as peças que não voltaram.'), { status: 400 });

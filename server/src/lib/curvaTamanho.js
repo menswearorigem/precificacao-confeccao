@@ -216,14 +216,39 @@ function distribuirGrade(lote, itens, { minimoPorTamanho = 0 } = {}) {
     // Tamanho abaixo do mínimo sai da grade e a quantidade dele volta para o
     // maior. Sai da grade, e não sobe para o mínimo, porque subir inflaria o
     // lote inteiro — e o lote é o que o dono decidiu cortar.
-    for (const l of linhas) {
-      if (l.quantidade > 0 && l.quantidade < min) {
-        ajustes.push(`${l.tamanho} sairia com ${l.quantidade} peça(s), abaixo do mínimo de ${min}. Saiu da grade e as peças foram para o tamanho de maior participação.`);
-        const maior = linhas.reduce((a, b) => (b.participacao > a.participacao ? b : a));
-        maior.quantidade += l.quantidade;
-        l.quantidade = 0;
-        l.removidoPeloMinimo = true;
+    //
+    // ⚠️ 14/09/2026: o remanejamento PERDIA PEÇA. O `maior` era procurado em
+    // `linhas` inteiro, então podia ser a PRÓPRIA linha que estava saindo
+    // (`l.quantidade += l.quantidade` e logo em seguida `= 0`) ou uma linha já
+    // removida — e o destino dela voltava a zero na volta seguinte. Com lote 6,
+    // mínimo 5 e curva P 50% · M 30% · G 20%, a grade somava 3 das 6 peças e
+    // ainda devolvia P com 3 peças marcada `removidoPeloMinimo`. Agora o
+    // destino é escolhido entre as linhas que CONTINUAM na grade, e a remoção
+    // vai da menor para a maior, de modo que o que resta é sempre o tamanho de
+    // maior participação — que é o que o parágrafo acima sempre prometeu. A
+    // soma passa a fechar com o lote, e `somaConfere` deixa de acusar.
+    for (;;) {
+      const ativas = linhas.filter((l) => !l.removidoPeloMinimo && l.quantidade > 0);
+      // Com uma linha só não há para onde remanejar: tirá-la vaporizaria o
+      // lote. Ela fica, abaixo do mínimo, e o aviso diz isso.
+      if (ativas.length <= 1) {
+        const sozinha = ativas[0];
+        if (sozinha && sozinha.quantidade < min) {
+          ajustes.push(`${sozinha.tamanho} ficou com ${sozinha.quantidade} peça(s), abaixo do mínimo de ${min}. É o único tamanho que sobrou na grade: tirá-lo faria as peças do lote sumirem.`);
+        }
+        break;
       }
+      const alvo = ativas
+        .filter((l) => l.quantidade < min)
+        .sort((a, b) => (a.quantidade - b.quantidade) || (a.participacao - b.participacao))[0];
+      if (!alvo) break;
+      const destino = ativas
+        .filter((l) => l !== alvo)
+        .reduce((a, b) => (b.participacao > a.participacao ? b : a));
+      ajustes.push(`${alvo.tamanho} sairia com ${alvo.quantidade} peça(s), abaixo do mínimo de ${min}. Saiu da grade e as peças foram para ${destino.tamanho}, o tamanho de maior participação entre os que ficaram.`);
+      destino.quantidade += alvo.quantidade;
+      alvo.quantidade = 0;
+      alvo.removidoPeloMinimo = true;
     }
   }
 

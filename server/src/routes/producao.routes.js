@@ -478,7 +478,13 @@ router.get('/ordens', async (req, res, next) => {
              FROM ordem_producao_apontamentos WHERE ordem_id = op.id
          ) a ON TRUE
          LEFT JOIN LATERAL (
-           SELECT SUM(COALESCE(quantidade_consumida, quantidade_reservada) * custo_unitario)
+           -- quantidade_consumida é NOT NULL DEFAULT 0 (0049): o COALESCE
+           -- nunca caía no segundo argumento e TODA ordem ainda não concluída
+           -- somava zero, enquanto o detalhe da mesma ordem mostrava o certo.
+           -- Enquanto não há consumo apontado, o que está comprometido é o
+           -- reservado - "ainda não consumi" não é "custou nada" (REGRA 2).
+           SELECT SUM(CASE WHEN quantidade_consumida > 0 THEN quantidade_consumida
+                           ELSE quantidade_reservada END * custo_unitario)
                     AS custo_material_reservado,
                   COUNT(*) FILTER (WHERE custo_unitario IS NULL) AS insumos_sem_custo
              FROM ordem_producao_insumos WHERE ordem_id = op.id
@@ -1401,7 +1407,14 @@ router.post('/ordens/:id/aplicar-custo-na-ficha', async (req, res, next) => {
       const consumido = Number(item.quantidade_consumida) > 0
         ? Number(item.quantidade_consumida) : Number(item.quantidade_reservada);
       const base = consumido > 0 ? consumido : Number(item.quantidade_necessaria);
-      const consumoPorPeca = base / totalPecas;
+      // A PERDA DE CORTE NÃO VOLTA PARA DENTRO DO CONSUMO. O que a ordem
+      // movimentou já saiu de `necessidadeSemPerda × (1 + perda)`
+      // (`producao.js`), e a ficha guarda o consumo LÍQUIDO — a perda continua
+      // sendo o campo `perda_pct`, que o motor aplica sozinho na próxima
+      // explosão. Gravando o bruto, cada clique no botão multiplicava a ficha
+      // por 1,10 outra vez: 0,50 → 0,55 → 0,605 kg/peça, sem teto.
+      const perda = item.perda_aplicada != null ? Number(item.perda_aplicada) : null;
+      const consumoPorPeca = (base / totalPecas) / (perda != null && perda > -1 ? 1 + perda : 1);
       const custoUnitario = item.custo_unitario != null ? Number(item.custo_unitario) : null;
 
       if (custoUnitario == null) {
@@ -1734,6 +1747,11 @@ async function darEntradaDaOrdem(client, ordem) {
     entradas.push({ ordem_id: ordem.id, cor: g.cor, tamanho: g.tamanho, quantidade: qtd });
   }
 
+  // A ordem sai do fluxo pela SITUAÇÃO, e não por um movimento de saída: a
+  // `vw_producao_wip` (migration 0077) só soma movimento de ordem que não está
+  // concluída nem cancelada. Assim a carga da etapa zera junto com a entrada
+  // no estoque — inclusive para as ordens concluídas antes daquela migration.
+  //
   // O reservado que sobrou vira consumido: é o que de fato foi usado.
   await client.query(
     `UPDATE ordem_producao_insumos
@@ -1858,14 +1876,45 @@ router.post('/faccao/movimento', async (req, res, next) => {
       return res.status(400).json({ error: 'O movimento é de insumo OU de peça pronta — nunca dos dois.' });
     }
 
+    const ordemId = inteiroPositivo(body.ordem_id);
+
     await client.query('BEGIN');
+
+    // O MATERIAL SAI DE CASA UMA VEZ SÓ.
+    //
+    // `reservar` já subtrai de `local='proprio'` o que a ordem segurou, e a
+    // remessa do MESMO lote subtraía outra vez: 1.000 kg viravam 900 + 50 na
+    // facção para 50 kg que saíram uma vez — 50 kg evaporavam do saldo.
+    // Enquanto `insumo_saldos` não tiver um local 'reservado' que segure o
+    // material entre a reserva e a remessa (proposta pendente de decisão),
+    // a parte da remessa já coberta pela reserva desta ordem só MUDA DE LUGAR:
+    // credita a facção sem debitar `proprio` de novo. O retorno desfaz pela
+    // mesma conta, para o par nunca ficar torto.
+    let cobertoPelaReserva = 0;
+    if (insumoId && ordemId) {
+      const { rows: r } = await client.query(
+        `SELECT COALESCE((SELECT SUM(quantidade_reservada) FROM ordem_producao_insumos
+                           WHERE ordem_id = $1 AND insumo_id = $2), 0) AS reservado,
+                COALESCE((SELECT SUM(CASE WHEN tipo = 'remessa' THEN quantidade ELSE -quantidade END)
+                            FROM faccao_movimentos
+                           WHERE ordem_id = $1 AND insumo_id = $2
+                             AND tipo IN ('remessa','retorno')), 0) AS na_faccao`,
+        [ordemId, insumoId]
+      );
+      const reservado = Number(r[0].reservado) || 0;
+      const antes = Number(r[0].na_faccao) || 0;
+      const depois = body.tipo === 'remessa' ? antes + quantidade : antes - quantidade;
+      const grampeia = (v) => Math.min(reservado, Math.max(0, v));
+      cobertoPelaReserva = Math.abs(grampeia(depois) - grampeia(antes));
+    }
+
     const { rows } = await client.query(
       `INSERT INTO faccao_movimentos
          (ordem_id, fornecedor_id, tipo, insumo_id, variante_id, quantidade,
           nota_numero, nota_chave, data_movimento, observacoes, usuario_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
       [
-        inteiroPositivo(body.ordem_id), fornecedorId, body.tipo, insumoId, varianteId, quantidade,
+        ordemId, fornecedorId, body.tipo, insumoId, varianteId, quantidade,
         body.nota_numero || null, body.nota_chave || null,
         body.data_movimento || new Date().toISOString().slice(0, 10),
         body.observacoes || null, req.user?.id || null,
@@ -1876,14 +1925,18 @@ router.post('/faccao/movimento', async (req, res, next) => {
     // matéria-prima em poder de terceiro continuar aparecendo como nossa.
     if (insumoId) {
       const sinal = body.tipo === 'remessa' ? -1 : 1;
-      await client.query(
-        `INSERT INTO insumo_saldos (insumo_id, local, quantidade)
-         VALUES ($1, 'proprio', $2)
-         ON CONFLICT (insumo_id, local, COALESCE(fornecedor_id, 0), COALESCE(deposito_id, 0))
-           DO UPDATE SET quantidade = insumo_saldos.quantidade + EXCLUDED.quantidade,
-                         atualizado_em = now()`,
-        [insumoId, sinal * quantidade]
-      );
+      // Só o que a reserva ainda NÃO tirou de `proprio` mexe em `proprio`.
+      const noProprio = quantidade - cobertoPelaReserva;
+      if (noProprio > 0) {
+        await client.query(
+          `INSERT INTO insumo_saldos (insumo_id, local, quantidade)
+           VALUES ($1, 'proprio', $2)
+           ON CONFLICT (insumo_id, local, COALESCE(fornecedor_id, 0), COALESCE(deposito_id, 0))
+             DO UPDATE SET quantidade = insumo_saldos.quantidade + EXCLUDED.quantidade,
+                           atualizado_em = now()`,
+          [insumoId, sinal * noProprio]
+        );
+      }
       await client.query(
         `INSERT INTO insumo_saldos (insumo_id, local, fornecedor_id, quantidade)
          VALUES ($1, 'faccao', $2, $3)
@@ -1902,8 +1955,12 @@ router.post('/faccao/movimento', async (req, res, next) => {
         [
           insumoId, fornecedorId,
           body.tipo === 'remessa' ? 'remessa_faccao' : 'retorno_faccao',
-          sinal * quantidade, saldo[0]?.quantidade ?? 0,
-          `${body.tipo === 'remessa' ? 'Remessa para' : 'Retorno de'} facção`, req.user?.id || null,
+          sinal * noProprio, saldo[0]?.quantidade ?? 0,
+          `${body.tipo === 'remessa' ? 'Remessa para' : 'Retorno de'} facção`
+            + (cobertoPelaReserva > 0
+              ? ` (${cobertoPelaReserva} já ${body.tipo === 'remessa' ? 'estava' : 'volta'} na reserva da ordem)`
+              : ''),
+          req.user?.id || null,
         ]
       );
     }

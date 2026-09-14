@@ -80,6 +80,9 @@ function diasEntre(a, b) {
   return Math.max(0, Math.round(ms / (24 * 3600 * 1000)));
 }
 
+// A janela crua, para as CTEs de `vendasEmPecas` que recebem o filtro de fora.
+const JANELA_CRUA = "pv.data_pedido >= $1::date AND pv.data_pedido <= $2::date";
+
 // ---------------------------------------------------------------------------
 // Venda por variante, em massa
 // ---------------------------------------------------------------------------
@@ -99,8 +102,16 @@ async function vendaPorVarianteEmMassa(produtoIds, janela) {
        LEFT JOIN pedidos_venda pv
               ON pv.id = pi.pedido_id
              AND ${vendas.PEDIDO_VALIDO}
-             AND pv.data_pedido >= date_trunc('week', $2::date)
-             AND pv.data_pedido <  date_trunc('week', $3::date) + INTERVAL '7 days'
+             -- A JANELA LIDA É A JANELA PEDIDA, dia a dia. O
+             -- date_trunc('week') de vendasEmPecas existe para a SÉRIE
+             -- semanal, onde meia semana vira um falso tombo no gráfico; aqui
+             -- não há série: a venda é dividida por 'dias', contado nas datas
+             -- cruas. Arredondar só um dos dois lados somava até 12 dias de
+             -- venda de fora e dividia por um período menor — venda anterior
+             -- ao início virava demanda, ponto de pedido e "a produção não
+             -- resolve", invertendo a decisão de produzir.
+             AND pv.data_pedido >= $2::date
+             AND pv.data_pedido <= $3::date
       WHERE ev.produto_id = ANY($1::int[])
         AND pv.id IS NOT NULL
       GROUP BY ev.produto_id, ev.cor, ev.tamanho`,
@@ -117,8 +128,11 @@ async function vendaPorVarianteEmMassa(produtoIds, janela) {
 async function pecasEmKitPorProduto(produtoIds, janela) {
   if (!produtoIds.length) return new Map();
   const [inicio, fim] = vendas.paramsJanela(janela);
+  // Mesma janela crua da consulta acima: os dois números aparecem lado a lado
+  // na mesma tela, e um deles lendo semana cheia e o outro a data pedida
+  // faria o aviso de kit discordar da venda que ele explica.
   const { rows } = await pool.query(
-    `WITH ${vendas.ctesVendasEmPecas(vendas.FILTRO_JANELA)}
+    `WITH ${vendas.ctesVendasEmPecas(JANELA_CRUA)}
      SELECT produto_id, COALESCE(SUM(pecas) FILTER (WHERE de_kit), 0)::numeric AS pecas
        FROM vendas_em_pecas
       WHERE produto_id = ANY($3::int[])

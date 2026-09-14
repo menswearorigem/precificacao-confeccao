@@ -130,6 +130,20 @@ async function semanasZeradasPorProduto(janela) {
 //      pendente a deixaria eternamente "a caminho".
 const emProducaoPorProduto = () => producaoProjecao.emProducaoPorProduto({});
 
+// O que já está vendido e ainda não saiu do galpão: reserva ATIVA (consumida
+// já virou baixa de saldo, liberada deixou de valer). Entra na POSIÇÃO de
+// estoque com sinal negativo — ver o comentário em `/produtos`.
+async function reservadoPorProduto() {
+  const { rows } = await pool.query(
+    `SELECT ev.produto_id, SUM(r.quantidade)::numeric AS reservado
+       FROM estoque_reservas r
+       JOIN estoque_variantes ev ON ev.id = r.variante_id
+      WHERE r.situacao = 'ativa'
+      GROUP BY ev.produto_id`
+  );
+  return new Map(rows.map((r) => [r.produto_id, Number(r.reservado)]));
+}
+
 // ---------------------------------------------------------------------------
 // Peça acabada: cobertura, cadência de reposição e quanto produzir
 // ---------------------------------------------------------------------------
@@ -158,7 +172,7 @@ router.get('/produtos', async (req, res, next) => {
     // Quantas vezes o mínimo é "sobra". 3× é o corte da planilha da casa.
     const fatorExcesso = temNumero(req.query.fator_excesso) ? Number(req.query.fator_excesso) : 3;
 
-    const [serie, zeradas, saldos, margemPorProduto, semReferencia, kitsSemComposicao, emProducao] = await Promise.all([
+    const [serie, zeradas, saldos, margemPorProduto, semReferencia, kitsSemComposicao, emProducao, reservado] = await Promise.all([
       vendas.serieSemanalPorProduto(pool, janela),
       semanasZeradasPorProduto(janela),
       pool.query(
@@ -202,6 +216,7 @@ router.get('/produtos', async (req, res, next) => {
       vendas.itensSemProduto(pool, janela),
       vendas.itensDeKitSemComposicao(pool, janela),
       emProducaoPorProduto(),
+      reservadoPorProduto(),
     ]);
 
     // Custo de producao por produto, LIDO do motor de calculo — a mesma
@@ -271,10 +286,14 @@ router.get('/produtos', async (req, res, next) => {
       const totais = margemPorProduto.get(s.produto_id) || null;
       const saldo = Number(s.saldo);
       const naFaccao = emProducao.get(s.produto_id) || 0;
-      // Posição de estoque, não saldo físico: é com ela que o ponto de
-      // pedido se compara, senão o sistema manda fazer de novo o que já
-      // está na facção.
-      const posicao = saldo + naFaccao;
+      // ⚠️ 14/09/2026: faltava a PARCELA NEGATIVA. Era `saldo + naFaccao`,
+      // enquanto estoqueMinimo.js:360 declara que a posição é o galpão MAIS o
+      // que está a caminho MENOS o que já está vendido e ainda não saiu. Sem a
+      // reserva ativa, uma referência com o saldo inteiro comprometido aparecia
+      // como "ok" no ponto de pedido — e o sistema deixava de mandar repor
+      // justamente a que não tem mais nada livre para vender.
+      const jaVendidoNaoSaiu = reservado.get(s.produto_id) || 0;
+      const posicao = saldo + naFaccao - jaVendidoNaoSaiu;
 
       // A cadência: a escolhida à mão vence a sugerida pela venda.
       const cadencia = cadenciaDaReferencia({
@@ -369,6 +388,7 @@ router.get('/produtos', async (req, res, next) => {
         foto_url: s.foto_url || null,
         saldo,
         em_producao: naFaccao,
+        reservado: jaVendidoNaoSaiu,
         posicao,
         variantes: Number(s.variantes),
         variantes_zeradas: Number(s.variantes_zeradas),
@@ -626,7 +646,12 @@ router.put('/produtos/:id/reposicao', async (req, res, next) => {
 // estatístico aqui protegeria duas vezes o mesmo risco.
 router.get('/insumos', async (req, res, next) => {
   try {
-    const numSemanas = semanas(req);
+    // ⚠️ 14/09/2026: aqui estava `semanas(req)` — função que NUNCA existiu
+    // neste arquivo (o que existe é `semanasDaJanela`). O resultado era um
+    // `500 {"error":"semanas is not defined"}` em TODA chamada da rota, e como
+    // nenhuma tela a consome ainda, o defeito passou despercebido. A janela é
+    // lida agora pelo mesmo caminho de `/produtos`.
+    const numSemanas = semanasDaJanela(janelaDeAnalise(req));
     // O plano: quantas peças de cada referência se pretende produzir. Sem
     // plano, o sistema usa a venda média da janela como proxy — e diz que é
     // proxy, porque produzir pelo que vendeu é uma decisão, não um dado.

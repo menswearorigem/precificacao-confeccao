@@ -179,6 +179,8 @@ router.get('/', async (req, res, next) => {
               COALESCE(q.os_abertas, 0) AS os_abertas,
               COALESCE(q.pecas_fora, 0) AS pecas_fora,
               q.quebra_fracao, q.atrasadas, q.custo_peca_medio, q.ultima_remessa,
+              COALESCE(q.custo_peca_pecas_com_preco, 0) AS custo_peca_pecas_com_preco,
+              COALESCE(q.custo_peca_pecas_sem_preco, 0) AS custo_peca_pecas_sem_preco,
               COALESCE(p.precos, 0) AS precos_cadastrados
          FROM fornecedores f
          LEFT JOIN faccao_categorias c ON c.id = f.faccao_categoria_id
@@ -189,8 +191,23 @@ router.get('/', async (req, res, next) => {
                   CASE WHEN SUM(q.remetido) > 0 THEN SUM(q.quebra) / SUM(q.remetido) END AS quebra_fracao,
                   COUNT(*) FILTER (WHERE q.data_retorno IS NULL AND q.previsao_retorno < CURRENT_DATE
                                      AND q.situacao IN ('remetida','parcial')) AS atrasadas,
-                  CASE WHEN SUM(q.retornado_bom) > 0
-                       THEN SUM(q.valor_servico) / SUM(q.retornado_bom) END AS custo_peca_medio,
+                  -- CUSTO MÉDIO SÓ SOBRE A PEÇA COM PREÇO CONHECIDO. A 0063
+                  -- fez valor_servico ser NULO quando a O.S. saiu sem preço,
+                  -- e o SUM ignora o NULO no numerador — mas o denominador
+                  -- contava as peças dessas O.S. do mesmo jeito, o que é
+                  -- dividir por peças que ninguém somou e desfazer a REGRA 2
+                  -- na agregação: 50 peças sem preço + 50 a R$ 4,00 viravam
+                  -- R$ 2,00/peça. Este é o número que escolhe facção.
+                  CASE WHEN SUM(q.retornado_bom) FILTER (WHERE q.valor_por_peca IS NOT NULL) > 0
+                       THEN SUM(q.valor_servico)
+                            / SUM(q.retornado_bom) FILTER (WHERE q.valor_por_peca IS NOT NULL)
+                  END AS custo_peca_medio,
+                  -- A cobertura do número, para a tela poder avisar em vez de
+                  -- apresentar uma média parcial como se fosse a média.
+                  COALESCE(SUM(q.retornado_bom) FILTER (WHERE q.valor_por_peca IS NOT NULL), 0)
+                    AS custo_peca_pecas_com_preco,
+                  COALESCE(SUM(q.retornado_bom) FILTER (WHERE q.valor_por_peca IS NULL), 0)
+                    AS custo_peca_pecas_sem_preco,
                   MAX(q.data_remessa) AS ultima_remessa
              FROM vw_faccao_quebra q WHERE q.fornecedor_id = f.id
          ) q ON TRUE
