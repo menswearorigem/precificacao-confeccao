@@ -43,9 +43,13 @@ router.get('/', async (req, res, next) => {
     if (empresa_id) { conditions.push(`p.empresa_id = $${i}`); values.push(empresa_id); i += 1; }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
+    // usa_aliquota_media/aliquota_media_pct: mesmo SELECT incompleto de
+    // produtos.routes (corrigido em 14/09/2026). Sem elas a Central de
+    // Alertas avaliava a empresa de alíquota média com imposto zero e o
+    // grupo "Impostos acima do esperado" nunca disparava para ela.
     const { rows: produtos } = await pool.query(`
       SELECT p.*, e.nome AS empresa_nome, e.regime_tributario, e.icms, e.pis, e.cofins, e.ipi,
-             e.iss, e.simples_aliquota, e.outros_impostos
+             e.iss, e.simples_aliquota, e.outros_impostos, e.usa_aliquota_media, e.aliquota_media_pct
       FROM produtos p LEFT JOIN empresas e ON e.id = p.empresa_id
       ${where}
     `, values);
@@ -63,22 +67,38 @@ router.get('/', async (req, res, next) => {
       for (const p of produtos) {
         const materiaisDoProduto = materiaisRows.filter((m) => m.produto_id === p.id);
         const custosDoProduto = custosRows.filter((c) => c.produto_id === p.id);
-        const itensComQtd = materiaisDoProduto.filter((m) => Number(m.quantidade) > 0).length;
-        const totalMateriaisBruto = materiaisDoProduto.reduce((s, m) => s + (Number(m.quantidade) || 0) * (Number(m.valor_unitario) || 0), 0);
-        const materiaisZerados = itensComQtd > 0 && totalMateriaisBruto === 0;
+        // Guarda de "material sem preço" (14/09/2026). Antes só disparava
+        // quando a ficha INTEIRA estava zerada (`totalMateriaisBruto === 0`),
+        // então bastava UMA linha com preço para a ficha passar como
+        // avaliável: malha de 0,35 kg sem preço (96% do material) mais uma
+        // etiqueta de R$ 0,15 dava preço R$ 39,76 em vez de R$ 61,70, com
+        // status "MARGEM SAUDÁVEL" e a referência contada entre as
+        // avaliadas. Uma linha com quantidade e sem preço já torna o custo
+        // desconhecido: a ficha inteira não é avaliável, e a referência sai
+        // da contagem em vez de entrar com um número barato demais.
+        const linhasSemPreco = materiaisDoProduto.filter(
+          (m) => Number(m.quantidade) > 0 && !(Number(m.valor_unitario) > 0)
+        );
+        const materiaisZerados = linhasSemPreco.length > 0;
 
         const calculo = produtosRoutes.buildCalculo(p, materiaisDoProduto, custosDoProduto, ctx);
         const avaliavel = calculo.custoTotal.subtotalProducao > 0;
         if (!avaliavel) continue; // sem nenhum custo cadastrado — calcularProduto nem gera alertas pra este produto
 
-        resultado.avaliadas += 1;
-        if (calculo.alertas.length > 0 && calculo.alertas[0] !== 'Tudo dentro do esperado') resultado.comAlerta += 1;
-
         const refInfo = { id: p.id, referencia: p.referencia, descricao: p.descricao };
 
         if (materiaisZerados) {
-          resultado.naoAvaliavelMateriais.push(refInfo);
-        } else if (calculo.alertas.some((a) => a.startsWith(GRUPOS[0].prefixo))) {
+          resultado.naoAvaliavelMateriais.push({
+            ...refInfo,
+            materiaisSemPreco: linhasSemPreco.map((m) => m.material),
+          });
+          continue;
+        }
+
+        resultado.avaliadas += 1;
+        if (calculo.alertas.length > 0 && calculo.alertas[0] !== 'Tudo dentro do esperado') resultado.comAlerta += 1;
+
+        if (calculo.alertas.some((a) => a.startsWith(GRUPOS[0].prefixo))) {
           resultado.grupos.materiais.referencias.push({ ...refInfo, valorApurado: GRUPOS[0].valorCampo(calculo), desvio: GRUPOS[0].valorCampo(calculo) - resultado.grupos.materiais.limite });
         }
 

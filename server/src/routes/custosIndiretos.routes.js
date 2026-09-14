@@ -10,8 +10,17 @@ async function computeResumo(client) {
   );
   const totalMensal = rows.reduce((sum, r) => sum + Number(r.valor_mensal), 0);
   const producaoMensal = Number(cfgRows[0]?.producao_mensal_pecas || 0);
-  const custoPorPeca = producaoMensal === 0 ? 0 : totalMensal / producaoMensal;
-  return { itens: rows, totalMensal, producaoMensal, custoPorPeca };
+  // Mesmo critério do motor (lib/calcContext.js, 14/09/2026): sem produção
+  // mensal não existe rateio, e a tela dizia "R$ 0,00 por peça" ao lado de
+  // R$ 10.000 de despesa. Divisor ausente é indeterminação, não custo zero
+  // (REGRA 2) — volta null com o motivo. Sem despesa nenhuma o rateio é
+  // zero de verdade.
+  const semRateio = producaoMensal <= 0 && totalMensal > 0;
+  const custoPorPeca = semRateio ? null : (producaoMensal <= 0 ? 0 : totalMensal / producaoMensal);
+  const motivoSemCustoPorPeca = semRateio
+    ? 'a produção mensal em peças está em branco, então não dá para ratear o custo indireto por peça. Informe a produção mensal para o rateio voltar a ser calculado.'
+    : null;
+  return { itens: rows, totalMensal, producaoMensal, custoPorPeca, motivoSemCustoPorPeca };
 }
 
 router.get('/', async (req, res, next) => {

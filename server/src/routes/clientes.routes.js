@@ -142,10 +142,29 @@ router.get('/:id/historico', async (req, res, next) => {
       [id]
     );
 
-    const validos = pedidos.filter((p) => p.situacao !== 'cancelado');
-    const cancelados = pedidos.filter((p) => p.situacao === 'cancelado');
-    const totalComprado = validos.reduce((s, p) => s + Number(p.total_liquido || 0), 0);
-    const pecas = validos.reduce((s, p) => s + Number(p.quantidade_pecas || 0), 0);
+    // Os cartões do topo (total comprado, nº de pedidos, peças, primeira e
+    // última compra) são somados em SQL sobre o histórico INTEIRO. Somá-los em
+    // JavaScript sobre a lista acima contava só os 200 pedidos mais recentes:
+    // com 250 pedidos de R$ 100, o cartão dizia "R$ 20.000,00 / 200 pedidos" em
+    // vez de R$ 25.000,00 / 250, e a "primeira compra" apontava o 200º pedido —
+    // enquanto "Peças mais levadas", logo abaixo na mesma tela, já somava em SQL
+    // e mostrava os R$ 25.000,00 certos. O LIMIT 200 continua valendo só para a
+    // LISTA de pedidos, que é paginação de tela, não conta.
+    const { rows: agregadoRows } = await pool.query(
+      `SELECT COUNT(*) FILTER (WHERE situacao <> 'cancelado')                     AS pedidos_validos,
+              COUNT(*) FILTER (WHERE situacao = 'cancelado')                      AS pedidos_cancelados,
+              COALESCE(SUM(total_liquido) FILTER (WHERE situacao <> 'cancelado'), 0)    AS total_comprado,
+              COALESCE(SUM(quantidade_pecas) FILTER (WHERE situacao <> 'cancelado'), 0) AS pecas,
+              MIN(data_pedido) FILTER (WHERE situacao <> 'cancelado')             AS primeira_compra,
+              MAX(data_pedido) FILTER (WHERE situacao <> 'cancelado')             AS ultima_compra
+         FROM pedidos_venda WHERE cliente_id = $1`,
+      [id]
+    );
+    const agregado = agregadoRows[0];
+    const totalPedidos = Number(agregado.pedidos_validos);
+    const canceladosQuantidade = Number(agregado.pedidos_cancelados);
+    const totalComprado = Number(agregado.total_comprado);
+    const pecas = Number(agregado.pecas);
 
     // Peças mais levadas, por referência. Cruzamento por produto_id quando
     // existe; a referência do item é só o rótulo (REGRA 2).
@@ -164,27 +183,38 @@ router.get('/:id/historico', async (req, res, next) => {
       [id]
     );
 
-    // Por canal, para saber por onde este cliente compra.
+    // Por canal, para saber por onde este cliente compra. Também em SQL, e pelo
+    // mesmo motivo dos cartões: somado sobre a lista cortada, o rodapé não
+    // fechava com o total logo acima dele.
+    const { rows: canalRows } = await pool.query(
+      `SELECT CASE WHEN pv.origem_viagem_id IS NOT NULL THEN 'Viagem'
+                   ELSE COALESCE(pv.canal_venda, 'Sem canal') END AS canal,
+              COUNT(*)::int AS pedidos,
+              COALESCE(SUM(pv.total_liquido), 0) AS valor
+         FROM pedidos_venda pv
+        WHERE pv.cliente_id = $1 AND pv.situacao <> 'cancelado'
+        GROUP BY 1`,
+      [id]
+    );
     const porCanal = {};
-    for (const p of validos) {
-      const canal = p.viagem_nome ? 'Viagem' : (p.canal_venda || 'Sem canal');
-      if (!porCanal[canal]) porCanal[canal] = { canal, pedidos: 0, valor: 0 };
-      porCanal[canal].pedidos += 1;
-      porCanal[canal].valor += Number(p.total_liquido || 0);
+    for (const r of canalRows) {
+      porCanal[r.canal] = { canal: r.canal, pedidos: Number(r.pedidos), valor: Number(r.valor) };
     }
 
     res.json({
       pedidos,
       resumo: {
-        totalPedidos: validos.length,
+        totalPedidos,
         totalComprado,
         // soma ÷ quantidade, e nulo quando não há pedido — não zero, que
         // seria indistinguível de "comprou e deu zero".
-        ticketMedio: validos.length > 0 ? totalComprado / validos.length : null,
+        ticketMedio: totalPedidos > 0 ? totalComprado / totalPedidos : null,
         pecas,
-        primeiraCompra: validos.length > 0 ? validos[validos.length - 1].data_pedido : null,
-        ultimaCompra: validos.length > 0 ? validos[0].data_pedido : null,
-        canceladosQuantidade: cancelados.length,
+        primeiraCompra: agregado.primeira_compra,
+        ultimaCompra: agregado.ultima_compra,
+        canceladosQuantidade,
+        // `cortado` continua dizendo que a LISTA abaixo foi cortada em 200 —
+        // os números deste resumo já são do histórico inteiro.
         cortado: pedidos.length >= 200,
       },
       maisComprados: itens.map((i) => ({

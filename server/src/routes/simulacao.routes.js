@@ -32,6 +32,7 @@ router.post('/', async (req, res, next) => {
       materiais,
       custosIndustriais,
       custoIndiretoPorPeca: ctx.custoIndiretoPorPeca,
+      motivoSemCustoIndireto: ctx.motivoSemCustoIndireto,
       pctImpostos: pctImpostosEmpresa(produtoRow),
       pctTaxas: ctx.pctTaxas,
       valorFixoTaxas: ctx.valorFixoTaxas,
@@ -61,7 +62,15 @@ router.post('/', async (req, res, next) => {
       pctTaxas: pctTaxasSimulado,
       valorFixoTaxas: base.custoTotal.valorFixoTaxas,
       config: ctx.config,
-      precoInformado: null,
+      // As duas colunas partem da MESMA base de preço (14/09/2026). O
+      // simulado forçava `precoInformado: null`, então a coluna "atual" media
+      // o preço praticado e a "simulada" o preço sugerido: com o formulário
+      // todo em zero um produto de preço praticado R$ 45,00 e sugerido
+      // R$ 49,99 mostrava 44,45%/"ATENÇÃO" contra 50,00%/"MARGEM SAUDÁVEL" —
+      // R$ 4,99 de diferença vindos de lugar nenhum, enquanto o próprio
+      // banner dizia "Diferença vs. preço sugerido base: R$ 0,00". Só os
+      // ajustes simulados podem separar as colunas.
+      precoInformado: produtoRow.preco_informado,
       margemDesejada: margemSimulada,
     });
 
@@ -78,6 +87,7 @@ router.post('/', async (req, res, next) => {
       },
       ajustes,
       atual: {
+        motivoSemPreco: base.formacaoPreco.motivoSemPreco,
         subtotalProducao: base.custoTotal.subtotalProducao,
         custoTotalPeca: base.custoTotal.custoTotalPeca,
         precoSugerido: base.formacaoPreco.precoSugerido,
@@ -94,8 +104,15 @@ router.post('/', async (req, res, next) => {
         lucroRS: precoSim.lucroRS,
         lucroPct: precoSim.lucroPct,
         status: precoSim.status,
-        diferencaRS: precoSim.precoSugerido - base.formacaoPreco.precoSugerido,
-        diferencaPct: base.formacaoPreco.precoSugerido === 0 ? 0 : precoSim.precoSugerido / base.formacaoPreco.precoSugerido - 1,
+        motivoSemPreco: precoSim.motivoSemPreco,
+        // Sem um dos dois preços não há diferença a mostrar — nem R$ 0,00,
+        // que seria ler "igual" onde na verdade é "não sei" (REGRA 2).
+        diferencaRS: precoSim.precoSugerido === null || base.formacaoPreco.precoSugerido === null
+          ? null
+          : precoSim.precoSugerido - base.formacaoPreco.precoSugerido,
+        diferencaPct: !(base.formacaoPreco.precoSugerido > 0) || precoSim.precoSugerido === null
+          ? null
+          : precoSim.precoSugerido / base.formacaoPreco.precoSugerido - 1,
       },
     });
   } catch (err) {

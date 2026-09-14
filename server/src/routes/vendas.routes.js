@@ -711,7 +711,16 @@ function comissaoDoPedido(pedido) {
     // Pedido no prejuízo não gera comissão negativa — gera comissão zero.
     return { valor: base > 0 ? base * taxa : 0, avaliavel: true, motivo: base > 0 ? null : 'Pedido sem lucro no período', base };
   }
-  return { valor: (Number(pedido.receita) || 0) * taxa, avaliavel: true, motivo: null, base: pedido.receita };
+  // Comissão sobre a MERCADORIA vendida. `pedido.receita`, em venda direta, é
+  // o `total_liquido` — que traz frete e acréscimo dentro: mercadoria R$ 1.000
+  // + R$ 180 de frete + R$ 20 de acréscimo a 5% pagava R$ 60,00 em vez de
+  // R$ 50,00, e o mesmo número inflado alimentava o "% da meta" do vendedor.
+  // A base é a mesma receita de mercadoria que a Lucratividade usa (soma dos
+  // itens vendidos), e não uma segunda conta escrita aqui.
+  const mercadoria = Array.isArray(pedido.itens)
+    ? pedido.itens.reduce((s, it) => s + (Number(it.totalItem) || 0), 0)
+    : Number(pedido.receita) || 0;
+  return { valor: mercadoria * taxa, avaliavel: true, motivo: null, base: mercadoria };
 }
 
 router.get('/lucratividade', async (req, res, next) => {

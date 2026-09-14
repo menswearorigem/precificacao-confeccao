@@ -5,3 +5,6 @@ dist/
 build/
 *.log
 .DS_Store
+
+# Scripts de reprodução da varredura de 14/09/2026 — não fazem parte do sistema.
+repro/

@@ -169,8 +169,19 @@ function faixasEfetivas({ comissaoFaixas, freteFaixas, pesoKg, usaFreteSubsidiad
  *  - margemDesejada     margem alvo (fração)
  *  - faixas             saída de faixasEfetivas().faixas
  *  - config             config do motor (calcularPrecificacao exige)
+ *  - pctTaxasFinanceiras  taxas de venda que NÃO são comissão de marketplace
+ *                         (ctx.pctTaxas do motor: cartão, antecipação, PIX,
+ *                         boleto, gateway, comissão de vendedor)
  */
-function precoConsistente({ subtotalProducao, pctImpostos, margemDesejada, faixas, config }) {
+// `pctTaxasFinanceiras` (14/09/2026): esta função só passava ao motor a
+// comissão da faixa e descartava as demais taxas de venda que a Ficha já
+// desconta. Com antecipação de 4% ativa o preço consistente saía R$ 83,32 no
+// lugar de R$ 96,14 (13,3% barato demais) e o `margemReal` devolvido ficava
+// ~4 pontos acima da margem que sobra de fato. A comissão do canal SUBSTITUI
+// a comissão de marketplace, mas taxa de cartão/antecipação continua valendo
+// em qualquer canal — as duas se somam.
+function precoConsistente({ subtotalProducao, pctImpostos, margemDesejada, faixas, config, pctTaxasFinanceiras }) {
+  const pctFin = Number(pctTaxasFinanceiras) || 0;
   const custo = Number(subtotalProducao);
   if (!temNumero(subtotalProducao) || custo <= 0) {
     return { ok: false, motivo: 'esta referência não tem custo de produção calculado, então não há preço a formar' };
@@ -183,7 +194,7 @@ function precoConsistente({ subtotalProducao, pctImpostos, margemDesejada, faixa
   const impossiveis = [];
 
   for (const f of faixas) {
-    const divisorReal = 1 - Number(pctImpostos) - f.pct - Number(margemDesejada);
+    const divisorReal = 1 - Number(pctImpostos) - pctFin - f.pct - Number(margemDesejada);
     if (divisorReal <= 0.01) {
       // O motor protege dividindo por 0,01, o que devolveria um preço
       // absurdo com cara de número. Aqui a faixa é descartada com o motivo:
@@ -191,7 +202,7 @@ function precoConsistente({ subtotalProducao, pctImpostos, margemDesejada, faixa
       // 100% do preço de venda.
       impossiveis.push({
         faixa: f,
-        motivo: `imposto (${(pctImpostos * 100).toFixed(1)}%) + comissão (${(f.pct * 100).toFixed(1)}%) + margem (${(margemDesejada * 100).toFixed(1)}%) somam ${((Number(pctImpostos) + f.pct + Number(margemDesejada)) * 100).toFixed(1)}% do preço. Não sobra espaço para o custo da peça.`,
+        motivo: `imposto (${(pctImpostos * 100).toFixed(1)}%) + comissão (${(f.pct * 100).toFixed(1)}%) + taxas de venda (${(pctFin * 100).toFixed(1)}%) + margem (${(margemDesejada * 100).toFixed(1)}%) somam ${((Number(pctImpostos) + pctFin + f.pct + Number(margemDesejada)) * 100).toFixed(1)}% do preço. Não sobra espaço para o custo da peça.`,
       });
       continue;
     }
@@ -200,7 +211,7 @@ function precoConsistente({ subtotalProducao, pctImpostos, margemDesejada, faixa
     const r = calcularPrecificacao({
       subtotalProducao: custo,
       pctImpostos,
-      pctTaxas: f.pct,
+      pctTaxas: pctFin + f.pct,
       valorFixoTaxas: f.fixo,
       config,
       precoInformado: null,
@@ -214,7 +225,7 @@ function precoConsistente({ subtotalProducao, pctImpostos, margemDesejada, faixa
   const consistentes = candidatos.filter((c) => c.dentro);
 
   if (consistentes.length === 1) {
-    return { ok: true, ...montar(consistentes[0], margemDesejada, pctImpostos), unico: true, impossiveis };
+    return { ok: true, ...montar(consistentes[0], margemDesejada, pctImpostos, pctFin), unico: true, impossiveis };
   }
 
   if (consistentes.length > 1) {
@@ -224,7 +235,7 @@ function precoConsistente({ subtotalProducao, pctImpostos, margemDesejada, faixa
     const escolhido = consistentes.reduce((a, b) => (b.preco < a.preco ? b : a));
     return {
       ok: true,
-      ...montar(escolhido, margemDesejada, pctImpostos),
+      ...montar(escolhido, margemDesejada, pctImpostos, pctFin),
       unico: false,
       aviso: `A tabela deste canal tem faixas que se sobrepõem: ${consistentes.length} preços diferentes atendem a margem. Foi escolhido o menor. Vale conferir as faixas em Configurações → Taxas de Marketplace.`,
       alternativas: consistentes.filter((c) => c !== escolhido).map((c) => ({ preco: c.preco, faixa: `R$ ${c.faixa.min} a ${c.faixa.max === Infinity ? '∞' : c.faixa.max}` })),
@@ -256,7 +267,7 @@ function precoConsistente({ subtotalProducao, pctImpostos, margemDesejada, faixa
     const maisBarato = candidatos.reduce((a, b) => (b.preco < a.preco ? b : a));
     return {
       ok: true,
-      ...montar(maisBarato, margemDesejada, pctImpostos),
+      ...montar(maisBarato, margemDesejada, pctImpostos, pctFin),
       unico: false,
       aviso: 'Nenhum preço caiu exatamente dentro da própria faixa da tabela. O preço mostrado é o mais barato dos calculados — confira as faixas cadastradas para este canal.',
       impossiveis,
@@ -268,7 +279,7 @@ function precoConsistente({ subtotalProducao, pctImpostos, margemDesejada, faixa
   const faixaDeCima = candidatos.find((c) => precoBorda >= c.faixa.min && (c.faixa.max === Infinity || precoBorda <= c.faixa.max));
   const usada = faixaDeCima ? faixaDeCima.faixa : borda.faixa;
   const margemNaBorda = margemRealNoPreco({
-    preco: precoBorda, subtotalProducao: custo, pctImpostos, faixa: usada,
+    preco: precoBorda, subtotalProducao: custo, pctImpostos, faixa: usada, pctTaxasFinanceiras: pctFin,
   });
 
   return {
@@ -287,14 +298,14 @@ function precoConsistente({ subtotalProducao, pctImpostos, margemDesejada, faixa
   };
 }
 
-function montar(c, margemDesejada, pctImpostos) {
+function montar(c, margemDesejada, pctImpostos, pctTaxasFinanceiras) {
   return {
     preco: c.preco,
     faixa: c.faixa,
     margemDesejada,
     margemReal: margemRealNoPreco({
       preco: c.preco, subtotalProducao: c.calculo ? c.calculo.custoTotalPeca - c.calculo.impostosRS - c.calculo.taxasRS : null,
-      pctImpostos, faixa: c.faixa,
+      pctImpostos, faixa: c.faixa, pctTaxasFinanceiras,
     }),
     calculo: c.calculo,
   };
@@ -303,11 +314,15 @@ function montar(c, margemDesejada, pctImpostos) {
 // A margem que de fato sobra num preço dado, com a taxa daquela faixa. É a
 // conferência: se este número não bater com a margem desejada, o preço está
 // errado — e é exatamente o que acontece quando se usa "comissão média".
-function margemRealNoPreco({ preco, subtotalProducao, pctImpostos, faixa }) {
+function margemRealNoPreco({ preco, subtotalProducao, pctImpostos, faixa, pctTaxasFinanceiras }) {
   const p = Number(preco);
   const custo = Number(subtotalProducao);
   if (!Number.isFinite(p) || p <= 0 || !Number.isFinite(custo)) return null;
-  const lucro = p * (1 - Number(pctImpostos) - faixa.pct) - faixa.fixo - custo;
+  // As taxas financeiras (cartão/antecipação/PIX) saem do preço em qualquer
+  // canal, junto da comissão da faixa — sem elas a margem "real" devolvida
+  // ficava ~4 pontos acima da que sobra de verdade.
+  const pctFin = Number(pctTaxasFinanceiras) || 0;
+  const lucro = p * (1 - Number(pctImpostos) - pctFin - faixa.pct) - faixa.fixo - custo;
   return lucro / p;
 }
 

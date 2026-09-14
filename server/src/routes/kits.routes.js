@@ -7,12 +7,54 @@ const router = express.Router();
 
 const CATEGORIAS_KIT_AUTOMATICO = ['Camiseta Dryfit', 'Camiseta Polo', 'Bermuda'];
 
-function calcularKit({ custoUnitario, precoUnitSugerido, pecas, descontoPct }) {
-  const custoTotalKit = custoUnitario * pecas;
-  const somaPrecosAvulsos = precoUnitSugerido * pecas;
-  const precoSugeridoKit = somaPrecosAvulsos * (1 - descontoPct);
-  const margemEstimada = precoSugeridoKit === 0 ? 0 : (precoSugeridoKit - custoTotalKit) / precoSugeridoKit;
+// Imposto e taxa de venda sobre o PREÇO DO KIT (14/09/2026).
+//
+// `custoTotalPeca` do motor já embute imposto e taxa calculados sobre o preço
+// AVULSO. Multiplicar isso por N e comparar com o preço do kit — que é 8%
+// menor — misturava duas bases: a margem do kit de 2 peças saía 45,65% contra
+// 46,44% reais. Quem vende mais barato paga menos imposto e menos comissão.
+//
+// Escolhemos RECALCULAR imposto e taxa sobre o preço do kit (em vez de tirar
+// os dois do numerador) porque assim `custoTotalKit` continua sendo o custo
+// cheio que a tela já mostra, e a margem passa a ser exatamente a fórmula da
+// Ficha — preço × (1 − imposto − taxas) − taxa fixa − custo de produção —
+// aplicada ao preço do kit. A taxa fixa segue por peça, como no avulso.
+function custoEMargemDoKit({ subtotalProducaoUnit, precoKit, quantidade, pctImpostos, pctTaxas, valorFixoTaxas }) {
+  if (precoKit === null || subtotalProducaoUnit === null) {
+    return { custoTotalKit: null, margemEstimada: null };
+  }
+  const custoTotalKit = subtotalProducaoUnit * quantidade
+    + pctImpostos * precoKit + pctTaxas * precoKit + valorFixoTaxas * quantidade;
+  const margemEstimada = precoKit > 0 ? (precoKit - custoTotalKit) / precoKit : null;
+  return { custoTotalKit, margemEstimada };
+}
+
+function calcularKit({ base, precoUnitSugerido, pecas, descontoPct }) {
+  const somaPrecosAvulsos = precoUnitSugerido === null ? null : precoUnitSugerido * pecas;
+  const precoSugeridoKit = somaPrecosAvulsos === null ? null : somaPrecosAvulsos * (1 - descontoPct);
+  const { custoTotalKit, margemEstimada } = custoEMargemDoKit({
+    subtotalProducaoUnit: base.subtotalProducao,
+    precoKit: precoSugeridoKit,
+    quantidade: pecas,
+    pctImpostos: base.pctImpostos,
+    pctTaxas: base.pctTaxas,
+    valorFixoTaxas: base.valorFixoTaxas,
+  });
   return { pecas, custoTotalKit, somaPrecosAvulsos, pctDesconto: descontoPct, precoSugeridoKit, margemEstimada };
+}
+
+// O que o motor devolve e que a conta do kit precisa: custo de PRODUÇÃO (sem
+// imposto/taxa) e as alíquotas, para recalculá-los no preço do kit.
+function baseDoProduto(calculo) {
+  const c = calculo.custoTotal;
+  return {
+    subtotalProducao: c.subtotalProducao === null || c.subtotalProducao === undefined
+      ? null
+      : Number(c.subtotalProducao),
+    pctImpostos: Number(c.pctImpostos) || 0,
+    pctTaxas: Number(c.pctTaxas) || 0,
+    valorFixoTaxas: Number(c.valorFixoTaxas) || 0,
+  };
 }
 
 // ---------- kits automáticos ----------
@@ -20,8 +62,11 @@ function calcularKit({ custoUnitario, precoUnitSugerido, pecas, descontoPct }) {
 router.get('/automaticos', async (req, res, next) => {
   try {
     const { rows: produtos } = await pool.query(
+      // usa_aliquota_media/aliquota_media_pct: mesmo SELECT incompleto de
+      // produtos.routes (14/09/2026) — sem elas o kit da empresa de alíquota
+      // média era montado com imposto zero.
       `SELECT p.*, e.nome AS empresa_nome, e.regime_tributario, e.icms, e.pis, e.cofins, e.ipi,
-              e.iss, e.simples_aliquota, e.outros_impostos
+              e.iss, e.simples_aliquota, e.outros_impostos, e.usa_aliquota_media, e.aliquota_media_pct
        FROM produtos p LEFT JOIN empresas e ON e.id = p.empresa_id
        WHERE p.categoria = ANY($1)
        ORDER BY p.referencia`,
@@ -40,9 +85,10 @@ router.get('/automaticos', async (req, res, next) => {
       const calculo = produtosRoutes.buildCalculo(p, materiais, custosIndustriais, ctx);
       const custoUnitario = calculo.custoTotal.custoTotalPeca;
       const precoUnitSugerido = calculo.formacaoPreco.precoSugerido;
+      const base = baseDoProduto(calculo);
       const kits = [];
       for (let pecas = 2; pecas <= 8; pecas += 1) {
-        kits.push(calcularKit({ custoUnitario, precoUnitSugerido, pecas, descontoPct: Number(ctx.config.desconto_kit_pct) }));
+        kits.push(calcularKit({ base, precoUnitSugerido, pecas, descontoPct: Number(ctx.config.desconto_kit_pct) }));
       }
       return {
         produtoId: p.id,
@@ -71,9 +117,10 @@ async function calcularKitManual(client, kit, ctx) {
     [kit.id]
   );
 
-  let custoTotalKit = 0;
   let somaPrecosAvulsos = 0;
+  let algumSemPreco = false;
   const itensDetalhados = [];
+  const basesDosItens = [];
   for (const item of itens) {
     const produtoRow = await produtosRoutes.fetchProdutoRow(client, item.produto_id);
     const materiais = await produtosRoutes.fetchMateriais(client, item.produto_id);
@@ -81,8 +128,10 @@ async function calcularKitManual(client, kit, ctx) {
     const calculo = produtosRoutes.buildCalculo(produtoRow, materiais, custosIndustriais, ctx);
     const custoUnitario = calculo.custoTotal.custoTotalPeca;
     const precoUnitSugerido = calculo.formacaoPreco.precoSugerido;
-    custoTotalKit += custoUnitario * item.quantidade;
-    somaPrecosAvulsos += precoUnitSugerido * item.quantidade;
+    const base = baseDoProduto(calculo);
+    if (precoUnitSugerido === null || base.subtotalProducao === null) algumSemPreco = true;
+    else somaPrecosAvulsos += precoUnitSugerido * item.quantidade;
+    basesDosItens.push({ base, item, precoUnitSugerido });
     itensDetalhados.push({
       id: item.id,
       produtoId: item.produto_id,
@@ -97,8 +146,25 @@ async function calcularKitManual(client, kit, ctx) {
   const descontoPct = kit.desconto_pct_override !== null && kit.desconto_pct_override !== undefined
     ? Number(kit.desconto_pct_override)
     : Number(ctx.config.desconto_kit_pct);
-  const precoSugeridoKit = somaPrecosAvulsos * (1 - descontoPct);
-  const margemEstimada = precoSugeridoKit === 0 ? 0 : (precoSugeridoKit - custoTotalKit) / precoSugeridoKit;
+  const precoSugeridoKit = algumSemPreco ? null : somaPrecosAvulsos * (1 - descontoPct);
+
+  // Mesma correção do kit automático, item a item: o desconto do kit é
+  // uniforme, então a parcela do preço do kit que cabe a cada referência é o
+  // preço avulso dela já descontado — e é sobre ESSA parcela que o imposto e
+  // a taxa daquela empresa incidem, não sobre o preço avulso cheio. Com uma
+  // só referência a conta cai exatamente na fórmula da Ficha.
+  let custoTotalKit = precoSugeridoKit === null ? null : 0;
+  if (precoSugeridoKit !== null) {
+    for (const { base, item, precoUnitSugerido } of basesDosItens) {
+      const parcelaDoKit = precoUnitSugerido * item.quantidade * (1 - descontoPct);
+      custoTotalKit += base.subtotalProducao * item.quantidade
+        + base.pctImpostos * parcelaDoKit + base.pctTaxas * parcelaDoKit
+        + base.valorFixoTaxas * item.quantidade;
+    }
+  }
+  const margemEstimada = precoSugeridoKit !== null && precoSugeridoKit > 0
+    ? (precoSugeridoKit - custoTotalKit) / precoSugeridoKit
+    : null;
 
   return {
     id: kit.id,

@@ -23,11 +23,23 @@ async function getCalcContext() {
   const config = cfgRows[0];
   const totalIndiretoMensal = Number(indiretosRows[0]?.total || 0);
   const producaoMensal = Number(config.producao_mensal_pecas || 0);
-  const custoIndiretoPorPeca = producaoMensal === 0 ? 0 : totalIndiretoMensal / producaoMensal;
+  // Produção mensal em branco com despesa fixa cadastrada (14/09/2026):
+  // antes o rateio virava R$ 0,00 e R$ 10.000/mês de custo indireto sumiam
+  // da peça em silêncio (preço caía de R$ 60,97 para R$ 48,77). Divisor
+  // ausente é "não dá para ratear", não "não tem custo" (REGRA 2): volta
+  // null com o motivo. Sem NENHUMA despesa cadastrada continua sendo zero
+  // de verdade — não há o que ratear, e aí não é ausência.
+  const semRateio = producaoMensal <= 0 && totalIndiretoMensal > 0;
+  const custoIndiretoPorPeca = semRateio
+    ? null
+    : (producaoMensal <= 0 ? 0 : totalIndiretoMensal / producaoMensal);
+  const motivoSemCustoIndireto = semRateio
+    ? `há R$ ${totalIndiretoMensal.toFixed(2)} por mês de custo indireto cadastrado, mas a produção mensal em peças está em branco: não dá para ratear o custo indireto por peça`
+    : null;
   const pctTaxas = Number(taxasRows[0]?.total_pct || 0);
   const valorFixoTaxas = Number(taxasRows[0]?.total_fixo || 0);
 
-  return { config, custoIndiretoPorPeca, pctTaxas, valorFixoTaxas };
+  return { config, custoIndiretoPorPeca, motivoSemCustoIndireto, pctTaxas, valorFixoTaxas };
 }
 
 async function getEmpresa(empresaId) {

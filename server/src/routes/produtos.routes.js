@@ -21,6 +21,7 @@ router.post('/calcular', async (req, res, next) => {
       materiais: body.materiais || [],
       custosIndustriais: body.custosIndustriais || [],
       custoIndiretoPorPeca: ctx.custoIndiretoPorPeca,
+      motivoSemCustoIndireto: ctx.motivoSemCustoIndireto,
       pctImpostos,
       pctTaxas: ctx.pctTaxas,
       valorFixoTaxas: ctx.valorFixoTaxas,
@@ -33,10 +34,18 @@ router.post('/calcular', async (req, res, next) => {
   }
 });
 
+// `usa_aliquota_media`/`aliquota_media_pct` entram neste SELECT (14/09/2026)
+// porque é o que `pctImpostosEmpresa` (calc.js) lê ANTES de tudo. Sem as duas
+// colunas a empresa de alíquota média chegava ao motor sem nenhum campo
+// fiscal preenchido e era precificada com imposto ZERO: com alíquota média de
+// 14,50% e ficha de R$ 24,9965 o preço sugerido saía R$ 40,43 em vez de
+// R$ 58,46. A prova de que era esquecimento, e não decisão, é que a MESMA
+// tela, ao vivo, chama POST /calcular, que usa `getEmpresa()` com SELECT * e
+// devolve o número certo — salvar o produto trocava o imposto por 0%.
 async function fetchProdutoRow(client, id) {
   const { rows } = await client.query(
     `SELECT p.*, e.nome AS empresa_nome, e.regime_tributario, e.icms, e.pis, e.cofins, e.ipi,
-            e.iss, e.simples_aliquota, e.outros_impostos
+            e.iss, e.simples_aliquota, e.outros_impostos, e.usa_aliquota_media, e.aliquota_media_pct
      FROM produtos p LEFT JOIN empresas e ON e.id = p.empresa_id
      WHERE p.id = $1`,
     [id]
@@ -66,6 +75,7 @@ function buildCalculo(produtoRow, materiais, custosIndustriais, ctx) {
     materiais,
     custosIndustriais,
     custoIndiretoPorPeca: ctx.custoIndiretoPorPeca,
+    motivoSemCustoIndireto: ctx.motivoSemCustoIndireto,
     pctImpostos,
     pctTaxas: ctx.pctTaxas,
     valorFixoTaxas: ctx.valorFixoTaxas,
@@ -103,8 +113,11 @@ router.get('/', async (req, res, next) => {
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const { rows: produtos } = await pool.query(
+      // Mesmas duas colunas de alíquota média de `fetchProdutoRow` — sem elas
+      // a LISTA mostrava lucro e status calculados com imposto zero, brigando
+      // com a ficha aberta da mesma referência.
       `SELECT p.*, e.nome AS empresa_nome, e.regime_tributario, e.icms, e.pis, e.cofins, e.ipi,
-              e.iss, e.simples_aliquota, e.outros_impostos
+              e.iss, e.simples_aliquota, e.outros_impostos, e.usa_aliquota_media, e.aliquota_media_pct
        FROM produtos p LEFT JOIN empresas e ON e.id = p.empresa_id
        ${where}
        ORDER BY p.referencia`,

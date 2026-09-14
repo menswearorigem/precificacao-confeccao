@@ -5,6 +5,7 @@ const multer = require('multer');
 const pool = require('../db/pool');
 const ponte = require('../lib/financeiroPonte');
 const { registrarMovimento } = require('../lib/estoqueMovimento');
+const estoqueReserva = require('../lib/estoqueReserva');
 const { getCalcContext } = require('../lib/calcContext');
 const { pctImpostosEmpresa } = require('../lib/calc');
 const { calcularTaxaEsperadaPedido } = require('../lib/marketplaceTaxaCalc');
@@ -64,6 +65,14 @@ const HEADER_FIELDS = [
   'valor_frete',
   'observacao',
 ];
+
+// Campos numéricos NOT NULL do cabeçalho. Esvaziar "Frete cobrado" na tela
+// manda string vazia, que virava NULL e o UPDATE inteiro estourava em HTTP 500
+// — junto com todas as outras alterações da mesma gravação, que se perdiam.
+// Limpar um desses campos quer dizer ZERO (nenhum frete, nenhum desconto), não
+// "não sei": é o único lugar em que vazio é um número, e por isso a lista é
+// nominal em vez de valer para todo campo do cabeçalho.
+const HEADER_NUMERICOS_ZERO = ['desconto_pct', 'desconto_valor', 'acrescimo', 'valor_frete'];
 
 async function precoSugeridoDoProduto(produtoId, ctx) {
   try {
@@ -834,9 +843,13 @@ async function mapaCustoPorProduto(produtoIds, ctx) {
       mapa.set(id, {
         custoPeca: Number(calculo.custoTotal.subtotalProducao) || 0,
         imposto: Number(calculo.custoTotal.impostosRS) || 0,
+        // Alíquota de imposto do produto — guardada aqui para o relatório
+        // aplicá-la sobre o valor VENDIDO do item, e não sobre o preço de
+        // tabela embutido em `impostosRS`. Ver `impostoEstimado` mais abaixo.
+        pctImpostos: Number(calculo.custoTotal.pctImpostos) || 0,
       });
     } catch {
-      mapa.set(id, { custoPeca: 0, imposto: 0 });
+      mapa.set(id, { custoPeca: 0, imposto: 0, pctImpostos: 0 });
     }
   }
   return mapa;
@@ -857,6 +870,8 @@ async function mapaCustoPorKit(kitIds, ctx) {
       const { rows: itensKit } = await pool.query('SELECT produto_id, quantidade FROM kits_manuais_itens WHERE kit_id = $1', [kitId]);
       let custoPeca = 0;
       let imposto = 0;
+      let pctPonderado = 0;
+      let pecasNoKit = 0;
       for (const item of itensKit) {
         const produtoRow = await produtosRoutes.fetchProdutoRow(pool, item.produto_id);
         const materiais = await produtosRoutes.fetchMateriais(pool, item.produto_id);
@@ -864,10 +879,15 @@ async function mapaCustoPorKit(kitIds, ctx) {
         const calculo = produtosRoutes.buildCalculo(produtoRow, materiais, custosIndustriais, ctx);
         custoPeca += (Number(calculo.custoTotal.subtotalProducao) || 0) * item.quantidade;
         imposto += (Number(calculo.custoTotal.impostosRS) || 0) * item.quantidade;
+        // A alíquota é do regime da empresa do produto; dentro de um kit ela
+        // é a mesma em todas as peças no caso normal, e a média ponderada por
+        // peça devolve exatamente esse valor quando elas coincidem.
+        pctPonderado += (Number(calculo.custoTotal.pctImpostos) || 0) * item.quantidade;
+        pecasNoKit += Number(item.quantidade);
       }
-      mapa.set(kitId, { custoPeca, imposto });
+      mapa.set(kitId, { custoPeca, imposto, pctImpostos: pecasNoKit > 0 ? pctPonderado / pecasNoKit : 0 });
     } catch {
-      mapa.set(kitId, { custoPeca: 0, imposto: 0 });
+      mapa.set(kitId, { custoPeca: 0, imposto: 0, pctImpostos: 0 });
     }
   }
   return mapa;
@@ -967,10 +987,21 @@ async function calcularRelatorioPedidos({
   const custoPorUnidadeAds = new Map();
   let custoAdsNaoAtribuido = 0;
   if (integracaoIdsAds.length > 0) {
+    // O Ads é consultado pela JANELA DO PERÍODO pedido, não pelas datas em que
+    // houve pedido. Enquanto as datas vinham dos pedidos, o gasto de um dia
+    // sem venda simplesmente não era lido: com R$ 100 de Ads no período (R$ 10
+    // no dia que vendeu, R$ 90 no dia que não vendeu) a tela mostrava R$ 10,00,
+    // TACOS 10% e lucro R$ 48,00 — o real é R$ 100,00, TACOS 100% e prejuízo de
+    // R$ 42,00. Esse dia não tem pedido para ratear, então o gasto entra como
+    // NÃO ATRIBUÍDO (custoAdsTotal), sem ser distribuído em pedido nenhum, que
+    // é o que o comentário do custoAdsTotal já prometia bater com o extrato do
+    // ML. Sem período informado não há janela: aí valem as datas dos pedidos.
+    const temJanela = Boolean(data_inicio && data_fim);
     const { rows: adsRows } = await pool.query(
       `SELECT origem_integracao_id, anuncio_id_marketplace, data, custo FROM ads_metricas_diarias
-       WHERE origem_integracao_id = ANY($1) AND data = ANY($2::date[]) AND custo > 0`,
-      [integracaoIdsAds, datasAds]
+       WHERE origem_integracao_id = ANY($1) AND custo > 0
+         AND ${temJanela ? 'data >= $2::date AND data <= $3::date' : 'data = ANY($2::date[])'}`,
+      temJanela ? [integracaoIdsAds, data_inicio, data_fim] : [integracaoIdsAds, datasAds]
     );
     for (const r of adsRows) {
       const chave = `${r.origem_integracao_id}:${r.anuncio_id_marketplace}:${r.data.toISOString().slice(0, 10)}`;
@@ -1082,7 +1113,14 @@ async function calcularRelatorioPedidos({
       const idsMembros = new Set(p._membros.map((m) => m.id));
       const itensDoPedido = itens.filter((it) => idsMembros.has(it.pedido_id));
       const custoPeca = itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * (custoDoItem(it)?.custoPeca || 0), 0);
-      const impostoEstimado = itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * (custoDoItem(it)?.imposto || 0), 0);
+      // Imposto do modo ESTIMATIVA sobre o valor efetivamente VENDIDO do item
+      // (it.total, que já é quantidade × unitário menos o desconto da linha).
+      // Antes era `quantidade × impostosRS`, e `impostosRS` é a alíquota sobre
+      // o preço de TABELA do cadastro: com tabela R$ 50 e venda a R$ 30 × 10,
+      // o imposto saía R$ 50,00 em vez de R$ 30,00 — e a R$ 90 saía os mesmos
+      // R$ 50,00 em vez de R$ 90,00. Errava para os dois lados. A alíquota vem
+      // do próprio cálculo do produto, para não reescrever a regra de tributo.
+      const impostoEstimado = itensDoPedido.reduce((s, it) => s + Number(it.total) * (custoDoItem(it)?.pctImpostos || 0), 0);
       const semCusto = itensDoPedido.some((it) => (it.kit_id ? !mapaCustoKit.has(it.kit_id) : !it.produto_id || !mapaCusto.has(it.produto_id)));
       const taxaMarketplace = Number(p.taxa_marketplace) || 0;
       const frete = Number(p.valor_frete) || 0;
@@ -1160,6 +1198,11 @@ async function calcularRelatorioPedidos({
         // (compra em pacote) — usado no front pra mostrar o selo "pacote" e
         // não confundir com um pedido comum de item único.
         pacote: p._membros.length > 1,
+        // Ids das suborders que este card representa. Quem precisar reler os
+        // itens do pacote no banco tem de ler os de TODOS os membros — ler só
+        // os da suborder primária e comparar com o valor do pacote inteiro é
+        // o que quebrava sinalizarCandidatosDescontoNaoCapturado.
+        membrosIds: p._membros.map((m) => m.id),
         data_pedido: p.data_pedido,
         cliente_nome: p.cliente_nome,
         clienteId: p.cliente_id,
@@ -1335,6 +1378,14 @@ async function sinalizarCandidatosDescontoNaoCapturado(resultado) {
   const pedidosComTaxa = resultado.filter((p) => p.canal_venda === 'Mercado Livre' && p.taxaMarketplace > 0);
   if (pedidosComTaxa.length === 0) return;
   const ids = pedidosComTaxa.map((p) => p.id);
+  // Numerador e denominador têm de estar na MESMA base. Os itens eram lidos só
+  // da suborder primária (`p.id`) e comparados com `p.receita`, que já é a do
+  // PACOTE inteiro: num pacote de 3 × R$ 100 com 19% cobrados por suborder, o
+  // pctEsperado saía 6,33% contra 19,00% de cobrado e TODO pacote do Mercado
+  // Livre virava "candidato a desconto não capturado". Somando os itens de
+  // todos os membros do pacote, o mesmo caso volta a dar 19,00% e zero
+  // candidatos — o selo passa a sinalizar só divergência de verdade.
+  const idsDeItens = [...new Set(pedidosComTaxa.flatMap((p) => (p.membrosIds?.length ? p.membrosIds : [p.id])))];
   const { rows: pedidosRows } = await pool.query(
     `SELECT pv.id, pv.origem_marketplace, pv.forma_pagamento_marketplace, COALESCE(im.usa_frete_subsidiado, TRUE) AS usa_frete_subsidiado
        FROM pedidos_venda pv LEFT JOIN integracoes_marketplace im ON im.id = pv.origem_integracao_id
@@ -1343,13 +1394,14 @@ async function sinalizarCandidatosDescontoNaoCapturado(resultado) {
   );
   const { rows: itensRows } = await pool.query(
     `SELECT pi.*, p.peso_kg FROM pedido_itens pi LEFT JOIN produtos p ON p.id = pi.produto_id WHERE pi.pedido_id = ANY($1)`,
-    [ids]
+    [idsDeItens]
   );
   const mapaPedidoRow = new Map(pedidosRows.map((p) => [p.id, p]));
   for (const p of pedidosComTaxa) {
     const pedidoRow = mapaPedidoRow.get(p.id);
     if (!pedidoRow) continue;
-    const itensDoPedido = itensRows.filter((it) => it.pedido_id === p.id);
+    const membros = new Set(p.membrosIds?.length ? p.membrosIds : [p.id]);
+    const itensDoPedido = itensRows.filter((it) => membros.has(it.pedido_id));
     const pesoConhecido = itensDoPedido.length > 0 && itensDoPedido.every((it) => it.peso_kg !== null);
     const pesoTotalKg = pesoConhecido ? itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * Number(it.peso_kg), 0) : null;
     const esperado = await calcularTaxaEsperadaPedido({
@@ -1602,14 +1654,18 @@ router.get('/relatorio-lucratividade/dashboard-executivo', async (req, res, next
 
     // empresa_id não é filtro do motor central (ele não recebe esse
     // parâmetro) — filtra aqui em cima do resultado já calculado.
-    const pedidos = empresa_id ? pedidosBrutos.filter((p) => String(p.empresa_id) === String(empresa_id)) : pedidosBrutos;
+    // O motor devolve o campo como `empresaId` (camelCase); filtrar por
+    // `p.empresa_id` comparava com undefined e o painel inteiro zerava —
+    // receita R$ 1.700,00 virava R$ 0,00, 3 pedidos viravam 0 e o ranking
+    // ficava vazio. Numa casa com dois CNPJs, é o filtro que mais importa.
+    const pedidos = empresa_id ? pedidosBrutos.filter((p) => String(p.empresaId) === String(empresa_id)) : pedidosBrutos;
 
     const { data_inicio: dataInicioAnterior, data_fim: dataFimAnterior } = periodoAnterior(data_inicio, data_fim);
     const { resultado: pedidosAnterioresBrutos } = await calcularRelatorioPedidos({
       data_inicio: dataInicioAnterior, data_fim: dataFimAnterior, canal_venda, full: recorteFull,
     });
     const pedidosAnteriores = empresa_id
-      ? pedidosAnterioresBrutos.filter((p) => String(p.empresa_id) === String(empresa_id))
+      ? pedidosAnterioresBrutos.filter((p) => String(p.empresaId) === String(empresa_id))
       : pedidosAnterioresBrutos;
 
     // ---------- totais do período, excluindo custo incompleto ----------
@@ -2058,7 +2114,12 @@ router.get('/relatorio-taxas', async (req, res, next) => {
         ? itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * Number(it.peso_kg), 0)
         : null;
 
-      const receita = Number(p.total_liquido);
+      // Mesma base de receita da Lucratividade (a mercadoria vendida, soma dos
+      // itens) — `total_liquido` traz o frete pago pelo COMPRADOR embutido, e
+      // dividir a taxa por ele diluía o percentual: 1 peça de R$ 100 + R$ 24
+      // de frete com R$ 19 cobrados pelo ML (19% exatos) aparecia como 15,32%,
+      // e a mesma venda mostrava dois percentuais diferentes em duas telas.
+      const receita = itensDoPedido.reduce((s, it) => s + Number(it.total), 0);
       const taxaCobrada = Number(p.taxa_marketplace);
 
       const esperado = await calcularTaxaEsperadaPedido({
@@ -2317,7 +2378,8 @@ router.put('/:id', async (req, res, next) => {
     for (const field of HEADER_FIELDS) {
       if (body[field] !== undefined) {
         updates.push(`${field} = $${i}`);
-        values.push(body[field] === '' ? null : body[field]);
+        const vazio = body[field] === '';
+        values.push(vazio ? (HEADER_NUMERICOS_ZERO.includes(field) ? 0 : null) : body[field]);
         i += 1;
       }
     }
@@ -2397,6 +2459,24 @@ router.post('/:id/itens', async (req, res, next) => {
     if (valorUnitario === undefined || valorUnitario === '') {
       const ctx = await getCalcContext();
       valorUnitario = await precoSugeridoDoProduto(varianteRow.produto_id, ctx);
+
+      // REGRA 2: preço desconhecido não é R$ 0,00. Produto sem ficha faz o
+      // motor devolver 0 (calc.js: subtotal 0 → preço sugerido 0), e o item
+      // era gravado a R$ 0,00 com HTTP 201 e nenhum aviso — 4 peças entravam
+      // no pedido valendo nada. Recusa com a saída escrita, como esta mesma
+      // rota já faz nos outros casos que ela não sabe resolver (EAN que não
+      // existe, variante inexistente); é o irmão do `semPreco` que o
+      // reaplicar-tabela-preco devolve mais abaixo.
+      if (!(Number(valorUnitario) > 0)) {
+        return res.status(400).json({
+          error: `Não há preço para "${varianteRow.referencia || varianteRow.descricao || 'esse produto'}": `
+            + 'a Ficha de Custo dele está vazia, então o motor não tem preço sugerido. '
+            + 'Cadastre os materiais e custos do produto, ou informe o valor unitário no lançamento — '
+            + 'lançar a R$ 0,00 esconderia a venda inteira do relatório.',
+          semPreco: true,
+          referencia: varianteRow.referencia || null,
+        });
+      }
 
       // Tabela de preço do pedido (migration 0062). REGRA 1: o preço de
       // partida acima continua vindo do motor, intocado — a tabela só aplica
@@ -2628,9 +2708,36 @@ router.post('/:id/faturar', async (req, res, next) => {
       return res.status(400).json({ error: 'Adicione ao menos um item antes de faturar o pedido.' });
     }
 
+    // A PEÇA SAI DO ESTOQUE UMA VEZ. Reserva é bloqueio, não saída: faturar
+    // resolve as reservas ativas do pedido (consumir já registra o movimento de
+    // saída, ver lib/estoqueReserva.js) e depois baixa APENAS o que sobrou.
+    // Antes, faturar ignorava a reserva de ponta a ponta: um pedido de 5 peças
+    // sobre 10 ficava com disponível 0 em vez de 5 (a reserva continuava ativa
+    // sobre um saldo que já tinha caído), e quem clicava "Consumir" na tela de
+    // Reserva e depois "Faturar" baixava a mesma venda duas vezes — pedido de 6
+    // sobre saldo 20 terminava em 8 quando o certo é 14.
+    await estoqueReserva.resolverPedido(client, {
+      pedidoId: Number(req.params.id),
+      acao: 'consumir',
+      motivo: `Faturamento do pedido de venda #${pedidoRows[0].numero}`,
+      usuarioId: req.user?.id || null,
+    });
+    const { rows: consumidas } = await client.query(
+      `SELECT variante_id, SUM(quantidade)::numeric AS quantidade
+         FROM estoque_reservas
+        WHERE origem_tipo = 'pedido_venda' AND origem_id = $1 AND situacao = 'consumida'
+        GROUP BY variante_id`,
+      [req.params.id]
+    );
+    const jaSaiuPorVariante = new Map(consumidas.map((r) => [r.variante_id, Number(r.quantidade)]));
     for (const item of itens) {
       if (!item.variante_id) continue;
-      await registrarMovimento(client, item.variante_id, 'saida', -Number(item.quantidade), `Pedido de venda #${pedidoRows[0].numero}`);
+      const jaSaiu = jaSaiuPorVariante.get(item.variante_id) || 0;
+      const abatido = Math.min(jaSaiu, Number(item.quantidade));
+      if (abatido > 0) jaSaiuPorVariante.set(item.variante_id, jaSaiu - abatido);
+      const aBaixar = Number(item.quantidade) - abatido;
+      if (aBaixar <= 0) continue;
+      await registrarMovimento(client, item.variante_id, 'saida', -aBaixar, `Pedido de venda #${pedidoRows[0].numero}`);
     }
 
     await client.query(`UPDATE pedidos_venda SET situacao = 'faturado', faturado_em = now(), updated_at = now() WHERE id = $1`, [req.params.id]);
@@ -2719,6 +2826,16 @@ router.post('/:id/cancelar', async (req, res, next) => {
         await registrarMovimento(client, item.variante_id, 'entrada', Number(item.quantidade), `Estorno do pedido de venda #${pedido.numero} (cancelado)`);
       }
     }
+
+    // Pedido cancelado não segura mais peça nenhuma. A reserva ficava ATIVA
+    // depois do cancelamento, e o saldo continuava bloqueado para uma venda que
+    // não existe mais — peça parada no papel sem ninguém saber por quê.
+    await estoqueReserva.resolverPedido(client, {
+      pedidoId: Number(req.params.id),
+      acao: 'liberar',
+      motivo: `Pedido de venda #${pedido.numero} cancelado`,
+      usuarioId: req.user?.id || null,
+    });
 
     await client.query(`UPDATE pedidos_venda SET situacao = 'cancelado', cancelado_em = now(), updated_at = now() WHERE id = $1`, [req.params.id]);
     await client.query('COMMIT');
