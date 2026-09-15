@@ -54,6 +54,7 @@ export default function RedefinirSenhaPage() {
               onChange={(e) => setSenhaNova(e.target.value)}
               autoComplete="new-password"
               autoFocus
+              hint="Mínimo de 8 caracteres com letra maiúscula, minúscula e um caractere especial (!, @, #, $…). Uma frase de 14 caracteres ou mais também vale."
             />
             <PasswordField
               id="redefinir-senha-confirmar"

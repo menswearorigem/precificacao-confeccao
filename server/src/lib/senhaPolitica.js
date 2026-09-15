@@ -2,14 +2,18 @@
 //
 // O nome de acesso é o primeiro nome da pessoa (decisão do dono do projeto, e
 // ela continua assim). Isso significa que a senha é a ÚNICA coisa segurando a
-// porta: um nome como "nath" é adivinhado de primeira. Por isso o mínimo subiu
-// de 6 para 10 caracteres.
+// porta: um nome como "nath" é adivinhado de primeira.
 //
-// Não exigimos "uma maiúscula, um número e um símbolo": isso empurra a pessoa
-// pra "Senha@123", que é pior que uma frase longa. Exigimos comprimento e
-// barramos as senhas óbvias.
+// Regra atual (pedido do dono, 15/09/2026): mínimo de 8 caracteres misturando
+// letra maiúscula, letra minúscula e um caractere especial. Quem preferir
+// frase continua podendo: de 14 caracteres pra cima o comprimento já segura
+// sozinho e nenhuma mistura é exigida. Os dois caminhos passam pelas mesmas
+// travas de senha óbvia, nome do usuário e sequência de teclado.
 
-const MINIMO = 10;
+const MINIMO = 8;
+
+// A partir daqui o comprimento basta e a mistura deixa de ser exigida.
+const SEM_EXIGENCIA = 14;
 
 // Senhas que aparecem em qualquer lista de ataque, mais as previsíveis deste
 // negócio. Comparação sem acento, minúsculas, ignorando números no fim.
@@ -33,7 +37,7 @@ function normalizar(texto) {
 function conferirSenha(senha, { nome } = {}) {
   if (typeof senha !== 'string' || !senha) return 'Informe a nova senha.';
   if (senha.length < MINIMO) {
-    return `A senha precisa ter pelo menos ${MINIMO} caracteres. Uma frase curta que só você lembra funciona bem — por exemplo três palavras juntas.`;
+    return `A senha precisa ter pelo menos ${MINIMO} caracteres.`;
   }
   if (senha.length > 200) return 'A senha é longa demais (máximo 200 caracteres).';
 
@@ -53,7 +57,22 @@ function conferirSenha(senha, { nome } = {}) {
   if ('abcdefghijklmnopqrstuvwxyz'.includes(base) || '01234567890'.includes(base)) {
     return 'A senha não pode ser uma sequência do teclado.';
   }
+
+  // Mistura só é cobrada de senha curta. Frase longa dispensa.
+  if (senha.length < SEM_EXIGENCIA) {
+    const faltando = [];
+    if (!/\p{Ll}/u.test(senha)) faltando.push('letra minúscula');
+    if (!/\p{Lu}/u.test(senha)) faltando.push('letra maiúscula');
+    if (!/[^\p{L}\p{N}\s]/u.test(senha)) faltando.push('caractere especial (!, @, #, $…)');
+    if (faltando.length) {
+      const lista = faltando.length === 1
+        ? faltando[0]
+        : `${faltando.slice(0, -1).join(', ')} e ${faltando[faltando.length - 1]}`;
+      return `Falta ${lista} na senha. Até ${SEM_EXIGENCIA - 1} caracteres ela precisa misturar maiúscula, minúscula e um caractere especial — de ${SEM_EXIGENCIA} caracteres pra cima, não precisa misturar nada.`;
+    }
+  }
+
   return null;
 }
 
-module.exports = { conferirSenha, MINIMO };
+module.exports = { conferirSenha, MINIMO, SEM_EXIGENCIA };

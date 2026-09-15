@@ -332,8 +332,8 @@ async function main() {
 
   // Setup na primeira rodada; nas seguintes o banco já tem a conta, então
   // cai no login normal (o script precisa poder rodar duas vezes seguidas).
-  // Senha longa por causa da regra de senha criada na varredura de
-// segurança (03/09/2026): mínimo de 10 caracteres, ver senhaPolitica.js.
+  // Frase longa por causa da regra de senha (ver senhaPolitica.js): 8+
+  // caracteres com mistura, ou 14+ sem exigir mistura — é este o caso aqui.
   const credenciais = { nome: 'teste-fin', senha: 'teste do financeiro 123' };
   let auth = await postar(porta, '/api/auth/setup', {
     ...credenciais, email: 'fin@exemplo.com', appPassword: process.env.APP_PASSWORD,

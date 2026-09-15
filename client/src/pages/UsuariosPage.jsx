@@ -12,6 +12,10 @@ import { CampoTextoLimitado, CampoEmail } from '../components/campos';
 // e era só por isso que ele não podia ser liberado pra ninguém e acabava
 // funcionando só pra administrador. Corrigido em 04/09/2026, a pedido da
 // dono do projeto (REGRA 4 — mexe em permissão de módulo).
+// A regra completa vive em server/src/lib/senhaPolitica.js. Esta frase é só
+// a versão curta pra quem está digitando.
+const REGRA_SENHA = 'Mínimo de 8 caracteres com letra maiúscula, letra minúscula e um caractere especial (!, @, #, $…). Uma frase de 14 caracteres ou mais também vale.';
+
 const MODULOS = [
   { key: 'produto', label: 'Produto' },
   { key: 'estoque', label: 'Estoque' },
@@ -214,9 +218,20 @@ export default function UsuariosPage() {
 
   async function resetarSenha(id) {
     // A regra completa vive no servidor (server/src/lib/senhaPolitica.js) —
-    // aqui é só o aviso imediato pra não mandar requisição à toa.
-    if (!novaSenha || novaSenha.length < 10) {
-      setError('A nova senha precisa ter pelo menos 10 caracteres. Uma frase curta funciona bem.');
+    // aqui é só o aviso imediato pra não mandar requisição à toa. Espelha a
+    // mesma regra: 8+ com mistura, ou 14+ sem exigir mistura.
+    const curta = (novaSenha || '').length < 14;
+    const semMistura = curta && !(
+      /\p{Ll}/u.test(novaSenha || '')
+      && /\p{Lu}/u.test(novaSenha || '')
+      && /[^\p{L}\p{N}\s]/u.test(novaSenha || '')
+    );
+    if (!novaSenha || novaSenha.length < 8) {
+      setError('A nova senha precisa ter pelo menos 8 caracteres.');
+      return;
+    }
+    if (semMistura) {
+      setError('A nova senha precisa ter letra maiúscula, letra minúscula e um caractere especial — ou ter 14 caracteres ou mais.');
       return;
     }
     setError('');
@@ -420,7 +435,7 @@ export default function UsuariosPage() {
 
           {resetandoId === u.id && (
             <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'flex-end' }}>
-              <Field label="Nova senha">
+              <Field label="Nova senha" hint={REGRA_SENHA}>
                 <input type="password" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} style={{ width: 200 }} />
               </Field>
               <button type="button" className="btn btn-primary" onClick={() => resetarSenha(u.id)}>Salvar nova senha</button>

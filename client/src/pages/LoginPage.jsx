@@ -140,7 +140,14 @@ function SetupForm({ onSuccess }) {
           <input id="setup-email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </div>
       </div>
-      <PasswordField id="setup-senha" label="Senha" value={senha} onChange={(e) => setSenha(e.target.value)} autoComplete="new-password" />
+      <PasswordField
+        id="setup-senha"
+        label="Senha"
+        value={senha}
+        onChange={(e) => setSenha(e.target.value)}
+        autoComplete="new-password"
+        hint="Mínimo de 8 caracteres com letra maiúscula, minúscula e um caractere especial (!, @, #, $…). Uma frase de 14 caracteres ou mais também vale."
+      />
       <PasswordField id="setup-confirmar" label="Confirmar senha" value={confirmarSenha} onChange={(e) => setConfirmarSenha(e.target.value)} autoComplete="new-password" />
       <PasswordField
         id="setup-app-senha"

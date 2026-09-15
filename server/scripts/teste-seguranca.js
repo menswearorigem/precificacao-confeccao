@@ -105,10 +105,27 @@ async function main() {
       metodo: 'POST',
       corpo: { appPassword: process.env.APP_PASSWORD, nome: 'Ana', email: 'ana@teste.com', senha: 'senha123' },
     });
-    ok('senha fraca é recusada na criação da conta', setupSenhaFraca.status === 400);
+    ok('senha óbvia é recusada na criação da conta', setupSenhaFraca.status === 400);
+
+    const setupSenhaCurta = await chamar('/api/auth/setup', {
+      metodo: 'POST',
+      corpo: { appPassword: process.env.APP_PASSWORD, nome: 'Ana', email: 'ana@teste.com', senha: 'Ab@1x' },
+    });
+    ok('senha com menos de 8 caracteres é recusada', setupSenhaCurta.status === 400);
     ok(
-      'a mensagem explica o mínimo de 10 caracteres',
-      String(setupSenhaFraca.dados?.error || '').includes('10 caracteres')
+      'a mensagem explica o mínimo de 8 caracteres',
+      String(setupSenhaCurta.dados?.error || '').includes('8 caracteres')
+    );
+
+    // 8 a 13 caracteres tem que misturar maiúscula, minúscula e especial.
+    const setupSemMistura = await chamar('/api/auth/setup', {
+      metodo: 'POST',
+      corpo: { appPassword: process.env.APP_PASSWORD, nome: 'Ana', email: 'ana@teste.com', senha: 'zebrafolha9' },
+    });
+    ok('senha curta sem mistura é recusada', setupSemMistura.status === 400);
+    ok(
+      'a mensagem diz o que faltou',
+      /maiúscula|caractere especial/.test(String(setupSemMistura.dados?.error || ''))
     );
 
     const setup = await chamar('/api/auth/setup', {
