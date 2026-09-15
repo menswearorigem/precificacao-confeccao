@@ -33,7 +33,7 @@
 //    lançamento continuam sendo feitos na tela do Wik.
 
 const wikWeb = require('./wikWeb');
-const { obterSessao } = require('./wikWebSessao');
+const { obterSessao, renovarSessao } = require('./wikWebSessao');
 const pool = require('../db/pool');
 const { recalcularSituacao } = require('./financeiroTitulos');
 
@@ -749,7 +749,6 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
   );
 
   try {
-    const sessao = await obterSessao(integracao);
     const mapaEmpresas = new Map(empresas.map((e) => [Number(e.wik_emp_id), e.id]));
 
     // Cadastros valem para o dia inteiro; sem isso todo ciclo regravaria 170
@@ -757,24 +756,47 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
     const cadastrosHoje = integracao.financeiro_ultima_sincronizacao
       && new Date(integracao.financeiro_ultima_sincronizacao).toISOString().slice(0, 10) === hojeIso();
 
-    for (const emp of empresas) {
-      // Trocar a empresa ativa MEXE na sessão de quem estiver logado com este
-      // usuário — é o preço de não haver conta de serviço (ver 0067).
-      await wikWeb.trocarEmpresa(sessao, emp.wik_emp_id);
+    // Toda a leitura das 4 empresas numa função só, para poder REFAZER do zero
+    // com uma sessão nova se a do Wik cair no meio. A gravação é toda idempotente
+    // (upsert por chave do Wik), então refazer não duplica nada.
+    async function rodarEmpresas(sessao) {
+      for (const emp of empresas) {
+        // Trocar a empresa ativa MEXE na sessão de quem estiver logado com este
+        // usuário — é o preço de não haver conta de serviço (ver 0067).
+        await wikWeb.trocarEmpresa(sessao, emp.wik_emp_id);
 
-      if (forcarCadastros || !cadastrosHoje) {
-        await importarPlanoContas(sessao, emp, resumo);
-        await importarCentrosCusto(sessao, emp, resumo);
-        await importarContasBancarias(sessao, emp, mapaEmpresas, resumo);
+        if (forcarCadastros || !cadastrosHoje) {
+          await importarPlanoContas(sessao, emp, resumo);
+          await importarCentrosCusto(sessao, emp, resumo);
+          await importarContasBancarias(sessao, emp, mapaEmpresas, resumo);
+        }
+        const mapas = await carregarMapas(emp.wik_emp_id);
+
+        await importarContasPagar(sessao, emp, janela, mapas, resumo);
+        await importarContasReceber(sessao, emp, janela, mapas, resumo);
+        await importarExtrato(sessao, emp, janela, mapas, resumo);
+        // Depois de ter os dois lados (baixas + extrato), liga o que o Wik já
+        // conciliou — assim não cai tudo como "a conciliar" no Hub.
+        await conciliarExtratoComBaixasWik(emp, resumo);
       }
-      const mapas = await carregarMapas(emp.wik_emp_id);
+    }
 
-      await importarContasPagar(sessao, emp, janela, mapas, resumo);
-      await importarContasReceber(sessao, emp, janela, mapas, resumo);
-      await importarExtrato(sessao, emp, janela, mapas, resumo);
-      // Depois de ter os dois lados (baixas + extrato), liga o que o Wik já
-      // conciliou — assim não cai tudo como "a conciliar" no Hub.
-      await conciliarExtratoComBaixasWik(emp, resumo);
+    // ⭐ O CONSERTO: sessão viva na entrada; se ela CAIR no meio (o Wik derruba
+    // quando o mesmo login aparece noutro lugar, ou por timeout de inatividade),
+    // renova UMA vez e REFAZ — em vez de falhar de vez e só "tentar no próximo
+    // ciclo" (que, na prática, também caía e deixava o financeiro travado em
+    // SESSAO_EXPIRADA). É o mesmo retry que o sync de produção já tinha e o
+    // financeiro não — a assimetria que deixava só o financeiro morto.
+    let sessao = await obterSessao(integracao);
+    try {
+      await rodarEmpresas(sessao);
+    } catch (err) {
+      if (!err.sessaoExpirada) throw err;
+      // Zera os contadores parciais desta tentativa (a gravação já feita fica —
+      // é idempotente e será reescrita igual) e refaz com uma sessão nova.
+      Object.assign(resumo, resumoVazio(), { janela: resumo.janela });
+      sessao = await renovarSessao(integracao);
+      await rodarEmpresas(sessao);
     }
 
     resumo.segundos = Math.round((Date.now() - t0) / 1000);
