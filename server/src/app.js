@@ -125,7 +125,13 @@ function createApp() {
   app.use('/api/produtos', jsonGrande);
   app.use('/api/financeiro', jsonGrande);
   app.use('/api/financeiro-nucleo', jsonGrande);
+  app.use('/api/wik-import', jsonGrande);
   app.use(express.json({ limit: '1mb' }));
+
+  // Importação em lote da grade/estado das OPs do Wik — PÚBLICA e protegida por
+  // segredo (chamada da aba do Wik, origem diferente). Montada ANTES de
+  // conferirOrigem e do requireAuth de propósito (ver wikImport.routes.js).
+  app.use('/api/wik-import', require('./routes/wikImport.routes'));
 
   app.use(conferirOrigem);
   app.use(middlewareAuditoria);
