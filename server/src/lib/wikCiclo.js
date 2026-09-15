@@ -24,8 +24,19 @@ const { sincronizarFichaCustoAgora } = require('./wikFichaCustoImport');
 const { sincronizarProducaoAgora } = require('./wikProducaoSync');
 const { sincronizarFinanceiroAgora } = require('./wikFinanceiroSync');
 const { importarClientesAgora, importarVendasAgora } = require('./wikVendasImport');
+const pool = require('../db/pool');
 
 const MIN = 60 * 1000;
+
+// TRAVA DE LÍDER entre instâncias (Postgres advisory lock). O Render pode rodar
+// mais de uma instância do Hub (e sobe uma nova junto da velha em cada deploy).
+// Cada instância tem a sua própria sessão web do Wik em memória, e o Wik só
+// deixa UMA sessão por login — então duas instâncias logando como o mesmo
+// usuário se derrubam num cabo de guerra (era o "SESSAO_EXPIRADA" do financeiro
+// e o "nunca puxa" da produção). Aqui só a instância que segurar esta trava roda
+// o ciclo e fala com o Wik; as outras pulam. Não muda schema e não afeta a API
+// (os imports por token rodam dentro do ciclo, na instância líder).
+const LOCK_KEY = 918273645;
 
 // Ordem importa: token primeiro (deixa um token válido pros jobs de API);
 // depois os jobs de API (mesmo token, um de cada vez); por fim os de sessão web
@@ -57,7 +68,19 @@ async function cicloWikCompleto(motivo = 'agenda', forcar = []) {
   const t0 = Date.now();
   const feitas = [];
   const forcarSet = new Set(forcar);
+
+  // Pega a trava de líder numa conexão dedicada e segura por todo o ciclo.
+  // Se outra instância já é a líder, pula (não loga no Wik, não derruba a dela).
+  const lockClient = await pool.connect();
+  let souLider = false;
   try {
+    const r = await lockClient.query('SELECT pg_try_advisory_lock($1) AS ok', [LOCK_KEY]);
+    souLider = !!(r.rows[0] && r.rows[0].ok);
+    if (!souLider) {
+      console.log(`[wik-ciclo] pulado — outra instância é a líder (${motivo})`);
+      return { pulado: 'outra instância é a líder' };
+    }
+
     for (const et of ETAPAS) {
       const agora = Date.now();
       const venceu = !ultima[et.nome] || (agora - ultima[et.nome]) >= et.cada;
@@ -74,11 +97,18 @@ async function cicloWikCompleto(motivo = 'agenda', forcar = []) {
     }
     return { feitas, segundos: Math.round((Date.now() - t0) / 1000) };
   } finally {
+    // Solta a trava de líder e devolve a conexão.
+    if (souLider) {
+      try { await lockClient.query('SELECT pg_advisory_unlock($1)', [LOCK_KEY]); } catch { /* ok */ }
+    }
+    lockClient.release();
     emVoo = false;
-    console.log(
-      `[wik-ciclo] fim (${Math.round((Date.now() - t0) / 1000)}s) — `
-      + `etapas rodadas: ${feitas.join(', ') || 'nenhuma vencida'} — ${motivo}`
-    );
+    if (souLider) {
+      console.log(
+        `[wik-ciclo] fim (${Math.round((Date.now() - t0) / 1000)}s) — `
+        + `etapas rodadas: ${feitas.join(', ') || 'nenhuma vencida'} — ${motivo}`
+      );
+    }
   }
 }
 
