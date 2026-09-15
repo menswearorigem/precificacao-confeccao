@@ -5,10 +5,11 @@ import {
   Boxes, TriangleAlert, ArrowRight, X,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { EstadoVazio, Skeleton } from '../components/ui';
+import { EstadoVazio, Skeleton, Select, NumInput, Checkbox, Paginacao } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoTresMeses } from '../lib/periodos';
-import { formatQtd } from '../lib/format';
+import { formatQtd, plural } from '../lib/format';
+import { useTabela } from '../lib/useTabela';
 
 // Produção › Matéria-Prima.
 //
@@ -220,12 +221,21 @@ function CartaoTecido({ referencia, tecidos, onSalvarCores, onSalvarSaldo }) {
                   )}
                 </td>
                 <td>
-                  <select value={escolhido}
+                  {/* 14/09 -> 15/09/2026: era um <select> cru. Esta tela era a
+                      única do sistema que usava o controle do navegador: a lista
+                      aberta era desenhada pelo Windows — fonte do sistema
+                      operacional, realce azul, barra de rolagem do Windows — em
+                      cima da tela couro, e sem busca. Medido no Chrome: 146
+                      <select> e 6.452 <option> no DOM com 15 referências
+                      abertas, contra ZERO <select> em qualquer outra tela.
+                      O <Select> do sistema abre busca sozinho acima de 15
+                      opções, e é a mesma API (value / onChange / <option>). */}
+                  <Select value={escolhido}
                     onChange={(e) => setRascunho({ ...rascunho, [c.cor]: e.target.value })}
                     className={rascunho[c.cor] !== undefined ? 'mp-sujo' : ''}>
                     <option value="">— escolher —</option>
                     {coresDoInsumo(c.insumoId).map((o) => <option key={o} value={o}>{o}</option>)}
-                  </select>
+                  </Select>
                   {rascunho[c.cor] === undefined && c.corInsumoOrigem === 'confirmada' && (
                     <span className="mp-selo mp-selo-confirmada" style={{ marginLeft: 6 }}>ok</span>
                   )}
@@ -252,9 +262,9 @@ function CartaoTecido({ referencia, tecidos, onSalvarCores, onSalvarSaldo }) {
                     : q(c.necessidade, 1))}</td>
                 <td>
                   {escolhido ? (
-                    <input className="mp-saldo" type="number" step="0.01" placeholder="não sei"
+                    <NumInput className="mp-saldo" step="0.01" placeholder="não sei"
                       value={editado !== undefined ? editado : (c.saldoTecido ?? '')}
-                      onChange={(e) => setSaldos({ ...saldos, [chaveSaldo]: e.target.value })} />
+                      onChange={(n) => setSaldos({ ...saldos, [chaveSaldo]: n ?? '' })} />
                   ) : <span className="mp-vazio">—</span>}
                 </td>
                 <td>
@@ -291,6 +301,12 @@ function Parametros({ referencia, tecidos, onSalvar }) {
     unidadeConfirmada: cfg.unidadeConfirmada === true,
   };
   const muda = (campo) => (e) => setForm({ ...atual, [campo]: e.target.value });
+  // O <NumInput> do sistema entrega NÚMERO, não evento — é `type="text"` com
+  // `inputMode="decimal"` por dentro, que é o padrão do resto do sistema
+  // (Configurações › Parâmetros usa o mesmo). Some a setinha de cima/baixo que
+  // o Windows desenhava no `type="number"`, e o celular continua abrindo o
+  // teclado numérico.
+  const mudaNum = (campo) => (n) => setForm({ ...atual, [campo]: n ?? '' });
   const sujo = form != null;
   const tecido = tecidos.find((t) => t.id === Number(atual.insumoId));
   const und = tecido ? tecido.unidade : (cfg.unidadeConsumo || '');
@@ -299,58 +315,65 @@ function Parametros({ referencia, tecidos, onSalvar }) {
     <div className="mp-params">
       <div className="mp-param">
         <label>Tecido</label>
-        <select value={atual.insumoId} onChange={muda('insumoId')} className={sujo ? 'mp-sujo' : ''}>
+        {/* `chaveRecentes`: são 401 tecidos, e cada referência usa sempre os
+            mesmos dois ou três. Os últimos escolhidos sobem para o topo. */}
+        <Select value={atual.insumoId} onChange={muda('insumoId')} className={sujo ? 'mp-sujo' : ''}
+          chaveRecentes="mp_tecido">
           <option value="">— escolher —</option>
           {tecidos.map((t) => (
             <option key={t.id} value={t.id}>{t.nome} ({t.unidade})</option>
           ))}
-        </select>
+        </Select>
       </div>
       <div className="mp-param">
         <label>Cada peça gasta</label>
         <span className="mp-campo">
-          <input type="number" step="0.001" value={atual.consumoPorPeca} onChange={muda('consumoPorPeca')}
-            className={sujo ? 'mp-sujo' : ''} />
+          <NumInput step="0.001" value={atual.consumoPorPeca}
+            onChange={mudaNum('consumoPorPeca')} className={sujo ? 'mp-sujo' : ''} />
           <span className="mp-unid">{und || '—'}</span>
         </span>
       </div>
       <div className="mp-param">
         <label title="Quanto de tecido se perde no corte. Sem isso, a necessidade sai baixa.">Perda no corte</label>
         <span className="mp-campo">
-          <input type="number" step="0.1" min="0" max="99" placeholder="—"
-            value={atual.perdaPct} onChange={muda('perdaPct')} className={sujo ? 'mp-sujo' : ''} />
+          <NumInput step="0.1" min="0" max="99" value={atual.perdaPct}
+            onChange={mudaNum('perdaPct')} className={sujo ? 'mp-sujo' : ''} />
           <span className="mp-unid">%</span>
         </span>
       </div>
       <div className="mp-param">
         <label title="Quanto tempo o fornecedor leva para entregar. É o que define o 'pedir até'.">Fornecedor leva</label>
         <span className="mp-campo">
-          <input type="number" step="1" min="1" value={atual.prazoEntregaDias} onChange={muda('prazoEntregaDias')}
-            className={sujo ? 'mp-sujo' : ''} />
+          <NumInput step="1" min="1" value={atual.prazoEntregaDias}
+            onChange={mudaNum('prazoEntregaDias')} className={sujo ? 'mp-sujo' : ''} />
           <span className="mp-unid">dias</span>
         </span>
       </div>
       <div className="mp-param">
         <label title="Lote mínimo do fornecedor. O pedido sobe para o múltiplo seguinte.">Compra de</label>
         <span className="mp-campo">
-          <input type="number" step="0.1" min="0" value={atual.barca} onChange={muda('barca')}
-            className={sujo ? 'mp-sujo' : ''} />
+          <NumInput step="0.1" min="0" value={atual.barca}
+            onChange={mudaNum('barca')} className={sujo ? 'mp-sujo' : ''} />
           <span className="mp-unid">em {atual.barca || '—'} {und}</span>
         </span>
       </div>
       <div className="mp-param">
         <label title="Multiplicador de temporada. 1 = sem efeito.">Temporada</label>
         <span className="mp-campo">
-          <input type="number" step="0.05" min="0.1" max="5" value={atual.sazonalidade} onChange={muda('sazonalidade')}
-            className={sujo ? 'mp-sujo' : ''} />
+          <NumInput step="0.05" min="0.1" max="5" value={atual.sazonalidade}
+            onChange={mudaNum('sazonalidade')} className={sujo ? 'mp-sujo' : ''} />
           <span className="mp-unid">×</span>
         </span>
       </div>
       {tecido && tecido.unidade_confianca && (
         <div className="mp-param">
           <label>Unidade</label>
+          {/* Era o checkbox cru do Windows: 13x13 px, quadrado cinza, abaixo do
+              alvo mínimo de toque (24 px) — difícil de acertar no celular do
+              galpão. O <Checkbox> do sistema esconde o input e desenha a caixa
+              no tema. */}
           <label className="mp-unid" style={{ display: 'flex', gap: 6, alignItems: 'center', height: 31, fontSize: 12 }}>
-            <input type="checkbox" style={{ width: 'auto', height: 'auto' }} checked={!!atual.unidadeConfirmada}
+            <Checkbox checked={!!atual.unidadeConfirmada}
               onChange={(e) => setForm({ ...atual, unidadeConfirmada: e.target.checked })} />
             confirmo que é <b>{tecido.unidade}</b>
           </label>
@@ -601,6 +624,21 @@ export default function MateriaPrimaPage() {
   const [abertos, setAbertos] = useState(() => new Set());
   const [ajuda, setAjuda] = useState(false);
 
+  // A lista de referências pagina — ver a nota junto do <Paginacao>. Ordem
+  // padrão: quem tem mais peça a produzir primeiro, que é quem puxa tecido.
+  const tabelaRefs = useTabela(dados?.referencias || [], {
+    colunas: {
+      referencia: (r) => r.referencia,
+      descricao: (r) => r.descricao || '',
+      minimo: (r) => Number(r.totais?.minimoPecas || 0),
+      produzir: (r) => Number(r.totais?.aProduzir || 0),
+      tecido: (r) => Number(r.totais?.tecido || 0),
+    },
+    colunaPadrao: 'produzir',
+    direcaoPadrao: 'desc',
+    prefixo: 'mp',
+  });
+
   const carregar = useCallback(async () => {
     setCarregando(true); setErro(null);
     try {
@@ -677,16 +715,29 @@ export default function MateriaPrimaPage() {
         </div>
         <div className="pagina-acoes mp-barra">
           <PeriodoFiltro inicio={periodo.inicio} fim={periodo.fim} onChange={setPeriodo} />
+          {/* O seletor de MODO de cálculo ganhou rótulo (15/09/2026). Os três
+              botões ficavam soltos na barra, colados no "Ver catálogo inteiro"
+              — que não é um quarto modo, é um interruptor de quantas
+              referências a lista mostra. E os três dão números bem diferentes
+              para o mesmo tecido (Tricoline: 31,1 · 149,9 · 224,8 m), então
+              saber em qual você está não é detalhe. */}
           {dados && (
-            <span className="mp-seg">
-              {Object.entries(dados.bases).map(([k, v]) => (
-                <button key={k} type="button" aria-pressed={base === k} onClick={() => setBase(k)} title={v.explicacao}>
-                  {v.rotulo}
-                </button>
-              ))}
+            <span className="mp-seg-grupo">
+              <span className="mp-seg-rotulo">Calcular</span>
+              <span className="mp-seg">
+                {Object.entries(dados.bases).map(([k, v]) => (
+                  <button key={k} type="button" aria-pressed={base === k} onClick={() => setBase(k)} title={v.explicacao}>
+                    {v.rotulo}
+                  </button>
+                ))}
+              </span>
             </span>
           )}
-          <button type="button" className="btn-sec" onClick={() => setTodas(!todas)}>
+          <span className="mp-barra-sep" aria-hidden="true" />
+          <button type="button" className="btn-sec" onClick={() => setTodas(!todas)}
+            title={todas
+              ? 'Mostrar só as referências que já têm tecido cadastrado'
+              : 'Mostrar o catálogo todo, para cadastrar o tecido de uma referência nova'}>
             {todas ? 'Só as configuradas' : 'Ver catálogo inteiro'}
           </button>
           <button type="button" className="btn-sec" onClick={carregar} disabled={carregando}>
@@ -744,7 +795,7 @@ export default function MateriaPrimaPage() {
             <div className="mp-kpi">
               <span className="mp-kpi-rotulo"><Scissors size={12} /> Referências</span>
               <strong>{dados.totais.referencias}</strong>
-              <small>{dados.totais.tecidos} tecido(s) envolvido(s)</small>
+              <small>{plural(dados.totais.tecidos, 'tecido')} envolvido{dados.totais.tecidos === 1 ? '' : 's'}</small>
             </div>
           </div>
 
@@ -756,8 +807,18 @@ export default function MateriaPrimaPage() {
               descricao="Use 'Ver catálogo inteiro' para escolher a referência e dizer qual tecido ela usa e quanto cada peça gasta."
             />
           ) : (
+            /* Paginação (15/09/2026). "Ver catálogo inteiro" levava a lista de
+               15 para 425 referências e a tela PARAVA DE RESPONDER por mais de
+               8 segundos — medido no Chrome, que não conseguiu nem tirar
+               screenshot durante a renderização. Cada bloco de referência traz
+               três tabelas cor x tamanho e vários campos, então 425 deles de
+               uma vez é dezenas de milhares de nós no DOM.
+               A página fatia; o quadro "Comprar por tecido" lá em cima continua
+               somando TODAS as referências, porque é dele que sai o pedido. */
+            <>
+            <Paginacao {...tabelaRefs} posicao="topo" />
             <div className="mp-lista">
-              {dados.referencias.map((r) => (
+              {tabelaRefs.itensPagina.map((r) => (
                 <Referencia
                   key={r.produtoId} r={r} tecidos={tecidos}
                   aberta={abertos.has(r.produtoId)}
@@ -768,6 +829,8 @@ export default function MateriaPrimaPage() {
                 />
               ))}
             </div>
+            <Paginacao {...tabelaRefs} posicao="rodape" />
+            </>
           )}
 
           <div style={{ marginTop: 14 }}>

@@ -8804,3 +8804,45 @@ table.grade-matriz { width: auto; min-width: 0; }
      tiram cerca de um terço da altura dele sem tirar uma palavra. */
   .page-sub { font-size: 12.5px; line-height: 1.45; margin-bottom: 10px; }
 }
+
+/* ---------------------------------------------------------------------------
+   `color-scheme` (15/09/2026).
+
+   O sistema nunca declarou esta propriedade — ficava em `normal`. Enquanto
+   toda tela usava os componentes próprios isso não aparecia; onde sobrou um
+   controle nativo (e vai sobrar: um `<input type=date>`, um campo de arquivo,
+   a barra de rolagem), o navegador desenhava tudo na paleta CLARA do Windows.
+   No tema couro escuro é um pop-up branco no meio da tela.
+
+   Uma linha por tema resolve os controles nativos que existirem, e de quebra
+   escurece a barra de rolagem e o seletor de arquivo. Não muda nada do que o
+   sistema desenha por conta própria.
+   ------------------------------------------------------------------------ */
+:root { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { color-scheme: dark; }
+}
+
+/* ---------------------------------------------------------------------------
+   Barra da Matéria-Prima: dizer onde termina o seletor de modo (15/09/2026).
+
+   Os três botões de cálculo ficavam soltos na mesma fileira do "Ver catálogo
+   inteiro" e do "Atualizar" — e "Ver catálogo inteiro" parecia um quarto modo
+   de cálculo quando é outra coisa (quantas referências a lista mostra). Como
+   os três modos dão números bem diferentes para o mesmo tecido, saber em qual
+   você está não é detalhe.
+   ------------------------------------------------------------------------ */
+.mp-seg-grupo { display: inline-flex; align-items: center; gap: 8px; }
+.mp-seg-rotulo {
+  font-family: var(--font-body); font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint);
+  white-space: nowrap; user-select: none;
+}
+.mp-barra-sep {
+  width: 1px; align-self: stretch; margin: 2px 2px;
+  background: var(--border); flex-shrink: 0;
+}
+@media (max-width: 720px) {
+  .mp-barra-sep { display: none; }
+}
