@@ -1,11 +1,44 @@
 require('dotenv').config();
 const createApp = require('./app');
+const pool = require('./db/pool');
 const { sincronizarTodasAtivas } = require('./lib/marketplaceSync');
 const { sincronizarExtratoTodasAtivas } = require('./lib/financeiroExtrato');
 const { sincronizarFullTodasAtivas } = require('./lib/fullSync');
 // TODAS as sincronizações do Wik rodam por UM maestro só, em sequência, pra
 // nunca duas baterem na mesma sessão do Wik (ver server/src/lib/wikCiclo.js).
 const { cicloWikCompleto } = require('./lib/wikCiclo');
+
+// ── AUTO-CURA de travas ÓRFÃS do Wik no boot ────────────────────────────────
+// `web_job_ativo` e `producao_job_ativo` são FLAGS no banco (não advisory
+// locks), então NÃO soltam sozinhas quando o processo morre. Todo deploy no
+// Render DRENA a instância antiga — se ela estava no meio de um job do Wik
+// (produção/financeiro), a flag fica PRESA e bloqueia financeiro, vendas e a
+// própria produção por até 25 min (o guarda de tempo), deixando a tela em
+// "outro job do Wik está rodando" / "sessão web ocupada" sem nada rodando.
+//
+// No boot, esta instância acabou de subir: não criou nenhuma trava ainda, e a
+// instância anterior (se existir) está sendo drenada. Então qualquer trava
+// parada há mais de 3 min é órfã e pode ser solta com segurança — uma trava
+// FRESCA (< 3 min, um "Sincronizar agora" recém-disparado numa instância que
+// ainda esteja de pé no overlap do deploy) é poupada. Idem para status preso
+// em 'rodando'. Isso faz o financeiro/vendas destravarem no ato do deploy, em
+// vez de esperar o guarda de 25 min.
+async function soltarTravasOrfasWik() {
+  try {
+    const r = await pool.query(`
+      UPDATE integracoes_wik SET
+        web_job_ativo = CASE WHEN web_job_ativo_desde < now() - interval '3 minutes' THEN NULL ELSE web_job_ativo END,
+        web_job_ativo_desde = CASE WHEN web_job_ativo_desde < now() - interval '3 minutes' THEN NULL ELSE web_job_ativo_desde END,
+        producao_job_ativo = CASE WHEN producao_job_ativo_desde < now() - interval '3 minutes' THEN NULL ELSE producao_job_ativo END,
+        producao_job_ativo_desde = CASE WHEN producao_job_ativo_desde < now() - interval '3 minutes' THEN NULL ELSE producao_job_ativo_desde END,
+        financeiro_status = CASE WHEN financeiro_status = 'rodando' THEN 'idle' ELSE financeiro_status END
+      WHERE web_job_ativo IS NOT NULL OR producao_job_ativo IS NOT NULL OR financeiro_status = 'rodando'
+      RETURNING id`);
+    if (r.rowCount) console.log('[wik-boot] travas órfãs do Wik soltas (deploy anterior foi drenado no meio de um job)');
+  } catch (err) {
+    console.error('[wik-boot] falha ao soltar travas órfãs:', err.message);
+  }
+}
 
 const PORT = process.env.PORT || 3000;
 // Pedidos novos + valor recebido do marketplace — intervalo mais curto que
@@ -50,6 +83,11 @@ app.listen(PORT, () => {
   console.log('  Porta: ' + PORT);
   console.log('==================================================');
   console.log('');
+
+  // Solta travas órfãs do Wik ANTES de qualquer ciclo (o maestro só roda 15s
+  // depois, então a limpeza termina primeiro). Destrava financeiro/vendas no
+  // ato do deploy em vez de esperar o guarda de 25 min.
+  soltarTravasOrfasWik();
 
   // Puxa pedidos novos dos marketplaces conectados (Mercado Livre, Shopee)
   // periodicamente, sem depender de o usuário clicar em "sincronizar agora".
