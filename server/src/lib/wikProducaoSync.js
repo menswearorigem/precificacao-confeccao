@@ -452,29 +452,115 @@ async function atualizarGradeDaOp(ordemId, detalhe) {
   finally { client.release(); }
 }
 
-// Uma passada de sincronização. Puxa a produção da MATRIZ (uma empresa só) e a
-// grava como OP nativa (origem 'wik'), sem efeitos colaterais.
+// ── Grid de OPs → estado + criação (o jeito que funciona) ───────────────────
+// A situação vem do grid como "2 - Finalizada" etc. Mapeia pro estado nativo.
+function mapSituacaoGrid(label) {
+  const s = String(label || '').toLowerCase();
+  if (s.includes('aguardando')) return 'planejada';
+  if (s.includes('iniciada')) return 'em_producao';
+  if (s.includes('cancel')) return 'cancelada';
+  if (s.includes('finaliz') || s.includes('baixad')) return 'concluida';
+  return 'em_producao';
+}
+function refDeGrid(prodDescricao) {
+  return String(prodDescricao || '').split(' - ')[0].trim();
+}
+function normRef(v) { return String(v || '').replace(/\s+/g, '').toUpperCase(); }
+
+// Janela do grid: uma faixa larga (barata — é uma consulta só) que cobre as OPs
+// que ainda mudam. Configurável por WIK_PRODUCAO_JANELA_DIAS (padrão 400).
+function janelaGrid() {
+  const dias = Number(process.env.WIK_PRODUCAO_JANELA_DIAS || 400);
+  const ate = new Date();
+  const de = new Date(ate.getTime() - dias * 24 * 60 * 60 * 1000);
+  const iso = (d) => d.toISOString().slice(0, 10);
+  return { de: iso(de), ate: iso(ate) };
+}
+
+// Cria/atualiza as OPs a partir do grid. ESTADO (situação) é sempre atualizado
+// (não-destrutivo). Os TOTAIS só são atualizados nas OPs ainda sincronizadas
+// (sincroniza_wik = TRUE) — as que foram preenchidas/editadas à mão ficam como
+// estão. OP nova casa pela referência e entra como origem 'wik', sem reservar
+// insumo. Referência sem produto no Hub é contada em naoCasadas.
+async function upsertOpsDoGrid(linhas) {
+  const res = { criadas: 0, atualizadas: 0, naoCasadas: 0 };
+  const { rows: prods } = await poolReal.query('SELECT id, referencia FROM produtos');
+  const refProduto = new Map(prods.map((p) => [normRef(p.referencia), p.id]));
+  const client = await poolReal.connect();
+  try {
+    await client.query('BEGIN');
+    for (const l of linhas) {
+      const wikOp = Number(l.OprId);
+      if (!Number.isFinite(wikOp)) continue;
+      const situacao = mapSituacaoGrid(l.Situacao);
+      const wikSit = String(l.Situacao || '').slice(0, 40);
+      const qPlan = so(l.OprQtdPecas);
+      const qReal = so(l.OprQtdRealizada);
+      const qLd = so(l.OprQtdLd);
+
+      const ex = await client.query(
+        `SELECT id, sincroniza_wik FROM ordens_producao WHERE origem='wik' AND wik_op=$1 ORDER BY id DESC LIMIT 1`,
+        [wikOp]
+      );
+      if (ex.rows[0]) {
+        if (ex.rows[0].sincroniza_wik) {
+          await client.query(
+            `UPDATE ordens_producao SET situacao=$2, wik_situacao=$3,
+               quantidade_planejada=$4, quantidade_produzida=$5, quantidade_segunda=$6,
+               wik_sincronizado_em=now(), atualizado_em=now() WHERE id=$1`,
+            [ex.rows[0].id, situacao, wikSit, qPlan, qReal, qLd]
+          );
+        } else {
+          // Descolada (manual): só o estado, sem mexer nos totais/grade da mão.
+          await client.query(
+            `UPDATE ordens_producao SET situacao=$2, wik_situacao=$3, wik_sincronizado_em=now(), atualizado_em=now() WHERE id=$1`,
+            [ex.rows[0].id, situacao, wikSit]
+          );
+        }
+        res.atualizadas += 1;
+      } else {
+        const produtoId = refProduto.get(normRef(refDeGrid(l.ProdDescricao)));
+        if (!produtoId) { res.naoCasadas += 1; continue; }
+        await client.query(
+          `INSERT INTO ordens_producao
+             (produto_id, situacao, origem, sincroniza_wik, wik_emp_id, wik_op, wik_situacao,
+              quantidade_planejada, quantidade_produzida, quantidade_segunda, wik_sincronizado_em)
+           VALUES ($1,$2,'wik',TRUE,$3,$4,$5,$6,$7,$8, now())`,
+          [produtoId, situacao, MATRIZ_EMP_ID, wikOp, wikSit, qPlan, qReal, qLd]
+        );
+        res.criadas += 1;
+      }
+    }
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK'); throw e; }
+  finally { client.release(); }
+  return res;
+}
+
+// Uma passada de sincronização. Puxa TODAS as OPs da matriz pelo GRID (com o
+// estado real), cria/atualiza, e busca a grade das que ainda faltam.
 async function sincronizarProducaoAgora() {
   const integracao = await buscarIntegracao();
   if (!integracao || !integracao.ativo) return { pulado: 'sem integração ativa' };
   if (!(await reservarJob(integracao.id))) return { pulado: 'outro ciclo em andamento' };
 
   await poolReal.query("UPDATE integracoes_wik SET producao_status = 'rodando', producao_erro = NULL WHERE id = $1", [integracao.id]);
-  const resumo = { apontamentos: 0, criadas: 0, atualizadas: 0, naoCasadas: 0, gradesLidas: 0, erros: [] };
+  const resumo = { opsNoGrid: 0, criadas: 0, atualizadas: 0, naoCasadas: 0, gradesLidas: 0, erros: [] };
   try {
     let sessao = await obterSessao(integracao);
+    const janela = janelaGrid();
 
-    async function puxarApontamento() {
+    // TODAS as OPs da janela, com a situação real (não só as em produção).
+    async function puxarGrid() {
       await wikWeb.trocarEmpresa(sessao, MATRIZ_EMP_ID);
-      return wikWeb.apontamentoPainel(sessao);
+      return wikWeb.gridOrdensProducao(sessao, janela);
     }
     let linhas;
-    try { linhas = await puxarApontamento(); }
-    catch (e) { if (e.sessaoExpirada) { sessao = await renovarSessao(integracao); linhas = await puxarApontamento(); } else throw e; }
-    resumo.apontamentos = linhas.length;
+    try { linhas = await puxarGrid(); }
+    catch (e) { if (e.sessaoExpirada) { sessao = await renovarSessao(integracao); linhas = await puxarGrid(); } else throw e; }
+    resumo.opsNoGrid = linhas.length;
 
-    const porOp = agregarApontamento(linhas);
-    const t1 = await upsertOpsDoApontamento(porOp);
+    const t1 = await upsertOpsDoGrid(linhas);
     resumo.criadas = t1.criadas; resumo.atualizadas = t1.atualizadas; resumo.naoCasadas = t1.naoCasadas;
 
     // Grade das OPs (mais novas primeiro), em lote.

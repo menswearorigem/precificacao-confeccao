@@ -470,11 +470,31 @@ async function contasBancarias(sessao) {
   return gridCompleto(sessao, '/GrupoReceitaDespesa/CarregaGrid', ['EmpId', 'Codigo', 'Descricao'], FILTRO_CADASTRO);
 }
 
+// ── Ordens de Produção: o GRID inteiro ──────────────────────────────────────
+// Diferente do painel de apontamento (/Kanban/ObterListaPainelInformativo), que
+// só devolve as OPs EM PRODUÇÃO agora, este grid traz TODAS as OPs da janela de
+// data, com a SITUAÇÃO real (Aguardando/Iniciada/Finalizada/Finalizada Parcial/
+// Baixada). É o que permite manter o estado das OPs correto no Hub (e não tudo
+// "em produção"). Testado ao vivo: {DataInicial, DataFinal} basta. Campos por
+// linha: OprId (nº da OP), ProdDescricao ("REF - descrição"), Situacao
+// ("2 - Finalizada"), OprQtdPecas, OprQtdRealizada, OprQtdLd.
+const COLS_OP_GRID = [
+  'CorTexto', 'OprId', 'OprDescricao', 'ProdDescricao', 'Tipo', 'Situacao',
+  'OprQtdPecas', 'OprQtdRealizada', 'OprQtdLd', 'OprLdConfEst', 'OprQtdPerda', 'OprDatacad',
+];
+async function gridOrdensProducao(sessao, { de, ate } = {}) {
+  return gridCompleto(sessao, '/OrdemProducao/CarregaGrid', COLS_OP_GRID, {
+    DataInicial: de, DataFinal: ate,
+  }, { ordem: 1, dir: 'desc' });
+}
+
+
 module.exports = {
   BASE_PADRAO,
   novaSessao, restaurarCookies, serializarCookies,
   login, sessaoViva, trocarEmpresa,
   listarEmpresas, apontamentoPainel, ordemProducaoDetalhe, carregarGridDepartamentos,
+  gridOrdensProducao,
   // financeiro
   contasPagar, contaPagarDetalhe, contasReceber, extratoFinanceiro,
   planoContas, centrosCusto, contasBancarias,
