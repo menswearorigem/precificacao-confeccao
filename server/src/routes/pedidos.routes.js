@@ -2928,13 +2928,16 @@ router.post('/:id/cancelar', async (req, res, next) => {
 router.calcularRelatorioPedidos = calcularRelatorioPedidos;
 
 
-// Importa as VENDAS do Wik pela API (venda_get + vendas_itens_get). Janela de
-// dias configurável; idempotente por (empresa, PedId); venda editada descola.
+// Importa as VENDAS DE ATACADO/LOJA do Wik pela SESSÃO WEB (grid /Pedido).
+// A API pública (venda_get) volta VAZIA para esse fluxo — por isso migramos
+// para o grid da Tela de Vendas, a mesma técnica confiável do grid das OPs.
+// Janela de dias configurável; idempotente por (empresa, PedId); venda editada
+// pela casa (sincroniza_wik = FALSE) descola e não é sobrescrita.
 router.post('/importar-wik-vendas', async (req, res) => {
   try {
-    const { importarVendasAgora } = require('../lib/wikVendasImport');
-    const dias = Number(req.body?.dias) > 0 ? Number(req.body.dias) : 30;
-    res.json(await importarVendasAgora({ dias }));
+    const { importarVendasWebAgora } = require('../lib/wikVendasWebSync');
+    const dias = Number(req.body?.dias) > 0 ? Number(req.body.dias) : 60;
+    res.json(await importarVendasWebAgora({ dias }));
   } catch (e) { res.status(502).json({ error: e.message }); }
 });
 

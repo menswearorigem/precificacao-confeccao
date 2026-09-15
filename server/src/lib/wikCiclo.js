@@ -23,7 +23,8 @@ const { sincronizarProdutosAgora } = require('./wikProdutosImport');
 const { sincronizarFichaCustoAgora } = require('./wikFichaCustoImport');
 const { sincronizarProducaoAgora } = require('./wikProducaoSync');
 const { sincronizarFinanceiroAgora } = require('./wikFinanceiroSync');
-const { importarClientesAgora, importarVendasAgora } = require('./wikVendasImport');
+const { importarClientesAgora } = require('./wikVendasImport');
+const { importarVendasWebAgora } = require('./wikVendasWebSync');
 const pool = require('../db/pool');
 
 const MIN = 60 * 1000;
@@ -47,7 +48,7 @@ const ETAPAS = [
   { nome: 'estoque',    cada: 15 * MIN,      fn: sincronizarEstoqueAgora },
   { nome: 'producao',   cada: 15 * MIN,      fn: sincronizarProducaoAgora },
   { nome: 'clientes',   cada: 30 * MIN,      fn: importarClientesAgora },
-  { nome: 'vendas',     cada: 30 * MIN,      fn: () => importarVendasAgora({ dias: 30 }) },
+  { nome: 'vendas',     cada: 30 * MIN,      fn: () => importarVendasWebAgora({ dias: 60 }) },
   { nome: 'financeiro', cada: 30 * MIN,      fn: sincronizarFinanceiroAgora },
   { nome: 'catalogo',   cada: 6 * 60 * MIN,  fn: sincronizarProdutosAgora },
   { nome: 'ficha',      cada: 6 * 60 * MIN,  fn: sincronizarFichaCustoAgora },

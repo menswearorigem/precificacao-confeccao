@@ -488,13 +488,58 @@ async function gridOrdensProducao(sessao, { de, ate } = {}) {
   }, { ordem: 1, dir: 'desc' });
 }
 
+// ── Pedidos de venda (atacado/loja lançados DIRETO no Wik) ──────────────────
+// A API pública (venda_get) volta VAZIA para esse fluxo — marketplace é outra
+// coisa e não passa pelo Wik. A fonte real é o grid da Tela de Vendas
+// (/Pedido/Index → /Pedido/CarregaGrid), a MESMA técnica confiável do grid das
+// OPs. Reverse-engineered ao vivo (15/09/2026): o corpo é DataTables + um
+// `jsonData` com as datas e os filtros de operação/situação/vendedor vazios
+// (= todos). Com {DataInicial, DataFinal} basta — devolveu 3.100 pedidos de
+// 2026. NÃO exige token antiforgery. A empresa é a da SESSÃO (matriz 192);
+// quem chama garante a empresa com trocarEmpresa antes.
+//
+// Campos úteis por linha (o grid devolve o objeto inteiro, não só as colunas):
+//   PedId, PedDatacad, Cliente, PedCliId, Vendedor, PedValorLiq, PedValorTotal,
+//   PedPercDesc, PedValorDesc, PedAcrescimo, PedFrete, Situacao, Operacao,
+//   CondVenc, FormPgto, PedNumNf, PedEmpNf, CanalVenda, PedObservacao.
+const COLS_PEDIDO_GRID = [
+  'CorTexto', 'boolExibeObsComLiberacao', 'PedId', 'Operacao', 'Cliente',
+  'PedDatacad', 'PedValorLiq', 'Situacao', 'ExibeObsComLiberacao',
+  'PedCheckout', 'PedNumNf', 'PedEmpNf',
+];
+async function gridPedidos(sessao, { de, ate } = {}) {
+  return gridCompleto(sessao, '/Pedido/CarregaGrid', COLS_PEDIDO_GRID, {
+    ListaFiltros: [],
+    FiltroSelecionado: '1',
+    DataInicial: de,
+    DataFinal: ate,
+    Valor: '',
+    OperacoesSelecionadas: '',   // vazio = todas as operações
+    SituacoesSelecionadas: '',    // vazio = todas as situações
+    Vendedor: '0',                // 0 = todos os vendedores
+  }, { ordem: 5, dir: 'desc' }); // ordem 5 = PedDatacad (mais novos primeiro)
+}
+
+// ── Matérias-primas: o CADASTRO inteiro (catálogo) ──────────────────────────
+// /MateriaPrima/Index → /MateriaPrima/CarregaGrid. Reverse-engineered ao vivo
+// (15/09/2026): grid DataTables comum, SEM `jsonData` de filtro, devolve as 507
+// matérias-primas com o objeto inteiro por linha — muito além das 4 colunas da
+// tela. Campos úteis: MatId, MatReferencia, MatDescricao, MatSituacao, MatUnd
+// (unidade real: KG/M/UN), MatGrupoId, MatSubgrupoId, MatTipo, MatPreco,
+// MatEstoqueMinimo, MatNcm, MatFornId, MatControlaEstoque. É o catálogo que
+// faltava (a aba tinha < 1/3 dos tecidos). O SALDO não vem aqui — é cadastro.
+const COLS_MATERIA_PRIMA = ['MatEmpId', 'MatId', 'MatReferencia', 'MatDescricao', 'MatSituacao'];
+async function gridMateriasPrimas(sessao) {
+  return gridCompleto(sessao, '/MateriaPrima/CarregaGrid', COLS_MATERIA_PRIMA, {}, { ordem: 1, dir: 'asc' });
+}
+
 
 module.exports = {
   BASE_PADRAO,
   novaSessao, restaurarCookies, serializarCookies,
   login, sessaoViva, trocarEmpresa,
   listarEmpresas, apontamentoPainel, ordemProducaoDetalhe, carregarGridDepartamentos,
-  gridOrdensProducao,
+  gridOrdensProducao, gridPedidos, gridMateriasPrimas,
   // financeiro
   contasPagar, contaPagarDetalhe, contasReceber, extratoFinanceiro,
   planoContas, centrosCusto, contasBancarias,
