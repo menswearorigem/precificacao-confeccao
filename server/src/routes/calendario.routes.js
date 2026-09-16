@@ -285,6 +285,7 @@ router.get('/resumo', async (req, res, next) => {
       `SELECT
          COUNT(*) FILTER (WHERE e.status NOT IN ('concluido','cancelado') AND e.data_prevista_fim < ${HOJE_BRASILIA}) AS atrasados,
          COUNT(*) FILTER (WHERE e.status NOT IN ('concluido','cancelado') AND e.data_prevista_fim >= ${HOJE_BRASILIA} AND e.data_prevista_fim <= ${HOJE_BRASILIA} + INTERVAL '7 days') AS vencendo_7_dias,
+         COUNT(*) FILTER (WHERE e.status NOT IN ('concluido','cancelado') AND e.data_prevista_fim = ${HOJE_BRASILIA}) AS vencem_hoje,
          COUNT(*) FILTER (WHERE e.status = 'concluido' AND date_trunc('month', e.data_conclusao_real) = date_trunc('month', ${HOJE_BRASILIA})) AS concluidos_no_mes
        FROM calendario_eventos e ${where}`,
       values
@@ -293,6 +294,8 @@ router.get('/resumo', async (req, res, next) => {
     res.json({
       atrasados: Number(r.atrasados),
       vencendo7Dias: Number(r.vencendo_7_dias),
+      // Cartão "Vencem hoje" do radar do calendário (16/09/2026).
+      vencemHoje: Number(r.vencem_hoje),
       concluidosNoMes: Number(r.concluidos_no_mes),
     });
   } catch (err) {

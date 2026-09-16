@@ -323,6 +323,8 @@ async function main() {
     // -----------------------------------------------------------------
     const resumo = await gerente('/api/calendario/resumo');
     ok('o painel de resumo responde', resumo.status === 200 && typeof resumo.dados.atrasados === 'number');
+    ok('o resumo traz "vencem hoje" (radar do calendário)', typeof resumo.dados.vencemHoje === 'number'
+      && resumo.dados.vencemHoje <= resumo.dados.vencendo7Dias);
     const notificacoes = await gerente('/api/calendario/notificacoes');
     ok('o sino de notificações responde', notificacoes.status === 200 && Array.isArray(notificacoes.dados.itens));
     const templates = await gerente('/api/calendario/templates');

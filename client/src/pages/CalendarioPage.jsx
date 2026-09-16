@@ -1,16 +1,18 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  ChevronLeft, ChevronRight, Plus, AlertTriangle, Calendar, Columns3, List, Printer,
-  Clock, CheckCircle2, Users,
+  ChevronLeft, ChevronRight, Plus, Calendar, Columns3, List, Printer, Search, X, Factory, Users,
 } from 'lucide-react';
 import { dataBr } from '../lib/format';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
-import { StatCard, Select, DateInput } from '../components/ui';
+import { Select, DateInput } from '../components/ui';
 import EventoCalendarioModal from '../components/EventoCalendarioModal';
 import CalendarioKanban, { COLUNAS as COLUNAS_KANBAN } from '../components/CalendarioKanban';
-import { corDaCategoria } from '../lib/corCategoria';
+import {
+  RadarCalendario, ChipEvento, PopoverDia, PainelLateral, ListaAgrupada, SeletorVisao,
+  STATUS_ROTULO, aberto, casaFoco,
+} from '../components/CalendarioVivo';
 import { situacaoEvento, situacaoClasse, SITUACAO_ROTULO } from '../lib/situacaoEvento';
 
 const DIAS_ALERTA_PADRAO = 3;
@@ -20,12 +22,8 @@ const NOMES_MES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ];
-const STATUS_ROTULO = {
-  nao_iniciado: 'Não iniciado',
-  em_andamento: 'Em andamento',
-  concluido: 'Concluído',
-  cancelado: 'Cancelado',
-};
+const MAX_CHIPS_POR_DIA = 3;
+
 
 // O filtro "Quem vê" (04/09/2026). Antes, quem é administrador enxergava o
 // calendário inteiro e não tinha como separar o que é seu do que é dos
@@ -92,30 +90,43 @@ function resumoDeQuemVe(evento) {
   return partes.join(' · ');
 }
 
-function EventoChip({ evento, diasAlerta, onClick }) {
-  const situacao = situacaoEvento(evento, diasAlerta);
-  const compartilhado = (evento.compartilhadoCom || []).length > 0;
-  return (
-    <button
-      type="button"
-      className={`calendario-chip ${situacaoClasse(situacao)}`}
-      onClick={(e) => { e.stopPropagation(); onClick(); }}
-      title={`${evento.titulo} — ${resumoDeQuemVe(evento)}`}
-    >
-      {evento.categoria && <span className="categoria-dot" style={{ background: corDaCategoria(evento.categoria) }} />}
-      {evento.titulo}
-      {compartilhado && <Users size={10} className="calendario-chip-compartilhado" />}
-    </button>
-  );
+// Rótulo curto do escopo para os chips (o rótulo longo continua no
+// cabeçalho impresso, onde cabe).
+const ESCOPO_CURTO = {
+  '': 'Tudo que eu vejo',
+  meus: 'Meus',
+  responsavel: 'Sou responsável',
+  criados_por_mim: 'Criados por mim',
+};
+
+const VISOES = [
+  { valor: 'mes', rotulo: 'Mês', Icone: Calendar },
+  { valor: 'kanban', rotulo: 'Quadro', Icone: Columns3 },
+  { valor: 'lista', rotulo: 'Lista', Icone: List },
+];
+
+function mesmoMes(iso, d) {
+  return iso.slice(0, 7) === `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function digitando(alvo) {
+  if (!alvo) return false;
+  const tag = alvo.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || alvo.isContentEditable;
 }
 
 export default function CalendarioPage() {
   const hoje = new Date();
+  const hojeIso = isoDoDia(hoje);
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [view, setView] = useState('mes'); // 'mes' | 'kanban' | 'lista'
   const [mesAtual, setMesAtual] = useState(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
+  // Direção da última troca de mês: 1 = avançou, -1 = voltou. Decide para
+  // que lado a grade e o título deslizam.
+  const [direcao, setDirecao] = useState(0);
   const [eventos, setEventos] = useState([]);
+  const [atencao, setAtencao] = useState([]);
   const [resumo, setResumo] = useState(null);
   const [categorias, setCategorias] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
@@ -124,6 +135,8 @@ export default function CalendarioPage() {
   const [status, setStatus] = useState('');
   const [busca, setBusca] = useState('');
   const [escopo, setEscopo] = useState(lerEscopoSalvo);
+  const [foco, setFoco] = useState(null); // recorte do radar: atrasado | hoje | semana | concluido
+  const [diaSelecionado, setDiaSelecionado] = useState(hojeIso);
   // Kanban: qual mês está sendo exibido. Antes o quadro trazia TODOS os
   // eventos de todos os tempos e as colunas "Concluído"/"Cancelado" só
   // cresciam — evento nunca saía da tela. Agora ele respeita o mês escolhido,
@@ -133,9 +146,10 @@ export default function CalendarioPage() {
   const [listaDe, setListaDe] = useState('');
   const [listaAte, setListaAte] = useState('');
   const [modal, setModal] = useState(null); // null | { eventoId } | { dataPadrao }
-  const [menuDia, setMenuDia] = useState(null); // null | { iso, eventos, pos: { top, left } }
+  const [popover, setPopover] = useState(null); // null | { iso, pos: { top, left } }
   const [erro, setErro] = useState('');
   const [diasAlerta, setDiasAlerta] = useState(DIAS_ALERTA_PADRAO);
+  const buscaRef = useRef(null);
 
   const { semanas, inicioGrade, fimGrade } = useMemo(
     () => gerarSemanasDoMes(mesAtual.getFullYear(), mesAtual.getMonth()),
@@ -163,6 +177,15 @@ export default function CalendarioPage() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  function aplicarFiltrosComuns(params, { comStatus = true } = {}) {
+    if (categoria) params.set('categoria', categoria);
+    if (responsavelId) params.set('responsavel_id', responsavelId);
+    if (comStatus && status) params.set('status', status);
+    if (busca) params.set('busca', busca);
+    if (escopo) params.set('escopo', escopo);
+    return params;
+  }
+
   function montarParamsFiltro() {
     const params = new URLSearchParams();
     if (view === 'mes') {
@@ -180,18 +203,22 @@ export default function CalendarioPage() {
       params.set('data_inicio', listaDe || '1900-01-01');
       params.set('data_fim', listaAte || '2999-12-31');
     }
-    if (categoria) params.set('categoria', categoria);
-    if (responsavelId) params.set('responsavel_id', responsavelId);
-    if (status) params.set('status', status);
-    if (busca) params.set('busca', busca);
-    if (escopo) params.set('escopo', escopo);
-    return params;
+    return aplicarFiltrosComuns(params);
   }
 
   function carregar() {
     const params = montarParamsFiltro();
     api.get(`/calendario/eventos?${params.toString()}`).then(setEventos).catch((err) => setErro(err.message));
     api.get('/calendario/resumo').then(setResumo).catch(() => {});
+    // "Precisa de atenção": tudo em aberto com prazo até daqui a 7 dias,
+    // independente do mês exibido (o atrasado de agosto continua aparecendo
+    // em setembro). Respeita os mesmos filtros de quem/categoria/busca.
+    const limite = new Date(hoje);
+    limite.setDate(limite.getDate() + 7);
+    const pAtencao = aplicarFiltrosComuns(new URLSearchParams({ data_inicio: '1900-01-01', data_fim: isoDoDia(limite) }), { comStatus: false });
+    api.get(`/calendario/eventos?${pAtencao.toString()}`)
+      .then((lista) => setAtencao(lista.filter((e) => aberto(e) && (e.atrasado || (e.diasParaPrazo !== null && e.diasParaPrazo <= 7)))))
+      .catch(() => {});
   }
 
   useEffect(carregar, [view, inicioGrade, fimGrade, categoria, responsavelId, status, busca, escopo, kanbanSoDoMes, mesAtual, listaDe, listaAte]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -218,23 +245,68 @@ export default function CalendarioPage() {
     return mapa;
   }, [eventos]);
 
+  // Anel "Prazos do mês": dos eventos (não cancelados) com prazo no mês
+  // exibido, quantos já estão concluídos.
+  const entregueNoMes = useMemo(() => {
+    const doMes = eventos.filter((e) => e.status !== 'cancelado' && mesmoMes(e.data_prevista_fim, mesAtual));
+    return { total: doMes.length, feitos: doMes.filter((e) => e.status === 'concluido').length };
+  }, [eventos, mesAtual]);
+
   function fecharModal(recarregar) {
     setModal(null);
     if (recarregar) carregar();
   }
 
-  // Clicar num dia vazio vai direto pro formulário de novo evento — mas um
-  // dia que já tem evento(s) abre um menu curto primeiro (lista dos eventos
-  // + botão "criar novo"), pra não competir com o clique de abrir um evento
-  // já existente (ver EventoChip acima, que também chama e.stopPropagation).
-  function aoClicarDia(e, iso, eventosDoDia) {
-    if (eventosDoDia.length === 0) {
-      setModal({ dataPadrao: iso });
-      return;
-    }
-    const rect = e.currentTarget.getBoundingClientRect();
-    setMenuDia({ iso, eventos: eventosDoDia, pos: { top: rect.bottom + 4, left: rect.left } });
+  const abrirEvento = useCallback((id) => setModal({ eventoId: id }), []);
+  const novoEvento = useCallback((iso) => setModal({ dataPadrao: iso || isoDoDia(new Date()) }), []);
+  const fecharPopover = useCallback(() => setPopover(null), []);
+
+  function irParaMes(delta) {
+    setDirecao(delta > 0 ? 1 : -1);
+    setMesAtual((m) => new Date(m.getFullYear(), m.getMonth() + delta, 1));
   }
+
+  function irParaHoje() {
+    const alvo = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    if (alvo.getTime() !== mesAtual.getTime()) setDirecao(alvo > mesAtual ? 1 : -1);
+    setMesAtual(alvo);
+    setDiaSelecionado(hojeIso);
+  }
+
+  // Clicar num evento do "Precisa de atenção": vai para o mês dele e
+  // seleciona o dia — e abre o evento, que é o que a pessoa quer resolver.
+  function irParaEvento(evento) {
+    const iso = evento.data_prevista_fim.slice(0, 10);
+    const alvo = new Date(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, 1);
+    if (view === 'mes' && alvo.getTime() !== mesAtual.getTime()) {
+      setDirecao(alvo > mesAtual ? 1 : -1);
+      setMesAtual(alvo);
+    }
+    setDiaSelecionado(iso);
+    abrirEvento(evento.id);
+  }
+
+  function alternarFoco(chave) {
+    setFoco((atual) => (atual === chave ? null : chave));
+  }
+
+  // Atalhos: ← → trocam o mês, T volta para hoje, N cria evento, / busca,
+  // Esc limpa o destaque. Desligados enquanto o formulário está aberto ou a
+  // pessoa está digitando.
+  useEffect(() => {
+    function tecla(e) {
+      if (modal || popover || digitando(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
+      const k = e.key;
+      if (k === 'ArrowLeft' && view !== 'lista') { e.preventDefault(); irParaMes(-1); }
+      else if (k === 'ArrowRight' && view !== 'lista') { e.preventDefault(); irParaMes(1); }
+      else if (k === 't' || k === 'T') irParaHoje();
+      else if (k === 'n' || k === 'N') novoEvento(diaSelecionado);
+      else if (k === '/') { e.preventDefault(); buscaRef.current?.focus(); }
+      else if (k === 'Escape' && foco) setFoco(null);
+    }
+    window.addEventListener('keydown', tecla);
+    return () => window.removeEventListener('keydown', tecla);
+  }); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Título do que está sendo exibido, usado na tela e no cabeçalho impresso.
   const periodoDescrito = view === 'mes' || (view === 'kanban' && kanbanSoDoMes)
@@ -246,74 +318,82 @@ export default function CalendarioPage() {
   const escopoDescrito = ESCOPOS.find((e) => e.valor === escopo)?.rotulo || ESCOPOS[0].rotulo;
 
   const mostrarNavegacaoMes = view === 'mes' || (view === 'kanban' && kanbanSoDoMes);
+  const chaveMes = `${mesAtual.getFullYear()}-${mesAtual.getMonth()}`;
+  const classeDirecao = direcao > 0 ? ' desliza-direita' : direcao < 0 ? ' desliza-esquerda' : '';
+  const eventosDoDiaSelecionado = eventosPorDia.get(diaSelecionado) || [];
+  const filtrosAtivos = Boolean(categoria || responsavelId || status || busca || foco);
 
   return (
-    <div className="page-wide">
+    <div className="page-wide cal-pagina">
       {/* no-print: este bloco e os indicadores abaixo gastavam uma FOLHA
           INTEIRA na exportação, antes de o calendário sequer começar. O que
           eles dizem volta, em uma linha, dentro do cabeçalho impresso. */}
-      <div className="no-print">
-        <h1>Calendário</h1>
-        <p className="page-sub">Prazos e compromissos do dia a dia — chegada de corte, metas e outros eventos com data.</p>
+      <div className="no-print cal-topo">
+        <div>
+          <h1>Calendário</h1>
+          <p className="page-sub">Prazos e compromissos do dia a dia — chegada de corte, metas e outros eventos com data.</p>
+        </div>
+        <div className="cal-atalhos" aria-hidden="true">
+          <kbd>←</kbd><kbd>→</kbd> mês · <kbd>T</kbd> hoje · <kbd>N</kbd> novo · <kbd>/</kbd> buscar
+        </div>
       </div>
 
       {erro && <div className="login-error no-print" style={{ marginBottom: 12 }}>{erro}</div>}
 
-      {resumo && (
-        <div className="stat-strip no-print">
-          <StatCard label="Atrasados" value={resumo.atrasados} variant="danger" Icone={AlertTriangle}>
-            {resumo.atrasados > 0 && <span className="stat-card-delta down"><AlertTriangle size={12} /> requer atenção</span>}
-          </StatCard>
-          <StatCard label="Vencendo em 7 dias" value={resumo.vencendo7Dias} variant="warning" Icone={Clock} />
-          <StatCard label="Concluídos no mês" value={resumo.concluidosNoMes} variant="success" Icone={CheckCircle2} />
-        </div>
-      )}
+      <RadarCalendario resumo={resumo} foco={foco} onFoco={alternarFoco} entregueNoMes={entregueNoMes} />
 
-      <div className="calendario-header-barra no-print">
+      <div className="calendario-header-barra cal-barra no-print">
         <div className="calendario-header-nav">
           {mostrarNavegacaoMes ? (
             <>
-              <button className="icon-btn" onClick={() => setMesAtual((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))}><ChevronLeft size={18} /></button>
-              <span className="calendario-header-titulo">{NOMES_MES[mesAtual.getMonth()]} de {mesAtual.getFullYear()}</span>
-              <button className="icon-btn" onClick={() => setMesAtual((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))}><ChevronRight size={18} /></button>
-              <button type="button" className="btn btn-ghost" onClick={() => setMesAtual(new Date(hoje.getFullYear(), hoje.getMonth(), 1))}>
+              <button type="button" className="icon-btn cal-seta" onClick={() => irParaMes(-1)} aria-label="Mês anterior" title="Mês anterior (←)"><ChevronLeft size={18} /></button>
+              <span className="cal-mes-janela" aria-live="polite">
+                <span key={chaveMes} className={`calendario-header-titulo cal-mes-titulo${classeDirecao}`}>
+                  {NOMES_MES[mesAtual.getMonth()]} <span className="cal-mes-ano">{mesAtual.getFullYear()}</span>
+                </span>
+              </span>
+              <button type="button" className="icon-btn cal-seta" onClick={() => irParaMes(1)} aria-label="Próximo mês" title="Próximo mês (→)"><ChevronRight size={18} /></button>
+              <button type="button" className="btn btn-ghost cal-hoje" onClick={irParaHoje} title="Voltar para hoje (T)">
                 Hoje
               </button>
             </>
           ) : view === 'lista' ? (
-            <span className="calendario-header-titulo">Lista de eventos</span>
+            <span className="calendario-header-titulo cal-mes-titulo">Lista de eventos {(listaDe || listaAte) && <span className="cal-mes-ano">{periodoDescrito}</span>}</span>
           ) : (
-            <span className="calendario-header-titulo">Quadro por status — todos os meses</span>
+            <span className="calendario-header-titulo cal-mes-titulo">Quadro <span className="cal-mes-ano">todos os meses</span></span>
           )}
         </div>
         <div className="calendario-header-acoes">
-          <div className="view-toggle">
-            <button type="button" className={view === 'mes' ? 'active' : ''} onClick={() => setView('mes')}>
-              <Calendar size={13} /> Mês
-            </button>
-            <button type="button" className={view === 'kanban' ? 'active' : ''} onClick={() => setView('kanban')}>
-              <Columns3 size={13} /> Kanban
-            </button>
-            <button type="button" className={view === 'lista' ? 'active' : ''} onClick={() => setView('lista')}>
-              <List size={13} /> Lista
-            </button>
-          </div>
+          <SeletorVisao view={view} onChange={setView} opcoes={VISOES} />
           <button className="btn btn-ghost" onClick={() => window.print()} title="Abre a impressão do navegador — de lá dá para salvar em PDF">
             <Printer size={14} /> Imprimir
           </button>
-          <button className="btn btn-primary" onClick={() => setModal({ dataPadrao: isoDoDia(hoje) })}>
+          <button className="btn btn-primary cal-novo" onClick={() => novoEvento(diaSelecionado)} title="Novo evento (N)">
             <Plus size={14} /> Novo evento
           </button>
         </div>
       </div>
 
-      <div className="filtros-barra no-print">
+      <div className="filtros-barra cal-filtros no-print">
         {/* Quem vê: o filtro que faz a liberação por pessoa/grupo aparecer na
             tela. Pra quem é administrador é o único jeito de tirar da frente
-            o calendário dos outros. */}
-        <Select value={escopo} onChange={(e) => setEscopo(e.target.value)} style={{ maxWidth: 300 }}>
-          {ESCOPOS.map((e) => <option key={e.valor || 'todos'} value={e.valor}>{e.rotulo}</option>)}
-        </Select>
+            o calendário dos outros. Virou chips (eram um select com frase
+            comprida). */}
+        <div className="cal-chips" role="group" aria-label="Quais eventos mostrar">
+          {ESCOPOS.map((e) => (
+            <button
+              key={e.valor || 'todos'}
+              type="button"
+              className="cal-filtro-chip"
+              aria-pressed={escopo === e.valor}
+              title={e.rotulo}
+              onClick={() => setEscopo(e.valor)}
+            >
+              {ESCOPO_CURTO[e.valor] || e.rotulo}
+            </button>
+          ))}
+        </div>
+        <span className="cal-sep" />
         <Select value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="Todas as categorias" style={{ maxWidth: 180 }}>
           {categorias.map((c) => <option key={c.id} value={c.valor}>{c.valor}</option>)}
         </Select>
@@ -343,121 +423,162 @@ export default function CalendarioPage() {
             )}
           </div>
         )}
-        <div className="filtros-barra-busca">
-          <input placeholder="Buscar por título, SKU ou referência…" value={busca} onChange={(e) => setBusca(e.target.value)} />
-        </div>
+        <label className="cal-busca">
+          <Search size={14} />
+          <input ref={buscaRef} placeholder="Buscar por título, SKU ou referência…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+          {busca && (
+            <button type="button" className="cal-busca-limpar" onClick={() => setBusca('')} aria-label="Limpar busca"><X size={13} /></button>
+          )}
+        </label>
+        {filtrosAtivos && (
+          <button
+            type="button"
+            className="cal-limpar-tudo"
+            onClick={() => { setCategoria(''); setResponsavelId(''); setStatus(''); setBusca(''); setFoco(null); }}
+          >
+            <X size={12} /> Limpar filtros
+          </button>
+        )}
       </div>
 
-      <div className="no-print">
-      {view === 'mes' ? (
-        <div className="card">
-          <div className="calendario-grade">
-            {DIAS_SEMANA.map((d) => <div key={d} className="calendario-cabecalho-dia">{d}</div>)}
-            {semanas.flat().map(({ data, foraDoMes }) => {
-              const iso = isoDoDia(data);
-              const eventosDoDia = eventosPorDia.get(iso) || [];
-              const ehHoje = iso === isoDoDia(hoje);
-              return (
-                <div
-                  key={iso}
-                  className={`calendario-dia${foraDoMes ? ' fora-do-mes' : ''}${ehHoje ? ' hoje' : ''}`}
-                  onClick={(e) => aoClicarDia(e, iso, eventosDoDia)}
-                >
-                  <span className="calendario-dia-numero">{data.getDate()}</span>
-                  <div className="calendario-dia-eventos">
-                    {eventosDoDia.slice(0, 3).map((e) => (
-                      <EventoChip key={e.id} evento={e} diasAlerta={diasAlerta} onClick={() => setModal({ eventoId: e.id })} />
-                    ))}
-                    {eventosDoDia.length > 3 && (
-                      <span className="calendario-dia-mais">+{eventosDoDia.length - 3} mais</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : view === 'lista' ? (
-        <div className="card">
-          <div className="card-head" style={{ marginBottom: 10 }}>
-            Lista de eventos {(listaDe || listaAte) && <span className="page-sub">— {periodoDescrito}</span>}
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="calendario-lista-tabela">
-              <thead>
-                <tr>
-                  <th>Título</th>
-                  <th>Categoria</th>
-                  <th>Responsáveis</th>
-                  <th>Quem vê</th>
-                  <th>Prazo</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {eventos.map((e) => (
-                  <tr key={e.id} className="calendario-lista-linha" onClick={() => setModal({ eventoId: e.id })}>
-                    <td>{e.titulo}</td>
-                    <td>{e.categoria || '—'}</td>
-                    <td>{e.responsaveis?.map((r) => r.nome).join(', ') || '—'}</td>
-                    <td className="calendario-lista-quem-ve">{resumoDeQuemVe(e)}</td>
-                    <td>{dataBr(e.data_prevista_fim.slice(0, 10))}{e.atrasado ? ' (atrasado)' : ''}</td>
-                    <td>{STATUS_ROTULO[e.status] || e.status}</td>
-                  </tr>
+      <div className="no-print cal-corpo">
+        <div className="cal-principal">
+          {view === 'mes' ? (
+            <div className="cal-painel cal-painel-grade">
+              <div className="cal-grade-cabecalho">
+                {DIAS_SEMANA.map((d, i) => (
+                  <div key={d} className={`cal-cabecalho-dia${i === 0 || i === 6 ? ' fds' : ''}`}>{d}</div>
                 ))}
-                {eventos.length === 0 && <tr><td colSpan="6">Nenhum evento no filtro selecionado.</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : (
-        <div className="card">
-          <div className="card-head" style={{ marginBottom: 10 }}>
-            Quadro por status <span className="page-sub">— {periodoDescrito}</span>
-          </div>
-          <CalendarioKanban
-            eventos={eventos}
-            diasAlerta={diasAlerta}
-            onMudarStatus={mudarStatusKanban}
-            onClickCartao={(id) => setModal({ eventoId: id })}
-          />
-        </div>
-      )}
+              </div>
+              <div key={chaveMes} className={`cal-grade${foco ? ' com-foco' : ''}${classeDirecao}`}>
+                {semanas.flat().map(({ data, foraDoMes }, idx) => {
+                  const iso = isoDoDia(data);
+                  const eventosDoDia = eventosPorDia.get(iso) || [];
+                  const ehHoje = iso === hojeIso;
+                  const fds = data.getDay() === 0 || data.getDay() === 6;
+                  const classes = [
+                    'cal-dia',
+                    fds && 'fds',
+                    foraDoMes && 'fora-do-mes',
+                    ehHoje && 'hoje',
+                    iso === diaSelecionado && 'selecionado',
+                    iso < hojeIso && 'passado',
+                    foco && eventosDoDia.some((e) => casaFoco(e, foco)) && 'tem-foco',
+                  ].filter(Boolean).join(' ');
+                  return (
+                    <div
+                      key={iso}
+                      className={classes}
+                      style={{ '--d': idx }}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${dataBr(iso)}, ${eventosDoDia.length} evento(s)`}
+                      onClick={() => setDiaSelecionado(iso)}
+                      onDoubleClick={() => novoEvento(iso)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') setDiaSelecionado(iso); }}
+                    >
+                      <div className="cal-dia-topo">
+                        <span className="cal-dia-numero">{data.getDate()}</span>
+                        {ehHoje && <span className="cal-hoje-etiqueta">hoje</span>}
+                        <button
+                          type="button"
+                          className="cal-dia-add"
+                          onClick={(e) => { e.stopPropagation(); novoEvento(iso); }}
+                          aria-label={`Criar evento em ${dataBr(iso)}`}
+                          title="Criar evento neste dia"
+                        >
+                          <Plus size={13} />
+                        </button>
+                      </div>
+                      <div className="cal-dia-eventos">
+                        {eventosDoDia.slice(0, MAX_CHIPS_POR_DIA).map((e, i) => (
+                          <ChipEvento
+                            key={e.id} evento={e} indice={i} diasAlerta={diasAlerta} foco={foco}
+                            onClick={abrirEvento} resumoQuemVe={resumoDeQuemVe}
+                          />
+                        ))}
+                        {eventosDoDia.length > MAX_CHIPS_POR_DIA && (
+                          <button
+                            type="button"
+                            className="cal-dia-mais"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const r = e.currentTarget.getBoundingClientRect();
+                              setDiaSelecionado(iso);
+                              setPopover({ iso, pos: { top: r.bottom + 6, left: r.left } });
+                            }}
+                          >
+                            +{eventosDoDia.length - MAX_CHIPS_POR_DIA} eventos
+                          </button>
+                        )}
+                      </div>
+                      {eventosDoDia.length > 0 && (
+                        <div className="cal-dia-carga" aria-hidden="true">
+                          {eventosDoDia.map((e) => (
+                            <i key={e.id} className={situacaoClasse(situacaoEvento(e, diasAlerta))} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : view === 'lista' ? (
+            <div className="cal-painel">
+              <ListaAgrupada eventos={eventos} diasAlerta={diasAlerta} foco={foco} onAbrir={abrirEvento} resumoQuemVe={resumoDeQuemVe} />
+            </div>
+          ) : (
+            <div className="cal-painel">
+              <CalendarioKanban
+                eventos={eventos}
+                diasAlerta={diasAlerta}
+                foco={foco}
+                onMudarStatus={mudarStatusKanban}
+                onClickCartao={abrirEvento}
+              />
+            </div>
+          )}
 
-      <div className="calendario-legenda">
-        {Object.entries(SITUACAO_ROTULO).map(([situacao, rotulo]) => (
-          <span key={situacao} className="calendario-legenda-item">
-            <span className={`calendario-legenda-quadrado ${situacaoClasse(situacao)}`} />
-            {rotulo}
-          </span>
-        ))}
-      </div>
-      </div>
-
-      {menuDia && (
-        <>
-          <div className="calendario-dia-menu-backdrop" onClick={() => setMenuDia(null)} />
-          <div className="calendario-dia-menu" style={{ top: menuDia.pos.top, left: menuDia.pos.left }}>
-            <div className="calendario-dia-menu-head">{dataBr(menuDia.iso)}</div>
-            {menuDia.eventos.map((e) => (
-              <button
-                key={e.id}
-                type="button"
-                className="calendario-dia-menu-item"
-                onClick={() => { setModal({ eventoId: e.id }); setMenuDia(null); }}
-              >
-                {e.titulo}
-              </button>
+          <div className="calendario-legenda cal-legenda">
+            {Object.entries(SITUACAO_ROTULO).map(([situacao, rotulo]) => (
+              <span key={situacao} className="calendario-legenda-item">
+                <span className={`calendario-legenda-quadrado ${situacaoClasse(situacao)}`} />
+                {rotulo}
+              </span>
             ))}
-            <button
-              type="button"
-              className="calendario-dia-menu-item calendario-dia-menu-novo"
-              onClick={() => { setModal({ dataPadrao: menuDia.iso }); setMenuDia(null); }}
-            >
-              <Plus size={13} /> Criar novo evento nesse dia
-            </button>
+            <span className="cal-legenda-icones">
+              <span><Factory size={12} /> ordem de produção</span>
+              <span><Users size={12} /> compartilhado</span>
+              {view === 'mes' && <span>duplo clique no dia = novo evento</span>}
+            </span>
           </div>
-        </>
+        </div>
+
+        <PainelLateral
+          diaSelecionado={diaSelecionado}
+          hojeIso={hojeIso}
+          eventosDoDia={eventosDoDiaSelecionado}
+          atencao={atencao}
+          diasAlerta={diasAlerta}
+          onAbrir={abrirEvento}
+          onNovo={novoEvento}
+          onIrParaDia={irParaEvento}
+          onVerTodos={() => { setView('lista'); setFoco(null); setListaDe(''); setListaAte(''); }}
+        />
+      </div>
+
+      {popover && (
+        <PopoverDia
+          dia={popover.iso}
+          eventos={eventosPorDia.get(popover.iso) || []}
+          pos={popover.pos}
+          diasAlerta={diasAlerta}
+          foco={foco}
+          onAbrir={abrirEvento}
+          onNovo={novoEvento}
+          onFechar={fecharPopover}
+        />
       )}
 
       {/* -------------------------------------------------------------------
