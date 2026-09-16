@@ -761,9 +761,18 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
     // (upsert por chave do Wik), então refazer não duplica nada.
     async function rodarEmpresas(sessao) {
       for (const emp of empresas) {
-        // Trocar a empresa ativa MEXE na sessão de quem estiver logado com este
-        // usuário — é o preço de não haver conta de serviço (ver 0067).
-        await wikWeb.trocarEmpresa(sessao, emp.wik_emp_id);
+        // Trocar a empresa ativa MEXE na sessão. Se o Wik RECUSAR a troca (já
+        // vimos empresas não-matriz voltando 500), não adianta seguir lendo o
+        // grid nessa sessão — ela volta a tela de login e vira "sessão
+        // derrubada" para o resto da rodada. Trata a recusa como sessão caída:
+        // dispara o retry, que renova e refaz. (É a causa mais provável de a
+        // derrubada bater sempre nas empresas 198/202 e nunca na matriz.)
+        const trocou = await wikWeb.trocarEmpresa(sessao, emp.wik_emp_id);
+        if (!trocou) {
+          const e = new Error(`SESSAO_EXPIRADA (troca para empresa ${emp.wik_emp_id} recusada)`);
+          e.sessaoExpirada = true;
+          throw e;
+        }
 
         if (forcarCadastros || !cadastrosHoje) {
           await importarPlanoContas(sessao, emp, resumo);
@@ -782,21 +791,26 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
     }
 
     // ⭐ O CONSERTO: sessão viva na entrada; se ela CAIR no meio (o Wik derruba
-    // quando o mesmo login aparece noutro lugar, ou por timeout de inatividade),
-    // renova UMA vez e REFAZ — em vez de falhar de vez e só "tentar no próximo
-    // ciclo" (que, na prática, também caía e deixava o financeiro travado em
-    // SESSAO_EXPIRADA). É o mesmo retry que o sync de produção já tinha e o
-    // financeiro não — a assimetria que deixava só o financeiro morto.
+    // quando o mesmo login aparece noutro lugar — o Render roda 2 instâncias no
+    // overlap de deploy — ou por timeout, ou porque a troca de empresa foi
+    // recusada), renova e REFAZ. Tenta até 3x com uma pequena espera entre
+    // elas, porque a derrubada costuma ser INTERMITENTE — uma tentativa só (o
+    // que o sync de produção faz) às vezes não basta. Gravação idempotente,
+    // então refazer nunca duplica.
     let sessao = await obterSessao(integracao);
-    try {
-      await rodarEmpresas(sessao);
-    } catch (err) {
-      if (!err.sessaoExpirada) throw err;
-      // Zera os contadores parciais desta tentativa (a gravação já feita fica —
-      // é idempotente e será reescrita igual) e refaz com uma sessão nova.
-      Object.assign(resumo, resumoVazio(), { janela: resumo.janela });
-      sessao = await renovarSessao(integracao);
-      await rodarEmpresas(sessao);
+    for (let tentativa = 1; ; tentativa += 1) {
+      try {
+        await rodarEmpresas(sessao);
+        break;
+      } catch (err) {
+        if (!err.sessaoExpirada || tentativa >= 3) throw err;
+        // Zera os contadores parciais desta tentativa (a gravação já feita fica
+        // — é idempotente e será reescrita igual) e refaz com uma sessão nova,
+        // depois de uma pausa curta e crescente para a outra ponta soltar.
+        Object.assign(resumo, resumoVazio(), { janela: resumo.janela });
+        await new Promise((r) => setTimeout(r, 1500 * tentativa));
+        sessao = await renovarSessao(integracao);
+      }
     }
 
     resumo.segundos = Math.round((Date.now() - t0) / 1000);
