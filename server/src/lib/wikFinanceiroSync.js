@@ -761,18 +761,14 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
     // (upsert por chave do Wik), então refazer não duplica nada.
     async function rodarEmpresas(sessao) {
       for (const emp of empresas) {
-        // Trocar a empresa ativa MEXE na sessão. Se o Wik RECUSAR a troca (já
-        // vimos empresas não-matriz voltando 500), não adianta seguir lendo o
-        // grid nessa sessão — ela volta a tela de login e vira "sessão
-        // derrubada" para o resto da rodada. Trata a recusa como sessão caída:
-        // dispara o retry, que renova e refaz. (É a causa mais provável de a
-        // derrubada bater sempre nas empresas 198/202 e nunca na matriz.)
-        const trocou = await wikWeb.trocarEmpresa(sessao, emp.wik_emp_id);
-        if (!trocou) {
-          const e = new Error(`SESSAO_EXPIRADA (troca para empresa ${emp.wik_emp_id} recusada)`);
-          e.sessaoExpirada = true;
-          throw e;
-        }
+        // Troca a empresa ativa da sessão (o contas a pagar depende dela; o
+        // contas a receber e o extrato usam EmpId como filtro e independem).
+        // A troca pode devolver 500 para empresas não-matriz, MAS isso NÃO
+        // derruba a sessão (confirmado ao vivo 16/09: a sessão segue viva depois
+        // do 500) — então NÃO tratamos como sessão caída (fazer isso causava 3
+        // renovações inúteis e falha). Só a derrubada REAL do grid (tela de
+        // login) dispara o retry lá embaixo.
+        await wikWeb.trocarEmpresa(sessao, emp.wik_emp_id);
 
         if (forcarCadastros || !cadastrosHoje) {
           await importarPlanoContas(sessao, emp, resumo);
