@@ -409,6 +409,21 @@
     --btn-primary-from: #6b4423; --btn-primary-to: #422a15; --btn-primary-ink: #fbf5e9;
     --zebra-overlay: rgba(42, 29, 16, 0.018);
     --zebra-frozen: #f8f2e4; --zebra-frozen-hover: #eee0c8;
+
+    /* ⚠️ 16/09/2026 — FONTES DO PAPEL SÃO FONTES DE SISTEMA, ESTÁTICAS.
+       Inter, Fraunces e JetBrains Mono chegam do Google Fonts como fontes
+       VARIÁVEIS, e o Chrome não sabe embutir fonte variável no PDF da
+       impressão: converte cada letra em desenho (fonte "Type 3"). Medido com
+       80 Fichas de Estoque: o PDF ficou com todas as fontes em Type 3 e cada
+       página custou quase o dobro para desenhar — é isso que trava a rolagem
+       da prévia de impressão em qualquer documento de várias folhas.
+       Arial/Georgia/Consolas são estáticas em Windows e Mac e entram no PDF
+       como fonte de verdade (TrueType). Ficam de fora de propósito as fontes
+       de sistema que também são variáveis: -apple-system/SF (Mac) e
+       Segoe UI Variable (Windows 11). A tela não muda: isto só vale no papel. */
+    --font-body: Arial, Helvetica, 'Liberation Sans', sans-serif;
+    --font-display: Georgia, 'Times New Roman', 'Liberation Serif', serif;
+    --font-mono: Consolas, 'Courier New', 'Liberation Mono', monospace;
   }
 }
 
@@ -8263,8 +8278,15 @@ table.grade-matriz { width: auto; min-width: 0; }
      referências mandava três ou quatro folhas em branco atrás do relatório.
      O app inteiro mora em #root (main.jsx) e o documento é irmão dele, filho
      direto do <body> pelo portal — então esconder #root por `display` derruba
-     a tela inteira sem alcançar o papel. */
-  #root { display: none !important; }
+     a tela inteira sem alcançar o papel.
+
+     ⚠️ 16/09/2026 — SÓ QUANDO O PAPEL DO FULL ESTÁ MONTADO. Esta regra era
+     global e escondia #root em QUALQUER impressão do sistema: Ficha de
+     Estoque, Ficha Técnica, Calendário, Financeiro, relatórios… todas saíam
+     como folha em branco. A classe no <body> é posta e tirada pelo próprio
+     FullRemessaImpressao (useEffect de montagem), então fora da tela do Full
+     o #root imprime normalmente. */
+  body.imp-full-montado #root { display: none !important; }
   #impressao-full {
     display: block !important;
     /* Em FLUXO NORMAL, não absoluto: dentro de um bloco posicionado a

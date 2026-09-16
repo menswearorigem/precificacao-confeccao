@@ -533,6 +533,16 @@ function FolhaDesmembrado({ anuncios, plano }) {
 // Montado num portal no <body>, fora da árvore do modal: é isso que faz a
 // impressão sair inteira em vez de parar na primeira dobra.
 export default function FullRemessaImpressao({ anuncios, plano, visivel = false, onFechar }) {
+  // Liga a regra de impressão que esconde o resto do app (#root) SÓ enquanto
+  // este documento existe. Antes a regra era global e toda impressão fora do
+  // Full saía em branco (16/09/2026 — ver theme.css, `imp-full-montado`).
+  const montado = Boolean(plano);
+  useEffect(() => {
+    if (!montado) return undefined;
+    document.body.classList.add('imp-full-montado');
+    return () => document.body.classList.remove('imp-full-montado');
+  }, [montado]);
+
   // Esc fecha a PRÉVIA, não o modal atrás dela.
   //
   // A prévia cobre a tela inteira; sem isto, a única saída é achar o botão, e
