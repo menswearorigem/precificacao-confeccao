@@ -78,7 +78,7 @@ router.post('/setup', async (req, res, next) => {
     if (!body.nome || !body.email || !body.senha) {
       return res.status(400).json({ error: 'Nome, e-mail e senha são obrigatórios.' });
     }
-    const erroSenha = conferirSenha(body.senha, { nome: body.nome });
+    const erroSenha = conferirSenha(body.senha);
     if (erroSenha) return res.status(400).json({ error: erroSenha });
 
     const senhaHash = await hashSenha(body.senha);
@@ -341,7 +341,7 @@ router.post('/redefinir-senha', async (req, res, next) => {
       return res.status(400).json({ error: 'Este link expirou. Solicite uma nova redefinição de senha.' });
     }
 
-    const erroSenha = conferirSenha(senhaNova, { nome: registro.nome });
+    const erroSenha = conferirSenha(senhaNova);
     if (erroSenha) return res.status(400).json({ error: erroSenha });
 
     const novoHash = await hashSenha(senhaNova);
@@ -421,7 +421,7 @@ router.put('/senha', requireAuth, async (req, res, next) => {
       });
       return res.status(401).json({ error: 'Senha atual incorreta.' });
     }
-    const erroSenha = conferirSenha(senhaNova, { nome: req.user.nome });
+    const erroSenha = conferirSenha(senhaNova);
     if (erroSenha) return res.status(400).json({ error: erroSenha });
     if (await verificarSenha(senhaNova, rows[0].senha_hash)) {
       return res.status(400).json({ error: 'A nova senha precisa ser diferente da atual.' });

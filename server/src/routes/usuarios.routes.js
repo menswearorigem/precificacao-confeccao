@@ -75,7 +75,7 @@ router.post('/', async (req, res, next) => {
     if (!body.nome || !body.email || !body.senha) {
       return res.status(400).json({ error: 'Nome, e-mail e senha são obrigatórios.' });
     }
-    const erroSenha = conferirSenha(body.senha, { nome: body.nome });
+    const erroSenha = conferirSenha(body.senha);
     if (erroSenha) return res.status(400).json({ error: erroSenha });
     const role = body.role === 'admin' ? 'admin' : 'limitado';
     const senhaHash = await hashSenha(body.senha);
@@ -194,7 +194,7 @@ router.put('/:id/senha', async (req, res, next) => {
     const alvo = await fetchUsuarioCompleto(req.params.id);
     if (!alvo) return res.status(404).json({ error: 'Usuário não encontrado.' });
 
-    const erroSenha = conferirSenha(senhaNova, { nome: alvo.nome });
+    const erroSenha = conferirSenha(senhaNova);
     if (erroSenha) return res.status(400).json({ error: erroSenha });
 
     const novoHash = await hashSenha(senhaNova);

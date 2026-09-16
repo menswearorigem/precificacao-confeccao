@@ -1,62 +1,34 @@
 // Regra de senha do HBN Hub.
 //
-// O nome de acesso é o primeiro nome da pessoa (decisão do dono do projeto, e
-// ela continua assim). Isso significa que a senha é a ÚNICA coisa segurando a
-// porta: um nome como "nath" é adivinhado de primeira.
+// Regra atual (pedido do dono, 16/09/2026): a senha é escolha de quem usa.
+// A única exigência é a mistura — letra maiúscula, letra minúscula e um
+// caractere especial, a partir de 8 caracteres. Nome da empresa, nome das
+// marcas, nome do próprio usuário: tudo liberado. Quem preferir frase
+// continua podendo: de 14 caracteres pra cima nem a mistura é exigida.
 //
-// Regra atual (pedido do dono, 15/09/2026): mínimo de 8 caracteres misturando
-// letra maiúscula, letra minúscula e um caractere especial. Quem preferir
-// frase continua podendo: de 14 caracteres pra cima o comprimento já segura
-// sozinho e nenhuma mistura é exigida. Os dois caminhos passam pelas mesmas
-// travas de senha óbvia, nome do usuário e sequência de teclado.
+// O que foi retirado de propósito nesta versão (estava aqui desde a varredura
+// de segurança de 03/09/2026): a lista de senhas óbvias, a proibição de a
+// senha conter o nome de usuário, a trava de caractere repetido e a de
+// sequência de teclado. Se um dia isso voltar, volta AQUI — é o único lugar
+// que decide o que é senha válida, e todas as rotas passam por ele.
+//
+// A defesa que segura a porta hoje é a do lado de fora: bloqueio por
+// tentativas no nome (5 erros) e limite por endereço de internet (30 falhas
+// a cada 15 minutos). Isso não mudou.
 
 const MINIMO = 8;
 
 // A partir daqui o comprimento basta e a mistura deixa de ser exigida.
 const SEM_EXIGENCIA = 14;
 
-// Senhas que aparecem em qualquer lista de ataque, mais as previsíveis deste
-// negócio. Comparação sem acento, minúsculas, ignorando números no fim.
-const PROIBIDAS = new Set([
-  'senha', 'senha123', '123456', '1234567', '12345678', '123456789', '1234567890',
-  'password', 'qwerty', 'abc123', 'admin', 'administrador', 'mudar123', 'trocar123',
-  'hbn', 'hbnhub', 'hbn hub', 'grupohbn', 'origem', 'hoggar', 'missmanu', 'miss manu',
-  'hebron', 'precificacao', 'confeccao', 'marketplace', 'financeiro',
-]);
-
-function normalizar(texto) {
-  return String(texto)
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .trim();
-}
-
 // Verifica a senha nova. Retorna null se estiver boa, ou a frase de erro
 // pronta pra mostrar na tela.
-function conferirSenha(senha, { nome } = {}) {
+function conferirSenha(senha) {
   if (typeof senha !== 'string' || !senha) return 'Informe a nova senha.';
   if (senha.length < MINIMO) {
     return `A senha precisa ter pelo menos ${MINIMO} caracteres.`;
   }
   if (senha.length > 200) return 'A senha é longa demais (máximo 200 caracteres).';
-
-  const base = normalizar(senha);
-  const semNumerosNoFim = base.replace(/[0-9!@#$%^&*]+$/, '');
-
-  if (PROIBIDAS.has(base) || PROIBIDAS.has(semNumerosNoFim)) {
-    return 'Essa senha é fácil demais de adivinhar. Escolha outra que não tenha a ver com o sistema nem com a empresa.';
-  }
-  if (nome && base.includes(normalizar(nome)) && normalizar(nome).length >= 3) {
-    return 'A senha não pode conter o seu nome de usuário.';
-  }
-  // Só um caractere repetido ("aaaaaaaaaa") ou sequência simples.
-  if (/^(.)\1+$/.test(base)) {
-    return 'A senha não pode ser o mesmo caractere repetido.';
-  }
-  if ('abcdefghijklmnopqrstuvwxyz'.includes(base) || '01234567890'.includes(base)) {
-    return 'A senha não pode ser uma sequência do teclado.';
-  }
 
   // Mistura só é cobrada de senha curta. Frase longa dispensa.
   if (senha.length < SEM_EXIGENCIA) {

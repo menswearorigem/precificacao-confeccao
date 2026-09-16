@@ -101,11 +101,14 @@ async function main() {
     });
     ok('setup com senha de liberação errada é recusado', setupSenhaErrada.status === 401);
 
+    // Desde 16/09/2026 não existe mais lista de senhas proibidas nem trava de
+    // nome da empresa / nome do usuário: o que recusa aqui é só a falta de
+    // mistura (esta senha não tem maiúscula nem caractere especial).
     const setupSenhaFraca = await chamar('/api/auth/setup', {
       metodo: 'POST',
       corpo: { appPassword: process.env.APP_PASSWORD, nome: 'Ana', email: 'ana@teste.com', senha: 'senha123' },
     });
-    ok('senha óbvia é recusada na criação da conta', setupSenhaFraca.status === 400);
+    ok('senha sem maiúscula nem especial é recusada na criação da conta', setupSenhaFraca.status === 400);
 
     const setupSenhaCurta = await chamar('/api/auth/setup', {
       metodo: 'POST',
