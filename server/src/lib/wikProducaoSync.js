@@ -28,7 +28,13 @@ const { reconciliarCalendario } = require('./producaoCalendario');
 const { obterSessao, renovarSessao } = require('./wikWebSessao');
 
 const GRADE_TTL_MS = 2 * 60 * 60 * 1000; // regravar grade no máx. a cada 2h
-const GRADE_CAP = Number(process.env.WIK_PRODUCAO_GRADE_CAP || 200); // OPs/ciclo
+// OPs por ciclo no backfill de grade. Baixo DE PROPÓSITO: cada OP é 1 GET de
+// página inteira, e o ciclo do maestro segura a sessão web enquanto roda —
+// com 200, o ciclo passava de 15 min (visto no log: "pulado — já em execução")
+// e financeiro/vendas nunca pegavam a sessão. Com ~40, o ciclo fecha em poucos
+// minutos e solta a sessão. É INCREMENTAL (opsComGradePendente), então o
+// backlog drena ao longo dos ciclos.
+const GRADE_CAP = Number(process.env.WIK_PRODUCAO_GRADE_CAP || 40); // OPs/ciclo
 // A produção do Wik é centralizada na MATRIZ (Hebron 192). O painel de
 // apontamento NÃO é escopado por empresa (devolve sempre a produção da matriz),
 // então varrer as 4 empresas só cria cópias fantasmas. Puxamos uma empresa só.
@@ -288,7 +294,15 @@ async function diagnosticarGradeOp(opBruto) {
 // empresa volta SEM grade. Então: tenta a grade na matriz e, se vier vazia,
 // troca a empresa ativa e tenta de novo, parando na primeira que trouxer grade.
 // Tudo somente leitura.
-const EMPRESAS_GRADE = [MATRIZ_EMP_ID, 202, 198, 193];
+// Só a MATRIZ. O fallback antigo tentava [192,202,198,193], mas a troca de
+// empresa para as não-matriz devolve HTTP 500 (confirmado ao vivo 16/09) — o
+// `trocarEmpresa(202/198/193)` NÃO funciona, então essas iterações só gastavam
+// 4 GETs por OP à toa (e nunca achavam grade), mantendo o loop cheio e a sessão
+// presa. A grade lê certo na matriz; OP que não tem grade na matriz não tinha
+// como ser lida mesmo. Configurável se um dia a troca de empresa voltar a valer.
+const EMPRESAS_GRADE = (process.env.WIK_PRODUCAO_EMPRESAS_GRADE
+  ? process.env.WIK_PRODUCAO_EMPRESAS_GRADE.split(',').map((x) => Number(x.trim())).filter(Boolean)
+  : [MATRIZ_EMP_ID]);
 async function detalheDaOpComGrade(sessao, op) {
   let ultimo = null;
   for (const emp of EMPRESAS_GRADE) {
