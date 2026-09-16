@@ -12,6 +12,7 @@ import {
 import { confirmar } from '../components/ConfirmDialog';
 import { useTabela } from '../lib/useTabela';
 import { brl, pct, formatQtd, tempoRelativo } from '../lib/format';
+import { andamentoDoPrazo } from '../components/VitrineMarketplace';
 import { SeloPlataforma, nomeDaLoja } from '../lib/canalMarketplace';
 import { CampoDesconto } from '../components/campos';
 import { CampoTextoLimitado } from '../components/campos';
@@ -240,50 +241,72 @@ function CartaoPromocao({ promocao, onAbrir, selecionada }) {
   const plataforma = promocao.loja_marketplace || promocao.marketplace;
   const itens = Number(promocao.itens_ativos || 0);
   const recusados = Number(promocao.itens_recusados || 0);
+  // Visual de "ingresso" (16/09/2026): o canhoto mostra o maior desconto e o
+  // tipo; a barra mostra quanto do prazo já passou. Tudo sai dos mesmos
+  // campos de antes — sem prazo lido, a barra simplesmente não aparece.
+  const prazo = andamentoDoPrazo(promocao.inicio_em, promocao.fim_em);
+  const temDesconto = promocao.maior_desconto_pct != null;
+  const apagada = ['encerrada', 'inativa'].includes(String(promocao.status || '').toLowerCase());
 
   return (
     <button
       type="button"
-      className={`promocao-card plataforma-${plataforma} ${selecionada ? 'selecionado' : ''}`}
+      className={`promocao-card promocao-ingresso plataforma-${plataforma} ${selecionada ? 'selecionado' : ''}${apagada ? ' apagada' : ''}`}
       onClick={() => onAbrir(promocao)}
     >
       <div className="promocao-card-faixa" />
-      <div className="promocao-card-topo">
-        <span className="promocao-card-loja">
-          <SeloPlataforma chave={plataforma} size={16} />
-          <span>{nomeDaLoja({ marketplace: plataforma, nome: promocao.loja_nome })}</span>
-        </span>
-        <span className={`selo ${STATUS_TOM[promocao.status] || 'tone-neutro'}`}>
-          {STATUS_ROTULO[promocao.status] || promocao.status}
-        </span>
+      <div className="promocao-canhoto" aria-hidden="true">
+        {temDesconto
+          ? <span className="promocao-canhoto-valor">{pct(promocao.maior_desconto_pct, 0)}<small>até</small></span>
+          : <span className="promocao-canhoto-icone"><Icone size={22} /></span>}
+        <span className="promocao-canhoto-tipo">{TIPO_ROTULO[promocao.tipo] || promocao.tipo}</span>
       </div>
-
-      <div className="promocao-card-corpo">
-        <span className="promocao-card-tipo"><Icone size={13} /> {TIPO_ROTULO[promocao.tipo] || promocao.tipo}</span>
-        <h3 className="promocao-card-nome">{promocao.nome || `Promoção ${promocao.promocao_id_externo}`}</h3>
-        <span className="promocao-card-janela">
-          <Calendar size={12} />
-          {promocao.inicio_em ? new Date(promocao.inicio_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'sem início'}
-          {' → '}
-          {promocao.fim_em ? new Date(promocao.fim_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'sem fim'}
-        </span>
-      </div>
-
-      <div className="promocao-card-rodape">
-        <span title="Anúncios dentro desta promoção">
-          <ListChecks size={12} /> {formatQtd(itens)} {itens === 1 ? 'anúncio' : 'anúncios'}
-        </span>
-        {promocao.maior_desconto_pct != null && (
-          <span title="Maior desconto entre os itens desta promoção">
-            <TrendingDown size={12} /> até {pct(promocao.maior_desconto_pct, 0)}
+      <div className="promocao-miolo">
+        <div className="promocao-card-topo">
+          <span className="promocao-card-loja">
+            <SeloPlataforma chave={plataforma} size={16} />
+            <span>{nomeDaLoja({ marketplace: plataforma, nome: promocao.loja_nome })}</span>
           </span>
-        )}
-        {recusados > 0 && (
-          <span className="promocao-card-recusados" title="Itens que a plataforma recusou nesta promoção">
-            <AlertTriangle size={12} /> {formatQtd(recusados)} recusado{recusados === 1 ? '' : 's'}
+          <span className={`selo ${STATUS_TOM[promocao.status] || 'tone-neutro'}`}>
+            {STATUS_ROTULO[promocao.status] || promocao.status}
           </span>
-        )}
-        {promocao.criada_no_hub && <span className="promocao-card-selo-hub" title="Criada aqui no HBN Hub">Hub</span>}
+        </div>
+
+        <div className="promocao-card-corpo">
+          <span className="promocao-card-tipo"><Icone size={13} /> {TIPO_ROTULO[promocao.tipo] || promocao.tipo}</span>
+          <h3 className="promocao-card-nome">{promocao.nome || `Promoção ${promocao.promocao_id_externo}`}</h3>
+          {prazo?.pct != null && (
+            <span className="promocao-prazo-trilho" aria-hidden="true">
+              <span className="promocao-prazo-cheio" style={{ width: `${prazo.pct}%` }} />
+            </span>
+          )}
+          <span className="promocao-card-janela">
+            <Calendar size={12} />
+            <span>
+              {promocao.inicio_em ? new Date(promocao.inicio_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'sem início'}
+              {' → '}
+              {promocao.fim_em ? new Date(promocao.fim_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'sem fim'}
+            </span>
+            {prazo && <b className="promocao-prazo-texto">{prazo.texto}</b>}
+          </span>
+        </div>
+
+        <div className="promocao-card-rodape">
+          <span title="Anúncios dentro desta promoção">
+            <ListChecks size={12} /> {formatQtd(itens)} {itens === 1 ? 'anúncio' : 'anúncios'}
+          </span>
+          {temDesconto && (
+            <span title="Maior desconto entre os itens desta promoção" className="promocao-rodape-desconto">
+              <TrendingDown size={12} /> até {pct(promocao.maior_desconto_pct, 0)}
+            </span>
+          )}
+          {recusados > 0 && (
+            <span className="promocao-card-recusados" title="Itens que a plataforma recusou nesta promoção">
+              <AlertTriangle size={12} /> {formatQtd(recusados)} recusado{recusados === 1 ? '' : 's'}
+            </span>
+          )}
+          {promocao.criada_no_hub && <span className="promocao-card-selo-hub" title="Criada aqui no HBN Hub">Hub</span>}
+        </div>
       </div>
     </button>
   );

@@ -9,6 +9,7 @@ import {
 import { CampoTextoLimitado } from '../components/campos';
 import { confirmar } from '../components/ConfirmDialog';
 import { brl, formatQtd, dataBr } from '../lib/format';
+import LogoWik from '../components/LogoWik';
 
 // ============================================================================
 // Financeiro › Contas Bancárias — 10/09/2026
@@ -386,7 +387,7 @@ export default function ContasBancariasPage() {
                 <div className="card-head" style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                   <Icone size={15} /> {c.nome}
                   {!c.ativo && <span className="stamp sm tone-neutro">desativada</span>}
-                  {doWik && <span className="stamp sm tone-neutro">Wik</span>}
+                  {doWik && <span className="stamp sm tone-neutro"><LogoWik size={12} /> Wik</span>}
                 </div>
                 <div className="painel-acoes-inline">
                   {!editando && (

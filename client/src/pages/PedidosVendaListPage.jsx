@@ -13,6 +13,7 @@ import { PRESETS_PERIODO } from '../lib/periodos';
 import DataTable from '../components/DataTable';
 import { useTabela } from '../lib/useTabela';
 import { novaAba } from '../lib/novaAba';
+import LogoWik from '../components/LogoWik';
 
 // Lista de pedidos de venda direta — repaginada em 09/09/2026.
 //
@@ -237,7 +238,7 @@ export default function PedidosVendaListPage() {
           />
           <button type="button" className="btn btn-ghost" onClick={importarVendasWik} disabled={impWik}
             title="Puxa as vendas do Wik pela API (últimos 30 dias). Editar uma venda aqui desliga a sincronização dela.">
-            <DownloadCloud size={14} /> {impWik ? 'Puxando…' : 'Puxar do Wik'}
+            {impWik ? <DownloadCloud size={14} className="girando" /> : <LogoWik size={16} />} {impWik ? 'Puxando…' : 'Puxar do Wik'}
           </button>
           <button className="btn btn-primary" onClick={novoPedido} disabled={criando}>
             <Plus size={14} /> {criando ? 'Abrindo…' : 'Nova venda'}

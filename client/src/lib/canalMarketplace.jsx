@@ -14,6 +14,8 @@
 //      planilha só porque a plataforma bate).
 import { Handshake, ShoppingBag, Music2, Shirt, Store } from 'lucide-react';
 import { PLATAFORMA_LABEL } from './marketplaces';
+import logoMercadoLivre from '../assets/logos/mercado-livre.png';
+import logoShopee from '../assets/logos/shopee.png';
 
 // Prefixo curto por plataforma — é como a casa fala ("MELI Origem",
 // "Shopee Hoggar"). O nome da loja vem do cadastro da conexão.
@@ -32,6 +34,13 @@ export const PREFIXO_PLATAFORMA = {
 // Substitui o `IconePlataforma` que existia só dentro de Métricas (e que
 // conhecia apenas Mercado Livre e Shopee, com cor de marca escrita à mão no
 // meio do arquivo) — agora é um componente só, usado por todas as telas.
+// Logos oficiais (arquivos enviados pela dona, 16/09/2026). Plataforma sem
+// arquivo ainda (TikTok Shop, Shein) continua com o símbolo desenhado.
+const LOGO = {
+  mercado_livre: logoMercadoLivre,
+  shopee: logoShopee,
+};
+
 const SIMBOLO = {
   mercado_livre: Handshake,
   shopee: ShoppingBag,
@@ -99,14 +108,17 @@ export function rotuloDoCanal(registro, indiceLojas) {
 export function SeloPlataforma({ chave, size = 16, title }) {
   const alvo = chaveDaPlataforma(chave);
   const Icone = SIMBOLO[alvo] || Store;
+  const logo = LOGO[alvo];
   return (
     <span
-      className={`selo-plataforma ${alvo ? `plataforma-${alvo}` : 'selo-plataforma-desconhecida'}`}
+      className={`selo-plataforma ${alvo ? `plataforma-${alvo}` : 'selo-plataforma-desconhecida'}${logo ? ' com-logo' : ''}`}
       style={{ '--selo-size': `${size}px` }}
       title={title || PLATAFORMA_LABEL[alvo] || 'Canal não identificado'}
       aria-label={PLATAFORMA_LABEL[alvo] || 'Canal não identificado'}
     >
-      <Icone size={Math.round(size * 0.58)} strokeWidth={2.3} />
+      {logo
+        ? <img src={logo} alt="" draggable={false} />
+        : <Icone size={Math.round(size * 0.58)} strokeWidth={2.3} />}
     </span>
   );
 }

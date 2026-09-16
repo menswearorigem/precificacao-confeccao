@@ -20,6 +20,7 @@ import NovaFaccaoModal from '../components/NovaFaccaoModal';
 import { useTabela } from '../lib/useTabela';
 import { brl, pct, formatQtd, numeroBr, dataBr, plural } from '../lib/format';
 import { CampoTextoLimitado } from '../components/campos';
+import LogoWik from '../components/LogoWik';
 
 // Estoque › Produção.
 //
@@ -1266,7 +1267,7 @@ export default function ProducaoPage() {
           </button>
           <button type="button" className="btn-sec" onClick={puxarDoWik} disabled={puxandoWik}
             title="Puxa agora as Ordens de Produção do Wik (elas também vêm sozinhas a cada 15 min). Entram como OP comum; editar uma desliga a sincronização dela.">
-            <DownloadCloud size={15} className={puxandoWik ? 'girando' : ''} /> {puxandoWik ? 'Puxando…' : 'Puxar do Wik'}
+            {puxandoWik ? <DownloadCloud size={15} className="girando" /> : <LogoWik size={16} />} {puxandoWik ? 'Puxando…' : 'Puxar do Wik'}
           </button>
           <button type="button" className="btn" onClick={() => setNovaOrdem(true)}>
             <Plus size={15} /> Nova ordem
@@ -1274,7 +1275,7 @@ export default function ProducaoPage() {
         </div>
       </header>
 
-      {avisoWik && <p className="aviso-inline"><DownloadCloud size={14} /> {avisoWik}</p>}
+      {avisoWik && <p className="aviso-inline"><LogoWik size={14} /> {avisoWik}</p>}
 
       <div className="indicadores-linha">
         <IndicadorDestaque rotulo="Ordens abertas" valor={formatQtd(totais.abertas)} Icone={Factory} />
@@ -1401,7 +1402,7 @@ export default function ProducaoPage() {
                         <td>
                           <SeloSituacao situacao={o.situacao} />
                           {o.origem === 'wik' && (
-                            <span className="selo tone-neutro" title={`Espelhada do Wik${o.wik_situacao ? ' — ' + o.wik_situacao : ''}${o.wik_etapas ? '. Onde está: ' + o.wik_etapas : ''}. Editar aqui desliga a sincronização desta OP.`}>Wik</span>
+                            <span className="selo tone-neutro" title={`Espelhada do Wik${o.wik_situacao ? ' — ' + o.wik_situacao : ''}${o.wik_etapas ? '. Onde está: ' + o.wik_etapas : ''}. Editar aqui desliga a sincronização desta OP.`}><LogoWik size={11} /> Wik</span>
                           )}
                           {o.origem === 'wik' && o.wik_atrasada && (
                             <span className="selo tone-ruim" title="Previsão de entrega já passou (cálculo nosso).">atrasada</span>

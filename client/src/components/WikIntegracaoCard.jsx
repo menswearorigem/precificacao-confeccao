@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { Field } from './ui';
 import { formatQtd, plural } from '../lib/format';
 import { CampoEmail } from './campos';
+import LogoWik from './LogoWik';
 
 function hoje(iso) {
   if (!iso) return '—';
@@ -192,7 +193,7 @@ export default function WikIntegracaoCard() {
 
   return (
     <div className="card" style={{ marginBottom: 18 }}>
-      <div className="card-head">Wik Sistemas (ERP) — Sincronização de Estoque</div>
+      <div className="card-head"><LogoWik size={16} /> Wik Sistemas (ERP) — Sincronização de Estoque</div>
       <p className="page-sub" style={{ marginTop: -6, marginBottom: 14 }}>
         Puxa o saldo de estoque direto da API do Wik pras referências já cadastradas aqui, atualizando
         sozinho a cada 15 minutos — sem precisar clicar em nada. Os botões abaixo são só pra

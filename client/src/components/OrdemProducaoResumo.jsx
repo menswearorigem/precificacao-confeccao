@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Factory, RefreshCw, Lock } from 'lucide-react';
 import { dataBr } from '../lib/format';
+import LogoWik from './LogoWik';
 
 // Painel "Ordem de produção" dentro do evento do calendário (16/09/2026).
 // O evento nasce e é atualizado pela OP (ver server/src/lib/producaoCalendario.js);
@@ -49,11 +50,11 @@ export default function OrdemProducaoResumo({ ordemId, dados }) {
           </span>
           {d.origem_op === 'wik' && (
             <span className="op-cal-chip" style={{ background: d.sincroniza_wik ? '#6a1b9a' : '#455a64' }}>
-              {d.sincroniza_wik ? 'Wik · sincroniza' : 'Wik · editada à mão'}
+              <LogoWik size={12} /> {d.sincroniza_wik ? 'Wik · sincroniza' : 'Wik · editada à mão'}
             </span>
           )}
           {d.atrasada_wik && d.situacao_op !== 'concluida' && d.situacao_op !== 'cancelada' && (
-            <span className="op-cal-chip" style={{ background: '#c62828' }}>Atrasada no Wik</span>
+            <span className="op-cal-chip" style={{ background: '#c62828' }}><LogoWik size={12} /> Atrasada no Wik</span>
           )}
         </div>
         <Link className="btn-sec" to={`/producao?ordem=${ordemId}`}>Abrir a OP</Link>

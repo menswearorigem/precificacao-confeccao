@@ -17,6 +17,7 @@ import { confirmar } from '../components/ConfirmDialog';
 import FullRemessaImpressao from '../components/FullRemessaImpressao';
 import { useTabela } from '../lib/useTabela';
 import { brl, numeroBr, formatQtd, dataBr, tempoRelativo, plural } from '../lib/format';
+import { PrecoVitrine, marcarFotoCarregada, refFotoJaCarregada } from '../components/VitrineMarketplace';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import { SeloPlataforma, nomeDaLoja, chaveDaPlataforma } from '../lib/canalMarketplace';
 import { usePaletaGrafico } from '../lib/coresGrafico';
@@ -107,10 +108,13 @@ function FotoFull({ anuncio, alturaAuto }) {
   if (foto) {
     return (
       <img
+        key={foto}
+        ref={refFotoJaCarregada}
         src={foto}
         alt=""
         loading="lazy"
         decoding="async"
+        onLoad={marcarFotoCarregada}
         style={alturaAuto ? { height: 'auto' } : undefined}
         // A CDN do Mercado Livre recusa requisição com referer de outro site.
         referrerPolicy="no-referrer"
@@ -326,8 +330,10 @@ function CartaoFull({ anuncio, marcado, onMarcar, onAbrir, hoje }) {
       <div className="full-card-corpo">
         <p className="full-card-titulo">{anuncio.titulo || '(sem título)'}</p>
         <div className="full-card-ref">
-          <span>{anuncio.referencia || 'sem vínculo no cadastro'}</span>
-          <span className="full-card-preco">{anuncio.preco != null ? brl(anuncio.preco) : '—'}</span>
+          <span className={anuncio.referencia ? 'full-card-referencia' : 'full-card-sem-vinculo'}>
+            {anuncio.referencia || 'sem vínculo no cadastro'}
+          </span>
+          <span className="full-card-preco"><PrecoVitrine valor={anuncio.preco} /></span>
         </div>
 
         <div className="full-card-saldos">
@@ -379,7 +385,7 @@ function CartaoFull({ anuncio, marcado, onMarcar, onAbrir, hoje }) {
         </div>
       </div>
 
-      <div className="full-card-acao">
+      <div className={`full-card-acao${enviar > 0 ? ' tem-envio' : ''}`}>
         {enviar > 0 ? (
           <>
             <span className="full-card-enviar">

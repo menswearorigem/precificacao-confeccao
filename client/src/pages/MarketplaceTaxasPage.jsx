@@ -4,8 +4,8 @@ import { api } from '../api/client';
 import { AvisoDeFalha, NumInput, Select } from '../components/ui';
 import BarraAlteracoes from '../components/BarraAlteracoes';
 import { brl } from '../lib/format';
-import logoMercadoLivre from '../assets/logos/mercado-livre.svg';
-import logoShopee from '../assets/logos/shopee.svg';
+import logoMercadoLivre from '../assets/logos/mercado-livre.png';
+import logoShopee from '../assets/logos/shopee.png';
 
 const MARKETPLACES = [
   { key: 'mercado_livre', label: 'Mercado Livre', logo: logoMercadoLivre },

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2, AlertTriangle, Download, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, plural } from '../lib/format';
+import LogoWik from './LogoWik';
 
 export default function WikImportarFichaCustoCard() {
   const [loading, setLoading] = useState(false);
@@ -95,7 +96,7 @@ export default function WikImportarFichaCustoCard() {
 
   return (
     <div className="card" style={{ marginBottom: 18 }}>
-      <div className="card-head">Importar Ficha de Custo do Wik</div>
+      <div className="card-head"><LogoWik size={16} /> Importar Ficha de Custo do Wik</div>
       <p className="page-sub" style={{ marginTop: -6, marginBottom: 14 }}>
         Traz o custo total já calculado e aprovado na Ficha de Custo do Wik (o mesmo valor que aparece na
         ficha impressa) pra cada produto que ainda não tem ficha, e ATUALIZA a ficha de produto que já foi

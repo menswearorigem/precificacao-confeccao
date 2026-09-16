@@ -17,6 +17,7 @@ import {
 import FotoProduto from '../components/FotoProduto';
 import DataTable from '../components/DataTable';
 import { usePaletaGrafico, corPorIndice } from '../lib/coresGrafico';
+import { CarregandoVitrine } from '../components/VitrineMarketplace';
 
 // As cores dos gráficos vêm do TEMA (lib/coresGrafico), não escritas aqui.
 // Antes eram quatro hexadecimais soltos — contra a REGRA 3 — e o efeito
@@ -269,7 +270,7 @@ function VisaoGeralTab({ filtros }) {
   }, [filtros]);
 
   if (erro) return <div className="login-error">{erro}</div>;
-  if (!resumo || !serie) return <p className="page-sub">Carregando…</p>;
+  if (!resumo || !serie) return <CarregandoVitrine />;
 
   return (
     <>
@@ -337,7 +338,7 @@ function PorLojaTab({ filtros }) {
   }, [filtros]);
 
   if (erro) return <div className="login-error">{erro}</div>;
-  if (!dados) return <p className="page-sub">Carregando…</p>;
+  if (!dados) return <CarregandoVitrine />;
 
   return (
     <>
@@ -420,7 +421,7 @@ function VendasPorAnuncioTab({ filtros, busca }) {
   }, [dados, busca]);
 
   if (erro) return <div className="login-error">{erro}</div>;
-  if (!dados) return <p className="page-sub">Carregando…</p>;
+  if (!dados) return <CarregandoVitrine />;
 
   return (
     <>
@@ -515,7 +516,7 @@ function AnaliseABCTab({ filtros, busca }) {
   }, [classificados]);
 
   if (erro) return <div className="login-error">{erro}</div>;
-  if (!dados) return <p className="page-sub">Carregando…</p>;
+  if (!dados) return <CarregandoVitrine />;
 
   return (
     <>
@@ -579,7 +580,7 @@ function EntradaSaidaTab({ filtros }) {
   }, [filtros]);
 
   if (erro) return <div className="login-error">{erro}</div>;
-  if (!dados) return <p className="page-sub">Carregando…</p>;
+  if (!dados) return <CarregandoVitrine />;
 
   const tickStyle = { fontSize: 11.5, fontFamily: FONTE_GRAFICO, fill: 'var(--ink-soft)' };
   const dadosGrafico = dados.serie.map((d) => ({ ...d, dataLabel: dataBr(d.data) }));
@@ -1163,7 +1164,7 @@ function CategoriaBrowser({ integracaoId, modoSelecao, onSelecionar }) {
           Usar "{categoriaAtual.nome}" pra Tendência
         </button>
       )}
-      {carregando && <p className="page-sub">Carregando…</p>}
+      {carregando && <CarregandoVitrine />}
       {erro && <div className="login-error">{erro}</div>}
       {dados && !carregando && (
         <>

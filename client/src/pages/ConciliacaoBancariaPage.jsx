@@ -12,6 +12,7 @@ import {
 } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { useTabela } from '../lib/useTabela';
+import LogoWik from '../components/LogoWik';
 
 // Conciliação bancária: casar o que o BANCO diz que aconteceu com o que o
 // sistema registrou.
@@ -635,7 +636,7 @@ export default function ConciliacaoBancariaPage() {
                         {l.wik_ext_id && (
                           <span className="selos-linha">
                             <span className="stamp sm tone-neutro" title="Lançamento importado do Extrato de Contas do Wik, não de um arquivo OFX.">
-                              <Cloud size={11} /> Wik
+                              <LogoWik size={12} /> Wik
                             </span>
                           </span>
                         )}

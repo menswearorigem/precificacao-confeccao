@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, AlertTriangle, Download, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
+import LogoWik from './LogoWik';
 
 export default function WikImportarProdutosCard() {
   const [integracao, setIntegracao] = useState(null);
@@ -98,7 +99,7 @@ export default function WikImportarProdutosCard() {
 
   return (
     <div className="card" style={{ marginBottom: 18 }}>
-      <div className="card-head">Importar catálogo completo de produtos do Wik</div>
+      <div className="card-head"><LogoWik size={16} /> Importar catálogo completo de produtos do Wik</div>
       <p className="page-sub" style={{ marginTop: -6, marginBottom: 14 }}>
         Traz TODOS os produtos ativos cadastrados no Wik (nas 4 empresas: matriz, filial, Hoggar/Miss
         Manu e Origem), com marca, categoria e o estoque de cada variante — usando o maior valor entre

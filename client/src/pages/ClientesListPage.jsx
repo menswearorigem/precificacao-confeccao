@@ -7,6 +7,7 @@ import { SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazi
 import { useTabela } from '../lib/useTabela';
 import { brl } from '../lib/format';
 import { novaAba } from '../lib/novaAba';
+import LogoWik from '../components/LogoWik';
 
 // Data do pedido (coluna DATE) formatada como o resto do sistema formata.
 const dataPedidoBr = (v) => (v ? new Date(v).toLocaleDateString('pt-BR') : '');
@@ -101,7 +102,7 @@ export default function ClientesListPage() {
           <BotaoExportar nomeBase="clientes" colunas={COLUNAS_EXPORTACAO} itens={tabela.itensOrdenados} disabled={tabela.totalItens === 0} />
           <button type="button" className="btn btn-ghost" onClick={importarWik} disabled={impWik}
             title="Importa os clientes do Wik pela API. Editar um cliente aqui desliga a sincronização dele.">
-            <DownloadCloud size={14} /> {impWik ? 'Importando…' : 'Importar do Wik'}
+            {impWik ? <DownloadCloud size={14} className="girando" /> : <LogoWik size={16} />} {impWik ? 'Importando…' : 'Importar do Wik'}
           </button>
           <Link to="/clientes/novo" className="btn btn-primary">
             <Plus size={14} /> Novo cliente

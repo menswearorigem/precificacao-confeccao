@@ -17,6 +17,7 @@ import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { confirmar } from '../components/ConfirmDialog';
 import { useTabela } from '../lib/useTabela';
 import { brl, numeroBr, formatQtd, tempoRelativo, dataBr, plural } from '../lib/format';
+import { PrecoVitrine, FaixaPrecoVitrine, marcarFotoCarregada, refFotoJaCarregada } from '../components/VitrineMarketplace';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import { SeloPlataforma, nomeDaLoja, chaveDaPlataforma, PREFIXO_PLATAFORMA } from '../lib/canalMarketplace';
 import { usePaletaGrafico } from '../lib/coresGrafico';
@@ -1027,10 +1028,13 @@ function FotoOuReferencia({ anuncio }) {
   if (foto) {
     return (
       <img
+        key={foto}
+        ref={refFotoJaCarregada}
         src={foto}
         alt=""
         loading="lazy"
         decoding="async"
+        onLoad={marcarFotoCarregada}
         // A CDN do Mercado Livre recusa requisição com referer de outro site.
         // Sem isto, parte das fotos volta 403 mesmo com o endereço certo.
         referrerPolicy="no-referrer"
@@ -1081,7 +1085,7 @@ function CartaoAnuncio({ anuncio, marcado, onMarcar, onAbrir }) {
       <div className="anuncio-card-corpo">
         <p className="anuncio-card-titulo">{anuncio.titulo || '(sem título)'}</p>
         <div className="anuncio-card-linha-preco">
-          <span className="anuncio-card-preco">{preco != null ? brl(preco) : '—'}</span>
+          <span className="anuncio-card-preco"><PrecoVitrine valor={preco} /></span>
           {desconto != null && <span className="anuncio-card-preco-de">{brl(precoDe)}</span>}
           {desconto != null && <span className="anuncio-card-desconto">−{desconto}%</span>}
         </div>
@@ -1098,13 +1102,13 @@ function CartaoAnuncio({ anuncio, marcado, onMarcar, onAbrir }) {
         </div>
         <div className="anuncio-card-metricas">
           <span title="Visitas informadas pela plataforma">
-            <Eye size={11} /> {anuncio.visitas != null ? formatQtd(anuncio.visitas) : '—'}
+            <Eye size={11} /> <b>{anuncio.visitas != null ? formatQtd(anuncio.visitas) : '—'}</b> <small>visitas</small>
           </span>
           <span title="Vendas acumuladas na plataforma">
-            <ShoppingBag size={11} /> {anuncio.vendas_total != null ? formatQtd(anuncio.vendas_total) : '—'}
+            <ShoppingBag size={11} /> <b>{anuncio.vendas_total != null ? formatQtd(anuncio.vendas_total) : '—'}</b> <small>vendas</small>
           </span>
           <span title="Estoque anunciado">
-            <Layers size={11} /> {anuncio.estoque != null ? formatQtd(anuncio.estoque) : '—'}
+            <Layers size={11} /> <b>{anuncio.estoque != null ? formatQtd(anuncio.estoque) : '—'}</b> <small>estoque</small>
           </span>
         </div>
       </div>
@@ -1160,7 +1164,7 @@ function CartaoPublicacao({ grupo, onAbrir }) {
       <div className="anuncio-card-corpo">
         <p className="anuncio-card-titulo">{grupo.titulo || principal.titulo || '(sem título)'}</p>
         <div className="anuncio-card-linha-preco">
-          <span className="anuncio-card-preco">{faixa}</span>
+          <span className="anuncio-card-preco" title={faixa}><FaixaPrecoVitrine min={grupo.precoMin} max={grupo.precoMax} /></span>
         </div>
         {!principal.referencia && (
           <span className="anuncio-card-sem-vinculo"><Link2Off size={11} /> sem vínculo no cadastro</span>
@@ -1173,13 +1177,13 @@ function CartaoPublicacao({ grupo, onAbrir }) {
         </div>
         <div className="anuncio-card-metricas">
           <span title="Visitas informadas pela plataforma, somando as variações">
-            <Eye size={11} /> {formatQtd(grupo.itens.reduce((soma, i) => soma + (Number(i.visitas) || 0), 0))}
+            <Eye size={11} /> <b>{formatQtd(grupo.itens.reduce((soma, i) => soma + (Number(i.visitas) || 0), 0))}</b> <small>visitas</small>
           </span>
           <span title="Vendas acumuladas na plataforma, somando as variações">
-            <ShoppingBag size={11} /> {formatQtd(grupo.itens.reduce((soma, i) => soma + (Number(i.vendas_total) || 0), 0))}
+            <ShoppingBag size={11} /> <b>{formatQtd(grupo.itens.reduce((soma, i) => soma + (Number(i.vendas_total) || 0), 0))}</b> <small>vendas</small>
           </span>
           <span title="Estoque anunciado somando as variações — aqui a soma vale, porque cada variação é uma peça diferente (cor/tamanho), não o mesmo estoque repetido">
-            <Layers size={11} /> {grupo.estoqueTotal != null ? formatQtd(grupo.estoqueTotal) : '—'}
+            <Layers size={11} /> <b>{grupo.estoqueTotal != null ? formatQtd(grupo.estoqueTotal) : '—'}</b> <small>estoque</small>
           </span>
         </div>
       </div>
@@ -1230,17 +1234,17 @@ function CartaoGrupo({ grupo, onAbrir }) {
           {principal.produto_descricao || principal.titulo || '(sem título)'}
         </p>
         <div className="anuncio-card-linha-preco">
-          <span className="anuncio-card-preco">{faixa}</span>
+          <span className="anuncio-card-preco" title={faixa}><FaixaPrecoVitrine min={grupo.precoMin} max={grupo.precoMax} /></span>
         </div>
         {principal.referencia
           ? <div className="anuncio-card-ref"><span>{principal.referencia}</span></div>
           : <span className="anuncio-card-sem-vinculo"><Link2Off size={11} /> sem vínculo no cadastro</span>}
         <div className="anuncio-card-metricas">
           <span title="Maior estoque entre os anúncios do grupo — não é a soma, porque eles costumam dividir o mesmo estoque físico">
-            <Layers size={11} /> {grupo.estoqueMaior != null ? formatQtd(grupo.estoqueMaior) : '—'}
+            <Layers size={11} /> <b>{grupo.estoqueMaior != null ? formatQtd(grupo.estoqueMaior) : '—'}</b> <small>estoque</small>
           </span>
           <span title="Gasto com Ads somando os anúncios do grupo">
-            <Megaphone size={11} /> {grupo.adsCusto != null ? brl(grupo.adsCusto) : '—'}
+            <Megaphone size={11} /> <b>{grupo.adsCusto != null ? brl(grupo.adsCusto) : '—'}</b> <small>em Ads</small>
           </span>
         </div>
       </div>

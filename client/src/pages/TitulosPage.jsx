@@ -14,6 +14,7 @@ import {
 } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { useTabela } from '../lib/useTabela';
+import LogoWik from '../components/LogoWik';
 
 // Contas a pagar e a receber — a mesma tela, lendo a natureza da rota.
 //
@@ -125,7 +126,7 @@ function SeloOrigem({ titulo }) {
   return (
     <span className="selos-linha">
       <span className="stamp sm tone-neutro" title={`Importado do Wik (conta ${titulo.wik_id})`}>
-        <Cloud size={11} /> Wik
+        <LogoWik size={12} /> Wik
       </span>
       {titulo.wik_travado && (
         <span
@@ -203,7 +204,7 @@ function FaixaWik({ aoSincronizar }) {
     }
     return (
       <div className="card no-print" style={{ marginBottom: 14, borderColor: 'var(--accent-ring, var(--success-ring))' }}>
-        <div className="card-head"><Cloud size={14} /> Importar o financeiro do Wik</div>
+        <div className="card-head"><LogoWik size={16} /> Importar o financeiro do Wik</div>
         <p className="page-sub" style={{ marginTop: -4, marginBottom: 10 }}>
           A importação do financeiro do Wik (contas a pagar e a receber, extrato bancário, plano de
           contas e centros de custo) começa <strong>desligada</strong> — puxar o histórico inteiro de um

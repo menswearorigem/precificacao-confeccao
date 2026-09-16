@@ -9,10 +9,10 @@ import WikIntegracaoCard from '../components/WikIntegracaoCard';
 import WikImportarProdutosCard from '../components/WikImportarProdutosCard';
 import WikImportarFichaCustoCard from '../components/WikImportarFichaCustoCard';
 import WikFichaCustoDiagnosticoCard from '../components/WikFichaCustoDiagnosticoCard';
-import logoMercadoLivre from '../assets/logos/mercado-livre.svg';
-import logoShopee from '../assets/logos/shopee.svg';
+import logoMercadoLivre from '../assets/logos/mercado-livre.png';
+import logoShopee from '../assets/logos/shopee.png';
 import logoTiktokShop from '../assets/logos/tiktok-shop.svg';
-import logoWikSistemas from '../assets/logos/wik-sistemas.svg';
+import logoWikSistemas from '../assets/logos/wik.png';
 import { CampoTextoLimitado } from '../components/campos';
 
 // Logos reais como arquivo SVG no repositório (client/src/assets/logos) —
