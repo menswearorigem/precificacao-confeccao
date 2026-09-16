@@ -51,7 +51,7 @@ export const verbetesVendas = [
       'preencher cabecalho do pedido',
     ],
     resposta:
-      'Clicando em **Novo pedido**, o sistema já cria o pedido (em aberto) e abre a ficha dele. No card **Cliente**, busque por nome, CPF/CNPJ ou telefone e clique em **Selecionar** — ou, se o cliente ainda não existe, clique em **Novo cliente** pra cadastrar rapidinho (nome, telefone, CPF/CNPJ) sem sair da tela do pedido. Dá pra trocar o cliente depois, enquanto o pedido estiver aberto.\n\nO card **Dados do Pedido** guarda data, empresa emitente, vendedor, operação, canal de venda, condição e forma de pagamento, desconto (em % ou em R$), acréscimo, frete e observação — cada campo salva sozinho ao sair dele (não precisa de um botão Salvar geral). Esses campos só ficam editáveis enquanto o pedido está **aberto**.',
+      'Clicando em **Novo pedido**, o sistema já cria o pedido (em aberto) e abre a ficha dele. No card **Cliente**, busque por nome, CPF/CNPJ ou telefone e clique em **Selecionar** — ou, se o cliente ainda não existe, clique em **Novo cliente** pra cadastrar rapidinho (nome, telefone, CPF/CNPJ) sem sair da tela do pedido. Dá pra trocar o cliente depois, enquanto o pedido estiver aberto.\n\nO card **Dados do pedido** guarda data, empresa emitente, vendedor, operação, canal de venda, condição e forma de pagamento, desconto (em % ou em R$), acréscimo, frete e observação — cada campo salva sozinho ao sair dele (não precisa de um botão Salvar geral). Esses campos só ficam editáveis enquanto o pedido está **aberto**.',
     relacionados: ['vendas-pedidos-listar-filtrar', 'vendas-pedido-lancar-itens'],
   },
   {
@@ -72,7 +72,7 @@ export const verbetesVendas = [
       'item sem estoque no pedido',
     ],
     resposta:
-      'Com o pedido aberto, o card **Lançar Item** tem duas formas de adicionar: bipar/digitar o código de barras (EAN) e a quantidade, ou buscar por referência/descrição e clicar em **Adicionar** no resultado. Cada item lançado mostra a quantidade em estoque disponível daquela variante.\n\nNa tabela **Itens da Venda**, com o pedido ainda aberto, dá pra editar quantidade, valor unitário e desconto (%) direto na linha — o total do item recalcula sozinho. O ícone de lixeira remove um item. Depois de faturado ou cancelado, os itens ficam só pra leitura.',
+      'Com o pedido aberto, o card **Lançar Item** tem duas formas de adicionar: bipar/digitar o código de barras (EAN) e a quantidade, ou buscar por referência/descrição e clicar em **Adicionar** no resultado. Cada item lançado mostra a quantidade em estoque disponível daquela variante.\n\nNa tabela **Itens da venda**, com o pedido ainda aberto, dá pra editar quantidade, valor unitário e desconto (%) direto na linha — o total do item recalcula sozinho. O ícone de lixeira remove um item. Depois de faturado ou cancelado, os itens ficam só pra leitura.',
     relacionados: ['vendas-pedido-criar-lancar-cliente', 'vendas-pedido-faturar'],
   },
   {
@@ -91,7 +91,7 @@ export const verbetesVendas = [
       'faturar pedido pede confirmacao',
     ],
     resposta:
-      'Com o pedido aberto e pelo menos um item lançado, clique em **Faturar Pedido**. O sistema pede confirmação avisando que o estoque de cada item será baixado automaticamente — depois de confirmado, o pedido muda para a situação **Faturado** e os campos ficam travados pra edição.\n\nO botão fica desabilitado enquanto não há nenhum item lançado, então não dá pra faturar um pedido vazio.',
+      'Com o pedido aberto e pelo menos um item lançado, clique em **Faturar pedido**. O sistema pede confirmação avisando que o estoque de cada item será baixado automaticamente — depois de confirmado, o pedido muda para a situação **Faturado** e os campos ficam travados pra edição.\n\nO botão fica desabilitado enquanto não há nenhum item lançado, então não dá pra faturar um pedido vazio.',
     relacionados: ['vendas-pedido-lancar-itens', 'vendas-pedido-cancelar-excluir'],
   },
   {
@@ -111,7 +111,7 @@ export const verbetesVendas = [
       'estornar estoque de um pedido',
     ],
     resposta:
-      '**Cancelar Pedido** funciona em qualquer situação, menos num pedido já cancelado. Se o pedido já estava **faturado**, cancelar também estorna (devolve) o estoque de cada item automaticamente — o sistema avisa isso antes de pedir confirmação. Se ainda estava aberto, cancelar só muda a situação, sem mexer em estoque (nada tinha sido baixado ainda).\n\n**Excluir** só aparece pra pedidos em **aberto** — remove o pedido de vez ("não pode ser desfeita"). Um pedido faturado ou cancelado não pode ser excluído, só cancelado (se ainda não estiver).',
+      '**Cancelar pedido** funciona em qualquer situação, menos num pedido já cancelado. Se o pedido já estava **faturado**, cancelar também estorna (devolve) o estoque de cada item automaticamente — o sistema avisa isso antes de pedir confirmação. Se ainda estava aberto, cancelar só muda a situação, sem mexer em estoque (nada tinha sido baixado ainda).\n\n**Excluir** só aparece pra pedidos em **aberto** — remove o pedido de vez ("não pode ser desfeita"). Um pedido faturado ou cancelado não pode ser excluído, só cancelado (se ainda não estiver).',
     relacionados: ['vendas-pedido-faturar'],
   },
   {
@@ -195,7 +195,7 @@ export const verbetesVendas = [
       'ficha de venda quantas referencias',
     ],
     resposta:
-      'A tela **Ficha de Venda** funciona igual à Ficha Técnica (busca por referência/código/descrição, adiciona até 5 de uma vez, **Gerar fichas**, depois **Imprimir / Exportar PDF**), mas o documento gerado é mais completo: além do custo de produção, ele traz também a **Formação de Preço** — preço mínimo, ideal, premium, markup, lucro estimado e o preço de venda praticado, com o selo de status da margem.\n\nÉ a ficha pensada pra quem está vendendo (mostra o preço), diferente da Ficha Técnica do módulo Produto, que mostra só o custo de produção.',
+      'A tela **Ficha de Venda** funciona igual à Ficha Técnica (busca por referência/código/descrição, adiciona até 5 de uma vez, **Gerar fichas**, depois **Imprimir**), mas o documento gerado é mais completo: além do custo de produção, ele traz também a **Formação de Preço** — preço mínimo, ideal, premium, markup, lucro estimado e o preço de venda praticado, com o selo de status da margem.\n\nÉ a ficha pensada pra quem está vendendo (mostra o preço), diferente da Ficha Técnica do módulo Produto, que mostra só o custo de produção.',
     relacionados: ['gloss-ficha-tecnica', 'produto-ficha-tecnica-gerar'],
   },
   {
@@ -215,7 +215,7 @@ export const verbetesVendas = [
       'lucratividade por canal de venda',
     ],
     resposta:
-      'A tela **Lucratividade de Vendas** mostra o que sobra da venda direta depois de tudo, em cinco abas: **Resumo**, **Comissão por Vendedor**, **Pedidos**, **Produtos** e **Canais e Tabelas**.\n\nO Resumo traz a conta inteira em cascata, de cima para baixo: faturamento, menos custo da peça (o mesmo da Ficha de Custo, não uma estimativa), menos impostos → **lucro bruto**; menos a **comissão dos vendedores** → lucro depois da comissão; menos a **publicidade do mês** (lançada em Vendas › Publicidade e Despesas) → **lucro líquido**. As três margens aparecem lado a lado, em vez de um número só.\n\nDuas ressalvas ficam escritas na própria tela: pedido com item sem produto vinculado aparece marcado "sem custo" e fica **fora do total** (receita real com custo zero infla a margem); e pedido cuja comissão é sobre o lucro, num pedido sem custo, é contado como **"não calculável"** em vez de entrar como comissão zero.',
+      'A tela **Lucratividade de Vendas** mostra o que sobra da venda direta depois de tudo, em cinco abas: **Resumo**, **Comissão por Vendedor**, **Pedidos**, **Produtos** e **Canais e Tabelas**.\n\nO Resumo traz a conta inteira em cascata, de cima para baixo: faturamento, menos custo da peça (o mesmo da Ficha de Custo, não uma estimativa), menos impostos → **lucro bruto**; menos a **comissão dos vendedores** → lucro depois da comissão; menos a **publicidade do mês** (lançada em Vendas › Resultado › Publicidade e Despesas) → **lucro líquido**. As três margens aparecem lado a lado, em vez de um número só.\n\nDuas ressalvas ficam escritas na própria tela: pedido com item sem produto vinculado aparece marcado "sem custo" e fica **fora do total** (receita real com custo zero infla a margem); e pedido cuja comissão é sobre o lucro, num pedido sem custo, é contado como **"não calculável"** em vez de entrar como comissão zero.',
     relacionados: ['vendas-comissao-vendedor', 'vendas-publicidade', 'gloss-margem-contribuicao'],
   },
   {
@@ -234,7 +234,7 @@ export const verbetesVendas = [
       'vendedor nao aparece no pedido',
     ],
     resposta:
-      'O vendedor é escolhido no card **Quem compra e quem vende**, dentro do pedido. A lista vem do cadastro em **Configurações › Vendedores** (a mesma tela aparece como sub-aba de Acessos › Vendedores).\n\nVendedor pode existir **com ou sem login** no sistema. Quando ele tem uma conta ligada, todo pedido que ele criar já nasce no nome dele, sem ninguém precisar escolher. Cliente que tem vendedor fixo no cadastro também traz o vendedor junto ao ser selecionado.\n\nPedido sem vendedor continua valendo e contando no faturamento — só fica de fora do relatório de comissão, e a tela avisa isso antes de faturar.',
+      'O vendedor é escolhido no card **Quem compra e quem vende**, dentro do pedido. A lista vem do cadastro em **Configurações › Cadastros › Vendedores** (a mesma tela aparece como sub-aba de Acessos › Vendedores).\n\nVendedor pode existir **com ou sem login** no sistema. Quando ele tem uma conta ligada, todo pedido que ele criar já nasce no nome dele, sem ninguém precisar escolher. Cliente que tem vendedor fixo no cadastro também traz o vendedor junto ao ser selecionado.\n\nPedido sem vendedor continua valendo e contando no faturamento — só fica de fora do relatório de comissão, e a tela avisa isso antes de faturar.',
     relacionados: ['vendas-comissao-vendedor', 'vendas-tabela-preco-pedido'],
   },
   {
@@ -253,7 +253,7 @@ export const verbetesVendas = [
       'relatorio de comissao',
     ],
     resposta:
-      'Em **Configurações › Vendedores**, cada pessoa tem uma regra própria, de três formatos: **% sobre o faturamento** do pedido, **% sobre o lucro** (receita menos custo da peça e imposto) ou **R$ por peça** vendida. Também dá pra marcar que a comissão só conta **depois que o pedido é faturado** (é o padrão) e definir uma **meta de faturamento no mês**, que vira barra de progresso na tela e no relatório.\n\nO valor a pagar aparece na aba **Comissão por Vendedor** da Lucratividade, com pedidos, peças, receita, lucro, comissão e quanto sobra depois dela.\n\nUm cuidado que a tela declara: comissão **sobre o lucro** de um pedido com item sem custo cadastrado não pode ser calculada — ela aparece como **"não calculável"** e é contada à parte, em vez de virar zero e fazer você pagar a menos sem perceber.',
+      'Em **Configurações › Cadastros › Vendedores**, cada pessoa tem uma regra própria, de três formatos: **% sobre o faturamento** do pedido, **% sobre o lucro** (receita menos custo da peça e imposto) ou **R$ por peça** vendida. Também dá pra marcar que a comissão só conta **depois que o pedido é faturado** (é o padrão) e definir uma **meta de faturamento no mês**, que vira barra de progresso na tela e no relatório.\n\nO valor a pagar aparece na aba **Comissão por Vendedor** da Lucratividade, com pedidos, peças, receita, lucro, comissão e quanto sobra depois dela.\n\nUm cuidado que a tela declara: comissão **sobre o lucro** de um pedido com item sem custo cadastrado não pode ser calculada — ela aparece como **"não calculável"** e é contada à parte, em vez de virar zero e fazer você pagar a menos sem perceber.',
     relacionados: ['vendas-vendedor-vincular', 'vendas-lucratividade'],
   },
   {
@@ -273,7 +273,7 @@ export const verbetesVendas = [
       'importar tabela de preco da planilha',
     ],
     resposta:
-      'Em **Configurações › Tabelas de Preço** você cadastra quantas tabelas quiser (Atacado, Lojista, Varejo…). Cada uma tem um **desconto geral** — em **%** ou em **R$ por peça** — e pode ter **preço próprio por referência**: desconto específico ou **preço travado**, que ignora o desconto geral.\n\nA prioridade é sempre do mais específico para o mais geral: preço travado da referência → desconto da referência → desconto geral da tabela → preço cheio.\n\nNo pedido, a tabela é escolhida no card **Quem compra e quem vende** e vale para as próximas peças lançadas. Trocando a tabela no meio da venda, o sistema pergunta se quer **refazer os preços** das peças já lançadas. Uma tabela pode ser marcada como **padrão**: aí todo pedido novo já nasce com ela.\n\nImportante: a tabela **não** mexe em custo, margem, markup nem preço sugerido. Ela parte do preço que o sistema já calcula e aplica o desconto comercial em cima — a mesma conta que era feita à mão no balcão. Para carregar muitas referências de uma vez, existe o botão **Colar lista da planilha** (uma referência por linha); referência que não existe no cadastro é relatada, nunca casada por semelhança de nome.',
+      'Em **Configurações › Cadastros › Tabelas de Preço** você cadastra quantas tabelas quiser (Atacado, Lojista, Varejo…). Cada uma tem um **desconto geral** — em **%** ou em **R$ por peça** — e pode ter **preço próprio por referência**: desconto específico ou **preço travado**, que ignora o desconto geral.\n\nA prioridade é sempre do mais específico para o mais geral: preço travado da referência → desconto da referência → desconto geral da tabela → preço cheio.\n\nNo pedido, a tabela é escolhida no card **Quem compra e quem vende** e vale para as próximas peças lançadas. Trocando a tabela no meio da venda, o sistema pergunta se quer **refazer os preços** das peças já lançadas. Uma tabela pode ser marcada como **padrão**: aí todo pedido novo já nasce com ela.\n\nImportante: a tabela **não** mexe em custo, margem, markup nem preço sugerido. Ela parte do preço que o sistema já calcula e aplica o desconto comercial em cima — a mesma conta que era feita à mão no balcão. Para carregar muitas referências de uma vez, existe o botão **Colar lista da planilha** (uma referência por linha); referência que não existe no cadastro é relatada, nunca casada por semelhança de nome.',
     relacionados: ['vendas-vendedor-vincular', 'config-taxas-venda'],
   },
   {

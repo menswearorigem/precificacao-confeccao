@@ -31,7 +31,7 @@ export const verbetesMarketplace = [
       'buscar pedido de marketplace por numero',
     ],
     resposta:
-      'A tela **Pedidos de Marketplace** lista os pedidos importados do Mercado Livre, Shopee, TikTok Shop e demais marketplaces conectados. Diferente da tela de Vendas, aqui não tem botão de "Novo pedido": pedidos chegam sozinhos, sincronizados a cada 5 minutos pelas integrações conectadas em **Integrações**, ou por importação de planilha (tela **Importar Pedidos**).\n\nDá pra filtrar por período, plataforma (Mercado Livre, Shopee, TikTok Shop...), loja/integração específica, situação e por texto (número do pedido, cliente etc.). Se a lista estiver vazia, o próprio sistema sugere ir em Integrações pra conectar uma loja.',
+      'A tela **Pedidos de Marketplace** lista os pedidos importados do Mercado Livre, Shopee, TikTok Shop e demais marketplaces conectados. Diferente da tela de Vendas, aqui não tem botão de "Novo pedido": pedidos chegam sozinhos, sincronizados a cada 5 minutos pelas integrações conectadas em **Integrações**, ou por importação de planilha (tela **Importar Pedidos**).\n\nDá pra filtrar por período, plataforma (Mercado Livre, Shopee, TikTok Shop…), loja/integração específica, situação e por texto (número do pedido, cliente etc.). Se a lista estiver vazia, o próprio sistema sugere ir em Integrações pra conectar uma loja.',
     relacionados: ['mkt-importar-pedidos', 'mkt-lucratividade-kpis'],
   },
   {
@@ -378,7 +378,7 @@ export const verbetesMarketplace = [
       'peso do produto nao cadastrado',
     ],
     resposta:
-      'A tela **Taxas de Marketplace** compara, pedido a pedido, a taxa que o Mercado Livre/Shopee/TikTok Shop realmente cobrou com o que era esperado pelas tabelas de comissão + frete cadastradas em Configurações → Taxas. Só considera pedidos importados automaticamente das integrações (planilha manual não entra nessa checagem).\n\nCada linha mostra receita, taxa cobrada, taxa esperada, a diferença entre as duas e a situação: **OK**, **Divergente** ou **Sem referência** (quando não existe tabela de comissão cadastrada pra comparar — nesse caso não conta como divergente, pra não acusar diferença falsa contra taxa zero). Pedido sem peso de produto cadastrado mostra "só comissão" na taxa esperada, porque o frete não entrou na conta. Se mais de 80% dos pedidos do período estiverem divergentes, o sistema avisa que provavelmente é a tabela de comissão desatualizada, não cobrança errada pedido a pedido. O botão **Revincular custos e impostos** (o mesmo da Lucratividade de Marketplace) também está disponível aqui.',
+      'A tela **Taxas de Marketplace** compara, pedido a pedido, a taxa que o Mercado Livre/Shopee/TikTok Shop realmente cobrou com o que era esperado pelas tabelas de comissão + frete cadastradas em Configurações › Cálculo › Taxas. Só considera pedidos importados automaticamente das integrações (planilha manual não entra nessa checagem).\n\nCada linha mostra receita, taxa cobrada, taxa esperada, a diferença entre as duas e a situação: **OK**, **Divergente** ou **Sem referência** (quando não existe tabela de comissão cadastrada pra comparar — nesse caso não conta como divergente, pra não acusar diferença falsa contra taxa zero). Pedido sem peso de produto cadastrado mostra "só comissão" na taxa esperada, porque o frete não entrou na conta. Se mais de 80% dos pedidos do período estiverem divergentes, o sistema avisa que provavelmente é a tabela de comissão desatualizada, não cobrança errada pedido a pedido. O botão **Revincular custos e impostos** (o mesmo da Lucratividade de Marketplace) também está disponível aqui.',
     relacionados: ['mkt-lucratividade-vincular-produto'],
   },
   {
@@ -399,7 +399,7 @@ export const verbetesMarketplace = [
       'item sem correspondencia na importacao de pedidos',
     ],
     resposta:
-      'A tela **Importar Pedidos** recebe uma planilha .xlsx exportada do Mercado Livre (Vendas → Relatórios → Vendas), da Shopee (Meus Pedidos → Exportar) ou do UpSeller (Pedidos → Exportar — que também cobre TikTok Shop e Shein, sem precisar de API própria pra essas duas).\n\nEscolha a origem da planilha, envie o arquivo e clique em **Pré-visualizar**: nada é gravado ainda nessa etapa. A prévia lista os pedidos encontrados, marca os que já foram importados antes (ficam desmarcados e esmaecidos) e avisa quando algum item não bateu com nenhuma referência/EAN do estoque — esse item entra só com a descrição, sem baixar estoque ao faturar. Marque os pedidos desejados e clique em **Importar N pedido(s) selecionado(s)**: cada um vira um pedido de venda em aberto, igual à sincronização automática.',
+      'A tela **Importar Pedidos** recebe uma planilha .xlsx exportada do Mercado Livre (Vendas › Relatórios › Vendas), da Shopee (Meus Pedidos → Exportar) ou do UpSeller (Pedidos → Exportar — que também cobre TikTok Shop e Shein, sem precisar de API própria pra essas duas).\n\nEscolha a origem da planilha, envie o arquivo e clique em **Pré-visualizar**: nada é gravado ainda nessa etapa. A prévia lista os pedidos encontrados, marca os que já foram importados antes (ficam desmarcados e esmaecidos) e avisa quando algum item não bateu com nenhuma referência/EAN do estoque — esse item entra só com a descrição, sem baixar estoque ao faturar. Marque os pedidos desejados e clique em **Importar N pedido(s) selecionado(s)**: cada um vira um pedido de venda em aberto, igual à sincronização automática.',
     relacionados: ['mkt-pedidos-listar-filtrar'],
   },
   {
@@ -454,7 +454,7 @@ export const verbetesMarketplace = [
       'imagem quebrada no anuncio',
     ],
     resposta:
-      'Isso era um defeito do sistema, corrigido em 10/09/2026: as fotos vêm da CDN da plataforma, e duas coisas as barravam ao mesmo tempo — o Mercado Livre entrega o endereço em `http://`, que o navegador bloqueia dentro de uma página segura, e a política de segurança do próprio HBN Hub não liberava nenhuma imagem de fora do domínio. As duas foram corrigidas, e vale para as fotos já gravadas: não é preciso rodar "Atualizar das lojas" antes.\n\nSe ainda houver cartão sem imagem, o quadro diz o motivo: **"sem foto"** significa que a plataforma não mandou endereço nenhum; **"foto não abriu"** significa que o endereço existe mas não respondeu (foto apagada na plataforma, por exemplo). Nesses casos o sistema tenta antes a foto do produto no cadastro, e só depois mostra a referência escrita.',
+      'Isso era um defeito do sistema, corrigido em 10/09/2026: as fotos vêm da CDN da plataforma, e duas coisas as barravam ao mesmo tempo — o Mercado Livre entrega o endereço em http://, que o navegador bloqueia dentro de uma página segura, e a política de segurança do próprio HBN Hub não liberava nenhuma imagem de fora do domínio. As duas foram corrigidas, e vale para as fotos já gravadas: não é preciso rodar "Atualizar das lojas" antes.\n\nSe ainda houver cartão sem imagem, o quadro diz o motivo: **"sem foto"** significa que a plataforma não mandou endereço nenhum; **"foto não abriu"** significa que o endereço existe mas não respondeu (foto apagada na plataforma, por exemplo). Nesses casos o sistema tenta antes a foto do produto no cadastro, e só depois mostra a referência escrita.',
     relacionados: ['mkt-anuncios-publicacao-variacao'],
   },
 
@@ -480,7 +480,7 @@ export const verbetesMarketplace = [
       'onde confiro os pedidos antes de enviar',
     ],
     resposta:
-      'A tela **Conferência de Pedidos** (`/marketplace/conferencia`) serve para bipar cada peça de um pedido antes de fechar a caixa, comparando contra o que foi realmente vendido — é a etapa que existe pra pegar a peça errada antes que ela saia da casa. Tem três abas: **Bipagem** (onde a conferência acontece, peça por peça), **Fila do dia** (a lista de pedidos do período, o que já foi conferido e o que falta) e **Relatório** (indicadores e histórico de divergências por período).\n\nA aba de Bipagem fica sempre montada por trás das outras — trocar de aba no meio de uma caixa não perde a sessão nem obriga a bipar a etiqueta de novo.',
+      'A tela **Conferência de Pedidos** (Marketplace › Expedição › Conferência) serve para bipar cada peça de um pedido antes de fechar a caixa, comparando contra o que foi realmente vendido — é a etapa que existe pra pegar a peça errada antes que ela saia da casa. Tem três abas: **Bipagem** (onde a conferência acontece, peça por peça), **Fila do dia** (a lista de pedidos do período, o que já foi conferido e o que falta) e **Relatório** (indicadores e histórico de divergências por período).\n\nA aba de Bipagem fica sempre montada por trás das outras — trocar de aba no meio de uma caixa não perde a sessão nem obriga a bipar a etiqueta de novo.',
     relacionados: ['mkt-conferencia-bipagem-fluxo', 'mkt-conferencia-fila-do-dia', 'mkt-conferencia-relatorio'],
   },
   {
@@ -522,7 +522,7 @@ export const verbetesMarketplace = [
       'codigo que o sistema nao conhece',
     ],
     resposta:
-      'Quando um item do pedido não tem código de barras (EAN) cadastrado, ele aparece marcado "Sem código de barras cadastrado — não dá pra bipar" e, no lugar da contagem, tem um botão **Confirmar no olho**. Antes de confirmar, o sistema pergunta se a peça está mesmo na caixa e avisa que confirmar assim marca o pedido como **divergente** no relatório — é uma garantia mais fraca do que bipar de verdade, então fica registrada como tal.\n\nCada código bipado que o sistema não reconhece entra na lista **Códigos que o sistema não conhece**, na aba Relatório — que é, na prática, a fila de trabalho de **Estoque › Importar EAN**: cadastrar o código lá tira a peça dessa situação nas próximas conferências.',
+      'Quando um item do pedido não tem código de barras (EAN) cadastrado, ele aparece marcado "Sem código de barras cadastrado — não dá pra bipar" e, no lugar da contagem, tem um botão **Confirmar no olho**. Antes de confirmar, o sistema pergunta se a peça está mesmo na caixa e avisa que confirmar assim marca o pedido como **divergente** no relatório — é uma garantia mais fraca do que bipar de verdade, então fica registrada como tal.\n\nCada código bipado que o sistema não reconhece entra na lista **Códigos que o sistema não conhece**, na aba Relatório — que é, na prática, a fila de trabalho de **Estoque › Importar e imprimir › Importar EAN**: cadastrar o código lá tira a peça dessa situação nas próximas conferências.',
     relacionados: ['mkt-conferencia-bipagem-fluxo', 'mkt-conferencia-relatorio'],
   },
   {
@@ -609,7 +609,7 @@ export const verbetesMarketplace = [
       'quantas etiquetas tem no arquivo',
     ],
     resposta:
-      'A tela **Etiquetas de Envio** resolve um problema concreto: a etiqueta do Mercado Livre Full sai em **ZPL** (a linguagem das impressoras térmicas Zebra), e a impressora comum da casa só entende PDF. Na aba **Converter etiqueta**, cole o conteúdo ZPL (ou solte o arquivo .zpl/.txt) e o sistema analisa sozinho, mostrando quantas etiquetas existem naquele conteúdo (cada trecho entre `^XA` e `^XZ` vira uma página do PDF) e se dá pra converter tudo aqui dentro ou não.\n\nClicando em **Gerar PDF**, o arquivo abre numa aba nova, pronto pra mandar na impressora. O arquivo é lido no navegador e só sobe pro servidor quando a pessoa decide converter de fato.',
+      'A tela **Etiquetas de Envio** resolve um problema concreto: a etiqueta do Mercado Livre Full sai em **ZPL** (a linguagem das impressoras térmicas Zebra), e a impressora comum da casa só entende PDF. Na aba **Converter etiqueta**, cole o conteúdo ZPL (ou solte o arquivo .zpl/.txt) e o sistema analisa sozinho, mostrando quantas etiquetas existem naquele conteúdo (cada trecho entre ^XA e ^XZ vira uma página do PDF) e se dá pra converter tudo aqui dentro ou não.\n\nClicando em **Gerar PDF**, o arquivo abre numa aba nova, pronto pra mandar na impressora. O arquivo é lido no navegador e só sobe pro servidor quando a pessoa decide converter de fato.',
     relacionados: ['mkt-etiquetas-labelary-privacidade', 'mkt-etiquetas-tamanho-etiqueta', 'mkt-etiquetas-lote-expedicao'],
   },
   {
@@ -711,7 +711,7 @@ export const verbetesMarketplace = [
       'picking sem endereco vai pro final',
     ],
     resposta:
-      'Na Lista de separação, quando uma peça não tem endereço cadastrado no galpão, a coluna **Local** sai com travessão e a linha vai pro fim da lista — são justamente essas peças que fazem quem separa ficar procurando. Cadastrar o endereço em **Estoque › Onde Está a Peça** (ver verbete específico) tira a peça dessa situação nas próximas listas.',
+      'Na Lista de separação, quando uma peça não tem endereço cadastrado no galpão, a coluna **Local** sai com travessão e a linha vai pro fim da lista — são justamente essas peças que fazem quem separa ficar procurando. Cadastrar o endereço em **Estoque › Onde Está › Endereços** (ver verbete específico) tira a peça dessa situação nas próximas listas.',
     relacionados: ['mkt-etiquetas-lista-separacao-picking', 'estoque-locais-visao-geral-disponivel'],
   },
 
@@ -736,7 +736,7 @@ export const verbetesMarketplace = [
       'lista de pedidos para o transportador',
     ],
     resposta:
-      'O **Romaneio de expedição** (`/marketplace/romaneio`) é o papel que o motorista assina ao levar os pedidos embora — e resolve três faltas que a etiqueta sozinha não cobria: não havia como provar que um pedido saiu da casa quando ele sumia depois; não havia como enxergar o que já devia ter sido coletado e não foi (o que custa reputação no Mercado Livre e na Shopee antes de custar dinheiro); e não havia trava contra a mesma caixa entrar em duas remessas ao mesmo tempo.\n\nÉ uma etapa depois da etiqueta e independente da Conferência de Pedidos: o romaneio junta pedidos **faturados** que ainda não foram coletados, sejam eles já conferidos na bipagem ou não.',
+      'O **Romaneio de expedição** (Marketplace › Expedição › Romaneio) é o papel que o motorista assina ao levar os pedidos embora — e resolve três faltas que a etiqueta sozinha não cobria: não havia como provar que um pedido saiu da casa quando ele sumia depois; não havia como enxergar o que já devia ter sido coletado e não foi (o que custa reputação no Mercado Livre e na Shopee antes de custar dinheiro); e não havia trava contra a mesma caixa entrar em duas remessas ao mesmo tempo.\n\nÉ uma etapa depois da etiqueta e independente da Conferência de Pedidos: o romaneio junta pedidos **faturados** que ainda não foram coletados, sejam eles já conferidos na bipagem ou não.',
     relacionados: ['mkt-romaneio-criar-fechar-coletar', 'mkt-romaneio-prazos-situacao-coleta', 'mkt-romaneio-rastreio-congelado'],
   },
   {
@@ -993,7 +993,7 @@ export const verbetesMarketplace = [
       'por que a saude da sincronizacao existe',
     ],
     resposta:
-      'A tela **Saúde da Sincronização** (`/marketplace/saude`) mostra pedidos que falharam ao ser importados de um marketplace e nunca foram tentados de novo — antes dela, o erro de importação ia para um campo que guarda só o último erro e é sobrescrito a cada ciclo (5 minutos), e quando a data do pedido passava dos dias da janela de ressincronização, ele saía da busca automática pra sempre, sem ninguém ser avisado. Uma venda paga pelo cliente simplesmente deixava de existir no sistema, e estoque, lucratividade e conferência passavam a trabalhar em cima de um faturamento incompleto sem sinal nenhum disso.\n\nA tela separa três situações que antes eram tratadas como uma coisa só: **conexão parada** (enquanto estiver assim, nada novo entra por ela), **pedido que falhou mas ainda está na janela** (vai ser tentado sozinho no próximo ciclo) e **pedido que falhou e já saiu da janela** (fica fora até alguém mandar buscar de novo — é o único caso que tem botão de ação).',
+      'A tela **Saúde da Sincronização** (Marketplace › Quando falta algo › Saúde da Sincronização) mostra pedidos que falharam ao ser importados de um marketplace e nunca foram tentados de novo — antes dela, o erro de importação ia para um campo que guarda só o último erro e é sobrescrito a cada ciclo (5 minutos), e quando a data do pedido passava dos dias da janela de ressincronização, ele saía da busca automática pra sempre, sem ninguém ser avisado. Uma venda paga pelo cliente simplesmente deixava de existir no sistema, e estoque, lucratividade e conferência passavam a trabalhar em cima de um faturamento incompleto sem sinal nenhum disso.\n\nA tela separa três situações que antes eram tratadas como uma coisa só: **conexão parada** (enquanto estiver assim, nada novo entra por ela), **pedido que falhou mas ainda está na janela** (vai ser tentado sozinho no próximo ciclo) e **pedido que falhou e já saiu da janela** (fica fora até alguém mandar buscar de novo — é o único caso que tem botão de ação).',
     relacionados: ['mkt-saude-sincronizacao-conexoes-paradas', 'mkt-saude-sincronizacao-buscar-de-novo'],
   },
   {

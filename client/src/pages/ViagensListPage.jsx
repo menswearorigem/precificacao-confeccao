@@ -78,10 +78,10 @@ export default function ViagensListPage() {
           <form onSubmit={criarViagem}>
             <div className="form-grid">
               <Field label="Nome da viagem">
-                <CampoTextoLimitado autoFocus placeholder="Ex: Circuito Nordeste — Agosto" value={nova.nome} onChange={(e) => setNova((n) => ({ ...n, nome: e.target.value }))} />
+                <CampoTextoLimitado autoFocus placeholder="Ex.: Circuito Nordeste — Agosto" value={nova.nome} onChange={(e) => setNova((n) => ({ ...n, nome: e.target.value }))} />
               </Field>
               <Field label="Local">
-                <input placeholder="Ex: Fortaleza / Recife" value={nova.local} onChange={(e) => setNova((n) => ({ ...n, local: e.target.value }))} />
+                <input placeholder="Ex.: Fortaleza / Recife" value={nova.local} onChange={(e) => setNova((n) => ({ ...n, local: e.target.value }))} />
               </Field>
               <Field label="Data de início">
                 <DateInput value={nova.data_inicio} onChange={(e) => setNova((n) => ({ ...n, data_inicio: e.target.value }))} />

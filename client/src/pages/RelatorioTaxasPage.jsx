@@ -188,7 +188,7 @@ export default function RelatorioTaxasPage() {
           {relatorio.pendentesSemTaxa > 0 && (
             <div className="aviso-compacto tone-atencao">
               {plural(relatorio.pendentesSemTaxa, 'pedido')} do período com tarifa não informada ainda (a Shopee só libera
-              depois que o pedido é liquidado financeiramente; no Mercado Livre, o backfill automático tenta de
+              depois que o pedido é liquidado financeiramente; no Mercado Livre, o preenchimento retroativo automático tenta de
               novo a cada ciclo) — não entraram nesta lista como "divergente", pra não acusar diferença falsa
               comparando contra tarifa zero.
             </div>

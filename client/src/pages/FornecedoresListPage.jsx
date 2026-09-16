@@ -52,7 +52,7 @@ const COLUNAS_EXPORTACAO = [
   { rotulo: 'Categoria principal', valor: (f) => f.categoria_principal || '' },
   { rotulo: 'Condição de pagamento padrão', valor: (f) => f.condicao_pagamento_padrao || '' },
   { rotulo: 'Forma de pagamento mais usada', valor: (f) => f.forma_pagamento_comum || '' },
-  { rotulo: 'Chave PIX', valor: (f) => f.chave_pix || '' },
+  { rotulo: 'Chave Pix', valor: (f) => f.chave_pix || '' },
   { rotulo: 'Compras', valor: (f) => formatQtd(f.compras_qtd) },
   { rotulo: 'Total comprado', valor: (f) => brl(f.total_comprado) },
   { rotulo: 'Ticket médio', valor: (f) => (f.ticket_medio === null ? '—' : brl(f.ticket_medio)) },
@@ -271,7 +271,7 @@ export default function FornecedoresListPage() {
           { rotulo: 'Categoria principal', tipo: 'texto', larguraExcel: 24 },
           { rotulo: 'Condição padrão', tipo: 'texto', larguraExcel: 20 },
           { rotulo: 'Paga mais em', tipo: 'texto', larguraExcel: 20 },
-          { rotulo: 'Chave PIX', tipo: 'texto', larguraExcel: 26 },
+          { rotulo: 'Chave Pix', tipo: 'texto', larguraExcel: 26 },
           { rotulo: 'Compras', tipo: 'numero' },
           { rotulo: 'Total comprado', tipo: 'moeda' },
           { rotulo: 'Ticket médio', tipo: 'moeda' },
@@ -368,7 +368,7 @@ export default function FornecedoresListPage() {
           campos={opcoes.camposBusca}
           campo={campo}
           onCampo={(v) => { setCampo(v); setBuscaAplicada(busca); }}
-          placeholder="Nome, razão social, fantasia, CPF/CNPJ, telefone, e-mail, cidade, PIX…"
+          placeholder="Nome, razão social, fantasia, CPF/CNPJ, telefone, e-mail, cidade, Pix…"
         />
       </div>
 
@@ -608,7 +608,7 @@ export default function FornecedoresListPage() {
             Icone={Truck}
             titulo={chips.length ? 'Nenhum fornecedor encontrado' : 'Nenhum fornecedor cadastrado ainda'}
             descricao={chips.length
-              ? 'A busca varre nome, razão social, fantasia, CPF/CNPJ, telefone, e-mail, endereço, PIX e observações. Se não achou, tente um pedaço menor do termo ou limpe os filtros.'
+              ? 'A busca varre nome, razão social, fantasia, CPF/CNPJ, telefone, e-mail, endereço, Pix e observações. Se não achou, tente um pedaço menor do termo ou limpe os filtros.'
               : 'Aqui aparecem os fornecedores usados nos lançamentos de compra.'}
             href={chips.length ? undefined : '/fornecedores/novo'}
             onAcao={chips.length ? limparTudo : undefined}

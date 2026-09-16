@@ -686,7 +686,7 @@ function ReputacaoTab({ integracoes }) {
     <div className="card">
       <div className="card-head">Reputação por Loja</div>
       <button className="btn btn-primary" onClick={buscar} disabled={carregando}>
-        {carregando ? 'Buscando…' : 'Buscar Reputação'}
+        {carregando ? 'Buscando…' : 'Buscar reputação'}
       </button>
       {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
       {dados && (
@@ -746,7 +746,7 @@ function OpinioesTab({ integracoes }) {
       <div className="card-head">Opiniões dos Anúncios Mais Vendidos — {integracaoML.nome}</div>
       <p className="page-sub">Consulta os até 25 anúncios com mais unidades vendidas nessa loja (item por item, pode demorar).</p>
       <button className="btn btn-primary" onClick={buscar} disabled={carregando}>
-        {carregando ? 'Buscando…' : 'Buscar Opiniões'}
+        {carregando ? 'Buscando…' : 'Buscar opiniões'}
       </button>
       {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
       {dados?.aviso && <div className="aviso-compacto tone-atencao">{dados.aviso}</div>}
@@ -821,7 +821,7 @@ function ConcorrentesTab({ integracoes }) {
         participa) — consulta os até 25 mais vendidos dessa loja, item por item.
       </p>
       <button className="btn btn-primary" onClick={buscar} disabled={carregando}>
-        {carregando ? 'Buscando…' : 'Buscar Concorrência'}
+        {carregando ? 'Buscando…' : 'Buscar concorrência'}
       </button>
       {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
       {dados?.aviso && <div className="aviso-compacto tone-atencao">{dados.aviso}</div>}
@@ -1004,7 +1004,7 @@ function PublicidadeTab({ integracoes }) {
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
           <button className="btn btn-primary" onClick={buscar} disabled={carregando}>
-            {carregando ? 'Buscando…' : 'Buscar Publicidade'}
+            {carregando ? 'Buscando…' : 'Buscar publicidade'}
           </button>
           <button className="btn btn-ghost" onClick={sincronizarHistorico} disabled={sincronizando}>
             <RefreshCw size={14} /> {sincronizando ? 'Sincronizando…' : 'Sincronizar histórico (90 dias)'}
@@ -1142,7 +1142,7 @@ function CategoriaBrowser({ integracaoId, modoSelecao, onSelecionar }) {
 
   if (!iniciado) {
     return (
-      <button className="btn btn-primary" onClick={() => setIniciado(true)}>Carregar Categorias</button>
+      <button className="btn btn-primary" onClick={() => setIniciado(true)}>Carregar categorias</button>
     );
   }
 
@@ -1255,7 +1255,7 @@ function CategoriasTab({ integracoes }) {
             </p>
           )}
           <button className="btn btn-primary" onClick={buscarTendencias} disabled={carregando || (escopo === 'categoria' && !categoriaEscolhida)}>
-            {carregando ? 'Buscando…' : 'Buscar Tendências'}
+            {carregando ? 'Buscando…' : 'Buscar tendências'}
           </button>
           {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
           {tendencias && (
@@ -1628,7 +1628,7 @@ export default function MetricasMarketplacePage() {
         {(subTab === 'vendasPorAnuncio' || subTab === 'abc') && (
           <div className="filtros-barra-busca">
             <Search size={14} />
-            <input placeholder="Referência, descrição ou ID do anúncio..." value={busca} onChange={(e) => setBusca(e.target.value)} />
+            <input placeholder="Referência, descrição ou ID do anúncio…" value={busca} onChange={(e) => setBusca(e.target.value)} />
           </div>
         )}
       </div>

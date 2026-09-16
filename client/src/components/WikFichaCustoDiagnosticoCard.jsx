@@ -35,7 +35,7 @@ export default function WikFichaCustoDiagnosticoCard() {
       </p>
 
       <form onSubmit={testar} style={{ display: 'flex', gap: 8 }}>
-        <input placeholder="Referência do produto (ex: 10010)" value={referencia} onChange={(e) => setReferencia(e.target.value)} style={{ maxWidth: 240 }} />
+        <input placeholder="Referência do produto (ex.: 10010)" value={referencia} onChange={(e) => setReferencia(e.target.value)} style={{ maxWidth: 240 }} />
         <button className="btn btn-primary" type="submit" disabled={loading}>{loading ? 'Consultando…' : 'Testar'}</button>
       </form>
 

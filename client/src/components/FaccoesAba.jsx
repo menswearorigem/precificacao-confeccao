@@ -215,7 +215,7 @@ function FichaFaccao({ faccaoId, etapas, produtos, onFechar, onEditar, onMudou }
               <span className="field-label"><DollarSign size={12} /> Pagamento</span>
               <p>
                 {[f.forma_pagamento_padrao, f.condicao_pagamento_padrao].filter(Boolean).join(' · ') || '—'}
-                {f.chave_pix ? <><br /><span className="ink-soft">PIX{f.pix_tipo ? ` (${f.pix_tipo})` : ''}: {f.chave_pix}</span></> : null}
+                {f.chave_pix ? <><br /><span className="ink-soft">Pix{f.pix_tipo ? ` (${f.pix_tipo})` : ''}: {f.chave_pix}</span></> : null}
               </p>
             </div>
           </div>

@@ -35,7 +35,7 @@ export default function HistoricoPrecoCard({ produtoId }) {
 
       {!loading && (!historico || historico.length === 0) && (
         <p className="page-sub" style={{ margin: 0 }}>
-          Ainda não há snapshot registrado pra esta referência — o histórico começa a contar a
+          Ainda não há retrato registrado pra esta referência — o histórico começa a contar a
           partir do primeiro salvamento aqui na ficha.
         </p>
       )}
@@ -43,7 +43,7 @@ export default function HistoricoPrecoCard({ produtoId }) {
       {!loading && historico && historico.length > 0 && (
         <>
           <p className="page-sub" style={{ marginTop: 0 }}>
-            Um snapshot é gravado a cada vez que esta ficha é salva. Mostra a evolução a partir daqui
+            Um retrato é gravado a cada vez que esta ficha é salva. Mostra a evolução a partir daqui
             — não há como reconstruir valores de antes do primeiro registro abaixo.
           </p>
           <div style={{ maxHeight: 320, overflowY: 'auto' }}>

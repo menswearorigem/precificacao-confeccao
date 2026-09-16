@@ -212,11 +212,11 @@ export default function ViagemDetailPage() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {viagem.situacao === 'planejamento' && (
-            <button className="btn btn-primary" onClick={() => mudarSituacao('em_andamento')}>Iniciar Viagem</button>
+            <button className="btn btn-primary" onClick={() => mudarSituacao('em_andamento')}>Iniciar viagem</button>
           )}
           {viagem.situacao === 'em_andamento' && (
             <button className="btn btn-ghost" onClick={async () => { if (await confirmar('Finalizar essa viagem? Ainda dá pra consultar tudo depois.', { perigo: false })) mudarSituacao('finalizada'); }}>
-              Finalizar Viagem
+              Finalizar viagem
             </button>
           )}
         </div>
@@ -276,7 +276,7 @@ export default function ViagemDetailPage() {
           <Search size={15} style={{ position: 'absolute', left: 12, top: 11, color: 'var(--ink-faint)' }} />
           <input
             style={{ paddingLeft: 34 }}
-            placeholder="Buscar por referência ou descrição..."
+            placeholder="Buscar por referência ou descrição…"
             value={buscaProduto}
             onChange={(e) => setBuscaProduto(e.target.value)}
           />
@@ -305,7 +305,7 @@ export default function ViagemDetailPage() {
             <Search size={15} style={{ position: 'absolute', left: 12, top: 11, color: 'var(--ink-faint)' }} />
             <input
               style={{ paddingLeft: 34 }}
-              placeholder="Procurar na lista dessa viagem..."
+              placeholder="Procurar na lista dessa viagem…"
               value={filtroCatalogo}
               onChange={(e) => setFiltroCatalogo(e.target.value)}
             />
@@ -342,7 +342,7 @@ export default function ViagemDetailPage() {
             <span className="mono" style={{ marginLeft: 10 }}>{brl(totalCarrinho)}</span>
           </div>
           <button className="btn btn-primary" onClick={() => setCheckoutAberto(true)}>
-            <ShoppingBag size={14} /> Finalizar Venda
+            <ShoppingBag size={14} /> Finalizar venda
           </button>
         </div>
       )}
@@ -485,7 +485,7 @@ function ProdutoCard({ produto, limiteEstoqueBaixo, emCarrinhoPorVariante, podeV
       {entradaAberta && (
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           <button className="btn btn-primary sm" onClick={confirmarEntrada} disabled={enviandoEntrada}>
-            {enviandoEntrada ? 'Adicionando…' : 'Confirmar Entrada'}
+            {enviandoEntrada ? 'Adicionando…' : 'Confirmar entrada'}
           </button>
           <button className="btn btn-ghost sm" onClick={() => { setEntradaAberta(false); setQuantidadesEntrada({}); }}>Cancelar</button>
         </div>
@@ -596,7 +596,7 @@ function CheckoutModal({ itens, total, onAtualizarItem, onRemoverItem, onClose, 
 
         <div className="form-grid">
           <Field label="Cliente (buscar cadastrado)">
-            <input placeholder="Buscar por nome..." value={buscaCliente}
+            <input placeholder="Buscar por nome…" value={buscaCliente}
               onChange={(e) => { setBuscaCliente(e.target.value); setClienteSelecionado(null); }} />
           </Field>
           <Field label="Ou nome rápido (sem cadastro)">
@@ -614,14 +614,14 @@ function CheckoutModal({ itens, total, onAtualizarItem, onRemoverItem, onClose, 
           </div>
         )}
         <Field label="Forma de pagamento">
-          <input placeholder="Ex: Pix, Dinheiro, Cartão..." value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)} />
+          <input placeholder="Ex.: Pix, Dinheiro, Cartão…" value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)} />
         </Field>
 
         {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
 
         <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
           <button className="btn btn-primary" onClick={confirmar} disabled={enviando || itens.length === 0}>
-            {enviando ? 'Registrando…' : 'Confirmar Venda e Baixar Estoque'}
+            {enviando ? 'Registrando…' : 'Confirmar venda e baixar estoque'}
           </button>
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
         </div>

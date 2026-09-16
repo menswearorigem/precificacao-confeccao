@@ -133,7 +133,7 @@ export default function WikImportarFichaCustoCard() {
           </div>
           <p>
             {plural(resultado.produtosAtualizados, 'produto')} com ficha de custo criada ou atualizada — {resultado.materiaisCriados} material(is)
-            e {resultado.custosCriados} operaç(ões) de custo industrial no total.
+            e {resultado.custosCriados} operação(ões) de custo industrial no total.
             {resultado.ignorados.length > 0 && ` ${plural(resultado.ignorados.length, 'produto')} tinham ficha editada manualmente e foram ignorados (protegidos).`}
           </p>
         </div>

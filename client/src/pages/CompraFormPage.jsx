@@ -291,7 +291,7 @@ export default function CompraFormPage() {
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-head">Lançar Item</div>
+        <div className="card-head">Lançar item</div>
         <form onSubmit={adicionarItem} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <Field label="Descrição">
             <input

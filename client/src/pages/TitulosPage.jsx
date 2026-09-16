@@ -227,7 +227,7 @@ function FaixaWik({ aoSincronizar }) {
         </div>
         {st.semMapa?.length > 0 && (
           <div className="stamp sm tone-atencao" style={{ marginTop: 10, display: 'inline-flex' }}>
-            Empresa(s) sem Id do Wik configurado: {st.semMapa.join(', ')} — os títulos dela(s) não serão
+            Empresa(s) sem ID do Wik configurado: {st.semMapa.join(', ')} — os títulos dela(s) não serão
             importados até o Id ser preenchido (em vez de cair no CNPJ errado).
           </div>
         )}
@@ -259,8 +259,8 @@ function FaixaWik({ aoSincronizar }) {
         </span>
       )}
       {st.semMapa?.length > 0 && (
-        <span className="stamp sm tone-prejuizo" title="Empresa sem o Id do Wik configurado: os títulos dela não são importados, em vez de cair no CNPJ errado.">
-          sem Id do Wik: {st.semMapa.join(', ')}
+        <span className="stamp sm tone-prejuizo" title="Empresa sem o ID do Wik configurado: os títulos dela não são importados, em vez de cair no CNPJ errado.">
+          sem ID do Wik: {st.semMapa.join(', ')}
         </span>
       )}
       <span className="faixa-wik-sep">

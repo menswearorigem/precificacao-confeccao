@@ -526,7 +526,7 @@ export default function IntegracoesPage() {
                                     onClick={() => conectarAds(item.id)}
                                     disabled={!item.adsAppId || !item.temAdsAppSecret}
                                   >
-                                    <Plug size={13} /> {item.adsConectado ? 'Reconectar Publicidade' : 'Conectar Publicidade'}
+                                    <Plug size={13} /> {item.adsConectado ? 'Reconectar publicidade' : 'Conectar publicidade'}
                                   </button>
                                   {item.adsConectado
                                     ? <span className="stamp sm tone-saudavel">Publicidade conectada</span>

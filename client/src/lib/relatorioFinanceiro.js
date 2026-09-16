@@ -12,7 +12,7 @@ const NOTAS_COMUNS = [
   'Os valores vêm do extrato da própria plataforma, não da soma dos pedidos — por isso incluem o que não pertence a venda nenhuma: publicidade, taxa, multa, ajuste e estorno.',
   '"Liberado" é o que o marketplace de fato creditou na conta da plataforma: venda menos publicidade, taxa e devolução. O saque não entra nesse número — ele é o mesmo dinheiro saindo da plataforma para o banco da empresa, e tem coluna própria.',
   'Lançamento pendente é o que a plataforma já reconhece e ainda não soltou. Nunca é somado ao liberado.',
-  'A publicidade da TikTok Shop não passa pelo statement da plataforma e, por isso, não aparece neste extrato.',
+  'A publicidade da TikTok Shop não vem no extrato financeiro da plataforma e, por isso, não aparece aqui.',
   'O extrato é casado com o pedido só por identificador exato — nunca por valor e data aproximados.',
 ];
 

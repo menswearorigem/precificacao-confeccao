@@ -29,7 +29,7 @@ export const verbetesCompras = [
       'compra de material de escritorio',
     ],
     resposta:
-      'A tela **Compras** lista o lançamento de todas as compras da empresa — de matéria-prima a material de escritório. As abas no topo filtram por categoria de compra (as mesmas categorias cadastradas em Configurações → Listas); também dá pra buscar por fornecedor ou número da compra/documento.\n\nCada linha mostra número, data, fornecedor, categoria, documento, total líquido e situação: **Pendente**, **Recebido** ou **Cancelado**. A lista pode ser exportada em CSV/XLSX, e o botão **Nova compra** já cria a compra e abre a ficha dela pra começar a lançar itens.',
+      'A tela **Compras** lista o lançamento de todas as compras da empresa — de matéria-prima a material de escritório. As abas no topo filtram por categoria de compra (as mesmas categorias cadastradas em Configurações › Cadastros › Listas); também dá pra buscar por fornecedor ou número da compra/documento.\n\nCada linha mostra número, data, fornecedor, categoria, documento, total líquido e situação: **Pendente**, **Recebido** ou **Cancelado**. A lista pode ser exportada em CSV/XLSX, e o botão **Nova compra** já cria a compra e abre a ficha dela pra começar a lançar itens.',
     relacionados: ['compras-criar-fornecedor-cabecalho', 'compras-relatorio'],
   },
   {
@@ -497,7 +497,7 @@ export const verbetesCompras = [
       'ordem em que a compra acontece cotacao pedido recebimento',
     ],
     resposta:
-      'A lista de Pedidos de Compra não tem um botão de criar um pedido direto: pedidos de compra nascem de uma **cotação com vencedor escolhido**, na tela Cotações, usando o botão **Gerar pedidos**. É a ordem em que a compra acontece na vida real — primeiro se cota e se decide o fornecedor, depois o pedido formaliza o que foi decidido.\n\nNo detalhe do pedido, o card **Entregas deste pedido** lista os recebimentos já abertos contra ele. Se o pedido está aprovado e ainda não tem nenhum recebimento, a tela linka direto para a tela Recebimentos para começar a conferência da doca; se o pedido ainda não foi aprovado, ele simplesmente não pode receber mercadoria ainda.',
+      'A lista de Pedidos de Compra não tem um botão de criar um pedido direto: pedidos de compra nascem de uma **cotação com vencedor escolhido**, na tela Cotações, usando o botão **Gerar pedidos**. É a ordem em que a compra acontece na vida real — primeiro se cota e se decide o fornecedor, depois o pedido formaliza o que foi decidido.\n\nNo detalhe do pedido, o card **Entregas deste pedido** lista os recebimentos já abertos contra ele. Se o pedido está aprovado e ainda não tem nenhum recebimento, a tela vincula direto para a tela Recebimentos para começar a conferência da doca; se o pedido ainda não foi aprovado, ele simplesmente não pode receber mercadoria ainda.',
     relacionados: ['compras-cotacao-gerar-pedidos', 'compras-pedido-aprovar', 'compras-recebimento-abrir'],
   },
 

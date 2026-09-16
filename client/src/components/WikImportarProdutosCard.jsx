@@ -109,7 +109,7 @@ export default function WikImportarProdutosCard() {
       </p>
       <p className="page-sub" style={{ marginTop: -6, marginBottom: 14 }}>
         Também <strong>completa os produtos que já existem aqui</strong> com o que o Wik tem a mais, sem
-        sobrescrever nada seu: preenche marca/categoria só onde estiver em branco, vincula o Id do Wik
+        sobrescrever nada seu: preenche marca/categoria só onde estiver em branco, vincula o ID do Wik
         (usado na Ficha de Custo) e acrescenta variantes de grade (cor × tamanho) que ainda não existem.
         O <strong>saldo das variantes que já existem não é tocado</strong> — esse número é a sua contagem
         física do galpão, não a do Wik.
@@ -146,7 +146,7 @@ export default function WikImportarProdutosCard() {
             resultado.enriquecimento.produtosCompletados > 0 ? (
               <p style={{ marginTop: 6 }}>
                 Nos produtos que já existiam: {resultado.enriquecimento.classificacoesPreenchidas} com marca/categoria
-                preenchida, {resultado.enriquecimento.wikProdIdsVinculados} vinculado(s) ao Id do Wik e{' '}
+                preenchida, {resultado.enriquecimento.wikProdIdsVinculados} vinculado(s) ao ID do Wik e{' '}
                 {resultado.enriquecimento.variantesCriadas} variante(s) de grade nova(s) acrescentada(s).
               </p>
             ) : (
@@ -171,7 +171,7 @@ export default function WikImportarProdutosCard() {
               <div className="form-grid">
                 <div><span className="field-label">Produtos a completar</span><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{preview.resumo.existentesParaEnriquecer}</div></div>
                 <div><span className="field-label">Marca/categoria em branco</span><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{preview.resumo.classificacaoParaPreencher}</div></div>
-                <div><span className="field-label">Vincular Id do Wik</span><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{preview.resumo.wikProdIdParaVincular}</div></div>
+                <div><span className="field-label">Vincular ID do Wik</span><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{preview.resumo.wikProdIdParaVincular}</div></div>
                 <div><span className="field-label">Variantes de grade novas</span><div className="mono" style={{ fontSize: 18, fontWeight: 700, color: 'var(--success)' }}>{preview.resumo.variantesNovasEmExistentes}</div></div>
               </div>
               <p className="page-sub" style={{ marginTop: 8, marginBottom: 0 }}>

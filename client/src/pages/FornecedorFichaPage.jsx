@@ -335,7 +335,7 @@ export default function FornecedorFichaPage() {
 
       <div className="pagina-topo">
         <div>
-          <h1>{isNew ? 'Novo Fornecedor' : fornecedor.nome}</h1>
+          <h1>{isNew ? 'Novo fornecedor' : fornecedor.nome}</h1>
           <p className="page-sub">
             {isNew
               ? 'Cadastro completo de fornecedor para uso nos lançamentos de compra.'
@@ -519,7 +519,7 @@ export default function FornecedorFichaPage() {
                   {listas?.condicao_pagamento.map((c) => <option key={c.id} value={c.valor}>{c.valor}</option>)}
                 </Select>
               </Field>
-              <Field label="Chave PIX">
+              <Field label="Chave Pix">
                 <input className="mono" value={fornecedor.chave_pix || ''} onChange={(e) => set({ chave_pix: e.target.value })} />
               </Field>
               <Field label="Ativo?">

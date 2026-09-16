@@ -382,7 +382,7 @@ export const verbetesProduto = [
       'gerar ficha de mais de uma referencia',
     ],
     resposta:
-      'Na tela **Ficha Técnica**, busque por referência, código ou descrição, e clique em **Adicionar** nos resultados pra selecionar até **5 referências** de uma vez (aparecem como etiquetas, removíveis clicando no X). Clique em **Gerar fichas** pra montar o documento — uma ficha de custo por página, com matéria-prima, custos industriais e o resumo do custo total da peça.\n\nA ficha técnica mostra só o **custo de produção** — nenhum preço de venda aparece aqui, isso fica na Ficha de Venda, dentro de Vendas. Com as fichas geradas, o botão **Imprimir / Exportar PDF** abre a impressão do navegador, pronta pra salvar como PDF.',
+      'Na tela **Ficha Técnica**, busque por referência, código ou descrição, e clique em **Adicionar** nos resultados pra selecionar até **5 referências** de uma vez (aparecem como etiquetas, removíveis clicando no X). Clique em **Gerar fichas** pra montar o documento — uma ficha de custo por página, com matéria-prima, custos industriais e o resumo do custo total da peça.\n\nA ficha técnica mostra só o **custo de produção** — nenhum preço de venda aparece aqui, isso fica na Ficha de Venda, dentro de Vendas. Com as fichas geradas, o botão **Imprimir** abre a impressão do navegador, pronta pra salvar como PDF.',
     relacionados: ['gloss-ficha-tecnica'],
   },
 
@@ -406,7 +406,7 @@ export const verbetesProduto = [
       'colunas da planilha de importacao em massa',
     ],
     resposta:
-      'A tela **Importar em massa** (menu Produto) existe pra resolver o dia de digitação que uma coleção nova dá — 12 referências × 4 cores × 5 tamanhos são 240 variantes pra cadastrar uma por uma. Ela é diferente da **Importação em Massa** de ficha de custo (a que lê planilha/PDF do sistema antigo): esta tela cria **grade** de variantes e atualiza cadastro/variante de produtos já existentes, a partir de uma planilha própria.\n\nNo campo **"O que a planilha traz"** você escolhe o tipo — **Grade**, **Cadastro** ou **Variante** — e o botão **Baixar modelo** entrega a planilha .xlsx correspondente, já com as colunas certas; a tela também mostra a frase de explicação e a lista de colunas esperadas pra aquele tipo. Os formatos aceitos pra enviar são **.xlsx** e **.csv**.',
+      'A tela **Importar em Massa** (Produto › Importar e imprimir › Importar em Massa) existe pra resolver o dia de digitação que uma coleção nova dá — 12 referências × 4 cores × 5 tamanhos são 240 variantes pra cadastrar uma por uma. Ela é diferente da **Importação em Massa** de ficha de custo (a que lê planilha/PDF do sistema antigo): esta tela cria **grade** de variantes e atualiza cadastro/variante de produtos já existentes, a partir de uma planilha própria.\n\nNo campo **"O que a planilha traz"** você escolhe o tipo — **Grade**, **Cadastro** ou **Variante** — e o botão **Baixar modelo** entrega a planilha .xlsx correspondente, já com as colunas certas; a tela também mostra a frase de explicação e a lista de colunas esperadas pra aquele tipo. Os formatos aceitos pra enviar são **.xlsx** e **.csv**.',
     relacionados: ['produto-importacao-massa-grade-fluxo', 'produto-importacao-massa'],
   },
   {

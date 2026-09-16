@@ -211,7 +211,7 @@ export default function NovaFaccaoModal({ faccaoId, compacto = false, onFechar, 
 
           <h3 className="card-titulo">Pagamento</h3>
           <div className="form-linha">
-            <Field label="Forma de pagamento padrão" hint="Como se paga: PIX, transferência…">
+            <Field label="Forma de pagamento padrão" hint="Como se paga: Pix, transferência…">
               <Select value={form.forma_pagamento_padrao} onChange={set('forma_pagamento_padrao')} placeholder="Não definida">
                 {FORMAS_PAGAMENTO.map((f) => <option key={f} value={f}>{f}</option>)}
               </Select>
@@ -219,19 +219,19 @@ export default function NovaFaccaoModal({ faccaoId, compacto = false, onFechar, 
             <Field label="Condição de pagamento" hint="Quando se paga: à vista, 15 dias…">
               <input className="input" value={form.condicao_pagamento_padrao} onChange={set('condicao_pagamento_padrao')} placeholder="15 dias" />
             </Field>
-            <Field label="Tipo da chave PIX">
+            <Field label="Tipo da chave Pix">
               <Select value={form.pix_tipo} onChange={set('pix_tipo')} placeholder="Não definido">
                 {PIX_TIPOS.map((p) => <option key={p.valor} value={p.valor}>{p.rotulo}</option>)}
               </Select>
             </Field>
-            <Field label="Chave PIX">
+            <Field label="Chave Pix">
               <input className="input" value={form.chave_pix} onChange={set('chave_pix')} />
             </Field>
           </div>
 
           {!compacto && (
             <div className="form-linha">
-              <Field label="Dados bancários" hint="Banco, agência e conta, quando o pagamento não é por PIX.">
+              <Field label="Dados bancários" hint="Banco, agência e conta, quando o pagamento não é por Pix.">
                 <input className="input" value={form.dados_bancarios} onChange={set('dados_bancarios')} />
               </Field>
               <Field label="Capacidade por mês (peças)" hint="Em branco = não declarada. A tela escreve isso em vez de supor capacidade infinita.">

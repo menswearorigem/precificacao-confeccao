@@ -89,7 +89,7 @@ export const verbetesViagens = [
       'venda de sacoleira na rua como lanco',
     ],
     resposta:
-      'Em cada variante (cor/tamanho) de um produto, o botão **Vender** adiciona uma peça ao carrinho — clicar de novo na mesma variante aumenta a quantidade. Uma barra flutuante mostra o total de peças e o valor do carrinho, com o botão **Finalizar Venda** pra abrir o checkout.\n\nNo checkout, cada item pode ter quantidade, valor unitário e desconto (%) ajustados na hora — o sistema avisa se a quantidade passar do estoque disponível, ou se o desconto passar do máximo permitido pro produto (não bloqueia, só avisa). É possível buscar um cliente já cadastrado, ou digitar um "nome rápido" sem cadastro, e anotar a forma de pagamento livremente (Pix, Dinheiro, Cartão...). O botão **Confirmar Venda e Baixar Estoque** registra a venda e já desconta do estoque na hora.\n\nSó dá pra vender enquanto a viagem não está com a situação **Finalizada**.',
+      'Em cada variante (cor/tamanho) de um produto, o botão **Vender** adiciona uma peça ao carrinho — clicar de novo na mesma variante aumenta a quantidade. Uma barra flutuante mostra o total de peças e o valor do carrinho, com o botão **Finalizar venda** pra abrir o checkout.\n\nNo checkout, cada item pode ter quantidade, valor unitário e desconto (%) ajustados na hora — o sistema avisa se a quantidade passar do estoque disponível, ou se o desconto passar do máximo permitido pro produto (não bloqueia, só avisa). É possível buscar um cliente já cadastrado, ou digitar um "nome rápido" sem cadastro, e anotar a forma de pagamento livremente (Pix, Dinheiro, Cartão…). O botão **Confirmar venda e baixar estoque** registra a venda e já desconta do estoque na hora.\n\nSó dá pra vender enquanto a viagem não está com a situação **Finalizada**.',
     relacionados: ['viagens-detalhe-precos', 'viagens-detalhe-situacao'],
   },
   {
@@ -106,7 +106,7 @@ export const verbetesViagens = [
       'botao de entrada no card do produto',
     ],
     resposta:
-      'O ícone de caixa com "+" no card de cada produto abre um modo de entrada de estoque: um campo de quantidade aparece ao lado de cada variante (cor/tamanho), pra lançar reposição que chegou durante a viagem (por exemplo, alguém trouxe mais peças de fora). Preenchendo as quantidades e clicando em **Confirmar Entrada**, o estoque daquelas variantes já sobe na hora — sem precisar sair da viagem e ir na tela de Estoque.',
+      'O ícone de caixa com "+" no card de cada produto abre um modo de entrada de estoque: um campo de quantidade aparece ao lado de cada variante (cor/tamanho), pra lançar reposição que chegou durante a viagem (por exemplo, alguém trouxe mais peças de fora). Preenchendo as quantidades e clicando em **Confirmar entrada**, o estoque daquelas variantes já sobe na hora — sem precisar sair da viagem e ir na tela de Estoque.',
     relacionados: ['viagens-detalhe-precos'],
   },
   {
@@ -126,7 +126,7 @@ export const verbetesViagens = [
       'quantas vendas teve a viagem',
     ],
     resposta:
-      'Uma viagem nova começa em **Planejamento**. O botão **Iniciar Viagem** muda pra **Em andamento** (libera a venda, se ainda não estivesse liberada). O botão **Finalizar Viagem** encerra ela — depois de finalizada, não dá mais pra vender, mas todo o histórico continua disponível pra consulta.\n\nNo topo do detalhe da viagem, uma faixa de resumo mostra o total **Vendido** (receita), **Lucro**, **Margem**, quantidade de **Peças vendidas** e número de **Vendas** — atualizado a cada venda confirmada.',
+      'Uma viagem nova começa em **Planejamento**. O botão **Iniciar viagem** muda pra **Em andamento** (libera a venda, se ainda não estivesse liberada). O botão **Finalizar viagem** encerra ela — depois de finalizada, não dá mais pra vender, mas todo o histórico continua disponível pra consulta.\n\nNo topo do detalhe da viagem, uma faixa de resumo mostra o total **Vendido** (receita), **Lucro**, **Margem**, quantidade de **Peças vendidas** e número de **Vendas** — atualizado a cada venda confirmada.',
     relacionados: ['viagens-listar-criar', 'viagens-detalhe-vender-carrinho'],
   },
 ];

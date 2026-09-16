@@ -153,7 +153,7 @@ function VincularItensModal({ pedido, onClose, onVinculado }) {
             {editando === item.id && (
               <div style={{ marginTop: 10 }}>
                 <input
-                  placeholder="Buscar por referência, descrição ou EAN..."
+                  placeholder="Buscar por referência, descrição ou EAN…"
                   value={buscas[item.id] || ''}
                   onChange={(e) => buscar(item.id, e.target.value)}
                   style={{ width: '100%' }}
@@ -1047,7 +1047,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
             </>
           ) : (
             <input
-              placeholder="Canal de venda: Ex: Mercado Livre, Shopee..."
+              placeholder="Canal de venda: Ex.: Mercado Livre, Shopee…"
               value={canaisVenda[0] || ''}
               onChange={(e) => setCanaisVenda(e.target.value ? [e.target.value] : [])}
               style={{ maxWidth: 220 }}
@@ -1056,7 +1056,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
           <div className="filtros-barra-busca">
             <Search size={14} />
             <input
-              placeholder={subTab === 'resumoProduto' ? 'Referência ou descrição do produto...' : 'Nº do pedido, cliente, SKU ou referência...'}
+              placeholder={subTab === 'resumoProduto' ? 'Referência ou descrição do produto…' : 'Nº do pedido, cliente, SKU ou referência…'}
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
             />

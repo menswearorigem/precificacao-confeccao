@@ -201,7 +201,7 @@ export default function WikIntegracaoCard() {
       </p>
 
       <form onSubmit={salvarCredencial} className="form-grid" style={{ marginBottom: 10 }}>
-        <Field label="Email (login do Wik)">
+        <Field label="E-mail (login do Wik)">
           <CampoEmail value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
         <Field label="Senha">
@@ -283,8 +283,8 @@ export default function WikIntegracaoCard() {
       {integracao?.statusToken === 'rejeitado' && (
         <div className="login-error" style={{ marginBottom: 12 }}>
           O Wik bloqueou o acesso desta conta. Isso costuma acontecer por token duplicado — é preciso abrir chamado
-          no suporte da Wik para destravar. Não adianta tentar de novo por aqui: o sistema já parou de relogar e
-          retentar sozinho (era exatamente esse padrão que causava o bloqueio), e só volta a tentar por agenda.
+          no suporte da Wik para destravar. Não adianta tentar de novo por aqui: o sistema já parou de entrar de novo e
+          tentar outra vez sozinho (era exatamente esse padrão que causava o bloqueio), e só volta a tentar por agenda.
           {integracao.rejeicoesConsecutivasToken >= 5 && (
             <> Já são {integracao.rejeicoesConsecutivasToken} rejeições seguidas — reduzimos o ritmo das tentativas
             automáticas (1x por hora) até normalizar.</>

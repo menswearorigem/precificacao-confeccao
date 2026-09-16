@@ -55,14 +55,14 @@ export const verbetesCalendario = [
       'imprimir o calendario do mes',
     ],
     resposta:
-      'A tela **Calendário** abre na **Visão Mês**: uma grade com o mês inteiro (incluindo dias do mês anterior/seguinte que completam a semana), navegável pelas setas ou pelo botão **Hoje**. No topo, três indicadores resumem a situação geral: **Atrasados**, **Vencendo em 7 dias** e **Concluídos no mês**.\n\nCada dia mostra até 3 eventos (chips coloridos por situação, com uma bolinha da cor da categoria); havendo mais, aparece "+N mais". Clicar num dia **vazio** já abre direto o formulário de novo evento com aquela data; clicar num dia **com eventos** abre um menu curto com a lista deles e um atalho "Criar novo evento nesse dia". O botão **Imprimir/Exportar PDF** gera uma versão só da visão ativa no momento (aqui, a grade do mês).',
+      'A tela **Calendário** abre na **visão Mês**: uma grade com o mês inteiro (incluindo dias do mês anterior/seguinte que completam a semana), navegável pelas setas ou pelo botão **Hoje**. No topo, três indicadores resumem a situação geral: **Atrasados**, **Vencendo em 7 dias** e **Concluídos no mês**.\n\nCada dia mostra até 3 eventos (chips coloridos por situação, com uma bolinha da cor da categoria); havendo mais, aparece "+N mais". Clicar num dia **vazio** já abre direto o formulário de novo evento com aquela data; clicar num dia **com eventos** abre um menu curto com a lista deles e um atalho "Criar novo evento nesse dia". O botão **Imprimir** gera uma versão só da visão ativa no momento (aqui, a grade do mês).',
     relacionados: ['calendario-filtros-visoes-kanban-lista', 'calendario-situacao-cores-legenda', 'calendario-criar-evento-basico'],
   },
   {
     id: 'calendario-filtros-visoes-kanban-lista',
     modulo: 'calendario',
     tela: 'Calendário',
-    titulo: 'Filtros e as visões Kanban e Lista',
+    titulo: 'Filtros e as visões Quadro e Lista',
     rota: '/calendario',
     perguntas: [
       'filtrar calendario por categoria',
@@ -75,7 +75,7 @@ export const verbetesCalendario = [
       'trocar entre mes kanban e lista',
     ],
     resposta:
-      'A barra de filtros do Calendário vale pras três visões: **Categoria**, **Responsável** e busca livre por título, SKU ou referência; o filtro de **Status** só aparece nas visões Mês e Lista (no Kanban a coluna já é o status).\n\nA visão **Kanban** organiza os eventos em 4 colunas — Não iniciado, Em andamento, Concluído, Cancelado — e arrastar um cartão pra outra coluna já muda o status do evento na hora (só funciona pra quem tem permissão de editar aquele evento). A visão **Lista** mostra os eventos filtrados numa tabela (título, categoria, responsáveis, prazo, status); clicar numa linha abre o evento. Trocar de visão (Mês/Kanban/Lista) é pelos botões no topo da tela.',
+      'A barra de filtros do Calendário vale pras três visões: **Categoria**, **Responsável** e busca livre por título, SKU ou referência; o filtro de **Status** só aparece nas visões Mês e Lista (no Quadro a coluna já é o status).\n\nA visão **Quadro** organiza os eventos em 4 colunas — Não iniciado, Em andamento, Concluído, Cancelado — e arrastar um cartão pra outra coluna já muda o status do evento na hora (só funciona pra quem tem permissão de editar aquele evento). A visão **Lista** mostra os eventos filtrados numa tabela (título, categoria, responsáveis, prazo, status); clicar numa linha abre o evento. Trocar de visão (Mês/Quadro/Lista) é pelos botões no topo da tela.',
     relacionados: ['calendario-visao-mes-navegacao', 'calendario-situacao-cores-legenda'],
   },
   {
@@ -94,7 +94,7 @@ export const verbetesCalendario = [
       'cor da bolinha da categoria',
     ],
     resposta:
-      'Cada evento tem uma **situação** — Atrasado, Vencendo em breve, No prazo ou Concluído — mostrada pela cor do chip/cartão e explicada na legenda no rodapé da grade. Evento concluído é sempre "Concluído"; evento cancelado conta como "No prazo" (não gera alerta); os demais viram "Atrasado" se já passou do prazo, ou "Vencendo em breve" se faltam poucos dias — esse limiar de dias é o mesmo configurado em Configurações → Parâmetros ("a partir de quantos dias antes o evento vira urgente").\n\nJá a bolinha colorida ao lado do título é a cor da **categoria** do evento — gerada automaticamente a partir do próprio texto da categoria (sempre a mesma cor pra mesma categoria), já que o cadastro de categorias não guarda uma cor escolhida à mão.',
+      'Cada evento tem uma **situação** — Atrasado, Vencendo em breve, No prazo ou Concluído — mostrada pela cor do chip/cartão e explicada na legenda no rodapé da grade. Evento concluído é sempre "Concluído"; evento cancelado conta como "No prazo" (não gera alerta); os demais viram "Atrasado" se já passou do prazo, ou "Vencendo em breve" se faltam poucos dias — esse limiar de dias é o mesmo configurado em Configurações › Cálculo › Parâmetros ("a partir de quantos dias antes o evento vira urgente").\n\nJá a bolinha colorida ao lado do título é a cor da **categoria** do evento — gerada automaticamente a partir do próprio texto da categoria (sempre a mesma cor pra mesma categoria), já que o cadastro de categorias não guarda uma cor escolhida à mão.',
     relacionados: ['calendario-visao-mes-navegacao', 'config-parametros-kits-marketplace-calendario'],
   },
   {
@@ -174,7 +174,7 @@ export const verbetesCalendario = [
       'quem sempre ve o evento',
     ],
     resposta:
-      'São dois campos diferentes, de propósitos distintos. **Responsáveis** é só uma lista de pessoas ligadas ao evento (informativo, aparece na Lista/impressão). Já **"Quem vê / quem edita este evento"** controla a visibilidade de verdade: quem criou o evento e os administradores sempre veem e editam; sem nenhuma liberação nesse campo, mais ninguém enxerga o evento.\n\nAqui dá pra liberar pessoas **ou grupos** (cadastrados em Configurações → Acessos → Grupos), cada um com nível **Visualizar** ou **Editar** — liberar um grupo libera todo mundo que está nele de uma vez, sem precisar adicionar pessoa por pessoa.',
+      'São dois campos diferentes, de propósitos distintos. **Responsáveis** é só uma lista de pessoas ligadas ao evento (informativo, aparece na Lista/impressão). Já **"Quem vê / quem edita este evento"** controla a visibilidade de verdade: quem criou o evento e os administradores sempre veem e editam; sem nenhuma liberação nesse campo, mais ninguém enxerga o evento.\n\nAqui dá pra liberar pessoas **ou grupos** (cadastrados em Configurações › Acessos › Grupos), cada um com nível **Visualizar** ou **Editar** — liberar um grupo libera todo mundo que está nele de uma vez, sem precisar adicionar pessoa por pessoa.',
     relacionados: ['calendario-criar-evento-basico', 'config-acessos-grupos'],
   },
   {
@@ -195,7 +195,7 @@ export const verbetesCalendario = [
       'exportar pdf de um evento',
     ],
     resposta:
-      'O campo **Categoria** fica dentro de "Detalhes avançados" (recolhido por padrão, abre sozinho se o evento já tiver uma categoria) — dá pra escolher uma existente ou cadastrar uma nova sem sair do formulário. **Anexos** (só em evento já salvo) aceita até 5 arquivos de até 8MB cada; **Comentários** é uma lista simples de mensagens com autor e data, mais um campo pra escrever uma nova.\n\nNo rodapé do formulário, pra evento já salvo e com permissão de editar: **Duplicar** cria uma cópia do evento, e **Excluir** apaga em definitivo (pede confirmação). O link **Imprimir/Exportar PDF** abre uma página separada só com aquele evento (título, status, prazo, categoria, prioridade, descrição, grade de variações se houver, produto vinculado, responsáveis e os campos do modelo) — separada do modal pra não imprimir a tela toda por trás dele.',
+      'O campo **Categoria** fica dentro de "Detalhes avançados" (recolhido por padrão, abre sozinho se o evento já tiver uma categoria) — dá pra escolher uma existente ou cadastrar uma nova sem sair do formulário. **Anexos** (só em evento já salvo) aceita até 5 arquivos de até 8MB cada; **Comentários** é uma lista simples de mensagens com autor e data, mais um campo pra escrever uma nova.\n\nNo rodapé do formulário, pra evento já salvo e com permissão de editar: **Duplicar** cria uma cópia do evento, e **Excluir** apaga em definitivo (pede confirmação). O link **Imprimir / Exportar PDF** abre uma página separada só com aquele evento (título, status, prazo, categoria, prioridade, descrição, grade de variações se houver, produto vinculado, responsáveis e os campos do modelo) — separada do modal pra não imprimir a tela toda por trás dele.',
     relacionados: ['calendario-criar-evento-basico', 'calendario-evento-responsaveis-visibilidade'],
   },
   {

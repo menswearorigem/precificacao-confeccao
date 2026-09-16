@@ -163,7 +163,7 @@ export const verbetesEstoque = [
       'quantas referencias de marketplace tenho',
     ],
     resposta:
-      'O toggle **Somente produtos do marketplace**, na tela Estoque, restringe tanto o seletor de referência quanto a busca geral às referências marcadas como "produto de marketplace" (esse marcador é definido na ficha de cada produto, ou em Configurações › Produtos de Marketplace). Ligado, ele mostra também quantas referências entram nesse filtro.\n\nÉ o mesmo marcador usado nas Fichas de Estoque em lote e no filtro da lista de Produtos — mudar aqui ou lá reflete em todos os lugares, porque é o mesmo campo do produto.',
+      'O toggle **Somente produtos do marketplace**, na tela Estoque, restringe tanto o seletor de referência quanto a busca geral às referências marcadas como "produto de marketplace" (esse marcador é definido na ficha de cada produto, ou em Configurações › Cadastros › Produtos de Marketplace). Ligado, ele mostra também quantas referências entram nesse filtro.\n\nÉ o mesmo marcador usado nas Fichas de Estoque em lote e no filtro da lista de Produtos — mudar aqui ou lá reflete em todos os lugares, porque é o mesmo campo do produto.',
     relacionados: ['produto-marketplace-selecionar', 'estoque-ficha-marketplace-lote'],
   },
   {
@@ -245,7 +245,7 @@ export const verbetesEstoque = [
       'selecionar referencias pra ficha de estoque',
     ],
     resposta:
-      'Na tela **Ficha de Estoque**, busque por referência, código ou descrição e clique em **Adicionar** nos resultados pra ir montando a seleção (sem limite fixo de quantidade — só um aviso, a partir de 80 fichas, de que gerar e imprimir pode demorar mais). Clique em **Gerar fichas** pra montar o documento: uma folha por referência, com uma tabela cor × tamanho de cada variante e a quantidade, mais o total de peças, custo total e valor total.\n\nCom as fichas geradas, o botão **Imprimir / Exportar PDF** abre a impressão do navegador. Referências sem custo cadastrado entram como zero nos totais de custo/valor, em vez de travar a geração.',
+      'Na tela **Ficha de Estoque**, busque por referência, código ou descrição e clique em **Adicionar** nos resultados pra ir montando a seleção (sem limite fixo de quantidade — só um aviso, a partir de 80 fichas, de que gerar e imprimir pode demorar mais). Clique em **Gerar fichas** pra montar o documento: uma folha por referência, com uma tabela cor × tamanho de cada variante e a quantidade, mais o total de peças, custo total e valor total.\n\nCom as fichas geradas, o botão **Imprimir** abre a impressão do navegador. Referências sem custo cadastrado entram como zero nos totais de custo/valor, em vez de travar a geração.',
     relacionados: ['estoque-ficha-marketplace-lote', 'produto-ficha-tecnica-gerar'],
   },
   {

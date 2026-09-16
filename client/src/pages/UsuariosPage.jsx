@@ -352,7 +352,7 @@ export default function UsuariosPage() {
                 <Pencil size={13} /> {editandoId === u.id ? 'Cancelar edição' : 'Editar dados'}
               </button>
               <button type="button" className="btn btn-ghost" onClick={() => { setResetandoId(resetandoId === u.id ? null : u.id); setNovaSenha(''); }}>
-                <KeyRound size={13} /> Resetar senha
+                <KeyRound size={13} /> Redefinir senha
               </button>
               {u.id !== usuarioAtual.id && (
                 <button type="button" className="icon-btn perigo" onClick={() => removerUsuario(u.id)}><Trash2 size={14} /></button>
@@ -383,7 +383,7 @@ export default function UsuariosPage() {
                 <button type="button" className="btn btn-ghost" onClick={() => setEditandoId(null)}>Cancelar</button>
               </div>
               <p className="page-sub" style={{ marginBottom: 0 }}>
-                Trocar a senha continua sendo pelo botão “Resetar senha” — e isso encerra as sessões abertas da pessoa.
+                Trocar a senha continua sendo pelo botão “Redefinir senha” — e isso encerra as sessões abertas da pessoa.
               </p>
             </div>
           )}

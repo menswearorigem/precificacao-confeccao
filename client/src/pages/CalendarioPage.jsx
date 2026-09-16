@@ -618,7 +618,7 @@ export default function CalendarioPage() {
             <div><strong>Eventos:</strong> {eventos.length}</div>
             {resumo && (
               <div>
-                <strong>Atrasados:</strong> {resumo.atrasados} · <strong>Vencendo em 7d:</strong> {resumo.vencendo7Dias} · <strong>Concluídos no mês:</strong> {resumo.concluidosNoMes}
+                <strong>Atrasados:</strong> {resumo.atrasados} · <strong>Vencendo em 7 dias:</strong> {resumo.vencendo7Dias} · <strong>Concluídos no mês:</strong> {resumo.concluidosNoMes}
               </div>
             )}
           </div>

@@ -40,7 +40,7 @@ export const verbetesGeral = [
       'nome de usuario nao existe',
     ],
     resposta:
-      'A tela de login pede **Usuário** e **Senha** — é o nome de usuário cadastrado, não o e-mail (o e-mail só entra na conta pra receber o link de redefinição, se um dia precisar). Digite os dois e clique em **Entrar**.\n\nSe aparecer que o usuário ou a senha estão errados, confira letra por letra (o campo de senha tem um ícone de olho pra você ver o que digitou) e o Caps Lock. Se não lembra a senha, use o link **Esqueci minha senha** logo abaixo do botão de entrar.\n\nDepois de logado, o sistema te leva direto pra primeira tela que seu usuário pode acessar — se seu perfil só tem um módulo liberado, é nele que você cai.',
+      'A tela de login pede **Usuário** e **Senha** — é o nome de usuário cadastrado, não o e-mail (o e-mail só entra na conta pra receber o link de redefinição, se um dia precisar). Digite os dois e clique em **Entrar**.\n\nSe aparecer que o usuário ou a senha estão errados, confira letra por letra (o campo de senha tem um ícone de olho pra você ver o que digitou) e o Caps Lock. Se não lembra a senha, use o link **Esqueci minha senha ou meu usuário** logo abaixo do botão de entrar.\n\nDepois de logado, o sistema te leva direto pra primeira tela que seu usuário pode acessar — se seu perfil só tem um módulo liberado, é nele que você cai.',
     relacionados: ['geral-esqueci-senha', 'geral-trocar-senha', 'geral-tela-nao-aparece'],
   },
   {
@@ -96,7 +96,7 @@ export const verbetesGeral = [
       'redefinir minha propria senha',
     ],
     resposta:
-      'Hoje o sistema não tem uma tela de "minha conta" onde você troca a própria senha só digitando a atual e a nova — o único caminho pra trocar de senha, mesmo lembrando da atual, é o mesmo da tela de login: clique em **Esqueci minha senha**, informe seu usuário e siga o link que chega por e-mail pra escolher a senha nova.\n\nSe você quer trocar a senha de **outra pessoa** (por exemplo, um funcionário que saiu ou esqueceu de novo), isso é diferente: um administrador faz isso pela tela de **Acessos**, editando o cadastro daquele usuário.',
+      'Hoje o sistema não tem uma tela de "minha conta" onde você troca a própria senha só digitando a atual e a nova — o único caminho pra trocar de senha, mesmo lembrando da atual, é o mesmo da tela de login: clique em **Esqueci minha senha ou meu usuário**, informe seu usuário e siga o link que chega por e-mail pra escolher a senha nova.\n\nSe você quer trocar a senha de **outra pessoa** (por exemplo, um funcionário que saiu ou esqueceu de novo), isso é diferente: um administrador faz isso pela tela de **Acessos**, editando o cadastro daquele usuário.',
     relacionados: ['geral-esqueci-senha', 'geral-login'],
   },
   {
@@ -126,7 +126,7 @@ export const verbetesGeral = [
       'quantos modulos tem o sistema',
     ],
     resposta:
-      'A barra lateral tem um botão por módulo, cada um com seu ícone e sua cor (só quem você tem acesso aparece):\n\n**Produto** — cadastro de referências, ficha técnica, kits e importação em lote.\n**Estoque** — quantidade por variante (cor/tamanho), bipagem, importação de saldo e de EAN.\n**Vendas** — pedidos feitos direto pelo balcão/site próprio, clientes e a lucratividade dessas vendas.\n**Marketplace** — pedidos vindos de canal externo (Mercado Livre, Shopee etc.), métricas, taxas cobradas e importação.\n**Viagens** — controle de viagens de compra/produção.\n**Compras** — pedidos de compra e fornecedores.\n**Análises** — dashboard, ficha de precificação, alertas e simulador.\n**Configurações** — parâmetros gerais, empresas, custos indiretos, taxas, listas, acessos e integrações (a maior parte só pra administrador).\n**Calendário** — agenda de eventos e prazos.\n\nClicar no módulo abre a primeira página dele; se ele tem mais de uma tela, elas aparecem como abas logo abaixo do cabeçalho.',
+      'A barra lateral tem um botão por módulo, cada um com seu ícone e sua cor (só quem você tem acesso aparece):\n\n**Produto** — cadastro de referências, ficha técnica, kits e importação em lote.\n**Estoque** — quantidade por variante (cor/tamanho), bipagem, importação de saldo e de EAN.\n**Produção** — ordens de produção, ordens de serviço de facção, movimentação entre etapas e planejamento (projeção de estoque, matéria-prima, carga).\n**Vendas** — pedidos feitos direto pelo balcão/site próprio, clientes e a lucratividade dessas vendas.\n**Marketplace** — pedidos vindos de canal externo (Mercado Livre, Shopee etc.), métricas, taxas cobradas e importação.\n**Financeiro** — títulos a pagar e receber, contas bancárias, repasses de marketplace, fluxo de caixa e DRE.\n**Viagens** — controle de viagens de compra/produção.\n**Compras** — pedidos de compra e fornecedores.\n**Análises** — dashboard, ficha de precificação, alertas e simulador.\n**Calendário** — agenda de eventos e prazos.\n**Configurações** — parâmetros gerais, empresas, custos indiretos, taxas, listas, acessos e integrações (a maior parte só pra administrador).\n\nClicar no módulo abre a primeira página dele; se ele tem mais de uma tela, elas aparecem como abas logo abaixo do cabeçalho.',
     relacionados: ['geral-tela-nao-aparece', 'geral-recolher-sidebar'],
   },
   {

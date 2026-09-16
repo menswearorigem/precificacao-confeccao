@@ -15,7 +15,12 @@ const CHAVE_SIDEBAR_COLAPSADO = 'hbn_sidebar_colapsado';
 // Módulos com a repaginação "viva" (16/09/2026): mesmo padrão visual do
 // Calendário — só estética, a distribuição de abas e subabas não muda. A
 // classe .modulo-vivo liga a camada de estilo do fim do theme.css.
-const MODULOS_VIVOS = new Set(['vendas', 'marketplace', 'financeiro', 'analises']);
+// Rodada 4 (16/09/2026): o padrão "vivo" vale pra todos os módulos, menos o
+// Calendário, que já tem o próprio visual (CalendarioVivo).
+const MODULOS_VIVOS = new Set([
+  'produto', 'estoque', 'producao', 'vendas', 'marketplace', 'financeiro',
+  'viagens', 'compras', 'analises', 'configuracoes',
+]);
 
 function semMovimento() {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -214,7 +219,7 @@ export default function Shell({ children }) {
           </button>
         </nav>
 
-        <div className={'shell-content' + (vivo ? ` modulo-vivo modulo-${activeModule.key}` : '')}>
+        <div className={'shell-content' + (vivo ? ` modulo-vivo modulo-${activeModule.key}` : '') + (location.pathname.startsWith('/ajuda') ? ' pagina-ajuda' : '')}>
           {activeModule ? (
             <>
               {/* Segundo nível: as ENTRADAS do módulo (14/09/2026).

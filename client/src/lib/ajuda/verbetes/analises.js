@@ -44,7 +44,7 @@ export const verbetesAnalises = [
       'quais produtos estao vendendo com margem baixa',
     ],
     resposta:
-      'No Dashboard Executivo, o card **Top 10 Produtos por Lucro** mostra as referências que mais lucro deram no período; ao lado, **Top 10 Produtos que Mais Consomem Margem** lista as referências com a menor margem no período, considerando só quem vendeu 2 ou mais unidades (pra não destacar um caso isolado). Clicar numa referência em qualquer uma das tabelas abre a ficha do produto.\n\nQuando existe alguma, aparece também o card **Referências Abaixo da Margem Mínima**, com todas as referências cuja margem apurada no período ficou abaixo do limite configurado em Configurações → Parâmetros.',
+      'No Dashboard Executivo, o card **Top 10 Produtos por Lucro** mostra as referências que mais lucro deram no período; ao lado, **Top 10 Produtos que Mais Consomem Margem** lista as referências com a menor margem no período, considerando só quem vendeu 2 ou mais unidades (pra não destacar um caso isolado). Clicar numa referência em qualquer uma das tabelas abre a ficha do produto.\n\nQuando existe alguma, aparece também o card **Referências Abaixo da Margem Mínima**, com todas as referências cuja margem apurada no período ficou abaixo do limite configurado em Configurações › Cálculo › Parâmetros.',
     relacionados: ['analises-dashboard-indicadores', 'analises-alertas'],
   },
   {
@@ -89,7 +89,7 @@ export const verbetesAnalises = [
       'margem la debaixo do esperado quais referencias',
     ],
     resposta:
-      'A **Central de Alertas** mostra, agora, quais referências estão fora de cada limite configurado em Configurações → Parâmetros (por exemplo, % de materiais acima do esperado, margem abaixo do mínimo). Dá pra filtrar por empresa, marca e categoria. Cada grupo de alerta mostra o limite configurado e a lista de referências fora dele, com o valor apurado e o desvio — clicar na seta de uma linha abre a ficha do produto.\n\nReferência com material cadastrado mas valor unitário zerado entra num grupo separado, **"Não avaliável — falta custo de material"**: mostrar "0%, dentro do limite" nesse caso seria uma aprovação falsa, então ela fica de fora do grupo de alerta normal até o custo ser preenchido de verdade. O selo de confiança no rodapé mostra quantas referências foram avaliadas, de quantas existem no total.',
+      'A **Central de Alertas** mostra, agora, quais referências estão fora de cada limite configurado em Configurações › Cálculo › Parâmetros (por exemplo, % de materiais acima do esperado, margem abaixo do mínimo). Dá pra filtrar por empresa, marca e categoria. Cada grupo de alerta mostra o limite configurado e a lista de referências fora dele, com o valor apurado e o desvio — clicar na seta de uma linha abre a ficha do produto.\n\nReferência com material cadastrado mas valor unitário zerado entra num grupo separado, **"Não avaliável — falta custo de material"**: mostrar "0%, dentro do limite" nesse caso seria uma aprovação falsa, então ela fica de fora do grupo de alerta normal até o custo ser preenchido de verdade. O selo de confiança no rodapé mostra quantas referências foram avaliadas, de quantas existem no total.',
     relacionados: ['analises-dashboard-top-produtos'],
   },
   {
@@ -239,7 +239,7 @@ export const verbetesAnalises = [
       'preco por canal decide qual preco usar',
     ],
     resposta:
-      'Logo abaixo do nome de cada canal, quando existe um preço praticado cadastrado no produto, a tela mostra uma frase com o preço praticado, a margem que ele entrega **naquele canal específico** e a comissão (mais a taxa fixa, se houver) usada na conta. Esse bloco muda de tom conforme o resultado: quando a margem calculada fica abaixo da margem mínima configurada em Configurações → Parâmetros, aparece com um alerta visual; caso contrário, aparece como confirmação — mas em nenhum dos dois casos a tela diz que o preço deveria mudar, só mostra o número. Quando não há preço praticado (ou não dá pra calcular a margem dele naquele canal), aparece o motivo no lugar da margem.\n\nComo a tela **não grava nada**, essa margem é só uma leitura de "com o preço que está lá hoje, é isso que sobra depois da comissão desse canal" — decidir se vale mudar o preço, e pra qual valor, é feito fora desta tela, na Ficha do produto.',
+      'Logo abaixo do nome de cada canal, quando existe um preço praticado cadastrado no produto, a tela mostra uma frase com o preço praticado, a margem que ele entrega **naquele canal específico** e a comissão (mais a taxa fixa, se houver) usada na conta. Esse bloco muda de tom conforme o resultado: quando a margem calculada fica abaixo da margem mínima configurada em Configurações › Cálculo › Parâmetros, aparece com um alerta visual; caso contrário, aparece como confirmação — mas em nenhum dos dois casos a tela diz que o preço deveria mudar, só mostra o número. Quando não há preço praticado (ou não dá pra calcular a margem dele naquele canal), aparece o motivo no lugar da margem.\n\nComo a tela **não grava nada**, essa margem é só uma leitura de "com o preço que está lá hoje, é isso que sobra depois da comissão desse canal" — decidir se vale mudar o preço, e pra qual valor, é feito fora desta tela, na Ficha do produto.',
     relacionados: ['analises-preco-por-canal-parametros', 'analises-preco-por-canal-tabela-canais'],
   },
 ];

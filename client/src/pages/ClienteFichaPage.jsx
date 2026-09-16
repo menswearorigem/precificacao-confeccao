@@ -153,7 +153,7 @@ export default function ClienteFichaPage() {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div>
-          <h1>{isNew ? 'Novo Cliente' : cliente.nome}</h1>
+          <h1>{isNew ? 'Novo cliente' : cliente.nome}</h1>
           <p className="page-sub">Cadastro completo de cliente para uso nos pedidos de venda.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
