@@ -7,6 +7,7 @@ const {
   calcularAtrasado, diasParaPrazo, registrarHistorico, diffCampos,
 } = require('../lib/calendarioEventos');
 const { lerOrdemDeProducao } = require('../lib/ordemProducaoParser');
+const { CHAVES_DA_ORDEM } = require('../lib/producaoCalendario');
 // HOJE_BRASILIA: `CURRENT_DATE` é o dia da SESSÃO do Postgres, que no Render
 // é UTC — a partir das 21h daqui ele já virou amanhã, e o cartão "Atrasados"
 // passava a contar todo evento que ainda vencia hoje. `diaSqlBrasilia` é o
@@ -189,7 +190,7 @@ async function buscarEventosFiltrados(req) {
   // de todo mundo. 'todos' é o comportamento antigo e continua sendo o
   // padrão de quem não manda nada.
   if (escopo === 'meus') {
-    const { sql, proximoIndex } = condicaoVisibilidade('e', i);
+    const { sql, proximoIndex } = condicaoVisibilidade('e', i, { incluirProducao: false });
     conditions.push(sql);
     values.push(req.user.id);
     i = proximoIndex;
@@ -693,8 +694,34 @@ router.put('/eventos/:id', async (req, res, next) => {
     const body = req.body || {};
 
     const novo = { ...atual };
+    // Evento de ORDEM DE PRODUÇÃO: título, datas, situação, produto e grade são
+    // da OP e voltariam na próxima sincronização — aceitar a edição aqui faria
+    // o calendário mostrar por minutos uma coisa que a OP não diz. Esses campos
+    // são ignorados; o que é da pessoa (descrição, prioridade, responsáveis,
+    // quem vê, campos próprios) continua editável. Para mudar prazo ou
+    // situação, edita-se a OP (ou o Wik, se ela ainda sincroniza).
+    const ehDaOrdem = Boolean(atual.ordem_producao_id);
+    const CAMPOS_DA_ORDEM = ['titulo', 'data_inicio', 'data_prevista_fim', 'data_conclusao_real', 'status', 'produto_id', 'usa_grade', 'categoria'];
     for (const campo of CAMPOS_EDITAVEIS) {
-      if (body[campo] !== undefined) novo[campo] = campo === 'campos_extra' ? JSON.stringify(body[campo]) : body[campo];
+      if (body[campo] === undefined) continue;
+      if (ehDaOrdem && CAMPOS_DA_ORDEM.includes(campo)) continue;
+      if (campo === 'campos_extra') {
+        let extra = body[campo] || {};
+        if (ehDaOrdem) {
+          // As chaves da OP sempre ganham das que vieram do formulário.
+          const daOrdem = {};
+          for (const k of CHAVES_DA_ORDEM) {
+            if (atual.campos_extra && atual.campos_extra[k] !== undefined) daOrdem[k] = atual.campos_extra[k];
+          }
+          extra = { ...extra, ...daOrdem };
+        }
+        novo[campo] = JSON.stringify(extra);
+      } else {
+        novo[campo] = body[campo];
+      }
+    }
+    if (ehDaOrdem && novo.campos_extra && typeof novo.campos_extra === 'object') {
+      novo.campos_extra = JSON.stringify(novo.campos_extra);
     }
 
     await client.query('BEGIN');
@@ -712,14 +739,14 @@ router.put('/eventos/:id', async (req, res, next) => {
     );
     if (body.responsaveis_ids !== undefined) await salvarResponsaveis(client, req.params.id, body.responsaveis_ids);
     if (body.permissoes !== undefined) await salvarPermissoes(client, req.params.id, body.permissoes);
-    if (body.grade !== undefined) await salvarGrade(client, req.params.id, body.grade);
+    if (body.grade !== undefined && !ehDaOrdem) await salvarGrade(client, req.params.id, body.grade);
 
     const alteracoes = diffCampos(atual, rows[0], CAMPOS_EDITAVEIS.filter((c) => c !== 'campos_extra'));
     if (Object.keys(alteracoes).length > 0) {
       await registrarHistorico(client, req.params.id, req.user.id, 'editado', alteracoes);
     }
     await client.query('COMMIT');
-    const gradeAtual = body.grade !== undefined
+    const gradeAtual = body.grade !== undefined && !ehDaOrdem
       ? (body.grade || []).filter((l) => l?.cor || l?.tamanho)
       : (await carregarGrades([Number(req.params.id)])).get(Number(req.params.id));
     res.json(montarEventoResposta(rows[0], { podeEditar: true, grade: gradeAtual }));
@@ -758,6 +785,13 @@ router.post('/eventos/:id/duplicar', async (req, res, next) => {
     const { rows: origemRows } = await client.query(`SELECT e.* FROM calendario_eventos e WHERE e.id = $1 ${condicao}`, values);
     if (origemRows.length === 0) return res.status(404).json({ error: 'Evento não encontrado.' });
     const origem = origemRows[0];
+    // A cópia de um evento de OP é um evento comum: não leva os dados da OP
+    // (ela não é sincronizada, e mostrar "OP 7045 · em produção" nela mentiria).
+    if (origem.ordem_producao_id && origem.campos_extra) {
+      const limpo = { ...origem.campos_extra };
+      for (const k of CHAVES_DA_ORDEM) delete limpo[k];
+      origem.campos_extra = limpo;
+    }
 
     await client.query('BEGIN');
     const { rows } = await client.query(

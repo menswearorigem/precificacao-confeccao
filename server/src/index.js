@@ -7,6 +7,7 @@ const { sincronizarFullTodasAtivas } = require('./lib/fullSync');
 // TODAS as sincronizações do Wik rodam por UM maestro só, em sequência, pra
 // nunca duas baterem na mesma sessão do Wik (ver server/src/lib/wikCiclo.js).
 const { cicloWikCompleto } = require('./lib/wikCiclo');
+const { reconciliarCalendario } = require('./lib/producaoCalendario');
 
 // ── AUTO-CURA de travas ÓRFÃS do Wik no boot ────────────────────────────────
 // `web_job_ativo` e `producao_job_ativo` são FLAGS no banco (não advisory
@@ -128,6 +129,15 @@ app.listen(PORT, () => {
   setTimeout(() => {
     cicloWikCompleto('boot').catch((err) => console.error('[wik-ciclo]', err.message));
   }, 15 * 1000);
+  // Calendário × OPs de marketplace. O ciclo de produção do Wik já reconcilia
+  // no fim de cada passada; esta rodada independente cobre o boot (OPs que já
+  // estavam no banco antes deste recurso) e o caso de o Wik estar desligado.
+  // Só toca OP que mudou — a passada sem novidade não grava nada.
+  const reconciliar = () => reconciliarCalendario(pool)
+    .then((r) => { if (r.criados || r.atualizados || r.erros.length) console.log('[calendario-op]', JSON.stringify({ ...r, erros: r.erros.slice(0, 3) })); })
+    .catch((err) => console.error('[calendario-op]', err.message));
+  setTimeout(reconciliar, 60 * 1000);
+  setInterval(reconciliar, 60 * 60 * 1000);
   setInterval(() => {
     cicloWikCompleto('agenda').catch((err) => console.error('[wik-ciclo]', err.message));
   }, WIK_CICLO_INTERVAL_MS);

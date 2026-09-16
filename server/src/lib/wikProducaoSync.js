@@ -24,6 +24,7 @@
 const wikWeb = require('./wikWeb');
 
 const poolReal = require('../db/pool');
+const { reconciliarCalendario } = require('./producaoCalendario');
 const { obterSessao, renovarSessao } = require('./wikWebSessao');
 
 const GRADE_TTL_MS = 2 * 60 * 60 * 1000; // regravar grade no máx. a cada 2h
@@ -52,6 +53,25 @@ function dataOuNull(s) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
   if (iso === PREV_NULA) return null;
   return iso;
+}
+
+// Data do Wik em qualquer um dos formatos que ele devolve → 'YYYY-MM-DD'.
+// A tela (input) usa dd/mm/aaaa; o grid (JSON do ASP.NET) usa /Date(ms)/ ou
+// ISO. Mandar dd/mm/aaaa cru para uma coluna DATE é perigoso: com DateStyle
+// MDY o Postgres lê 03/10 como 10 de março. Data inválida ou a "nula" do Wik
+// (01/01/1900) vira null — nunca um prazo inventado.
+function dataWik(v) {
+  if (v == null || v === '') return null;
+  const s = String(v).trim();
+  let out = null;
+  let m = s.match(/\/Date\((-?\d+)/);
+  if (m) out = new Date(Number(m[1])).toISOString().slice(0, 10);
+  else if ((m = s.match(/^(\d{4})-(\d{2})-(\d{2})/))) out = `${m[1]}-${m[2]}-${m[3]}`;
+  else if ((m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/))) out = `${m[3]}-${m[2]}-${m[1]}`;
+  if (!out || out <= PREV_NULA) return null;
+  const d = new Date(`${out}T00:00:00Z`);
+  if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== out) return null;
+  return out;
 }
 
 async function buscarIntegracao() {
@@ -103,17 +123,19 @@ async function mapaRefProduto(client) {
   return m;
 }
 
-// Situação do Wik -> situação nativa da OP. NUNCA mapeamos para 'concluida'
-// (isso implicaria entrada no estoque, que a casa já faz importando o saldo do
-// Wik) nem para 'planejada' (que implicaria insumo reservado, o que não é o
-// caso de uma OP do Wik).
+// Situação do Wik -> situação nativa da OP. MESMA regra do grid
+// (`mapSituacaoGrid`): as duas leituras discordavam (o grid dizia "concluída"
+// e a leitura da grade voltava para "em produção" a cada 2h), e o calendário
+// piscava entre concluído e em andamento. Concluir aqui é só ESTADO — o
+// sincronizador grava direto, não passa pela rota de conclusão, então não dá
+// entrada no estoque (a casa importa o saldo do Wik) nem mexe em insumo.
 const MAP_SITUACAO_NATIVA = {
-  0: 'rascunho',    // Aguardando Início
+  0: 'planejada',   // Aguardando Início
   1: 'em_producao', // Iniciada
-  2: 'em_producao', // Finalizada no Wik — no Hub segue "em produção" até a casa concluir
-  4: 'em_producao', // Finalizada Parcial
+  2: 'concluida',   // Finalizada
+  4: 'concluida',   // Finalizada Parcial
   5: 'cancelada',   // Cancelada
-  6: 'cancelada',   // Baixada
+  6: 'concluida',   // Baixada
 };
 
 // Agrega o apontamento por OP: referência, onde as peças estão (etapas), atraso.
@@ -362,7 +384,10 @@ async function alimentarGradeDaOp(op, { gradeManual = null, integracao = null } 
       [ordemId, prev, real, seg]
     );
     await client.query('COMMIT');
-    return { op: opNum, ordemId, gravadas: linhas.length, planejadas: prev, produzidas: real, segunda: seg, manual };
+    let calendario = null;
+    try { calendario = await reconciliarCalendario(poolReal, { ordemIds: [ordemId] }); }
+    catch (e) { calendario = { erro: e.message }; }
+    return { op: opNum, ordemId, gravadas: linhas.length, planejadas: prev, produzidas: real, segunda: seg, manual, calendario };
   } catch (e) { await client.query('ROLLBACK'); throw e; }
   finally { client.release(); }
 }
@@ -436,16 +461,27 @@ async function atualizarGradeDaOp(ordemId, detalhe) {
         [ordemId, String(g.CorDescricao || '').slice(0, 60), String(g.OpriTamanho).slice(0, 20), qp, qr, ld]
       );
     }
-    const situacaoNativa = MAP_SITUACAO_NATIVA[c.situacao] || 'em_producao';
+    // Situação ilegível na página = mantém a que o grid já gravou.
+    const situacaoNativa = c.situacao != null ? (MAP_SITUACAO_NATIVA[c.situacao] || null) : null;
     await client.query(
       `UPDATE ordens_producao SET
-         situacao = $2, wik_situacao = $3,
+         situacao = COALESCE($2, situacao),
+         wik_situacao = COALESCE($3, wik_situacao),
          quantidade_planejada = $4, quantidade_produzida = $5, quantidade_segunda = $6,
-         data_prevista = COALESCE($7, data_prevista),
+         data_prevista = COALESCE($7::date, data_prevista),
+         data_inicio = COALESCE($8::date, data_inicio),
+         data_conclusao = CASE
+           WHEN COALESCE($2, situacao) = 'concluida' AND situacao <> 'concluida' THEN COALESCE(data_conclusao, CURRENT_DATE)
+           WHEN COALESCE($2, situacao) <> 'concluida' THEN NULL
+           ELSE data_conclusao END,
+         observacoes = COALESCE(observacoes, $9),
          wik_grade_em = now(), wik_sincronizado_em = now(), atualizado_em = now()
        WHERE id = $1 AND sincroniza_wik = TRUE`,
-      [ordemId, situacaoNativa, c.situacao != null ? (LABEL_SITUACAO[c.situacao] || String(c.situacao)) : null,
-       prevTot, realTot, segTot, c.dtPrevFim || null]
+      // Mesmo formato do grid ("1 - Iniciada"): com rótulos diferentes, grid e
+      // grade se desmentiam a cada ciclo e a OP parecia sempre "mudada".
+      [ordemId, situacaoNativa, c.situacao != null ? `${c.situacao} - ${LABEL_SITUACAO[c.situacao] || c.situacao}` : null,
+       prevTot, realTot, segTot, dataWik(c.dtPrevFim), dataWik(c.dtPrevInicio),
+       c.obs ? String(c.obs).slice(0, 2000) : null]
     );
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; }
@@ -498,35 +534,65 @@ async function upsertOpsDoGrid(linhas) {
       const qReal = so(l.OprQtdRealizada);
       const qLd = so(l.OprQtdLd);
 
+      // O grid devolve o objeto inteiro da OP; os prazos vêm quando existem.
+      const dtAbertura = dataWik(l.OprDatacad);
+      const dtPrevFim = dataWik(l.OprDtPrevFim);
+      const dtPrevIni = dataWik(l.OprDtPrevInicio);
+
       const ex = await client.query(
         `SELECT id, sincroniza_wik FROM ordens_producao WHERE origem='wik' AND wik_op=$1 ORDER BY id DESC LIMIT 1`,
         [wikOp]
       );
+      // Só grava (e só mexe em `atualizado_em`) quando algo mudou de verdade:
+      // é o `atualizado_em` que diz ao calendário que a OP precisa ser revista.
+      const conclusaoSql = `data_conclusao = CASE
+             WHEN $2 = 'concluida' AND situacao <> 'concluida' THEN COALESCE(data_conclusao, CURRENT_DATE)
+             WHEN $2 <> 'concluida' THEN NULL
+             ELSE data_conclusao END`;
       if (ex.rows[0]) {
+        let r;
         if (ex.rows[0].sincroniza_wik) {
-          await client.query(
+          r = await client.query(
             `UPDATE ordens_producao SET situacao=$2, wik_situacao=$3,
                quantidade_planejada=$4, quantidade_produzida=$5, quantidade_segunda=$6,
-               wik_sincronizado_em=now(), atualizado_em=now() WHERE id=$1`,
-            [ex.rows[0].id, situacao, wikSit, qPlan, qReal, qLd]
+               data_prevista = COALESCE($7::date, data_prevista),
+               data_inicio = COALESCE($8::date, data_inicio),
+               ${conclusaoSql},
+               wik_sincronizado_em=now(), atualizado_em=now()
+             WHERE id=$1 AND (
+               situacao IS DISTINCT FROM $2 OR wik_situacao IS DISTINCT FROM $3
+               OR quantidade_planejada IS DISTINCT FROM $4::numeric
+               OR quantidade_produzida IS DISTINCT FROM $5::numeric
+               OR quantidade_segunda IS DISTINCT FROM $6::numeric
+               OR ($7::date IS NOT NULL AND data_prevista IS DISTINCT FROM $7::date)
+               OR ($8::date IS NOT NULL AND data_inicio IS DISTINCT FROM $8::date))`,
+            [ex.rows[0].id, situacao, wikSit, qPlan, qReal, qLd, dtPrevFim, dtPrevIni]
           );
         } else {
           // Descolada (manual): só o estado, sem mexer nos totais/grade da mão.
-          await client.query(
-            `UPDATE ordens_producao SET situacao=$2, wik_situacao=$3, wik_sincronizado_em=now(), atualizado_em=now() WHERE id=$1`,
+          r = await client.query(
+            `UPDATE ordens_producao SET situacao=$2, wik_situacao=$3, ${conclusaoSql},
+               wik_sincronizado_em=now(), atualizado_em=now()
+             WHERE id=$1 AND (situacao IS DISTINCT FROM $2 OR wik_situacao IS DISTINCT FROM $3)`,
             [ex.rows[0].id, situacao, wikSit]
           );
         }
-        res.atualizadas += 1;
+        if (r.rowCount === 0) {
+          await client.query('UPDATE ordens_producao SET wik_sincronizado_em=now() WHERE id=$1', [ex.rows[0].id]);
+        } else {
+          res.atualizadas += 1;
+        }
       } else {
         const produtoId = refProduto.get(normRef(refDeGrid(l.ProdDescricao)));
         if (!produtoId) { res.naoCasadas += 1; continue; }
         await client.query(
           `INSERT INTO ordens_producao
              (produto_id, situacao, origem, sincroniza_wik, wik_emp_id, wik_op, wik_situacao,
-              quantidade_planejada, quantidade_produzida, quantidade_segunda, wik_sincronizado_em)
-           VALUES ($1,$2,'wik',TRUE,$3,$4,$5,$6,$7,$8, now())`,
-          [produtoId, situacao, MATRIZ_EMP_ID, wikOp, wikSit, qPlan, qReal, qLd]
+              quantidade_planejada, quantidade_produzida, quantidade_segunda,
+              data_abertura, data_prevista, data_inicio, nome, wik_sincronizado_em)
+           VALUES ($1,$2,'wik',TRUE,$3,$4,$5,$6,$7,$8, COALESCE($9::date, CURRENT_DATE), $10::date, $11::date, $12, now())`,
+          [produtoId, situacao, MATRIZ_EMP_ID, wikOp, wikSit, qPlan, qReal, qLd,
+           dtAbertura, dtPrevFim, dtPrevIni, l.OprDescricao ? String(l.OprDescricao).slice(0, 160) : null]
         );
         res.criadas += 1;
       }
@@ -581,6 +647,13 @@ async function sincronizarProducaoAgora() {
     // Deixa a sessão de volta na matriz pro que vier depois.
     try { await wikWeb.trocarEmpresa(sessao, MATRIZ_EMP_ID); } catch { /* segue */ }
 
+    // Calendário: toda OP de produto de marketplace que entrou ou mudou neste
+    // ciclo vai (ou é atualizada) no calendário. Falha aqui não derruba o sync.
+    try {
+      resumo.calendario = await reconciliarCalendario(poolReal);
+      for (const e of resumo.calendario.erros.slice(0, 5)) resumo.erros.push(`calendário: ${e}`);
+    } catch (e) { resumo.erros.push(`calendário: ${e.message}`); }
+
     await poolReal.query(
       `UPDATE integracoes_wik SET producao_status = 'idle', producao_ultima_sincronizacao = now(), producao_erro = $2 WHERE id = $1`,
       [integracao.id, resumo.erros.length ? resumo.erros.slice(0, 5).join(' | ') : null]
@@ -598,4 +671,5 @@ module.exports = {
   sincronizarProducaoAgora, diagnosticarGradeOp,
   alimentarGradeDaOp, alimentarGradeMarketplace,
   obterSessao, buscarIntegracao,
+  _dataWik: dataWik, _upsertOpsDoGrid: upsertOpsDoGrid, _atualizarGradeDaOp: atualizarGradeDaOp,
 };

@@ -87,6 +87,18 @@ router.post('/wik/grade-op/:op', async (req, res) => {
   }
 });
 
+// Leva AGORA para o calendário todas as OPs de produto de marketplace (sem
+// esperar o ciclo). Body opcional { todas: true } revisa todas, mesmo as que
+// não mudaram — a assinatura continua evitando regravar o que está igual.
+router.post('/calendario/sincronizar', async (req, res) => {
+  try {
+    const out = await calendarioProducao.reconciliarCalendario(pool, { todas: req.body?.todas === true });
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Alimenta a grade de TODAS as OPs do Wik de produto de MARKETPLACE de uma vez.
 // Ex.: POST /producao/wik/grade-marketplace   (body opcional { soSemGrade:false } refaz todas)
 router.post('/wik/grade-marketplace', async (req, res) => {

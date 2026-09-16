@@ -5,6 +5,7 @@ import {
   Building2, LayoutGrid, List, CalendarDays, Wallet,
   DownloadCloud,
 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import {
   EstadoVazio, Select, Skeleton, CampoBusca, IndicadorDestaque,
@@ -1122,6 +1123,17 @@ export default function ProducaoPage() {
   const [puxandoWik, setPuxandoWik] = useState(false);
   const [avisoWik, setAvisoWik] = useState('');
   const [ordemAberta, setOrdemAberta] = useState(null);
+  // /producao?ordem=123 abre a OP direto (link "Abrir a OP" do calendário).
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const id = Number(searchParams.get('ordem'));
+    if (id) {
+      setOrdemAberta(id);
+      const resto = new URLSearchParams(searchParams);
+      resto.delete('ordem');
+      setSearchParams(resto, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
   const [faccoes, setFaccoes] = useState([]);
   const [etapas, setEtapas] = useState([]);
   const [kits, setKits] = useState([]);

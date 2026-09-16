@@ -18,9 +18,25 @@ const { hojeEmBrasilia } = require('./dataBrasil');
 // Fragmento de WHERE reutilizado tanto na listagem quanto (com evento_id
 // fixo) na checagem de um evento só. `alias` é o alias da tabela
 // calendario_eventos na query que for usar isso.
-function condicaoVisibilidade(alias, paramIndexInicial) {
+function condicaoVisibilidade(alias, paramIndexInicial, { incluirProducao = true } = {}) {
   let i = paramIndexInicial;
   const usuarioIdParam = i; i += 1;
+  // Evento de ORDEM DE PRODUÇÃO (16/09/2026): a maioria nasce do sincronizador
+  // do Wik, sem criador nem responsável — sem esta regra só o administrador
+  // enxergaria os prazos das OPs. Quem tem acesso à produção (os mesmos
+  // módulos que abrem /producao: 'producao' ou 'estoque') vê esses eventos.
+  // Editar continua exigindo liberação (condicaoEdicao). `incluirProducao`
+  // desliga isso no filtro "Meus eventos", que é filtro, não permissão.
+  const producao = incluirProducao
+    ? `
+    OR (
+      ${alias}.ordem_producao_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM usuario_modulos um
+        WHERE um.usuario_id = $${usuarioIdParam} AND um.modulo IN ('producao', 'estoque')
+      )
+    )`
+    : '';
   const sql = `(
     ${alias}.criado_por = $${usuarioIdParam}
     OR EXISTS (
@@ -35,7 +51,7 @@ function condicaoVisibilidade(alias, paramIndexInicial) {
       SELECT 1 FROM calendario_eventos_permissoes p
       JOIN grupo_usuarios gu ON gu.grupo_id = p.grupo_id
       WHERE p.evento_id = ${alias}.id AND gu.usuario_id = $${usuarioIdParam}
-    )
+    )${producao}
   )`;
   return { sql, proximoIndex: i };
 }

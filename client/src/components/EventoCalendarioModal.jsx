@@ -6,6 +6,7 @@ import { confirmar } from './ConfirmDialog';
 import FotoProduto from './FotoProduto';
 import FileDropzone from './FileDropzone';
 import GradeVariacoes from './GradeVariacoes';
+import OrdemProducaoResumo from './OrdemProducaoResumo';
 import { dataBr, plural } from '../lib/format';
 
 const STATUS_OPCOES = [
@@ -238,6 +239,10 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
   const [comentarios, setComentarios] = useState([]);
   const [novoComentario, setNovoComentario] = useState('');
   const [podeEditar, setPodeEditar] = useState(true);
+  // Evento que nasceu de uma ordem de produção: título, datas, situação e
+  // grade são da OP (o servidor ignora mudança nesses campos).
+  const [ordemProducaoId, setOrdemProducaoId] = useState(null);
+  const travadoPelaOp = Boolean(ordemProducaoId);
   const [avancadoAberto, setAvancadoAberto] = useState(false);
 
   // Grade de variações (Seção 1) — opções vindas das mesmas fontes
@@ -341,6 +346,7 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
       setAnexos(e.anexos || []);
       setComentarios(e.comentarios || []);
       setPodeEditar(e.podeEditar);
+      setOrdemProducaoId(e.ordem_producao_id || null);
       setUsaGrade(Boolean(e.usa_grade));
       setGrade((e.grade || []).map((g) => ({ cor: g.cor, tamanho: g.tamanho, quantidade: g.quantidade })));
       if (e.categoria) setAvancadoAberto(true); // já tinha categoria escolhida — abre a seção pra não esconder um valor já preenchido
@@ -688,6 +694,8 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
 
         {erro && <div className="login-error" style={{ marginBottom: 10 }}>{erro}</div>}
 
+        {travadoPelaOp && <OrdemProducaoResumo ordemId={ordemProducaoId} dados={campoExtra} />}
+
         {!eventoId && (
           <div className="field" style={{ marginBottom: 12 }}>
             <span className="field-label">Modelo</span>
@@ -700,7 +708,7 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
 
         <div className="field" style={{ marginBottom: 12 }}>
           <span className="field-label">Título</span>
-          <input value={titulo} onChange={(e) => setTitulo(e.target.value)} disabled={!podeEditar} autoFocus placeholder="Ex.: Corte da referência OG1192" />
+          <input value={titulo} onChange={(e) => setTitulo(e.target.value)} disabled={!podeEditar || travadoPelaOp} autoFocus placeholder="Ex.: Corte da referência OG1192" />
         </div>
 
         <div className="form-grid">
@@ -712,22 +720,22 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
           </div>
           <div className="field">
             <span className="field-label">Status</span>
-            <Select value={status} onChange={(e) => setStatus(e.target.value)} disabled={!podeEditar}>
+            <Select value={status} onChange={(e) => setStatus(e.target.value)} disabled={!podeEditar || travadoPelaOp}>
               {STATUS_OPCOES.map((o) => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
             </Select>
           </div>
           <div className="field">
             <span className="field-label">Data início</span>
-            <DateInput value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} disabled={!podeEditar} />
+            <DateInput value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} disabled={!podeEditar || travadoPelaOp} />
           </div>
           <div className="field">
             <span className="field-label">Data prevista de fim</span>
-            <DateInput value={dataPrevistaFim} onChange={(e) => setDataPrevistaFim(e.target.value)} disabled={!podeEditar} />
+            <DateInput value={dataPrevistaFim} onChange={(e) => setDataPrevistaFim(e.target.value)} disabled={!podeEditar || travadoPelaOp} />
           </div>
           {status === 'concluido' && (
             <div className="field">
               <span className="field-label">Data de conclusão real</span>
-              <DateInput value={dataConclusaoReal} onChange={(e) => setDataConclusaoReal(e.target.value)} disabled={!podeEditar} />
+              <DateInput value={dataConclusaoReal} onChange={(e) => setDataConclusaoReal(e.target.value)} disabled={!podeEditar || travadoPelaOp} />
             </div>
           )}
         </div>
@@ -737,6 +745,7 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
           <textarea rows={3} value={descricao} onChange={(e) => setDescricao(e.target.value)} disabled={!podeEditar} />
         </div>
 
+        {!travadoPelaOp && (<>
         <div className="field" style={{ marginBottom: 12 }}>
           <span className="field-label">Produto vinculado (opcional)</span>
           <BuscaAssincrona
@@ -764,7 +773,9 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
           />
         </div>
 
-        {templateTemGrade && (
+        </>)}
+
+        {templateTemGrade && !travadoPelaOp && (
           <div className="card" style={{ background: 'var(--surface-alt)', marginBottom: 12 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: podeEditar ? 'pointer' : 'default' }}>
               <Toggle checked={usaGrade} onChange={(e) => alternarUsaGrade(e.target.checked)} disabled={!podeEditar} />
@@ -790,7 +801,7 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
             expõe endpoint de Ordem de Produção hoje — por isso a OP entra
             pelo arquivo; as linhas gravadas já saem marcadas com a origem que
             a estrutura do banco reservou pra ela. */}
-        {templateTemGrade && podeEditar && (
+        {templateTemGrade && podeEditar && !travadoPelaOp && (
           <div className="card" style={{ background: 'var(--surface-alt)', marginBottom: 12 }}>
             <div className="card-head" style={{ marginBottom: 4 }}>
               <FileUp size={14} style={{ verticalAlign: -2, marginRight: 6 }} />
@@ -881,10 +892,11 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
           </div>
         )}
 
+        {!travadoPelaOp && (
         <SecaoRecolhivel titulo="Detalhes avançados" aberto={avancadoAberto} onToggle={() => setAvancadoAberto((v) => !v)}>
           <div className="field" style={{ marginBottom: 12 }}>
             <span className="field-label">Categoria</span>
-            <Select value={categoria} onChange={(e) => setCategoria(e.target.value)} disabled={!podeEditar} placeholder="Sem categoria">
+            <Select value={categoria} onChange={(e) => setCategoria(e.target.value)} disabled={!podeEditar || travadoPelaOp} placeholder="Sem categoria">
               {categorias.map((c) => <option key={c.id} value={c.valor}>{c.valor}</option>)}
             </Select>
             {podeEditar && (
@@ -895,6 +907,7 @@ export default function EventoCalendarioModal({ eventoId, dataPadrao, onClose, o
             )}
           </div>
         </SecaoRecolhivel>
+        )}
 
         <div className="field" style={{ marginBottom: 12 }}>
           <span className="field-label">Responsáveis</span>

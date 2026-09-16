@@ -17,6 +17,26 @@
 
 export const verbetesCalendario = [
   {
+    id: 'calendario-ops-marketplace-automaticas',
+    modulo: 'calendario',
+    tela: 'Calendário — OPs automáticas',
+    titulo: 'OPs de marketplace entram sozinhas no calendário',
+    rota: '/calendario',
+    perguntas: [
+      'op no calendario',
+      'ordem de producao no calendario',
+      'prazo da op no calendario',
+      'op do wik no calendario',
+      'por que a op nao aparece no calendario',
+      'nao consigo mudar a data do evento da op',
+      'evento da op concluiu sozinho',
+      'grade da op no calendario',
+    ],
+    resposta:
+      'Toda **ordem de produção de produto de marketplace** (do Wik ou lançada no Hub) vira um evento na categoria **Produção**, com o prazo de entrega, a situação, as cores, os tamanhos e as quantidades da OP. Quando a OP muda — prazo renegociado, grade nova, peças produzidas, OP iniciada — o evento muda junto; quando a OP **conclui**, o evento conclui; se for **cancelada**, o evento fica cancelado. A conferência roda a cada ciclo do Wik (15 min).\n\nNo evento, o quadro **OP** mostra tudo o que se sabe da ordem e tem o botão **Abrir a OP**. Título, datas, situação e grade **não se editam no calendário** — mudam na OP (ou no Wik, enquanto a OP sincroniza). Responsáveis, prioridade, descrição, anexos e comentários são do evento e ficam.\n\nOP **sem prazo de entrega** não entra (o calendário não inventa data): preencha a previsão e ela aparece sozinha. Quem tem acesso à **Produção** enxerga esses eventos.',
+    relacionados: ['calendario-evento-grade-variacoes', 'calendario-evento-responsaveis-visibilidade'],
+  },
+  {
     id: 'calendario-visao-mes-navegacao',
     modulo: 'calendario',
     tela: 'Calendário — Visão Mês',
