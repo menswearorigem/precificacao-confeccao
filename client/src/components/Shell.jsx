@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { LogOut, Menu, X, ChevronsLeft, ChevronsRight, Sun, Moon, Rows3, AlignJustify, HelpCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -11,6 +11,48 @@ import ManuBotao from './ManuBotao';
 import logoHbnHub from '../assets/logo-hbn-hub.png';
 
 const CHAVE_SIDEBAR_COLAPSADO = 'hbn_sidebar_colapsado';
+
+// Módulos com a repaginação "viva" (16/09/2026): mesmo padrão visual do
+// Calendário — só estética, a distribuição de abas e subabas não muda. A
+// classe .modulo-vivo liga a camada de estilo do fim do theme.css.
+const MODULOS_VIVOS = new Set(['vendas', 'marketplace', 'financeiro', 'analises']);
+
+function semMovimento() {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+}
+
+// Marcador que desliza até a aba acesa (2º e 3º nível do menu). Mede o
+// elemento `.active` dentro do contêiner e posiciona um <span> absoluto.
+function useMarcadorDeslizante(ativo, dependencia) {
+  const ref = useRef(null);
+  const [pos, setPos] = useState(null);
+  useLayoutEffect(() => {
+    if (!ativo) return undefined;
+    const medir = () => {
+      const alvo = ref.current?.querySelector('.active');
+      if (!alvo) { setPos(null); return; }
+      setPos({ x: alvo.offsetLeft, y: alvo.offsetTop, w: alvo.offsetWidth, h: alvo.offsetHeight });
+    };
+    medir();
+    const obs = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(medir) : null;
+    if (obs && ref.current) obs.observe(ref.current);
+    window.addEventListener('resize', medir);
+    document.fonts?.ready?.then(medir);
+    return () => { obs?.disconnect(); window.removeEventListener('resize', medir); };
+  }, [ativo, dependencia]);
+  return [ref, pos];
+}
+
+function Marcador({ pos, className }) {
+  if (!pos) return null;
+  return (
+    <span
+      aria-hidden="true"
+      className={className}
+      style={{ width: pos.w, height: pos.h, transform: `translate(${pos.x}px, ${pos.y}px)` }}
+    />
+  );
+}
 
 function findActiveModule(pathname, visibleModules) {
   for (const mod of visibleModules) {
@@ -33,6 +75,21 @@ export default function Shell({ children }) {
   // acesa — é ela que decide se existe um terceiro nível.
   const entradas = activeModule ? getEntradasVisiveis(activeModule, user) : [];
   const entradaAtiva = acharEntradaAtiva(entradas, location.pathname);
+  const vivo = Boolean(activeModule && MODULOS_VIVOS.has(activeModule.key));
+  const [refSubmenu, posSubmenu] = useMarcadorDeslizante(vivo, `${location.pathname}|${entradas.length}`);
+  const [refSubsub, posSubsub] = useMarcadorDeslizante(vivo, location.pathname);
+  const refMain = useRef(null);
+
+  // Troca de tela nos módulos vivos: o conteúdo sobe suavemente. Feito com a
+  // Web Animations API (e não com `key` no <main>) para não desmontar a tela
+  // — o FinanceiroPage serve três rotas e perderia o estado.
+  useEffect(() => {
+    if (!vivo || semMovimento() || !refMain.current?.animate) return;
+    refMain.current.animate(
+      [{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }],
+      { duration: 380, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)' }
+    );
+  }, [location.pathname, vivo]);
   const [menuAberto, setMenuAberto] = useState(false);
   const [sidebarColapsado, setSidebarColapsado] = useState(
     () => localStorage.getItem(CHAVE_SIDEBAR_COLAPSADO) === '1'
@@ -157,7 +214,7 @@ export default function Shell({ children }) {
           </button>
         </nav>
 
-        <div className="shell-content">
+        <div className={'shell-content' + (vivo ? ` modulo-vivo modulo-${activeModule.key}` : '')}>
           {activeModule ? (
             <>
               {/* Segundo nível: as ENTRADAS do módulo (14/09/2026).
@@ -170,7 +227,8 @@ export default function Shell({ children }) {
                   (REGRA 4): `mod.pages` continua sendo a mesma lista de
                   sempre, só que agrupada para exibição. */}
               {entradas.length > 1 && (
-              <div className="shell-submenu">
+              <div className="shell-submenu" ref={refSubmenu}>
+                {vivo && <Marcador pos={posSubmenu} className="vivo-marcador-aba" />}
                 {entradas.map((entrada) => {
                   const Icon = entrada.icon;
                   const ativa = entradaAtiva === entrada;
@@ -202,7 +260,8 @@ export default function Shell({ children }) {
                   fileira de cima — o olho tem que enxergar primeiro ONDE está
                   (a entrada) e só depois QUAL ângulo (a tela). */}
               {entradaAtiva?.paginas && (
-                <div className="shell-subsubmenu" aria-label={`Telas de ${entradaAtiva.label}`}>
+                <div className="shell-subsubmenu" aria-label={`Telas de ${entradaAtiva.label}`} ref={refSubsub}>
+                  {vivo && <Marcador pos={posSubsub} className="vivo-marcador-subaba" />}
                   {entradaAtiva.paginas.map(({ to, label, icon: Icon }) => (
                     <NavLink
                       key={to}
@@ -217,7 +276,7 @@ export default function Shell({ children }) {
                 </div>
               )}
 
-              <main className="shell-main">{children}</main>
+              <main className="shell-main" ref={refMain}>{children}</main>
             </>
           ) : (
             <main className="shell-main">

@@ -9505,3 +9505,351 @@ table.grade-matriz { width: auto; min-width: 0; }
     transition: none !important;
   }
 }
+
+/* =====================================================================
+   MÓDULOS VIVOS — Vendas, Marketplace, Financeiro e Análises (16/09/2026)
+   ---------------------------------------------------------------------
+   Mesma linguagem do Calendário Vivo, aplicada só por estética: nenhuma
+   aba, rota ou regra muda. O Shell põe .modulo-vivo na .shell-content
+   desses quatro módulos (components/Shell.jsx) e tudo abaixo vale só ali.
+   O que o checape em produção mostrou e esta camada resolve:
+   - faixa de indicadores colada com bloco bege vazio no fim (Dashboard,
+     Contas Bancárias) → cartões soltos em grade auto-fit;
+   - selos de situação pastel com borda → cor cheia + texto branco;
+   - 1ª coluna das tabelas com faixa bege diferente do resto;
+   - gráfico carregando/vazio como um bloco bege liso;
+   - nada se mexia: abas, página, números e cartões agora têm movimento.
+   Animações: sempre `backwards` (nunca `both`/`forwards`) — um transform
+   que continua "valendo" depois da animação vira bloco de contenção e
+   desloca modais position:fixed que moram dentro de cards.
+   ===================================================================== */
+:root {
+  --vivo-perigo: var(--cal-atrasado, #b23a26);
+  --vivo-atencao: var(--cal-vencendo, #b06d0f);
+  --vivo-ok: var(--cal-concluido, #3f6b3a);
+  --vivo-info: #2f5f8a;
+  --vivo-neutro: var(--cal-cancelado, #6f655a);
+  --vivo-latao: var(--cal-no-prazo, #8a6a2f);
+  --vivo-zebra: color-mix(in srgb, var(--ink) 2.6%, var(--surface));
+  --vivo-hover: color-mix(in srgb, var(--terracotta) 8%, var(--surface));
+  --vivo-sombra: 0 10px 26px rgba(47, 28, 13, 0.12), 0 2px 6px rgba(47, 28, 13, 0.06);
+  --vivo-mola: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --vivo-info: #3f74a3;
+    --vivo-sombra: 0 12px 28px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
+  }
+}
+:root[data-theme="dark"] {
+  --vivo-info: #3f74a3;
+  --vivo-sombra: 0 12px 28px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+@keyframes vivo-surge { from { opacity: 0; transform: translateY(10px) scale(0.985); } }
+@keyframes vivo-aparece { from { opacity: 0; } }
+@keyframes vivo-fio { from { transform: scaleX(0); } }
+@keyframes vivo-cresce { from { transform: scaleY(0); } }
+@keyframes vivo-brilho { to { background-position: -120% 0; } }
+@keyframes vivo-flutua { 50% { transform: translateY(-5px); } }
+@keyframes vivo-pop { from { opacity: 0; transform: scale(0.85); } }
+
+/* ---- menu: marcador que desliza (2º e 3º nível) ---- */
+.modulo-vivo .shell-submenu,
+.modulo-vivo .shell-subsubmenu { position: relative; }
+.modulo-vivo .shell-submenu .nav-link { position: relative; z-index: 1; border-bottom-color: transparent; transition: color 0.2s var(--ease); }
+.modulo-vivo .shell-submenu .nav-link:hover { background: transparent; color: var(--ink); }
+.modulo-vivo .shell-submenu .nav-link.active { background: transparent; border-bottom-color: transparent; }
+.modulo-vivo .shell-submenu .nav-link svg { transition: transform 0.3s var(--vivo-mola); }
+.modulo-vivo .shell-submenu .nav-link:hover svg { transform: translateY(-1px) rotate(-6deg); }
+.vivo-marcador-aba {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  border-radius: 9px 9px 0 0;
+  background: linear-gradient(180deg, transparent 10%, var(--accent-softer));
+  box-shadow: inset 0 -3px 0 var(--terracotta);
+  pointer-events: none;
+  transition: transform 0.4s var(--vivo-mola), width 0.4s var(--vivo-mola);
+}
+.modulo-vivo .shell-subsubmenu .subnav-link { position: relative; z-index: 1; border-color: transparent; transition: color 0.2s var(--ease), background 0.15s var(--ease); }
+.modulo-vivo .shell-subsubmenu .subnav-link.active { background: transparent; border-color: transparent; color: #fff; }
+.modulo-vivo .shell-subsubmenu .subnav-link:not(.active):hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.vivo-marcador-subaba {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  border-radius: 999px;
+  background: var(--terracotta);
+  box-shadow: 0 4px 12px rgba(181, 101, 29, 0.35);
+  pointer-events: none;
+  transition: transform 0.4s var(--vivo-mola), width 0.4s var(--vivo-mola);
+}
+
+/* ---- topo da página ---- */
+.modulo-vivo .shell-main h1 { font-size: clamp(24px, 2vw, 29px); letter-spacing: -0.015em; }
+.modulo-vivo .page-sub { max-width: 110ch; }
+
+/* ---- cards: entram em sequência, sombra ao passar o mouse ---- */
+.modulo-vivo .card {
+  border-radius: 16px;
+  animation: vivo-surge 0.5s var(--ease) backwards;
+  transition: box-shadow 0.25s var(--ease), border-color 0.25s var(--ease);
+}
+.modulo-vivo .card:hover { box-shadow: var(--vivo-sombra); }
+.modulo-vivo .card:nth-child(2) { animation-delay: 60ms; }
+.modulo-vivo .card:nth-child(3) { animation-delay: 120ms; }
+.modulo-vivo .card:nth-child(4) { animation-delay: 180ms; }
+.modulo-vivo .card:nth-child(5) { animation-delay: 240ms; }
+.modulo-vivo .card:nth-child(n+6) { animation-delay: 300ms; }
+.modulo-vivo .card-head { font-weight: 800; }
+.modulo-vivo .card-head::before {
+  width: 4px;
+  height: 14px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--terracotta), var(--terracotta-bright));
+  animation: vivo-cresce 0.5s var(--vivo-mola) 0.2s backwards;
+}
+
+/* ---- faixa de indicadores (StatCard): cartões soltos ---- */
+/* !important: várias telas passam `gridTemplateColumns` inline (Dashboard
+   com 5 colunas para 6 cartões — o cartão órfão na segunda linha). */
+.modulo-vivo .stat-strip {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)) !important;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+.modulo-vivo .stat-strip:has(> :nth-child(6):last-child) { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; }
+@media (max-width: 1380px) {
+  .modulo-vivo .stat-strip:has(> :nth-child(6):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+}
+.modulo-vivo .stat-card {
+  --tom: var(--terracotta);
+  position: relative;
+  overflow: hidden;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 14px 16px 13px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--card-shadow);
+  animation: vivo-surge 0.45s var(--ease) backwards;
+  transition: transform 0.22s var(--ease), box-shadow 0.22s var(--ease), border-color 0.22s var(--ease);
+}
+.modulo-vivo .stat-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--tom), transparent 85%);
+  transform-origin: left;
+  animation: vivo-fio 0.7s var(--ease) 0.15s backwards;
+}
+.modulo-vivo .stat-card:hover { transform: translateY(-3px); box-shadow: var(--vivo-sombra); border-color: color-mix(in srgb, var(--tom) 55%, var(--border)); }
+.modulo-vivo .stat-strip > :nth-child(1) { --tom: var(--terracotta); }
+.modulo-vivo .stat-strip > :nth-child(2) { --tom: var(--vivo-info); animation-delay: 50ms; }
+.modulo-vivo .stat-strip > :nth-child(3) { --tom: var(--vivo-ok); animation-delay: 100ms; }
+.modulo-vivo .stat-strip > :nth-child(4) { --tom: var(--vivo-latao); animation-delay: 150ms; }
+.modulo-vivo .stat-strip > :nth-child(5) { --tom: var(--leather); animation-delay: 200ms; }
+.modulo-vivo .stat-strip > :nth-child(6) { --tom: var(--vivo-atencao); animation-delay: 250ms; }
+.modulo-vivo .stat-strip > :nth-child(n+7) { --tom: var(--brass); animation-delay: 300ms; }
+.modulo-vivo .stat-card.stat-card-danger { --tom: var(--vivo-perigo); border-left: 1px solid var(--border); }
+.modulo-vivo .stat-card.stat-card-warning { --tom: var(--vivo-atencao); border-left: 1px solid var(--border); }
+.modulo-vivo .stat-card.stat-card-success { --tom: var(--vivo-ok); border-left: 1px solid var(--border); }
+.modulo-vivo .stat-card-value {
+  font-family: var(--font-display);
+  font-size: clamp(19px, 1.5vw, 24px);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+.modulo-vivo .stat-card-label { font-weight: 700; }
+.modulo-vivo .stat-card-delta {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+.modulo-vivo .stat-card-icone {
+  order: -1;
+  box-sizing: content-box;
+  padding: 8px;
+  border-radius: 11px;
+  background: var(--tom);
+  color: #fff !important;
+  width: 18px;
+  height: 18px;
+  transition: transform 0.3s var(--vivo-mola);
+}
+.modulo-vivo .stat-card:hover .stat-card-icone { transform: rotate(-8deg) scale(1.08); }
+
+/* ---- IndicadorDestaque (.indicador) ---- */
+.modulo-vivo .indicadores-faixa { gap: 10px; }
+.modulo-vivo .indicador {
+  --tom: var(--brass);
+  border-radius: 14px;
+  animation: vivo-surge 0.45s var(--ease) backwards;
+  transition: transform 0.22s var(--ease), box-shadow 0.22s var(--ease), border-color 0.22s var(--ease);
+}
+.modulo-vivo .indicadores-faixa > :nth-child(2) { animation-delay: 50ms; }
+.modulo-vivo .indicadores-faixa > :nth-child(3) { animation-delay: 100ms; }
+.modulo-vivo .indicadores-faixa > :nth-child(4) { animation-delay: 150ms; }
+.modulo-vivo .indicadores-faixa > :nth-child(5) { animation-delay: 200ms; }
+.modulo-vivo .indicadores-faixa > :nth-child(n+6) { animation-delay: 250ms; }
+.modulo-vivo .indicador::before {
+  height: 3px;
+  opacity: 1;
+  background: linear-gradient(90deg, var(--tom), transparent 85%);
+  transform-origin: left;
+  animation: vivo-fio 0.7s var(--ease) 0.15s backwards;
+}
+.modulo-vivo .indicador-destaque { --tom: var(--terracotta); }
+.modulo-vivo .indicador-destaque::before { height: 4px; }
+.modulo-vivo .indicador-positivo { --tom: var(--vivo-ok); }
+.modulo-vivo .indicador-negativo { --tom: var(--vivo-perigo); }
+.modulo-vivo .indicador-atencao { --tom: var(--vivo-atencao); }
+.modulo-vivo .indicador:hover { transform: translateY(-3px); box-shadow: var(--vivo-sombra); border-color: color-mix(in srgb, var(--tom) 55%, var(--border)); }
+.modulo-vivo .indicador-rotulo { font-weight: 700; }
+.modulo-vivo .indicador-icone {
+  box-sizing: content-box;
+  padding: 6px;
+  border-radius: 9px;
+  background: var(--tom);
+  color: #fff !important;
+  width: 15px;
+  height: 15px;
+  transition: transform 0.3s var(--vivo-mola);
+}
+.modulo-vivo .indicador:hover .indicador-icone { transform: rotate(-8deg) scale(1.08); }
+
+/* ---- sub-abas dentro da página (Visão Geral, Por Loja…) ---- */
+.modulo-vivo .subtab-btn {
+  transition: transform 0.2s var(--ease), background 0.2s var(--ease), color 0.2s var(--ease), border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+.modulo-vivo .subtab-btn:not(.active):hover { transform: translateY(-1px); border-color: var(--terracotta); color: var(--ink); }
+.modulo-vivo .subtab-btn.active {
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(181, 101, 29, 0.3);
+  animation: vivo-pop 0.3s var(--vivo-mola);
+}
+.modulo-vivo .view-toggle button { transition: background 0.2s var(--ease), color 0.2s var(--ease); }
+
+/* ---- filtros e botões ---- */
+.modulo-vivo .filtros-barra .select-custom-trigger,
+.modulo-vivo .filtros-barra .date-custom-trigger,
+.modulo-vivo .filtros-barra-busca {
+  border-radius: 10px;
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+.modulo-vivo .filtros-barra .select-custom-trigger:hover,
+.modulo-vivo .filtros-barra .date-custom-trigger:hover { border-color: var(--terracotta); box-shadow: 0 0 0 3px var(--focus-ring); }
+.modulo-vivo .btn,
+.modulo-vivo .btn-sec { transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease), background 0.15s var(--ease), border-color 0.15s var(--ease); }
+.modulo-vivo .btn:not(:disabled):hover,
+.modulo-vivo .btn-sec:not(:disabled):hover { transform: translateY(-1px); }
+.modulo-vivo .btn-primary:not(:disabled):hover { box-shadow: 0 8px 18px rgba(66, 42, 21, 0.3); }
+.modulo-vivo .btn:not(:disabled):active,
+.modulo-vivo .btn-sec:not(:disabled):active { transform: scale(0.97); }
+
+/* ---- selos de situação: cor cheia + texto branco ---- */
+.modulo-vivo .stamp.sm,
+.modulo-vivo .selo {
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  font-weight: 800;
+  border-radius: 999px;
+  border-color: transparent;
+  outline: none;
+  transform: none;
+  animation: vivo-pop 0.3s var(--vivo-mola) backwards;
+}
+.modulo-vivo .stamp.sm.tone-prejuizo, .modulo-vivo .stamp.sm.tone-abaixo,
+.modulo-vivo .selo.tone-prejuizo, .modulo-vivo .selo.tone-abaixo { background: var(--vivo-perigo); color: #fff; }
+.modulo-vivo .stamp.sm.tone-atencao, .modulo-vivo .selo.tone-atencao { background: var(--vivo-atencao); color: #fff; }
+.modulo-vivo .stamp.sm.tone-saudavel, .modulo-vivo .selo.tone-saudavel { background: var(--vivo-ok); color: #fff; }
+.modulo-vivo .stamp.sm.tone-elevada, .modulo-vivo .selo.tone-elevada { background: var(--vivo-info); color: #fff; }
+.modulo-vivo .stamp.sm.tone-neutro, .modulo-vivo .selo.tone-neutro { background: var(--vivo-neutro); color: #fff; }
+/* O carimbo grande (Central de Alertas, margem em destaque) continua com
+   cara de carimbo, só ganha um "pouso" ao aparecer. */
+.modulo-vivo .stamp:not(.sm) { animation: vivo-pop 0.45s var(--vivo-mola) 0.15s backwards; }
+
+/* ---- tabelas ---- */
+.modulo-vivo table.data-table thead th { letter-spacing: 0.06em; }
+.modulo-vivo table.data-table tbody tr { animation: vivo-aparece 0.35s var(--ease) backwards; }
+.modulo-vivo table.data-table tbody tr:nth-child(2) { animation-delay: 25ms; }
+.modulo-vivo table.data-table tbody tr:nth-child(3) { animation-delay: 50ms; }
+.modulo-vivo table.data-table tbody tr:nth-child(4) { animation-delay: 75ms; }
+.modulo-vivo table.data-table tbody tr:nth-child(5) { animation-delay: 100ms; }
+.modulo-vivo table.data-table tbody tr:nth-child(6) { animation-delay: 125ms; }
+.modulo-vivo table.data-table tbody tr:nth-child(7) { animation-delay: 150ms; }
+.modulo-vivo table.data-table tbody tr:nth-child(8) { animation-delay: 175ms; }
+.modulo-vivo table.data-table tbody tr:nth-child(n+9) { animation-delay: 200ms; }
+.modulo-vivo table.data-table tbody tr:nth-child(even) { background: var(--vivo-zebra); }
+.modulo-vivo table.data-table tbody tr { transition: background 0.15s var(--ease), box-shadow 0.15s var(--ease); }
+.modulo-vivo table.data-table tbody tr:hover,
+.modulo-vivo table.data-table tr.clickable-row:hover { background: var(--vivo-hover); box-shadow: inset 3px 0 0 var(--terracotta); }
+/* 1ª coluna grudada: a mesma cor da linha (antes era uma faixa bege mais
+   escura que o resto da listra). */
+.modulo-vivo .data-table-wrap table.data-table tbody tr > *:first-child { background: var(--surface); }
+.modulo-vivo .data-table-wrap table.data-table tbody tr:nth-child(even) > *:first-child { background: var(--vivo-zebra); }
+.modulo-vivo .data-table-wrap table.data-table tbody tr:hover > *:first-child,
+.modulo-vivo .data-table-wrap table.data-table tbody tr.clickable-row:hover > *:first-child {
+  background: var(--vivo-hover);
+  box-shadow: inset 3px 0 0 var(--terracotta);
+}
+.modulo-vivo table.data-table tbody tr.linha-total td { background: var(--surface-alt); }
+
+/* ---- gráficos, avisos, vazio, carregando ---- */
+.modulo-vivo .grafico-area { animation: vivo-aparece 0.6s var(--ease) 0.15s backwards; }
+.modulo-vivo .grafico-vazio {
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--ink) 3%, transparent) 0 8px, transparent 8px 16px), var(--surface);
+  border: 1.5px dashed var(--border);
+  border-radius: 12px;
+  color: var(--ink-soft);
+  animation: vivo-aparece 0.5s var(--ease) backwards;
+}
+.modulo-vivo .skeleton {
+  background: linear-gradient(100deg, var(--surface-alt) 30%, color-mix(in srgb, var(--surface) 70%, var(--surface-alt)) 50%, var(--surface-alt) 70%);
+  background-size: 300% 100%;
+  animation: vivo-brilho 1.6s linear infinite;
+}
+.modulo-vivo .aviso-compacto,
+.modulo-vivo .aviso-inline {
+  border-radius: 10px;
+  border-left: 4px solid currentColor;
+  animation: vivo-surge 0.4s var(--ease) backwards;
+}
+.modulo-vivo .estado-vazio svg { animation: vivo-flutua 3s ease-in-out infinite; color: var(--terracotta); }
+.modulo-vivo .estado-vazio-titulo { font-size: 16px; }
+.modulo-vivo .cascata-linha { transition: background 0.15s var(--ease); border-radius: 6px; }
+.modulo-vivo .cascata-linha:hover { background: var(--vivo-hover); }
+.modulo-vivo .row-line { transition: background 0.15s var(--ease); }
+
+/* ---- celular ---- */
+@media (max-width: 640px) {
+  .modulo-vivo .stat-strip,
+  .modulo-vivo .stat-strip:has(> :nth-child(6):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px; }
+  .modulo-vivo .stat-card { padding: 11px 12px; }
+  .modulo-vivo .stat-card-icone { padding: 6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modulo-vivo *,
+  .modulo-vivo *::before,
+  .modulo-vivo *::after,
+  .vivo-marcador-aba,
+  .vivo-marcador-subaba {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+@media print {
+  .modulo-vivo *, .modulo-vivo *::before { animation: none !important; }
+  .modulo-vivo .stat-card-icone, .modulo-vivo .indicador-icone { background: none; color: inherit !important; padding: 0; }
+}

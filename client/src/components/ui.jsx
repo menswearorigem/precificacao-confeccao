@@ -1,4 +1,4 @@
-import { Children, Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Children, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import {
@@ -277,6 +277,62 @@ export function Toggle({ checked, onChange, disabled, className = '', ...props }
 // componente próprio (ex.: MargemPill com cor semântica, que já sai com a
 // classe stat-card-value embutida) quanto pra um selo de variação abaixo do
 // valor (ex.: VariacaoBadge), podendo os dois coexistir.
+// Número que "conta" até o valor quando a tela abre (16/09/2026, módulos
+// vivos). Só anima dentro de `.modulo-vivo` e sem prefers-reduced-motion; em
+// qualquer outro lugar devolve o texto exatamente como veio. Aceita número
+// ou texto já formatado ("R$ 1.234,56", "40,3%", "-R$ 90,96"): anima só o
+// primeiro número do texto e mantém prefixo, sufixo e casas decimais.
+const PADRAO_NUMERO_BR = /-?\d{1,3}(?:\.\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?/;
+
+function formatarComoOriginal(valor, casas, comMilhar) {
+  const texto = Math.abs(valor).toLocaleString('pt-BR', {
+    minimumFractionDigits: casas,
+    maximumFractionDigits: casas,
+    useGrouping: comMilhar,
+  });
+  return (valor < 0 ? '-' : '') + texto;
+}
+
+export function NumeroAnimado({ valor, duracao = 750 }) {
+  const ref = useRef(null);
+  const [exibido, setExibido] = useState(valor);
+
+  useLayoutEffect(() => {
+    setExibido(valor);
+    const el = ref.current;
+    const texto = typeof valor === 'number' ? valor.toLocaleString('pt-BR') : valor;
+    if (typeof texto !== 'string' || !el?.closest?.('.modulo-vivo')) return undefined;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return undefined;
+    // Datas, horas e intervalos ("16/09/2026", "10:55", "0,0% – 67,8%") não
+    // são uma quantidade: animar só o primeiro pedaço ficaria estranho.
+    if (/[/:–]/.test(texto) || (texto.match(/\d[\d.,]*/g) || []).length > 1) return undefined;
+    const achado = texto.match(PADRAO_NUMERO_BR);
+    if (!achado) return undefined;
+    const bruto = achado[0];
+    const alvo = Number(bruto.replace(/\./g, '').replace(',', '.'));
+    if (!Number.isFinite(alvo) || alvo === 0) return undefined;
+    const casas = (bruto.split(',')[1] || '').length;
+    const comMilhar = bruto.includes('.') || Math.abs(alvo) >= 1000;
+    const antes = texto.slice(0, achado.index);
+    const depois = texto.slice(achado.index + bruto.length);
+    let quadro;
+    let t0;
+    const passo = (t) => {
+      if (t0 === undefined) t0 = t;
+      const k = Math.min(1, (t - t0) / duracao);
+      if (k >= 1) { setExibido(valor); return; }
+      const suave = 1 - (1 - k) ** 3;
+      setExibido(antes + formatarComoOriginal(alvo * suave, casas, comMilhar) + depois);
+      quadro = requestAnimationFrame(passo);
+    };
+    setExibido(antes + formatarComoOriginal(0, casas, comMilhar) + depois);
+    quadro = requestAnimationFrame(passo);
+    return () => { cancelAnimationFrame(quadro); setExibido(valor); };
+  }, [valor, duracao]);
+
+  return <span ref={ref} className="numero-animado">{exibido}</span>;
+}
+
 // `variant` (opcional: "danger"/"warning"/"success") dá uma barra lateral +
 // ícone (se `Icone` for passado) na cor cheia do indicador — pra KPIs onde a
 // cor por si só já diz se é bom ou ruim (ex.: "Atrasados"), em vez dos três
@@ -289,7 +345,11 @@ export function StatCard({ label, value, children, variant, Icone }) {
     <div className={`stat-card${variant ? ` stat-card-${variant}` : ''}`}>
       <div className="stat-card-corpo">
         <span className="stat-card-label">{label}</span>
-        {value !== undefined && <span className="stat-card-value">{value}</span>}
+        {value !== undefined && (
+          <span className="stat-card-value">
+            {typeof value === 'string' || typeof value === 'number' ? <NumeroAnimado valor={value} /> : value}
+          </span>
+        )}
         {children}
       </div>
       {Icone && <Icone size={22} className="stat-card-icone" />}
@@ -762,7 +822,9 @@ export function IndicadorDestaque({ rotulo, valor, explicacao, variacao, tom, Ic
         <span className="indicador-rotulo">{rotulo}</span>
         {Icone && <Icone size={18} className="indicador-icone" />}
       </div>
-      <span className="mono indicador-valor">{valor}</span>
+      <span className="mono indicador-valor">
+        {typeof valor === 'string' || typeof valor === 'number' ? <NumeroAnimado valor={valor} /> : valor}
+      </span>
       {variacao && <span className="indicador-variacao">{variacao}</span>}
       {explicacao && <p className="indicador-explicacao">{explicacao}</p>}
     </div>
