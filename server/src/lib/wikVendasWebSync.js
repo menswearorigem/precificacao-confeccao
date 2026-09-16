@@ -21,6 +21,11 @@ const wikWeb = require('./wikWeb');
 const { obterSessao, renovarSessao } = require('./wikWebSessao');
 
 const MATRIZ_EMP_ID = Number(process.env.WIK_PRODUCAO_EMP_ID || 192);
+// Quantos pedidos têm os ITENS puxados por ciclo. O detalhe é uma página
+// grande (~500 KB) e um GET por pedido, então limita pra não segurar a sessão
+// e não starvar financeiro/produção. É INCREMENTAL: cada ciclo pega os que
+// ainda não têm itens; em alguns ciclos, enche tudo.
+const ITENS_CAP = Number(process.env.WIK_VENDAS_ITENS_CAP || 40);
 
 function hojeIso() { return new Date().toISOString().slice(0, 10); }
 function somarDias(iso, d) { const dt = new Date(iso + 'T00:00:00'); dt.setDate(dt.getDate() + d); return dt.toISOString().slice(0, 10); }
@@ -119,6 +124,81 @@ async function gravarPedido(client, ped) {
   return up.rows[0].inserido ? 'criado' : 'atualizado';
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// SEGUNDA PASSADA: os ITENS (produtos) de cada pedido
+// ═══════════════════════════════════════════════════════════════════════════
+// O grid só traz o cabeçalho. Sem os itens não dá pra ligar a venda ao produto
+// e ao custo. Aqui, para os pedidos que ainda NÃO têm itens (incremental,
+// limitado por ITENS_CAP), lê o detalhe no Wik e grava `pedido_itens`, casando
+// cada item ao produto do Hub por `wik_prod_id` (o ProdId do Wik) e, na falta,
+// pela referência. Também acerta a contagem de peças no cabeçalho.
+async function preencherItensPendentes(sessao, cap, resumo) {
+  const { rows: pendentes } = await pool.query(
+    `SELECT pv.id, pv.wik_ped_id
+       FROM pedidos_venda pv
+      WHERE pv.origem = 'wik' AND pv.sincroniza_wik = TRUE AND pv.wik_ped_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM pedido_itens pi WHERE pi.pedido_id = pv.id)
+      ORDER BY pv.data_pedido DESC NULLS LAST
+      LIMIT $1`,
+    [cap]
+  );
+  if (!pendentes.length) return;
+
+  // Mapas de casamento (uma vez): ProdId do Wik → produto_id; referência → produto_id.
+  const { rows: prods } = await pool.query(
+    "SELECT id, wik_prod_id, upper(btrim(referencia)) AS ref FROM produtos"
+  );
+  const porWik = new Map();
+  const porRef = new Map();
+  for (const p of prods) {
+    if (p.wik_prod_id) porWik.set(Number(p.wik_prod_id), p.id);
+    if (p.ref) porRef.set(p.ref, p.id);
+  }
+
+  for (const ped of pendentes) {
+    let itens;
+    try {
+      itens = await wikWeb.pedidoItens(sessao, ped.wik_ped_id);
+    } catch (e) {
+      if (e.sessaoExpirada) throw e; // deixa o chamador renovar e refazer
+      resumo.erros.push(`Itens ped ${ped.wik_ped_id}: ${e.message}`);
+      continue;
+    }
+    if (!itens.length) { resumo.pedidosSemItens += 1; continue; }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM pedido_itens WHERE pedido_id = $1', [ped.id]);
+      let ordem = 0;
+      let qtdTotal = 0;
+      for (const it of itens) {
+        const produtoId = (it.prodId && porWik.get(it.prodId))
+          || (it.ref && porRef.get(String(it.ref).toUpperCase()))
+          || null;
+        await client.query(
+          `INSERT INTO pedido_itens
+             (pedido_id, produto_id, referencia, descricao, cor, tamanho,
+              quantidade, valor_unitario, desconto_pct, desconto_valor, total, ordem)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+          [ped.id, produtoId, it.ref ? String(it.ref).slice(0, 60) : null,
+            it.descricao ? it.descricao.slice(0, 200) : null,
+            it.cor ? it.cor.slice(0, 60) : null, it.tamanho ? it.tamanho.slice(0, 20) : null,
+            it.quantidade, it.valorUnitario, it.descPct, it.descValor, it.total, ordem++]
+        );
+        qtdTotal += it.quantidade;
+      }
+      await client.query('UPDATE pedidos_venda SET quantidade_pecas = $2, updated_at = now() WHERE id = $1', [ped.id, qtdTotal]);
+      await client.query('COMMIT');
+      resumo.pedidosComItens += 1;
+      resumo.itensGravados += itens.length;
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      resumo.erros.push(`Itens ped ${ped.wik_ped_id}: ${e.message}`);
+    } finally { client.release(); }
+  }
+}
+
 // Importa os pedidos dos últimos `dias` (padrão 60). Empresa = matriz (192),
 // onde o atacado é lançado.
 async function importarVendasWebAgora({ dias = 60 } = {}) {
@@ -128,7 +208,10 @@ async function importarVendasWebAgora({ dias = 60 } = {}) {
 
   const de = somarDias(hojeIso(), -Math.max(1, dias));
   const ate = hojeIso();
-  const resumo = { janela: `${de}..${ate}`, lidos: 0, criadas: 0, atualizadas: 0, jaExistiam: 0, erros: [] };
+  const resumo = {
+    janela: `${de}..${ate}`, lidos: 0, criadas: 0, atualizadas: 0, jaExistiam: 0,
+    pedidosComItens: 0, pedidosSemItens: 0, itensGravados: 0, erros: [],
+  };
   try {
     let sessao = await obterSessao(integracao);
     async function puxar() {
@@ -158,6 +241,22 @@ async function importarVendasWebAgora({ dias = 60 } = {}) {
         resumo.erros.push(`Ped ${ped.PedId}: ${e.message}`);
       } finally { client.release(); }
     }
+
+    // Segunda passada: os ITENS (produtos) dos pedidos que ainda não têm.
+    // Se a sessão cair no meio, renova e refaz o que faltou.
+    try {
+      await preencherItensPendentes(sessao, ITENS_CAP, resumo);
+    } catch (e) {
+      if (e.sessaoExpirada) {
+        sessao = await renovarSessao(integracao);
+        await preencherItensPendentes(sessao, ITENS_CAP, resumo).catch((err) => {
+          resumo.erros.push(`Itens (2ª tentativa): ${err.message}`);
+        });
+      } else {
+        resumo.erros.push(`Itens: ${e.message}`);
+      }
+    }
+
     resumo.erros = resumo.erros.slice(0, 10);
     return resumo;
   } finally {

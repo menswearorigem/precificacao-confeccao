@@ -520,6 +520,41 @@ async function gridPedidos(sessao, { de, ate } = {}) {
   }, { ordem: 5, dir: 'desc' }); // ordem 5 = PedDatacad (mais novos primeiro)
 }
 
+// ── Itens (produtos) de UM pedido de venda ──────────────────────────────────
+// O grid /Pedido/CarregaGrid só traz o CABEÇALHO. Os produtos vendidos ficam na
+// tela de detalhe (/Pedido/Create?id=<PedId>), no input escondido
+// `ListaItensSaida` (JSON) — mesmo truque da grade da OP (ListaItens) e das
+// parcelas do contas a pagar. Reverse-engineered ao vivo (16/09/2026): cada
+// item tem ProdId, Produto ("REF - nome"), Cor, Tamanho, Quantidade,
+// ValorUnitario, ValorTotal, DescPercentual, DescValor, OrdemProducaoId.
+// É o que liga a venda ao produto e, por ele, ao custo.
+async function pedidoItens(sessao, pedId) {
+  const html = await getHtml(sessao, `/Pedido/Create?id=${encodeURIComponent(pedId)}`);
+  const bruto = extrairInput(html, 'ListaItensSaida');
+  if (!bruto) return [];
+  let arr;
+  try { arr = JSON.parse(decodeHtml(bruto)); } catch { return []; }
+  if (!Array.isArray(arr)) return [];
+  return arr.map((it) => {
+    const nome = String(it.Produto || '');
+    const sep = nome.indexOf(' - ');
+    const ref = sep > 0 ? nome.slice(0, sep).trim() : null;         // "5297 - GOLA…" → "5297"
+    const desc = sep > 0 ? nome.slice(sep + 3).trim() : nome.trim();
+    return {
+      prodId: Number(it.ProdId) || null,
+      ref,
+      descricao: desc || null,
+      cor: it.Cor != null && it.Cor !== '' ? String(it.Cor) : null,
+      tamanho: it.Tamanho != null && it.Tamanho !== '' ? String(it.Tamanho) : null,
+      quantidade: Number(it.Quantidade) || 0,
+      valorUnitario: Number(it.ValorUnitario) || 0,
+      descPct: Number(it.DescPercentual) || 0,
+      descValor: Number(it.DescValor) || 0,
+      total: Number(it.ValorTotal) || 0,
+    };
+  }).filter((x) => x.ref || x.prodId || x.descricao);
+}
+
 // ── Matérias-primas: o CADASTRO inteiro (catálogo) ──────────────────────────
 // /MateriaPrima/Index → /MateriaPrima/CarregaGrid. Reverse-engineered ao vivo
 // (15/09/2026): grid DataTables comum, SEM `jsonData` de filtro, devolve as 507
@@ -539,7 +574,7 @@ module.exports = {
   novaSessao, restaurarCookies, serializarCookies,
   login, sessaoViva, trocarEmpresa,
   listarEmpresas, apontamentoPainel, ordemProducaoDetalhe, carregarGridDepartamentos,
-  gridOrdensProducao, gridPedidos, gridMateriasPrimas,
+  gridOrdensProducao, gridPedidos, pedidoItens, gridMateriasPrimas,
   // financeiro
   contasPagar, contaPagarDetalhe, contasReceber, extratoFinanceiro,
   planoContas, centrosCusto, contasBancarias,
