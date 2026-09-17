@@ -219,7 +219,14 @@ export default function Shell({ children }) {
           </button>
         </nav>
 
-        <div className={'shell-content' + (vivo ? ` modulo-vivo modulo-${activeModule.key}` : '') + (location.pathname.startsWith('/ajuda') ? ' pagina-ajuda' : '')}>
+        <div
+          className={'shell-content' + (vivo ? ` modulo-vivo modulo-${activeModule.key}` : '') + (location.pathname.startsWith('/ajuda') ? ' pagina-ajuda' : '')}
+          style={vivo ? {
+            '--module-color': activeModule.color,
+            // Rótulo acima do título da página (CSS `content: var(--modulo-nome)`).
+            '--modulo-nome': JSON.stringify(location.pathname.startsWith('/ajuda') ? 'Ajuda · Manu' : activeModule.label),
+          } : undefined}
+        >
           {activeModule ? (
             <>
               {/* Segundo nível: as ENTRADAS do módulo (14/09/2026).

@@ -45,7 +45,13 @@
   --teal-bg: #dcece9;
   --font-display: 'Fraunces', Georgia, 'Iowan Old Style', serif;
   --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Roboto Mono', 'Courier New', monospace;
+  /* 17/09/2026: números e códigos (referência, R$, %, SKU) deixaram de usar
+     fonte de máquina de escrever — ficam na mesma Inter do resto, com
+     algarismos de largura fixa (.mono liga tabular-nums), então as colunas
+     continuam alinhadas. A monoespaçada de verdade ficou só pra atalho de
+     teclado e trecho técnico (--font-codigo). */
+  --font-mono: var(--font-body);
+  --font-codigo: 'JetBrains Mono', 'SF Mono', 'Roboto Mono', 'Courier New', monospace;
   --radius: 12px;
   --radius-sm: 8px;
   --radius-lg: 18px;
@@ -423,7 +429,8 @@
        Segoe UI Variable (Windows 11). A tela não muda: isto só vale no papel. */
     --font-body: Arial, Helvetica, 'Liberation Sans', sans-serif;
     --font-display: Georgia, 'Times New Roman', 'Liberation Serif', serif;
-    --font-mono: Consolas, 'Courier New', 'Liberation Mono', monospace;
+    --font-mono: var(--font-body);
+    --font-codigo: Consolas, 'Courier New', 'Liberation Mono', monospace;
   }
 }
 
@@ -453,7 +460,7 @@ h1, h2, h3 {
 
 a { color: inherit; }
 
-.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums lining-nums; letter-spacing: 0; font-feature-settings: 'tnum' 1, 'cv11' 1; }
 
 ::selection { background: var(--selection-bg); color: var(--ink); }
 
@@ -2089,7 +2096,7 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
   font-size: 15px; color: var(--ink); font-family: var(--font-body);
 }
 .busca-global-campo kbd {
-  font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint);
+  font-family: var(--font-codigo); font-size: 11px; color: var(--ink-faint);
   border: 1px solid var(--border); border-radius: 5px; padding: 2px 6px;
 }
 .busca-global-resultados { overflow-y: auto; padding: 8px; }
@@ -4364,7 +4371,7 @@ table.ficha-doc-tabela {
   font-size: 14px; color: var(--ink); font-family: var(--font-body);
 }
 .manu-painel-campo kbd {
-  font-family: var(--font-mono);
+  font-family: var(--font-codigo);
   font-size: 10.5px;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -5549,7 +5556,7 @@ table.ficha-doc-tabela {
 }
 .promocao-historico-quando { font-size: 10.5px; color: var(--ink-faint); }
 .promocao-historico-texto code {
-  font-family: var(--font-mono); font-size: 11px;
+  font-family: var(--font-codigo); font-size: 11px;
   background: var(--border-soft); padding: 1px 5px; border-radius: 4px;
 }
 .promocao-historico-origem { font-size: 10.5px; color: var(--ink-faint); white-space: nowrap; }
@@ -6251,7 +6258,7 @@ tr.linha-clicavel:hover > * { background: var(--border-soft); }
 .saude-erro { display: flex; flex-direction: column; gap: 3px; max-width: 380px; }
 .saude-erro small { font-size: 11.5px; line-height: 1.45; }
 .saude-erro code {
-  font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint);
+  font-family: var(--font-codigo); font-size: 11px; color: var(--ink-faint);
   background: var(--border-soft); border-radius: var(--radius-sm);
   padding: 3px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -8163,7 +8170,7 @@ table.grade-matriz { width: auto; min-width: 0; }
 .full-vincular-topo b { font-size: 12.5px; display: block; }
 .full-vincular-topo small { display: block; font-size: 11px; color: var(--ink-soft); line-height: 1.5; margin-top: 2px; }
 .full-vincular code {
-  font-family: var(--font-mono); font-size: 10.5px;
+  font-family: var(--font-codigo); font-size: 10.5px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px;
 }
 .full-vincular-busca {
@@ -8243,7 +8250,7 @@ table.grade-matriz { width: auto; min-width: 0; }
 }
 .full-diagnostico-lista li.ok { border-color: var(--success-ring); background: var(--success-bg); }
 .full-diagnostico-lista code {
-  font-family: var(--font-mono); font-size: 10.5px; display: block;
+  font-family: var(--font-codigo); font-size: 10.5px; display: block;
   color: var(--ink); word-break: break-all;
 }
 .full-diagnostico-lista span { display: block; color: var(--ink-soft); margin-top: 2px; }
@@ -8956,7 +8963,7 @@ table.grade-matriz { width: auto; min-width: 0; }
 .cal-topo { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
 .cal-atalhos { font-size: 11.5px; color: var(--ink-faint); padding-bottom: 6px; }
 .cal-atalhos kbd {
-  font-family: var(--font-mono);
+  font-family: var(--font-codigo);
   font-size: 10.5px;
   border: 1px solid var(--border);
   border-bottom-width: 2px;
@@ -10824,3 +10831,213 @@ table.grade-matriz { width: auto; min-width: 0; }
   .pagina-ajuda *, .ajuda-verbete summary::after { animation: none !important; }
 }
 .manu-resposta-rodape > .btn { align-self: flex-start; }
+
+/* =====================================================================
+   VIVO 2 — segunda mão em todos os módulos (17/09/2026)
+   ---------------------------------------------------------------------
+   Retorno do usuário: "não mudou quase nada — as letras de código
+   continuam e só apareceram tarjas". Esta camada muda a cara de verdade:
+   - fonte de máquina de escrever fora (ver --font-mono no topo);
+   - cada módulo usa a própria cor (a mesma do menu lateral, passada pelo
+     Shell em --module-color) em título, marcadores, cartões e botões;
+   - rótulo do módulo acima do título da página;
+   - tabelas sem a faixa bege no cabeçalho, linhas mais altas, números
+     em peso médio e ações que só aparecem ao passar o mouse;
+   - cartões, filtros e botões mais leves e arredondados.
+   Continua só estética: nenhuma aba, rota ou dado muda.
+   ===================================================================== */
+.modulo-vivo {
+  --mc: var(--module-color, var(--terracotta));
+  --mc-suave: color-mix(in srgb, var(--mc) 10%, var(--surface));
+  --mc-leve: color-mix(in srgb, var(--mc) 5%, var(--surface));
+  --mc-borda: color-mix(in srgb, var(--mc) 32%, var(--border));
+  background:
+    radial-gradient(ellipse 900px 380px at 85% -12%, color-mix(in srgb, var(--mc) 13%, transparent), transparent 65%),
+    radial-gradient(ellipse 1100px 520px at 18% -8%, var(--body-glow-1), transparent 62%),
+    var(--bg);
+}
+
+/* ---- título da página ---- */
+.modulo-vivo .shell-main :is(.page, .page-wide, .pagina) > h1:first-of-type,
+.modulo-vivo .shell-main :is(.page, .page-wide, .pagina) > :first-child h1:first-of-type {
+  position: relative;
+  font-size: clamp(26px, 2.3vw, 34px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  padding-top: 20px;
+  animation: vivo-surge 0.5s var(--ease) backwards;
+}
+.modulo-vivo .shell-main :is(.page, .page-wide, .pagina) > h1:first-of-type::before,
+.modulo-vivo .shell-main :is(.page, .page-wide, .pagina) > :first-child h1:first-of-type::before {
+  content: var(--modulo-nome, '');
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mc);
+  padding-left: 14px;
+  background: radial-gradient(circle at 4px 50%, var(--mc) 3.5px, transparent 4.5px);
+  white-space: nowrap;
+}
+.modulo-vivo .page-sub { font-size: 13px; color: var(--ink-soft); }
+
+/* ---- cartões ---- */
+.modulo-vivo .card {
+  border-color: var(--border-soft);
+  border-radius: 18px;
+  box-shadow: 0 1px 2px rgba(47, 28, 13, 0.04), 0 6px 20px rgba(47, 28, 13, 0.05);
+}
+.modulo-vivo .card:hover { border-color: var(--mc-borda); }
+.modulo-vivo .card-head {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.modulo-vivo .card-head::before { background: var(--mc); height: 16px; }
+.modulo-vivo .card-titulo { font-size: 16px; }
+.modulo-vivo .card-titulo svg { color: var(--mc); }
+
+/* ---- indicadores na cor do módulo ---- */
+.modulo-vivo .stat-strip > :nth-child(1),
+.modulo-vivo .indicador-destaque { --tom: var(--mc); }
+.modulo-vivo .stat-card { border-color: var(--border-soft); border-radius: 18px; padding: 16px 18px 15px; }
+.modulo-vivo .stat-card-value { font-family: var(--font-body); font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.modulo-vivo .indicador { border-radius: 18px; }
+.modulo-vivo .indicador-valor { font-family: var(--font-body); font-weight: 700; letter-spacing: -0.02em; }
+
+/* ---- tabelas ---- */
+.modulo-vivo table.data-table,
+.modulo-vivo :is(.tabela-nota, .tabela-cobertura, .tabela-grade) { font-size: 13px; }
+.modulo-vivo table.data-table th,
+.modulo-vivo :is(.tabela-nota, .tabela-cobertura, .tabela-grade) thead th {
+  background: var(--surface) !important;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  padding-top: 11px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--border);
+  box-shadow: none;
+}
+.modulo-vivo table.data-table th:hover { color: var(--ink); }
+.modulo-vivo table.data-table th[aria-sort] svg,
+.modulo-vivo table.data-table th .ativo svg { color: var(--mc); }
+.modulo-vivo table.data-table td,
+.modulo-vivo :is(.tabela-nota, .tabela-cobertura) td { padding-top: 12px; padding-bottom: 12px; border-bottom-color: color-mix(in srgb, var(--border-soft) 70%, transparent); }
+.modulo-vivo table.data-table tbody tr:nth-child(even),
+.modulo-vivo :is(.tabela-nota, .tabela-cobertura) tbody tr:nth-child(even) { background: transparent; }
+.modulo-vivo .data-table-wrap table.data-table tbody tr:nth-child(even) > *:first-child { background: var(--surface); }
+.modulo-vivo table.data-table tbody tr:hover,
+.modulo-vivo table.data-table tr.clickable-row:hover,
+.modulo-vivo :is(.tabela-nota, .tabela-cobertura) tbody tr:hover { background: var(--mc-leve); box-shadow: inset 3px 0 0 var(--mc); }
+.modulo-vivo .data-table-wrap table.data-table tbody tr:hover > *:first-child,
+.modulo-vivo .data-table-wrap table.data-table tbody tr.clickable-row:hover > *:first-child { background: var(--mc-leve); box-shadow: inset 3px 0 0 var(--mc); }
+.modulo-vivo table.data-table td.mono,
+.modulo-vivo table.data-table td .mono,
+.modulo-vivo :is(.tabela-nota, .tabela-cobertura) td.num { font-weight: 600; color: var(--ink); }
+.modulo-vivo table.data-table td:first-child.mono,
+.modulo-vivo table.data-table tr > td.mono:first-of-type { color: var(--mc); }
+/* A seta ">" no fim da linha: discreta até passar o mouse. */
+.modulo-vivo table.data-table tr.clickable-row td:last-child svg { color: var(--ink-faint); transition: transform 0.25s var(--vivo-mola), color 0.15s var(--ease); }
+.modulo-vivo table.data-table tr.clickable-row:hover td:last-child svg { color: var(--mc); transform: translateX(3px); }
+.modulo-vivo table.data-table .icon-btn { opacity: 0.55; }
+.modulo-vivo table.data-table tr:hover .icon-btn { opacity: 1; }
+.modulo-vivo .data-table-contagem,
+.modulo-vivo .tabela-contagem { font-family: var(--font-body); font-weight: 600; color: var(--ink-soft); }
+
+/* ---- filtros e campos ---- */
+.modulo-vivo :is(.input, input[type="text"], input[type="search"], input[type="number"], input[type="date"], select, textarea):not([type="checkbox"]):not([type="radio"]),
+.modulo-vivo :is(.select-custom-trigger, .date-custom-trigger) {
+  border-radius: 12px;
+  background-color: var(--mc-leve);
+  border-color: var(--border-soft);
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease), background-color 0.15s var(--ease);
+}
+.modulo-vivo :is(.input, input, select, textarea):not([type="checkbox"]):not([type="radio"]):hover,
+.modulo-vivo :is(.select-custom-trigger, .date-custom-trigger):hover { border-color: var(--mc-borda); }
+.modulo-vivo :is(.input, input, select, textarea):not([type="checkbox"]):not([type="radio"]):focus,
+.modulo-vivo :is(.select-custom-trigger, .date-custom-trigger):focus-visible {
+  background-color: var(--surface);
+  border-color: var(--mc);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--mc) 16%, transparent);
+  outline: none;
+}
+.modulo-vivo .field-label { font-weight: 700; color: var(--ink-soft); }
+
+/* ---- botões ---- */
+.modulo-vivo .btn,
+.modulo-vivo .btn-sec { border-radius: 12px; padding-top: 9px; padding-bottom: 9px; }
+.modulo-vivo .btn.sm { border-radius: 10px; padding-top: 6px; padding-bottom: 6px; }
+.modulo-vivo .btn-ghost,
+.modulo-vivo .btn-sec { background: var(--surface); border-color: var(--border-soft); box-shadow: 0 1px 2px rgba(47, 28, 13, 0.05); }
+.modulo-vivo .btn-ghost:not(:disabled):hover,
+.modulo-vivo .btn-sec:not(:disabled):hover { background: var(--mc-suave); border-color: var(--mc-borda); color: var(--ink); }
+.modulo-vivo .btn-ghost svg,
+.modulo-vivo .btn-sec svg { color: var(--mc); }
+.modulo-vivo .btn-primary { box-shadow: 0 4px 12px rgba(66, 42, 21, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.16); }
+.modulo-vivo .btn-primary svg { transition: transform 0.3s var(--vivo-mola); }
+.modulo-vivo .btn-primary:not(:disabled):hover svg { transform: rotate(90deg); }
+
+/* ---- sub-abas e marcadores na cor do módulo ---- */
+.modulo-vivo .subtab-btn { font-family: var(--font-body); font-weight: 600; border-color: var(--border-soft); }
+.modulo-vivo .subtab-btn:not(.active):hover { border-color: var(--mc); }
+.modulo-vivo .subtab-btn.active { background: var(--mc); border-color: var(--mc); box-shadow: 0 6px 16px color-mix(in srgb, var(--mc) 35%, transparent); }
+.modulo-vivo .vivo-marcador-aba { box-shadow: inset 0 -3px 0 var(--mc); background: linear-gradient(180deg, transparent 10%, var(--mc-suave)); }
+.modulo-vivo .vivo-marcador-subaba { background: var(--mc); box-shadow: 0 4px 12px color-mix(in srgb, var(--mc) 35%, transparent); }
+.modulo-vivo .shell-submenu .nav-link.active,
+.modulo-vivo .shell-submenu .nav-link.active svg { color: var(--mc); }
+
+/* ---- miudezas ---- */
+.modulo-vivo .foto-produto-placeholder {
+  background:
+    radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--mc) 18%, transparent), transparent 60%),
+    linear-gradient(135deg, var(--surface-alt), var(--mc-suave));
+  color: color-mix(in srgb, var(--mc) 60%, var(--ink-faint));
+}
+.modulo-vivo .cartao-secao.ativo { border-color: var(--mc); background: var(--mc-leve); box-shadow: 0 0 0 3px color-mix(in srgb, var(--mc) 16%, transparent), var(--vivo-sombra); }
+.modulo-vivo .cartao-secao.ativo::before { background: var(--mc); }
+.modulo-vivo .vendedor-card::before,
+.modulo-vivo .estado-vazio svg,
+.modulo-vivo .viagem-vazio svg { color: var(--mc); }
+.modulo-vivo .vendedor-card::before { background: linear-gradient(90deg, var(--mc), transparent 85%); }
+.modulo-vivo .aviso-inline { border-radius: 14px; }
+.modulo-vivo .tabela-rolagem { border-radius: 14px; }
+
+/* Módulos cuja cor é escura demais pra texto sobre o fundo escuro: o
+   rótulo e os números clareiam no tema escuro. */
+:root[data-theme="dark"] .modulo-vivo { --mc: color-mix(in srgb, var(--module-color, var(--terracotta)) 70%, #fff); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .modulo-vivo { --mc: color-mix(in srgb, var(--module-color, var(--terracotta)) 70%, #fff); }
+}
+@media print {
+  .modulo-vivo .shell-main :is(.page, .page-wide, .pagina) > h1:first-of-type::before,
+  .modulo-vivo .shell-main :is(.page, .page-wide, .pagina) > :first-child h1:first-of-type::before { content: none; }
+  .modulo-vivo .shell-main h1 { padding-top: 0 !important; }
+}
+/* Tema escuro: a cor do módulo é clareada (ver --mc acima), então o texto
+   sobre ela passa a ser escuro — branco em rosa/areia claro não se lê. */
+:root[data-theme="dark"] .modulo-vivo :is(.subtab-btn.active, .shell-subsubmenu .subnav-link.active),
+:root[data-theme="dark"] .modulo-vivo :is(.stat-strip > :nth-child(1) .stat-card-icone, .indicador-destaque .indicador-icone) { color: #1b120a !important; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .modulo-vivo :is(.subtab-btn.active, .shell-subsubmenu .subnav-link.active),
+  :root:not([data-theme="light"]) .modulo-vivo :is(.stat-strip > :nth-child(1) .stat-card-icone, .indicador-destaque .indicador-icone) { color: #1b120a !important; }
+}
+
+/* Linha de filtros das telas de Estoque/Produção (.filtros-linha): a busca
+   ficava espremida (placeholder cortado) e o seletor esticava a linha toda. */
+.modulo-vivo .filtros-linha > .busca-composta { flex: 1 1 380px; min-width: 260px; }
+.modulo-vivo .filtros-linha > .select-custom { flex: 0 1 240px; min-width: 190px; width: auto; }
+.modulo-vivo .pagina-topo > div > p.ink-soft { font-size: 13px; max-width: 110ch; margin: 8px 0 0; line-height: 1.5; }
+.modulo-vivo .pagina h1 svg { color: var(--mc); }
+.pagina-ajuda .ajuda-cabecalho h1::before { color: #f0cf9a !important; background: radial-gradient(circle at 4px 50%, #f0cf9a 3.5px, transparent 4.5px) !important; }

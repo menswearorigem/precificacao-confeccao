@@ -188,7 +188,7 @@ export default function ProdutosMarketplacePage() {
           value={colagem}
           onChange={(e) => { setColagem(e.target.value); setPrevia(null); }}
           placeholder={'OG1192\nVM034\nMM6232'}
-          style={{ width: '100%', fontFamily: 'var(--font-mono)' }}
+          style={{ width: '100%', fontFamily: 'var(--font-codigo)' }}
         />
         <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
           <button type="button" className="btn btn-ghost" onClick={conferirColagem} disabled={conferindo || referenciasColadas().length === 0}>

@@ -55,7 +55,7 @@ function SincronizarReferenciasModal({ onClose, onSincronizado }) {
         </p>
         <textarea
           rows={5}
-          style={{ width: '100%', fontFamily: 'var(--font-mono)' }}
+          style={{ width: '100%', fontFamily: 'var(--font-codigo)' }}
           placeholder={'OG1192\nOG1620\nMM6387'}
           value={texto}
           onChange={(e) => setTexto(e.target.value)}
