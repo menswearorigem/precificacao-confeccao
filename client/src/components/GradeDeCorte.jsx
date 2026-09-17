@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Scissors, Copy, Check, AlertTriangle, Minus, Plus, RotateCcw } from 'lucide-react';
+import { Scissors, Copy, Check, AlertTriangle, Minus, Plus, RotateCcw, Info } from 'lucide-react';
 import './GradeDeCorte.css';
 
 /**
@@ -9,6 +9,11 @@ import './GradeDeCorte.css';
  * calcula grade nenhuma: escolhe qual das grades já calculadas está
  * selecionada, seja uma das sugeridas, seja o tamanho digitado à mão — todas
  * saem do mesmo catálogo que o servidor mandou.
+ *
+ * 17/09/2026 — a marcação passou a usar as peças do sistema (`.card`,
+ * `.card-titulo`, `.tabela-nota`, `.selo`, `.btn`, `.ajuda-bloco`) em vez de
+ * um visual próprio com cores e medidas fora dos tokens. Só apresentação: os
+ * números, as regras e a rota continuam iguais.
  */
 
 const pct = (fracao) => `${(fracao * 100).toLocaleString('pt-BR', {
@@ -90,8 +95,8 @@ function BotaoCopiar({ grade }) {
   }
 
   return (
-    <button type="button" className="gc-copiar" onClick={copiar}>
-      {copiado ? <Check size={15} /> : <Copy size={15} />}
+    <button type="button" className="btn btn-ghost sm gc-copiar" onClick={copiar}>
+      {copiado ? <Check size={14} /> : <Copy size={14} />}
       {copiado ? 'Copiado' : 'Copiar grade'}
     </button>
   );
@@ -141,9 +146,9 @@ export default function GradeDeCorte({ grade, loteAlvo }) {
 
   if (!grade.aplicavel) {
     return (
-      <section className="gc-cartao gc-cartao--vazio">
-        <h3 className="gc-titulo"><Scissors size={17} /> Grade de corte</h3>
-        <p className="gc-motivo">{grade.motivoNaoAplicavel}</p>
+      <div className="card">
+        <h2 className="card-titulo"><Scissors size={16} /> Grade de corte</h2>
+        <p className="ink-soft ajuda-bloco">{grade.motivoNaoAplicavel}</p>
         {grade.foraDaGrade?.length > 0 && (
           <ul className="gc-fora">
             {grade.foraDaGrade.map((f) => (
@@ -151,13 +156,14 @@ export default function GradeDeCorte({ grade, loteAlvo }) {
             ))}
           </ul>
         )}
-      </section>
+      </div>
     );
   }
 
   const atual = gradeManual || opcoes[indice];
   const naGrade = atual.proporcao.filter((p) => p.unidades > 0);
   const esgotados = naGrade.filter((p) => p.esgotado).map((p) => p.tamanho);
+  const fora = grade.foraDaGrade || [];
 
   function passo(delta) {
     const atualN = manual === '' ? atual.pecasPorGrade : Number(manual) || atual.pecasPorGrade;
@@ -167,9 +173,12 @@ export default function GradeDeCorte({ grade, loteAlvo }) {
 
   return (
     <>
-      <section className="gc-cartao">
-        <h3 className="gc-titulo"><Scissors size={17} /> Grade de corte</h3>
-        <p className="gc-legenda">
+      <div className="card">
+        <div className="card-head-linha">
+          <h2 className="card-titulo"><Scissors size={16} /> Grade de corte</h2>
+          <BotaoCopiar grade={atual} />
+        </div>
+        <p className="ink-soft ajuda-bloco">
           Quantas vezes cada tamanho entra no risco. Repita a grade quantas vezes
           couber no enfesto.
         </p>
@@ -182,156 +191,175 @@ export default function GradeDeCorte({ grade, loteAlvo }) {
             </div>
           ))}
           <div className="gc-total">
-            <strong>{atual.pecasPorGrade}</strong>
+            <strong className="mono">{atual.pecasPorGrade}</strong>
             <span>peças<br />por grade</span>
           </div>
-        </div>
-
-        <div className="gc-rodape">
-          <span className="gc-erro">
+          <span className={`selo ${atual.erroMaximoPP === 0 ? 'tone-saudavel' : 'tone-neutro'} gc-erro`}>
             {atual.erroMaximoPP === 0
-              ? 'Fecha exatamente a curva de venda.'
-              : `Fiel à curva: erro máximo de ${pp(atual.erroMaximoPP)}`}
+              ? 'fecha exatamente a curva'
+              : `erro máximo de ${pp(atual.erroMaximoPP)}`}
           </span>
-          <BotaoCopiar grade={atual} />
         </div>
 
         {atual.equivaleA && (
-          <p className="gc-nota-reducao">
-            <AlertTriangle size={13} /> Esta grade é a de {atual.equivaleA} peças
+          <p className="aviso-inline gc-nota-reducao">
+            <AlertTriangle size={14} /> Esta grade é a de {atual.equivaleA} peças
             repetida {atual.pecasPorGrade / atual.equivaleA}×. Mesma proporção, o
             dobro do colchão — só vale a pena se o enfesto pedir.
           </p>
         )}
 
-        {opcoes.length > 1 && (
-          <div className="gc-alternativas">
-            <span className="gc-alternativas-titulo">Grades mais curtas</span>
-            <div className="gc-chips">
-              {opcoes.map((op, i) => (
+        <div className="gc-escolha">
+          {opcoes.length > 1 && (
+            <div className="gc-bloco">
+              <span className="field-label">Grades mais curtas</span>
+              <div className="gc-chips">
+                {opcoes.map((op, i) => (
+                  <button
+                    type="button"
+                    key={op.pecasPorGrade}
+                    className={`gc-chip${!gradeManual && i === indice ? ' ativo' : ''}`}
+                    aria-pressed={!gradeManual && i === indice}
+                    onClick={() => { setEscolhida(i); setManual(''); }}
+                  >
+                    <span className="gc-chip-rotulo mono">{op.rotulo}</span>
+                    <span className="gc-chip-detalhe">
+                      {op.pecasPorGrade} peças · erro {pp(op.erroMaximoPP)}
+                      {i === indiceRecomendada ? ' · recomendada' : ''}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <p className="ink-faint gc-dica">
+                Grade curta é mais fácil no enfesto e mais distante da curva real.
+              </p>
+            </div>
+          )}
+
+          <div className="gc-bloco">
+            <span className="field-label">Ou o tamanho que o seu enfesto pede</span>
+            <div className="gc-manual-linha">
+              <div className={`gc-campo${motivoManual ? ' recusado' : ''}`}>
                 <button
                   type="button"
-                  key={op.pecasPorGrade}
-                  className={`gc-chip${!gradeManual && i === indice ? ' gc-chip--ativo' : ''}`}
-                  onClick={() => { setEscolhida(i); setManual(''); }}
+                  className="gc-campo-passo"
+                  onClick={() => passo(-1)}
+                  aria-label="Uma peça a menos por grade"
                 >
-                  <span className="gc-chip-rotulo">{op.rotulo}</span>
-                  <span className="gc-chip-detalhe">
-                    {op.pecasPorGrade} peças · erro {pp(op.erroMaximoPP)}
-                    {i === indiceRecomendada ? ' · recomendada' : ''}
-                  </span>
+                  <Minus size={15} />
                 </button>
-              ))}
+                <input
+                  type="number"
+                  className="gc-campo-entrada mono"
+                  inputMode="numeric"
+                  min={minimo}
+                  max={maximo}
+                  placeholder={String(atual.pecasPorGrade)}
+                  value={manual}
+                  onChange={(e) => setManual(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="gc-campo-passo"
+                  onClick={() => passo(1)}
+                  aria-label="Uma peça a mais por grade"
+                >
+                  <Plus size={15} />
+                </button>
+              </div>
+              <span className="ink-soft gc-manual-unidade">peças por grade</span>
+              {gradeManual && (
+                <button type="button" className="btn btn-ghost sm" onClick={() => setManual('')}>
+                  <RotateCcw size={13} /> Voltar para a recomendada
+                </button>
+              )}
             </div>
-            <p className="gc-aviso-curta">
-              Grade curta é mais fácil no enfesto e mais distante da curva real.
-            </p>
+            {motivoManual
+              ? <p className="erro-inline gc-recusa">{motivoManual}</p>
+              : <p className="ink-faint gc-dica">De {minimo} a {maximo} peças. A proporção se ajusta ao número que você escolher.</p>}
           </div>
-        )}
-
-        <div className="gc-manual">
-          <span className="gc-alternativas-titulo">Ou o tamanho que o seu enfesto pede</span>
-          <div className="gc-manual-linha">
-            <div className={`gc-campo${motivoManual ? ' gc-campo--recusado' : ''}`}>
-              <button
-                type="button"
-                className="gc-campo-passo"
-                onClick={() => passo(-1)}
-                aria-label="Uma peça a menos por grade"
-              >
-                <Minus size={15} />
-              </button>
-              <input
-                type="number"
-                className="gc-campo-entrada"
-                inputMode="numeric"
-                min={minimo}
-                max={maximo}
-                placeholder={String(atual.pecasPorGrade)}
-                value={manual}
-                onChange={(e) => setManual(e.target.value)}
-              />
-              <button
-                type="button"
-                className="gc-campo-passo"
-                onClick={() => passo(1)}
-                aria-label="Uma peça a mais por grade"
-              >
-                <Plus size={15} />
-              </button>
-            </div>
-            <span className="gc-manual-unidade">peças por grade</span>
-            {gradeManual && (
-              <button type="button" className="gc-voltar" onClick={() => setManual('')}>
-                <RotateCcw size={13} /> voltar para a recomendada
-              </button>
-            )}
-          </div>
-          {motivoManual
-            ? <p className="gc-manual-recusa">{motivoManual}</p>
-            : <p className="gc-aviso-curta">De {minimo} a {maximo} peças. A proporção se ajusta ao número que você escolher.</p>}
         </div>
 
-        {(grade.foraDaGrade?.length > 0 || esgotados.length > 0) && (
-          <ul className="gc-fora">
-            {grade.foraDaGrade?.map((f) => (
-              <li key={f.tamanho}>
-                <AlertTriangle size={13} /> <strong>{f.tamanho}</strong> não entra na grade — {f.motivo}
-              </li>
-            ))}
-            {esgotados.length > 0 && (
-              <li>
-                <AlertTriangle size={13} /> {esgotados.join(', ')} esgotou no período — a
-                participação está subestimada, e a grade também.
-              </li>
-            )}
-          </ul>
+        {esgotados.length > 0 && (
+          <p className="aviso-inline">
+            <AlertTriangle size={14} /> {esgotados.join(', ')} esgotou no período — a
+            participação está subestimada, e a grade também.
+          </p>
         )}
-      </section>
+
+        {fora.length > 0 && (
+          <details className="gc-fora-detalhe">
+            <summary>
+              <Info size={14} />
+              <span>
+                {fora.length === 1
+                  ? '1 tamanho ficou fora da grade'
+                  : `${fora.length} tamanhos ficaram fora da grade`}
+              </span>
+              <span className="ink-faint gc-fora-amostra">
+                {fora.slice(0, 4).map((f) => f.tamanho).join(', ')}{fora.length > 4 ? '…' : ''}
+              </span>
+            </summary>
+            <ul className="gc-fora">
+              {fora.map((f) => (
+                <li key={f.tamanho}>
+                  <strong>{f.tamanho}</strong> — {f.motivo}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </div>
 
       {atual.repeticoes && (
-        <section className="gc-cartao">
-          <h4 className="gc-lote">
-            Para um lote de <strong>{loteAlvo}</strong> peças:{' '}
-            <strong>{atual.repeticoes} grades = {atual.totalPecas} peças</strong>
-            {atual.diferencaParaLote !== 0 && (
-              <span className="gc-diferenca">
-                {' '}({Math.abs(atual.diferencaParaLote)}{' '}
-                {atual.diferencaParaLote < 0 ? 'a menos' : 'a mais'})
-              </span>
-            )}
-          </h4>
+        <div className="card">
+          <div className="card-head-linha">
+            <h2 className="card-titulo">
+              <Scissors size={16} /> Para um lote de {loteAlvo} peças
+            </h2>
+            <span className="gc-lote-resumo">
+              <strong className="mono">{atual.repeticoes} grades = {atual.totalPecas} peças</strong>
+              {atual.diferencaParaLote !== 0 && (
+                <span className="ink-faint">
+                  {' '}({Math.abs(atual.diferencaParaLote)}{' '}
+                  {atual.diferencaParaLote < 0 ? 'a menos' : 'a mais'})
+                </span>
+              )}
+            </span>
+          </div>
 
-          <table className="gc-tabela">
-            <thead>
-              <tr>
-                <th>Tamanho</th>
-                <th>Grade</th>
-                <th>× {atual.repeticoes} grades</th>
-                <th>Participação</th>
-                <th>Curva real</th>
-              </tr>
-            </thead>
-            <tbody>
-              {naGrade.map((p) => (
-                <tr key={p.tamanho}>
-                  <td className="gc-td-tamanho">{p.tamanho}</td>
-                  <td>{p.unidades}</td>
-                  <td><strong>{p.unidades * atual.repeticoes}</strong></td>
-                  <td>{pct(p.participacaoGrade)}</td>
-                  <td className="gc-td-fraca">{pct(p.participacaoReal)}</td>
+          <div className="tabela-rolagem">
+            <table className="tabela-nota gc-tabela">
+              <thead>
+                <tr>
+                  <th>Tamanho</th>
+                  <th className="num">Grade</th>
+                  <th className="num">× {atual.repeticoes} grades</th>
+                  <th className="num">Participação</th>
+                  <th className="num">Curva real</th>
                 </tr>
-              ))}
-              <tr className="gc-tr-total">
-                <td>Total</td>
-                <td>{atual.pecasPorGrade}</td>
-                <td><strong>{atual.totalPecas}</strong></td>
-                <td />
-                <td />
-              </tr>
-            </tbody>
-          </table>
-        </section>
+              </thead>
+              <tbody>
+                {naGrade.map((p) => (
+                  <tr key={p.tamanho}>
+                    <td><strong>{p.tamanho}</strong></td>
+                    <td className="num">{p.unidades}</td>
+                    <td className="num"><strong>{p.unidades * atual.repeticoes}</strong></td>
+                    <td className="num">{pct(p.participacaoGrade)}</td>
+                    <td className="num ink-faint">{pct(p.participacaoReal)}</td>
+                  </tr>
+                ))}
+                <tr className="linha-total">
+                  <td><strong>Total</strong></td>
+                  <td className="num">{atual.pecasPorGrade}</td>
+                  <td className="num"><strong>{atual.totalPecas}</strong></td>
+                  <td className="num" />
+                  <td className="num" />
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
     </>
   );
