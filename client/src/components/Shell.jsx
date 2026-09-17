@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { LogOut, Menu, X, ChevronsLeft, ChevronsRight, Sun, Moon, Rows3, AlignJustify, HelpCircle } from 'lucide-react';
+import { LogOut, Menu, X, ChevronsLeft, ChevronsRight, Sun, Moon, Rows3, AlignJustify, HelpCircle, Search } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getVisibleModules, getEntradasVisiveis, acharEntradaAtiva } from '../lib/modules';
 import { useTema } from '../lib/useTema';
@@ -9,6 +9,7 @@ import BuscaGlobal from './BuscaGlobal';
 import SinoCalendario from './SinoCalendario';
 import ManuBotao from './ManuBotao';
 import logoHbnHub from '../assets/logo-hbn-hub.png';
+import { BarraInferior, FerramentasDaGaveta, useTabelasEmCartao } from './MobileShell';
 
 const CHAVE_SIDEBAR_COLAPSADO = 'hbn_sidebar_colapsado';
 
@@ -84,6 +85,17 @@ export default function Shell({ children }) {
   const [refSubmenu, posSubmenu] = useMarcadorDeslizante(vivo, `${location.pathname}|${entradas.length}`);
   const [refSubsub, posSubsub] = useMarcadorDeslizante(vivo, location.pathname);
   const refMain = useRef(null);
+  useTabelasEmCartao(refMain, activeModule?.key);
+
+  // Celular: a fileira de abas rola de lado; a aba acesa vem pro meio da
+  // tela (antes ela podia ficar escondida depois da borda direita).
+  useEffect(() => {
+    if (!window.matchMedia?.('(max-width: 860px)').matches) return;
+    for (const sel of ['.shell-submenu .nav-link.active', '.shell-subsubmenu .subnav-link.active']) {
+      const el = document.querySelector(sel);
+      el?.scrollIntoView?.({ inline: 'center', block: 'nearest', behavior: semMovimento() ? 'auto' : 'smooth' });
+    }
+  }, [location.pathname]);
 
   // Troca de tela nos módulos vivos: o conteúdo sobe suavemente. Feito com a
   // Web Animations API (e não com `key` no <main>) para não desmontar a tela
@@ -141,17 +153,26 @@ export default function Shell({ children }) {
             {menuAberto ? <X size={20} /> : <Menu size={20} />}
           </button>
           <div className="brand-mark"><img src={logoHbnHub} alt="" /></div>
-          <div>
+          <div className="brand-textos">
+            {activeModule && <div className="brand-modulo">{location.pathname.startsWith('/ajuda') ? 'Ajuda' : activeModule.label}</div>}
             <div className="brand-name">HBN Hub</div>
             <div className="brand-sub">Miss Manu · Origem · Hoggar · Hebron</div>
           </div>
         </div>
         <div className="header-actions">
+          <button
+            type="button"
+            className="icon-toggle-btn so-celular"
+            aria-label="Buscar no sistema"
+            onClick={() => window.dispatchEvent(new Event('hbn:abrir-busca'))}
+          >
+            <Search size={17} />
+          </button>
           {visibleModules.some((mod) => mod.key === 'calendario') && <SinoCalendario />}
           {densidadeCtx && (
             <button
               type="button"
-              className="icon-toggle-btn"
+              className="icon-toggle-btn so-computador"
               title={densidadeCtx.densidade === 'compacta' ? 'Densidade compacta — clique para confortável' : 'Densidade confortável — clique para compacta'}
               onClick={() => densidadeCtx.setDensidade(densidadeCtx.densidade === 'compacta' ? 'confortavel' : 'compacta')}
             >
@@ -160,7 +181,7 @@ export default function Shell({ children }) {
           )}
           <button
             type="button"
-            className="icon-toggle-btn"
+            className="icon-toggle-btn so-computador"
             title={tema === 'dark' ? 'Tema escuro — clique para claro' : 'Tema claro — clique para escuro'}
             onClick={() => setTema(tema === 'dark' ? 'light' : 'dark')}
           >
@@ -169,14 +190,14 @@ export default function Shell({ children }) {
           {/* /ajuda não é de nenhum módulo (ver lib/modules.js#canAccessPath),
               então o link mora aqui em vez de entrar como página de um
               módulo — não distorce o modelo de permissão por módulo. */}
-          <Link to="/ajuda" className="icon-toggle-btn" title="Ajuda" aria-label="Ajuda">
+          <Link to="/ajuda" className="icon-toggle-btn so-computador" title="Ajuda" aria-label="Ajuda">
             <HelpCircle size={15} />
           </Link>
           {user && <span className="user-badge">{user.nome}</span>}
           {/* O rótulo vai num <span> próprio para o CSS poder escondê-lo no
               celular (o botão vira só o ícone) sem perder o nome acessível,
               que o aria-label garante. */}
-          <button className="logout-btn" onClick={handleLogout} aria-label="Sair">
+          <button className="logout-btn so-computador" onClick={handleLogout} aria-label="Sair">
             <LogOut size={13} className="logout-btn-icone" />
             <span className="logout-btn-texto">Sair</span>
           </button>
@@ -217,6 +238,13 @@ export default function Shell({ children }) {
             {sidebarColapsado ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
             {!sidebarColapsado && <span>Recolher</span>}
           </button>
+          <FerramentasDaGaveta
+            user={user}
+            tema={tema}
+            setTema={setTema}
+            densidadeCtx={densidadeCtx}
+            onSair={handleLogout}
+          />
         </nav>
 
         <div
@@ -305,6 +333,12 @@ export default function Shell({ children }) {
           )}
         </div>
       </div>
+      <BarraInferior
+        visiveis={visibleModules}
+        ativo={activeModule}
+        menuAberto={menuAberto}
+        onMenu={() => setMenuAberto((v) => !v)}
+      />
     </div>
   );
 }

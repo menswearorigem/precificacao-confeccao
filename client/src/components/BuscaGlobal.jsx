@@ -69,8 +69,14 @@ export default function BuscaGlobal() {
         setAberto(false);
       }
     }
+    // Celular não tem ⌘K: a lupa do cabeçalho (Shell) abre por este evento.
+    function aoPedirBusca() { setAberto(true); }
     document.addEventListener('keydown', aoTeclar);
-    return () => document.removeEventListener('keydown', aoTeclar);
+    window.addEventListener('hbn:abrir-busca', aoPedirBusca);
+    return () => {
+      document.removeEventListener('keydown', aoTeclar);
+      window.removeEventListener('hbn:abrir-busca', aoPedirBusca);
+    };
   }, [aberto]);
 
   useEffect(() => {
