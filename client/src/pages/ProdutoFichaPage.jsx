@@ -398,7 +398,7 @@ export default function ProdutoFichaPage() {
             <span style={{ fontSize: 10.5, color: 'var(--ink-soft)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Preço {produto.preco_informado ? 'praticado' : 'sugerido'}
             </span>
-            <span className="mono" style={{ fontSize: 22, fontWeight: 700, color: 'var(--leather-dark)' }}>
+            <span className="mono" style={{ fontSize: 22, fontWeight: 700, color: 'var(--leather-ink)' }}>
               {brlOuTraco(c.formacaoPreco.precoAtivo)}
             </span>
           </div>

@@ -63,7 +63,7 @@ function TooltipGrafico({ active, payload, label, formato = brl }) {
       background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10,
       padding: '10px 14px', boxShadow: 'var(--shadow-md)', fontFamily: FONTE,
     }}>
-      <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 13, color: 'var(--leather-deep)', marginBottom: 6 }}>
+      <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 13, color: 'var(--leather-ink)', marginBottom: 6 }}>
         {label}
       </div>
       {payload.map((item) => (

@@ -51,7 +51,7 @@ function MarketplaceLogo({ marketplace, size = 30 }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
       <img src={info.logo} alt="" width={size} height={size} style={{ borderRadius: size * 0.22, flexShrink: 0 }} />
-      <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: size * 0.6, color: 'var(--leather-deep)' }}>
+      <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: size * 0.6, color: 'var(--leather-ink)' }}>
         {info.label}
       </span>
     </span>

@@ -342,7 +342,7 @@ export default function UsuariosPage() {
       {!loading && usuariosFiltrados.map((u) => (
         <div className="card" style={{ marginBottom: 16, marginTop: 12 }} key={u.id}>
           <div style={{ justifyContent: 'space-between', display: 'flex', alignItems: 'center', marginBottom: 14, paddingBottom: 12, borderBottom: '1px solid var(--border-soft)' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 16, color: 'var(--leather-deep)' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 16, color: 'var(--leather-ink)' }}>
               {u.nome}
               {u.role === 'admin' && <span className="stamp sm tone-elevada"><ShieldCheck size={11} style={{ verticalAlign: -1, marginRight: 3 }} />Admin</span>}
               {!u.ativo && <span className="stamp sm tone-prejuizo">Inativo</span>}

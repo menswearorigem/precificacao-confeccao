@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Barcode, PackageCheck, ListChecks, BarChart3, CheckCircle2, XCircle, AlertTriangle,
-  Undo2, Tag, LogOut, ScanLine, Package,
+  Undo2, Tag, LogOut, ScanLine, Package, CornerDownLeft,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { StatCard, Select, DateInput } from '../components/ui';
@@ -266,18 +266,37 @@ function AbaBipagem({ aoConcluirPedido, pedidoParaAbrir, aoAbrirPedido }) {
         <label className="field-label" htmlFor="campo-conferencia">
           {sessao ? 'Bipe cada peça da caixa' : 'Bipe a etiqueta de envio (ou digite o número do pedido)'}
         </label>
-        <div className="conferencia-scanner-linha">
-          <Barcode size={26} />
+        <div className={'conferencia-scanner-linha' + (ocupado ? ' ocupado' : '')}>
+          <span className="conferencia-scanner-icone" aria-hidden="true"><Barcode size={24} /></span>
           <input
             id="campo-conferencia"
             ref={inputRef}
             value={codigo}
             onChange={(e) => setCodigo(e.target.value)}
             autoComplete="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            inputMode="text"
+            enterKeyHint="go"
             autoFocus
             disabled={ocupado}
-            placeholder={sessao ? 'código de barras da peça…' : 'etiqueta, nº do pedido ou nº do pacote…'}
+            placeholder={sessao ? 'Código de barras da peça' : 'Etiqueta, nº do pedido ou nº do pacote'}
           />
+          {/* Botão para quem digita (o leitor manda o Enter sozinho). */}
+          <button
+            type="submit"
+            className="btn btn-primary conferencia-scanner-enviar"
+            disabled={ocupado || !codigo.trim()}
+          >
+            {ocupado ? 'Conferindo…' : sessao ? 'Conferir' : 'Abrir'}
+            {!ocupado && <CornerDownLeft size={15} />}
+          </button>
+        </div>
+        <div className="conferencia-scanner-status" aria-live="polite">
+          <span className="conferencia-scanner-ponto" aria-hidden="true" />
+          <span className="quando-pronto">Pronto para ler — pode bipar</span>
+          <span className="quando-parado">Clique no campo para voltar a bipar</span>
+          <span className="quando-ocupado">Conferindo a leitura…</span>
         </div>
         {!sessao && (
           <p className="page-sub" style={{ margin: '8px 0 0' }}>

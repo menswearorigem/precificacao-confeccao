@@ -266,7 +266,7 @@ function KpiMini({ label, value }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
       <span style={{ fontSize: 10.5, color: 'var(--ink-soft)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
-      <span className="mono" style={{ fontSize: 16, fontWeight: 700, color: 'var(--leather-dark)' }}>{value}</span>
+      <span className="mono" style={{ fontSize: 16, fontWeight: 700, color: 'var(--leather-ink)' }}>{value}</span>
     </div>
   );
 }
@@ -275,7 +275,7 @@ function KpiCard({ label, value }) {
   return (
     <div className="card" style={{ textAlign: 'center' }}>
       <div style={{ fontSize: 10.5, color: 'var(--ink-soft)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
-      <div className="mono" style={{ fontSize: 20, fontWeight: 700, color: 'var(--leather-dark)', marginTop: 4 }}>{value}</div>
+      <div className="mono" style={{ fontSize: 20, fontWeight: 700, color: 'var(--leather-ink)', marginTop: 4 }}>{value}</div>
     </div>
   );
 }
