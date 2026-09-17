@@ -1,8 +1,8 @@
 /**
- * Grade de corte — 28 pontos. Módulo puro: não sobe Postgres, não sobe servidor.
+ * Grade de corte — 43 pontos. Módulo puro: não sobe Postgres, não sobe servidor.
  *   node server/scripts/teste-grade-corte-2026-09-17.js
  */
-const { gradesDeCorte, textoParaFaccao } = require('../src/lib/gradeCorte');
+const { gradesDeCorte, gradeComTamanho, textoParaFaccao } = require('../src/lib/gradeCorte');
 
 let ok = 0;
 let falhou = 0;
@@ -123,6 +123,43 @@ console.log('\n8. Texto de colar no pedido da facção');
   const r = gradesDeCorte(curva(['P', 'M', 'G', 'GG'], [77, 259, 415, 327]), { loteAlvo: 300 });
   conferir('duas linhas, sem os tamanhos fora da grade', textoParaFaccao(r.recomendada).split('\n').length, 2);
   conferir('primeira linha', textoParaFaccao(r.recomendada).split('\n')[0], 'P 1 · M 3 · G 5 · GG 4   (grade de 13)');
+}
+
+console.log('\n9. Grade de tamanho escolhido à mão');
+{
+  const real = curva(['P', 'M', 'G', 'GG'], [77, 259, 415, 327]);
+  const base = gradesDeCorte(real, { loteAlvo: 300 });
+
+  conferir('catálogo começa no mínimo viável', base.minimoPecasPorGrade, 4);
+  conferir('catálogo vai até 100', base.maximoPecasPorGrade, 100);
+  conferir('catálogo não pula nenhum N viável', base.catalogo.length, 97);
+
+  const escolha13 = gradeComTamanho(real, 13, { loteAlvo: 300, base });
+  conferir('13 peças reproduz a recomendada', unidadesDe(escolha13.grade), [1, 3, 5, 4]);
+  conferir('e o mesmo erro', escolha13.grade.erroMaximoPP, base.recomendada.erroMaximoPP);
+
+  const escolha10 = gradeComTamanho(real, 10, { loteAlvo: 300, base });
+  conferir('10 peças dá 1:2:4:3', unidadesDe(escolha10.grade), [1, 2, 4, 3]);
+  conferir('lote 300 → 30 grades = 300 peças', [escolha10.grade.repeticoes, escolha10.grade.totalPecas], [30, 300]);
+
+  const escolha7 = gradeComTamanho(real, 7, { loteAlvo: 300, base });
+  conferir('7 peças → 43 grades = 301 peças', [escolha7.grade.repeticoes, escolha7.grade.totalPecas], [43, 301]);
+  conferir('e a tela declara 1 peça a mais', escolha7.grade.diferencaParaLote, 1);
+
+  const escolha26 = gradeComTamanho(real, 26, { loteAlvo: 300, base });
+  conferir('26 peças entrega 2:6:10:8 — quem pediu 26 quer 26', unidadesDe(escolha26.grade), [2, 6, 10, 8]);
+  conferir('mas a redução é declarada', escolha26.grade.equivaleA, 13);
+
+  const curta = gradeComTamanho(real, 3, { base });
+  conferir('3 peças é recusado com o mínimo por escrito', curta.motivo,
+    'uma grade de 3 peça(s) não comporta esta curva sem zerar um tamanho — o mínimo aqui é 4');
+  conferir('e não devolve grade nenhuma', curta.grade, null);
+
+  const longa = gradeComTamanho(real, 200, { base });
+  conferir('200 peças é recusado com o teto por escrito', longa.motivo, 'o máximo é 100 peças por grade');
+
+  const vazia = gradeComTamanho(real, null, { base });
+  conferir('sem número, pede o número', vazia.motivo, 'informe quantas peças a grade tem');
 }
 
 console.log(`\n${ok} ok · ${falhou} falha(s)\n`);

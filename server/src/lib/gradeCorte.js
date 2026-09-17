@@ -16,6 +16,7 @@ const TOLERANCIA_PADRAO_PP = 1.5;      // erro aceito para eleger a grade recome
 const GANHO_MINIMO_PP = 1.0;           // ganho mínimo para uma alternativa merecer a tela
 const ERRO_MAX_ALTERNATIVA_PP = 6.0;   // acima disso a grade é curta demais para ser honesta
 const FATOR_MAX_ALTERNATIVA = 0.8;     // alternativa tem de ser ao menos 20% mais curta
+const NMAX_CATALOGO = 100;             // teto da grade digitada à mão
 const EPS = 1e-9;
 
 /**
@@ -284,13 +285,82 @@ function gradesDeCorte(curva, opcoes = {}) {
     .slice(-2)
     .map((c) => montarGrade(c.unidades, c.N, itens, participacoes, loteAlvo));
 
+  /*
+   * Catálogo: toda grade viável, de `restantes.length` até NMAX_CATALOGO peças.
+   * É o que sustenta o campo "digite o tamanho da grade" — quem enfesta sabe de
+   * quantas vias é o colchão, e isso manda mais do que qualquer sugestão.
+   *
+   * Aqui a grade redutível NÃO é descartada: quem pediu 26 peças quer 26 peças.
+   * Mas a redução é declarada em `equivaleA`, porque 2:6:10:8 é 1:3:5:4 com o
+   * dobro do pano — informação que muda a decisão de quem corta.
+   */
+  const catalogo = [];
+  for (let N = restantes.length; N <= NMAX_CATALOGO; N += 1) {
+    const unidades = gerarGrade(curvaGrade, restantes, N);
+    if (!unidades) continue;
+    const divisor = mdcLista(unidades.filter((u) => u > 0));
+    catalogo.push({
+      pecasPorGrade: N,
+      unidades,
+      erroMaximoPP: arredondar(erroMaximoPP(unidades, N, participacoes), 2),
+      equivaleA: divisor > 1 ? N / divisor : null,
+    });
+  }
+
   return {
     aplicavel: true,
     motivoNaoAplicavel: null,
     recomendada: montarGrade(eleita.unidades, eleita.N, itens, participacoes, loteAlvo),
     alternativas,
+    catalogo,
+    minimoPecasPorGrade: catalogo.length ? catalogo[0].pecasPorGrade : null,
+    maximoPecasPorGrade: catalogo.length ? catalogo[catalogo.length - 1].pecasPorGrade : null,
     foraDaGrade,
     tolerancia,
+  };
+}
+
+/**
+ * A grade de um tamanho escolhido à mão. Mesmo motor das sugestões — só muda
+ * quem decide o N. Devolve o motivo por escrito quando o número pedido não
+ * comporta a curva, em vez de devolver uma grade errada calada.
+ *
+ * @param {Array} curva
+ * @param {number} pecasPorGrade
+ * @param {{ loteAlvo?: number, base?: object }} [opcoes] `base` reaproveita um
+ *        resultado de gradesDeCorte() já calculado, para não recalcular tudo.
+ * @returns {{ grade: object|null, motivo: string|null }}
+ */
+function gradeComTamanho(curva, pecasPorGrade, opcoes = {}) {
+  const base = opcoes.base && opcoes.base.catalogo ? opcoes.base : gradesDeCorte(curva, opcoes);
+  if (!base.aplicavel) return { grade: null, motivo: base.motivoNaoAplicavel };
+
+  if (!temNumero(pecasPorGrade)) {
+    return { grade: null, motivo: 'informe quantas peças a grade tem' };
+  }
+  const N = Math.round(Number(pecasPorGrade));
+  const entrada = base.catalogo.find((c) => c.pecasPorGrade === N);
+
+  if (!entrada) {
+    const minimo = base.minimoPecasPorGrade;
+    const maximo = base.maximoPecasPorGrade;
+    if (N < minimo) {
+      return {
+        grade: null,
+        motivo: `uma grade de ${N} peça(s) não comporta esta curva sem zerar um tamanho — o mínimo aqui é ${minimo}`,
+      };
+    }
+    return { grade: null, motivo: `o máximo é ${maximo} peças por grade` };
+  }
+
+  const { itens, participacoes } = normalizarCurva(curva);
+  const loteAlvo = temNumero(opcoes.loteAlvo) ? Number(opcoes.loteAlvo) : null;
+  return {
+    grade: {
+      ...montarGrade(entrada.unidades, N, itens, participacoes, loteAlvo),
+      equivaleA: entrada.equivaleA,
+    },
+    motivo: null,
   };
 }
 
@@ -310,4 +380,4 @@ function textoParaFaccao(grade) {
   return linhas.join('\n');
 }
 
-module.exports = { gradesDeCorte, textoParaFaccao };
+module.exports = { gradesDeCorte, gradeComTamanho, textoParaFaccao };

@@ -247,3 +247,111 @@
   .gc-tabela { font-size: 0.8rem; }
   .gc-tabela th, .gc-tabela td { padding: 7px 6px; }
 }
+
+/* ---------- tamanho de grade digitado à mão ---------- */
+
+.gc-manual {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--gc-linha);
+}
+
+.gc-manual-linha {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.gc-campo {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--gc-linha);
+  border-radius: 11px;
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+
+.gc-campo:focus-within { border-color: color-mix(in srgb, var(--gc-marca) 60%, transparent); }
+.gc-campo--recusado { border-color: color-mix(in srgb, #d14343 60%, transparent); }
+
+.gc-campo-passo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  border: none;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.gc-campo-passo:hover { background: color-mix(in srgb, var(--gc-marca) 18%, transparent); }
+
+.gc-campo-entrada {
+  width: 74px;
+  padding: 9px 6px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  -moz-appearance: textfield;
+}
+
+.gc-campo-entrada::-webkit-outer-spin-button,
+.gc-campo-entrada::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.gc-campo-entrada:focus { outline: none; }
+.gc-campo-entrada::placeholder { opacity: 0.35; font-weight: 600; }
+
+.gc-manual-unidade { font-size: 0.85rem; opacity: 0.7; }
+
+.gc-voltar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.gc-voltar:hover { opacity: 1; background: color-mix(in srgb, currentColor 7%, transparent); }
+
+.gc-manual-recusa {
+  margin: 12px 0 0;
+  font-size: 0.8rem;
+  color: #d14343;
+}
+
+.gc-nota-reducao {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.gc-nota-reducao svg { flex-shrink: 0; margin-top: 3px; opacity: 0.7; }
+
+@media (max-width: 640px) {
+  .gc-voltar { margin-left: 0; }
+}

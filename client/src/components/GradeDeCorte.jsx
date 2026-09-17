@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Scissors, Copy, Check, AlertTriangle } from 'lucide-react';
+import { Scissors, Copy, Check, AlertTriangle, Minus, Plus, RotateCcw } from 'lucide-react';
 import './GradeDeCorte.css';
 
 /**
  * Grade de corte — a sugestão de corte como proporção de enfesto.
  *
  * Recebe o bloco `gradeCorte` da rota /api/analises-estoque/curva-tamanho. Não
- * calcula grade nenhuma: só escolhe qual das grades já calculadas está
- * selecionada.
+ * calcula grade nenhuma: escolhe qual das grades já calculadas está
+ * selecionada, seja uma das sugeridas, seja o tamanho digitado à mão — todas
+ * saem do mesmo catálogo que o servidor mandou.
  */
 
 const pct = (fracao) => `${(fracao * 100).toLocaleString('pt-BR', {
@@ -19,6 +20,33 @@ const pp = (valor) => `${valor.toLocaleString('pt-BR', {
   minimumFractionDigits: 1,
   maximumFractionDigits: 1,
 })} p.p.`;
+
+/** Entrada compacta do catálogo → o mesmo formato das grades sugeridas. */
+function expandirDoCatalogo(entrada, modelo, loteAlvo) {
+  const N = entrada.pecasPorGrade;
+  const proporcao = modelo.map((p, i) => ({
+    tamanho: p.tamanho,
+    unidades: entrada.unidades[i],
+    participacaoGrade: entrada.unidades[i] / N,
+    participacaoReal: p.participacaoReal,
+    esgotado: p.esgotado,
+  }));
+  const repeticoes = loteAlvo > 0 ? Math.max(1, Math.round(loteAlvo / N)) : null;
+  const totalPecas = repeticoes === null ? null : repeticoes * N;
+  return {
+    pecasPorGrade: N,
+    proporcao,
+    rotulo: proporcao.filter((p) => p.unidades > 0).map((p) => p.unidades).join(' : '),
+    erroMaximoPP: entrada.erroMaximoPP,
+    equivaleA: entrada.equivaleA,
+    repeticoes,
+    totalPecas,
+    diferencaParaLote: totalPecas === null ? null : totalPecas - loteAlvo,
+    pecas: repeticoes === null
+      ? null
+      : proporcao.map((p) => ({ tamanho: p.tamanho, quantidade: p.unidades * repeticoes })),
+  };
+}
 
 function textoParaFaccao(grade) {
   const naGrade = grade.proporcao.filter((p) => p.unidades > 0);
@@ -71,6 +99,9 @@ function BotaoCopiar({ grade }) {
 
 export default function GradeDeCorte({ grade, loteAlvo }) {
   const [escolhida, setEscolhida] = useState(null);
+  const [manual, setManual] = useState('');
+
+  useEffect(() => { setEscolhida(null); setManual(''); }, [grade]);
 
   const opcoes = useMemo(() => {
     if (!grade?.aplicavel) return [];
@@ -79,9 +110,32 @@ export default function GradeDeCorte({ grade, loteAlvo }) {
 
   const indiceRecomendada = opcoes.length - 1;
   const indice = escolhida === null ? indiceRecomendada : Math.min(escolhida, indiceRecomendada);
-  const atual = opcoes[indice];
 
-  useEffect(() => { setEscolhida(null); }, [grade]);
+  const minimo = grade?.minimoPecasPorGrade ?? 1;
+  const maximo = grade?.maximoPecasPorGrade ?? 100;
+
+  // O campo manual sai do mesmo catálogo do servidor. Número fora da faixa não
+  // vira grade aproximada: vira recusa com o motivo escrito.
+  const { gradeManual, motivoManual } = useMemo(() => {
+    if (!grade?.aplicavel || manual === '') return { gradeManual: null, motivoManual: null };
+    const N = Number(manual);
+    if (!Number.isFinite(N) || N <= 0) {
+      return { gradeManual: null, motivoManual: 'informe quantas peças a grade tem' };
+    }
+    const entrada = (grade.catalogo || []).find((c) => c.pecasPorGrade === Math.round(N));
+    if (!entrada) {
+      return {
+        gradeManual: null,
+        motivoManual: Math.round(N) < minimo
+          ? `uma grade de ${Math.round(N)} peça(s) não comporta esta curva sem zerar um tamanho — o mínimo aqui é ${minimo}`
+          : `o máximo é ${maximo} peças por grade`,
+      };
+    }
+    return {
+      gradeManual: expandirDoCatalogo(entrada, grade.recomendada.proporcao, loteAlvo),
+      motivoManual: null,
+    };
+  }, [grade, manual, loteAlvo, minimo, maximo]);
 
   if (!grade) return null;
 
@@ -101,8 +155,15 @@ export default function GradeDeCorte({ grade, loteAlvo }) {
     );
   }
 
+  const atual = gradeManual || opcoes[indice];
   const naGrade = atual.proporcao.filter((p) => p.unidades > 0);
   const esgotados = naGrade.filter((p) => p.esgotado).map((p) => p.tamanho);
+
+  function passo(delta) {
+    const atualN = manual === '' ? atual.pecasPorGrade : Number(manual) || atual.pecasPorGrade;
+    const alvo = Math.min(maximo, Math.max(minimo, Math.round(atualN) + delta));
+    setManual(String(alvo));
+  }
 
   return (
     <>
@@ -135,6 +196,14 @@ export default function GradeDeCorte({ grade, loteAlvo }) {
           <BotaoCopiar grade={atual} />
         </div>
 
+        {atual.equivaleA && (
+          <p className="gc-nota-reducao">
+            <AlertTriangle size={13} /> Esta grade é a de {atual.equivaleA} peças
+            repetida {atual.pecasPorGrade / atual.equivaleA}×. Mesma proporção, o
+            dobro do colchão — só vale a pena se o enfesto pedir.
+          </p>
+        )}
+
         {opcoes.length > 1 && (
           <div className="gc-alternativas">
             <span className="gc-alternativas-titulo">Grades mais curtas</span>
@@ -143,8 +212,8 @@ export default function GradeDeCorte({ grade, loteAlvo }) {
                 <button
                   type="button"
                   key={op.pecasPorGrade}
-                  className={`gc-chip${i === indice ? ' gc-chip--ativo' : ''}`}
-                  onClick={() => setEscolhida(i)}
+                  className={`gc-chip${!gradeManual && i === indice ? ' gc-chip--ativo' : ''}`}
+                  onClick={() => { setEscolhida(i); setManual(''); }}
                 >
                   <span className="gc-chip-rotulo">{op.rotulo}</span>
                   <span className="gc-chip-detalhe">
@@ -159,6 +228,49 @@ export default function GradeDeCorte({ grade, loteAlvo }) {
             </p>
           </div>
         )}
+
+        <div className="gc-manual">
+          <span className="gc-alternativas-titulo">Ou o tamanho que o seu enfesto pede</span>
+          <div className="gc-manual-linha">
+            <div className={`gc-campo${motivoManual ? ' gc-campo--recusado' : ''}`}>
+              <button
+                type="button"
+                className="gc-campo-passo"
+                onClick={() => passo(-1)}
+                aria-label="Uma peça a menos por grade"
+              >
+                <Minus size={15} />
+              </button>
+              <input
+                type="number"
+                className="gc-campo-entrada"
+                inputMode="numeric"
+                min={minimo}
+                max={maximo}
+                placeholder={String(atual.pecasPorGrade)}
+                value={manual}
+                onChange={(e) => setManual(e.target.value)}
+              />
+              <button
+                type="button"
+                className="gc-campo-passo"
+                onClick={() => passo(1)}
+                aria-label="Uma peça a mais por grade"
+              >
+                <Plus size={15} />
+              </button>
+            </div>
+            <span className="gc-manual-unidade">peças por grade</span>
+            {gradeManual && (
+              <button type="button" className="gc-voltar" onClick={() => setManual('')}>
+                <RotateCcw size={13} /> voltar para a recomendada
+              </button>
+            )}
+          </div>
+          {motivoManual
+            ? <p className="gc-manual-recusa">{motivoManual}</p>
+            : <p className="gc-aviso-curta">De {minimo} a {maximo} peças. A proporção se ajusta ao número que você escolher.</p>}
+        </div>
 
         {(grade.foraDaGrade?.length > 0 || esgotados.length > 0) && (
           <ul className="gc-fora">
