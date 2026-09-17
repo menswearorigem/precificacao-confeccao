@@ -7,6 +7,7 @@ import {
   EstadoVazio, Skeleton, Select, Field, NumInput, IndicadorDestaque,
 } from '../components/ui';
 import { pct, formatQtd, numeroBr } from '../lib/format';
+import GradeDeCorte from '../components/GradeDeCorte';
 
 // Estoque › Curva de tamanho.
 //
@@ -197,6 +198,8 @@ export default function CurvaTamanhoPage() {
               </table>
             </div>
           </div>
+
+          <GradeDeCorte grade={dados.gradeCorte} loteAlvo={lote} />
 
           {dados.grade?.ok && (
             <div className="card">

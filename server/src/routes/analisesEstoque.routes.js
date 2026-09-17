@@ -15,6 +15,7 @@ const produtosRoutes = require('./produtos.routes');
 const { getCalcContext } = require('../lib/calcContext');
 const parado = require('../lib/estoqueParado');
 const curva = require('../lib/curvaTamanho');
+const { gradesDeCorte } = require('../lib/gradeCorte');
 
 const router = express.Router();
 
@@ -239,6 +240,18 @@ router.get('/curva-tamanho', async (req, res, next) => {
       return res.json({ ok: false, motivo: escolha.motivo, produto, meses, descartadas: escolha.descartadas });
     }
 
+    // Grade de corte (17/09/2026): a mesma curva, como proporção de enfesto
+    // (quantas vezes cada tamanho entra no risco) em vez de quantidade
+    // absoluta para o lote — ver server/src/lib/gradeCorte.js. Campo próprio
+    // (`gradeCorte`, não `grade`): a distribuição por lote abaixo já usa o
+    // nome `grade` e continua servindo a tabela "Grade para cortar N peças".
+    const curvaParaGrade = escolha.curva.itens.map((i) => ({
+      tamanho: i.tamanho,
+      vendidas: i.unidades,
+      participacao: i.participacao,
+      esgotado: i.esgotouNaJanela,
+    }));
+
     res.json({
       ok: true,
       produto,
@@ -246,6 +259,7 @@ router.get('/curva-tamanho', async (req, res, next) => {
       curva: escolha.curva,
       descartadas: escolha.descartadas,
       grade: lote ? curva.distribuirGrade(lote, escolha.curva.itens, { minimoPorTamanho: minimo }) : null,
+      gradeCorte: gradesDeCorte(curvaParaGrade, { loteAlvo: lote }),
       explicacao: 'A curva é a participação de cada tamanho na venda do período. Ela sobe de nível quando o histórico é curto demais: referência → categoria → geral, e a resposta diz de qual nível veio. A grade é distribuída pelo método do maior resto, que faz a soma fechar exatamente no lote.',
     });
   } catch (err) {

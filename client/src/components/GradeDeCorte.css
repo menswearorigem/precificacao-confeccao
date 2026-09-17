@@ -1,0 +1,249 @@
+/*
+ * Grade de corte.
+ *
+ * Todas as superfícies são derivadas de `currentColor`, então o bloco herda o
+ * tema da página em vez de fixar cinzas — funciona igual no claro e no escuro
+ * sem depender de qual seletor o sistema usa para o modo escuro. A única cor
+ * absoluta é a marca, sólida e saturada, com texto branco em cima.
+ */
+
+.gc-cartao {
+  --gc-marca: var(--cor-primaria, #a9550e);
+  --gc-marca-forte: var(--cor-primaria-escura, #8c4409);
+  --gc-linha: color-mix(in srgb, currentColor 14%, transparent);
+  --gc-fundo: color-mix(in srgb, currentColor 4%, transparent);
+
+  border: 1px solid var(--gc-linha);
+  border-radius: 14px;
+  padding: 20px 22px;
+  margin-bottom: 18px;
+  background: var(--gc-fundo);
+}
+
+.gc-titulo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.gc-titulo svg { color: var(--gc-marca); }
+
+.gc-legenda,
+.gc-motivo {
+  margin: 0 0 18px;
+  font-size: 0.875rem;
+  opacity: 0.72;
+  max-width: 62ch;
+}
+
+.gc-motivo { margin-bottom: 8px; }
+
+/* ---------- os quadrados ---------- */
+
+.gc-quadros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.gc-quadro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 72px;
+  padding: 12px 10px 14px;
+  border-radius: 12px;
+  background: var(--gc-marca);
+  color: #fff;
+  line-height: 1;
+}
+
+.gc-quadro-tamanho {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.gc-quadro-unidades {
+  font-size: 2rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.gc-total {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  padding: 12px 14px;
+  margin-left: 6px;
+  border-left: 1px solid var(--gc-linha);
+}
+
+.gc-total strong {
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.gc-total span { font-size: 0.75rem; opacity: 0.65; line-height: 1.25; }
+
+/* ---------- rodapé ---------- */
+
+.gc-rodape {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.gc-erro { font-size: 0.85rem; opacity: 0.78; }
+
+.gc-copiar {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: 1px solid var(--gc-linha);
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.gc-copiar:hover {
+  background: color-mix(in srgb, var(--gc-marca) 12%, transparent);
+  border-color: color-mix(in srgb, var(--gc-marca) 45%, transparent);
+}
+
+/* ---------- alternativas ---------- */
+
+.gc-alternativas {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--gc-linha);
+}
+
+.gc-alternativas-titulo {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.gc-chips { display: flex; flex-wrap: wrap; gap: 9px; }
+
+.gc-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+  padding: 9px 15px;
+  border: 1px solid var(--gc-linha);
+  border-radius: 11px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.gc-chip:hover { border-color: color-mix(in srgb, var(--gc-marca) 55%, transparent); }
+
+.gc-chip--ativo {
+  background: var(--gc-marca);
+  border-color: var(--gc-marca);
+  color: #fff;
+}
+
+.gc-chip-rotulo {
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.gc-chip-detalhe { font-size: 0.72rem; opacity: 0.75; }
+
+.gc-aviso-curta { margin: 12px 0 0; font-size: 0.78rem; opacity: 0.6; }
+
+/* ---------- avisos ---------- */
+
+.gc-fora {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  font-size: 0.8rem;
+}
+
+.gc-fora li { display: flex; align-items: flex-start; gap: 7px; line-height: 1.5; }
+.gc-fora li + li { margin-top: 6px; }
+.gc-fora svg { flex-shrink: 0; margin-top: 3px; opacity: 0.7; }
+
+/* ---------- tabela do lote ---------- */
+
+.gc-lote { margin: 0 0 14px; font-size: 0.95rem; font-weight: 500; }
+.gc-diferenca { opacity: 0.6; font-weight: 400; }
+
+.gc-tabela { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+
+.gc-tabela th {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--gc-linha);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  text-align: right;
+  opacity: 0.6;
+}
+
+.gc-tabela th:first-child { text-align: left; }
+
+.gc-tabela td {
+  padding: 9px 10px;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 8%, transparent);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.gc-td-tamanho { text-align: left; font-weight: 700; }
+.gc-td-fraca { opacity: 0.55; }
+
+.gc-tr-total td {
+  border-bottom: none;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+.gc-tr-total td:first-child { text-align: left; }
+
+@media (max-width: 640px) {
+  .gc-cartao { padding: 16px; }
+  .gc-quadro { min-width: 60px; padding: 10px 8px 12px; }
+  .gc-quadro-unidades { font-size: 1.6rem; }
+  .gc-total { margin-left: 0; padding-left: 10px; }
+  .gc-tabela { font-size: 0.8rem; }
+  .gc-tabela th, .gc-tabela td { padding: 7px 6px; }
+}
