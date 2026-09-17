@@ -1038,4 +1038,26 @@ export const verbetesMarketplace = [
       'Cada linha da lista **Pedidos que não entraram** mostra o erro categorizado (com uma explicação do que fazer) e o texto técnico original, além de quantas tentativas já houve. O botão **Buscar de novo** vai direto na API do marketplace pelo ID do pedido e tenta importar de novo — é o único caminho para os pedidos que já saíram da janela de dias (contada a partir da **data do pedido**, não da data da falha: um pedido antigo que só falhou hoje já pode estar fora da janela). **Encerrar** tira o pedido da lista sem importar — nada é apagado, fica registrado quem encerrou e quando.\n\nA seção recolhida "N pendências resolvidas" guarda o histórico de dias recentes: pedidos que voltaram sozinhos ("importado") ou foram encerrados por alguém ("encerrado por uma pessoa") — é aonde ir pra conferir se o que falhou ontem realmente voltou.',
     relacionados: ['mkt-saude-sincronizacao-o-que-e', 'mkt-saude-sincronizacao-conexoes-paradas'],
   },
+  {
+    id: 'mkt-conferencia-lista-do-dia',
+    modulo: 'marketplace',
+    tela: 'Conferência de Pedidos',
+    titulo: 'Conferir pedidos bipando a etiqueta (lista do dia)',
+    rota: '/marketplace/conferencia',
+    perguntas: [
+      'como confiro os pedidos',
+      'conferencia de pedidos',
+      'bipar etiqueta de envio',
+      'etiqueta nao abre o pedido',
+      'preciso cadastrar etiqueta',
+      'carregar lista de separacao',
+      'pdf do upseller na conferencia',
+      'lista do dia',
+      'pedido so na lista',
+      'caixa fecha sozinha',
+    ],
+    resposta:
+      'Comece o dia na aba **Lista do dia**: carregue o PDF da **Lista de Separação** do UpSeller (arrastando ou em **Escolher PDF**). Pronto — toda etiqueta da lista já abre a caixa, sem cadastrar nada.\n\nNa aba **Bipagem**, bipe a etiqueta de envio e depois cada peça. Quando a última peça certa é bipada, a caixa **fecha sozinha** e o campo fica pronto pra próxima etiqueta. Peça de outro pedido, a mais ou com código desconhecido dá som de erro e não conta.\n\nPedido que ainda não chegou ao sistema aparece como **só na lista** e é conferido pelos SKUs do PDF; quando ele chegar pela sincronização, a mesma etiqueta passa a abrir o pedido do sistema. Carregar a lista de novo não duplica nada.',
+    relacionados: ['mkt-pedidos-listar-filtrar'],
+  },
 ];

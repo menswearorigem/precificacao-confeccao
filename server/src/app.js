@@ -126,6 +126,7 @@ function createApp() {
   app.use('/api/financeiro', jsonGrande);
   app.use('/api/financeiro-nucleo', jsonGrande);
   app.use('/api/wik-import', jsonGrande);
+  app.use('/api/conferencia/lista', jsonGrande);
   app.use(express.json({ limit: '1mb' }));
 
   // Importação em lote da grade/estado das OPs do Wik — PÚBLICA e protegida por

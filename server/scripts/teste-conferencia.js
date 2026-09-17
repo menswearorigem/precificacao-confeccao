@@ -188,7 +188,7 @@ async function main() {
 
     const inexistente = await bruno('/api/conferencia/abrir/NAOEXISTE123');
     ok('código que não é de nenhum pedido dá 404 com explicação', inexistente.status === 404
-      && /vincular esta etiqueta/i.test(inexistente.dados.error));
+      && /lista do dia/i.test(inexistente.dados.error));
 
     // -----------------------------------------------------------------
     secao('3. Bipar peça — os quatro desfechos');

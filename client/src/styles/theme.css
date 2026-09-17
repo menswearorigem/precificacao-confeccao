@@ -11790,3 +11790,43 @@ table.grade-matriz { width: auto; min-width: 0; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .conferencia-scanner-linha:focus-within .conferencia-scanner-icone { color: #1b120a; }
 }
+
+/* ------------------------------------------------------------------------
+   Conferência de Pedidos — Lista do dia (17/09/2026)
+   ------------------------------------------------------------------------ */
+.conferencia-lista-faixa {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 10px; padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--warning-ring);
+  background: var(--warning-bg); color: var(--warning);
+  font-size: 13px; font-weight: 600;
+}
+.conferencia-lista-faixa.ok { border-color: var(--success-ring); background: var(--success-bg); color: var(--success); }
+.conferencia-lista-faixa svg { flex-shrink: 0; }
+.conferencia-lista-faixa .btn { margin-left: auto; }
+
+.conferencia-upload {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  border: 2px dashed var(--border);
+  margin-bottom: 12px;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+.conferencia-upload.arrastando { border-color: var(--success); background: var(--success-bg); }
+.conferencia-upload-icone {
+  width: 48px; height: 48px; border-radius: 12px; flex-shrink: 0;
+  display: grid; place-items: center;
+  background: linear-gradient(135deg, #e53935, #ff7043); color: #fff;
+}
+.conferencia-upload-texto { flex: 1 1 240px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.conferencia-upload-texto strong { font-size: 15px; color: var(--ink); }
+.conferencia-upload-texto span { font-size: 13px; color: var(--ink-soft); }
+.conferencia-upload-acoes { display: flex; gap: 8px; flex-wrap: wrap; }
+.conferencia-upload-colar { flex: 1 1 100%; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.conferencia-upload-colar textarea { width: 100%; font-family: inherit; font-size: 13px; }
+
+@media (max-width: 640px) {
+  .conferencia-lista-faixa .btn { margin-left: 0; width: 100%; justify-content: center; }
+  .conferencia-upload-acoes { width: 100%; }
+  .conferencia-upload-acoes .btn { flex: 1; justify-content: center; }
+}

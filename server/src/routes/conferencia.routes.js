@@ -10,14 +10,21 @@
 // `0047_conferencia_pedidos.sql` pras três decisões de modelagem.
 
 const express = require('express');
+const multer = require('multer');
 const pool = require('../db/pool');
 const { hojeEmBrasilia } = require('../lib/dataBrasil');
 const { registrar } = require('../lib/auditoria');
 const {
   acharPedidoPorCodigo, montarEstado, avaliarLeitura, carregarItensDoPedido,
+  gravarEtiquetasNoPedido, acharNaLista, resumoDaLista, carregarItensDaLista,
+  montarEstadoLista, avaliarLeituraLista,
 } = require('../lib/conferenciaPedidos');
+const { extrairTextoPdf, parseListaSeparacao } = require('../lib/listaSeparacaoParser');
+const { normalizarComparacao, partirSkuKit } = require('../lib/marketplaceSync');
+const { refCanonica } = require('../lib/conferenciaEquivalencias');
 
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 // Resumo do pedido pra tela: o suficiente pra pessoa saber que é a caixa
 // certa, sem trazer valor, custo ou margem (quem confere não precisa disso).
@@ -44,10 +51,64 @@ async function carregarConcluida(client, pedidoId) {
   const { rows } = await client.query(
     `SELECT cp.*, u.nome AS usuario_nome
        FROM conferencias_pedido cp LEFT JOIN usuarios u ON u.id = cp.usuario_id
-      WHERE cp.pedido_id = $1 AND cp.situacao = 'concluida' LIMIT 1`,
+      WHERE cp.situacao = 'concluida'
+        AND (cp.pedido_id = $1
+             -- conferido pela LISTA antes de o pedido chegar ao sistema
+             OR cp.lista_pedido_id IN (
+               SELECT l.id FROM conferencia_lista_pedidos l
+                WHERE l.pedido_id = $1
+                   OR l.pedido_plataforma = (SELECT origem_pedido_id FROM pedidos_venda WHERE id = $1)
+             ))
+      ORDER BY cp.concluida_em DESC LIMIT 1`,
     [pedidoId]
   );
   return rows[0] || null;
+}
+
+async function carregarLinhaLista(client, listaId) {
+  const { rows } = await client.query('SELECT * FROM conferencia_lista_pedidos WHERE id = $1', [listaId]);
+  return rows[0] || null;
+}
+
+async function carregarConcluidaLista(client, listaId) {
+  const { rows } = await client.query(
+    `SELECT cp.*, u.nome AS usuario_nome
+       FROM conferencias_pedido cp LEFT JOIN usuarios u ON u.id = cp.usuario_id
+      WHERE cp.lista_pedido_id = $1 AND cp.situacao = 'concluida' LIMIT 1`,
+    [listaId]
+  );
+  return rows[0] || null;
+}
+
+async function carregarEmAndamentoLista(client, listaId) {
+  const { rows } = await client.query(
+    `SELECT cp.*, u.nome AS usuario_nome
+       FROM conferencias_pedido cp LEFT JOIN usuarios u ON u.id = cp.usuario_id
+      WHERE cp.lista_pedido_id = $1 AND cp.situacao = 'em_andamento' LIMIT 1`,
+    [listaId]
+  );
+  return rows[0] || null;
+}
+
+// Uma conferência é de um pedido do sistema OU de um pedido que só existe na
+// lista do dia (migration 0080). Tudo que varia entre os dois passa por aqui.
+async function carregarAlvo(client, conferencia) {
+  if (conferencia.pedido_id) {
+    return { tipo: 'pedido', pedido: await carregarPedidoResumo(client, conferencia.pedido_id) };
+  }
+  const linha = await carregarLinhaLista(client, conferencia.lista_pedido_id);
+  return { tipo: 'lista', linha, pedido: resumoDaLista(linha) };
+}
+
+function estadoDoAlvo(client, alvo, conferencia) {
+  return alvo.tipo === 'pedido'
+    ? montarEstado(client, alvo.pedido, conferencia)
+    : montarEstadoLista(client, alvo.linha, conferencia);
+}
+
+function identificacaoDoAlvo(alvo) {
+  if (alvo.tipo === 'pedido') return alvo.pedido.origem_pedido_id || `#${alvo.pedido.numero}`;
+  return `${alvo.pedido.origem_pedido_id} (só na lista do dia)`;
 }
 
 async function carregarEmAndamento(client, pedidoId) {
@@ -137,13 +198,42 @@ router.get('/fila', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // Abrir um pedido a partir do que foi bipado
 // ---------------------------------------------------------------------------
+// Procura primeiro no sistema (etiqueta, número, pacote, número interno) e,
+// não achando, na LISTA DO DIA carregada do PDF do UpSeller. Pedido da lista
+// que existe no sistema abre pelo sistema; o que ainda não existe abre pela
+// própria lista.
+function msgJaConferido(concluida) {
+  const quando = new Date(concluida.concluida_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  return `Este pedido JÁ FOI CONFERIDO em ${quando}${concluida.usuario_nome ? ` por ${concluida.usuario_nome}` : ''}.`;
+}
+
 router.get('/abrir/:codigo', async (req, res, next) => {
   const client = await pool.connect();
   try {
-    const achado = await acharPedidoPorCodigo(client, req.params.codigo);
+    let achado = await acharPedidoPorCodigo(client, req.params.codigo);
+    let daLista = null;
+    if (!achado) {
+      const naLista = await acharNaLista(client, req.params.codigo);
+      if (naLista?.ambiguo) {
+        return res.status(409).json({
+          error: `Esse código aparece em ${naLista.quantidade} pedidos da lista. Bipe a etiqueta de envio pra não conferir a caixa errada.`,
+        });
+      }
+      if (naLista) {
+        daLista = naLista.linha;
+        if (daLista.pedido_id) {
+          const pedido = await carregarPedidoResumo(client, daLista.pedido_id);
+          achado = { pedido, via: naLista.via };
+          daLista = null;
+        } else {
+          achado = { via: naLista.via };
+        }
+      }
+    }
     if (!achado) {
       return res.status(404).json({
-        error: 'Não achei nenhum pedido com esse código. Se for uma etiqueta nova, abra o pedido pelo número e depois use "Vincular esta etiqueta" — da próxima vez ela já abre bipando.',
+        error: 'Não achei esse código nem nos pedidos do sistema nem na lista do dia. Carregue o PDF da Lista de Separação na aba “Lista do dia” — ou abra pelo número do pedido.',
+        naoEncontrado: true,
       });
     }
     if (achado.ambiguo) {
@@ -152,12 +242,30 @@ router.get('/abrir/:codigo', async (req, res, next) => {
       });
     }
 
+    // Pedido que só existe na lista
+    if (daLista) {
+      const concluida = await carregarConcluidaLista(client, daLista.id);
+      if (concluida) {
+        return res.status(409).json({ error: msgJaConferido(concluida), jaConferido: true });
+      }
+      const emAndamento = await carregarEmAndamentoLista(client, daLista.id);
+      const estado = await montarEstadoLista(client, daLista, emAndamento);
+      return res.json({
+        via: achado.via,
+        pedido: resumoDaLista(daLista),
+        conferencia: emAndamento
+          ? { id: emAndamento.id, usuarioNome: emAndamento.usuario_nome, iniciadaEm: emAndamento.iniciada_em, houveDivergencia: emAndamento.houve_divergencia }
+          : null,
+        leituras: emAndamento ? await carregarLeituras(client, emAndamento.id) : [],
+        ...estado,
+      });
+    }
+
     const pedido = achado.pedido;
     const concluida = await carregarConcluida(client, pedido.id);
     if (concluida) {
-      const quando = new Date(concluida.concluida_em).toLocaleString('pt-BR');
       return res.status(409).json({
-        error: `Este pedido JÁ FOI CONFERIDO em ${quando}${concluida.usuario_nome ? ` por ${concluida.usuario_nome}` : ''}.`,
+        error: msgJaConferido(concluida),
         jaConferido: true,
         pedido: { id: pedido.id, numero: pedido.numero, origem_pedido_id: pedido.origem_pedido_id },
       });
@@ -200,8 +308,7 @@ router.post('/pedidos/:pedidoId/iniciar', async (req, res, next) => {
     const concluida = await carregarConcluida(client, req.params.pedidoId);
     if (concluida) {
       await client.query('ROLLBACK');
-      const quando = new Date(concluida.concluida_em).toLocaleString('pt-BR');
-      return res.status(409).json({ error: `Este pedido já foi conferido em ${quando}.`, jaConferido: true });
+      return res.status(409).json({ error: msgJaConferido(concluida), jaConferido: true });
     }
 
     let conferencia = await carregarEmAndamento(client, req.params.pedidoId);
@@ -221,17 +328,58 @@ router.post('/pedidos/:pedidoId/iniciar', async (req, res, next) => {
     }
     await client.query('COMMIT');
 
-    const pedido = await carregarPedidoResumo(client, req.params.pedidoId);
-    const estado = await montarEstado(client, pedido, conferencia);
-    res.status(201).json({
-      pedido: { ...pedido, codigos_rastreio: pedido.codigos_rastreio || [] },
-      conferencia: { id: conferencia.id, usuarioNome: conferencia.usuario_nome, iniciadaEm: conferencia.iniciada_em, houveDivergencia: conferencia.houve_divergencia },
-      leituras: await carregarLeituras(client, conferencia.id),
-      ...estado,
-    });
+    await responderEstado(client, res.status(201), conferencia);
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     // Corrida perdida pro índice único: a outra bancada criou primeiro.
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Outra estação abriu este pedido agora mesmo. Atualize a tela.' });
+    }
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// Mesma coisa para um pedido que só existe na lista do dia.
+router.post('/lista/:listaId/iniciar', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: travados } = await client.query('SELECT * FROM conferencia_lista_pedidos WHERE id = $1 FOR UPDATE', [req.params.listaId]);
+    if (travados.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Pedido da lista não encontrado.' });
+    }
+    const linha = travados[0];
+    if (linha.pedido_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Este pedido já chegou ao sistema — bipe a etiqueta de novo pra abrir pelo pedido.' });
+    }
+    const concluida = await carregarConcluidaLista(client, linha.id);
+    if (concluida) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: msgJaConferido(concluida), jaConferido: true });
+    }
+    let conferencia = await carregarEmAndamentoLista(client, linha.id);
+    if (!conferencia) {
+      const itens = await carregarItensDaLista(client, linha);
+      const esperadas = itens.reduce((s, i) => s + i.esperado, 0);
+      if (esperadas === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'A lista não trouxe nenhum item pra este pedido. Confira no painel do UpSeller.' });
+      }
+      const { rows } = await client.query(
+        `INSERT INTO conferencias_pedido (lista_pedido_id, usuario_id, pecas_esperadas)
+         VALUES ($1, $2, $3) RETURNING *`,
+        [linha.id, req.user.id, esperadas]
+      );
+      conferencia = { ...rows[0], usuario_nome: req.user.nome };
+    }
+    await client.query('COMMIT');
+    await responderEstado(client, res.status(201), conferencia);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     if (err.code === '23505') {
       return res.status(409).json({ error: 'Outra estação abriu este pedido agora mesmo. Atualize a tela.' });
     }
@@ -251,10 +399,10 @@ async function carregarConferenciaAberta(client, conferenciaId) {
 }
 
 async function responderEstado(client, res, conferencia, extra = {}) {
-  const pedido = await carregarPedidoResumo(client, conferencia.pedido_id);
-  const estado = await montarEstado(client, pedido, conferencia);
+  const alvo = await carregarAlvo(client, conferencia);
+  const estado = await estadoDoAlvo(client, alvo, conferencia);
   res.json({
-    pedido: { ...pedido, codigos_rastreio: pedido.codigos_rastreio || [] },
+    pedido: { ...alvo.pedido, codigos_rastreio: alvo.pedido.codigos_rastreio || [] },
     conferencia: {
       id: conferencia.id,
       usuarioNome: conferencia.usuario_nome,
@@ -266,6 +414,57 @@ async function responderEstado(client, res, conferencia, extra = {}) {
     ...estado,
     ...extra,
   });
+}
+
+// Fecha a conferência. Usado pelo "Fechar caixa" e pelo fechamento automático
+// da caixa completa. Devolve null quando outra estação fechou antes.
+async function fecharConferencia(client, req, conferencia, alvo, estado, observacao) {
+  await client.query('BEGIN');
+  const { rows } = await client.query(
+    `UPDATE conferencias_pedido
+        SET situacao = 'concluida',
+            concluida_em = now(),
+            houve_divergencia = houve_divergencia OR $2,
+            observacao = COALESCE($3, observacao)
+      WHERE id = $1 AND situacao = 'em_andamento'
+      RETURNING *`,
+    [conferencia.id, !estado.completo, observacao]
+  );
+  if (rows.length === 0) {
+    await client.query('ROLLBACK');
+    return null;
+  }
+  await client.query('COMMIT');
+
+  await registrar(req, {
+    acao: 'conferiu',
+    entidade: alvo.tipo === 'pedido' ? 'pedido' : 'conferencia_lista',
+    entidadeId: alvo.tipo === 'pedido' ? conferencia.pedido_id : conferencia.lista_pedido_id,
+    descricao: `Conferiu o pedido ${identificacaoDoAlvo(alvo)}: ${estado.conferidoTotal} de ${estado.esperadoTotal} peça(s)${rows[0].houve_divergencia ? ' — COM divergência' : ' — sem divergência'}.${observacao ? ` Motivo: ${observacao}` : ''}`,
+  });
+  return rows[0];
+}
+
+// Depois de uma leitura que conta: se a tela pediu (`fecharAoCompletar`) e a
+// caixa ficou completa, fecha na hora — como o site antigo fazia. A bancada
+// não precisa clicar em nada entre uma caixa e outra.
+async function responderLeitura(client, req, res, conferenciaId, leitura) {
+  const atualizada = await carregarConferenciaAberta(client, conferenciaId);
+  if (req.body?.fecharAoCompletar && atualizada.situacao === 'em_andamento') {
+    const alvo = await carregarAlvo(client, atualizada);
+    const estado = await estadoDoAlvo(client, alvo, atualizada);
+    if (estado.completo) {
+      const fechada = await fecharConferencia(client, req, atualizada, alvo, estado, null);
+      if (fechada) {
+        return responderEstado(client, res, { ...fechada, usuario_nome: atualizada.usuario_nome }, {
+          leitura,
+          fechadaAutomaticamente: true,
+          houveDivergencia: fechada.houve_divergencia,
+        });
+      }
+    }
+  }
+  return responderEstado(client, res, atualizada, { leitura });
 }
 
 // ---------------------------------------------------------------------------
@@ -286,7 +485,7 @@ router.post('/:id/leitura', async (req, res, next) => {
       return res.status(409).json({ error: 'Esta conferência já foi encerrada.' });
     }
 
-    const pedido = await carregarPedidoResumo(client, conferencia.pedido_id);
+    const alvo = await carregarAlvo(client, conferencia);
 
     // Avaliar e gravar numa transação só, com a conferência travada: duas
     // pessoas podem estar na MESMA caixa (uma bipa, a outra separa). Sem a
@@ -295,17 +494,21 @@ router.post('/:id/leitura', async (req, res, next) => {
     // com peça a mais sem ninguém ver.
     await client.query('BEGIN');
     await client.query('SELECT id FROM conferencias_pedido WHERE id = $1 FOR UPDATE', [conferencia.id]);
-    const avaliacao = await avaliarLeitura(client, pedido, conferencia, codigo);
+    const avaliacao = alvo.tipo === 'pedido'
+      ? await avaliarLeitura(client, alvo.pedido, conferencia, codigo)
+      : await avaliarLeituraLista(client, alvo.linha, conferencia, codigo);
     await client.query(
-      `INSERT INTO conferencia_leituras (conferencia_id, codigo, resultado, pedido_item_id, variante_id, usuario_id)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [conferencia.id, codigo, avaliacao.resultado, avaliacao.itemId || null, avaliacao.peca?.varianteId || null, req.user.id]
+      `INSERT INTO conferencia_leituras (conferencia_id, codigo, resultado, pedido_item_id, lista_item_idx, variante_id, usuario_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [conferencia.id, codigo, avaliacao.resultado, avaliacao.itemId || null, avaliacao.listaItemIdx || null,
+        avaliacao.peca?.varianteId || null, req.user.id]
     );
     await client.query('COMMIT');
 
-    const atualizada = await carregarConferenciaAberta(client, conferencia.id);
-    await responderEstado(client, res, atualizada, {
-      leitura: { resultado: avaliacao.resultado, mensagem: avaliacao.mensagem, itemId: avaliacao.itemId || null },
+    await responderLeitura(client, req, res, conferencia.id, {
+      resultado: avaliacao.resultado,
+      mensagem: avaliacao.mensagem,
+      itemId: avaliacao.itemId || avaliacao.listaItemIdx || null,
     });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -324,7 +527,7 @@ router.post('/:id/confirmar-manual', async (req, res, next) => {
   const client = await pool.connect();
   try {
     const itemId = Number(req.body?.pedido_item_id);
-    if (!itemId) return res.status(400).json({ error: 'Diga qual item está sendo confirmado.' });
+    if (!Number.isInteger(itemId) || itemId <= 0) return res.status(400).json({ error: 'Diga qual item está sendo confirmado.' });
 
     const conferencia = await carregarConferenciaAberta(client, req.params.id);
     if (!conferencia) return res.status(404).json({ error: 'Conferência não encontrada.' });
@@ -332,22 +535,27 @@ router.post('/:id/confirmar-manual', async (req, res, next) => {
       return res.status(409).json({ error: 'Esta conferência já foi encerrada.' });
     }
 
-    const itens = await carregarItensDoPedido(client, conferencia.pedido_id);
-    const item = itens.find((i) => i.id === itemId);
+    const alvo = await carregarAlvo(client, conferencia);
+    const estado = await estadoDoAlvo(client, alvo, conferencia);
+    const item = estado.itens.find((i) => i.id === itemId);
     if (!item) return res.status(400).json({ error: 'Esse item não é deste pedido.' });
+    if (item.falta <= 0) return res.status(400).json({ error: 'Esse item já está completo.' });
 
     await client.query('BEGIN');
     await client.query(
-      `INSERT INTO conferencia_leituras (conferencia_id, codigo, resultado, pedido_item_id, usuario_id)
-       VALUES ($1, $2, 'confirmado_manual', $3, $4)`,
-      [conferencia.id, '(confirmado no olho)', itemId, req.user.id]
+      `INSERT INTO conferencia_leituras (conferencia_id, codigo, resultado, pedido_item_id, lista_item_idx, usuario_id)
+       VALUES ($1, $2, 'confirmado_manual', $3, $4, $5)`,
+      [conferencia.id, '(confirmado no olho)',
+        alvo.tipo === 'pedido' ? itemId : null,
+        alvo.tipo === 'lista' ? itemId : null,
+        req.user.id]
     );
     await client.query('UPDATE conferencias_pedido SET houve_divergencia = TRUE WHERE id = $1', [conferencia.id]);
     await client.query('COMMIT');
 
-    const atualizada = await carregarConferenciaAberta(client, conferencia.id);
-    await responderEstado(client, res, atualizada, {
-      leitura: { resultado: 'confirmado_manual', mensagem: 'Peça confirmada no olho — o pedido fica marcado como divergente.' },
+    await responderLeitura(client, req, res, conferencia.id, {
+      resultado: 'confirmado_manual',
+      mensagem: 'Peça confirmada no olho — o pedido fica marcado como divergente.',
     });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -406,8 +614,8 @@ router.post('/:id/concluir', async (req, res, next) => {
       return res.status(409).json({ error: 'Esta conferência já foi concluída.' });
     }
 
-    const pedido = await carregarPedidoResumo(client, conferencia.pedido_id);
-    const estado = await montarEstado(client, pedido, conferencia);
+    const alvo = await carregarAlvo(client, conferencia);
+    const estado = await estadoDoAlvo(client, alvo, conferencia);
     const forcar = Boolean(req.body?.forcar);
 
     if (!estado.completo && !forcar) {
@@ -423,34 +631,13 @@ router.post('/:id/concluir', async (req, res, next) => {
       return res.status(400).json({ error: 'Pra fechar uma caixa incompleta, escreva o motivo.' });
     }
 
-    await client.query('BEGIN');
-    const { rows } = await client.query(
-      `UPDATE conferencias_pedido
-          SET situacao = 'concluida',
-              concluida_em = now(),
-              houve_divergencia = houve_divergencia OR $2,
-              observacao = COALESCE($3, observacao)
-        WHERE id = $1 AND situacao = 'em_andamento'
-        RETURNING *`,
-      [conferencia.id, !estado.completo, observacao]
-    );
-    if (rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'Outra estação fechou este pedido agora mesmo.' });
-    }
-    await client.query('COMMIT');
-
-    await registrar(req, {
-      acao: 'conferiu',
-      entidade: 'pedido',
-      entidadeId: conferencia.pedido_id,
-      descricao: `Conferiu o pedido ${pedido.origem_pedido_id || `#${pedido.numero}`}: ${estado.conferidoTotal} de ${estado.esperadoTotal} peça(s)${rows[0].houve_divergencia ? ' — COM divergência' : ' — sem divergência'}.${observacao ? ` Motivo: ${observacao}` : ''}`,
-    });
+    const fechada = await fecharConferencia(client, req, conferencia, alvo, estado, observacao);
+    if (!fechada) return res.status(409).json({ error: 'Outra estação fechou este pedido agora mesmo.' });
 
     res.json({
       ok: true,
       completo: estado.completo,
-      houveDivergencia: rows[0].houve_divergencia,
+      houveDivergencia: fechada.houve_divergencia,
       conferidoTotal: estado.conferidoTotal,
       esperadoTotal: estado.esperadoTotal,
     });
@@ -472,6 +659,211 @@ router.post('/:id/abandonar', async (req, res, next) => {
     );
     if (rowCount === 0) return res.status(409).json({ error: 'Esta conferência não está aberta.' });
     res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// LISTA DO DIA — carregar o PDF da Lista de Separação do UpSeller
+// ---------------------------------------------------------------------------
+// Aceita o PDF (campo `file`) ou o texto já extraído (`texto`). Não pede
+// confirmação: carregar a lista não mexe em venda, estoque nem valor — só
+// grava etiquetas e o que vai em cada caixa. Carregar a mesma lista de novo
+// não duplica nada (chave: o "UP..." de cada pedido).
+router.post('/lista', upload.single('file'), async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    let texto = '';
+    let arquivoNome = null;
+    if (req.file) {
+      arquivoNome = req.file.originalname || null;
+      const ehPdf = /pdf/i.test(req.file.mimetype || '') || /\.pdf$/i.test(arquivoNome || '');
+      if (ehPdf) {
+        try {
+          texto = await extrairTextoPdf(req.file.buffer);
+        } catch (e) {
+          return res.status(400).json({ error: `Não consegui ler esse PDF (${e.message}). Baixe de novo a Lista de Separação no UpSeller.` });
+        }
+      } else {
+        texto = req.file.buffer.toString('utf-8');
+      }
+    } else {
+      texto = String(req.body?.texto || '');
+    }
+    if (!texto.trim()) return res.status(400).json({ error: 'Envie o PDF da Lista de Separação (ou cole o texto dele).' });
+
+    // Referências conhecidas: só servem pra limpar texto grudado no SKU.
+    const { rows: refs } = await client.query(
+      `SELECT referencia FROM produtos UNION SELECT referencia FROM estoque_ean_mapeamento`
+    );
+    // Guarda também a forma canônica (MB6387 → MM6387), pra equivalência
+    // permanente valer na leitura do PDF.
+    const conhecidas = new Set();
+    refs.forEach((r) => {
+      const n = normalizarComparacao(r.referencia);
+      if (!n) return;
+      conhecidas.add(n);
+      conhecidas.add(refCanonica(n));
+    });
+
+    const pedidos = parseListaSeparacao(texto, conhecidas);
+    if (pedidos.length === 0) {
+      return res.status(400).json({
+        error: 'Não encontrei nenhum pedido nesse arquivo. Ele precisa ser a "Lista de Separação" do UpSeller (cada pedido começa com o código UP…).',
+      });
+    }
+
+    // Todos os pedidos do sistema que batem com algum identificador da lista,
+    // numa consulta só.
+    const todosCandidatos = [...new Set(pedidos.flatMap((p) => p.candidatos))];
+    const { rows: doSistema } = todosCandidatos.length
+      ? await client.query(
+        `SELECT id, origem_pedido_id, pack_id_marketplace FROM pedidos_venda
+          WHERE situacao <> 'cancelado'
+            AND (origem_pedido_id = ANY($1) OR pack_id_marketplace = ANY($1))`,
+        [todosCandidatos]
+      )
+      : { rows: [] };
+
+    const resumo = {
+      arquivo: arquivoNome,
+      total: pedidos.length,
+      noSistema: 0,
+      soNaLista: 0,
+      semEtiqueta: 0,
+      semItens: 0,
+      itensNaoReconhecidos: 0,
+      jaConferidos: 0,
+      etiquetasGravadas: 0,
+      conflitos: [],
+    };
+
+    await client.query('BEGIN');
+    for (const p of pedidos) {
+      const ids = new Set(
+        doSistema
+          .filter((d) => p.candidatos.includes(d.origem_pedido_id) || p.candidatos.includes(d.pack_id_marketplace))
+          .map((d) => d.id)
+      );
+      const pedidoId = ids.size === 1 ? [...ids][0] : null;
+
+      // eslint-disable-next-line no-await-in-loop
+      const { rows: existentes } = await client.query(
+        `SELECT l.id, l.pedido_id,
+                EXISTS (SELECT 1 FROM conferencias_pedido cp WHERE cp.lista_pedido_id = l.id AND cp.situacao <> 'abandonada') AS tem_conferencia
+           FROM conferencia_lista_pedidos l WHERE l.up_id = $1`,
+        [p.upId]
+      );
+      const existente = existentes[0];
+      let pedidoFinal = pedidoId;
+      if (existente) {
+        // Já conferido/em conferência pela lista: não troca o trilho nem os itens.
+        if (existente.tem_conferencia) pedidoFinal = existente.pedido_id;
+        else pedidoFinal = pedidoId || existente.pedido_id;
+        // eslint-disable-next-line no-await-in-loop
+        await client.query(
+          `UPDATE conferencia_lista_pedidos
+              SET pedido_plataforma = COALESCE($2, pedido_plataforma),
+                  ids_candidatos = (SELECT ARRAY(SELECT DISTINCT unnest(ids_candidatos || $3::text[]))),
+                  codigos_rastreio = (SELECT ARRAY(SELECT DISTINCT unnest(codigos_rastreio || $4::text[]))),
+                  itens = CASE WHEN $5 THEN itens ELSE $6::jsonb END,
+                  pedido_id = $7,
+                  arquivo_nome = $8,
+                  carregado_por = $9,
+                  carregado_em = now()
+            WHERE id = $1`,
+          [existente.id, p.pedidoPlataforma, p.candidatos, p.rastreios, existente.tem_conferencia,
+            JSON.stringify(p.itens), pedidoFinal, arquivoNome, req.user.id]
+        );
+      } else {
+        // eslint-disable-next-line no-await-in-loop
+        await client.query(
+          `INSERT INTO conferencia_lista_pedidos
+             (up_id, pedido_plataforma, ids_candidatos, codigos_rastreio, itens, pedido_id, arquivo_nome, carregado_por)
+           VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)`,
+          [p.upId, p.pedidoPlataforma, p.candidatos, p.rastreios, JSON.stringify(p.itens), pedidoId, arquivoNome, req.user.id]
+        );
+      }
+
+      if (pedidoFinal) {
+        resumo.noSistema += 1;
+        // eslint-disable-next-line no-await-in-loop
+        const r = await gravarEtiquetasNoPedido(client, pedidoFinal, p.rastreios);
+        resumo.etiquetasGravadas += r.gravadas;
+        r.conflitos.forEach((c) => resumo.conflitos.push({ ...c, lista: p.pedidoPlataforma || p.upId }));
+      } else {
+        resumo.soNaLista += 1;
+      }
+      if (p.rastreios.length === 0) resumo.semEtiqueta += 1;
+      if (p.itens.length === 0) resumo.semItens += 1;
+      resumo.itensNaoReconhecidos += p.itens.filter((i) => !i.reconhecido).length;
+    }
+    await client.query('COMMIT');
+
+    await registrar(req, {
+      acao: 'importou',
+      entidade: 'conferencia_lista',
+      descricao: `Carregou a lista do dia${arquivoNome ? ` (${arquivoNome})` : ''}: ${resumo.total} pedido(s), ${resumo.noSistema} no sistema, ${resumo.soNaLista} só na lista.`,
+    });
+
+    res.status(201).json(resumo);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// Os pedidos da lista carregados num dia, com o estado da conferência.
+router.get('/lista', async (req, res, next) => {
+  try {
+    const data = req.query.data || hojeEmBrasilia();
+    const { rows } = await pool.query(
+      `SELECT l.id, l.up_id, l.pedido_plataforma, l.codigos_rastreio, l.itens, l.pedido_id,
+              l.arquivo_nome, l.carregado_em,
+              pv.numero, pv.origem_marketplace, pv.origem_pedido_id,
+              c.nome AS cliente_nome, im.nome AS loja_nome,
+              cf.situacao AS conf_situacao, cf.houve_divergencia AS conf_divergencia,
+              cf.concluida_em AS conf_concluida_em, cf.usuario_nome AS conf_usuario
+         FROM conferencia_lista_pedidos l
+         LEFT JOIN pedidos_venda pv ON pv.id = l.pedido_id
+         LEFT JOIN clientes c ON c.id = pv.cliente_id
+         LEFT JOIN integracoes_marketplace im ON im.id = pv.origem_integracao_id
+         LEFT JOIN LATERAL (
+           SELECT cp.situacao, cp.houve_divergencia, cp.concluida_em, u.nome AS usuario_nome
+             FROM conferencias_pedido cp LEFT JOIN usuarios u ON u.id = cp.usuario_id
+            WHERE (cp.lista_pedido_id = l.id OR (l.pedido_id IS NOT NULL AND cp.pedido_id = l.pedido_id))
+              AND cp.situacao <> 'abandonada'
+            ORDER BY CASE cp.situacao WHEN 'concluida' THEN 0 ELSE 1 END, cp.id DESC
+            LIMIT 1
+         ) cf ON TRUE
+        WHERE (l.carregado_em AT TIME ZONE 'America/Sao_Paulo')::date = $1
+        ORDER BY l.id`,
+      [data]
+    );
+    res.json({
+      data,
+      pedidos: rows.map((r) => ({
+        id: r.id,
+        upId: r.up_id,
+        pedidoPlataforma: r.pedido_plataforma,
+        codigosRastreio: r.codigos_rastreio || [],
+        // em PEÇAS: um kit de 3 conta 3
+        pecas: (r.itens || []).reduce((s, i) => s + (Number(i.quantidade) || 1) * (partirSkuKit(i.sku)?.quantidade || 1), 0),
+        itens: r.itens || [],
+        noSistema: Boolean(r.pedido_id),
+        pedido: r.pedido_id
+          ? { id: r.pedido_id, numero: r.numero, origem_marketplace: r.origem_marketplace, origem_pedido_id: r.origem_pedido_id, cliente_nome: r.cliente_nome, loja_nome: r.loja_nome }
+          : null,
+        arquivo: r.arquivo_nome,
+        carregadoEm: r.carregado_em,
+        conferencia: r.conf_situacao
+          ? { situacao: r.conf_situacao, houveDivergencia: r.conf_divergencia, concluidaEm: r.conf_concluida_em, usuarioNome: r.conf_usuario }
+          : null,
+      })),
+    });
   } catch (err) {
     next(err);
   }
@@ -599,10 +991,11 @@ router.get('/relatorio', async (req, res, next) => {
 
     const { rows: divergentes } = await pool.query(
       `SELECT cp.id, cp.concluida_em, cp.observacao, cp.pecas_esperadas,
-              pv.numero, pv.origem_pedido_id, pv.origem_marketplace,
-              u.nome AS usuario_nome
+              pv.numero, COALESCE(pv.origem_pedido_id, lp.pedido_plataforma, lp.up_id) AS origem_pedido_id,
+              pv.origem_marketplace, u.nome AS usuario_nome
          FROM conferencias_pedido cp
-         JOIN pedidos_venda pv ON pv.id = cp.pedido_id
+         LEFT JOIN pedidos_venda pv ON pv.id = cp.pedido_id
+         LEFT JOIN conferencia_lista_pedidos lp ON lp.id = cp.lista_pedido_id
          LEFT JOIN usuarios u ON u.id = cp.usuario_id
         WHERE cp.situacao = 'concluida' AND cp.houve_divergencia
           AND (cp.concluida_em AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN $1 AND $2

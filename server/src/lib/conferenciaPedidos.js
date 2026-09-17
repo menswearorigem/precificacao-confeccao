@@ -9,7 +9,8 @@
 // pessoa decide. É melhor a bancada parar e olhar do que o sistema deixar
 // passar uma peça errada porque "parecia" a certa (REGRA 2).
 
-const { normalizarComparacao, partirSkuIndividual, partirSkuKit } = require('./marketplaceSync');
+const { normalizarComparacao, partirSkuIndividual, partirSkuKit, acrescentarRastreios } = require('./marketplaceSync');
+const { mesmaPeca, refCanonica } = require('./conferenciaEquivalencias');
 
 // ---------------------------------------------------------------------------
 // 1. Achar o PEDIDO a partir do que foi bipado
@@ -139,32 +140,22 @@ function itemCasaComPeca(item, peca) {
   // (a) mesma variante de estoque — o vínculo mais forte que existe
   if (item.variante_id && peca.varianteId && item.variante_id === peca.varianteId) return true;
 
-  const refPeca = normalizarComparacao(peca.referencia);
-  const corPeca = normalizarComparacao(peca.cor);
-  const tamPeca = normalizarComparacao(peca.tamanho);
-  if (!refPeca) return false;
+  if (!normalizarComparacao(peca.referencia)) return false;
 
   // (b) mesmo produto + cor + tamanho. Cobre o caso comum de item vinculado
   //     ao produto mas com `variante_id` nulo (acontece quando o casamento
-  //     achou a referência e não a variação exata).
-  if (
-    normalizarComparacao(item.referencia) === refPeca
-    && normalizarComparacao(item.cor) === corPeca
-    && normalizarComparacao(item.tamanho) === tamPeca
-  ) return true;
+  //     achou a referência e não a variação exata). Desde 17/09/2026 com as
+  //     equivalências permanentes (lib/conferenciaEquivalencias.js).
+  if (mesmaPeca(
+    { referencia: item.referencia, cor: item.cor, tamanho: item.tamanho },
+    peca
+  )) return true;
 
   // (c) o SKU original do anúncio, para item nunca vinculado
   const sku = item.sku_externo;
   if (sku) {
-    const individual = partirSkuIndividual(sku);
-    const kit = partirSkuKit(sku);
-    const partido = individual || kit;
-    if (
-      partido
-      && normalizarComparacao(partido.referencia) === refPeca
-      && normalizarComparacao(partido.cor) === corPeca
-      && normalizarComparacao(partido.tamanho) === tamPeca
-    ) return true;
+    const partido = partirSkuIndividual(sku) || partirSkuKit(sku);
+    if (partido && mesmaPeca(partido, peca)) return true;
   }
 
   return false;
@@ -311,6 +302,252 @@ async function avaliarLeitura(client, pedido, conferencia, codigo) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// 5. LISTA DO DIA (17/09/2026) — ver migration 0080
+// ---------------------------------------------------------------------------
+// O PDF da Lista de Separação do UpSeller carregado de manhã. Cada pedido da
+// lista ou (a) aponta para o pedido do sistema, e a conferência segue por ele,
+// ou (b) ainda não existe no sistema, e a conferência é feita contra os SKUs
+// do próprio PDF — como no site antigo.
+
+const SO_DIGITOS_E_LETRAS = "regexp_replace(upper(%s), '[^A-Z0-9]', '', 'g')";
+
+// Procura o pedido do sistema pelos identificadores que o PDF trouxe. Só
+// aceita resultado ÚNICO: dois pedidos pro mesmo código = não vincula.
+async function acharPedidoDoSistemaParaLista(client, candidatos) {
+  const lista = [...new Set((candidatos || []).filter(Boolean))];
+  if (lista.length === 0) return null;
+  const { rows } = await client.query(
+    `SELECT DISTINCT id FROM pedidos_venda
+      WHERE situacao <> 'cancelado'
+        AND (origem_pedido_id = ANY($1) OR pack_id_marketplace = ANY($1))
+      LIMIT 2`,
+    [lista.map((c) => String(c).toUpperCase())]
+  );
+  return rows.length === 1 ? rows[0].id : null;
+}
+
+// Grava as etiquetas da lista no pedido do sistema — sem roubar etiqueta que
+// já pertence a OUTRO pedido (isso é caixa trocada, não é pra resolver em
+// silêncio). Devolve quantas ficaram de fora por conflito.
+async function gravarEtiquetasNoPedido(client, pedidoId, rastreios) {
+  const codigos = [...new Set((rastreios || []).map((c) => String(c).trim().toUpperCase()).filter((c) => c.length >= 4))];
+  if (codigos.length === 0) return { gravadas: 0, conflitos: [] };
+  const { rows: donos } = await client.query(
+    `SELECT id, numero, origem_pedido_id, codigos_rastreio FROM pedidos_venda
+      WHERE codigos_rastreio && $1::text[] AND id <> $2`,
+    [codigos, pedidoId]
+  );
+  const conflitos = [];
+  const livres = codigos.filter((c) => {
+    const dono = donos.find((d) => (d.codigos_rastreio || []).includes(c));
+    if (dono) conflitos.push({ codigo: c, pedido: dono.origem_pedido_id || `#${dono.numero}` });
+    return !dono;
+  });
+  await acrescentarRastreios(client, pedidoId, livres);
+  return { gravadas: livres.length, conflitos };
+}
+
+// Pedido da lista ainda sem pedido do sistema: tenta de novo (a sincronização
+// pode ter trazido desde a carga). Nunca troca o vínculo de uma lista que já
+// tem conferência própria — mudar de trilho no meio da caixa perde leituras.
+async function revincularLista(client, linha) {
+  if (linha.pedido_id) return linha;
+  const { rows: confs } = await client.query(
+    `SELECT 1 FROM conferencias_pedido WHERE lista_pedido_id = $1 AND situacao <> 'abandonada' LIMIT 1`,
+    [linha.id]
+  );
+  if (confs.length > 0) return linha;
+  const pedidoId = await acharPedidoDoSistemaParaLista(client, [linha.pedido_plataforma, ...(linha.ids_candidatos || [])]);
+  if (!pedidoId) return linha;
+  await client.query('UPDATE conferencia_lista_pedidos SET pedido_id = $2 WHERE id = $1', [linha.id, pedidoId]);
+  await gravarEtiquetasNoPedido(client, pedidoId, linha.codigos_rastreio);
+  return { ...linha, pedido_id: pedidoId };
+}
+
+// Acha o pedido da LISTA pelo que foi bipado: etiqueta, número da
+// plataforma, "UP..." do UpSeller ou qualquer identificador do bloco.
+// Só olha cargas dos últimos 45 dias.
+async function acharNaLista(client, codigoBruto) {
+  const codigo = String(codigoBruto || '').trim().toUpperCase();
+  if (!codigo) return null;
+  const { rows } = await client.query(
+    `SELECT * FROM conferencia_lista_pedidos
+      WHERE carregado_em > now() - interval '45 days'
+        AND (codigos_rastreio @> ARRAY[$1]::text[]
+             OR upper(up_id) = $1
+             OR upper(pedido_plataforma) = $1
+             OR ids_candidatos @> ARRAY[$1]::text[])
+      ORDER BY carregado_em DESC, id DESC
+      LIMIT 2`,
+    [codigo]
+  );
+  if (rows.length === 0) return null;
+  if (rows.length > 1) return { ambiguo: true, quantidade: rows.length };
+  const linha = await revincularLista(client, rows[0]);
+  const via = (linha.codigos_rastreio || []).includes(codigo) ? 'rastreio' : 'lista_numero';
+  return { linha, via };
+}
+
+// O "pedido" que a tela mostra para um pedido que só existe na lista.
+function resumoDaLista(linha) {
+  return {
+    id: null,
+    listaPedidoId: linha.id,
+    soNaLista: true,
+    numero: null,
+    up_id: linha.up_id,
+    data_pedido: linha.carregado_em,
+    situacao: null,
+    origem_marketplace: /^\d{6}[A-Z0-9]{6,10}$/.test(linha.pedido_plataforma || '') ? 'shopee' : null,
+    origem_pedido_id: linha.pedido_plataforma || linha.up_id,
+    pack_id_marketplace: null,
+    codigos_rastreio: linha.codigos_rastreio || [],
+    quantidade_pecas: null,
+    cliente_nome: null,
+    loja_nome: null,
+  };
+}
+
+function partirSkuDaLista(sku) {
+  const kit = partirSkuKit(sku);
+  if (kit) return { ...kit, pecasPorUnidade: kit.quantidade };
+  const individual = partirSkuIndividual(sku);
+  if (individual) return { ...individual, pecasPorUnidade: 1 };
+  return null;
+}
+
+// Itens da lista com o que o cadastro sabe deles: descrição, foto e —
+// principalmente — se existe EAN pra essa peça. Sem EAN, a tela oferece o
+// "confirmar no olho" em vez de deixar a pessoa bipando algo que não passa.
+async function carregarItensDaLista(client, linha) {
+  const brutos = Array.isArray(linha.itens) ? linha.itens : [];
+  const partidos = brutos.map((it) => partirSkuDaLista(it.sku));
+  const refs = new Set();
+  partidos.forEach((p) => {
+    if (!p) return;
+    refs.add(normalizarComparacao(p.referencia));
+    refs.add(refCanonica(p.referencia));
+    if (refCanonica(p.referencia) === 'MM6387') refs.add('MB6387');
+  });
+  let variantes = [];
+  let mapeados = [];
+  if (refs.size > 0) {
+    const lista = [...refs];
+    ({ rows: variantes } = await client.query(
+      `SELECT v.id, v.cor, v.tamanho, v.ean, p.id AS produto_id, p.referencia, p.descricao,
+              EXISTS (SELECT 1 FROM produto_fotos pf WHERE pf.produto_id = p.id) AS tem_foto
+         FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id
+        WHERE ${SO_DIGITOS_E_LETRAS.replace('%s', 'p.referencia')} = ANY($1)`,
+      [lista]
+    ));
+    ({ rows: mapeados } = await client.query(
+      `SELECT referencia, cor, tamanho FROM estoque_ean_mapeamento
+        WHERE ${SO_DIGITOS_E_LETRAS.replace('%s', 'referencia')} = ANY($1)`,
+      [lista]
+    ));
+  }
+
+  return brutos.map((it, i) => {
+    const partido = partidos[i];
+    const unidades = Math.max(1, Math.round(Number(it.quantidade) || 1));
+    const pecasPorUnidade = partido ? Math.max(1, partido.pecasPorUnidade) : 1;
+    const variante = partido ? variantes.find((v) => mesmaPeca(v, partido)) : null;
+    const comEan = partido
+      ? variantes.some((v) => v.ean && mesmaPeca(v, partido)) || mapeados.some((m) => mesmaPeca(m, partido))
+      : false;
+    return {
+      idx: i + 1,
+      sku: it.sku,
+      partido,
+      referencia: partido ? partido.referencia : it.sku,
+      cor: partido ? partido.cor : '',
+      tamanho: partido ? partido.tamanho : '',
+      descricao: variante?.descricao || (partido ? '' : 'SKU fora do padrão REF-COR-TAMANHO — confira no olho'),
+      produtoId: variante?.produto_id || null,
+      temFoto: Boolean(variante?.tem_foto),
+      ehKit: pecasPorUnidade > 1,
+      pecasPorUnidade,
+      esperado: unidades * pecasPorUnidade,
+      semEan: !comEan,
+    };
+  });
+}
+
+async function carregarConferidoPorItemLista(client, conferenciaId) {
+  const { rows } = await client.query(
+    `SELECT lista_item_idx, COUNT(*)::int AS total
+       FROM conferencia_leituras
+      WHERE conferencia_id = $1
+        AND resultado IN ('ok', 'confirmado_manual')
+        AND lista_item_idx IS NOT NULL
+      GROUP BY lista_item_idx`,
+    [conferenciaId]
+  );
+  return new Map(rows.map((r) => [r.lista_item_idx, r.total]));
+}
+
+async function montarEstadoLista(client, linha, conferencia) {
+  const itens = await carregarItensDaLista(client, linha);
+  const conferido = conferencia ? await carregarConferidoPorItemLista(client, conferencia.id) : new Map();
+  const itensComProgresso = itens.map((i) => {
+    const feito = conferido.get(i.idx) || 0;
+    return {
+      id: i.idx,
+      referencia: i.referencia,
+      descricao: i.descricao,
+      cor: i.cor,
+      tamanho: i.tamanho,
+      ean: null,
+      produtoId: i.produtoId,
+      temFoto: i.temFoto,
+      ehKit: i.ehKit,
+      pecasPorUnidade: i.pecasPorUnidade,
+      esperado: i.esperado,
+      conferido: feito,
+      falta: Math.max(0, i.esperado - feito),
+      semEan: i.semEan,
+      sku: i.sku,
+    };
+  });
+  const esperadoTotal = itensComProgresso.reduce((s, i) => s + i.esperado, 0);
+  const conferidoTotal = itensComProgresso.reduce((s, i) => s + Math.min(i.conferido, i.esperado), 0);
+  return {
+    itens: itensComProgresso,
+    esperadoTotal,
+    conferidoTotal,
+    completo: esperadoTotal > 0 && conferidoTotal >= esperadoTotal,
+  };
+}
+
+async function avaliarLeituraLista(client, linha, conferencia, codigo) {
+  const peca = await resolverPecaPorEan(client, codigo);
+  if (!peca) {
+    return {
+      resultado: 'ean_desconhecido',
+      mensagem: 'Não conheço este código de barras. Ele não está em nenhuma variação nem no mapeamento de EAN importado do Wik.',
+    };
+  }
+  const itens = await carregarItensDaLista(client, linha);
+  const candidatos = itens.filter((i) => i.partido && mesmaPeca(i.partido, peca));
+  const descricaoPeca = `${peca.referencia}${peca.cor ? ` · ${peca.cor}` : ''}${peca.tamanho ? ` ${peca.tamanho}` : ''}`;
+  if (candidatos.length === 0) {
+    return { resultado: 'fora_do_pedido', peca, mensagem: `${descricaoPeca} NÃO faz parte deste pedido. Não coloque na caixa.` };
+  }
+  const conferido = await carregarConferidoPorItemLista(client, conferencia.id);
+  const comEspaco = candidatos.find((i) => (conferido.get(i.idx) || 0) < i.esperado);
+  if (!comEspaco) {
+    const total = candidatos.reduce((s, i) => s + i.esperado, 0);
+    return {
+      resultado: 'quantidade_excedida',
+      peca,
+      listaItemIdx: candidatos[0].idx,
+      mensagem: `${descricaoPeca} já está completa nesta caixa (${total} de ${total}). Não coloque outra.`,
+    };
+  }
+  return { resultado: 'ok', peca, listaItemIdx: comEspaco.idx, mensagem: `${descricaoPeca} conferida.` };
+}
+
 module.exports = {
   acharPedidoPorCodigo,
   resolverPecaPorEan,
@@ -319,4 +556,11 @@ module.exports = {
   carregarConferidoPorItem,
   montarEstado,
   avaliarLeitura,
+  acharPedidoDoSistemaParaLista,
+  gravarEtiquetasNoPedido,
+  acharNaLista,
+  resumoDaLista,
+  carregarItensDaLista,
+  montarEstadoLista,
+  avaliarLeituraLista,
 };

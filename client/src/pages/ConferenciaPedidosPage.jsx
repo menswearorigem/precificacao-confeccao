@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Barcode, PackageCheck, ListChecks, BarChart3, CheckCircle2, XCircle, AlertTriangle,
-  Undo2, Tag, LogOut, ScanLine, Package, CornerDownLeft,
+  Undo2, Tag, LogOut, ScanLine, Package, CornerDownLeft, FileUp, FileText, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { StatCard, Select, DateInput } from '../components/ui';
+import { StatCard, Select, DateInput, EstadoVazio } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
 import FotoProduto from '../components/FotoProduto';
 import { dataBr, hojeIso } from '../lib/format';
@@ -13,6 +13,7 @@ import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 
 const ABAS = [
   { chave: 'bipagem', rotulo: 'Bipagem', Icone: ScanLine },
+  { chave: 'lista', rotulo: 'Lista do dia', Icone: FileUp },
   { chave: 'fila', rotulo: 'Fila do dia', Icone: ListChecks },
   { chave: 'relatorio', rotulo: 'Relatório', Icone: BarChart3 },
 ];
@@ -55,6 +56,11 @@ function TituloPedido({ pedido }) {
         </span>
       )}
       <strong className="mono">{pedido.origem_pedido_id || `#${pedido.numero}`}</strong>
+      {pedido.soNaLista && (
+        <span className="stamp sm tone-atencao" title="Ainda não chegou ao sistema — as peças são conferidas contra a Lista de Separação">
+          só na lista
+        </span>
+      )}
       {pedido.cliente_nome && <span style={{ color: 'var(--ink-soft)' }}>· {pedido.cliente_nome}</span>}
     </span>
   );
@@ -63,7 +69,7 @@ function TituloPedido({ pedido }) {
 // ---------------------------------------------------------------------------
 // Aba 1 — Bipagem
 // ---------------------------------------------------------------------------
-function AbaBipagem({ aoConcluirPedido, pedidoParaAbrir, aoAbrirPedido }) {
+function AbaBipagem({ aoConcluirPedido, pedidoParaAbrir, aoAbrirPedido, resumoLista, aoIrParaLista }) {
   const [sessao, setSessao] = useState(null); // { pedido, conferencia, itens, ... }
   const [codigo, setCodigo] = useState('');
   const [ocupado, setOcupado] = useState(false);
@@ -76,6 +82,7 @@ function AbaBipagem({ aoConcluirPedido, pedidoParaAbrir, aoAbrirPedido }) {
   const [ultima, setUltima] = useState(null); // { resultado, mensagem }
   const [overlay, setOverlay] = useState(null); // { titulo, subtitulo }
   const [abertoPorNumero, setAbertoPorNumero] = useState(false);
+  const [semLista, setSemLista] = useState(false);
   const inputRef = useRef(null);
 
   // Foco permanente no campo. O leitor de código de barras "digita" e dá
@@ -109,39 +116,56 @@ function AbaBipagem({ aoConcluirPedido, pedidoParaAbrir, aoAbrirPedido }) {
 
   async function abrirPedido(valor) {
     setErro('');
+    setSemLista(false);
     setOcupado(true);
     try {
       const r = await api.get(`/conferencia/abrir/${encodeURIComponent(valor)}`);
-      const iniciada = r.conferencia
-        ? r
-        : await api.post(`/conferencia/pedidos/${r.pedido.id}/iniciar`);
+      let iniciada = r;
+      if (!r.conferencia) {
+        // Pedido que ainda não chegou ao sistema abre pela lista do dia.
+        iniciada = r.pedido.soNaLista
+          ? await api.post(`/conferencia/lista/${r.pedido.listaPedidoId}/iniciar`)
+          : await api.post(`/conferencia/pedidos/${r.pedido.id}/iniciar`);
+      }
       setSessao(iniciada);
-      setAbertoPorNumero(r.via !== 'rastreio');
+      setAbertoPorNumero(!r.pedido.soNaLista && r.via !== 'rastreio');
       setUltima(null);
       somAcerto();
     } catch (err) {
       somErro();
       setErro(err.message);
+      setSemLista(Boolean(err.data?.naoEncontrado));
     } finally {
       setOcupado(false);
       focar();
     }
   }
 
+  // A última peça FECHA a caixa sozinha (como no site antigo): som próprio,
+  // aviso de tela cheia por 2 segundos e o campo já pronto pra próxima
+  // etiqueta — sem clicar em nada entre uma caixa e outra.
+  function tratarFechamentoAutomatico(r) {
+    if (!r.fechadaAutomaticamente) return false;
+    somPedidoCompleto();
+    setOverlay({
+      titulo: r.houveDivergencia ? 'Fechado com divergência' : 'Pedido conferido',
+      subtitulo: `${r.conferidoTotal} de ${r.esperadoTotal} peças — pode fechar a caixa e bipar a próxima etiqueta.`,
+      alerta: r.houveDivergencia,
+    });
+    limparSessao();
+    aoConcluirPedido?.();
+    return true;
+  }
+
   async function biparPeca(valor) {
     setErro('');
     setOcupado(true);
     try {
-      const r = await api.post(`/conferencia/${sessao.conferencia.id}/leitura`, { codigo: valor });
+      const r = await api.post(`/conferencia/${sessao.conferencia.id}/leitura`, { codigo: valor, fecharAoCompletar: true });
+      if (tratarFechamentoAutomatico(r)) return;
       setSessao(r);
       setUltima(r.leitura);
       if (r.leitura.resultado === 'ok') somAcerto(); else somErro();
-      // Fechou a caixa: som próprio, aviso de tela cheia por 2 segundos e o
-      // campo já pronto pro próximo pedido — sem precisar clicar em nada.
-      if (r.completo) {
-        somPedidoCompleto();
-        setOverlay({ titulo: 'Pedido completo', subtitulo: `${r.conferidoTotal} de ${r.esperadoTotal} peças conferidas — pode fechar a caixa.` });
-      }
     } catch (err) {
       somErro();
       setErro(err.message);
@@ -166,14 +190,11 @@ function AbaBipagem({ aoConcluirPedido, pedidoParaAbrir, aoAbrirPedido }) {
     );
     if (!ok) return;
     try {
-      const r = await api.post(`/conferencia/${sessao.conferencia.id}/confirmar-manual`, { pedido_item_id: itemId });
+      const r = await api.post(`/conferencia/${sessao.conferencia.id}/confirmar-manual`, { pedido_item_id: itemId, fecharAoCompletar: true });
+      if (tratarFechamentoAutomatico(r)) return;
       setSessao(r);
       setUltima(r.leitura);
       somAcerto();
-      if (r.completo) {
-        somPedidoCompleto();
-        setOverlay({ titulo: 'Pedido completo', subtitulo: `${r.conferidoTotal} de ${r.esperadoTotal} peças conferidas — pode fechar a caixa.` });
-      }
     } catch (err) { somErro(); setErro(err.message); } finally { focar(); }
   }
 
@@ -299,17 +320,32 @@ function AbaBipagem({ aoConcluirPedido, pedidoParaAbrir, aoAbrirPedido }) {
           <span className="quando-ocupado">Conferindo a leitura…</span>
         </div>
         {!sessao && (
-          <p className="page-sub" style={{ margin: '8px 0 0' }}>
-            Aceita o código de rastreio da etiqueta, o número do pedido na plataforma, o número do
-            pacote do Mercado Livre ou o número interno. Se a etiqueta ainda não estiver no sistema,
-            abra pelo número do pedido e use “Vincular esta etiqueta” — na próxima vez ela abre sozinha.
-          </p>
+          <div className={`conferencia-lista-faixa${resumoLista?.total ? ' ok' : ''}`}>
+            <FileText size={16} />
+            {resumoLista?.total ? (
+              <span>
+                Lista do dia: <strong>{resumoLista.total}</strong> pedido(s) ·{' '}
+                <strong>{resumoLista.conferidos}</strong> conferido(s) · faltam{' '}
+                <strong>{resumoLista.total - resumoLista.conferidos}</strong>
+              </span>
+            ) : (
+              <span>Nenhuma lista carregada hoje — carregue o PDF da Lista de Separação pra bipar direto pela etiqueta.</span>
+            )}
+            <button type="button" className="btn btn-ghost" onClick={aoIrParaLista}>
+              <FileUp size={14} /> {resumoLista?.total ? 'Carregar outra' : 'Carregar lista'}
+            </button>
+          </div>
         )}
       </form>
 
       {erro && (
         <div className="conferencia-aviso erro">
           <XCircle size={18} /> <span>{erro}</span>
+          {semLista && (
+            <button type="button" className="btn btn-ghost" onClick={aoIrParaLista}>
+              <FileUp size={14} /> Carregar lista do dia
+            </button>
+          )}
         </div>
       )}
 
@@ -326,7 +362,7 @@ function AbaBipagem({ aoConcluirPedido, pedidoParaAbrir, aoAbrirPedido }) {
             <div>
               <TituloPedido pedido={sessao.pedido} />
               <p className="page-sub" style={{ margin: '4px 0 0' }}>
-                {dataBr(String(sessao.pedido.data_pedido).slice(0, 10))}
+                {sessao.pedido.soNaLista ? `lista ${sessao.pedido.up_id}` : dataBr(String(sessao.pedido.data_pedido).slice(0, 10))}
                 {sessao.pedido.codigos_rastreio?.length > 0 && (
                   <> · etiqueta <span className="mono">{sessao.pedido.codigos_rastreio.join(', ')}</span></>
                 )}
@@ -388,6 +424,7 @@ function AbaBipagem({ aoConcluirPedido, pedidoParaAbrir, aoAbrirPedido }) {
                         {item.ehKit && <span className="stamp sm tone-elevada" style={{ marginLeft: 6 }}>kit de {item.pecasPorUnidade}</span>}
                       </div>
                       {item.descricao && <div className="conferencia-item-desc">{item.descricao}</div>}
+                      {item.sku && item.ehKit && <div className="conferencia-item-desc mono">{item.sku}</div>}
                       {item.semEan && (
                         <div className="conferencia-item-desc aviso">
                           Sem código de barras cadastrado — não dá pra bipar.
@@ -468,6 +505,264 @@ function AbaBipagem({ aoConcluirPedido, pedidoParaAbrir, aoAbrirPedido }) {
             </div>
           )}
         </>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Aba — Lista do dia (PDF da Lista de Separação do UpSeller)
+// ---------------------------------------------------------------------------
+// É o que faz a bipagem funcionar sem cadastrar etiqueta: carregado o PDF de
+// manhã, toda etiqueta da lista abre a caixa. Pedido que já está no sistema
+// confere pelo sistema; o que ainda não chegou confere pelo próprio PDF.
+const FILTROS_LISTA = [
+  { chave: 'faltam', rotulo: 'Faltam conferir' },
+  { chave: 'conferidos', rotulo: 'Conferidos' },
+  { chave: 'so_lista', rotulo: 'Só na lista' },
+  { chave: 'todos', rotulo: 'Todos' },
+];
+
+function AbaLista({ recarregarChave, aoCarregar, aoEscolherPedido }) {
+  const [data, setData] = useState(hojeIso());
+  const [dados, setDados] = useState(null);
+  const [erroLista, setErroLista] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+  const [erroEnvio, setErroEnvio] = useState('');
+  const [colar, setColar] = useState(false);
+  const [texto, setTexto] = useState('');
+  const [filtro, setFiltro] = useState('faltam');
+  const [arrastando, setArrastando] = useState(false);
+  const [explicar, setExplicar] = useState(false);
+  const arquivoRef = useRef(null);
+
+  const carregar = useCallback(() => {
+    setErroLista('');
+    api.get(`/conferencia/lista?data=${data}`)
+      .then(setDados)
+      .catch((e) => { setDados(null); setErroLista(e.message); });
+  }, [data]);
+
+  useEffect(carregar, [carregar, recarregarChave]);
+
+  async function enviar({ arquivo, textoColado }) {
+    setErroEnvio('');
+    setResultado(null);
+    setEnviando(true);
+    try {
+      let r;
+      if (arquivo) {
+        const form = new FormData();
+        form.append('file', arquivo);
+        r = await api.upload('/conferencia/lista', form);
+      } else {
+        r = await api.post('/conferencia/lista', { texto: textoColado });
+      }
+      setResultado(r);
+      setTexto('');
+      setColar(false);
+      setData(hojeIso());
+      somAcerto();
+      carregar();
+      aoCarregar?.();
+    } catch (err) {
+      somErro();
+      setErroEnvio(err.message);
+    } finally {
+      setEnviando(false);
+      if (arquivoRef.current) arquivoRef.current.value = '';
+    }
+  }
+
+  const pedidos = dados?.pedidos || [];
+  const totais = useMemo(() => ({
+    total: pedidos.length,
+    conferidos: pedidos.filter((p) => p.conferencia?.situacao === 'concluida').length,
+    soLista: pedidos.filter((p) => !p.noSistema).length,
+    semEtiqueta: pedidos.filter((p) => p.codigosRastreio.length === 0).length,
+  }), [pedidos]);
+
+  const visiveis = useMemo(() => {
+    if (filtro === 'faltam') return pedidos.filter((p) => p.conferencia?.situacao !== 'concluida');
+    if (filtro === 'conferidos') return pedidos.filter((p) => p.conferencia?.situacao === 'concluida');
+    if (filtro === 'so_lista') return pedidos.filter((p) => !p.noSistema);
+    return pedidos;
+  }, [pedidos, filtro]);
+
+  return (
+    <>
+      <div
+        className={`card conferencia-upload${arrastando ? ' arrastando' : ''}`}
+        onDragOver={(e) => { e.preventDefault(); setArrastando(true); }}
+        onDragLeave={() => setArrastando(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setArrastando(false);
+          const f = e.dataTransfer.files?.[0];
+          if (f) enviar({ arquivo: f });
+        }}
+      >
+        <div className="conferencia-upload-icone"><FileUp size={26} /></div>
+        <div className="conferencia-upload-texto">
+          <strong>Lista de Separação do UpSeller (PDF)</strong>
+          <span>Arraste o arquivo aqui ou escolha. Pode carregar mais de uma vez no dia — nada duplica.</span>
+        </div>
+        <div className="conferencia-upload-acoes">
+          <input
+            ref={arquivoRef}
+            type="file"
+            accept=".pdf,.txt,application/pdf,text/plain"
+            hidden
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) enviar({ arquivo: f }); }}
+          />
+          <button type="button" className="btn btn-primary" disabled={enviando} onClick={() => arquivoRef.current?.click()}>
+            <FileUp size={15} /> {enviando ? 'Lendo a lista…' : 'Escolher PDF'}
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={() => setColar((v) => !v)}>
+            {colar ? 'Fechar' : 'Colar texto'}
+          </button>
+        </div>
+        {colar && (
+          <div className="conferencia-upload-colar">
+            <textarea
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+              rows={6}
+              placeholder="Cole aqui o texto copiado do PDF da Lista de Separação…"
+            />
+            <button type="button" className="btn btn-primary" disabled={!texto.trim() || enviando} onClick={() => enviar({ textoColado: texto })}>
+              Carregar texto
+            </button>
+          </div>
+        )}
+      </div>
+
+      {erroEnvio && (
+        <div className="conferencia-aviso erro"><XCircle size={18} /> <span>{erroEnvio}</span></div>
+      )}
+
+      {resultado && (
+        <div className={`conferencia-aviso ${resultado.conflitos.length || resultado.semItens ? 'aviso' : 'ok'}`}>
+          <CheckCircle2 size={18} />
+          <span>
+            <strong>{resultado.total} pedido(s) carregado(s)</strong>
+            {' — '}{resultado.noSistema} já no sistema, {resultado.soNaLista} só na lista.
+            {resultado.semEtiqueta > 0 && <> {resultado.semEtiqueta} sem etiqueta no PDF (abrem pelo número).</>}
+            {resultado.semItens > 0 && <> {resultado.semItens} sem nenhum item lido — confira no UpSeller.</>}
+            {resultado.itensNaoReconhecidos > 0 && <> {resultado.itensNaoReconhecidos} item(ns) com referência fora do cadastro.</>}
+            {resultado.conflitos.length > 0 && (
+              <> Etiqueta que já era de outro pedido (não foi trocada):{' '}
+                {resultado.conflitos.map((c) => `${c.codigo} → ${c.pedido}`).join(', ')}.
+              </>
+            )}
+            {' '}Já pode bipar.
+          </span>
+        </div>
+      )}
+
+      <div className="filtros-barra">
+        <span className="field-label" style={{ margin: 0 }}>Lista carregada em</span>
+        <DateInput value={data} onChange={(e) => setData(e.target.value)} />
+        <div className="view-toggle">
+          {FILTROS_LISTA.map((f) => (
+            <button key={f.chave} type="button" className={filtro === f.chave ? 'active' : ''} onClick={() => setFiltro(f.chave)}>
+              {f.rotulo}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {erroLista && <p className="login-error">{erroLista}</p>}
+
+      {totais.total > 0 && (
+        <div className="stat-strip">
+          <StatCard label="Na lista" value={totais.total} Icone={FileText} />
+          <StatCard label="Conferidos" value={totais.conferidos} variant="success" Icone={CheckCircle2} />
+          <StatCard label="Faltam" value={totais.total - totais.conferidos} variant="warning" Icone={Package} />
+          <StatCard label="Só na lista" value={totais.soLista} Icone={AlertTriangle}>
+            <span className="stat-card-delta">ainda não chegaram pela sincronização</span>
+          </StatCard>
+        </div>
+      )}
+
+      {dados && totais.total === 0 && (
+        <EstadoVazio
+          Icone={FileUp}
+          titulo="Nenhuma lista carregada nesse dia"
+          descricao="Baixe a Lista de Separação no UpSeller e carregue acima. Depois disso, é só bipar a etiqueta de cada caixa."
+        />
+      )}
+
+      {totais.total > 0 && (
+        <div className="card">
+          <div style={{ overflowX: 'auto' }}>
+            <table className="calendario-lista-tabela">
+              <thead>
+                <tr>
+                  <th>Pedido</th>
+                  <th>Etiqueta</th>
+                  <th>Peças</th>
+                  <th>Situação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visiveis.map((p) => (
+                  <tr
+                    key={p.id}
+                    className="linha-clicavel"
+                    title="Abrir a conferência deste pedido"
+                    onClick={() => aoEscolherPedido?.(p.codigosRastreio[0] || p.pedidoPlataforma || p.upId)}
+                  >
+                    <td>
+                      {p.pedido
+                        ? <TituloPedido pedido={p.pedido} />
+                        : <TituloPedido pedido={{ origem_pedido_id: p.pedidoPlataforma || p.upId, soNaLista: true }} />}
+                    </td>
+                    <td className="mono">{p.codigosRastreio.join(', ') || <span style={{ color: 'var(--warning)' }}>sem etiqueta</span>}</td>
+                    <td title={p.itens.map((i) => `${i.quantidade}× ${i.sku}`).join('\n')}>
+                      {p.itens.length === 0 ? <span style={{ color: 'var(--warning)' }}>nenhum item lido</span> : p.pecas}
+                    </td>
+                    <td>
+                      {!p.conferencia && <span className="stamp sm tone-neutro">falta conferir</span>}
+                      {p.conferencia?.situacao === 'em_andamento' && <span className="stamp sm tone-atencao">conferindo{p.conferencia.usuarioNome ? ` (${p.conferencia.usuarioNome})` : ''}</span>}
+                      {p.conferencia?.situacao === 'concluida' && (
+                        p.conferencia.houveDivergencia
+                          ? <span className="stamp sm tone-atencao">conferido com divergência</span>
+                          : <span className="stamp sm tone-elevada">conferido</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {visiveis.length === 0 && <tr><td colSpan="4">Nenhum pedido nesse filtro.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <button type="button" className="btn btn-ghost" onClick={() => setExplicar((v) => !v)}>
+        {explicar ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Como a lista funciona
+      </button>
+      {explicar && (
+        <div className="card page-sub" style={{ lineHeight: 1.6 }}>
+          <p style={{ marginTop: 0 }}>
+            Cada pedido do PDF traz o número, a etiqueta de envio e os SKUs. Ao carregar, o sistema procura o
+            pedido pelo número: <strong>achou</strong>, a etiqueta é gravada nele e a conferência usa o pedido do
+            sistema (com kit e foto); <strong>não achou</strong> (loja não integrada ou venda de agora há pouco),
+            a conferência usa os SKUs do próprio PDF — e se o pedido chegar depois, a mesma etiqueta passa a abrir
+            o pedido do sistema.
+          </p>
+          <p>
+            A peça é reconhecida pelo código de barras do cadastro e pelo mapeamento de EAN do Wik. Valem as
+            equivalências fixas: Marrom = Chocolate, Azul Marinho = Marinho, Verde Militar = Militar,
+            MM6387 = MB6387 (e, nela, P/M/1 e G/GG/2).
+          </p>
+          <p style={{ marginBottom: 0 }}>
+            Carregar a lista não mexe em venda, estoque nem valor. Etiqueta que já pertence a outro pedido nunca é
+            trocada — aparece no aviso, porque quase sempre é caixa trocada.
+          </p>
+        </div>
       )}
     </>
   );
@@ -729,13 +1024,26 @@ export default function ConferenciaPedidosPage() {
   // Pedido escolhido na Fila para abrir direto na aba de bipagem.
   const [pedidoParaAbrir, setPedidoParaAbrir] = useState(null);
   const [recarregarChave, setRecarregarChave] = useState(0);
+  const [resumoLista, setResumoLista] = useState(null);
+
+  // Resumo da lista de hoje para a faixa da bipagem.
+  useEffect(() => {
+    api.get(`/conferencia/lista?data=${hojeIso()}`)
+      .then((r) => setResumoLista({
+        total: r.pedidos.length,
+        conferidos: r.pedidos.filter((p) => p.conferencia?.situacao === 'concluida').length,
+      }))
+      .catch(() => setResumoLista(null));
+  }, [recarregarChave]);
+
+  const recarregar = () => setRecarregarChave((n) => n + 1);
 
   return (
     <div className="page-wide">
       <h1><ScanLine size={22} style={{ verticalAlign: -3, marginRight: 8 }} />Conferência de Pedidos</h1>
       <p className="page-sub">
-        Antes de fechar a caixa: bipe a etiqueta de envio pra abrir o pedido e depois bipe cada peça.
-        O sistema confere contra o que foi vendido e avisa na hora se a peça não é daquele pedido.
+        Carregue a Lista de Separação do dia, bipe a etiqueta de envio e depois cada peça. A caixa fecha
+        sozinha quando a última peça certa é bipada — e o sistema avisa na hora se a peça não é daquele pedido.
       </p>
 
       <div className="view-toggle" style={{ margin: '12px 0 14px' }}>
@@ -751,11 +1059,20 @@ export default function ConferenciaPedidosPage() {
           meio de uma caixa tinha de bipar a etiqueta de novo para voltar. */}
       <div hidden={aba !== 'bipagem'}>
         <AbaBipagem
-          aoConcluirPedido={() => setRecarregarChave((n) => n + 1)}
+          aoConcluirPedido={recarregar}
           pedidoParaAbrir={pedidoParaAbrir}
           aoAbrirPedido={() => setPedidoParaAbrir(null)}
+          resumoLista={resumoLista}
+          aoIrParaLista={() => setAba('lista')}
         />
       </div>
+      {aba === 'lista' && (
+        <AbaLista
+          recarregarChave={recarregarChave}
+          aoCarregar={recarregar}
+          aoEscolherPedido={(codigo) => { setPedidoParaAbrir(codigo); setAba('bipagem'); }}
+        />
+      )}
       {aba === 'fila' && (
         <AbaFila
           recarregarChave={recarregarChave}
