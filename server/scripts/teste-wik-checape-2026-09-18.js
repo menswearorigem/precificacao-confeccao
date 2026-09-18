@@ -133,6 +133,68 @@ const TELA_DE_LOGIN = '<html><body><form><input name="UsrNome"/><input name="Usr
   ok('⚠️ ilegível devolve NULL (erro visível), não 0', wikSync._quantidadeWik('abc') === null);
   ok('vazio devolve NULL, não 0', wikSync._quantidadeWik('') === null);
 
+  secao('6-B. Troca de empresa: nunca com campo vazio, e sem requisição à toa');
+  // Aqui é o wikWeb DE VERDADE, com o `fetch` trocado por um dublê — é o único
+  // jeito de provar O QUE é enviado ao Wik. Foi mandar `descricao`/`matriz`
+  // vazios que deixou a sessão sem empresa ativa em produção, e a partir dali
+  // TODO grid respondeu HTTP 500 (contas a pagar e /Pedido/CarregaGrid).
+  {
+    const fetchOriginal = globalThis.fetch;
+    const chamadas = [];
+    const resposta = (status, corpo) => ({
+      status,
+      headers: { getSetCookie: () => [], get: () => null },
+      text: async () => corpo,
+    });
+    try {
+      globalThis.fetch = async (url, opcoes) => {
+        const caminho = String(url).replace('https://x', '');
+        const corpo = opcoes && opcoes.body ? String(opcoes.body) : '';
+        chamadas.push({ caminho, corpo });
+        if (caminho === '/Login/ListarComboEmpresas') {
+          return resposta(200, JSON.stringify([
+            { id: 192, text: 'HEBRON - DINAMICA MATRIZ', matriz: 192 },
+            { id: 198, text: 'HOGGAR MISS MANU - NFE - 198', matriz: 192 },
+          ]));
+        }
+        if (caminho === '/Login/AdicionarEmpresaNasessao') return resposta(200, 'true');
+        return resposta(500, '');
+      };
+
+      const s1 = wikWebReal.novaSessao('https://x');
+      const trocou = await wikWebReal.trocarEmpresa(s1, 198);
+      const usada = chamadas.find((c) => c.caminho === '/Login/AdicionarEmpresaNasessao');
+      ok('a troca deu certo sem quem chama passar nada', trocou === true);
+      ok('⚠️ a descrição veio do combo do WIK, nunca vazia',
+        !!usada && /descricao=HOGGAR\+MISS\+MANU/.test(usada.corpo), usada && usada.corpo);
+      ok('…e a matriz também', !!usada && /matriz=192/.test(usada.corpo), usada && usada.corpo);
+
+      const antes = chamadas.length;
+      const denovo = await wikWebReal.trocarEmpresa(s1, 198);
+      ok('⚠️ pedir a MESMA empresa não faz requisição nenhuma', denovo === true && chamadas.length === antes,
+        `${chamadas.length - antes} requisição(ões)`);
+
+      // Sem combo (o Wik não respondeu), NÃO se tenta o endpoint da tela com
+      // campo vazio: é justamente isso que estraga a sessão.
+      chamadas.length = 0;
+      globalThis.fetch = async (url, opcoes) => {
+        const caminho = String(url).replace('https://x', '');
+        chamadas.push({ caminho, corpo: opcoes && opcoes.body ? String(opcoes.body) : '' });
+        if (caminho === '/Login/ListarComboEmpresas') return resposta(500, '');
+        return resposta(500, '');
+      };
+      const s2 = wikWebReal.novaSessao('https://x');
+      const semCombo = await wikWebReal.trocarEmpresa(s2, 202);
+      ok('⚠️ sem o combo, o endpoint da tela NÃO é chamado com campo vazio',
+        !chamadas.some((c) => c.caminho === '/Login/AdicionarEmpresaNasessao'),
+        chamadas.map((c) => c.caminho).join(' · '));
+      ok('e a recusa é honesta (não diz que trocou)', semCombo === false);
+      ok('…e a sessão não fica dizendo que está numa empresa que não está', s2.empresaAtiva === null);
+    } finally {
+      globalThis.fetch = fetchOriginal;
+    }
+  }
+
   // ── limpeza do cenário de banco ──
   await pool.query("DELETE FROM ordem_producao_grade WHERE ordem_id IN (SELECT id FROM ordens_producao WHERE origem='wik')");
   await pool.query("DELETE FROM ordens_producao WHERE origem='wik'");

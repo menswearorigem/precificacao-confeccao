@@ -831,7 +831,12 @@ async function sincronizarProducaoAgora() {
     }
     let linhas;
     try { linhas = await puxarGrid(); }
-    catch (e) { if (e.sessaoExpirada) { sessao = await renovarSessao(integracao); linhas = await puxarGrid(); } else throw e; }
+    catch (e) {
+      // Mesmo caso das vendas: 500 no grid = sessão sem empresa ativa. Um
+      // login novo, uma vez — nunca um laço de relogin (é o que bloqueia conta).
+      if (e.sessaoExpirada || e.gridErroHttp >= 500) { sessao = await renovarSessao(integracao); linhas = await puxarGrid(); }
+      else throw e;
+    }
     resumo.opsNoGrid = linhas.length;
 
     const t1 = await upsertOpsDoGrid(linhas);

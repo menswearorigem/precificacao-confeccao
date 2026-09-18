@@ -322,8 +322,13 @@ async function importarVendasWebAgora({ dias = 60 } = {}) {
     let linhas;
     try { linhas = await puxar(); }
     catch (e) {
-      if (e.sessaoExpirada) { sessao = await renovarSessao(integracao); linhas = await puxar(); }
-      else throw e;
+      // HTTP 500 no grid quase sempre é a sessão SEM empresa ativa (uma troca
+      // de empresa recusada estraga a sessão inteira, e daí todo grid responde
+      // 500). A cura é a mesma da sessão expirada: login novo, uma vez.
+      if (e.sessaoExpirada || e.gridErroHttp >= 500) {
+        sessao = await renovarSessao(integracao);
+        linhas = await puxar();
+      } else throw e;
     }
     resumo.lidos = linhas.length;
 

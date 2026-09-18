@@ -227,33 +227,84 @@ async function getHtml(sessao, caminho) {
 
 // TROCA DA EMPRESA ATIVA DA SESSÃO.
 //
-// ⚠️ Medido ao vivo em 18/09/2026, com sessão boa, em duas apurações
-// independentes:
-//   POST /Home/AtualizaEmpresaSessao {empId}                  -> HTTP 500
+// ⚠️ Medido ao vivo em 18/09/2026, em apurações independentes:
+//   POST /Home/AtualizaEmpresaSessao {empId}                   -> HTTP 500
 //        (500 até para a empresa que JÁ está ativa — nunca funcionou aqui)
-//   POST /Login/AdicionarEmpresaNasessao {id,descricao,matriz} -> 200 "true",
-//        e a sessão muda de verdade (contas a pagar: centenas na matriz -> 9 na 198)
-//   POST /Home/AtualizaEmpresaSessao {empId,empMatriz,empDescricao} -> 200
+//   POST /Login/AdicionarEmpresaNasessao {id,descricao,matriz}  -> 200 "true",
+//        e a sessão muda de verdade
 //
-// O primeiro é o que a PRÓPRIA tela do Wik usa (select2 do cabeçalho:
-// url "/Login/AdicionarEmpresaNasessao", data {id, descricao, matriz}). Por
-// isso tentamos nesta ordem, e devolvemos TRUE só quando a troca foi aceita —
-// quem chama tem de conferir: ler o contas a pagar sem ter trocado traz os
-// títulos da MATRIZ carimbados como se fossem da outra empresa.
-async function trocarEmpresa(sessao, empId, { descricao = '', matriz = '' } = {}) {
-  const novo = await requisitar(sessao, 'POST', '/Login/AdicionarEmpresaNasessao', {
-    form: { id: String(empId), descricao: String(descricao || ''), matriz: String(matriz || '') },
-  });
-  if (novo.status >= 200 && novo.status < 300) {
-    const corpo = (await novo.text().catch(() => '')).trim().toLowerCase();
-    if (corpo === '' || corpo === 'true' || corpo === '"true"' || corpo.startsWith('{') || corpo.startsWith('[')) return true;
+// ⚠️ E a lição de 18/09 à tarde, com o sistema no ar: chamar
+// `/Login/AdicionarEmpresaNasessao` com `descricao`/`matriz` VAZIOS é PIOR que
+// não trocar — a sessão fica sem empresa válida e, a partir dali, TODO grid
+// responde HTTP 500 (foi o que derrubou o contas a pagar e o
+// `/Pedido/CarregaGrid` das vendas). Por isso, aqui:
+//
+//   1. se a sessão JÁ está na empresa pedida, não se faz requisição nenhuma
+//      (a produção e as vendas pediam a matriz a cada volta, à toa);
+//   2. a descrição e a matriz vêm do PRÓPRIO WIK (/Login/ListarComboEmpresas,
+//      uma chamada por sessão, em cache) quando quem chama não passa — nunca
+//      se manda campo vazio;
+//   3. sem descrição, nem se tenta o endpoint da tela: vai direto para os
+//      antigos.
+//
+// `sessao.empresaAtiva` guarda a última troca aceita; numa falha ele é zerado,
+// para ninguém supor que a sessão está onde não está.
+async function empresasEmCache(sessao) {
+  if (sessao._comboEmpresas) return sessao._comboEmpresas;
+  try {
+    const j = await getJson(sessao, '/Login/ListarComboEmpresas');
+    const arr = Array.isArray(j) ? j : (j.data || j.retorno || []);
+    sessao._comboEmpresas = new Map(arr
+      .map((e) => [Number(e.id), { id: Number(e.id), nome: e.text, matriz: e.matriz }])
+      .filter(([id]) => Number.isFinite(id)));
+  } catch {
+    // Combo indisponível não pode derrubar quem chamou: seguimos sem ele e a
+    // troca usa os caminhos antigos.
+    sessao._comboEmpresas = new Map();
   }
-  const comTudo = await requisitar(sessao, 'POST', '/Home/AtualizaEmpresaSessao', {
-    form: { empId: String(empId), empMatriz: String(matriz || ''), empDescricao: String(descricao || '') },
-  });
-  if (comTudo.status >= 200 && comTudo.status < 300) return true;
-  const antigo = await requisitar(sessao, 'POST', '/Home/AtualizaEmpresaSessao', { form: { empId } });
-  return antigo.status >= 200 && antigo.status < 300;
+  return sessao._comboEmpresas;
+}
+
+async function trocarEmpresa(sessao, empId, { descricao = '', matriz = '' } = {}) {
+  const alvo = Number(empId);
+  if (!Number.isFinite(alvo) || alvo <= 0) return false;
+  // Já está nela: nenhuma requisição, nenhum risco.
+  if (sessao.empresaAtiva === alvo) return true;
+
+  let desc = String(descricao || '').trim();
+  let mat = matriz === null || matriz === undefined ? '' : String(matriz).trim();
+  if (!desc || !mat) {
+    const combo = await empresasEmCache(sessao);
+    const doWik = combo.get(alvo);
+    if (doWik) {
+      if (!desc) desc = String(doWik.nome || '').trim();
+      if (!mat && doWik.matriz !== null && doWik.matriz !== undefined) mat = String(doWik.matriz).trim();
+    }
+  }
+
+  const aceitar = () => { sessao.empresaAtiva = alvo; return true; };
+  const recusar = () => { sessao.empresaAtiva = null; return false; };
+
+  // 1) O endpoint que a própria tela do Wik usa — só COM descrição de verdade.
+  if (desc) {
+    const novo = await requisitar(sessao, 'POST', '/Login/AdicionarEmpresaNasessao', {
+      form: { id: String(alvo), descricao: desc, matriz: mat },
+    });
+    if (novo.status >= 200 && novo.status < 300) {
+      const corpo = (await novo.text().catch(() => '')).trim().toLowerCase();
+      if (corpo === '' || corpo === 'true' || corpo === '"true"' || corpo.startsWith('{') || corpo.startsWith('[')) return aceitar();
+    }
+    // 2) O antigo, mas com os três parâmetros que a tela manda.
+    const comTudo = await requisitar(sessao, 'POST', '/Home/AtualizaEmpresaSessao', {
+      form: { empId: String(alvo), empMatriz: mat, empDescricao: desc },
+    });
+    if (comTudo.status >= 200 && comTudo.status < 300) return aceitar();
+  }
+
+  // 3) Último recurso: o antigo com um parâmetro só (é o que devolve 500 nesta
+  //    instalação — fica por compatibilidade com outra versão do Wik).
+  const antigo = await requisitar(sessao, 'POST', '/Home/AtualizaEmpresaSessao', { form: { empId: String(alvo) } });
+  return antigo.status >= 200 && antigo.status < 300 ? aceitar() : recusar();
 }
 
 // ── leituras de alto nível ──────────────────────────────────────────────────
@@ -413,7 +464,14 @@ async function postGrid(sessao, caminho, colunas, jsonData, opcoes) {
   const r = await requisitar(sessao, 'POST', caminho, { form: corpoGrid(colunas, jsonData, opcoes) });
   const txt = await r.text();
   conferirSessao(r.status, txt);
-  if (r.status >= 400) throw new Error(`${caminho} devolveu HTTP ${r.status}`);
+  if (r.status >= 400) {
+    // Marcado para quem chama poder distinguir "o Wik recusou a leitura" de um
+    // erro de código. O 500 destes grids costuma ser SESSÃO SEM EMPRESA ATIVA
+    // (ver trocarEmpresa): a cura é refazer o login, não insistir.
+    const e = new Error(`${caminho} devolveu HTTP ${r.status}`);
+    e.gridErroHttp = r.status;
+    throw e;
+  }
   let j;
   try { j = JSON.parse(txt); } catch { throw new Error(`${caminho} não devolveu JSON.`); }
   // Alguns endpoints (BaixaTituloRec) devolvem JSON dentro de JSON.
