@@ -2941,4 +2941,28 @@ router.post('/importar-wik-vendas', async (req, res) => {
   } catch (e) { res.status(502).json({ error: e.message }); }
 });
 
+// Estado da importação de vendas do Wik — o que a faixa da tela de Pedidos
+// mostra. Existe porque o maestro chama o sync e descarta o retorno: sem isto,
+// um erro no meio da madrugada não aparecia em lugar nenhum e a tela só dizia
+// "0 peças" sem explicar por quê.
+router.get('/wik-vendas/status', async (req, res) => {
+  try {
+    const { estadoVendasWik } = require('../lib/wikVendasWebSync');
+    res.json(await estadoVendasWik());
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Recuperação do histórico: preenche em lote os itens dos pedidos do Wik que
+// nasceram só com o cabeçalho. O ciclo automático faz isso de 40 em 40 a cada
+// 30 min (ritmo certo para o dia a dia, lento demais para recuperar meses).
+// Idempotente: chamar de novo continua de onde parou.
+router.post('/wik-vendas/preencher-itens', async (req, res) => {
+  try {
+    const { preencherItensPendentesAgora } = require('../lib/wikVendasWebSync');
+    const limite = Number(req.body?.limite) > 0 ? Number(req.body.limite) : 600;
+    const segundos = Number(req.body?.segundos) > 0 ? Math.min(Number(req.body.segundos), 240) : 240;
+    res.json(await preencherItensPendentesAgora({ limite, segundos }));
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
 module.exports = router;

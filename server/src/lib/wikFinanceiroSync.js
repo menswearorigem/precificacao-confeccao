@@ -43,6 +43,22 @@ const DETALHE_TTL_MS = 6 * 60 * 60 * 1000;
 // Teto de contas a pagar cujo detalhe é lido por ciclo, por empresa. As que
 // sobrarem entram no ciclo seguinte — o mesmo desenho do GRADE_CAP da 0067.
 const DETALHE_CAP = Number(process.env.WIK_FIN_DETALHE_CAP || 120);
+
+// ── A chave do problema da "sessão derrubada" (18/09/2026) ─────────────────
+// O contas a pagar era o ÚNICO leitor que dependia da empresa ATIVA da sessão,
+// e por isso este sync chamava /Home/AtualizaEmpresaSessao (trocarEmpresa) uma
+// vez por empresa, a cada volta. É a única chamada que MUDA estado no Wik em
+// todo o caminho — o resto é leitura — e é a suspeita de sempre quando a
+// sessão cai. Agora o filtro de empresa vai no próprio jsonData do grid
+// (wikWeb.contasPagar recebe `empId`), então dá para parar de trocar.
+//
+// Fica em variável de ambiente, e não hard-coded, porque isto precisa ser
+// testado contra o Wik de verdade antes de virar o padrão: rode
+// POST /api/financeiro-nucleo/wik/diagnostico (botão "Testar o caminho do
+// Wik", em Financeiro › Títulos) e veja qual dos dois caminhos traz título.
+//   WIK_FIN_TROCA_EMPRESA=0  → não troca a empresa da sessão (caminho novo)
+//   ausente, ou qualquer outro valor → troca, como antes (caminho atual)
+const TROCAR_EMPRESA = String(process.env.WIK_FIN_TROCA_EMPRESA ?? '1') !== '0';
 // Tamanho da fatia da carga histórica inicial ("puxar tudo"), em dias.
 const FATIA_CARGA_DIAS = Number(process.env.WIK_FIN_FATIA_DIAS || 90);
 // Até onde a carga inicial vai para trás quando ninguém disse até onde.
@@ -390,7 +406,9 @@ async function gravarBaixa({ tituloId, wikRef, data, valor, contaId, forma }) {
 // só se lê o detalhe de quem precisa: conta nova, ou conta cujo detalhe está
 // mais velho que DETALHE_TTL_MS — e no máximo DETALHE_CAP por ciclo.
 async function importarContasPagar(sessao, emp, janela, mapas, resumo) {
-  const contas = await wikWeb.contasPagar(sessao, { de: janela.de, ate: janela.ate, tipoData: 2 });
+  const contas = await wikWeb.contasPagar(sessao, {
+    de: janela.de, ate: janela.ate, tipoData: 2, empId: emp.wik_emp_id,
+  });
   resumo.pagar_contas_vistas += contas.length;
   if (!contas.length) return;
 
@@ -768,21 +786,32 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
         // do 500) — então NÃO tratamos como sessão caída (fazer isso causava 3
         // renovações inúteis e falha). Só a derrubada REAL do grid (tela de
         // login) dispara o retry lá embaixo.
-        await wikWeb.trocarEmpresa(sessao, emp.wik_emp_id);
+        // Cada etapa carimba ONDE estava quando falhou. Até 17/09/2026 o erro
+        // que chegava na tela era sempre a mesma frase genérica sobre sessão
+        // derrubada, sem dizer em qual empresa nem em qual leitura — e com
+        // isso a investigação recomeçava do zero toda vez.
+        const passo = async (nome, fn) => {
+          try { return await fn(); } catch (err) {
+            err.etapaFinanceiro = `${nome} · ${emp.nome} (Wik ${emp.wik_emp_id})`;
+            throw err;
+          }
+        };
+
+        if (TROCAR_EMPRESA) await passo('trocar empresa da sessão', () => wikWeb.trocarEmpresa(sessao, emp.wik_emp_id));
 
         if (forcarCadastros || !cadastrosHoje) {
-          await importarPlanoContas(sessao, emp, resumo);
-          await importarCentrosCusto(sessao, emp, resumo);
-          await importarContasBancarias(sessao, emp, mapaEmpresas, resumo);
+          await passo('plano de contas', () => importarPlanoContas(sessao, emp, resumo));
+          await passo('centros de custo', () => importarCentrosCusto(sessao, emp, resumo));
+          await passo('contas bancárias', () => importarContasBancarias(sessao, emp, mapaEmpresas, resumo));
         }
         const mapas = await carregarMapas(emp.wik_emp_id);
 
-        await importarContasPagar(sessao, emp, janela, mapas, resumo);
-        await importarContasReceber(sessao, emp, janela, mapas, resumo);
-        await importarExtrato(sessao, emp, janela, mapas, resumo);
+        await passo('contas a pagar', () => importarContasPagar(sessao, emp, janela, mapas, resumo));
+        await passo('contas a receber', () => importarContasReceber(sessao, emp, janela, mapas, resumo));
+        await passo('extrato bancário', () => importarExtrato(sessao, emp, janela, mapas, resumo));
         // Depois de ter os dois lados (baixas + extrato), liga o que o Wik já
         // conciliou — assim não cai tudo como "a conciliar" no Hub.
-        await conciliarExtratoComBaixasWik(emp, resumo);
+        await passo('conciliação com as baixas do Wik', () => conciliarExtratoComBaixasWik(emp, resumo));
       }
     }
 
@@ -840,12 +869,20 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
     // Sessão derrubada não é falha da integração: é o Wik dizendo que o mesmo
     // login está em uso na tela. Some sozinho no ciclo seguinte.
     const derrubada = err.sessaoExpirada || /outra sess/i.test(err.message || '');
+    const onde = err.etapaFinanceiro ? `Parou em: ${err.etapaFinanceiro}. ` : '';
     await pool.query(
       `UPDATE integracoes_wik SET financeiro_status = 'erro', financeiro_erro = $2 WHERE id = $1`,
       [integracao.id, derrubada
-        ? 'A sessão web do Wik foi derrubada (o mesmo login está sendo usado na tela do Wik). '
-          + 'O próximo ciclo tenta de novo. Uma conta de serviço dedicada resolve isso de vez.'
-        : err.message]
+        // A frase antiga dizia "o mesmo login está sendo usado na tela do Wik"
+        // e recomendava criar uma conta de serviço — que já existe. Dizer a
+        // causa errada com confiança é pior que não dizer: manda a pessoa
+        // procurar o problema no lugar onde ele não está.
+        ? `${onde}O Wik devolveu a tela de login no meio da leitura, mesmo com o login dedicado do Hub. `
+          + 'As três causas conhecidas, nesta ordem: a troca de empresa da sessão '
+          + '(/Home/AtualizaEmpresaSessao — teste pelo botão "Testar o caminho do Wik" e, se confirmar, '
+          + 'defina WIK_FIN_TROCA_EMPRESA=0 no Render); duas instâncias do serviço no ar ao mesmo tempo '
+          + 'durante um deploy; ou alguém logado no Wik com este mesmo usuário. O próximo ciclo tenta de novo.'
+        : `${onde}${err.message}`]
     );
     if (derrubada) {
       await pool.query('UPDATE integracoes_wik SET web_cookie = NULL WHERE id = $1', [integracao.id]);

@@ -188,7 +188,14 @@ function formatarNumeroExibicao(value, casas, forcarCasas) {
 // o campo NÃO está em foco (valor inicial, ou troca vinda de fora enquanto
 // o campo está solto). onChange continua disparando a cada tecla, com
 // number (ou '') — nenhum contrato muda pra quem já usa NumInput.
-export function NumInput({ value, onChange, step = '0.01', suffix, onFocus, onBlur, ...props }) {
+export function NumInput({ value, onChange, step = '0.01', suffix, min, onFocus, onBlur, ...props }) {
+  // `min={0}` significa "aqui não existe número negativo" — quantidade de
+  // peça, saldo, desconto. Sem isto o sinal de menos passava pelo filtro de
+  // caracteres e a tela aceitava, por exemplo, uma ordem de produção de −50
+  // peças, que calculava e aparecia em tipografia calma ao lado dos números
+  // certos. O campo é type="text" (a formatação é nossa), então o atributo
+  // `min` do HTML não faz nada sozinho: quem garante é o filtro abaixo.
+  const semNegativo = min !== undefined && min !== null && Number(min) >= 0;
   const casas = casasDecimaisDoStep(step);
   const forcarCasas = suffix === 'R$';
   const [focado, setFocado] = useState(false);
@@ -201,7 +208,7 @@ export function NumInput({ value, onChange, step = '0.01', suffix, onFocus, onBl
   function aoDigitar(e) {
     // Filtra qualquer coisa que não seja dígito/separador/sinal — cobre
     // colar texto com prefixo ("R$ 1.500,00") sem deixar lixo no campo.
-    const limpo = e.target.value.replace(/[^0-9,.\-]/g, '');
+    const limpo = e.target.value.replace(semNegativo ? /[^0-9,.]/g : /[^0-9,.\-]/g, '');
     setTexto(limpo);
     onChange(textoParaNumero(limpo));
   }

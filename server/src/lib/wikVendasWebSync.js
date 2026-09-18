@@ -84,6 +84,51 @@ async function acharClienteId(client, wikCliId, nome) {
   return null;
 }
 
+// ── O VENDEDOR ──────────────────────────────────────────────────────────────
+// O grid manda o vendedor como TEXTO, no formato do Wik: "1165 - ERISVANIA DA
+// CONCEICAO DA SILVA". Até 17/09/2026 esse texto era gravado só em
+// `pedidos_venda.vendedor` — e a aba "Por Vendedor" das métricas, que lê
+// `vendedor_id`, mostrava "VENDEDORES COM VENDA: 0" em cima de R$ 390 mil
+// vendidos. A lista mostrava um nome, a métrica não mostrava ninguém: duas
+// fontes para a mesma pergunta.
+//
+// Aqui o texto vira cadastro. A coluna de texto CONTINUA sendo gravada
+// (REGRA 2: nada que já existe deixa de ser gravado) — ela é o que o Wik
+// disse, palavra por palavra; `vendedor_id` é quem ele é no Hub.
+//
+// Casar pelo NOME, não pelo código: o índice único de `vendedores` é
+// lower(btrim(nome)) (migration 0062), e é ele que impede "Arthur" e "arthur"
+// de virarem dois cadastros dividindo a mesma comissão no meio. O código do
+// Wik é guardado como rastro (`wik_vend_codigo`), nunca como chave — o mesmo
+// vendedor pode ter código diferente em outra empresa do grupo.
+function lerVendedor(texto) {
+  const bruto = txt(texto);
+  if (!bruto) return null;
+  const m = bruto.match(/^\s*([0-9]+)\s*-\s*(.+)$/);
+  const codigo = m ? m[1] : null;
+  const nome = (m ? m[2] : bruto).replace(/\s+/g, ' ').trim();
+  if (!nome) return null;
+  return { codigo: codigo ? codigo.slice(0, 20) : null, nome: nome.slice(0, 120) };
+}
+
+async function acharOuCriarVendedor(client, texto) {
+  const v = lerVendedor(texto);
+  if (!v) return null;
+  // ON CONFLICT no índice de nome: vendedor cadastrado à mão NÃO é duplicado
+  // nem sobrescrito — no máximo ganha o código do Wik, se ainda não tinha.
+  // Comissão, meta e vínculo com usuário são da casa e o Wik nunca encosta.
+  const { rows } = await client.query(
+    `INSERT INTO vendedores (nome, wik_vend_codigo, origem, sincroniza_wik)
+     VALUES ($1, $2, 'wik', TRUE)
+     ON CONFLICT ((lower(btrim(nome)))) DO UPDATE
+        SET wik_vend_codigo = COALESCE(vendedores.wik_vend_codigo, EXCLUDED.wik_vend_codigo),
+            updated_at = now()
+     RETURNING id`,
+    [v.nome, v.codigo]
+  );
+  return rows[0] ? rows[0].id : null;
+}
+
 async function gravarPedido(client, ped) {
   const pedId = Number(ped.PedId);
   // descolado pela casa? não mexe.
@@ -94,6 +139,7 @@ async function gravarPedido(client, ped) {
   if (jaTem.rows[0] && jaTem.rows[0].sincroniza_wik !== true) return 'jaExistia';
 
   const clienteId = await acharClienteId(client, Number(ped.PedCliId) || null, txt(ped.Cliente));
+  const vendedorId = await acharOuCriarVendedor(client, ped.Vendedor);
   const dataPedido = (txt(ped.PedDatacad) || '').slice(0, 10) || hojeIso();
   const totalBruto = num(ped.PedValorTotal);
   const totalLiq = num(ped.PedValorLiq) || totalBruto;
@@ -102,12 +148,13 @@ async function gravarPedido(client, ped) {
   // fora, para não zerar uma contagem que outro caminho tenha preenchido.
   const up = await client.query(
     `INSERT INTO pedidos_venda
-       (data_pedido, cliente_id, vendedor, operacao, condicao_pagamento, forma_pagamento,
+       (data_pedido, cliente_id, vendedor, vendedor_id, operacao, condicao_pagamento, forma_pagamento,
         desconto_pct, desconto_valor, acrescimo, valor_frete, situacao, quantidade_pecas,
         total_bruto, total_liquido, observacao, origem, sincroniza_wik, wik_emp_id, wik_ped_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'wik',TRUE,$16,$17)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'wik',TRUE,$17,$18)
      ON CONFLICT (wik_emp_id, wik_ped_id) WHERE wik_ped_id IS NOT NULL DO UPDATE SET
        data_pedido=EXCLUDED.data_pedido, cliente_id=EXCLUDED.cliente_id, vendedor=EXCLUDED.vendedor,
+       vendedor_id=COALESCE(EXCLUDED.vendedor_id, pedidos_venda.vendedor_id),
        operacao=EXCLUDED.operacao, condicao_pagamento=EXCLUDED.condicao_pagamento,
        forma_pagamento=EXCLUDED.forma_pagamento, desconto_pct=EXCLUDED.desconto_pct,
        desconto_valor=EXCLUDED.desconto_valor, acrescimo=EXCLUDED.acrescimo, valor_frete=EXCLUDED.valor_frete,
@@ -115,7 +162,7 @@ async function gravarPedido(client, ped) {
        observacao=EXCLUDED.observacao, updated_at=now()
      WHERE pedidos_venda.sincroniza_wik = TRUE
      RETURNING (xmax = 0) AS inserido`,
-    [dataPedido, clienteId, txt(ped.Vendedor), txt(ped.Operacao) || 'Venda',
+    [dataPedido, clienteId, txt(ped.Vendedor), vendedorId, txt(ped.Operacao) || 'Venda',
      txt(ped.CondVenc), txt(ped.FormPgto), num(ped.PedPercDesc), num(ped.PedValorDesc), num(ped.PedAcrescimo),
      num(ped.PedFrete), situacaoVenda(ped.Situacao), 0, totalBruto, totalLiq,
      txt(ped.PedObservacao), MATRIZ_EMP_ID, pedId]
@@ -132,15 +179,45 @@ async function gravarPedido(client, ped) {
 // limitado por ITENS_CAP), lê o detalhe no Wik e grava `pedido_itens`, casando
 // cada item ao produto do Hub por `wik_prod_id` (o ProdId do Wik) e, na falta,
 // pela referência. Também acerta a contagem de peças no cabeçalho.
-async function preencherItensPendentes(sessao, cap, resumo) {
+async function contarPendentes() {
+  const { rows } = await pool.query(
+    `SELECT COUNT(*)::int AS n
+       FROM pedidos_venda pv
+      WHERE pv.origem = 'wik' AND pv.sincroniza_wik = TRUE AND pv.wik_ped_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM pedido_itens pi WHERE pi.pedido_id = pv.id)`
+  );
+  return rows[0].n;
+}
+
+// Marca a tentativa no próprio pedido. É o que impede o teto por ciclo de ser
+// gasto eternamente nos MESMOS pedidos: sem esta marca, um pedido cujo detalhe
+// volta sem item continuava "pendente" e era relido a cada ciclo, na frente da
+// fila (a ordem era por data, mais novos primeiro), e a fila nunca andava.
+// O motivo fica escrito na linha — erro que ninguém lê é erro que dura um mês.
+async function marcarTentativa(pedidoId, erro) {
+  await pool.query(
+    'UPDATE pedidos_venda SET itens_wik_tentativa_em = now(), itens_wik_erro = $2 WHERE id = $1',
+    [pedidoId, erro || null]
+  );
+}
+
+// `cap`      — quantos pedidos por rodada (o detalhe é uma página de ~500 KB).
+// `horas`    — depois de quantas horas vale tentar de novo um pedido que já
+//              falhou. Assim o ciclo normal anda para a frente e o que falhou
+//              volta para a fila mais tarde, sem travar ninguém.
+// `forcar`   — ignora a espera (usado pelo botão de recuperação do histórico).
+async function preencherItensPendentes(sessao, { cap, horas = 12, forcar = false }, resumo) {
   const { rows: pendentes } = await pool.query(
     `SELECT pv.id, pv.wik_ped_id
        FROM pedidos_venda pv
       WHERE pv.origem = 'wik' AND pv.sincroniza_wik = TRUE AND pv.wik_ped_id IS NOT NULL
         AND NOT EXISTS (SELECT 1 FROM pedido_itens pi WHERE pi.pedido_id = pv.id)
-      ORDER BY pv.data_pedido DESC NULLS LAST
+        AND ($2::boolean
+             OR pv.itens_wik_tentativa_em IS NULL
+             OR pv.itens_wik_tentativa_em < now() - make_interval(hours => $3::int))
+      ORDER BY pv.itens_wik_tentativa_em ASC NULLS FIRST, pv.data_pedido DESC NULLS LAST
       LIMIT $1`,
-    [cap]
+    [cap, forcar, horas]
   );
   if (!pendentes.length) return;
 
@@ -162,9 +239,14 @@ async function preencherItensPendentes(sessao, cap, resumo) {
     } catch (e) {
       if (e.sessaoExpirada) throw e; // deixa o chamador renovar e refazer
       resumo.erros.push(`Itens ped ${ped.wik_ped_id}: ${e.message}`);
+      await marcarTentativa(ped.id, e.message);
       continue;
     }
-    if (!itens.length) { resumo.pedidosSemItens += 1; continue; }
+    if (!itens.length) {
+      resumo.pedidosSemItens += 1;
+      await marcarTentativa(ped.id, 'O detalhe deste pedido no Wik não trouxe nenhum item (ListaItensSaida vazia).');
+      continue;
+    }
 
     const client = await pool.connect();
     try {
@@ -192,9 +274,11 @@ async function preencherItensPendentes(sessao, cap, resumo) {
       await client.query('COMMIT');
       resumo.pedidosComItens += 1;
       resumo.itensGravados += itens.length;
+      await marcarTentativa(ped.id, null);
     } catch (e) {
       await client.query('ROLLBACK').catch(() => {});
       resumo.erros.push(`Itens ped ${ped.wik_ped_id}: ${e.message}`);
+      await marcarTentativa(ped.id, e.message);
     } finally { client.release(); }
   }
 }
@@ -210,9 +294,16 @@ async function importarVendasWebAgora({ dias = 60 } = {}) {
   const ate = hojeIso();
   const resumo = {
     janela: `${de}..${ate}`, lidos: 0, criadas: 0, atualizadas: 0, jaExistiam: 0,
-    pedidosComItens: 0, pedidosSemItens: 0, itensGravados: 0, erros: [],
+    vendedoresLigados: 0,
+    pedidosComItens: 0, pedidosSemItens: 0, itensGravados: 0,
+    faltandoItensAntes: 0, faltandoItensDepois: 0, erros: [],
   };
+  await pool.query(
+    "UPDATE integracoes_wik SET vendas_status = 'rodando', vendas_erro = NULL WHERE id = $1",
+    [integracao.id]
+  );
   try {
+    resumo.faltandoItensAntes = await contarPendentes();
     let sessao = await obterSessao(integracao);
     async function puxar() {
       await wikWeb.trocarEmpresa(sessao, MATRIZ_EMP_ID);
@@ -245,11 +336,11 @@ async function importarVendasWebAgora({ dias = 60 } = {}) {
     // Segunda passada: os ITENS (produtos) dos pedidos que ainda não têm.
     // Se a sessão cair no meio, renova e refaz o que faltou.
     try {
-      await preencherItensPendentes(sessao, ITENS_CAP, resumo);
+      await preencherItensPendentes(sessao, { cap: ITENS_CAP }, resumo);
     } catch (e) {
       if (e.sessaoExpirada) {
         sessao = await renovarSessao(integracao);
-        await preencherItensPendentes(sessao, ITENS_CAP, resumo).catch((err) => {
+        await preencherItensPendentes(sessao, { cap: ITENS_CAP }, resumo).catch((err) => {
           resumo.erros.push(`Itens (2ª tentativa): ${err.message}`);
         });
       } else {
@@ -257,6 +348,73 @@ async function importarVendasWebAgora({ dias = 60 } = {}) {
       }
     }
 
+    resumo.faltandoItensDepois = await contarPendentes();
+    resumo.erros = resumo.erros.slice(0, 10);
+    await pool.query(
+      `UPDATE integracoes_wik
+          SET vendas_status = 'idle', vendas_erro = NULL, vendas_resumo = $2,
+              vendas_ultima_sincronizacao = now()
+        WHERE id = $1`,
+      [integracao.id, JSON.stringify(resumo)]
+    );
+    return resumo;
+  } catch (err) {
+    // O maestro chama esta função e descarta o retorno — até 17/09/2026 um erro
+    // aqui morria em silêncio e a tela de Vendas não tinha como saber. Agora
+    // fica gravado, e a faixa da tela mostra.
+    await pool.query(
+      "UPDATE integracoes_wik SET vendas_status = 'erro', vendas_erro = $2 WHERE id = $1",
+      [integracao.id, String(err.message || err).slice(0, 2000)]
+    );
+    throw err;
+  } finally {
+    await liberarWebVendas(integracao.id);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RECUPERAÇÃO DO HISTÓRICO: preenche os itens que faltam, em lote
+// ═══════════════════════════════════════════════════════════════════════════
+// O ciclo automático anda de `ITENS_CAP` em `ITENS_CAP` a cada 30 minutos, o
+// que é o certo para não pesar no Wik no dia a dia — mas é lento demais para
+// recuperar um histórico inteiro que nasceu sem itens. Esta função é o botão
+// "preencher o que falta": vai em rodadas, com teto de tempo, e devolve o que
+// conseguiu. Chamar de novo continua de onde parou.
+async function preencherItensPendentesAgora({ limite = 600, segundos = 240, forcar = true } = {}) {
+  const integracao = await buscarIntegracao();
+  if (!integracao || !integracao.ativo) return { pulado: 'sem credencial ativa' };
+  if (!(await reservarWebVendas(integracao.id))) return { pulado: 'sessão web ocupada' };
+
+  const t0 = Date.now();
+  const resumo = {
+    janela: 'histórico', lidos: 0, criadas: 0, atualizadas: 0, jaExistiam: 0,
+    pedidosComItens: 0, pedidosSemItens: 0, itensGravados: 0,
+    faltandoItensAntes: 0, faltandoItensDepois: 0, erros: [],
+  };
+  try {
+    resumo.faltandoItensAntes = await contarPendentes();
+    let sessao = await obterSessao(integracao);
+    await wikWeb.trocarEmpresa(sessao, MATRIZ_EMP_ID);
+
+    const porRodada = Math.min(ITENS_CAP, 40);
+    let feitos = 0;
+    while (feitos < limite && (Date.now() - t0) < segundos * 1000) {
+      const antes = resumo.pedidosComItens + resumo.pedidosSemItens + resumo.erros.length;
+      try {
+        await preencherItensPendentes(sessao, { cap: porRodada, forcar }, resumo);
+      } catch (e) {
+        if (!e.sessaoExpirada) throw e;
+        sessao = await renovarSessao(integracao);
+        await wikWeb.trocarEmpresa(sessao, MATRIZ_EMP_ID);
+        continue;
+      }
+      const depois = resumo.pedidosComItens + resumo.pedidosSemItens + resumo.erros.length;
+      if (depois === antes) break; // não sobrou ninguém para tentar
+      feitos += (depois - antes);
+    }
+
+    resumo.faltandoItensDepois = await contarPendentes();
+    resumo.segundos = Math.round((Date.now() - t0) / 1000);
     resumo.erros = resumo.erros.slice(0, 10);
     return resumo;
   } finally {
@@ -264,4 +422,20 @@ async function importarVendasWebAgora({ dias = 60 } = {}) {
   }
 }
 
-module.exports = { importarVendasWebAgora, situacaoVenda };
+// Estado da integração de vendas, para a faixa da tela de Pedidos.
+async function estadoVendasWik() {
+  const integracao = await buscarIntegracao();
+  return {
+    ativo: !!(integracao && integracao.ativo),
+    status: integracao ? integracao.vendas_status : null,
+    erro: integracao ? integracao.vendas_erro : null,
+    resumo: integracao ? integracao.vendas_resumo : null,
+    ultimaSincronizacao: integracao ? integracao.vendas_ultima_sincronizacao : null,
+    faltandoItens: await contarPendentes(),
+  };
+}
+
+module.exports = {
+  importarVendasWebAgora, preencherItensPendentesAgora, estadoVendasWik,
+  situacaoVenda, lerVendedor,
+};

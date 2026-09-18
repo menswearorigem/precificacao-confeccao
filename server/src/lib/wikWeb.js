@@ -364,8 +364,14 @@ async function gridCompleto(sessao, caminho, colunas, jsonData, opcoes) {
 
 // TipoData: 1 = cadastro · 2 = vencimento · 3 = baixa
 const COLS_CONTA_PAGAR = ['CorTexto', 'CtaId', 'CtaDocumento', 'Pessoa', 'CtaVlrBruto', 'CtaVlrLiq', 'Situacao'];
-async function contasPagar(sessao, { de, ate, tipoData = 2 } = {}) {
-  return gridCompleto(sessao, '/ContaPagar/CarregaGrid', COLS_CONTA_PAGAR, {
+// `empId` é opcional e vai no jsonData como FILTRO. O contas a receber e o
+// extrato já funcionam assim; só o contas a pagar dependia da empresa ATIVA da
+// sessão, o que obrigava a chamar /Home/AtualizaEmpresaSessao a cada volta —
+// a mesma chamada que aparece em toda investigação de sessão derrubada.
+// Mandar o filtro é inofensivo se o Wik ignorar, e é o que permite parar de
+// trocar a empresa da sessão (ver WIK_FIN_TROCA_EMPRESA em wikFinanceiroSync).
+async function contasPagar(sessao, { de, ate, tipoData = 2, empId = null } = {}) {
+  const filtro = {
     ListaFiltros: {},
     FiltroSelecionado: '1',
     DataInicial: de,
@@ -376,7 +382,9 @@ async function contasPagar(sessao, { de, ate, tipoData = 2 } = {}) {
     TipoData: String(tipoData),
     ExibicaoSelecionada: '1',
     TelaPesquisa: 'ContaPagar',
-  }, { ordem: 1 });
+  };
+  if (empId) { filtro.EmpId = String(empId); filtro.Empresa = String(empId); }
+  return gridCompleto(sessao, '/ContaPagar/CarregaGrid', COLS_CONTA_PAGAR, filtro, { ordem: 1 });
 }
 
 // As PARCELAS de uma conta a pagar vêm embutidas no HTML, no input escondido

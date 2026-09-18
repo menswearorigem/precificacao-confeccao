@@ -158,6 +158,12 @@ function FaixaWik({ aoSincronizar }) {
   const [msg, setMsg] = useState('');
   const [ativando, setAtivando] = useState(false);
   const [dias, setDias] = useState('');
+  // 18/09/2026: "ver erro" era um <span> com `title` — só aparecia parando o
+  // mouse em cima por um segundo, e um clique não fazia nada. O erro existia,
+  // estava bem escrito, e não chegava em ninguém. Agora é botão e abre.
+  const [verErro, setVerErro] = useState(false);
+  const [diag, setDiag] = useState(null);
+  const [diagnosticando, setDiagnosticando] = useState(false);
 
   async function carregar() {
     try { setSt(await api.get(`${BASE}/wik/status`)); } catch { setSt(null); }
@@ -179,6 +185,14 @@ function FaixaWik({ aoSincronizar }) {
     } catch (err) {
       setMsg(mensagemErro(err));
     } finally { setRodando(false); }
+  }
+
+  async function diagnosticar() {
+    setDiag(null);
+    setDiagnosticando(true);
+    try { setDiag(await api.post(`${BASE}/wik/diagnostico`, {})); }
+    catch (err) { setDiag({ conclusao: mensagemErro(err), passos: [] }); }
+    finally { setDiagnosticando(false); }
   }
 
   // Importação DESLIGADA (nasce assim de propósito): mostra o painel para ligar.
@@ -236,7 +250,9 @@ function FaixaWik({ aoSincronizar }) {
     );
   }
 
-  const carregando = !integ.financeiro_carga_inicial_fim;
+  // "histórico ainda carregando" com ZERO sincronização feita é mentira por
+  // omissão: dava a entender que estava andando quando nunca tinha rodado.
+  const carregando = !integ.financeiro_carga_inicial_fim && !!integ.financeiro_ultima_sincronizacao;
   const ultima = integ.financeiro_ultima_sincronizacao;
 
   return (
@@ -263,14 +279,54 @@ function FaixaWik({ aoSincronizar }) {
           sem ID do Wik: {st.semMapa.join(', ')}
         </span>
       )}
+      {!integ.financeiro_ultima_sincronizacao && (
+        <span className="stamp sm tone-prejuizo" title="Nenhum ciclo do financeiro chegou ao fim até agora — por isso as telas de título, banco e fluxo estão vazias.">
+          nunca sincronizou
+        </span>
+      )}
       <span className="faixa-wik-sep">
         {msg && <span className="tone-prejuizo">{msg}</span>}
-        {integ.financeiro_erro && !msg && <span className="tone-prejuizo" title={integ.financeiro_erro}>ver erro</span>}
+        {integ.financeiro_erro && !msg && (
+          <button type="button" className="btn btn-ghost btn-mini tone-prejuizo" onClick={() => setVerErro((v) => !v)}>
+            {verErro ? 'esconder o erro' : 'ver erro'}
+          </button>
+        )}
         <button type="button" className="btn btn-ghost btn-mini" onClick={sincronizar} disabled={rodando}>
           <RefreshCw size={13} className={rodando ? 'girando' : undefined} />
           {rodando ? 'Sincronizando…' : 'Sincronizar agora'}
         </button>
       </span>
+
+      {verErro && integ.financeiro_erro && (
+        <div className="faixa-wik-detalhe card" style={{ flexBasis: '100%', marginTop: 8 }}>
+          <p style={{ margin: 0 }}>{integ.financeiro_erro}</p>
+          <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn-sec btn-mini" onClick={diagnosticar} disabled={diagnosticando}>
+              <RefreshCw size={13} className={diagnosticando ? 'girando' : undefined} />
+              {diagnosticando ? 'Testando…' : 'Testar o caminho do Wik'}
+            </button>
+            <span className="page-sub" style={{ margin: 0 }}>
+              Faz um login e duas leituras de uma linha, só para descobrir qual caminho o Wik aceita. Não grava nada.
+            </span>
+          </div>
+          {diag && (
+            <div style={{ marginTop: 10 }}>
+              <p><strong>{diag.conclusao || diag.error}</strong></p>
+              {diag.passos?.length > 0 && (
+                <ul className="lista-simples">
+                  {diag.passos.map((pss, i) => (
+                    <li key={i} className={pss.ok ? 'tone-saudavel' : 'tone-prejuizo'}>
+                      {pss.ok ? '✓' : '✗'} {pss.passo}
+                      {pss.linhas !== undefined ? ` — ${pss.linhas} linha(s)` : ''}
+                      {pss.detalhe ? ` — ${pss.detalhe}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

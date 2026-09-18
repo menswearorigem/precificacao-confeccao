@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Plus, Search, ClipboardList, ChevronRight, User, Tags, LayoutGrid, List as ListIcon, DownloadCloud} from 'lucide-react';
+  Plus, Search, ClipboardList, ChevronRight, User, Tags, LayoutGrid, List as ListIcon, DownloadCloud,
+  RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, formatQtd, dataBr, plural } from '../lib/format';
 import {
@@ -82,6 +83,13 @@ export default function PedidosVendaListPage() {
   const [criando, setCriando] = useState(false);
   const [impWik, setImpWik] = useState(false);
   const [avisoWik, setAvisoWik] = useState('');
+  // Estado da importação de vendas do Wik. Existe desde 18/09/2026 porque o
+  // sync roda sozinho e descartava o resultado: 563 pedidos ficaram com 0 peças
+  // por semanas e a tela não tinha como dizer por quê. Erro que não aparece na
+  // tela é erro que dura um mês.
+  const [wikSt, setWikSt] = useState(null);
+  const [verErroWik, setVerErroWik] = useState(false);
+  const [preenchendo, setPreenchendo] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -101,6 +109,31 @@ export default function PedidosVendaListPage() {
   // resultado do filtro ANTIGO, com a barra de filtros dizendo outra coisa.
   const geracao = useRef(0);
 
+  async function carregarStatusWik() {
+    try { setWikSt(await api.get('/pedidos/wik-vendas/status')); } catch { setWikSt(null); }
+  }
+  useEffect(() => { carregarStatusWik(); }, []);
+
+  // Recuperação do histórico: o ciclo automático preenche os itens de 40 em 40
+  // a cada 30 min — ritmo certo para o dia a dia, lento demais para recuperar
+  // meses de pedido que nasceram só com o cabeçalho. Este botão vai em lote,
+  // com teto de tempo, e pode ser clicado de novo: continua de onde parou.
+  async function preencherItensWik() {
+    setPreenchendo(true); setAvisoWik('');
+    try {
+      const r = await api.post('/pedidos/wik-vendas/preencher-itens', {});
+      if (r.pulado) setAvisoWik(`Não deu para começar agora: ${r.pulado}. Tente de novo em alguns minutos.`);
+      else setAvisoWik(
+        `Itens do Wik: ${r.pedidosComItens} pedido(s) preenchidos, ${r.itensGravados} item(ns) gravados`
+        + (r.pedidosSemItens ? `, ${r.pedidosSemItens} sem item nenhum no Wik` : '')
+        + `. Faltavam ${r.faltandoItensAntes}, agora faltam ${r.faltandoItensDepois}.`
+      );
+      await carregarStatusWik();
+      load();
+    } catch (e) { setAvisoWik('Erro: ' + e.message); }
+    finally { setPreenchendo(false); }
+  }
+
   async function importarVendasWik() {
     setImpWik(true); setAvisoWik('');
     try {
@@ -109,7 +142,9 @@ export default function PedidosVendaListPage() {
       if (r.criadas) p.push(`${r.criadas} criadas`);
       if (r.atualizadas) p.push(`${r.atualizadas} atualizadas`);
       if (r.jaExistiam) p.push(`${r.jaExistiam} já existiam`);
+      if (r.itensGravados) p.push(`${r.itensGravados} item(ns) de produto`);
       setAvisoWik(`Vendas do Wik (30 dias): ${p.join(', ') || (r.pulado || 'nada a importar')}.`);
+      await carregarStatusWik();
       load();
     } catch (e) { setAvisoWik('Erro: ' + e.message); }
     finally { setImpWik(false); }
@@ -325,6 +360,42 @@ export default function PedidosVendaListPage() {
 
       <ChipsFiltros itens={chips} onLimparTudo={limparFiltros} />
 
+      {wikSt?.ativo && (
+        <div className="faixa-wik no-print">
+          <LogoWik size={14} />
+          <span>
+            {wikSt.status === 'erro'
+              ? <strong>A última importação de vendas do Wik falhou.</strong>
+              : <>Vendas do Wik · <strong>{wikSt.ultimaSincronizacao ? dataBr(String(wikSt.ultimaSincronizacao).slice(0, 10)) : 'ainda não rodou'}</strong></>}
+          </span>
+          {wikSt.faltandoItens > 0 && (
+            <span
+              className="stamp sm tone-atencao"
+              title="Pedido sem item é pedido que entra no faturamento e não entra em peça vendida, curva ABC, saída de estoque nem custo. O valor aparece; o produto, não."
+            >
+              {wikSt.faltandoItens} pedido(s) ainda sem os produtos
+            </span>
+          )}
+          <span className="faixa-wik-sep">
+            {wikSt.erro && (
+              <button type="button" className="btn btn-ghost btn-mini tone-prejuizo" onClick={() => setVerErroWik((v) => !v)}>
+                {verErroWik ? 'esconder o erro' : 'ver erro'}
+              </button>
+            )}
+            {wikSt.faltandoItens > 0 && (
+              <button type="button" className="btn btn-ghost btn-mini" onClick={preencherItensWik} disabled={preenchendo}>
+                <RefreshCw size={13} className={preenchendo ? 'girando' : undefined} />
+                {preenchendo ? 'Preenchendo…' : 'Preencher os itens que faltam'}
+              </button>
+            )}
+          </span>
+          {verErroWik && wikSt.erro && (
+            <div className="faixa-wik-detalhe card" style={{ flexBasis: '100%', marginTop: 8 }}>
+              <p style={{ margin: 0 }}>{wikSt.erro}</p>
+            </div>
+          )}
+        </div>
+      )}
       {avisoWik && <p className="aviso-inline" style={{ marginBottom: 8 }}>{avisoWik}</p>}
       <AvisoDeFalha mensagem={erroCarga} aoTentarDeNovo={load} />
 

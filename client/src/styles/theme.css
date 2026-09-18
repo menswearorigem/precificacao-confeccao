@@ -11830,3 +11830,42 @@ table.grade-matriz { width: auto; min-width: 0; }
   .conferencia-upload-acoes { width: 100%; }
   .conferencia-upload-acoes .btn { flex: 1; justify-content: center; }
 }
+
+
+/* ===========================================================================
+   FAIXA DO WIK — o detalhe do erro, e o motivo de um botão estar apagado
+   (18/09/2026)
+   ===========================================================================
+   Duas regras que nasceram do mesmo achado: o sistema sabia o motivo e não
+   dizia. O erro do financeiro existia num `title` que só aparecia parando o
+   mouse em cima; o botão "Abrir a ordem" ficava cinza sem uma palavra de
+   explicação. Aqui é só o espaço para o texto caber. */
+.faixa-wik-detalhe {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  background: var(--surface);
+}
+.faixa-wik-detalhe .lista-simples {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 3px;
+}
+
+/* O rodapé do painel de Nova Ordem passa a ter uma linha de texto à esquerda,
+   antes dos botões: é ela que diz o que falta para o botão acender. */
+.painel-rodape-motivo {
+  margin: 0 auto 0 0;
+  max-width: 62ch;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.painel-rodape-motivo svg { flex: none; margin-top: 2px; }
+@media (max-width: 720px) {
+  .painel-rodape-motivo { max-width: none; order: -1; width: 100%; }
+}

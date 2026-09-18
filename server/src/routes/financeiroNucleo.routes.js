@@ -968,6 +968,94 @@ router.post('/wik/sincronizar', async (req, res, next) => {
   }
 });
 
+// ── Testar o caminho do Wik ────────────────────────────────────────────────
+// Diagnóstico de UMA página, para acabar com o chute sobre a "sessão
+// derrubada". Faz o mínimo possível — um login, e por empresa duas leituras de
+// 1 linha do contas a pagar — e responde, em português, qual dos dois caminhos
+// funciona:
+//
+//   A) COM troca de empresa   → /Home/AtualizaEmpresaSessao + grid sem filtro
+//                               (é o que o sync faz hoje)
+//   B) SEM troca de empresa   → grid com EmpId no filtro, sessão intocada
+//
+// Se B funcionar e A não, a resposta é definir WIK_FIN_TROCA_EMPRESA=0 no
+// Render: a troca de empresa é a única chamada deste caminho que MUDA estado
+// no Wik, e é a suspeita número 1 da derrubada.
+//
+// Só leitura: não grava nada no Hub nem no Wik.
+router.post('/wik/diagnostico', async (req, res) => {
+  const wikWeb = require('../lib/wikWeb');
+  const { obterSessao } = require('../lib/wikWebSessao');
+  const passos = [];
+  const anota = (o) => { passos.push(o); return o; };
+  try {
+    const { rows: ints } = await pool.query('SELECT * FROM integracoes_wik ORDER BY id LIMIT 1');
+    const integracao = ints[0];
+    if (!integracao || !integracao.ativo) {
+      return res.status(409).json({ error: 'A integração com o Wik não está ativa.' });
+    }
+    const { rows: empresas } = await pool.query(
+      'SELECT id, nome, wik_emp_id FROM empresas WHERE ativo AND wik_emp_id IS NOT NULL ORDER BY ordem, id'
+    );
+    if (!empresas.length) {
+      return res.status(409).json({ error: 'Nenhuma empresa com Id do Wik configurado.' });
+    }
+
+    const hoje = new Date().toISOString().slice(0, 10);
+    const de = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+
+    let sessao;
+    try {
+      sessao = await obterSessao(integracao);
+      anota({ passo: 'login', ok: true, detalhe: 'A sessão web do Wik abriu.' });
+    } catch (e) {
+      anota({ passo: 'login', ok: false, detalhe: e.message });
+      return res.json({ conclusao: 'Nem o login funcionou — o problema é a credencial, não o caminho.', passos });
+    }
+
+    for (const emp of empresas) {
+      // B) sem trocar a empresa da sessão
+      try {
+        const linhas = await wikWeb.contasPagar(sessao, { de, ate: hoje, tipoData: 2, empId: emp.wik_emp_id });
+        anota({ passo: `contas a pagar SEM trocar empresa · ${emp.nome}`, ok: true, linhas: linhas.length });
+      } catch (e) {
+        anota({ passo: `contas a pagar SEM trocar empresa · ${emp.nome}`, ok: false, detalhe: e.sessaoExpirada ? 'o Wik devolveu a tela de login' : e.message });
+      }
+      // A) trocando a empresa da sessão, como o sync faz hoje
+      try {
+        const trocou = await wikWeb.trocarEmpresa(sessao, emp.wik_emp_id);
+        anota({ passo: `trocar a empresa da sessão para ${emp.nome}`, ok: trocou, detalhe: trocou ? 'aceitou' : 'o Wik recusou a troca' });
+      } catch (e) {
+        anota({ passo: `trocar a empresa da sessão para ${emp.nome}`, ok: false, detalhe: e.message });
+      }
+      try {
+        const linhas = await wikWeb.contasPagar(sessao, { de, ate: hoje, tipoData: 2 });
+        anota({ passo: `contas a pagar DEPOIS de trocar empresa · ${emp.nome}`, ok: true, linhas: linhas.length });
+      } catch (e) {
+        anota({ passo: `contas a pagar DEPOIS de trocar empresa · ${emp.nome}`, ok: false, detalhe: e.sessaoExpirada ? 'o Wik devolveu a tela de login' : e.message });
+      }
+    }
+
+    const semTroca = passos.filter((p) => p.passo.includes('SEM trocar'));
+    const comTroca = passos.filter((p) => p.passo.includes('DEPOIS de trocar'));
+    const okSem = semTroca.some((p) => p.ok);
+    const okCom = comTroca.some((p) => p.ok);
+    let conclusao;
+    if (okSem && !okCom) {
+      conclusao = 'É a troca de empresa que derruba a sessão. Defina WIK_FIN_TROCA_EMPRESA=0 nas variáveis do Render e o financeiro passa a importar.';
+    } else if (okSem && okCom) {
+      conclusao = 'Os dois caminhos funcionaram agora. A derrubada é intermitente — a causa mais provável é outra instância do serviço no ar durante um deploy, ou alguém logado no Wik com o mesmo usuário.';
+    } else if (!okSem && !okCom) {
+      conclusao = 'Nenhum dos dois caminhos leu o contas a pagar. O login abre mas as leituras são recusadas: o usuário do Hub provavelmente não tem permissão de financeiro no Wik, ou não enxerga estas empresas.';
+    } else {
+      conclusao = 'Só o caminho com troca de empresa funcionou — mantenha WIK_FIN_TROCA_EMPRESA ligado e investigue as instâncias em paralelo.';
+    }
+    res.json({ conclusao, passos });
+  } catch (err) {
+    res.status(502).json({ error: err.message, passos });
+  }
+});
+
 // A fila de conferência de duplicidade. É SUGESTÃO: nada é fundido sozinho.
 router.get('/wik/duplicados', async (req, res, next) => {
   try {

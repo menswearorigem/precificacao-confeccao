@@ -82,6 +82,7 @@ function MatrizGrade({ grade, quantidades, onAlterar, onPreencherLinha }) {
                     <td key={chave(c.cor, c.tamanho)} className="num">
                       <NumInput
                         step="1"
+                        min={0}
                         value={quantidades[chave(c.cor, c.tamanho)] ?? ''}
                         onChange={(v) => onAlterar(c, v)}
                       />
@@ -462,6 +463,48 @@ export default function NovaOrdemProducao({
   const pendenciasGraves = (previa?.pendencias || []).filter((p) => p.grave);
   const semPrazo = !dataPrevista;
 
+  // ── Por que a ordem não abre ────────────────────────────────────────────
+  // Até 17/09/2026 os dois botões do rodapé ficavam apagados enquanto não
+  // houvesse prévia — e nada na tela dizia isso. Quem preenchia referência,
+  // datas e grade inteira via os botões cinza e não tinha o que fazer: a
+  // prévia é obrigatória (é ela que confere o material), mas isso só estava
+  // escrito na documentação, não na tela. Pior: o aviso logo acima promete
+  // "dá para abrir assim e preencher depois" sobre a data de chegada, o que
+  // fazia a pessoa procurar o problema na data.
+  //
+  // Agora são duas coisas: a prévia se pede sozinha quando a grade fica
+  // pronta (o caso normal deixa de ter porta escondida), e, quando ainda
+  // falta alguma coisa, o motivo aparece escrito embaixo do botão.
+  const totalPecas = tipo === 'produto'
+    ? gradeProduto.reduce((t, l) => t + l.quantidade_planejada, 0)
+    : totalKit;
+
+  useEffect(() => {
+    if (previa || carregandoPrevia || salvando) return;
+    if (!prontoParaPrevia || totalPecas <= 0) return;
+    const t = setTimeout(() => { pedirPrevia(); }, 600);
+    return () => clearTimeout(t);
+    // `pedirPrevia` é recriada a cada render; depender dela reiniciaria o
+    // timer para sempre. As dependências abaixo são o que de fato decide.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previa, carregandoPrevia, salvando, prontoParaPrevia, totalPecas]);
+
+  const motivoTravado = (() => {
+    if (salvando) return null;
+    if (!prontoParaPrevia) {
+      return tipo === 'produto'
+        ? 'Escolha a referência e preencha a grade — é por linha da grade que a peça entra no estoque no fim.'
+        : 'Acrescente pelo menos uma referência ao kit e preencha a grade dela.';
+    }
+    if (totalPecas <= 0) return 'Preencha a quantidade de pelo menos uma cor e tamanho.';
+    if (carregandoPrevia) return 'Conferindo o material da ficha…';
+    if (!previa) return 'Clique em "Ver o que a ficha vai consumir" — é a conferência do material, e ela é obrigatória antes de abrir.';
+    if (pendenciasGraves.length > 0 && !aceitarIncompleta) {
+      return 'A ficha está incompleta para esta grade: marque "Abrir mesmo assim" acima, ou complete a ficha da referência.';
+    }
+    return null;
+  })();
+
   return (
     <>
       {mostrarFalta && previa && (
@@ -741,6 +784,11 @@ export default function NovaOrdemProducao({
           </div>
 
           <footer className="painel-rodape">
+            {motivoTravado && (
+              <p className="painel-rodape-motivo ink-soft" role="status">
+                <Info size={14} /> {motivoTravado}
+              </p>
+            )}
             <button type="button" className="btn-sec" onClick={onFechar}>Cancelar</button>
             <button
               type="button" className="btn-sec"
