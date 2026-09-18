@@ -181,12 +181,30 @@ async function main() {
     ok('grade da OP não é trocada pelo calendário', g2[0].n === 3);
 
     secao('5. Conclusão da OP conclui o evento');
+    // ⚠️ CONTRATO ATUALIZADO NO CHECAPE DE 18/09/2026.
+    // Antes, uma OP que chegava "2 - Finalizada" SEM data de fim ganhava
+    // `data_conclusao = CURRENT_DATE` — ou seja, uma OP terminada em junho era
+    // carimbada como "concluída hoje", e qualquer relatório de produção por
+    // data saía errado (em produção, as 273 OPs concluídas estavam todas com a
+    // data da importação). Agora a data de conclusão só vem do Wik
+    // (`OprDtFim`, que o grid entrega em 754 das 837 OPs); sem ela, fica NULA,
+    // e o calendário usa o prazo como referência, sem inventar nada.
     await wik._upsertOpsDoGrid([{ OprId: 7045, ProdDescricao: 'OG100 - Camiseta Dryfit', Situacao: '2 - Finalizada', OprQtdPecas: 300, OprQtdRealizada: 290, OprQtdLd: 10 }]);
     const opFim = await ordemPorWik(7045);
-    ok('OP concluída com data de conclusão', opFim.situacao === 'concluida' && !!opFim.data_conclusao);
+    ok('OP concluída, e SEM data de conclusão inventada (o Wik não mandou OprDtFim)',
+      opFim.situacao === 'concluida' && opFim.data_conclusao === null, iso(opFim.data_conclusao));
     await cal.reconciliarCalendario(pool);
     ev = await evento(op45.id);
-    ok('evento concluído com data real', ev.status === 'concluido' && iso(ev.data_conclusao_real) === iso(opFim.data_conclusao));
+    ok('evento concluído (o calendário usa o prazo quando o Wik não deu data de fim)',
+      ev.status === 'concluido' && iso(ev.data_conclusao_real) === iso(opFim.data_prevista),
+      `${ev.status} / ${iso(ev.data_conclusao_real)}`);
+    // E quando o Wik MANDA a data de fim, é ela que vale — nunca "hoje".
+    await wik._upsertOpsDoGrid([{ OprId: 7045, ProdDescricao: 'OG100 - Camiseta Dryfit', Situacao: '2 - Finalizada', OprQtdPecas: 300, OprQtdRealizada: 290, OprQtdLd: 10, OprDtFim: '2026-06-22T00:00:00' }]);
+    const opFimReal = await ordemPorWik(7045);
+    ok('⚠️ data de conclusão vem do OprDtFim do Wik (22/06), não de hoje',
+      iso(opFimReal.data_conclusao) === '2026-06-22', iso(opFimReal.data_conclusao));
+    await cal.reconciliarCalendario(pool);
+    ev = await evento(op45.id);
     ok('produzidas e segunda no evento', ev.campos_extra.quantidade_produzida === 290 && ev.campos_extra.quantidade_segunda === 10);
     ok('anotação e descrição continuam', ev.campos_extra.anotacao === 'minha' && ev.descricao === 'Cobrar a facção na segunda');
 

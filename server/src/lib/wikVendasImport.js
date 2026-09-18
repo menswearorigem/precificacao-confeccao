@@ -137,7 +137,7 @@ async function importarClientesAgora() {
     await registrarFalhaWik(integracao.id, err);
     throw err;
   } finally {
-    await liberarJobWik(integracao.id);
+    await liberarJobWik(integracao.id, 'clientes');
   }
 }
 
@@ -265,7 +265,7 @@ async function importarVendasAgora({ dias = 30, cap = 400 } = {}) {
     await registrarFalhaWik(integracao.id, err);
     throw err;
   } finally {
-    await liberarJobWik(integracao.id);
+    await liberarJobWik(integracao.id, 'vendas');
   }
 }
 

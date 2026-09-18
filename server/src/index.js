@@ -32,8 +32,16 @@ async function soltarTravasOrfasWik() {
         web_job_ativo_desde = CASE WHEN web_job_ativo_desde < now() - interval '3 minutes' THEN NULL ELSE web_job_ativo_desde END,
         producao_job_ativo = CASE WHEN producao_job_ativo_desde < now() - interval '3 minutes' THEN NULL ELSE producao_job_ativo END,
         producao_job_ativo_desde = CASE WHEN producao_job_ativo_desde < now() - interval '3 minutes' THEN NULL ELSE producao_job_ativo_desde END,
+        -- CORRIGIDO (18/09/2026): a trava da porta da API (wik_job_ativo) e o
+        -- preview de estoque NÃO eram soltos no boot. Se o Render drenava a
+        -- instância no meio de um job, todo botão do Wik era recusado por até
+        -- 30 min sem nada rodando, e o preview ficava "rodando" para sempre.
+        wik_job_ativo = CASE WHEN wik_job_ativo_desde < now() - interval '3 minutes' THEN NULL ELSE wik_job_ativo END,
+        wik_job_ativo_desde = CASE WHEN wik_job_ativo_desde < now() - interval '3 minutes' THEN NULL ELSE wik_job_ativo_desde END,
+        preview_status = CASE WHEN preview_status = 'rodando' AND preview_iniciado_em < now() - interval '3 minutes' THEN 'idle' ELSE preview_status END,
         financeiro_status = CASE WHEN financeiro_status = 'rodando' THEN 'idle' ELSE financeiro_status END
-      WHERE web_job_ativo IS NOT NULL OR producao_job_ativo IS NOT NULL OR financeiro_status = 'rodando'
+      WHERE web_job_ativo IS NOT NULL OR producao_job_ativo IS NOT NULL
+         OR wik_job_ativo IS NOT NULL OR preview_status = 'rodando' OR financeiro_status = 'rodando'
       RETURNING id`);
     if (r.rowCount) console.log('[wik-boot] travas órfãs do Wik soltas (deploy anterior foi drenado no meio de um job)');
   } catch (err) {

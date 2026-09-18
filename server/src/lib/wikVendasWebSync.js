@@ -28,6 +28,9 @@ const MATRIZ_EMP_ID = Number(process.env.WIK_PRODUCAO_EMP_ID || 192);
 const ITENS_CAP = Number(process.env.WIK_VENDAS_ITENS_CAP || 40);
 
 function hojeIso() { return new Date().toISOString().slice(0, 10); }
+// O mesmo parser de data do Wik usado pela produção (três formatos + o
+// 01/01/1900 que significa "sem data").
+const { _dataWik: dataWik } = require('./wikProducaoSync');
 function somarDias(iso, d) { const dt = new Date(iso + 'T00:00:00'); dt.setDate(dt.getDate() + d); return dt.toISOString().slice(0, 10); }
 function txt(v) { if (v === null || v === undefined) return null; const s = String(v).trim(); return s === '' ? null : s; }
 function num(v) { const n = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(n) ? n : 0; }
@@ -140,7 +143,14 @@ async function gravarPedido(client, ped) {
 
   const clienteId = await acharClienteId(client, Number(ped.PedCliId) || null, txt(ped.Cliente));
   const vendedorId = await acharOuCriarVendedor(client, ped.Vendedor);
-  const dataPedido = (txt(ped.PedDatacad) || '').slice(0, 10) || hojeIso();
+  // CORRIGIDO (18/09/2026): era `String(PedDatacad).slice(0,10)` cru numa coluna
+  // DATE. Com `/Date(ms)/` isso vira lixo, e com "dd/mm/aaaa" o Postgres em
+  // DateStyle MDY lê 03/10 como 10 de março — em silêncio. O parser que entende
+  // os três formatos já existia no repositório (wikProducaoSync.dataWik) e não
+  // era usado aqui. E, sem data, o pedido NÃO é carimbado com a data de hoje:
+  // hoje é um palpite que estraga qualquer relatório por período.
+  const dataPedido = dataWik(ped.PedDatacad);
+  if (!dataPedido) return 'semData';
   const totalBruto = num(ped.PedValorTotal);
   const totalLiq = num(ped.PedValorLiq) || totalBruto;
 
@@ -293,7 +303,7 @@ async function importarVendasWebAgora({ dias = 60 } = {}) {
   const de = somarDias(hojeIso(), -Math.max(1, dias));
   const ate = hojeIso();
   const resumo = {
-    janela: `${de}..${ate}`, lidos: 0, criadas: 0, atualizadas: 0, jaExistiam: 0,
+    janela: `${de}..${ate}`, lidos: 0, criadas: 0, atualizadas: 0, jaExistiam: 0, semData: 0,
     vendedoresLigados: 0,
     pedidosComItens: 0, pedidosSemItens: 0, itensGravados: 0,
     faltandoItensAntes: 0, faltandoItensDepois: 0, erros: [],
@@ -326,6 +336,7 @@ async function importarVendasWebAgora({ dias = 60 } = {}) {
         await client.query('COMMIT');
         if (r === 'criado') resumo.criadas++;
         else if (r === 'atualizado') resumo.atualizadas++;
+        else if (r === 'semData') resumo.semData = (resumo.semData || 0) + 1;
         else resumo.jaExistiam++;
       } catch (e) {
         await client.query('ROLLBACK').catch(() => {});
@@ -387,7 +398,7 @@ async function preencherItensPendentesAgora({ limite = 600, segundos = 240, forc
 
   const t0 = Date.now();
   const resumo = {
-    janela: 'histórico', lidos: 0, criadas: 0, atualizadas: 0, jaExistiam: 0,
+    janela: 'histórico', lidos: 0, criadas: 0, atualizadas: 0, jaExistiam: 0, semData: 0,
     pedidosComItens: 0, pedidosSemItens: 0, itensGravados: 0,
     faltandoItensAntes: 0, faltandoItensDepois: 0, erros: [],
   };

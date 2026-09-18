@@ -114,7 +114,7 @@ router.post('/testar', async (req, res, next) => {
       const resultado = await renovarTokenAgora(integracao);
       res.json({ ok: true, nome: resultado.nome, email: resultado.email, expiraEm: resultado.expiraEm });
     } finally {
-      await liberarJobWik(integracao.id);
+      await liberarJobWik(integracao.id, 'teste-conexao');
     }
   } catch (err) {
     res.status(422).json({ error: err.message });
@@ -162,7 +162,7 @@ router.post('/testar-completo', async (req, res, next) => {
         tamanhos: { base: 'wiki_v2', path: 'tamanhos_get', ...chamadaTamanhos },
       });
     } finally {
-      await liberarJobWik(integracao.id);
+      await liberarJobWik(integracao.id, 'teste-completo');
     }
   } catch (err) {
     res.status(422).json({ error: err.message });
@@ -219,7 +219,7 @@ router.post('/estoque/preview', async (req, res, next) => {
         await registrarFalhaWik(integracao.id, err);
       })
       .finally(async () => {
-        await liberarJobWik(integracao.id);
+        await liberarJobWik(integracao.id, 'estoque-preview');
       });
   } catch (err) {
     next(err);
@@ -320,7 +320,7 @@ router.post('/produtos/preview', async (req, res, next) => {
         await registrarFalhaWik(integracao.id, err);
       })
       .finally(async () => {
-        await liberarJobWik(integracao.id);
+        await liberarJobWik(integracao.id, 'produtos-preview');
       });
   } catch (err) {
     next(err);
@@ -439,7 +439,7 @@ router.post('/ficha-custo/diagnosticar', async (req, res, next) => {
         materiaPrimaExemplo: materiaPrimaExemplo ? { matIdTestado: insumos[0]?.MatId, resposta: materiaPrimaExemplo } : null,
       });
     } finally {
-      await liberarJobWik(integracao.id);
+      await liberarJobWik(integracao.id, 'diagnostico-ficha');
     }
   } catch (err) {
     res.status(422).json({ error: err.message });
@@ -495,7 +495,7 @@ router.post('/ficha-custo/preview', async (req, res, next) => {
         await registrarFalhaWik(integracao.id, err);
       })
       .finally(async () => {
-        await liberarJobWik(integracao.id);
+        await liberarJobWik(integracao.id, 'ficha-custo-preview');
       });
   } catch (err) {
     next(err);

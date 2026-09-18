@@ -72,9 +72,21 @@ async function cicloWikCompleto(motivo = 'agenda', forcar = []) {
 
   // Pega a trava de líder numa conexão dedicada e segura por todo o ciclo.
   // Se outra instância já é a líder, pula (não loga no Wik, não derruba a dela).
-  const lockClient = await pool.connect();
+  //
+  // CORRIGIDO (18/09/2026): o `pool.connect()` ficava FORA do try/finally, com
+  // `emVoo` já ligado. Se o banco engasgasse um instante (pool cheio, reinício),
+  // a exceção subia com `emVoo = true` para sempre — e TODO ciclo seguinte
+  // respondia "pulado — já em execução" até o processo reiniciar, sem nada
+  // rodando e sem nenhum log dizendo isso.
+  let lockClient = null;
   let souLider = false;
   try {
+    try {
+      lockClient = await pool.connect();
+    } catch (err) {
+      console.error('[wik-ciclo] não consegui conexão para a trava de líder:', err.message);
+      return { pulado: 'sem conexão com o banco para a trava de líder' };
+    }
     const r = await lockClient.query('SELECT pg_try_advisory_lock($1) AS ok', [LOCK_KEY]);
     souLider = !!(r.rows[0] && r.rows[0].ok);
     if (!souLider) {
@@ -86,23 +98,30 @@ async function cicloWikCompleto(motivo = 'agenda', forcar = []) {
       const agora = Date.now();
       const venceu = !ultima[et.nome] || (agora - ultima[et.nome]) >= et.cada;
       if (!venceu && !forcarSet.has(et.nome)) continue;
-      // Marca ANTES de rodar: sucesso OU falha respeita a cadência, pra uma
-      // etapa que erra não voltar a martelar o Wik no próximo tick.
+      // Marca ANTES de rodar: uma etapa que morre no meio não volta a martelar
+      // o Wik no tick seguinte.
       ultima[et.nome] = agora;
       try {
         await et.fn();
         feitas.push(et.nome);
       } catch (err) {
         console.error(`[wik-ciclo:${et.nome}]`, err && err.message ? err.message : err);
+        // CORRIGIDO (18/09/2026): uma falha de 1 segundo custava a cadência
+        // CHEIA (30 min no financeiro) — a etapa nem era tentada de novo. Agora
+        // a falha recua só um pouco (1/4 da cadência, no mínimo 5 min), o
+        // suficiente para não martelar e pouco o bastante para o sistema se
+        // recuperar sozinho dentro da mesma hora.
+        const recuo = Math.max(5 * MIN, Math.round(et.cada / 4));
+        ultima[et.nome] = agora - (et.cada - recuo);
       }
     }
     return { feitas, segundos: Math.round((Date.now() - t0) / 1000) };
   } finally {
     // Solta a trava de líder e devolve a conexão.
-    if (souLider) {
+    if (souLider && lockClient) {
       try { await lockClient.query('SELECT pg_advisory_unlock($1)', [LOCK_KEY]); } catch { /* ok */ }
     }
-    lockClient.release();
+    if (lockClient) lockClient.release();
     emVoo = false;
     if (souLider) {
       console.log(

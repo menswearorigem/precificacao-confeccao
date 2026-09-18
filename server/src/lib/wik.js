@@ -291,6 +291,15 @@ async function chamarApi(path, tokenBox, params = {}, opcoes = {}) {
       );
     }
     if (causa === 'parametro') {
+      // CORRIGIDO (18/09/2026): o Wik responde "Nenhuma cliente encontrado"
+      // como HTTP 200 com body.status 400 — ou seja, uma LISTA VAZIA vestida
+      // de erro. Isso pintava a tela de Integrações de vermelho ("erro_outro"
+      // no selo do token, que estava válido) e derrubava a importação de
+      // clientes inteira. Resposta vazia é resposta vazia.
+      const msgVazio = String(data?.message || '');
+      if (/nenhum[ao]?\b[\s\S]{0,40}\bencontrad/i.test(msgVazio)) {
+        return { retorno: [], success: true, status: 200, vazio: true };
+      }
       throw new Error(
         `Erro de PARÂMETRO na API do Wik em ${path} (HTTP ${res.status}, body.status ${data?.status}): `
         + `${data?.message || JSON.stringify(data?.errors || {})}`

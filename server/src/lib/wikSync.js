@@ -66,7 +66,20 @@ async function reservarJobWik(integracaoId, nomeJob) {
   return rows.length > 0;
 }
 
-async function liberarJobWik(integracaoId) {
+// CORRIGIDO (18/09/2026): liberava a trava SEM conferir de quem ela era. Um job
+// que passou dos 30 min tem a trava tomada por idade — e, ao terminar, apagava
+// a trava de quem já estava rodando, liberando um terceiro. Dois jobs na API ao
+// mesmo tempo com o mesmo token é exatamente o que o suporte do Wik descreveu
+// como causa do bloqueio da conta. Agora só solta a própria (o `nomeJob` é
+// opcional para não quebrar chamador antigo, mas todos passam).
+async function liberarJobWik(integracaoId, nomeJob = null) {
+  if (nomeJob) {
+    await pool.query(
+      'UPDATE integracoes_wik SET wik_job_ativo = NULL, wik_job_ativo_desde = NULL WHERE id = $1 AND wik_job_ativo = $2',
+      [integracaoId, nomeJob]
+    );
+    return;
+  }
   await pool.query('UPDATE integracoes_wik SET wik_job_ativo = NULL, wik_job_ativo_desde = NULL WHERE id = $1', [integracaoId]);
 }
 
@@ -168,6 +181,19 @@ async function renovarTokenWikSeNecessario() {
 // erro", é a inicialização). Usado por toda função que precisa fazer uma
 // chamada de dado ao Wik (nenhuma cria mais o próprio tokenBox).
 async function obterTokenBoxAtual(integracao) {
+  // CORRIGIDO (18/09/2026): esta função só olhava o banco quando a memória
+  // estava VAZIA. Com mais de uma instância no ar (o Render sobe a nova junto
+  // da velha em todo deploy), só a LÍDER renova o token — a outra seguia com o
+  // token ANTIGO em memória e o usava ao servir uma tela. Usar o token velho
+  // enquanto a líder usa o novo é o "token duplicado" que o suporte do Wik
+  // apontou como causa do bloqueio da conta. O banco é a única fonte da
+  // verdade: uma consulta barata por uso vale muito menos que uma conta
+  // bloqueada. (Já havia 2 rejeições de token em 24 h registradas.)
+  try {
+    const { rows } = await pool.query('SELECT access_token FROM integracoes_wik WHERE id = $1', [integracao.id]);
+    const doBanco = rows[0] && rows[0].access_token;
+    if (doBanco && doBanco !== tokenBoxGlobal.atual) tokenBoxGlobal.atual = doBanco;
+  } catch { /* se o banco engasgar, segue com o que há em memória */ }
   if (!tokenBoxGlobal.atual && integracao.access_token) {
     tokenBoxGlobal.atual = integracao.access_token;
   }
@@ -326,7 +352,17 @@ async function montarPreviewEstoque(integracao, porEmpId) {
     const referencia = linha.prod_referencia;
     const cor = limparDescricaoWik(linha.cor);
     const tamanho = linha.estct_tamanho || '';
-    const quantidade = Number(linha.estct_saldo) || 0;
+    const quantidade = quantidadeWik(linha.estct_saldo);
+    if (quantidade === null) {
+      // ⚠️ `Number("1.234,00")` é NaN, e o `|| 0` que existia aqui transformava
+      // isso em ZERO — e zero não é erro: entrava como atualização, gerava
+      // movimento negativo e ZERAVA o saldo na tela, com trilha dizendo
+      // "Sincronização automática — Wik Sistemas". O Wik mistura "7117,00" com
+      // 7117.00 no mesmo campo, dependendo do endpoint. Saldo ilegível agora é
+      // ERRO VISÍVEL, nunca zero.
+      erros.push({ motivo: `Saldo ilegível para "${referencia}" (${cor}/${tamanho}): o Wik devolveu "${linha.estct_saldo}". Nada foi alterado nesta variante.`, dados: { referencia, cor, tamanho } });
+      continue;
+    }
     if (!produtoIdPorReferencia.has(referencia)) {
       erros.push({ motivo: `Referência "${referencia}" não está cadastrada em Produtos — cadastre-a antes de sincronizar.`, dados: { referencia, cor, tamanho } });
       continue;
@@ -362,6 +398,21 @@ async function montarPreviewEstoque(integracao, porEmpId) {
     criar, atualizar, erros,
     resumo: { totalLinhasWik: linhasBrutas.length, variantesCriar: criar.length, variantesAtualizar: atualizar.length, totalErros: erros.length },
   };
+}
+
+// Número do Wik em qualquer um dos dois formatos que ele usa no MESMO campo:
+// 7117.00 (number) e "7.117,00" (string pt-BR). Devolve null — não zero —
+// quando não dá para ler, para o chamador poder tratar como erro.
+function quantidadeWik(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  const bruto = String(v).trim();
+  if (!bruto || bruto.toLowerCase() === 'null') return null;
+  const limpo = /,/.test(bruto)
+    ? bruto.replace(/\s/g, '').replace(/\./g, '').replace(',', '.')
+    : bruto.replace(/\s/g, '');
+  const n = Number(limpo);
+  return Number.isFinite(n) ? n : null;
 }
 
 const MOTIVO_SINCRONIZACAO_PADRAO = 'Sincronização automática — Wik Sistemas';
@@ -400,9 +451,23 @@ async function aplicarSincronizacaoEstoque({ criar, atualizar }, motivo = MOTIVO
       if (rows.length > 0) criados += 1;
     }
 
+    // CORRIGIDO (18/09/2026): o ajuste era `nova − atual`, com `atual` vindo da
+    // PRÉVIA (de minutos antes), somado ao saldo de AGORA. Se o ciclo
+    // automático de 15 min rodasse entre a prévia e o clique em "Confirmar", o
+    // mesmo ajuste era aplicado duas vezes (500 → ciclo → 600 → confirmar →
+    // 700). Agora o ALVO manda: o ajuste é recalculado contra o saldo real do
+    // banco, dentro da transação e com trava de linha. Confirmar duas vezes dá
+    // o mesmo resultado.
     let atualizados = 0;
     for (const item of atualizar || []) {
-      const delta = Number(item.quantidadeNova) - Number(item.quantidadeAtual);
+      const alvo = Number(item.quantidadeNova);
+      if (!Number.isFinite(alvo)) continue;
+      const { rows: atualRows } = await client.query(
+        'SELECT quantidade FROM estoque_variantes WHERE id = $1 FOR UPDATE',
+        [item.varianteId]
+      );
+      if (!atualRows[0]) continue;
+      const delta = alvo - Number(atualRows[0].quantidade);
       if (delta !== 0) {
         await registrarMovimento(client, item.varianteId, 'importacao', delta, motivo);
       }
@@ -476,7 +541,7 @@ async function sincronizarEstoqueAgora() {
     await registrarFalhaWik(integracao.id, err);
     throw err;
   } finally {
-    await liberarJobWik(integracao.id);
+    await liberarJobWik(integracao.id, 'estoque');
   }
 }
 
@@ -527,7 +592,7 @@ async function previewReferencias(referencias) {
       erros: preview.erros.filter((e) => alvo.has(e.dados?.referencia)),
     };
   } finally {
-    await liberarJobWik(integracao.id);
+    await liberarJobWik(integracao.id, 'referencias-especificas');
   }
 }
 
@@ -598,6 +663,7 @@ async function corrigirJobsPresos(integracao) {
 }
 
 module.exports = {
+  _quantidadeWik: quantidadeWik,   // exportado para o teste de regressão do checape
   buscarIntegracao,
   obterTokenBoxAtual,
   renovarTokenAgora,

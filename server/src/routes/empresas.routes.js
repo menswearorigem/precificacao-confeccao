@@ -18,6 +18,12 @@ const EDITABLE_FIELDS = [
   'aliquota_media_pct',
   'ativo',
   'ordem',
+  // O mapa empresa do Hub ↔ empresa do Wik. O financeiro DEPENDE dele (sem ele
+  // a empresa é pulada e a tela fica em "nunca sincronizou"), e até hoje não
+  // havia nenhum caminho para preenchê-lo pela interface — só direto no banco.
+  // O cartão de Integrações mapeia MARCAS (listas.wik_emp_id), que é outra
+  // coisa e é usado pelo estoque.
+  'wik_emp_id',
 ];
 
 router.get('/', async (req, res, next) => {

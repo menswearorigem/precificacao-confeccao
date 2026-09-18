@@ -239,7 +239,7 @@ async function sincronizarFichaCustoAgora() {
     await registrarFalhaWik(integracao.id, err);
     throw err;
   } finally {
-    await liberarJobWik(integracao.id);
+    await liberarJobWik(integracao.id, 'ficha-custo');
   }
 }
 

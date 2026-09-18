@@ -120,12 +120,49 @@ function extrairTokenAntiforgery(html) {
 function pareceTelaDeLogin(html) {
   return /name="UsrSenha"/i.test(html) && /name="UsrNome"/i.test(html);
 }
-// O Wik permite UMA sessão por usuário. Quando outra sessão do mesmo login
-// assume, as telas voltam uma CASCA (layout sem conteúdo) e mostram este aviso,
-// ou devolvem 401. Tratamos os dois como sessão derrubada -> relogar.
+// SESSÃO DERRUBADA — o que é, de verdade (corrigido no checape de 18/09/2026).
+//
+// ⚠️ A versão anterior desta função dizia "sessão derrubada" para QUALQUER HTML
+// que contivesse o texto "logado em outra sessão". Esse texto NÃO é um aviso do
+// servidor: ele está no LAYOUT de TODA página do Wik, dentro do tratador de
+// erro do jQuery, esperando um HTTP 401 que quase nunca vem:
+//
+//   $.ajaxPrefilter(function (options, originalOptions, jqXHR) {
+//     jqXHR.fail(function () {
+//       if (jqXHR.status == 401) {
+//         swal({ text: "Usuário está logado em outra sessão! " })...
+//
+// Ou seja: toda página HTML boa do Wik (OP com grade, pedido com itens, conta a
+// pagar com parcelas — 260 KB, HTTP 200, conteúdo completo) era lida como
+// "sessão caída". Por isso `getHtml` SEMPRE lançava SESSAO_EXPIRADA e tudo que
+// depende de página nunca funcionou, enquanto tudo que vem de JSON (os grids)
+// funcionava — e cada falso positivo ainda disparava um relogin, que é o padrão
+// que o suporte do Wik aponta como causa de bloqueio de conta.
+//
+// Agora sessão derrubada é só o que é fato: HTTP 401, um redirecionamento para
+// fora (3xx), ou a TELA DE LOGIN de verdade (o formulário com UsrNome/UsrSenha).
 function pareceSessaoDerrubada(status, html) {
   if (status === 401) return true;
-  return /logado em outra sess/i.test(html || '');
+  if (status >= 300 && status < 400) return true;   // redirecionou para o login
+  return pareceTelaDeLogin(html || '');
+}
+// Guarda única usada por todo leitor: decide e lança o erro padrão.
+function conferirSessao(status, texto) {
+  if (pareceSessaoDerrubada(status, texto)) {
+    const e = new Error('SESSAO_EXPIRADA'); e.sessaoExpirada = true; throw e;
+  }
+}
+// PAYLOAD DEGENERADO — o Wik às vezes devolve HTTP 200 com N linhas em que
+// TODOS os campos são nulos e o id é 0 (visto ao vivo no grid de OPs e no de
+// contas a pagar: `recordsTotal: 9`, nove objetos vazios). Não é erro, não é
+// tela de login: é lixo. Gravar isso como se fosse leitura boa é o que fazia o
+// sistema dizer "sincronizado agora" numa rodada que não leu nada — e, com um
+// produto de referência vazia no catálogo, chegava a criar OP fantasma
+// (wik_op = 0). Quem lê grid passa por aqui antes de gravar.
+function linhasDegeneradas(linhas, campoId) {
+  if (!Array.isArray(linhas) || linhas.length === 0) return false;
+  const vazias = linhas.filter((l) => !l || !(Number(l[campoId]) > 0)).length;
+  return vazias >= linhas.length * 0.8;
 }
 
 // Faz login e devolve uma sessão com cookies válidos. Lança em falha.
@@ -142,7 +179,23 @@ async function login(baseUrl, usuario, senha) {
   });
   // Sucesso = redireciono (302/303) para dentro do sistema OU 200 que já não é
   // mais a tela de login. Falha típica = 200 devolvendo a tela de login de novo.
-  if (p.status >= 300 && p.status < 400) return sessao; // redirecionou = logou
+  //
+  // CORRIGIDO (18/09/2026): antes, QUALQUER 3xx era dado como sucesso e o fluxo
+  // parava ali. Duas consequências: (1) os cookies que /Home/Main define nunca
+  // eram recebidos; (2) um login com senha errada que respondesse 302 passava
+  // por bom, e o sintoma virava "sessão expirada" em toda leitura, para sempre.
+  // Agora seguimos o redirecionamento uma vez e confirmamos que a página final
+  // não é o login.
+  if (p.status >= 300 && p.status < 400) {
+    const destino = p.headers.get('location') || '/Home/Main';
+    const caminho = destino.startsWith('http') ? destino.replace(sessao.baseUrl, '') : destino;
+    const f = await requisitar(sessao, 'GET', caminho || '/Home/Main');
+    const htmlFinal = await f.text().catch(() => '');
+    if (f.status === 200 && pareceTelaDeLogin(htmlFinal)) {
+      throw new Error('Login web do Wik falhou: o Wik devolveu a tela de login depois do redirecionamento. Confira usuário/senha do Wik web.');
+    }
+    return sessao;
+  }
   const corpo = await p.text().catch(() => '');
   if (p.status === 200 && !pareceTelaDeLogin(corpo)) return sessao;
   throw new Error(`Login web do Wik falhou (HTTP ${p.status}). Confira usuário/senha do Wik web.`);
@@ -162,22 +215,45 @@ async function sessaoViva(sessao) {
 async function getJson(sessao, caminho) {
   const r = await requisitar(sessao, 'GET', caminho);
   const t = await r.text();
-  if (pareceTelaDeLogin(t) || pareceSessaoDerrubada(r.status, t)) {
-    const e = new Error('SESSAO_EXPIRADA'); e.sessaoExpirada = true; throw e;
-  }
+  conferirSessao(r.status, t);
   return JSON.parse(t);
 }
 async function getHtml(sessao, caminho) {
   const r = await requisitar(sessao, 'GET', caminho);
   const t = await r.text();
-  if (pareceTelaDeLogin(t) || pareceSessaoDerrubada(r.status, t)) {
-    const e = new Error('SESSAO_EXPIRADA'); e.sessaoExpirada = true; throw e;
-  }
+  conferirSessao(r.status, t);
   return t;
 }
-async function trocarEmpresa(sessao, empId) {
-  const r = await requisitar(sessao, 'POST', '/Home/AtualizaEmpresaSessao', { form: { empId } });
-  return r.status >= 200 && r.status < 400;
+
+// TROCA DA EMPRESA ATIVA DA SESSÃO.
+//
+// ⚠️ Medido ao vivo em 18/09/2026, com sessão boa, em duas apurações
+// independentes:
+//   POST /Home/AtualizaEmpresaSessao {empId}                  -> HTTP 500
+//        (500 até para a empresa que JÁ está ativa — nunca funcionou aqui)
+//   POST /Login/AdicionarEmpresaNasessao {id,descricao,matriz} -> 200 "true",
+//        e a sessão muda de verdade (contas a pagar: centenas na matriz -> 9 na 198)
+//   POST /Home/AtualizaEmpresaSessao {empId,empMatriz,empDescricao} -> 200
+//
+// O primeiro é o que a PRÓPRIA tela do Wik usa (select2 do cabeçalho:
+// url "/Login/AdicionarEmpresaNasessao", data {id, descricao, matriz}). Por
+// isso tentamos nesta ordem, e devolvemos TRUE só quando a troca foi aceita —
+// quem chama tem de conferir: ler o contas a pagar sem ter trocado traz os
+// títulos da MATRIZ carimbados como se fossem da outra empresa.
+async function trocarEmpresa(sessao, empId, { descricao = '', matriz = '' } = {}) {
+  const novo = await requisitar(sessao, 'POST', '/Login/AdicionarEmpresaNasessao', {
+    form: { id: String(empId), descricao: String(descricao || ''), matriz: String(matriz || '') },
+  });
+  if (novo.status >= 200 && novo.status < 300) {
+    const corpo = (await novo.text().catch(() => '')).trim().toLowerCase();
+    if (corpo === '' || corpo === 'true' || corpo === '"true"' || corpo.startsWith('{') || corpo.startsWith('[')) return true;
+  }
+  const comTudo = await requisitar(sessao, 'POST', '/Home/AtualizaEmpresaSessao', {
+    form: { empId: String(empId), empMatriz: String(matriz || ''), empDescricao: String(descricao || '') },
+  });
+  if (comTudo.status >= 200 && comTudo.status < 300) return true;
+  const antigo = await requisitar(sessao, 'POST', '/Home/AtualizaEmpresaSessao', { form: { empId } });
+  return antigo.status >= 200 && antigo.status < 300;
 }
 
 // ── leituras de alto nível ──────────────────────────────────────────────────
@@ -213,7 +289,7 @@ function decodeHtml(s) {
           .replace(/&quot;/g, '"').replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n))
           .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)));
 }
-async function ordemProducaoDetalhe(sessao, op) {
+async function ordemProducaoDetalhe(sessao, op, { dicaSituacao = null } = {}) {
   const idEnc = encodeURIComponent(op);
 
   function lerCabecalho(html) {
@@ -251,18 +327,20 @@ async function ordemProducaoDetalhe(sessao, op) {
   // certo quando a grade não veio de primeira. (getHtml já detecta sessão caída
   // de verdade — tela de login / "logado em outra sessão" — então não tratamos
   // "sem ListaItens" como sessão expirada: normalmente é só o statusTela.)
+  // CORRIGIDO (18/09/2026): a varredura antiga tentava statusTela = 1, 2, 4 e 0
+  // quando a grade não vinha — mais QUATRO páginas de ~260 KB por OP, ou seja
+  // ~1,3 MB e 20 s por OP que não tem grade, com 40 OPs por ciclo. Medido ao
+  // vivo: a grade vem SEM statusTela em todas as OPs testadas, e quando não vem
+  // é porque a OP não tem grade mesmo. Agora é no máximo UMA tentativa extra,
+  // com a situação que já sabemos (a `dica` vem do grid; senão, a lida na
+  // própria página). Menos tráfego = ciclo curto = a sessão web sobra para o
+  // financeiro e as vendas.
   if (grade.length === 0) {
-    // Tenta a situação lida na página primeiro; se nem o cabeçalho veio, cai nos
-    // códigos de OP em produção (1/2/4), que é o estado das OPs do painel. Para
-    // na primeira que trouxer grade — no máximo poucas tentativas, só quando a
-    // grade não veio de primeira.
-    const candidatos = [];
-    if (cabecalho.situacao != null) candidatos.push(cabecalho.situacao);
-    for (const s of [1, 2, 4, 0]) if (!candidatos.includes(s)) candidatos.push(s);
-    for (const st of candidatos) {
+    const st = (dicaSituacao != null ? Number(dicaSituacao) : cabecalho.situacao);
+    if (st != null && Number.isFinite(st)) {
       const htmlN = await getHtml(sessao, `/OrdemProducao/Create/?id=${idEnc}&statusTela=${encodeURIComponent(st)}`);
       const gradeN = lerGrade(htmlN);
-      if (gradeN.length > 0) { html = htmlN; grade = gradeN; cabecalho = lerCabecalho(htmlN); break; }
+      if (gradeN.length > 0) { html = htmlN; grade = gradeN; cabecalho = lerCabecalho(htmlN); }
     }
   }
 
@@ -302,9 +380,7 @@ async function carregarGridDepartamentos(sessao) {
   form['jsonData'] = JSON.stringify({ ListaFiltros: {}, FiltroSelecionado: '1', Valor: '' });
   const r = await requisitar(sessao, 'POST', '/Departamento/CarregaGrid', { form });
   const txt = await r.text();
-  if (pareceTelaDeLogin(txt) || pareceSessaoDerrubada(r.status, txt)) {
-    const e = new Error('SESSAO_EXPIRADA'); e.sessaoExpirada = true; throw e;
-  }
+  conferirSessao(r.status, txt);
   const j = JSON.parse(txt);
   return j.data || j.aaData || [];
 }
@@ -336,7 +412,7 @@ function corpoGrid(colunas, jsonData, { start = 0, length = 1000, ordem = 0, dir
 async function postGrid(sessao, caminho, colunas, jsonData, opcoes) {
   const r = await requisitar(sessao, 'POST', caminho, { form: corpoGrid(colunas, jsonData, opcoes) });
   const txt = await r.text();
-  if (pareceTelaDeLogin(txt) || pareceSessaoDerrubada(r.status, txt)) { const e = new Error('SESSAO_EXPIRADA'); e.sessaoExpirada = true; throw e; }
+  conferirSessao(r.status, txt);
   if (r.status >= 400) throw new Error(`${caminho} devolveu HTTP ${r.status}`);
   let j;
   try { j = JSON.parse(txt); } catch { throw new Error(`${caminho} não devolveu JSON.`); }
@@ -421,8 +497,14 @@ async function contaPagarDetalhe(sessao, ctaId) {
 
 // Contas a RECEBER. Este endpoint não é DataTables (ignora `columns[]`) e
 // devolve JSON dentro de JSON — `postGrid` já desembrulha os dois casos.
-// SituacaoSelecionada: 1 = em aberto · 2 = baixados · 3 = todos (confirmar).
-async function contasReceber(sessao, { de, ate, tipoData = 2, situacao = '3', empId = '0' } = {}) {
+//
+// ⚠️ CONFIRMADO AO VIVO (18/09/2026, duas apurações independentes):
+//   SituacaoSelecionada 1 = Aberto · 2 = Baixado · 3 = SUBSTITUÍDO (não é "todos")
+// O padrão antigo era '3' com o comentário "3 = todos (confirmar)": quem
+// chamasse sem passar situação recebia um punhado de títulos substituídos e
+// concluiria que o Wik está vazio. O padrão agora é '1' (em aberto), e quem
+// quer os dois estados pede os dois — é o que o sync faz.
+async function contasReceber(sessao, { de, ate, tipoData = 2, situacao = '1', empId = '0' } = {}) {
   return postGrid(sessao, '/BaixaTituloRec/CarregaGridBaixaRec', [], {
     ListaFiltros: {},
     FiltroSelecionado: '1',
@@ -581,6 +663,8 @@ module.exports = {
   BASE_PADRAO,
   novaSessao, restaurarCookies, serializarCookies,
   login, sessaoViva, trocarEmpresa,
+  // guardas expostas para teste de regressão (ver teste-wik-checape-2026-09-18.js)
+  pareceTelaDeLogin, pareceSessaoDerrubada, linhasDegeneradas,
   listarEmpresas, apontamentoPainel, ordemProducaoDetalhe, carregarGridDepartamentos,
   gridOrdensProducao, gridPedidos, pedidoItens, gridMateriasPrimas,
   // financeiro

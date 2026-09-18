@@ -22,15 +22,41 @@ const pool = require('../db/pool');
 
 const router = express.Router();
 
-const SEGREDO = process.env.WIK_IMPORT_SECRET || 'HBN-WIK-IMPORT-2026';
+// ⚠️ FECHADA NO CHECAPE DE 18/09/2026.
+//
+// Como estava: montada ANTES do requireAuth e do conferirOrigem, com
+// `Access-Control-Allow-Origin: *` e o segredo padrão ESCRITO NO CÓDIGO
+// ('HBN-WIK-IMPORT-2026'). Conferido em produção: um POST sem cookie nenhum,
+// de qualquer origem do mundo, com o segredo que está no repositório, era
+// aceito — ou seja, qualquer pessoa criava e sobrescrevia ordens de produção e
+// grades na base de produção, sem login e sem auditoria (o router é montado
+// antes do middlewareAuditoria).
+//
+// Agora:
+//   • sem WIK_IMPORT_SECRET definido no ambiente, a rota NÃO funciona (503).
+//     Não existe mais valor padrão;
+//   • o segredo precisa ter pelo menos 24 caracteres;
+//   • ela só liga com WIK_IMPORT_ENABLED=1 — ela existia para contornar a
+//     leitura de grade quebrada, que este mesmo patch conserta, então o normal
+//     é ficar desligada;
+//   • o CORS deixou de ser `*`: só a origem do Wik.
+const SEGREDO = process.env.WIK_IMPORT_SECRET || null;
+const LIGADA = String(process.env.WIK_IMPORT_ENABLED || '0') === '1';
+const ORIGEM_WIK = process.env.WIK_IMPORT_ORIGEM || 'https://appnew1.wikisistemas.com.br';
 const MATRIZ_EMP_ID = Number(process.env.WIK_PRODUCAO_EMP_ID || 192);
 
-// CORS liberado só neste router (chamado da aba do Wik, origem diferente).
 router.use((req, res, next) => {
-  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Origin', ORIGEM_WIK);
+  res.set('Vary', 'Origin');
   res.set('Access-Control-Allow-Headers', 'Content-Type');
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
+  if (!LIGADA) {
+    return res.status(503).json({ error: 'importação em lote desligada (defina WIK_IMPORT_ENABLED=1 para ligar)' });
+  }
+  if (!SEGREDO || String(SEGREDO).length < 24) {
+    return res.status(503).json({ error: 'importação em lote sem segredo forte configurado (WIK_IMPORT_SECRET, mínimo 24 caracteres)' });
+  }
   next();
 });
 
@@ -49,7 +75,7 @@ const norm = (v) => String(v || '').replace(/\s+/g, '').toUpperCase();
 
 router.post('/grade-lote', async (req, res) => {
   const b = req.body || {};
-  if (b.secret !== SEGREDO) return res.status(403).json({ error: 'segredo inválido' });
+  if (!SEGREDO || b.secret !== SEGREDO) return res.status(403).json({ error: 'segredo inválido' });
   const ops = Array.isArray(b.ops) ? b.ops : [];
 
   const resu = { recebidas: ops.length, atualizadas: 0, criadas: 0, semProduto: 0, refsSemProduto: [], erros: [] };

@@ -268,3 +268,86 @@ Usada nos endpoints de pessoa/cliente/fornecedor do Wik:
   reservam e liberam a trava global de job.
 - `client/src/components/WikIntegracaoCard.jsx` e `WikStatusBanner.jsx`:
   selo de status e mensagem "token duplicado" na tela quando `rejeitado`.
+
+---
+
+## A SEGUNDA PORTA: o backend web interno (checape de 18/09/2026)
+
+Este documento descrevia só a **API oficial** (token, estoque, catálogo, ficha).
+Metade da integração não aparecia aqui: **produção, financeiro, vendas de
+atacado, facções e matéria-prima entram pela sessão WEB** de
+`appnew1.wikisistemas.com.br`, que é engenharia reversa das telas do Wik e pode
+mudar sem aviso. Quem for mexer nisso precisa saber das armadilhas abaixo —
+todas medidas ao vivo, não deduzidas.
+
+### 1. "Logado em outra sessão" NÃO é aviso de sessão derrubada
+
+O texto `Usuário está logado em outra sessão!` está no **layout de toda página**
+do Wik, dentro do `$.ajaxPrefilter` do jQuery, esperando um HTTP 401 que quase
+nunca vem. Uma página de 260 KB, HTTP 200, com a grade inteira dentro, contém
+esse texto. Tratá-lo como sinal de sessão caída fazia `getHtml()` lançar
+`SESSAO_EXPIRADA` **em toda leitura de página** — grade da OP, itens do pedido e
+parcelas do contas a pagar nunca chegavam — enquanto os grids (JSON) funcionavam.
+Sessão derrubada é: **HTTP 401**, **3xx**, ou a **tela de login de verdade**
+(`UsrNome`/`UsrSenha`). Ver `pareceSessaoDerrubada` em `wikWeb.js` e a regressão
+em `server/scripts/teste-wik-checape-2026-09-18.js`.
+
+### 2. Troca da empresa ativa da sessão
+
+`POST /Home/AtualizaEmpresaSessao` com só `empId` devolve **HTTP 500** (até para
+a empresa que já está ativa). O que funciona é o que a própria tela do Wik usa:
+`POST /Login/AdicionarEmpresaNasessao` com `{id, descricao, matriz}` → `200 true`.
+`wikWeb.trocarEmpresa` tenta esse primeiro e só depois os antigos — e **o retorno
+tem de ser conferido**: ler sem ter trocado traz os títulos da empresa anterior.
+
+### 3. O `EmpId` do contas a pagar e do extrato é ignorado
+
+`/ContaPagar/CarregaGrid` devolve a **mesma lista** para `EmpId` ausente, 192,
+198 ou 202: quem separa é a **empresa ativa da sessão**. No
+`/ExtratoFinanceiro/CarregaGrid` o filtro também não separa (os mesmos `ExtId`
+voltam para empresas diferentes). Consequências no código:
+
+- **NUNCA** defina `WIK_FIN_TROCA_EMPRESA=0` com mais de uma empresa mapeada —
+  isso gravaria a dívida de um CNPJ dentro do outro. O sync recusa a
+  configuração em vez de obedecer.
+- O extrato é lido **uma vez por ciclo** (`EmpId=0`), fora do laço de empresas, e
+  a empresa de cada linha vem da **conta bancária** (`fin_contas.wik_emp_id`).
+- O contas a pagar compara a lista de cada empresa com a da anterior: se vierem
+  **idênticas**, a empresa é pulada com o motivo escrito na tela.
+
+### 4. Situações da OP (lidas do `<select name="OprSituacao">`)
+
+```
+-1 INFORME · 0 AGUARDANDO INÍCIO · 1 INICIADA · 2 FINALIZADA
+ 3 CANCELADA · 4 FINALIZADA PARCIAL · 5 BAIXADA      (não existe 6)
+```
+
+### 5. As datas da OP
+
+`OprDtPreFase`, `OprDtPrevInicio` e `OprDtPrevFim` vêm **iguais à data de
+abertura** em 100% das OPs desta instalação: o campo de previsão não é
+preenchido no Wik. O prazo de verdade está no **apontamento**
+(`/Kanban/ObterListaPainelInformativo`, campo `Prev` por etapa, junto de
+`Status` e `DiasAtraso` já calculados). Início e fim reais estão no grid
+(`OprDtInicio`, `OprDtFim`) — e é de `OprDtFim` que sai a data de conclusão;
+nunca de `CURRENT_DATE`.
+
+### 6. Grids: `columns[]` não é decorativo, e o payload pode vir degenerado
+
+Nome de coluna desconhecido → HTTP 500. `CarregaGridBaixaRec` devolve JSON
+dentro de JSON. E o Wik às vezes devolve **HTTP 200 com N linhas de id 0 e todos
+os campos nulos** — não é erro nem tela de login, é lixo: `linhasDegeneradas()`
+recusa o lote em vez de gravá-lo como leitura boa.
+
+### 7. Contas a receber
+
+`SituacaoSelecionada`: **1 = Aberto · 2 = Baixado · 3 = Substituído** (não é
+"todos"). O padrão da função é `'1'`.
+
+### 8. A fila de leitura da grade
+
+`ordens_producao.wik_grade_em` = "a última vez que a grade VEIO";
+`wik_grade_tentativa_em` (+ `wik_grade_erro`, migration 0082) = "a última vez que
+se TENTOU". É a tentativa que faz a fila girar — sem ela, a OP que volta sem
+grade fica presa na cabeça da fila para sempre e nenhuma outra é lida. Mesmo
+padrão de `pedidos_venda.itens_wik_tentativa_em` (0081).
