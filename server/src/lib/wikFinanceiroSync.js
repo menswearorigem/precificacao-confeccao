@@ -893,6 +893,22 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
     // com uma sessão nova se a do Wik cair no meio. A gravação é toda idempotente
     // (upsert por chave do Wik), então refazer não duplica nada.
     async function rodarEmpresas(sessao) {
+      // Um relogin por ciclo, no máximo: refazer a sessão é a única coisa que
+      // este caminho faz contra o Wik além de ler, e login repetido é o que
+      // derruba a conta.
+      let sessaoJaRefeita = false;
+      // A troca de empresa manda `{id, descricao, matriz}` — e quem sabe a
+      // descrição e a matriz CERTAS é o próprio Wik, não o cadastro do Hub
+      // (aqui a empresa se chama "HOGGAR (Simples Nacional)"; lá, "HOGGAR MISS
+      // MANU - NFE - 198"). Mandar o nome do Hub é o tipo de detalhe que faz o
+      // Wik recusar a troca sem dizer por quê. O combo é uma chamada só por
+      // ciclo, e é o mesmo que a tela deles usa.
+      let comboWik = new Map();
+      try {
+        for (const e of await wikWeb.listarEmpresas(sessao)) comboWik.set(Number(e.id), e);
+      } catch (e) {
+        resumo.erros.push(`não consegui ler a lista de empresas do Wik (a troca vai usar o nome do Hub): ${e.message}`);
+      }
       for (const emp of empresas) {
         // Troca a empresa ativa da sessão (o contas a pagar depende dela; o
         // contas a receber e o extrato usam EmpId como filtro e independem).
@@ -919,14 +935,34 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
         // traria os títulos da empresa anterior carimbados como se fossem
         // desta (ver a guarda em importarContasPagar).
         if (TROCAR_EMPRESA) {
+          const noWik = comboWik.get(Number(emp.wik_emp_id));
           const trocou = await passo('trocar empresa da sessão',
-            () => wikWeb.trocarEmpresa(sessao, emp.wik_emp_id, { descricao: emp.nome, matriz: MATRIZ_EMP_ID }));
+            () => wikWeb.trocarEmpresa(sessao, emp.wik_emp_id, {
+              descricao: (noWik && noWik.nome) || emp.nome,
+              matriz: (noWik && noWik.matriz) || MATRIZ_EMP_ID,
+            }));
           if (!trocou) {
             resumo.empresas_puladas.push(`${emp.nome} (Wik ${emp.wik_emp_id})`);
             resumo.erros.push(
               `${emp.nome}: o Wik não aceitou trocar a empresa da sessão, então os títulos desta empresa NÃO foram `
               + 'lidos (ler sem trocar traria os da empresa anterior e duplicaria a dívida entre CNPJs).'
             );
+            // ⚠️ MEDIDO NA TELA DE PRODUÇÃO EM 18/09/2026: quando o endpoint
+            // antigo recusa a troca (HTTP 500), a sessão fica SEM empresa
+            // ativa — e daí em diante TODA leitura do contas a pagar devolve
+            // 500, inclusive a das outras empresas e a que nem depende de
+            // troca. Era isso que fazia o diagnóstico culpar a leitura.
+            // Refazemos o login UMA vez por ciclo para as empresas seguintes
+            // (e o extrato) não herdarem a sessão estragada.
+            if (!sessaoJaRefeita) {
+              sessaoJaRefeita = true;
+              try {
+                sessao = await renovarSessao(integracao);
+                resumo.erros.push('sessão refeita depois da troca de empresa recusada (o Wik deixa a sessão sem empresa ativa quando recusa).');
+              } catch (e) {
+                resumo.erros.push(`não consegui refazer a sessão depois da troca recusada: ${e.message}`);
+              }
+            }
             continue;
           }
         }

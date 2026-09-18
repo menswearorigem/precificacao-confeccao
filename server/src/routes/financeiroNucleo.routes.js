@@ -970,24 +970,45 @@ router.post('/wik/sincronizar', async (req, res, next) => {
 
 // ── Testar o caminho do Wik ────────────────────────────────────────────────
 // Diagnóstico de UMA página, para acabar com o chute sobre a "sessão
-// derrubada". Faz o mínimo possível — um login, e por empresa duas leituras de
-// 1 linha do contas a pagar — e responde, em português, qual dos dois caminhos
-// funciona:
+// derrubada". Faz o mínimo possível — um login, e por empresa algumas leituras
+// curtas do contas a pagar — e responde, em português, o que REALMENTE
+// acontece.
 //
-//   A) COM troca de empresa   → /Home/AtualizaEmpresaSessao + grid sem filtro
-//                               (é o que o sync faz hoje)
-//   B) SEM troca de empresa   → grid com EmpId no filtro, sessão intocada
+// ⚠️ REESCRITO NO CHECAPE DE 18/09/2026. A versão anterior tinha três defeitos,
+// e os três apareciam juntos na tela:
 //
-// Se B funcionar e A não, a resposta é definir WIK_FIN_TROCA_EMPRESA=0 no
-// Render: a troca de empresa é a única chamada deste caminho que MUDA estado
-// no Wik, e é a suspeita número 1 da derrubada.
+//   1. Contava LINHA, não conteúdo. O Wik devolve HTTP 200 com N linhas de
+//      `CtaId = 0` e todos os campos nulos — lixo. O diagnóstico via "9 linhas"
+//      e dizia "funcionou".
+//   2. Concluía, quando o caminho sem troca lia e o com troca não, que a
+//      resposta era **definir `WIK_FIN_TROCA_EMPRESA=0`**. Está medido que o
+//      `EmpId` do contas a pagar é IGNORADO pelo Wik: sem a troca de empresa,
+//      o Hub grava os títulos da MATRIZ carimbados como se fossem de cada
+//      CNPJ — dívida duplicada, Simples Nacional misturado com Lucro Real.
+//      Era o conselho mais caro do sistema.
+//   3. Usava o endpoint de troca que devolve HTTP 500 nesta instalação — e o
+//      500 deixa a sessão SEM empresa ativa, então todas as leituras seguintes
+//      também davam 500 e o diagnóstico culpava a leitura.
+//
+// Agora: conta só linha com `CtaId > 0`, compara as listas entre empresas (se
+// vierem iguais, o filtro não separa), refaz o login quando a troca falha (para
+// os passos seguintes valerem alguma coisa) e nunca recomenda desligar a troca.
 //
 // Só leitura: não grava nada no Hub nem no Wik.
 router.post('/wik/diagnostico', async (req, res) => {
   const wikWeb = require('../lib/wikWeb');
-  const { obterSessao } = require('../lib/wikWebSessao');
+  const { obterSessao, renovarSessao } = require('../lib/wikWebSessao');
+  const MATRIZ_EMP_ID = Number(process.env.WIK_PRODUCAO_EMP_ID || 192);
   const passos = [];
   const anota = (o) => { passos.push(o); return o; };
+  // Assinatura do lote: se duas empresas devolverem a mesma, não houve
+  // separação nenhuma — foi a mesma lista duas vezes.
+  const assinatura = (linhas) => {
+    const ids = linhas.map((l) => Number(l.CtaId) || 0).filter((n) => n > 0);
+    return `${ids.length}:${ids.slice(0, 10).join(',')}`;
+  };
+  const validas = (linhas) => linhas.filter((l) => Number(l.CtaId) > 0);
+
   try {
     const { rows: ints } = await pool.query('SELECT * FROM integracoes_wik ORDER BY id LIMIT 1');
     const integracao = ints[0];
@@ -1013,42 +1034,116 @@ router.post('/wik/diagnostico', async (req, res) => {
       return res.json({ conclusao: 'Nem o login funcionou — o problema é a credencial, não o caminho.', passos });
     }
 
+    // A descrição e a matriz que a troca de empresa espera são as DO WIK, não as
+    // do cadastro do Hub — o combo é a mesma chamada que a tela deles faz.
+    const comboWik = new Map();
+    try {
+      for (const e of await wikWeb.listarEmpresas(sessao)) comboWik.set(Number(e.id), e);
+      anota({ passo: 'ler a lista de empresas do Wik', ok: true, detalhe: [...comboWik.values()].map((e) => `${e.id} ${e.nome}`).join(' · ') });
+    } catch (e) {
+      anota({ passo: 'ler a lista de empresas do Wik', ok: false, detalhe: e.message });
+    }
+
+    const porEmpresa = new Map();   // wik_emp_id -> assinatura do lote lido DEPOIS de trocar
+    let trocaFuncionou = false;
+    let trocaRecusada = false;
+    let leuAlgumaCoisa = false;
+    let veioLixo = false;
+
     for (const emp of empresas) {
-      // B) sem trocar a empresa da sessão
+      // 1) A troca de empresa — é ela que escopa o contas a pagar no Wik.
+      let trocou = false;
       try {
-        const linhas = await wikWeb.contasPagar(sessao, { de, ate: hoje, tipoData: 2, empId: emp.wik_emp_id });
-        anota({ passo: `contas a pagar SEM trocar empresa · ${emp.nome}`, ok: true, linhas: linhas.length });
-      } catch (e) {
-        anota({ passo: `contas a pagar SEM trocar empresa · ${emp.nome}`, ok: false, detalhe: e.sessaoExpirada ? 'o Wik devolveu a tela de login' : e.message });
-      }
-      // A) trocando a empresa da sessão, como o sync faz hoje
-      try {
-        const trocou = await wikWeb.trocarEmpresa(sessao, emp.wik_emp_id);
-        anota({ passo: `trocar a empresa da sessão para ${emp.nome}`, ok: trocou, detalhe: trocou ? 'aceitou' : 'o Wik recusou a troca' });
+        const noWik = comboWik.get(Number(emp.wik_emp_id));
+        trocou = await wikWeb.trocarEmpresa(sessao, emp.wik_emp_id, {
+          descricao: (noWik && noWik.nome) || emp.nome,
+          matriz: (noWik && noWik.matriz) || MATRIZ_EMP_ID,
+        });
+        anota({
+          passo: `trocar a empresa da sessão para ${emp.nome}`,
+          ok: trocou,
+          detalhe: trocou ? 'aceitou' : 'o Wik recusou a troca nos três endereços conhecidos',
+        });
       } catch (e) {
         anota({ passo: `trocar a empresa da sessão para ${emp.nome}`, ok: false, detalhe: e.message });
       }
+      if (trocou) trocaFuncionou = true; else trocaRecusada = true;
+
+      if (!trocou) {
+        // O endpoint antigo devolve 500 e deixa a sessão sem empresa ativa —
+        // dali em diante TODA leitura do contas a pagar dá 500. Sem refazer o
+        // login, os passos seguintes não diriam nada sobre o Wik, só sobre a
+        // sessão que este próprio teste estragou.
+        try {
+          sessao = await renovarSessao(integracao);
+          anota({ passo: `refazer o login depois da troca recusada · ${emp.nome}`, ok: true, detalhe: 'sessão nova, para os próximos passos valerem' });
+        } catch (e) {
+          anota({ passo: `refazer o login depois da troca recusada · ${emp.nome}`, ok: false, detalhe: e.message });
+        }
+        continue;
+      }
+
+      // 2) A leitura, já com a empresa certa na sessão.
       try {
         const linhas = await wikWeb.contasPagar(sessao, { de, ate: hoje, tipoData: 2 });
-        anota({ passo: `contas a pagar DEPOIS de trocar empresa · ${emp.nome}`, ok: true, linhas: linhas.length });
+        const boas = validas(linhas);
+        if (linhas.length && !boas.length) {
+          veioLixo = true;
+          anota({
+            passo: `contas a pagar · ${emp.nome}`,
+            ok: false,
+            linhas: 0,
+            detalhe: `o Wik devolveu ${linhas.length} linha(s) VAZIAS (CtaId 0, todos os campos nulos) — não é título, é uma página de preenchimento`,
+          });
+        } else {
+          if (boas.length) leuAlgumaCoisa = true;
+          porEmpresa.set(emp.wik_emp_id, { nome: emp.nome, assinatura: assinatura(boas), n: boas.length });
+          anota({ passo: `contas a pagar · ${emp.nome}`, ok: true, linhas: boas.length });
+        }
       } catch (e) {
-        anota({ passo: `contas a pagar DEPOIS de trocar empresa · ${emp.nome}`, ok: false, detalhe: e.sessaoExpirada ? 'o Wik devolveu a tela de login' : e.message });
+        anota({
+          passo: `contas a pagar · ${emp.nome}`,
+          ok: false,
+          detalhe: e.sessaoExpirada ? 'o Wik devolveu a tela de login (HTTP 401 ou o formulário)' : e.message,
+        });
       }
     }
 
-    const semTroca = passos.filter((p) => p.passo.includes('SEM trocar'));
-    const comTroca = passos.filter((p) => p.passo.includes('DEPOIS de trocar'));
-    const okSem = semTroca.some((p) => p.ok);
-    const okCom = comTroca.some((p) => p.ok);
+    // 3) As listas das empresas são as mesmas? Então não houve separação.
+    const listas = [...porEmpresa.values()].filter((x) => x.n > 0);
+    const iguais = listas.length > 1 && new Set(listas.map((x) => x.assinatura)).size === 1;
+    if (listas.length > 1) {
+      anota({
+        passo: 'as empresas devolveram listas diferentes?',
+        ok: !iguais,
+        detalhe: iguais
+          ? `NÃO: ${listas.map((x) => `${x.nome} ${x.n}`).join(' · ')} — a mesma lista para todas, ou seja, a sessão não trocou de verdade`
+          : `sim: ${listas.map((x) => `${x.nome} ${x.n}`).join(' · ')}`,
+      });
+    }
+
     let conclusao;
-    if (okSem && !okCom) {
-      conclusao = 'É a troca de empresa que derruba a sessão. Defina WIK_FIN_TROCA_EMPRESA=0 nas variáveis do Render e o financeiro passa a importar.';
-    } else if (okSem && okCom) {
-      conclusao = 'Os dois caminhos funcionaram agora. A derrubada é intermitente — a causa mais provável é outra instância do serviço no ar durante um deploy, ou alguém logado no Wik com o mesmo usuário.';
-    } else if (!okSem && !okCom) {
-      conclusao = 'Nenhum dos dois caminhos leu o contas a pagar. O login abre mas as leituras são recusadas: o usuário do Hub provavelmente não tem permissão de financeiro no Wik, ou não enxerga estas empresas.';
+    if (iguais) {
+      conclusao = 'A troca de empresa foi aceita, mas as empresas devolveram A MESMA lista de títulos — '
+        + 'ou seja, a sessão continuou na mesma empresa. Importar assim gravaria a dívida de um CNPJ dentro do outro, '
+        + 'então o sync PULA a segunda empresa em vez de duplicar. Isso é assunto para o suporte da Wik.';
+    } else if (!trocaFuncionou && trocaRecusada) {
+      conclusao = 'O Wik recusou a troca da empresa da sessão em todos os endereços conhecidos '
+        + '(/Login/AdicionarEmpresaNasessao e /Home/AtualizaEmpresaSessao). Sem a troca não dá para ler o contas a pagar '
+        + 'de cada empresa: o filtro de empresa do grid é IGNORADO pelo Wik, então sem trocar viriam sempre os títulos '
+        + 'da mesma empresa. NÃO defina WIK_FIN_TROCA_EMPRESA=0 — isso não conserta e ainda duplica a dívida entre os CNPJs. '
+        + 'Abra chamado na Wik com este resultado.';
+    } else if (veioLixo && !leuAlgumaCoisa) {
+      conclusao = 'A sessão abriu e a troca de empresa funcionou, mas o Wik devolveu só linhas VAZIAS — '
+        + 'essas empresas não têm título nenhum na janela testada (30 dias). Provavelmente o financeiro do grupo está '
+        + 'lançado em outra empresa do Wik (a matriz), que ainda não está mapeada em Empresas aqui no Hub.';
+    } else if (leuAlgumaCoisa) {
+      conclusao = 'O caminho está funcionando: login, troca de empresa e leitura do contas a pagar, com títulos de verdade. '
+        + 'Se a tela ainda estiver vazia, o que falta é rodar a importação (botão "Sincronizar agora") ou esperar o próximo ciclo.';
     } else {
-      conclusao = 'Só o caminho com troca de empresa funcionou — mantenha WIK_FIN_TROCA_EMPRESA ligado e investigue as instâncias em paralelo.';
+      conclusao = 'O login abre mas nenhuma leitura do contas a pagar passou. As causas, nesta ordem: alguém entrou no Wik '
+        + 'com o MESMO usuário do Hub (o Wik só permite uma sessão por login); o usuário não tem permissão de financeiro no Wik; '
+        + 'ou o Wik está instável agora. Tente de novo em alguns minutos antes de mexer em configuração.';
     }
     res.json({ conclusao, passos });
   } catch (err) {

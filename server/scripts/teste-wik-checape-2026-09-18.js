@@ -25,6 +25,7 @@ const pool = require('../src/db/pool');
 const path = require.resolve('../src/lib/wikWeb');
 const wikWebReal = require('../src/lib/wikWeb');
 let TROCA_FUNCIONA = true;
+let ULTIMA_TROCA = null;
 let PAGAR_IGNORA_EMPRESA = true;   // é o comportamento medido ao vivo
 const CONTAS_DA_MATRIZ = [
   { CtaId: 45009, CtaDocumento: 'OS', CtaFornId: 1151, Pessoa: 'FACÇÃO-KLEVES POLO', CtaVlrBruto: 6000, CtaVlrLiq: 6000, Situacao: 'EM ABERTO', CtaDataCadastro: '2026-09-01T00:00:00' },
@@ -36,7 +37,13 @@ require.cache[path] = { id: path, filename: path, loaded: true, exports: {
   BASE_PADRAO: 'https://x',
   restaurarCookies: () => ({}), serializarCookies: () => '[]',
   sessaoViva: async () => true, login: async () => ({}),
-  trocarEmpresa: async () => TROCA_FUNCIONA,
+  trocarEmpresa: async (s, empId, opcoes) => { ULTIMA_TROCA = { empId, ...(opcoes || {}) }; return TROCA_FUNCIONA; },
+  // o combo que a tela do Wik usa — com os nomes DELES, não os do Hub
+  listarEmpresas: async () => ([
+    { id: 192, nome: 'HEBRON - DINAMICA MATRIZ', matriz: 192 },
+    { id: 198, nome: 'HOGGAR MISS MANU - NFE - 198', matriz: 192 },
+    { id: 202, nome: 'HEBRON - ORIGEM', matriz: 192 },
+  ]),
   pareceTelaDeLogin: wikWebReal.pareceTelaDeLogin,
   pareceSessaoDerrubada: wikWebReal.pareceSessaoDerrubada,
   linhasDegeneradas: wikWebReal.linhasDegeneradas,
@@ -204,6 +211,10 @@ const TELA_DE_LOGIN = '<html><body><form><input name="UsrNome"/><input name="Usr
     (await q("SELECT count(*)::int n FROM fin_titulos WHERE empresa_id IN (901,902)"))[0].n === 0);
   ok('…e a tela recebe o motivo, empresa por empresa',
     Array.isArray(r0.empresas_puladas) && r0.empresas_puladas.length === 2, JSON.stringify(r0.empresas_puladas));
+  // Medido na tela em 18/09: a troca recusada deixa a sessão sem empresa ativa
+  // e todo o resto do ciclo passa a dar HTTP 500. O sync refaz o login UMA vez.
+  ok('⚠️ a sessão é refeita uma vez (a recusa deixa a sessão sem empresa ativa)',
+    (r0.erros || []).filter((e) => /sessão refeita/i.test(e)).length === 1, JSON.stringify(r0.erros));
 
   secao('11. Financeiro: o filtro de empresa é ignorado pelo Wik — a guarda segura');
   await pool.query("UPDATE integracoes_wik SET financeiro_carga_inicial_ate=NULL, financeiro_carga_inicial_fim=NULL, financeiro_ultima_sincronizacao=NULL, web_job_ativo=NULL WHERE id=1");
@@ -213,6 +224,9 @@ const TELA_DE_LOGIN = '<html><body><form><input name="UsrNome"/><input name="Usr
   ok('⚠️ a MESMA conta a pagar não entra em dois CNPJs', porEmpresa.length === 1, JSON.stringify(porEmpresa));
   ok('…e a segunda empresa é registrada como pulada, com o porquê',
     (r1.empresas_puladas || []).length === 1 && /IDÊNTICO/.test((r1.erros || []).join(' ')), JSON.stringify(r1.empresas_puladas));
+  ok('⚠️ a troca usa a descrição e a matriz QUE O WIK conhece, não o nome do Hub',
+    ULTIMA_TROCA && ULTIMA_TROCA.descricao === 'HEBRON - ORIGEM' && Number(ULTIMA_TROCA.matriz) === 192,
+    JSON.stringify(ULTIMA_TROCA));
 
   secao('12. Financeiro: o extrato bancário entra UMA vez');
   const ext = await q("SELECT wik_emp_id, count(*)::int n, sum(valor) s FROM fin_extrato_bancario WHERE wik_ext_id=430 GROUP BY wik_emp_id");
