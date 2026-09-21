@@ -196,6 +196,9 @@ export const MODULES = [
         paginas: [
           { to: '/marketplace/anuncios', label: 'Anúncios', icon: Store },
           { to: '/marketplace/promocoes', label: 'Promoções', icon: Tag },
+          // 21/09/2026: o piso é a regra que Anúncios e Promoções obedecem —
+          // mora ao lado deles, no mesmo grupo do catálogo.
+          { to: '/marketplace/piso', label: 'Piso de Preço', icon: ShieldCheck },
           { to: '/marketplace/full', label: 'Full', icon: Warehouse },
         ],
       },

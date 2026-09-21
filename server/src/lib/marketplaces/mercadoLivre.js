@@ -1681,6 +1681,8 @@ module.exports = {
   buscarDetalheCategoria,
   buscarOpinioesAnuncio,
   buscarConcorrenciaAnuncio,
+  // Leitura de item em lote, exportada para o rastreio de concorrente (21/09/2026).
+  buscarDetalheAnuncios,
   buscarAdvertiserIdAds,
   buscarCampanhasAds,
   buscarMetricasAnunciosPorDia,

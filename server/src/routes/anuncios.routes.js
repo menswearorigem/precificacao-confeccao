@@ -26,6 +26,8 @@ const { montarPlanilhaAnuncios } = require('../lib/anunciosExportacao');
 const { idsDoFiltro, chavesDoFiltro } = require('../lib/filtrosMulti');
 const { paraHttps } = require('../lib/fotoMarketplace');
 
+const precoPiso = require('../lib/precoPiso');
+
 const router = express.Router();
 
 // Janela de VENDA da exportação: a planilha só leva o anúncio que vendeu nos
@@ -626,6 +628,39 @@ async function alterarAnuncioNaPlataforma(req, anuncioId, { preco, estoque, titu
     };
     await garantirTokenValido(integracao);
 
+    // -----------------------------------------------------------------------
+    // O PISO (21/09/2026). Preço novo abaixo do piso do canal não trava — a
+    // dona escolheu "avisa, mas deixa aplicar" — mas exige que quem manda
+    // diga que viu (`aceitar_abaixo_do_piso`) e POR QUÊ (`motivo_piso`), e o
+    // motivo fica gravado. Quem avalia é o motor, com o preço que vai para a
+    // plataforma, e não um campo que a tela mandou. Anúncio sem referência,
+    // referência sem custo ou canal sem tabela: não há piso, não há trava —
+    // não se trava o que não se mede (a auditoria lista esses casos).
+    // -----------------------------------------------------------------------
+    let excecaoPiso = null;
+    if (preco != null && Number(preco) > 0 && linha.produto_id) {
+      const ctxPiso = await precoPiso.carregarContexto([linha.produto_id]);
+      const av = precoPiso.avaliar(ctxPiso, {
+        produtoId: linha.produto_id, marketplace: linha.marketplace, tipoAnuncio: linha.tipo_anuncio,
+        integracaoId: linha.origem_integracao_id, preco: Number(preco),
+      });
+      if (av.ok && av.abaixoDoPiso) {
+        const corpo = req.body || {};
+        if (corpo.aceitar_abaixo_do_piso !== true) {
+          const e = new Error(`${precoPiso.brl(preco)} fica abaixo do piso deste canal (${precoPiso.brl(av.piso)}, ${av.regra.descricao}): margem de ${precoPiso.pctBr(av.margem)} contra o mínimo de ${precoPiso.pctBr(av.regra.margemMinima)}. Para alterar mesmo assim, confirme e diga o motivo.`);
+          Object.assign(e, { status: 400, exige: 'aceitar_abaixo_do_piso', piso: av.piso, margem: av.margem, margemMinima: av.regra.margemMinima, regra: av.regra.descricao });
+          throw e;
+        }
+        const motivo = String(corpo.motivo_piso || '').trim();
+        if (!motivo) {
+          const e = new Error('Diga o motivo de vender abaixo do piso — ele fica registrado.');
+          Object.assign(e, { status: 400, exige: 'motivo_piso', piso: av.piso, margem: av.margem });
+          throw e;
+        }
+        excecaoPiso = { av, motivo };
+      }
+    }
+
     // As variações que o pedido mandou, ou (quando não mandou) a variação
     // única do anúncio — necessária porque Shopee e TikTok só aceitam preço
     // e estoque por variação, nunca no anúncio como um todo.
@@ -696,6 +731,14 @@ async function alterarAnuncioNaPlataforma(req, anuncioId, { preco, estoque, titu
       throw e;
     }
 
+    if (excecaoPiso) {
+      await client.query(
+        `INSERT INTO preco_piso_excecoes (origem, anuncio_id, produto_id, marketplace, preco, piso, margem_no_preco, margem_minima, motivo, usuario_id)
+         VALUES ('anuncio', $1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [anuncioId, linha.produto_id, linha.marketplace, Number(preco), excecaoPiso.av.piso, excecaoPiso.av.margem, excecaoPiso.av.regra.margemMinima, excecaoPiso.motivo, req.user?.id || null]
+      );
+    }
+
     // Histórico e retrato local só depois que a plataforma aceitou. Se a
     // chamada acima tivesse falhado, o catch abaixo registra a TENTATIVA
     // recusada — nunca uma alteração que não aconteceu.
@@ -756,6 +799,11 @@ router.post('/:id/publicar', async (req, res, next) => {
     }
     res.json(await alterarAnuncioNaPlataforma(req, req.params.id, req.body));
   } catch (err) {
+    // A trava do piso responde com `exige`, como a promoção faz com o
+    // prejuízo: a tela lê o campo e pede a confirmação com motivo.
+    if (err && err.exige) {
+      return res.status(err.status || 400).json({ error: err.message, exige: err.exige, piso: err.piso, margem: err.margem, margemMinima: err.margemMinima, regra: err.regra });
+    }
     next(err);
   }
 });

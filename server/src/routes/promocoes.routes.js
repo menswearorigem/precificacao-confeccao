@@ -35,6 +35,8 @@ const mercadoLivre = require('../lib/marketplaces/mercadoLivre');
 const shopee = require('../lib/marketplaces/shopee');
 const tiktokShop = require('../lib/marketplaces/tiktokShop');
 
+const precoPiso = require('../lib/precoPiso');
+
 const router = express.Router();
 
 // Teto de itens por operação em massa. 200 é o mesmo limite da ação em massa
@@ -114,6 +116,65 @@ async function contarPrejuizo(itens) {
   if (lista.length === 0) return 0;
   const base = await carregarBaseDeMargem(lista.map((i) => i.produtoId));
   return lista.filter((i) => margemNoPreco(base, i.produtoId, i.preco).prejuizo === true).length;
+}
+
+// A mesma trava para o PISO do canal (21/09/2026): quem conta é o motor por
+// canal, sobre o preço que vai para a plataforma. Devolve os itens abaixo do
+// piso com a avaliação, para a rota exigir `aceitar_abaixo_do_piso` +
+// `motivo_piso` e gravar a exceção quando a pessoa assinar.
+async function itensAbaixoDoPiso(itens) {
+  const lista = (Array.isArray(itens) ? itens : [])
+    .map((i) => ({ anuncioId: inteiroPositivo(i.anuncio_id), produtoId: inteiroPositivo(i.produto_id), preco: i.preco_promocional != null ? Number(i.preco_promocional) : null }))
+    .filter((i) => i.anuncioId && i.produtoId && Number.isFinite(i.preco) && i.preco > 0);
+  if (lista.length === 0) return [];
+  const { rows: anuncios } = await pool.query(
+    'SELECT id, marketplace, tipo_anuncio, origem_integracao_id, produto_id FROM anuncios_marketplace WHERE id = ANY($1::int[])',
+    [[...new Set(lista.map((i) => i.anuncioId))]]
+  );
+  const porId = new Map(anuncios.map((a) => [a.id, a]));
+  const ctx = await precoPiso.carregarContexto(lista.map((i) => i.produtoId));
+  const abaixo = [];
+  const vistos = new Set();
+  for (const i of lista) {
+    const a = porId.get(i.anuncioId);
+    if (!a) continue;
+    const chave = `${i.anuncioId}|${i.preco}`;
+    if (vistos.has(chave)) continue;
+    vistos.add(chave);
+    const av = precoPiso.avaliar(ctx, { produtoId: i.produtoId, marketplace: a.marketplace, tipoAnuncio: a.tipo_anuncio, integracaoId: a.origem_integracao_id, preco: i.preco });
+    if (av.ok && av.abaixoDoPiso) abaixo.push({ anuncioId: i.anuncioId, produtoId: i.produtoId, marketplace: a.marketplace, preco: i.preco, av });
+  }
+  return abaixo;
+}
+
+// Aplica a trava: devolve `null` se pode seguir, ou o corpo do 400.
+async function travaDoPiso(req, itens) {
+  const abaixo = await itensAbaixoDoPiso(itens);
+  if (abaixo.length === 0) return { abaixo, erro: null };
+  if (req.body?.aceitar_abaixo_do_piso !== true) {
+    return {
+      abaixo,
+      erro: {
+        error: `${abaixo.length} ${abaixo.length === 1 ? 'item fica' : 'itens ficam'} abaixo do piso do canal (a margem mínima da regra da casa). Para aplicar mesmo assim, confirme e diga o motivo.`,
+        exige: 'aceitar_abaixo_do_piso',
+        itens: abaixo.map((x) => ({ anuncio_id: x.anuncioId, preco: x.preco, piso: x.av.piso, margem: x.av.margem, margem_minima: x.av.regra.margemMinima })),
+      },
+    };
+  }
+  const motivo = String(req.body?.motivo_piso || '').trim();
+  if (!motivo) return { abaixo, erro: { error: 'Diga o motivo de vender abaixo do piso — ele fica registrado.', exige: 'motivo_piso' } };
+  return { abaixo, erro: null, motivo };
+}
+
+async function gravarExcecoesDoPiso(trava, { promocaoId = null, usuarioId = null }) {
+  if (!trava || !trava.motivo || trava.abaixo.length === 0) return;
+  for (const x of trava.abaixo) {
+    await pool.query(
+      `INSERT INTO preco_piso_excecoes (origem, anuncio_id, promocao_id, produto_id, marketplace, preco, piso, margem_no_preco, margem_minima, motivo, usuario_id)
+       VALUES ('promocao', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [x.anuncioId, promocaoId, x.produtoId, x.marketplace, x.preco, x.av.piso, x.av.margem, x.av.regra.margemMinima, trava.motivo, usuarioId]
+    );
+  }
 }
 
 async function historico(client, promocaoId, { anuncio, campo, antes, depois, usuarioId }) {
@@ -431,7 +492,7 @@ async function montarPrevia({ anuncioIds, regra, promocaoTipo, integracaoId }) {
 
   const { rows: anuncios } = await pool.query(
     `SELECT a.id, a.anuncio_id_externo, a.titulo, a.preco, a.preco_original, a.estoque, a.foto_url,
-            a.marketplace, a.origem_integracao_id, a.produto_id,
+            a.marketplace, a.origem_integracao_id, a.produto_id, a.tipo_anuncio,
             im.nome AS loja_nome, p.referencia
        FROM anuncios_marketplace a
        JOIN integracoes_marketplace im ON im.id = a.origem_integracao_id
@@ -451,6 +512,11 @@ async function montarPrevia({ anuncioIds, regra, promocaoTipo, integracaoId }) {
   }
 
   const base = await carregarBaseDeMargem(anuncios.map((a) => a.produto_id));
+  // O piso do CANAL (21/09/2026): a margem acima é a do motor com a taxa
+  // global de venda; o piso desconta a comissão da faixa do canal, o frete
+  // subsidiado e o que a regra da casa pedir. É o número que diz se a
+  // promoção pode ir ou precisa de assinatura.
+  const ctxPiso = await precoPiso.carregarContexto(anuncios.map((a) => a.produto_id));
 
   // Critérios da relâmpago da Shopee, quando é o caso. Best-effort: a
   // prévia funciona sem eles, só sem o aviso de "essa a Shopee vai recusar".
@@ -548,6 +614,12 @@ async function montarPrevia({ anuncioIds, regra, promocaoTipo, integracaoId }) {
       const avisos = [];
       if (margem?.prejuizo) avisos.push('prejuízo neste preço');
       else if (margem?.abaixoDoMinimo) avisos.push('abaixo da margem mínima');
+      const piso = (!impedimento && a.produto_id && precoPromocional != null)
+        ? precoPiso.avaliar(ctxPiso, { produtoId: a.produto_id, marketplace: a.marketplace, tipoAnuncio: a.tipo_anuncio, integracaoId: a.origem_integracao_id, preco: precoPromocional })
+        : null;
+      if (piso?.ok && piso.abaixoDoPiso && !margem?.prejuizo) {
+        avisos.push(`abaixo do piso do canal (${precoPiso.brl(piso.piso)} · margem ${precoPiso.pctBr(piso.margem)} contra ${precoPiso.pctBr(piso.regra.margemMinima)})`);
+      }
       if (criterios && alvo.precoBase && precoPromocional != null) {
         // Mínimo e máximo da relâmpago a Shopee mede sobre o preço ORIGINAL —
         // que é justamente o que `alvo.precoBase` passou a ser quando ele
@@ -595,6 +667,9 @@ async function montarPrevia({ anuncioIds, regra, promocaoTipo, integracaoId }) {
           ? (alvo.precoBase - precoPromocional) / alvo.precoBase : null,
         margem,
         margem_indisponivel: margem ? motivoSemMargem(margem) : null,
+        piso: piso?.ok ? piso.piso : null,
+        margem_canal: piso?.ok ? piso.margem : null,
+        abaixo_do_piso: piso?.ok ? piso.abaixoDoPiso === true : false,
         impedimento,
         avisos,
       });
@@ -610,6 +685,7 @@ async function montarPrevia({ anuncioIds, regra, promocaoTipo, integracaoId }) {
       impedidos: linhas.length - aplicaveis.length,
       com_prejuizo: linhas.filter((l) => l.margem?.prejuizo).length,
       abaixo_do_minimo: linhas.filter((l) => l.margem?.abaixoDoMinimo && !l.margem?.prejuizo).length,
+      abaixo_do_piso: linhas.filter((l) => l.abaixo_do_piso).length,
       sem_margem_calculavel: linhas.filter((l) => l.margem_indisponivel).length,
       // Quanto de receita a promoção deixa de fazer se tudo vender uma vez.
       // É estimativa declarada como tal, não previsão: some só as linhas que
@@ -900,6 +976,8 @@ router.post('/', async (req, res, next) => {
         exige: 'aceitar_prejuizo',
       });
     }
+    const travaPiso = await travaDoPiso(req, listaItens);
+    if (travaPiso.erro) return res.status(400).json(travaPiso.erro);
 
     const integracao = await carregarIntegracao(integracaoId);
 
@@ -976,6 +1054,7 @@ router.post('/', async (req, res, next) => {
       sucesso: true,
     });
 
+    await gravarExcecoesDoPiso(travaPiso, { promocaoId: promocao.id, usuarioId: req.user?.id || null });
     res.status(201).json({ promocao, itens: resultadoItens });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -1021,6 +1100,9 @@ router.post('/:id/itens', async (req, res, next) => {
     if (itens.length > MAX_ITENS_LOTE) {
       return res.status(400).json({ error: `Máximo de ${MAX_ITENS_LOTE} itens por vez.` });
     }
+    const travaPiso = await travaDoPiso(req, itens);
+    if (travaPiso.erro) return res.status(400).json(travaPiso.erro);
+    await gravarExcecoesDoPiso(travaPiso, { promocaoId: id, usuarioId: req.user?.id || null });
 
     const { rows } = await pool.query('SELECT * FROM promocoes_marketplace WHERE id = $1', [id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Promoção não encontrada.' });
@@ -1077,6 +1159,9 @@ router.put('/:id/itens', async (req, res, next) => {
         exige: 'aceitar_prejuizo',
       });
     }
+    const travaPiso = await travaDoPiso(req, req.body?.itens);
+    if (travaPiso.erro) return res.status(400).json(travaPiso.erro);
+    await gravarExcecoesDoPiso(travaPiso, { promocaoId: id, usuarioId: req.user?.id || null });
 
     const { rows } = await pool.query('SELECT * FROM promocoes_marketplace WHERE id = $1', [id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Promoção não encontrada.' });
@@ -1567,6 +1652,9 @@ router.post('/relampago-em-massa', async (req, res, next) => {
         exige: 'aceitar_prejuizo',
       });
     }
+    const travaPiso = await travaDoPiso(req, itens);
+    if (travaPiso.erro) return res.status(400).json(travaPiso.erro);
+    await gravarExcecoesDoPiso(travaPiso, { promocaoId: null, usuarioId: req.user?.id || null });
 
     const integracao = await carregarIntegracao(integracaoId);
     if (integracao.marketplace !== 'shopee') {

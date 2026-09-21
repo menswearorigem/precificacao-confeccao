@@ -8,6 +8,7 @@ const { sincronizarFullTodasAtivas } = require('./lib/fullSync');
 // nunca duas baterem na mesma sessão do Wik (ver server/src/lib/wikCiclo.js).
 const { cicloWikCompleto } = require('./lib/wikCiclo');
 const { reconciliarCalendario } = require('./lib/producaoCalendario');
+const { lerConcorrentes } = require('./lib/concorrentesSync');
 
 // ── AUTO-CURA de travas ÓRFÃS do Wik no boot ────────────────────────────────
 // `web_job_ativo` e `producao_job_ativo` são FLAGS no banco (não advisory
@@ -149,4 +150,13 @@ app.listen(PORT, () => {
   setInterval(() => {
     cicloWikCompleto('agenda').catch((err) => console.error('[wik-ciclo]', err.message));
   }, WIK_CICLO_INTERVAL_MS);
+
+  // Preço dos concorrentes (21/09/2026): de 6 em 6 horas, 8 min depois da
+  // subida — depois de pedidos, extrato e Full, que usam o mesmo token do
+  // Mercado Livre. Advisory lock próprio dentro de `lerConcorrentes`.
+  const lerConc = () => lerConcorrentes()
+    .then((r) => { if (r.lidos || r.erros || r.catalogo) console.log('[concorrentes]', JSON.stringify(r)); })
+    .catch((err) => console.error('[concorrentes]', err.message));
+  setTimeout(lerConc, 8 * 60 * 1000);
+  setInterval(lerConc, 6 * 60 * 60 * 1000);
 });

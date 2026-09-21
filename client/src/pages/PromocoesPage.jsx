@@ -10,6 +10,20 @@ import {
   Checkbox, NumInput, Field, Paginacao,
 } from '../components/ui';
 import { confirmar } from '../components/ConfirmDialog';
+import { tratarTravaDoPiso } from '../components/MotivoDialog';
+
+// Repete a chamada com o motivo quando a resposta é a trava do piso do canal
+// (21/09/2026). `null` de `tratarTravaDoPiso` = a pessoa desistiu: o erro
+// original sobe e a tela mostra.
+async function comTravaDoPiso(chamar) {
+  try {
+    return await chamar({});
+  } catch (e) {
+    const extra = await tratarTravaDoPiso(e);
+    if (!extra) throw e;
+    return chamar(extra);
+  }
+}
 import { useTabela } from '../lib/useTabela';
 import { brl, pct, formatQtd, tempoRelativo } from '../lib/format';
 import { andamentoDoPrazo } from '../components/VitrineMarketplace';
@@ -795,7 +809,8 @@ function CriarPromocao({ lojas, onFechar, onCriada }) {
     setErro(null);
     try {
       if (acrescentando) {
-        const r = await api.post(`/promocoes/${promocaoDestinoId}/itens`, {
+        const r = await comTravaDoPiso((extra) => api.post(`/promocoes/${promocaoDestinoId}/itens`, {
+          ...extra,
           confirmar: true,
           itens: aplicaveis.map((l) => ({
             anuncio_id: l.anuncio_id,
@@ -807,7 +822,7 @@ function CriarPromocao({ lojas, onFechar, onCriada }) {
             estoque_promocional: l.estoque_promocional,
             limite_por_compra: l.limite_por_compra,
           })),
-        });
+        }));
         // A rota devolve total/aplicados/falhas. Item recusado pela plataforma
         // não pode virar silêncio: quem mandou 30 e teve 4 recusados precisa
         // saber disso agora, não na próxima sincronização.
@@ -820,7 +835,8 @@ function CriarPromocao({ lojas, onFechar, onCriada }) {
         }
         return;
       }
-      const r = await api.post('/promocoes', {
+      const r = await comTravaDoPiso((extra) => api.post('/promocoes', {
+        ...extra,
         confirmar: true,
         aceitar_prejuizo: comPrejuizo > 0,
         integracao_id: Number(integracaoId),
@@ -844,7 +860,7 @@ function CriarPromocao({ lojas, onFechar, onCriada }) {
           estoque_promocional: l.estoque_promocional,
           limite_por_compra: l.limite_por_compra,
         })),
-      });
+      }));
       onCriada(r);
     } catch (e) {
       setErro(e.message);
@@ -1091,7 +1107,8 @@ function RelampagoEmMassa({ lojas, onFechar, onCriadas }) {
     setEnviando(true);
     setErro(null);
     try {
-      const r = await api.post('/promocoes/relampago-em-massa', {
+      const r = await comTravaDoPiso((extra) => api.post('/promocoes/relampago-em-massa', {
+        ...extra,
         confirmar: true,
         aceitar_prejuizo: comPrejuizo > 0,
         integracao_id: Number(integracaoId),
@@ -1109,7 +1126,7 @@ function RelampagoEmMassa({ lojas, onFechar, onCriadas }) {
           estoque_promocional: l.estoque_promocional,
           limite_por_compra: l.limite_por_compra,
         })),
-      });
+      }));
       setResultado(r);
       onCriadas();
     } catch (e) {
@@ -1375,7 +1392,8 @@ function PainelPromocao({ promocaoId, onFechar, onMudou }) {
     setSalvando(true);
     setErro(null);
     try {
-      const r = await api.put(`/promocoes/${promocaoId}/itens`, {
+      const r = await comTravaDoPiso((extra) => api.put(`/promocoes/${promocaoId}/itens`, {
+        ...extra,
         confirmar: true,
         aceitar_prejuizo: comPrejuizo > 0,
         itens: alterados.map((i) => ({
@@ -1386,7 +1404,7 @@ function PainelPromocao({ promocaoId, onFechar, onMudou }) {
           preco_atual: i.preco_original,
           preco_promocional: edicoes[i.id],
         })),
-      });
+      }));
       if (r.falhas?.length > 0) {
         setErro(`${r.alterados} alterados. ${r.falhas.length} recusados: ${r.falhas.map((f) => f.erro).join(' · ')}`);
       }

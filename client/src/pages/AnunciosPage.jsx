@@ -15,6 +15,7 @@ import {
 } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { confirmar } from '../components/ConfirmDialog';
+import { tratarTravaDoPiso } from '../components/MotivoDialog';
 import { useTabela } from '../lib/useTabela';
 import { brl, numeroBr, formatQtd, tempoRelativo, dataBr, plural } from '../lib/format';
 import { PrecoVitrine, FaixaPrecoVitrine, marcarFotoCarregada, refFotoJaCarregada } from '../components/VitrineMarketplace';
@@ -1720,13 +1721,22 @@ function AbaEditar({ dado, onGravado }) {
     setErro('');
     setOk('');
     try {
-      await api.post(`/anuncios/${dado.id}/publicar`, {
+      const corpo = {
         confirmar: true,
         preco: preco === '' ? null : Number(preco),
         estoque: estoque === '' ? null : Number(estoque),
         titulo: titulo === '' ? null : titulo,
         situacao: situacao === '' ? null : situacao,
-      });
+      };
+      try {
+        await api.post(`/anuncios/${dado.id}/publicar`, corpo);
+      } catch (e) {
+        // Abaixo do piso do canal (21/09/2026): não trava, mas pede o motivo
+        // e grava quem assinou. Sem motivo, nada vai para a plataforma.
+        const extra = await tratarTravaDoPiso(e);
+        if (!extra) throw e;
+        await api.post(`/anuncios/${dado.id}/publicar`, { ...corpo, ...extra });
+      }
       setOk('Alteração enviada para a plataforma e registrada no histórico.');
       setPreco(''); setEstoque(''); setTitulo(''); setSituacao('');
       onGravado();

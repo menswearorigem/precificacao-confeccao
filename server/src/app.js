@@ -49,6 +49,7 @@ const producaoMovimentacaoRoutes = require('./routes/producaoMovimentacao.routes
 const producaoInsumosRoutes = require('./routes/producaoInsumos.routes');
 const producaoProjecaoRoutes = require('./routes/producaoProjecao.routes');
 const planejamentoRoutes = require('./routes/planejamento.routes');
+const precoRegraRoutes = require('./routes/precoRegra.routes');
 const producaoMateriaPrimaRoutes = require('./routes/producaoMateriaPrima.routes');
 const faccoesRoutes = require('./routes/faccoes.routes');
 const produtoGradeRoutes = require('./routes/produtoGrade.routes');
@@ -274,6 +275,11 @@ function createApp() {
   // O pedido de compra que sai daqui nasce em RASCUNHO e é o time de Compras,
   // na tela dele, quem aprova — a fronteira de permissão continua a mesma.
   app.use('/api/planejamento', requireAuth, requireModulo(['producao', 'estoque']), planejamentoRoutes);
+  // Piso de preço, simulador de campanha e concorrentes (21/09/2026). Lê e
+  // simula quem cuida de marketplace, produto ou análise; as REGRAS só quem
+  // tem `configuracoes` (checado dentro da rota). A trava em si vive em
+  // /api/anuncios e /api/promocoes. Nenhuma chave nova (REGRA 4).
+  app.use('/api/preco-regra', requireAuth, requireModulo(['marketplace', 'produto', 'analises', 'configuracoes']), precoRegraRoutes);
   // Cadastro de FACÇÃO e das categorias dela (09/09/2026). Mesma chave da
   // Produção: quem movimenta peça para a facção é quem sabe quem ela é, e a
   // dono pediu explicitamente para poder criar a facção NA HORA de gerar a

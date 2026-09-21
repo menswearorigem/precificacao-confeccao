@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DensidadeProvider } from './contexts/DensidadeContext';
 import Shell from './components/Shell';
 import { ConfirmDialogRoot } from './components/ConfirmDialog';
+import { MotivoDialogRoot } from './components/MotivoDialog';
 import { canAccessPath, getDefaultPath } from './lib/modules';
 import { instalarCliqueDoMeio } from './lib/novaAba';
 import LoginPage from './pages/LoginPage';
@@ -83,6 +84,7 @@ const CargaProducaoPage = lazy(() => import('./pages/CargaProducaoPage'));
 const ProjecaoEstoquePage = lazy(() => import('./pages/ProjecaoEstoquePage'));
 const MateriaPrimaPage = lazy(() => import('./pages/MateriaPrimaPage'));
 const PlanejamentoPage = lazy(() => import('./pages/PlanejamentoPage'));
+const PisoPrecoPage = lazy(() => import('./pages/PisoPrecoPage'));
 const InsumosPage = lazy(() => import('./pages/InsumosPage'));
 const PromocoesPage = lazy(() => import('./pages/PromocoesPage'));
 const FullPage = lazy(() => import('./pages/FullPage'));
@@ -202,6 +204,7 @@ function AppRoutes() {
                       responde a pergunta seguinte: da' para produzir isso? */}
                   <Route path="/producao/materia-prima" element={<MateriaPrimaPage />} />
                   <Route path="/producao/planejamento" element={<PlanejamentoPage />} />
+                  <Route path="/marketplace/piso" element={<PisoPrecoPage />} />
                   <Route path="/estoque/locais" element={<EstoqueLocaisPage />} />
                   {/* Reserva de estoque (09/09/2026): saldo × disponível.
                       Mesmo módulo `estoque` das demais telas de saldo —
@@ -337,6 +340,7 @@ export default function App() {
       <DensidadeProvider>
         <AppRoutes />
         <ConfirmDialogRoot />
+        <MotivoDialogRoot />
       </DensidadeProvider>
     </AuthProvider>
   );
