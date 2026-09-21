@@ -2051,3 +2051,10 @@ router.get('/faccao/saldos', async (req, res, next) => {
 });
 
 module.exports = router;
+// 21/09/2026: o Planejamento (planejamento.routes.js) abre a OP APROVADA
+// pelo mesmo caminho da Nova Ordem — mesma explosão de ficha, mesma gravação,
+// mesmo evento no calendário — em vez de repetir a conta. Exportados como
+// `produtosRoutes.buildCalculo` já é: a rota continua sendo a rota.
+module.exports.montarExplosao = montarExplosao;
+module.exports.prepararReferencia = prepararReferencia;
+module.exports.gravarOrdem = gravarOrdem;

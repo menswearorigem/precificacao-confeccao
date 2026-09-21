@@ -82,6 +82,7 @@ const OrdensServicoPage = lazy(() => import('./pages/OrdensServicoPage'));
 const CargaProducaoPage = lazy(() => import('./pages/CargaProducaoPage'));
 const ProjecaoEstoquePage = lazy(() => import('./pages/ProjecaoEstoquePage'));
 const MateriaPrimaPage = lazy(() => import('./pages/MateriaPrimaPage'));
+const PlanejamentoPage = lazy(() => import('./pages/PlanejamentoPage'));
 const InsumosPage = lazy(() => import('./pages/InsumosPage'));
 const PromocoesPage = lazy(() => import('./pages/PromocoesPage'));
 const FullPage = lazy(() => import('./pages/FullPage'));
@@ -200,6 +201,7 @@ function AppRoutes() {
                       Depois da Projecao porque le' o mesmo "em producao" dela e
                       responde a pergunta seguinte: da' para produzir isso? */}
                   <Route path="/producao/materia-prima" element={<MateriaPrimaPage />} />
+                  <Route path="/producao/planejamento" element={<PlanejamentoPage />} />
                   <Route path="/estoque/locais" element={<EstoqueLocaisPage />} />
                   {/* Reserva de estoque (09/09/2026): saldo × disponível.
                       Mesmo módulo `estoque` das demais telas de saldo —

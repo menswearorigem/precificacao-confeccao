@@ -11869,3 +11869,90 @@ table.grade-matriz { width: auto; min-width: 0; }
 @media (max-width: 720px) {
   .painel-rodape-motivo { max-width: none; order: -1; width: 100%; }
 }
+
+/* ===========================================================================
+   Produção › Planejamento (21/09/2026) — o sistema sugere, você aprova.
+   Reusa o vocabulário da Matéria-Prima (mp-*): indicadores, lista compacta,
+   selos, tabela de tecido. O que é novo aqui é a CONTA em linha (vende ×
+   estação = vai vender × ciclo = preciso − tenho = produzir), a grade
+   editável e a faixa de meses da sazonalidade.
+   =========================================================================== */
+.pl-lote { margin: 0; font-size: 12.5px; color: var(--ink-soft); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.pl-lote b { color: var(--ink); }
+.pl-link { border: 0; background: transparent; color: var(--warning); font: inherit; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; padding: 0; text-decoration: underline; text-underline-offset: 3px; }
+.pl-kpi-btn { text-align: left; cursor: pointer; font-family: inherit; color: inherit; }
+.pl-kpi-btn:hover { background: var(--surface-alt); }
+.pl-sem h4 { margin: 0 0 8px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.pl-sem ul { margin: 0; padding-left: 18px; columns: 2; column-gap: 24px; font-size: 12.5px; line-height: 1.7; color: var(--ink-soft); }
+.pl-sem li b { color: var(--ink); }
+
+/* a linha da lista: foto + id · urgência · peças · estação · tenho · insumo */
+.pl-topo { grid-template-columns: 18px minmax(220px, 1.6fr) auto repeat(3, minmax(70px, auto)) auto; }
+.pl-id { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pl-urg { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 6px; white-space: nowrap; }
+.pl-urg-atrasada { color: var(--danger); background: var(--danger-bg); box-shadow: inset 0 0 0 1px var(--danger-ring); }
+.pl-urg-agora { color: var(--warning); background: var(--warning-bg); box-shadow: inset 0 0 0 1px var(--warning-ring); }
+.pl-urg-programar { color: var(--info); background: var(--info-bg); box-shadow: inset 0 0 0 1px var(--info-ring); }
+.pl-alta { color: var(--terracotta); }
+.pl-baixa { color: var(--info); }
+.pl-insumo { text-align: right; }
+
+/* a conta escrita em linha */
+.pl-corpo { display: grid; gap: 14px; padding-top: 14px; }
+.pl-porque { background: var(--surface); border: 1px solid var(--border-soft); border-radius: 10px; padding: 12px 14px; display: grid; gap: 10px; }
+.pl-conta { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+.pl-conta-passo { display: flex; flex-direction: column; line-height: 1.15; padding: 6px 10px; border-radius: 8px; background: var(--surface-alt); font-size: 12px; color: var(--ink-soft); }
+.pl-conta-passo small { font-size: 9.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); margin-bottom: 3px; }
+.pl-conta-passo b { font-size: 16px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.pl-conta-final { background: var(--terracotta); color: var(--on-accent, #fff); }
+.pl-conta-final small { color: var(--on-accent, #fff); opacity: .85; }
+.pl-conta-final b { color: var(--on-accent, #fff); font-size: 18px; }
+.pl-conta-op { font-size: 16px; color: var(--muted); padding-bottom: 8px; }
+.pl-detalhes { display: grid; gap: 5px; font-size: 12px; color: var(--ink-soft); line-height: 1.55; }
+.pl-detalhes b { color: var(--ink); }
+.pl-detalhes > span { display: flex; gap: 6px; align-items: flex-start; }
+.pl-detalhes svg { flex: 0 0 auto; margin-top: 2px; }
+.pl-aviso { color: var(--warning); }
+
+/* a grade editável */
+.pl-grade-wrap { background: var(--surface); border: 1px solid var(--border-soft); border-radius: 10px; overflow: hidden; }
+.pl-grade-topo { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border-soft); background: var(--surface-alt); }
+.pl-grade-topo h4 { margin: 0; font-size: 10.5px; font-weight: 700; letter-spacing: .11em; text-transform: uppercase; display: flex; align-items: center; gap: 7px; color: var(--leather-ink); }
+.pl-grade-topo button { margin-left: auto; }
+.pl-grade input.pl-cel { width: 56px; height: 28px; text-align: center; font-size: 12.5px; border-radius: 6px; padding: 0 4px; }
+.pl-grade td { padding: 4px 5px; }
+
+/* a barra de decisão */
+.pl-acoes { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.pl-acoes input[type="date"] { height: 31px; font-size: 13px; border-radius: 7px; padding: 0 8px; }
+.pl-motivo { flex: 1; min-width: 220px; height: 34px; border-radius: 7px; padding: 0 10px; font-size: 13px; }
+.pl-linha-clicavel { cursor: pointer; }
+.pl-linha-clicavel:hover td { background: var(--surface-alt); }
+
+/* sazonalidade */
+.pl-saz { display: grid; gap: 12px; }
+.pl-saz-topo { display: flex; flex-direction: column; gap: 4px; }
+.pl-saz-topo h4 { margin: 0; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.pl-meses { display: grid; grid-template-columns: repeat(12, 1fr); gap: 6px; }
+.pl-mes { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px 6px; border-radius: 8px; background: var(--surface-alt); border: 1px solid transparent; }
+.pl-mes-manual { border-color: var(--terracotta); background: var(--warning-bg); }
+.pl-mes-barra { width: 100%; height: 54px; display: flex; align-items: flex-end; justify-content: center; }
+.pl-mes-barra i { display: block; width: 60%; border-radius: 4px 4px 0 0; background: linear-gradient(180deg, var(--terracotta), var(--leather)); min-height: 3px; }
+.pl-mes b { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink); }
+.pl-mes span { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.pl-mes input { width: 100%; height: 26px; text-align: center; font-size: 12px; border-radius: 6px; padding: 0 4px; }
+.pl-saz-rodape { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pl-saz-rodape button { margin-left: auto; }
+.pl-janela-edit { white-space: nowrap; }
+.pl-janela-edit input { width: 44px; height: 28px; text-align: center; font-size: 12px; border-radius: 6px; padding: 0 3px; }
+.pl-nova td input:not(.pl-janela-edit input) { height: 28px; font-size: 12.5px; border-radius: 6px; padding: 0 8px; }
+
+@media (max-width: 1100px) {
+  .pl-topo { grid-template-columns: 18px 1fr auto; row-gap: 8px; }
+  .pl-meses { grid-template-columns: repeat(6, 1fr); }
+  .pl-sem ul { columns: 1; }
+}
+@media (max-width: 760px) {
+  .pl-meses { grid-template-columns: repeat(4, 1fr); }
+  .pl-conta-passo b { font-size: 14px; }
+}

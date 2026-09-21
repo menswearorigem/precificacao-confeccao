@@ -160,8 +160,16 @@ async function reservadoPorProduto() {
 //   · Cada linha vem com um BLOCO, que é como a tela agrupa: produzir agora ·
 //     programar · tranquilo · sobrando · sem cálculo. A tela não organiza mais
 //     por vocabulário de estatística.
-router.get('/produtos', async (req, res, next) => {
-  try {
+// 21/09/2026: a conta inteira saiu do handler e virou `calcularCobertura`,
+// exportada. O Planejamento (Produção › Planejamento) precisa da MESMA linha
+// que esta tela mostra — mesma posição de estoque, mesma cadência, mesmo
+// ponto de pedido — para em cima dela aplicar a sazonalidade e sugerir a OP.
+// Duas contas com a mesma intenção e textos diferentes foi como nasceram as
+// duas coberturas discordando em 09/09; por isso a rota e o planejamento
+// chamam a mesma função, e ela recebe só a `query` (é tudo de que precisava).
+async function calcularCobertura(query = {}) {
+  {
+    const req = { query };
     const janela = janelaDeAnalise(req);
     const numSemanas = semanasDaJanela(janela);
     const cadencias = cadenciasComParametros(req.query);
@@ -437,7 +445,7 @@ router.get('/produtos', async (req, res, next) => {
       };
     });
 
-    res.json({
+    return {
       linhas,
       parametros: {
         janela: { inicio: janela.inicio, fim: janela.fim },
@@ -477,7 +485,13 @@ router.get('/produtos', async (req, res, next) => {
         ...(semReferencia.itens > 0 ? [`${semReferencia.itens} item(ns) de venda da janela (${Math.round(semReferencia.unidades)} unidade(s)) não estão ligados a nenhuma referência cadastrada e ficaram de fora de TODA a conta — normalmente SKU de anúncio que o casamento não reconheceu. Enquanto isso não for resolvido, a venda medida está incompleta.`] : []),
         ...(kitsSemComposicao > 0 ? [`${kitsSemComposicao} item(ns) apontam um kit sem composição cadastrada. Foram contados como 1 peça por unidade, que é o número conservador — a venda real deles pode ser maior.`] : []),
       ],
-    });
+    };
+  }
+}
+
+router.get('/produtos', async (req, res, next) => {
+  try {
+    res.json(await calcularCobertura(req.query));
   } catch (err) {
     next(err);
   }
@@ -799,3 +813,4 @@ router.get('/insumos', async (req, res, next) => {
 });
 
 module.exports = router;
+module.exports.calcularCobertura = calcularCobertura;

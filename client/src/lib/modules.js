@@ -7,7 +7,7 @@ import {
   LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer,
   Banknote, MapPin, Gauge, PackageCheck, FileSpreadsheet,
   Inbox, Radar, Megaphone, Scissors, PackageOpen, HeartPulse, Calculator,
-  BookUser, Send} from 'lucide-react';
+  BookUser, Send, Sparkles } from 'lucide-react';
 
 /* ---------------------------------------------------------------------------
  * NAVEGAÇÃO EM TRÊS NÍVEIS (14/09/2026)
@@ -136,6 +136,10 @@ export const MODULES = [
         label: 'Planejamento',
         icon: PackageCheck,
         paginas: [
+          // 21/09/2026: o Planejamento é a resposta das outras três — o que
+          // produzir e o que comprar, já com grade, para só aprovar. Fica
+          // primeiro porque é por ele que a semana começa.
+          { to: '/producao/planejamento', label: 'Planejamento', icon: Sparkles },
           { to: '/producao/projecao', label: 'Projeção de Estoque', icon: PackageCheck },
           { to: '/producao/materia-prima', label: 'Matéria-Prima', icon: Scissors },
           { to: '/producao/carga', label: 'Carga e Gargalo', icon: Gauge },

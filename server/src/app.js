@@ -48,6 +48,7 @@ const producaoRoutes = require('./routes/producao.routes');
 const producaoMovimentacaoRoutes = require('./routes/producaoMovimentacao.routes');
 const producaoInsumosRoutes = require('./routes/producaoInsumos.routes');
 const producaoProjecaoRoutes = require('./routes/producaoProjecao.routes');
+const planejamentoRoutes = require('./routes/planejamento.routes');
 const producaoMateriaPrimaRoutes = require('./routes/producaoMateriaPrima.routes');
 const faccoesRoutes = require('./routes/faccoes.routes');
 const produtoGradeRoutes = require('./routes/produtoGrade.routes');
@@ -267,6 +268,12 @@ function createApp() {
   // (REGRA 4). `/api/insumos` nao serve: aquela vive sob `compras` e daria 403
   // justamente para o time de producao, que e' quem usa esta aba.
   app.use('/api/producao-materia-prima', requireAuth, requireModulo(['producao', 'estoque']), producaoMateriaPrimaRoutes);
+  // Planejamento que sugere (21/09/2026): previsão com sazonalidade → OP
+  // sugerida → compra de tecido sugerida, para a dona só aprovar. Mesma chave
+  // das demais abas de Produção: quem aprova a OP é quem já abre OP à mão.
+  // O pedido de compra que sai daqui nasce em RASCUNHO e é o time de Compras,
+  // na tela dele, quem aprova — a fronteira de permissão continua a mesma.
+  app.use('/api/planejamento', requireAuth, requireModulo(['producao', 'estoque']), planejamentoRoutes);
   // Cadastro de FACÇÃO e das categorias dela (09/09/2026). Mesma chave da
   // Produção: quem movimenta peça para a facção é quem sabe quem ela é, e a
   // dono pediu explicitamente para poder criar a facção NA HORA de gerar a
