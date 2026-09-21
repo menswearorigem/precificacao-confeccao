@@ -50,6 +50,7 @@ const producaoInsumosRoutes = require('./routes/producaoInsumos.routes');
 const producaoProjecaoRoutes = require('./routes/producaoProjecao.routes');
 const planejamentoRoutes = require('./routes/planejamento.routes');
 const precoRegraRoutes = require('./routes/precoRegra.routes');
+const posVendaRoutes = require('./routes/posVenda.routes');
 const producaoMateriaPrimaRoutes = require('./routes/producaoMateriaPrima.routes');
 const faccoesRoutes = require('./routes/faccoes.routes');
 const produtoGradeRoutes = require('./routes/produtoGrade.routes');
@@ -280,6 +281,10 @@ function createApp() {
   // tem `configuracoes` (checado dentro da rota). A trava em si vive em
   // /api/anuncios e /api/promocoes. Nenhuma chave nova (REGRA 4).
   app.use('/api/preco-regra', requireAuth, requireModulo(['marketplace', 'produto', 'analises', 'configuracoes']), precoRegraRoutes);
+  // Pós-venda (21/09/2026): devolução, reclamação, pergunta e avaliação de
+  // todos os canais ligadas a referência × cor × tamanho. Mesma chave de
+  // Devoluções. Nenhuma chave nova (REGRA 4).
+  app.use('/api/pos-venda', requireAuth, requireModulo(['marketplace', 'produto', 'analises']), posVendaRoutes);
   // Cadastro de FACÇÃO e das categorias dela (09/09/2026). Mesma chave da
   // Produção: quem movimenta peça para a facção é quem sabe quem ela é, e a
   // dono pediu explicitamente para poder criar a facção NA HORA de gerar a

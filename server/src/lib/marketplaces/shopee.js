@@ -837,6 +837,7 @@ async function buscarAvaliacoesLoja({ partnerId, partnerKey, accessToken, shopId
       total += 1;
       if (recentes.length < 20) {
         recentes.push({
+          id: c.comment_id != null ? String(c.comment_id) : null,
           anuncioId: c.item_id ? String(c.item_id) : null,
           nota,
           comentario: c.comment || '',

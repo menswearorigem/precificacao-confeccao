@@ -1017,7 +1017,47 @@ async function encerrarPromocaoTikTok({ appKey, appSecret, accessToken, shopCiph
   });
 }
 
+// ---------------------------------------------------------------------------
+// Pós-venda (21/09/2026): devoluções/reembolsos
+// ---------------------------------------------------------------------------
+// POST /return_refund/202309/returns/search — traz motivo (`return_reason`,
+// `return_reason_text`), o pedido (`order_id`) e os itens com `sku_id` e
+// `seller_sku` (que o casamento de SKU do sync já sabe ler).
+async function buscarDevolucoesTikTok({ appKey, appSecret, accessToken, shopCipher, desdeUnix, limite = 500 }) {
+  const devolucoes = [];
+  let pageToken = '';
+  for (let pagina = 0; pagina < Math.ceil(limite / 50); pagina += 1) {
+    const data = await chamarApi(`/return_refund/${VERSAO}/returns/search`, {
+      appKey, appSecret, accessToken,
+      query: { shop_cipher: shopCipher, page_size: 50, ...(pageToken ? { page_token: pageToken } : {}) },
+      method: 'POST',
+      body: { create_time_ge: Number(desdeUnix) || undefined },
+    });
+    const lista = data?.return_orders || [];
+    for (const r of lista) {
+      devolucoes.push({
+        id: String(r.return_id), orderId: r.order_id != null ? String(r.order_id) : null,
+        tipo: r.return_type || null, status: r.return_status || null,
+        motivoCodigo: r.return_reason || null, motivoTexto: r.return_reason_text || r.return_reason || null,
+        valor: Number(r.refund_amount?.refund_total) || 0,
+        criadaEm: r.create_time ? new Date(Number(r.create_time) * 1000).toISOString() : null,
+        atualizadaEm: r.update_time ? new Date(Number(r.update_time) * 1000).toISOString() : null,
+        compradorId: r.buyer_id != null ? String(r.buyer_id) : null,
+        itens: (r.return_line_items || []).map((it) => ({
+          productId: it.product_id != null ? String(it.product_id) : null, skuId: it.sku_id != null ? String(it.sku_id) : null,
+          skuExterno: it.seller_sku || null, nome: it.product_name || null, quantidade: 1,
+        })),
+        bruto: r,
+      });
+    }
+    pageToken = data?.next_page_token || '';
+    if (!pageToken || lista.length === 0) break;
+  }
+  return devolucoes;
+}
+
 module.exports = {
+  buscarDevolucoesTikTok,
   buildAuthorizeUrl,
   trocarCodigoPorToken,
   renovarToken,

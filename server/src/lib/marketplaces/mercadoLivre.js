@@ -1646,6 +1646,79 @@ async function buscarEnviosFullML({ accessToken, sellerId }) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Pós-venda (21/09/2026): perguntas, reclamações e avaliações com texto
+// ---------------------------------------------------------------------------
+// Perguntas do comprador nos anúncios do vendedor. `status` = 'UNANSWERED'
+// (padrão, o que exige ação) ou 'ANSWERED'. Pagina de 50 em 50.
+async function buscarPerguntas({ accessToken, sellerId, status = 'UNANSWERED', desdeIso = null, limite = 500 }) {
+  const perguntas = [];
+  for (let offset = 0; offset < limite; offset += 50) {
+    const q = new URLSearchParams({ seller_id: String(sellerId), status, limit: '50', offset: String(offset), api_version: '4', sort_fields: 'date_created', sort_types: 'DESC' });
+    const data = await chamarApi(`/questions/search?${q}`, accessToken);
+    const lista = data.questions || [];
+    for (const p of lista) {
+      if (desdeIso && p.date_created && p.date_created < desdeIso) return perguntas;
+      perguntas.push({
+        id: String(p.id), itemId: p.item_id || null, texto: p.text || '', status: p.status || null,
+        criadaEm: p.date_created || null,
+        resposta: p.answer?.text || null, respondidaEm: p.answer?.date_created || null,
+        compradorId: p.from?.id != null ? String(p.from.id) : null,
+        bruto: p,
+      });
+    }
+    if (lista.length < 50) break;
+  }
+  return perguntas;
+}
+
+async function responderPergunta({ accessToken, perguntaId, texto }) {
+  return chamarApiComCorpo('/answers', accessToken, { metodo: 'POST', corpo: { question_id: Number(perguntaId), text: String(texto) } });
+}
+
+// Reclamações (claims) em que o vendedor é o reclamado. Traz o motivo em
+// `reason_id` e o item pela ordem (`resource_id` = order id, resource='order').
+async function buscarReclamacoes({ accessToken, desdeIso = null, limite = 300 }) {
+  const reclamacoes = [];
+  for (let offset = 0; offset < limite; offset += 30) {
+    const q = new URLSearchParams({ 'player.role': 'respondent', limit: '30', offset: String(offset), sort: 'date_created:desc' });
+    const data = await chamarApi(`/post-purchase/v1/claims/search?${q}`, accessToken);
+    const lista = data.data || data.results || [];
+    for (const c of lista) {
+      if (desdeIso && c.date_created && c.date_created < desdeIso) return reclamacoes;
+      reclamacoes.push({
+        id: String(c.id), tipo: c.type || null, etapa: c.stage || null, status: c.status || null,
+        motivoCodigo: c.reason_id || null, motivoTexto: c.reason?.name || c.reason_id || null,
+        recurso: c.resource || null, recursoId: c.resource_id != null ? String(c.resource_id) : null,
+        criadaEm: c.date_created || null, atualizadaEm: c.last_updated || null,
+        compradorId: (c.players || []).find((pl) => pl.role === 'complainant')?.user_id != null ? String((c.players || []).find((pl) => pl.role === 'complainant').user_id) : null,
+        bruto: c,
+      });
+    }
+    if (lista.length < 30) break;
+  }
+  return reclamacoes;
+}
+
+// Avaliações COM texto de um anúncio (a `buscarOpinioesAnuncio` acima só
+// traz o agregado). Pagina de 50 em 50.
+async function buscarAvaliacoesAnuncio({ accessToken, itemId, limite = 200 }) {
+  const avaliacoes = [];
+  for (let offset = 0; offset < limite; offset += 50) {
+    const data = await chamarApi(`/reviews/item/${itemId}?limit=50&offset=${offset}`, accessToken);
+    const lista = data.reviews || [];
+    for (const r of lista) {
+      avaliacoes.push({
+        id: String(r.id), itemId: String(itemId), nota: Number(r.rate) || null, titulo: r.title || null, texto: r.content || '',
+        criadaEm: r.date_created || null, compradorId: r.reviewer_id != null ? String(r.reviewer_id) : null, bruto: r,
+      });
+    }
+    if (lista.length < 50) break;
+  }
+  return { avaliacoes, notaMedia: Number(data_media(avaliacoes)) || null };
+}
+function data_media(lista) { const n = lista.filter((a) => a.nota).map((a) => a.nota); return n.length ? n.reduce((s, x) => s + x, 0) / n.length : null; }
+
 module.exports = {
   buildAuthorizeUrl,
   trocarCodigoPorToken,
@@ -1683,6 +1756,11 @@ module.exports = {
   buscarConcorrenciaAnuncio,
   // Leitura de item em lote, exportada para o rastreio de concorrente (21/09/2026).
   buscarDetalheAnuncios,
+  // Pós-venda (21/09/2026)
+  buscarPerguntas,
+  responderPergunta,
+  buscarReclamacoes,
+  buscarAvaliacoesAnuncio,
   buscarAdvertiserIdAds,
   buscarCampanhasAds,
   buscarMetricasAnunciosPorDia,

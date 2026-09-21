@@ -7,7 +7,7 @@ import {
   LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer,
   Banknote, MapPin, Gauge, PackageCheck, FileSpreadsheet,
   Inbox, Radar, Megaphone, Scissors, PackageOpen, HeartPulse, Calculator,
-  BookUser, Send, Sparkles } from 'lucide-react';
+  BookUser, Send, Sparkles, MessageSquareWarning } from 'lucide-react';
 
 /* ---------------------------------------------------------------------------
  * NAVEGAÇÃO EM TRÊS NÍVEIS (14/09/2026)
@@ -190,6 +190,9 @@ export const MODULES = [
         ],
       },
       { to: '/marketplace/pedidos', label: 'Pedidos', icon: ClipboardList },
+      // 21/09/2026: o que o cliente diz DEPOIS do pedido — devolução,
+      // reclamação, pergunta, avaliação — mora ao lado dos pedidos.
+      { to: '/marketplace/pos-venda', label: 'Pós-venda', icon: MessageSquareWarning },
       {
         label: 'Catálogo',
         icon: Store,

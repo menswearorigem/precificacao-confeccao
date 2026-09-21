@@ -85,6 +85,7 @@ const ProjecaoEstoquePage = lazy(() => import('./pages/ProjecaoEstoquePage'));
 const MateriaPrimaPage = lazy(() => import('./pages/MateriaPrimaPage'));
 const PlanejamentoPage = lazy(() => import('./pages/PlanejamentoPage'));
 const PisoPrecoPage = lazy(() => import('./pages/PisoPrecoPage'));
+const PosVendaPage = lazy(() => import('./pages/PosVendaPage'));
 const InsumosPage = lazy(() => import('./pages/InsumosPage'));
 const PromocoesPage = lazy(() => import('./pages/PromocoesPage'));
 const FullPage = lazy(() => import('./pages/FullPage'));
@@ -205,6 +206,7 @@ function AppRoutes() {
                   <Route path="/producao/materia-prima" element={<MateriaPrimaPage />} />
                   <Route path="/producao/planejamento" element={<PlanejamentoPage />} />
                   <Route path="/marketplace/piso" element={<PisoPrecoPage />} />
+                  <Route path="/marketplace/pos-venda" element={<PosVendaPage />} />
                   <Route path="/estoque/locais" element={<EstoqueLocaisPage />} />
                   {/* Reserva de estoque (09/09/2026): saldo × disponível.
                       Mesmo módulo `estoque` das demais telas de saldo —

@@ -19,7 +19,7 @@
 const { registrarMovimento } = require('./estoqueMovimento');
 const { ajustarLocal } = require('./estoqueLocais');
 
-const MOTIVOS = ['arrependimento', 'defeito', 'tamanho', 'nao_recebido', 'errado', 'outro'];
+const MOTIVOS = ['arrependimento', 'defeito', 'tamanho', 'ficou_pequeno', 'ficou_grande', 'diferente_da_foto', 'atraso', 'nao_recebido', 'errado', 'outro'];
 const DESTINOS = {
   revenda: { rotulo: 'Volta a vender', voltaAoEstoque: true, exigeDeposito: false },
   segunda: { rotulo: 'Segunda qualidade', voltaAoEstoque: true, exigeDeposito: true },

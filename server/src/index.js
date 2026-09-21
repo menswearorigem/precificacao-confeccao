@@ -9,6 +9,7 @@ const { sincronizarFullTodasAtivas } = require('./lib/fullSync');
 const { cicloWikCompleto } = require('./lib/wikCiclo');
 const { reconciliarCalendario } = require('./lib/producaoCalendario');
 const { lerConcorrentes } = require('./lib/concorrentesSync');
+const { sincronizarPosVendaTodasAtivas } = require('./lib/posVendaSync');
 
 // ── AUTO-CURA de travas ÓRFÃS do Wik no boot ────────────────────────────────
 // `web_job_ativo` e `producao_job_ativo` são FLAGS no banco (não advisory
@@ -159,4 +160,13 @@ app.listen(PORT, () => {
     .catch((err) => console.error('[concorrentes]', err.message));
   setTimeout(lerConc, 8 * 60 * 1000);
   setInterval(lerConc, 6 * 60 * 60 * 1000);
+
+  // Pós-venda (21/09/2026): de hora em hora, 6 min depois da subida (depois
+  // de pedidos, extrato e Full — mesmo token). Pergunta sem resposta é o
+  // item mais sensível a tempo; uma hora é o intervalo que o ML mede.
+  const lerPosVenda = () => sincronizarPosVendaTodasAtivas()
+    .then((r) => { const lidos = r.reduce((s, x) => s + (x.lidos || 0), 0); if (lidos || r.some((x) => !x.ok)) console.log('[pos-venda]', JSON.stringify(r.map((x) => ({ loja: x.nome, ok: x.ok, lidos: x.lidos, erro: x.erro })))); })
+    .catch((err) => console.error('[pos-venda]', err.message));
+  setTimeout(lerPosVenda, 6 * 60 * 1000);
+  setInterval(lerPosVenda, 60 * 60 * 1000);
 });
