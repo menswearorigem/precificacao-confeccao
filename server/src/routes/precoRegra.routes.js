@@ -122,12 +122,15 @@ router.delete('/regras/:id', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // Auditoria: todo anúncio ativo × o piso do canal dele
 // ---------------------------------------------------------------------------
-router.get('/auditoria', async (req, res, next) => {
-  try {
+// Extraída do handler em 21/09/2026 para a Manu analista ler a mesma
+// auditoria (resumo do dia, "quais anúncios estão abaixo do piso?") sem
+// passar pelo HTTP. O handler abaixo só chama e responde.
+async function auditarPiso(query = {}) {
+  {
     const cond = [`a.ativo`, `a.status = 'ativo'`];
     const params = [];
-    if (req.query.marketplace && piso.NOME_CANAL[req.query.marketplace]) { params.push(req.query.marketplace); cond.push(`a.marketplace = $${params.length}`); }
-    if (inteiroPositivo(req.query.integracao_id)) { params.push(inteiroPositivo(req.query.integracao_id)); cond.push(`a.origem_integracao_id = $${params.length}`); }
+    if (query.marketplace && piso.NOME_CANAL[query.marketplace]) { params.push(query.marketplace); cond.push(`a.marketplace = $${params.length}`); }
+    if (inteiroPositivo(query.integracao_id)) { params.push(inteiroPositivo(query.integracao_id)); cond.push(`a.origem_integracao_id = $${params.length}`); }
     const { rows: anuncios } = await pool.query(
       `SELECT a.id, a.marketplace, a.origem_integracao_id, a.anuncio_id_externo, a.titulo, a.produto_id, a.preco, a.preco_original,
               a.tipo_anuncio, a.foto_url, a.estoque, im.nome AS loja_nome, p.referencia, p.descricao,
@@ -167,7 +170,7 @@ router.get('/auditoria', async (req, res, next) => {
       };
     });
     const contar = (s) => linhas.filter((l) => l.situacao === s).length;
-    res.json({
+    return {
       linhas,
       totais: {
         anuncios: linhas.length, abaixo: contar('abaixo'), prejuizo: contar('prejuizo'), noLimite: contar('no_limite'), ok: contar('ok'), semPiso: contar('sem_piso'),
@@ -181,8 +184,12 @@ router.get('/auditoria', async (req, res, next) => {
         '"Deixado na mesa" = (lucro no piso − lucro no preço atual) × peças vendidas por este anúncio nos últimos 30 dias. Anúncio sem venda ligada a ele nos 30 dias fica sem esse número — não é zero.',
         'Anúncio sem referência vinculada, referência sem custo ou canal sem tabela de comissão aparecem como "sem piso", com o motivo. A trava não dispara neles: não se trava o que não se mede.',
       ],
-    });
-  } catch (err) { next(err); }
+    };
+  }
+}
+
+router.get('/auditoria', async (req, res, next) => {
+  try { res.json(await auditarPiso(req.query)); } catch (err) { next(err); }
 });
 
 // Um preço, um anúncio — a tela pergunta enquanto a pessoa digita.
@@ -407,3 +414,4 @@ router.get('/excecoes', async (req, res, next) => {
 });
 
 module.exports = router;
+module.exports.auditarPiso = auditarPiso;

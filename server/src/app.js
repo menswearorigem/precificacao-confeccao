@@ -51,6 +51,7 @@ const producaoProjecaoRoutes = require('./routes/producaoProjecao.routes');
 const planejamentoRoutes = require('./routes/planejamento.routes');
 const precoRegraRoutes = require('./routes/precoRegra.routes');
 const posVendaRoutes = require('./routes/posVenda.routes');
+const manuRoutes = require('./routes/manu.routes');
 const producaoMateriaPrimaRoutes = require('./routes/producaoMateriaPrima.routes');
 const faccoesRoutes = require('./routes/faccoes.routes');
 const produtoGradeRoutes = require('./routes/produtoGrade.routes');
@@ -285,6 +286,9 @@ function createApp() {
   // todos os canais ligadas a referência × cor × tamanho. Mesma chave de
   // Devoluções. Nenhuma chave nova (REGRA 4).
   app.use('/api/pos-venda', requireAuth, requireModulo(['marketplace', 'produto', 'analises']), posVendaRoutes);
+  // Manu analista (21/09/2026): só login — a permissão é por seção, dentro
+  // da rota, porque o resumo do dia cruza módulos (ver manu.routes.js).
+  app.use('/api/manu', requireAuth, manuRoutes);
   // Cadastro de FACÇÃO e das categorias dela (09/09/2026). Mesma chave da
   // Produção: quem movimenta peça para a facção é quem sabe quem ela é, e a
   // dono pediu explicitamente para poder criar a facção NA HORA de gerar a

@@ -168,7 +168,7 @@ export default function Shell({ children }) {
           >
             <Search size={17} />
           </button>
-          {visibleModules.some((mod) => mod.key === 'calendario') && <SinoCalendario />}
+          <SinoCalendario comCalendario={visibleModules.some((mod) => mod.key === 'calendario')} />
           {densidadeCtx && (
             <button
               type="button"

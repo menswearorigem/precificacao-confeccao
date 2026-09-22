@@ -84,9 +84,10 @@ router.get('/opcoes', (req, res) => {
   res.json({ motivos: Object.entries(pv.MOTIVOS).map(([chave, m]) => ({ chave, ...m })), alimenta: pv.ALIMENTA, tipos: ['devolucao', 'reclamacao', 'pergunta', 'avaliacao'] });
 });
 
-router.get('/painel', async (req, res, next) => {
-  try {
-    const j = janela(req);
+// Extraída do handler em 21/09/2026 para a Manu analista (resumo do dia,
+// "qual referência mais devolve?") ler o mesmo painel sem passar pelo HTTP.
+async function calcularPainel(j) {
+  {
     const [eventos, totaisProduto, estado] = await Promise.all([
       eventosDaJanela(j),
       vendas.totaisPorProduto(pool, vendas.normalizarJanela(j)),
@@ -114,7 +115,7 @@ router.get('/painel', async (req, res, next) => {
     const alimentaGeral = new Map();
     for (const [m, n] of motivosGeral) { const a = pv.MOTIVOS[m]?.alimenta; if (a) alimentaGeral.set(a, (alimentaGeral.get(a) || 0) + n); }
 
-    res.json({
+    return {
       janela: j,
       totais: {
         devolucoes: contar('devolucao'), pecasDevolvidas: pecasDev, pecasVendidas: pecasVend,
@@ -137,8 +138,12 @@ router.get('/painel', async (req, res, next) => {
         'Sinal de modelagem: num tamanho, pelo menos 3 devoluções por "ficou pequeno" e 3× mais que "ficou grande" (ou o inverso). Menos que isso é acaso.',
         'O que cada loja não dá: Shopee e TikTok não expõem perguntas por API; TikTok não expõe avaliações; Shein não expõe nada. O quadro de lojas diz fonte por fonte.',
       ],
-    });
-  } catch (err) { next(err); }
+    };
+  }
+}
+
+router.get('/painel', async (req, res, next) => {
+  try { res.json(await calcularPainel(janela(req))); } catch (err) { next(err); }
 });
 
 router.get('/eventos', async (req, res, next) => {
@@ -222,3 +227,5 @@ router.get('/sincronizacao', async (req, res, next) => {
 });
 
 module.exports = router;
+module.exports.calcularPainel = calcularPainel;
+module.exports.eventosDaJanela = eventosDaJanela;

@@ -10,6 +10,7 @@ const { cicloWikCompleto } = require('./lib/wikCiclo');
 const { reconciliarCalendario } = require('./lib/producaoCalendario');
 const { lerConcorrentes } = require('./lib/concorrentesSync');
 const { sincronizarPosVendaTodasAtivas } = require('./lib/posVendaSync');
+const { jobBriefingDiario } = require('./lib/manuBriefing');
 
 // ── AUTO-CURA de travas ÓRFÃS do Wik no boot ────────────────────────────────
 // `web_job_ativo` e `producao_job_ativo` são FLAGS no banco (não advisory
@@ -169,4 +170,14 @@ app.listen(PORT, () => {
     .catch((err) => console.error('[pos-venda]', err.message));
   setTimeout(lerPosVenda, 6 * 60 * 1000);
   setInterval(lerPosVenda, 60 * 60 * 1000);
+
+  // Manu analista (21/09/2026): o resumo do dia. Uma foto por dia de
+  // Brasília — a primeira passada de cada dia gera, as outras pulam. Roda
+  // 4 min depois da subida e depois a cada 30 min (a virada do dia cai em
+  // alguma dessas passadas). A tela sempre pode pedir "atualizar agora".
+  const briefing = () => jobBriefingDiario()
+    .then((r) => { if (!r.pulado) console.log('[manu] resumo do dia gerado', JSON.stringify(r)); })
+    .catch((err) => console.error('[manu]', err.message));
+  setTimeout(briefing, 4 * 60 * 1000);
+  setInterval(briefing, 30 * 60 * 1000);
 });

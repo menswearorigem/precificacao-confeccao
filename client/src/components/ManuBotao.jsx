@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { MessageCircleQuestion } from 'lucide-react';
 import ManuPainel from './ManuPainel';
+import { carregarBriefing } from '../lib/manu/analista';
 
 const CHAVE_APRESENTADA = 'hbn_manu_apresentada';
 
@@ -59,6 +60,20 @@ export default function ManuBotao() {
   const [balaoVisivel, setBalaoVisivel] = useState(false);
   const botaoRef = useRef(null);
   const desvio = useDesvioDeColisao();
+
+  // Manu analista (21/09/2026): quantas frentes pedem ação hoje. Só o
+  // número, na mascote — o quadro inteiro fica no painel. Recarrega a cada
+  // 30 min; o cache de lib/manu/analista evita bater no servidor à toa.
+  const [pendencias, setPendencias] = useState(0);
+  useEffect(() => {
+    let ativo = true;
+    function ler() {
+      carregarBriefing().then((b) => { if (ativo) setPendencias((b?.totais?.urgentes || 0) + (b?.totais?.atencao || 0)); }).catch(() => {});
+    }
+    ler();
+    const t = setInterval(ler, 30 * 60 * 1000);
+    return () => { ativo = false; clearInterval(t); };
+  }, []);
 
   // Balão de boas-vindas: só na primeira visita, some sozinho depois de 8s
   // ou no primeiro clique, e nunca mais volta.
@@ -128,7 +143,7 @@ export default function ManuBotao() {
           type="button"
           className="manu-botao"
           aria-label="Falar com a Manu"
-          title="Falar com a Manu"
+          title={pendencias > 0 ? `Falar com a Manu · ${pendencias} ${pendencias === 1 ? 'frente pede' : 'frentes pedem'} atenção hoje` : 'Falar com a Manu'}
           onClick={abrirPainel}
         >
           {imagemFalhou ? (
@@ -142,6 +157,9 @@ export default function ManuBotao() {
             />
           )}
           <span className="manu-botao-rotulo">Falar com a Manu</span>
+          {pendencias > 0 && (
+            <span className="manu-botao-contador" aria-label={`${pendencias} frentes pedem atenção hoje`}>{pendencias > 9 ? '9+' : pendencias}</span>
+          )}
         </button>
       </div>
 

@@ -3166,8 +3166,12 @@ table.ficha-doc-tabela {
   padding: 10px 12px;
   font-weight: 700;
   font-size: 13px;
+  /* Cor explícita (21/09/2026): o painel abre dentro do cabeçalho escuro e
+     herdava o texto claro dele — o título ficava quase invisível no fundo claro. */
+  color: var(--ink);
   border-bottom: 1px solid var(--border-soft);
 }
+.sino-painel-head + .sino-painel-head, .sino-painel-lista + .sino-painel-head, .page-sub + .sino-painel-head { border-top: 1px solid var(--border-soft); margin-top: 2px; }
 .sino-painel-lista { display: flex; flex-direction: column; }
 .sino-item {
   display: flex;
@@ -12028,3 +12032,58 @@ table.grade-matriz { width: auto; min-width: 0; }
 .pv-detalhe { display: grid; gap: 10px; }
 .pv-detalhe > div:first-child { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; }
 @media (max-width: 1100px) { .pv-topo { grid-template-columns: 18px 1fr auto; row-gap: 8px; } .pv-acoes li { grid-template-columns: 1fr; gap: 4px; } }
+
+/* =========================================================================
+   Manu analista (21/09/2026, frente 4 de 4) — resumo do dia e resposta
+   ========================================================================= */
+.manu-brief { padding: 2px 6px 6px; display: flex; flex-direction: column; gap: 4px; }
+.manu-brief-topo { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 4px 6px 6px; }
+.manu-brief-frase { font-size: 12.5px; font-weight: 600; color: var(--ink); line-height: 1.4; }
+.manu-brief-hora { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--ink-faint); white-space: nowrap; }
+.manu-brief-atualizar { border: none; background: none; color: var(--ink-faint); cursor: pointer; padding: 2px; border-radius: 4px; display: inline-flex; }
+.manu-brief-atualizar:hover { color: var(--ink); background: var(--surface-alt); }
+.manu-brief-atualizar:disabled { opacity: .5; cursor: default; }
+.manu-brief-atualizar .girando { animation: manu-girar 1s linear infinite; }
+@keyframes manu-girar { to { transform: rotate(360deg); } }
+.manu-brief-secao { border-radius: var(--radius-sm); border: 1px solid var(--border-soft); background: var(--surface-raised); }
+.manu-brief-secao.aberta { background: var(--surface-alt); }
+.manu-brief-secao.nivel-urgente { border-left: 3px solid var(--danger-ring); }
+.manu-brief-secao.nivel-atencao { border-left: 3px solid var(--warning-ring); }
+.manu-brief-secao.nivel-sem_dado { border-left: 3px solid var(--border); }
+.manu-brief-secao.nivel-ok { border-left: 3px solid var(--success-ring); }
+.manu-brief-cab {
+  width: 100%; display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: "nivel titulo seta" "nivel resumo seta";
+  column-gap: 8px; row-gap: 1px; align-items: center; padding: 7px 10px; border: none; background: none; text-align: left; cursor: pointer; border-radius: var(--radius-sm);
+}
+.manu-brief-cab:hover { background: var(--surface-alt); }
+.manu-brief-nivel { grid-area: nivel; font-size: 9.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; border-radius: 4px; padding: 2px 6px; white-space: nowrap; align-self: start; margin-top: 2px; }
+.manu-brief-nivel.nivel-urgente { color: var(--danger); background: var(--danger-bg); }
+.manu-brief-nivel.nivel-atencao { color: var(--warning); background: var(--warning-bg); }
+.manu-brief-nivel.nivel-ok { color: var(--success); background: var(--success-bg); }
+.manu-brief-nivel.nivel-sem_dado { color: var(--muted); background: var(--surface-alt); box-shadow: inset 0 0 0 1px var(--border-soft); }
+.manu-brief-titulo { grid-area: titulo; font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.manu-brief-resumo { grid-area: resumo; font-size: 11.5px; color: var(--ink-soft); line-height: 1.4; }
+.manu-brief-seta { grid-area: seta; color: var(--ink-faint); transition: transform .15s; }
+.manu-brief-secao.aberta .manu-brief-seta { transform: rotate(180deg); }
+.manu-brief-detalhe { padding: 0 10px 10px 12px; font-size: 12px; color: var(--ink-soft); display: flex; flex-direction: column; gap: 8px; }
+.manu-brief-detalhe .manu-resposta-lista { margin: 0; }
+.manu-brief-detalhe > .btn { align-self: flex-start; }
+.manu-brief-motivo { margin: 0; font-size: 11.5px; color: var(--ink-faint); font-style: italic; }
+.manu-brief-item-link { border: none; background: none; padding: 0; text-align: left; color: var(--ink-soft); cursor: pointer; font: inherit; }
+.manu-brief-item-link:hover { color: var(--ink); text-decoration: underline; }
+.manu-brief-ver-mais { border: none; background: none; color: var(--ink-faint); font-size: 11.5px; cursor: pointer; padding: 4px 6px; text-align: left; align-self: flex-start; }
+.manu-brief-ver-mais:hover { color: var(--ink); text-decoration: underline; }
+.manu-exemplos { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 6px 8px; }
+.manu-exemplo { border: 1px solid var(--border-soft); background: var(--surface-raised); color: var(--ink-soft); font-size: 11.5px; border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+.manu-exemplo:hover { border-color: var(--border); color: var(--ink); background: var(--surface-alt); }
+.manu-analise { margin: 0 0 6px; border-radius: var(--radius-sm); background: var(--surface-alt); }
+.manu-analise .manu-resposta { padding-top: 0; }
+.manu-analise .manu-resposta-subtitulo { margin-top: 4px !important; }
+.manu-analise-nota { margin: 10px 0 0 !important; font-size: 10.5px; color: var(--ink-faint); font-style: italic; }
+.manu-analise .manu-brief { padding-left: 0; padding-right: 0; }
+.manu-botao-contador {
+  position: absolute; top: -2px; right: -2px;
+  background: var(--danger-ring); color: var(--on-accent);
+  font-size: 10px; font-weight: 700; line-height: 1; min-width: 18px; height: 18px; border-radius: 9px; padding: 0 4px;
+  display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px var(--surface-raised);
+}

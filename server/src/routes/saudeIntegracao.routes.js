@@ -147,3 +147,6 @@ router.post('/conexoes/:id/sincronizar', async (req, res, next) => {
 });
 
 module.exports = router;
+// Para a Manu analista (21/09/2026) ler a saúde sem passar pelo HTTP.
+module.exports.carregarConexoes = carregarConexoes;
+module.exports.carregarFalhas = carregarFalhas;

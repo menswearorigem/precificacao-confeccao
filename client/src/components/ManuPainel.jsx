@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Search, ArrowRight, MessageCircleQuestion } from 'lucide-react';
+import { Search, ArrowRight, MessageCircleQuestion, RefreshCw, Sparkles, ChevronDown } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { buscarAjuda, listarAjuda, buscarVerbetePorId, registrarSemResposta } from '../lib/ajuda';
+import { pareceAnalise, perguntarManu, carregarBriefing, rotuloNivel, horaDe, EXEMPLOS_DE_PERGUNTA } from '../lib/manu/analista';
 import { EstadoVazio } from './ui';
 
 // ---------------------------------------------------------------------
@@ -49,8 +50,10 @@ function renderizarResposta(texto) {
       return;
     }
 
+    // Lista de um item só também é lista (21/09/2026): a Manu analista
+    // responde "- 1 anúncio abaixo do piso" e isso não é um parágrafo com traço.
     const todasComTraco = linhas.every((l) => /^[-•]\s+/.test(l));
-    if (todasComTraco && linhas.length > 1) {
+    if (todasComTraco && linhas.length >= 1) {
       elementos.push(
         <ul className="manu-resposta-lista" key={`b${idxBloco}`}>
           {linhas.map((l, i) => (
@@ -103,6 +106,119 @@ export function RespostaVerbete({ verbete, onNavegar, onSelecionarRelacionado })
   );
 }
 
+// ---------------------------------------------------------------------
+// Manu analista (21/09/2026): o resumo do dia e a resposta a uma pergunta
+// de análise. Os dois vêm do servidor (/api/manu), já filtrados pelos
+// módulos do usuário. Sem IA paga: é regra fixa em cima dos motores que
+// já existem — por isso a resposta sempre traz a tela de onde o número
+// saiu, para conferir.
+// ---------------------------------------------------------------------
+function SecaoBriefing({ secao, aberta, onAlternar, onNavegar }) {
+  const temDetalhe = (secao.itens && secao.itens.length > 0) || secao.motivo;
+  return (
+    <div className={`manu-brief-secao nivel-${secao.nivel}${aberta ? ' aberta' : ''}`}>
+      <button type="button" className="manu-brief-cab" onClick={() => (temDetalhe ? onAlternar(secao.chave) : onNavegar(secao.rota))} aria-expanded={aberta}>
+        <span className={`manu-brief-nivel nivel-${secao.nivel}`}>{rotuloNivel(secao.nivel)}</span>
+        <span className="manu-brief-titulo">{secao.titulo}</span>
+        <span className="manu-brief-resumo">{secao.resumo}</span>
+        {temDetalhe && <ChevronDown size={14} className="manu-brief-seta" />}
+      </button>
+      {aberta && temDetalhe && (
+        <div className="manu-brief-detalhe">
+          {secao.motivo && <p className="manu-brief-motivo">Por que não medi: {secao.motivo}</p>}
+          {(secao.itens || []).length > 0 && (
+            <ul className="manu-resposta-lista">
+              {secao.itens.map((it, i) => (
+                <li key={i}>
+                  {it.rota ? <button type="button" className="manu-brief-item-link" onClick={() => onNavegar(it.rota)}>{it.texto}</button> : it.texto}
+                </li>
+              ))}
+            </ul>
+          )}
+          {secao.rota && (
+            <button type="button" className="btn btn-primary sm" onClick={() => onNavegar(secao.rota)}>
+              Abrir a tela <ArrowRight size={13} />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function BriefingDoDia({ briefing, carregando, erro, onAtualizar, onNavegar, compacto = false }) {
+  const [abertas, setAbertas] = useState(() => new Set());
+  function alternar(chave) {
+    setAbertas((s) => { const n = new Set(s); if (n.has(chave)) n.delete(chave); else n.add(chave); return n; });
+  }
+  const secoes = briefing?.secoes || [];
+  const pendentes = secoes.filter((s) => s.nivel !== 'ok');
+  const emDia = secoes.filter((s) => s.nivel === 'ok');
+  const [verEmDia, setVerEmDia] = useState(false);
+  return (
+    <div className="manu-brief">
+      <div className="manu-brief-topo">
+        <span className="manu-brief-frase">
+          {erro ? 'Não consegui montar o resumo de hoje.' : (carregando && !briefing ? 'Montando o resumo de hoje…' : (briefing?.frase || ''))}
+        </span>
+        {briefing && (
+          <span className="manu-brief-hora">
+            {horaDe(briefing.geradoEm) ? `às ${horaDe(briefing.geradoEm)}` : ''}
+            <button type="button" className="manu-brief-atualizar" title="Recalcular agora" onClick={onAtualizar} disabled={carregando}>
+              <RefreshCw size={12} className={carregando ? 'girando' : ''} />
+            </button>
+          </span>
+        )}
+      </div>
+      {erro && <p className="manu-painel-dica">{String(erro.message || erro)}</p>}
+      {pendentes.map((s) => (
+        <SecaoBriefing key={s.chave} secao={s} aberta={abertas.has(s.chave)} onAlternar={alternar} onNavegar={onNavegar} />
+      ))}
+      {briefing && pendentes.length === 0 && !erro && (
+        <p className="manu-painel-dica">Nada pendente nas frentes que você vê.</p>
+      )}
+      {!compacto && emDia.length > 0 && (
+        <button type="button" className="manu-brief-ver-mais" onClick={() => setVerEmDia((v) => !v)}>
+          {verEmDia ? 'Esconder' : 'Ver'} {emDia.length === 1 ? 'a frente em dia' : `as ${emDia.length} frentes em dia`}
+        </button>
+      )}
+      {!compacto && verEmDia && emDia.map((s) => (
+        <SecaoBriefing key={s.chave} secao={s} aberta={abertas.has(s.chave)} onAlternar={alternar} onNavegar={onNavegar} />
+      ))}
+    </div>
+  );
+}
+
+function RespostaAnalise({ resposta, carregando, onNavegar }) {
+  if (carregando && !resposta) {
+    return <div className="manu-analise"><p className="manu-painel-dica">Fazendo a conta…</p></div>;
+  }
+  if (!resposta) return null;
+  const r = resposta.resposta;
+  return (
+    <div className="manu-analise">
+      <div className="manu-grupo-titulo"><Sparkles size={12} /> Resposta da Manu{carregando ? ' · atualizando…' : ''}</div>
+      <div className="manu-resposta">
+        {r.titulo && <p className="manu-resposta-subtitulo">{r.titulo}</p>}
+        <div className="manu-resposta-texto">{renderizarResposta(r.texto || '')}</div>
+        {r.briefing && (
+          <BriefingDoDia briefing={r.briefing} compacto onNavegar={onNavegar} onAtualizar={() => {}} />
+        )}
+        {r.rota && (
+          <div className="manu-resposta-rodape">
+            <button type="button" className="btn btn-primary sm" onClick={() => onNavegar(r.rota)}>
+              {r.rotaRotulo || 'Abrir a tela'} <ArrowRight size={13} />
+            </button>
+          </div>
+        )}
+        {!r.semAcesso && !r.erro && (
+          <p className="manu-analise-nota">Conta feita por regra fixa em cima dos motores do sistema. A tela é a fonte — confira lá.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ItemVerbete({ verbete, ativo, abertoId, onAtivar, onNavegar, onSelecionarRelacionado, onAlternarAberto }) {
   const aberto = abertoId === verbete.id;
   return (
@@ -138,6 +254,45 @@ export default function ManuPainel({ variante = 'flutuante', onFechar }) {
   const [indiceAtivo, setIndiceAtivo] = useState(0);
   const inputRef = useRef(null);
   const painelRef = useRef(null);
+
+  // Manu analista: o resumo do dia (campo vazio) e a resposta (pergunta de análise).
+  const [briefing, setBriefing] = useState(null);
+  const [briefingCarregando, setBriefingCarregando] = useState(false);
+  const [briefingErro, setBriefingErro] = useState(null);
+  const [analise, setAnalise] = useState(null);
+  const [analiseCarregando, setAnaliseCarregando] = useState(false);
+  const perguntaEmVoo = useRef('');
+
+  function atualizarBriefing(forcar = false) {
+    setBriefingCarregando(true);
+    setBriefingErro(null);
+    carregarBriefing({ forcar })
+      .then((b) => setBriefing(b))
+      .catch((e) => setBriefingErro(e))
+      .finally(() => setBriefingCarregando(false));
+  }
+  useEffect(() => { atualizarBriefing(false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const termoLimpo = termo.trim();
+  const ehAnalise = pareceAnalise(termoLimpo);
+
+  function perguntar(texto) {
+    const t = (texto || '').trim();
+    if (!pareceAnalise(t) || t === perguntaEmVoo.current) return;
+    perguntaEmVoo.current = t;
+    setAnaliseCarregando(true);
+    perguntarManu(t)
+      .then((r) => { if (perguntaEmVoo.current === t) setAnalise(r.entendi ? r : { entendi: false, pergunta: t }); })
+      .catch((e) => { if (perguntaEmVoo.current === t) setAnalise({ entendi: true, resposta: { titulo: 'Não consegui responder', texto: String(e.message || e), erro: true } }); })
+      .finally(() => { if (perguntaEmVoo.current === t) setAnaliseCarregando(false); });
+  }
+  // Pergunta enquanto a pessoa digita, com pausa de 700 ms — o servidor
+  // faz conta de verdade (lucratividade, cobertura…), não é busca em lista.
+  useEffect(() => {
+    if (!ehAnalise) { setAnalise(null); perguntaEmVoo.current = ''; return undefined; }
+    const t = setTimeout(() => perguntar(termoLimpo), 700);
+    return () => clearTimeout(t);
+  }, [termoLimpo, ehAnalise]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const comuns = useMemo(
     () => listarAjuda(location.pathname, { user }),
@@ -210,9 +365,16 @@ export default function ManuPainel({ variante = 'flutuante', onFechar }) {
       setIndiceAtivo((i) => Math.max(i - 1, 0));
     } else if (e.key === 'Enter') {
       e.preventDefault();
+      if (ehAnalise) { perguntaEmVoo.current = ''; perguntar(termoLimpo); return; }
       const alvo = lista[indiceAtivo];
       if (alvo) setAbertoId((atual) => (atual === alvo.id ? null : alvo.id));
     }
+  }
+
+  function navegarRota(rota) {
+    if (!rota) return;
+    navigate(rota);
+    onFechar?.();
   }
 
   function alternarAberto(id) {
@@ -246,6 +408,24 @@ export default function ManuPainel({ variante = 'flutuante', onFechar }) {
 
         {termo.trim().length < 2 && (
           <div className="manu-grupo">
+            <div className="manu-grupo-titulo"><Sparkles size={12} /> Hoje, pela Manu</div>
+            <BriefingDoDia
+              briefing={briefing}
+              carregando={briefingCarregando}
+              erro={briefingErro}
+              onAtualizar={() => atualizarBriefing(true)}
+              onNavegar={navegarRota}
+            />
+            <div className="manu-exemplos">
+              {EXEMPLOS_DE_PERGUNTA.slice(0, 4).map((ex) => (
+                <button type="button" key={ex} className="manu-exemplo" onClick={() => setTermo(ex)}>{ex}</button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {termo.trim().length < 2 && (
+          <div className="manu-grupo">
             <div className="manu-grupo-titulo">Dúvidas comuns nesta tela</div>
             {comuns.length === 0 && (
               <p className="manu-painel-dica">Nenhuma dúvida cadastrada pra este módulo ainda.</p>
@@ -265,6 +445,10 @@ export default function ManuPainel({ variante = 'flutuante', onFechar }) {
           </div>
         )}
 
+        {termo.trim().length >= 2 && ehAnalise && (analise?.entendi || analiseCarregando) && (
+          <RespostaAnalise resposta={analise?.entendi ? analise : null} carregando={analiseCarregando} onNavegar={navegarRota} />
+        )}
+
         {termo.trim().length >= 2 && (
           resultados && resultados.length > 0 ? (
             <div className="manu-grupo">
@@ -282,10 +466,14 @@ export default function ManuPainel({ variante = 'flutuante', onFechar }) {
               ))}
             </div>
           ) : (
-            <EstadoVazio
-              Icone={MessageCircleQuestion}
-              descricao='Não achei nada sobre isso. Tenta com outras palavras, ou fala com um administrador.'
-            />
+            (!(ehAnalise && (analise?.entendi || analiseCarregando)) && (
+              <EstadoVazio
+                Icone={MessageCircleQuestion}
+                descricao={analise && analise.entendi === false
+                  ? 'Não entendi a pergunta. Eu respondo sobre vendas, margem, devoluções, atrasos, piso, estoque e produção — por exemplo: "quanto vendi ontem?", "por que a margem da OG1620 caiu esse mês?".'
+                  : 'Não achei nada sobre isso. Tenta com outras palavras, ou fala com um administrador.'}
+              />
+            ))
           )
         )}
       </div>
