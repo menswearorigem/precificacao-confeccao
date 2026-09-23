@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Ruler, RefreshCw, AlertTriangle, Info, Scissors, Layers,
+  Ruler, RefreshCw, AlertTriangle, Info, Scissors, Layers, TrendingUp, Boxes,
 } from 'lucide-react';
 import { api } from '../api/client';
 import {
@@ -8,6 +8,7 @@ import {
 } from '../components/ui';
 import { pct, formatQtd, numeroBr } from '../lib/format';
 import GradeDeCorte from '../components/GradeDeCorte';
+import CoberturaPorTamanho from '../components/CoberturaPorTamanho';
 
 // Estoque › Curva de tamanho.
 //
@@ -51,6 +52,20 @@ export default function CurvaTamanhoPage() {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
 
+  // Grade de corte (23/09/2026): duas sub-abas e tamanhos tirados à mão.
+  // Cada aba guarda os seus tirados — a "Pela venda" continua sendo a grade
+  // pura da venda, e o que se tira olhando o estoque não vaza para ela.
+  const [modoGrade, setModoGrade] = useState('venda');
+  const [excluirVenda, setExcluirVenda] = useState([]);
+  const [excluirEstoque, setExcluirEstoque] = useState([]);
+  const [horizonte, setHorizonte] = useState(45);
+  const [atualizandoGrade, setAtualizandoGrade] = useState(false);
+  const baseCarregada = useRef('');
+  const pedidoAtual = useRef(0);
+
+  // Referência nova tem outros tamanhos: os tirados da anterior não valem.
+  useEffect(() => { setExcluirVenda([]); setExcluirEstoque([]); }, [produtoId]);
+
   useEffect(() => {
     // `/estoque/produtos-referencia` e NÃO `/produtos` (09/09/2026):
     // `/produtos` exige o módulo `produto` ou `analises`, e o público desta
@@ -64,21 +79,38 @@ export default function CurvaTamanhoPage() {
       .catch((e) => setErro(e.message));
   }, []);
 
-  const carregar = useCallback(async () => {
-    setCarregando(true);
+  const carregar = useCallback(async ({ forcarCompleto = false } = {}) => {
+    // Tirar um tamanho ou trocar o horizonte só muda a grade: recarrega por
+    // baixo, sem apagar a tela no esqueleto. Filtro novo recarrega tudo.
+    const base = `${produtoId}|${meses}|${lote}|${minimo}`;
+    const soGrade = !forcarCompleto && baseCarregada.current === base;
+    const meu = ++pedidoAtual.current;
+    if (soGrade) setAtualizandoGrade(true); else setCarregando(true);
     setErro('');
     try {
       const qs = new URLSearchParams({ meses: String(meses) });
       if (produtoId) qs.set('produto_id', String(produtoId));
       if (lote > 0) qs.set('lote', String(lote));
       if (minimo > 0) qs.set('minimo', String(minimo));
-      setDados(await api.get(`/analises-estoque/curva-tamanho?${qs}`));
+      if (excluirVenda.length) qs.set('excluir', excluirVenda.join(','));
+      if (excluirEstoque.length) qs.set('excluir_estoque', excluirEstoque.join(','));
+      qs.set('horizonte', String(horizonte));
+      const r = await api.get(`/analises-estoque/curva-tamanho?${qs}`);
+      if (meu !== pedidoAtual.current) return; // chegou atrasado: já há um mais novo
+      setDados(r);
+      baseCarregada.current = base;
     } catch (e) {
-      setErro(e.message);
+      if (meu === pedidoAtual.current) setErro(e.message);
     } finally {
-      setCarregando(false);
+      if (meu === pedidoAtual.current) { setCarregando(false); setAtualizandoGrade(false); }
     }
-  }, [produtoId, meses, lote, minimo]);
+  }, [produtoId, meses, lote, minimo, excluirVenda, excluirEstoque, horizonte]);
+
+  const alternar = (setLista) => (tamanho) => setLista((lista) => (
+    lista.some((t) => t.toUpperCase() === tamanho.toUpperCase())
+      ? lista.filter((t) => t.toUpperCase() !== tamanho.toUpperCase())
+      : [...lista, tamanho]
+  ));
 
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -94,7 +126,7 @@ export default function CurvaTamanhoPage() {
           </p>
         </div>
         <div className="pagina-acoes">
-          <button type="button" className="btn-sec" onClick={carregar} disabled={carregando}>
+          <button type="button" className="btn-sec" onClick={() => carregar({ forcarCompleto: true })} disabled={carregando}>
             <RefreshCw size={15} className={carregando ? 'girando' : ''} /> Atualizar
           </button>
         </div>
@@ -199,7 +231,67 @@ export default function CurvaTamanhoPage() {
             </div>
           </div>
 
-          <GradeDeCorte grade={dados.gradeCorte} loteAlvo={lote} />
+          {(() => {
+            const tamanhos = c.itens.map((i) => ({ tamanho: i.tamanho, semVenda: !(Number(i.unidades) > 0) }));
+            const ge = dados.gradeEstoque;
+            const noEstoque = modoGrade === 'estoque' && ge;
+            const abas = (
+              <div className="segmentado gc-abas" role="tablist" aria-label="Base da grade">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={modoGrade === 'venda'}
+                  className={modoGrade === 'venda' ? 'ativo' : undefined}
+                  onClick={() => setModoGrade('venda')}
+                >
+                  <TrendingUp size={13} /> Pela venda
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={modoGrade === 'estoque'}
+                  className={modoGrade === 'estoque' ? 'ativo' : undefined}
+                  onClick={() => setModoGrade('estoque')}
+                  disabled={!ge}
+                >
+                  <Boxes size={13} /> Venda + estoque
+                  {ge?.sugeridos?.length > 0 && <span className="gc-abas-contador">{ge.sugeridos.length}</span>}
+                </button>
+              </div>
+            );
+            return noEstoque ? (
+              <GradeDeCorte
+                grade={ge.grade}
+                loteAlvo={lote}
+                abas={abas}
+                tamanhos={tamanhos}
+                excluidos={excluirEstoque}
+                onAlternarTamanho={alternar(setExcluirEstoque)}
+                sugeridos={ge.sugeridos}
+                atualizando={atualizandoGrade}
+                antes={(
+                  <CoberturaPorTamanho
+                    dados={ge}
+                    excluidos={excluirEstoque}
+                    onAlternar={alternar(setExcluirEstoque)}
+                    onTirarSugeridos={(lista) => setExcluirEstoque((atual) => [...new Set([...atual, ...lista])])}
+                    horizonte={horizonte}
+                    onHorizonte={setHorizonte}
+                  />
+                )}
+              />
+            ) : (
+              <GradeDeCorte
+                grade={dados.gradeCorte}
+                loteAlvo={lote}
+                abas={abas}
+                tamanhos={tamanhos}
+                excluidos={excluirVenda}
+                onAlternarTamanho={alternar(setExcluirVenda)}
+                atualizando={atualizandoGrade}
+              />
+            );
+          })()}
 
           {dados.grade?.ok && (
             <div className="card">

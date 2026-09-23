@@ -252,3 +252,146 @@
   .gc-lote-resumo { text-align: left; }
 }
 .gc-tabela tr.linha-total td { background: var(--surface-alt); font-weight: 700; }
+
+/* ---------- 23/09/2026: sub-abas, tamanhos no corte, venda + estoque ---------- */
+
+.gc-cabeca { flex-wrap: wrap; gap: 10px 14px; }
+.gc-cabeca .gc-abas { margin-right: auto; }
+.gc-cabeca .card-titulo { margin-bottom: 0; }
+
+.gc-abas button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.gc-abas button.ativo { background: var(--module-color, var(--terracotta)); color: #fff; }
+.gc-abas button:disabled { opacity: 0.5; cursor: not-allowed; }
+.gc-abas-contador {
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--ce-destaque);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+}
+
+.gc-card { --ce-destaque: #c2410c; transition: opacity 0.15s var(--ease); }
+.gc-atualizando { opacity: 0.6; pointer-events: none; }
+
+.gc-tamanhos { margin: 14px 0 4px; }
+.gc-tamanhos > .field-label { display: block; margin-bottom: 8px; }
+.gc-tamanhos-lista { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.gc-tam {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 13px;
+  border: 1.5px solid var(--module-color, var(--terracotta));
+  border-radius: 999px;
+  background: var(--module-color, var(--terracotta));
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease), transform 0.15s var(--ease);
+}
+.gc-tam:hover { transform: translateY(-1px); }
+.gc-tam:active { transform: scale(0.97); }
+.gc-tam svg { opacity: 0.8; }
+.gc-tam.fora {
+  background: transparent;
+  color: var(--ink-faint);
+  border-color: var(--border);
+  border-style: dashed;
+  text-decoration: line-through;
+}
+.gc-tam.sugerido { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ce-destaque) 45%, transparent); }
+.gc-tam:disabled {
+  background: var(--surface-alt);
+  border-color: var(--border-soft);
+  color: var(--ink-faint);
+  cursor: not-allowed;
+  transform: none;
+}
+
+.gc-unico { margin: 0 0 0 6px; font-size: 13px; max-width: 520px; }
+
+.ce-painel {
+  margin: 12px 0 6px;
+  padding: 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  background: var(--surface-alt);
+}
+.ce-horizonte { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
+.ce-horizonte .field-label { margin: 0; }
+.ce-horizonte .segmentado button.ativo { background: var(--module-color, var(--terracotta)); color: #fff; }
+.ce-tabela { min-width: 560px; }
+.ce-tabela tr.ce-linha-fora td { color: var(--ink-faint); }
+.ce-tabela tr.ce-linha-fora td strong { text-decoration: line-through; }
+.ce-dura-ok { color: var(--success, #15803d); }
+.ce-acao { text-align: right; white-space: nowrap; }
+.ce-entra { font-size: 11.5px; }
+
+.ce-tirar {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border: none;
+  border-radius: 999px;
+  background: var(--ce-destaque);
+  color: #fff;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s var(--ease), transform 0.15s var(--ease);
+}
+.ce-tirar:hover { filter: brightness(1.08); transform: translateY(-1px); }
+
+.ce-sugestao {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ce-destaque) 12%, var(--surface));
+  font-size: 13px;
+  color: var(--ink);
+}
+.ce-sugestao > svg { color: var(--ce-destaque); flex-shrink: 0; }
+.ce-sugestao .ce-tirar { margin-left: auto; }
+.ce-rodape { margin-top: 10px; }
+
+@media (max-width: 640px) {
+  .gc-cabeca .gc-abas { order: 3; width: 100%; margin-right: 0; }
+  .gc-abas button { flex: 1; justify-content: center; }
+  .ce-painel { padding: 10px; }
+}
+
+/* No celular a tabela vira cartão (MobileShell) e a última coluna sem título
+   iria para o canto de cima, por cima de "Vende/mês". Aqui o botão é a ação da
+   linha: vai para o pé do cartão, largura cheia. */
+@media (max-width: 860px) {
+  table[data-cartao="sim"].ce-tabela.ce-tabela.ce-tabela > tbody > tr:has(> td) { padding-right: 14px !important; }
+  table[data-cartao="sim"].ce-tabela.ce-tabela > tbody > tr > td.ce-acao.ce-acao:last-child:not(:first-child) {
+    position: static !important;
+    display: block !important;
+    flex: 1 1 100% !important;
+    text-align: left !important;
+  }
+  table[data-cartao="sim"].ce-tabela > tbody > tr > td.ce-acao::before { content: none; }
+  table[data-cartao="sim"].ce-tabela td.ce-acao :is(.ce-tirar, .btn) { width: 100%; justify-content: center; padding: 9px 12px; }
+}

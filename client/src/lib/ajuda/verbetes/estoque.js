@@ -493,6 +493,28 @@ export const verbetesEstoque = [
     relacionados: ['estoque-curva-tamanho-visao-geral', 'estoque-curva-tamanho-esgotou'],
   },
 
+  {
+    id: 'estoque-curva-grade-tirar-tamanho-e-estoque',
+    modulo: 'estoque',
+    tela: 'Curva de Tamanho',
+    titulo: 'Tirar um tamanho da grade de corte e a aba Venda + estoque',
+    rota: '/estoque/curva-tamanho',
+    perguntas: [
+      'tirar tamanho da grade',
+      'nao quero cortar o P',
+      'excluir tamanho do corte',
+      'grade sem um tamanho',
+      'grade com estoque',
+      'venda mais estoque grade',
+      'tamanho com estoque sobrando no corte',
+      'sugestao tirar do corte',
+      'quantos dias o estoque dura por tamanho',
+    ],
+    resposta:
+      'No cartão **Grade de corte**, a linha **Tamanhos no corte** mostra cada tamanho como um botão: toque para tirá-lo (fica vazado e riscado) ou devolvê-lo. A grade é refeita só entre os que ficam — o erro passa a ser medido contra a curva deles, sem o tamanho tirado.\n\nO cartão tem duas abas. **Pela venda** é a grade pura da venda. **Venda + estoque** mostra, por tamanho, quanto vende por mês (ritmo dos últimos 90 dias), o estoque de primeira qualidade, o que está em produção e **quantos dias** isso dura. O tamanho que dura mais que o horizonte escolhido (30, 45, 60 ou 90 dias) ganha o botão **Tirar do corte** — é sugestão, quem decide é você. A proporção dos que ficam continua sendo a da venda. Cada aba guarda os seus tamanhos tirados.',
+    relacionados: ['estoque-curva-grade-para-cortar-lote', 'estoque-curva-tamanho-esgotou'],
+  },
+
   // -------------------------------------------------------------------
   // Depósitos e Transferências — /estoque/depositos
   // -------------------------------------------------------------------

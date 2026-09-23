@@ -16,6 +16,8 @@ const { getCalcContext } = require('../lib/calcContext');
 const parado = require('../lib/estoqueParado');
 const curva = require('../lib/curvaTamanho');
 const { gradesDeCorte } = require('../lib/gradeCorte');
+const cobertura = require('../lib/coberturaTamanho');
+const projecao = require('../lib/producaoProjecao');
 
 const router = express.Router();
 
@@ -157,13 +159,19 @@ router.get('/parado', async (req, res, next) => {
 // GET /curva-tamanho — quanto cortar de cada tamanho
 // ---------------------------------------------------------------------------
 // Parâmetros: produto_id (opcional), meses (padrão 12), lote (opcional),
-// minimo (opcional).
+// minimo (opcional), excluir (tamanhos tirados do corte na aba "Pela venda",
+// ex. "P,GG"), excluir_estoque (os tirados na aba "Venda + estoque") e
+// horizonte (dias que o estoque precisa aguentar para o tamanho sair do corte).
 router.get('/curva-tamanho', async (req, res, next) => {
   try {
     const meses = Math.max(3, Math.min(36, Number(req.query.meses) || 12));
     const produtoId = Number(req.query.produto_id) || null;
     const lote = Number(req.query.lote) || null;
     const minimo = Number(req.query.minimo) || 0;
+    const listaTamanhos = (v) => String(v || '').split(',').map((t) => t.trim()).filter(Boolean).slice(0, 30);
+    const excluir = listaTamanhos(req.query.excluir);
+    const excluirEstoque = listaTamanhos(req.query.excluir_estoque);
+    const horizonteDias = cobertura.horizonteValido(req.query.horizonte);
 
     let produto = null;
     if (produtoId) {
@@ -252,14 +260,101 @@ router.get('/curva-tamanho', async (req, res, next) => {
       esgotado: i.esgotouNaJanela,
     }));
 
+    // Estoque × venda por tamanho (23/09/2026) — a aba "Venda + estoque".
+    //
+    // ESCOPO: com referência escolhida, o estoque e o ritmo são DAQUELA
+    // referência, mesmo que a curva tenha subido para a categoria por falta de
+    // histórico. É ela que vai para o corte: o M parado de outra referência
+    // da categoria não cobre a falta do M desta. Sem referência, é a casa toda.
+    //
+    // RITMO: últimos 90 dias, e não a janela inteira da curva. A proporção
+    // entre tamanhos é estável e ganha com histórico longo; a velocidade não —
+    // doze meses de média escondem que a peça esfriou (ou esquentou). Se a
+    // referência não vendeu nada em 90 dias, cai para a janela da curva e diz.
+    //
+    // TENHO: saldo de primeira qualidade (linha "LD" de leve defeito não conta,
+    // `produto_cores.eh_qualidade`) + o pendente das ordens vivas — os mesmos
+    // números da Projeção de estoque (lib/producaoProjecao.js), não uma
+    // segunda definição de "em produção".
+    async function vendaPorTamanhoEmDias(dias) {
+      const params = [dias];
+      let filtro = '';
+      if (produto) { params.push(produto.id); filtro = 'AND COALESCE(pi.produto_id, ev.produto_id) = $2'; }
+      const { rows } = await pool.query(
+        `SELECT COALESCE(NULLIF(pi.tamanho, ''), ev.tamanho, '') AS tamanho,
+                SUM(pi.quantidade)::numeric AS unidades
+           FROM pedido_itens pi
+           JOIN pedidos_venda pv ON pv.id = pi.pedido_id
+           LEFT JOIN estoque_variantes ev ON ev.id = pi.variante_id
+          WHERE pv.situacao <> 'cancelado' AND pv.cancelado_em IS NULL
+            AND pv.data_pedido >= (CURRENT_DATE - ($1::int || ' days')::interval)
+            ${filtro}
+          GROUP BY 1`,
+        params
+      );
+      const mapa = new Map();
+      for (const r of rows) {
+        const k = cobertura.chaveTamanho(r.tamanho);
+        mapa.set(k, (mapa.get(k) || 0) + (Number(r.unidades) || 0));
+      }
+      return mapa;
+    }
+
+    let diasDoRitmo = 90;
+    let vendaNoRitmo = await vendaPorTamanhoEmDias(diasDoRitmo);
+    let ritmoCaiuParaJanela = false;
+    if ([...vendaNoRitmo.values()].every((v) => v <= 0)) {
+      diasDoRitmo = meses * 30;
+      vendaNoRitmo = await vendaPorTamanhoEmDias(diasDoRitmo);
+      ritmoCaiuParaJanela = true;
+    }
+
+    const idsEscopo = produto ? [produto.id] : null;
+    const [saldos, pendentes] = await Promise.all([
+      projecao.saldoPorVariante({ produtoIds: idsEscopo }),
+      projecao.emProducaoPorVariante({ produtoIds: idsEscopo }),
+    ]);
+    const estoquePorTamanho = new Map();
+    for (const v of saldos.values()) {
+      if (v.ehQualidade) continue;
+      const k = cobertura.chaveTamanho(v.tamanho);
+      estoquePorTamanho.set(k, (estoquePorTamanho.get(k) || 0) + Math.max(0, v.saldo));
+    }
+    const emProducaoPorTamanho = new Map();
+    for (const v of pendentes.values()) {
+      const k = cobertura.chaveTamanho(v.tamanho);
+      emProducaoPorTamanho.set(k, (emProducaoPorTamanho.get(k) || 0) + Math.max(0, v.pendente));
+    }
+
+    const coberturaTamanhos = cobertura.coberturaPorTamanho(
+      escolha.curva.itens.map((i) => i.tamanho),
+      {
+        vendaNoRitmo,
+        diasDoRitmo,
+        estoque: estoquePorTamanho,
+        emProducao: emProducaoPorTamanho,
+        horizonteDias,
+      }
+    );
+
+    const itensVenda = excluir.length
+      ? escolha.curva.itens.filter((i) => !excluir.some((t) => cobertura.chaveTamanho(t) === cobertura.chaveTamanho(i.tamanho)))
+      : escolha.curva.itens;
+
     res.json({
       ok: true,
       produto,
       meses,
       curva: escolha.curva,
       descartadas: escolha.descartadas,
-      grade: lote ? curva.distribuirGrade(lote, escolha.curva.itens, { minimoPorTamanho: minimo }) : null,
-      gradeCorte: gradesDeCorte(curvaParaGrade, { loteAlvo: lote }),
+      grade: lote ? curva.distribuirGrade(lote, itensVenda, { minimoPorTamanho: minimo }) : null,
+      gradeCorte: gradesDeCorte(curvaParaGrade, { loteAlvo: lote, excluir }),
+      gradeEstoque: {
+        ...coberturaTamanhos,
+        escopo: produto ? `da referência ${produto.referencia}` : 'da casa toda',
+        ritmoCaiuParaJanela,
+        grade: gradesDeCorte(curvaParaGrade, { loteAlvo: lote, excluir: excluirEstoque }),
+      },
       explicacao: 'A curva é a participação de cada tamanho na venda do período. Ela sobe de nível quando o histórico é curto demais: referência → categoria → geral, e a resposta diz de qual nível veio. A grade é distribuída pelo método do maior resto, que faz a soma fechar exatamente no lote.',
     });
   } catch (err) {

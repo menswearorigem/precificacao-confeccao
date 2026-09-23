@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Scissors, Copy, Check, AlertTriangle, Minus, Plus, RotateCcw, Info } from 'lucide-react';
+import { Scissors, Copy, Check, AlertTriangle, Minus, Plus, RotateCcw, Info, X } from 'lucide-react';
 import './GradeDeCorte.css';
 
 /**
@@ -102,11 +102,58 @@ function BotaoCopiar({ grade }) {
   );
 }
 
-export default function GradeDeCorte({ grade, loteAlvo }) {
+/**
+ * Os tamanhos da curva como chips de liga/desliga (23/09/2026). Cheio = entra
+ * no corte; vazado e riscado = fora. Tamanho sem venda no período não tem o
+ * que ligar: aparece apagado, com o motivo no título.
+ */
+function SeletorTamanhos({ tamanhos, excluidos, onAlternar, sugeridos = [] }) {
+  if (!tamanhos?.length || !onAlternar) return null;
+  const fora = new Set(excluidos.map((t) => t.toUpperCase()));
+  const sug = new Set(sugeridos.map((t) => t.toUpperCase()));
+  return (
+    <div className="gc-tamanhos">
+      <span className="field-label">Tamanhos no corte</span>
+      <div className="gc-tamanhos-lista" role="group" aria-label="Tamanhos no corte">
+        {tamanhos.map(({ tamanho, semVenda }) => {
+          const tirado = fora.has(tamanho.toUpperCase());
+          const sugerido = !tirado && sug.has(tamanho.toUpperCase());
+          return (
+            <button
+              type="button"
+              key={tamanho}
+              className={`gc-tam${tirado ? ' fora' : ''}${sugerido ? ' sugerido' : ''}`}
+              aria-pressed={!tirado && !semVenda}
+              disabled={semVenda}
+              title={semVenda
+                ? 'Sem venda no período — já fica fora da grade'
+                : tirado ? `Devolver o ${tamanho} ao corte` : `Tirar o ${tamanho} do corte`}
+              onClick={() => onAlternar(tamanho)}
+            >
+              {tamanho}
+              {!semVenda && (tirado ? <Plus size={12} /> : <X size={12} />)}
+            </button>
+          );
+        })}
+      </div>
+      <p className="ink-faint gc-dica">
+        Toque num tamanho para tirá-lo ou devolvê-lo. A proporção é refeita só
+        entre os que ficam.
+      </p>
+    </div>
+  );
+}
+
+export default function GradeDeCorte({
+  grade, loteAlvo, abas = null, antes = null, tamanhos = [], excluidos = [],
+  onAlternarTamanho = null, sugeridos = [], atualizando = false,
+}) {
   const [escolhida, setEscolhida] = useState(null);
   const [manual, setManual] = useState('');
 
-  useEffect(() => { setEscolhida(null); setManual(''); }, [grade]);
+  // Ao tirar/devolver um tamanho a grade chega nova, mas o enfesto é o mesmo:
+  // o número digitado à mão fica (e é recusado com motivo se não couber mais).
+  useEffect(() => { setEscolhida(null); }, [grade]);
 
   const opcoes = useMemo(() => {
     if (!grade?.aplicavel) return [];
@@ -144,14 +191,42 @@ export default function GradeDeCorte({ grade, loteAlvo }) {
 
   if (!grade) return null;
 
+  // Os tirados à mão já aparecem nos chips; a lista de "fora da grade" fica
+  // só com o que o cálculo tirou sozinho, que é o que precisa de explicação.
+  const foraAutomatico = (grade.foraDaGrade || []).filter((f) => !f.manual);
+
+  const seletor = (
+    <SeletorTamanhos
+      tamanhos={tamanhos}
+      excluidos={excluidos}
+      onAlternar={onAlternarTamanho}
+      sugeridos={sugeridos}
+    />
+  );
+
   if (!grade.aplicavel) {
     return (
-      <div className="card">
-        <h2 className="card-titulo"><Scissors size={16} /> Grade de corte</h2>
-        <p className="ink-soft ajuda-bloco">{grade.motivoNaoAplicavel}</p>
-        {grade.foraDaGrade?.length > 0 && (
+      <div className={`card gc-card${atualizando ? ' gc-atualizando' : ''}`}>
+        <div className="card-head-linha gc-cabeca">
+          <h2 className="card-titulo"><Scissors size={16} /> Grade de corte</h2>
+          {abas}
+        </div>
+        {antes}
+        {seletor}
+        {grade.tamanhoUnico ? (
+          <div className="gc-quadros">
+            <div className="gc-quadro">
+              <span className="gc-quadro-tamanho">{grade.tamanhoUnico}</span>
+              <span className="gc-quadro-unidades">1</span>
+            </div>
+            <p className="ink-soft gc-unico">{grade.motivoNaoAplicavel}</p>
+          </div>
+        ) : (
+          <p className="aviso-inline"><AlertTriangle size={14} /> {grade.motivoNaoAplicavel}</p>
+        )}
+        {foraAutomatico.length > 0 && (
           <ul className="gc-fora">
-            {grade.foraDaGrade.map((f) => (
+            {foraAutomatico.map((f) => (
               <li key={f.tamanho}><strong>{f.tamanho}</strong> — {f.motivo}</li>
             ))}
           </ul>
@@ -163,7 +238,7 @@ export default function GradeDeCorte({ grade, loteAlvo }) {
   const atual = gradeManual || opcoes[indice];
   const naGrade = atual.proporcao.filter((p) => p.unidades > 0);
   const esgotados = naGrade.filter((p) => p.esgotado).map((p) => p.tamanho);
-  const fora = grade.foraDaGrade || [];
+  const fora = foraAutomatico;
 
   function passo(delta) {
     const atualN = manual === '' ? atual.pecasPorGrade : Number(manual) || atual.pecasPorGrade;
@@ -173,15 +248,19 @@ export default function GradeDeCorte({ grade, loteAlvo }) {
 
   return (
     <>
-      <div className="card">
-        <div className="card-head-linha">
+      <div className={`card gc-card${atualizando ? ' gc-atualizando' : ''}`}>
+        <div className="card-head-linha gc-cabeca">
           <h2 className="card-titulo"><Scissors size={16} /> Grade de corte</h2>
+          {abas}
           <BotaoCopiar grade={atual} />
         </div>
         <p className="ink-soft ajuda-bloco">
           Quantas vezes cada tamanho entra no risco. Repita a grade quantas vezes
           couber no enfesto.
         </p>
+
+        {antes}
+        {seletor}
 
         <div className="gc-quadros">
           {naGrade.map((p) => (

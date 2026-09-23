@@ -75,6 +75,39 @@ function normalizarCurva(curva) {
   return { itens, participacoes };
 }
 
+/** Comparação de tamanho sem caixa nem espaço: "gg " e "GG" são o mesmo. */
+function chaveTamanho(t) {
+  return String(t ?? '').trim().toUpperCase().replace(/\s+/g, '');
+}
+
+/**
+ * Tamanho tirado do corte por decisão de quem corta (23/09/2026).
+ *
+ * Não é a mesma coisa que o tamanho sem venda: este vendeu, mas a pessoa não
+ * quer cortá-lo agora (tem estoque, saiu de linha, a facção não faz). Ele sai
+ * da proporção e a participação dos que ficam é refeita só entre eles — é
+ * contra ESSA curva que o erro da grade passa a ser medido. Medir contra a
+ * curva cheia acusaria erro de 6 p.p. num tamanho que ninguém quer cortar.
+ *
+ * O piso 1 continua valendo para os que ficam: a exclusão é explícita, nunca
+ * uma consequência calada do arredondamento.
+ */
+function aplicarExclusao({ itens, participacoes }, excluir) {
+  const lista = Array.isArray(excluir)
+    ? excluir
+    : String(excluir ?? '').split(',');
+  const fora = new Set(lista.map(chaveTamanho).filter(Boolean));
+  if (fora.size === 0) return { itens, participacoes };
+
+  const marcados = itens.map((item) => ({ ...item, excluido: fora.has(chaveTamanho(item.tamanho)) }));
+  const brutas = participacoes.map((p, i) => (marcados[i].excluido ? 0 : p));
+  const soma = brutas.reduce((s, n) => s + n, 0);
+  return {
+    itens: marcados,
+    participacoes: soma > 0 ? brutas.map((n) => n / soma) : brutas.map(() => 0),
+  };
+}
+
 /**
  * Uma grade de N peças, pelo maior resto com PISO 1.
  *
@@ -162,7 +195,8 @@ function montarGrade(unidades, N, itens, participacoes, loteAlvo) {
 /**
  * @param {Array<{tamanho: string, vendidas: number, participacao?: number, esgotado?: boolean}>} curva
  *        já na ordem de tamanho que o módulo usa
- * @param {{ loteAlvo?: number, tolerancia?: number }} [opcoes]
+ * @param {{ loteAlvo?: number, tolerancia?: number, excluir?: string[]|string }} [opcoes]
+ *        `excluir`: tamanhos que quem corta tirou do corte (lista ou "P,GG")
  * @returns {{
  *   aplicavel: boolean,
  *   motivoNaoAplicavel: string|null,
@@ -176,10 +210,13 @@ function gradesDeCorte(curva, opcoes = {}) {
   const tolerancia = temNumero(opcoes.tolerancia) ? Number(opcoes.tolerancia) : TOLERANCIA_PADRAO_PP;
   const loteAlvo = temNumero(opcoes.loteAlvo) ? Number(opcoes.loteAlvo) : null;
 
-  const { itens, participacoes } = normalizarCurva(curva);
+  const { itens, participacoes } = aplicarExclusao(normalizarCurva(curva), opcoes.excluir);
 
   const foraDaGrade = itens
     .map((item, i) => {
+      if (item.excluido) {
+        return { tamanho: item.tamanho, motivo: 'tirado do corte por você', manual: true };
+      }
       if (item.vendidas === null) {
         return { tamanho: item.tamanho, motivo: 'sem dado de venda no período' };
       }
@@ -202,13 +239,23 @@ function gradesDeCorte(curva, opcoes = {}) {
     tolerancia,
   };
 
+  const algumExcluido = itens.some((i) => i.excluido);
   if (ativos.length === 0) {
-    return { ...vazio, motivoNaoAplicavel: 'nenhum tamanho teve venda no período' };
-  }
-  if (ativos.length === 1) {
     return {
       ...vazio,
-      motivoNaoAplicavel: `grade não se aplica: só o ${itens[ativos[0]].tamanho} teve venda no período`,
+      motivoNaoAplicavel: algumExcluido
+        ? 'todos os tamanhos com venda foram tirados do corte — devolva ao menos um'
+        : 'nenhum tamanho teve venda no período',
+    };
+  }
+  if (ativos.length === 1) {
+    const unico = itens[ativos[0]].tamanho;
+    return {
+      ...vazio,
+      tamanhoUnico: unico,
+      motivoNaoAplicavel: algumExcluido
+        ? `só o ${unico} ficou no corte: não há proporção a montar — corte só ${unico}, na quantidade que quiser`
+        : `grade não se aplica: só o ${unico} teve venda no período`,
     };
   }
 
@@ -353,7 +400,7 @@ function gradeComTamanho(curva, pecasPorGrade, opcoes = {}) {
     return { grade: null, motivo: `o máximo é ${maximo} peças por grade` };
   }
 
-  const { itens, participacoes } = normalizarCurva(curva);
+  const { itens, participacoes } = aplicarExclusao(normalizarCurva(curva), opcoes.excluir);
   const loteAlvo = temNumero(opcoes.loteAlvo) ? Number(opcoes.loteAlvo) : null;
   return {
     grade: {
@@ -380,4 +427,4 @@ function textoParaFaccao(grade) {
   return linhas.join('\n');
 }
 
-module.exports = { gradesDeCorte, gradeComTamanho, textoParaFaccao };
+module.exports = { gradesDeCorte, gradeComTamanho, textoParaFaccao, chaveTamanho };
