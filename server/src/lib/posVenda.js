@@ -171,31 +171,38 @@ function exigemAcao({ eventos = [], porReferencia = [], agora = new Date(), taxa
   for (const e of eventos) {
     // Avaliação nunca está "aberta" na plataforma; o que a tira da lista é
     // alguém marcar como tratada.
+    // 23/09/2026: cada item leva também `resumo` (a frase do cliente ou o
+    // fato), `detalhe` (o que a tela mostra em letra menor), loja, nota e
+    // quando aconteceu — a lista "Resolver" é uma tabela com colunas, não
+    // texto corrido. `texto` continua como antes para a Manu analista.
+    const base = { lojaNome: e.loja_nome || null, anuncioTitulo: e.anuncio_titulo || null, ocorridoEm: e.ocorrido_em, nota: temNumero(e.nota) ? Number(e.nota) : null, motivoRotulo: e.motivo ? (MOTIVOS[e.motivo]?.rotulo || e.motivo) : null };
+    const frase = (t) => (t ? `“${String(t).slice(0, 140)}”` : null);
     if (e.tipo === 'avaliacao') {
       if (temNumero(e.nota) && Number(e.nota) <= 2 && !e.tratado_em) {
-        itens.push({ chave: `avaliacao-${e.id}`, tipo: 'avaliacao', nivel: 'atencao', eventoId: e.id, referencia: e.referencia, marketplace: e.marketplace, texto: `Avaliação ${e.nota}★${e.referencia ? ` · ${e.referencia}` : ''}: “${String(e.texto || '').slice(0, 90)}”` });
+        itens.push({ ...base, chave: `avaliacao-${e.id}`, tipo: 'avaliacao', nivel: 'atencao', eventoId: e.id, referencia: e.referencia, marketplace: e.marketplace, texto: `Avaliação ${e.nota}★${e.referencia ? ` · ${e.referencia}` : ''}: “${String(e.texto || '').slice(0, 90)}”`, resumo: frase(e.texto) || 'Avaliação sem comentário', detalhe: [e.anuncio_titulo, base.motivoRotulo ? `motivo: ${base.motivoRotulo}` : null].filter(Boolean).join(' · ') });
       }
       continue;
     }
     if (!e.aberto) continue;
     if (e.tipo === 'pergunta' && !e.respondida_em) {
       const horas = h(e.ocorrido_em);
-      itens.push({ chave: `pergunta-${e.id}`, tipo: 'pergunta', nivel: horas > horasPergunta ? 'urgente' : 'atencao', eventoId: e.id, referencia: e.referencia, marketplace: e.marketplace, texto: `Pergunta sem resposta há ${Math.floor(horas)} h${e.referencia ? ` · ${e.referencia}` : ''}: “${String(e.texto || '').slice(0, 90)}”`, horas: Math.floor(horas) });
+      itens.push({ ...base, chave: `pergunta-${e.id}`, tipo: 'pergunta', nivel: horas > horasPergunta ? 'urgente' : 'atencao', eventoId: e.id, referencia: e.referencia, marketplace: e.marketplace, texto: `Pergunta sem resposta há ${Math.floor(horas)} h${e.referencia ? ` · ${e.referencia}` : ''}: “${String(e.texto || '').slice(0, 90)}”`, horas: Math.floor(horas), resumo: frase(e.texto) || 'Pergunta sem texto', detalhe: `sem resposta há ${Math.floor(horas)} h${e.anuncio_titulo ? ` · ${e.anuncio_titulo}` : ''}` });
     }
     if (e.tipo === 'reclamacao') {
       const horas = h(e.ocorrido_em);
-      itens.push({ chave: `reclamacao-${e.id}`, tipo: 'reclamacao', nivel: horas > 48 ? 'urgente' : 'atencao', eventoId: e.id, referencia: e.referencia, marketplace: e.marketplace, texto: `Reclamação aberta há ${Math.floor(horas / 24)} d${e.referencia ? ` · ${e.referencia}` : ''}${e.motivo ? ` · ${MOTIVOS[e.motivo]?.rotulo || e.motivo}` : ''}`, horas: Math.floor(horas) });
+      itens.push({ ...base, chave: `reclamacao-${e.id}`, tipo: 'reclamacao', nivel: horas > 48 ? 'urgente' : 'atencao', eventoId: e.id, referencia: e.referencia, marketplace: e.marketplace, texto: `Reclamação aberta há ${Math.floor(horas / 24)} d${e.referencia ? ` · ${e.referencia}` : ''}${e.motivo ? ` · ${MOTIVOS[e.motivo]?.rotulo || e.motivo}` : ''}`, horas: Math.floor(horas), resumo: frase(e.texto) || (e.motivo_externo ? `Motivo na plataforma: ${e.motivo_externo}` : 'Reclamação aberta'), detalhe: `aberta há ${Math.floor(horas / 24)} d${base.motivoRotulo ? ` · ${base.motivoRotulo}` : ' · sem motivo classificado'}${e.anuncio_titulo ? ` · ${e.anuncio_titulo}` : ''}` });
     }
     if (e.tipo === 'devolucao' && e.marketplace !== 'manual') {
-      itens.push({ chave: `devolucao-${e.id}`, tipo: 'devolucao', nivel: 'atencao', eventoId: e.id, referencia: e.referencia, marketplace: e.marketplace, texto: `Devolução em andamento${e.referencia ? ` · ${e.referencia}` : ''}${e.motivo ? ` · ${MOTIVOS[e.motivo]?.rotulo || e.motivo}` : ' · sem motivo classificado'}` });
+      itens.push({ ...base, chave: `devolucao-${e.id}`, tipo: 'devolucao', nivel: 'atencao', eventoId: e.id, referencia: e.referencia, marketplace: e.marketplace, texto: `Devolução em andamento${e.referencia ? ` · ${e.referencia}` : ''}${e.motivo ? ` · ${MOTIVOS[e.motivo]?.rotulo || e.motivo}` : ' · sem motivo classificado'}`, resumo: frase(e.texto) || (e.motivo_externo ? `Motivo na plataforma: ${e.motivo_externo}` : 'Devolução em andamento'), detalhe: `${e.status_externo ? String(e.status_externo).toLowerCase().replace(/_/g, ' ') : 'em andamento'} · ${base.motivoRotulo ? `motivo: ${base.motivoRotulo}` : 'sem motivo classificado'}${e.anuncio_titulo ? ` · ${e.anuncio_titulo}` : ''}` });
     }
   }
   for (const r of porReferencia) {
     if (r.taxaDevolucao != null && r.taxaDevolucao >= taxaAlerta && !r.amostraPequena) {
-      itens.push({ chave: `taxa-${r.produtoId}`, tipo: 'referencia', nivel: r.taxaDevolucao >= taxaAlerta * 2 ? 'urgente' : 'atencao', produtoId: r.produtoId, referencia: r.referencia, texto: `${r.referencia} devolve ${(r.taxaDevolucao * 100).toFixed(1)}% do que vende${r.motivos[0] ? ` — principal: ${r.motivos[0].rotulo}` : ''}` });
+      const taxaTxt = `${(r.taxaDevolucao * 100).toFixed(1).replace('.', ',')}%`;
+      itens.push({ chave: `taxa-${r.produtoId}`, tipo: 'referencia', nivel: r.taxaDevolucao >= taxaAlerta * 2 ? 'urgente' : 'atencao', produtoId: r.produtoId, referencia: r.referencia, texto: `${r.referencia} devolve ${(r.taxaDevolucao * 100).toFixed(1)}% do que vende${r.motivos[0] ? ` — principal: ${r.motivos[0].rotulo}` : ''}`, resumo: `Devolve ${taxaTxt} do que vende (${r.pecasDevolvidas} de ${r.vendidas} peças)`, detalhe: `${r.descricao || ''}${r.motivos[0] ? ` · principal: ${r.motivos[0].rotulo}` : ' · sem motivo classificado'}` });
     }
     for (const s of r.sinais) {
-      itens.push({ chave: `sinal-${r.produtoId}-${s.tamanho}-${s.sinal}`, tipo: 'modelagem', nivel: 'atencao', produtoId: r.produtoId, referencia: r.referencia, texto: `${r.referencia}: ${s.texto}` });
+      itens.push({ chave: `sinal-${r.produtoId}-${s.tamanho}-${s.sinal}`, tipo: 'modelagem', nivel: 'atencao', produtoId: r.produtoId, referencia: r.referencia, texto: `${r.referencia}: ${s.texto}`, resumo: s.texto.charAt(0).toUpperCase() + s.texto.slice(1), detalhe: r.descricao || '' });
     }
   }
   const ordem = { urgente: 0, atencao: 1 };

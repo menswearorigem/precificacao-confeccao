@@ -23,6 +23,7 @@ const piso = require('../lib/precoPiso');
 const { temNumero } = require('../lib/estoqueMinimo');
 const vendas = require('../lib/vendasEmPecas');
 const { lerConcorrentes, extrairMlb } = require('../lib/concorrentesSync');
+const { CHAVE_PUBLICACAO } = require('../lib/anuncioPublicacao');
 
 const router = express.Router();
 
@@ -133,8 +134,9 @@ async function auditarPiso(query = {}) {
     if (inteiroPositivo(query.integracao_id)) { params.push(inteiroPositivo(query.integracao_id)); cond.push(`a.origem_integracao_id = $${params.length}`); }
     const { rows: anuncios } = await pool.query(
       `SELECT a.id, a.marketplace, a.origem_integracao_id, a.anuncio_id_externo, a.titulo, a.produto_id, a.preco, a.preco_original,
-              a.tipo_anuncio, a.foto_url, a.estoque, im.nome AS loja_nome, p.referencia, p.descricao,
-              EXISTS (SELECT 1 FROM produto_fotos pf WHERE pf.produto_id = a.produto_id) AS tem_foto
+              a.tipo_anuncio, a.foto_url, a.estoque, a.url, im.nome AS loja_nome, p.referencia, p.descricao,
+              EXISTS (SELECT 1 FROM produto_fotos pf WHERE pf.produto_id = a.produto_id) AS tem_foto,
+              ${CHAVE_PUBLICACAO} AS publicacao
          FROM anuncios_marketplace a
          JOIN integracoes_marketplace im ON im.id = a.origem_integracao_id
          LEFT JOIN produtos p ON p.id = a.produto_id
@@ -144,7 +146,7 @@ async function auditarPiso(query = {}) {
     const ids = [...new Set(anuncios.map((a) => a.produto_id).filter(Boolean))];
     const [ctx, recentes] = await Promise.all([piso.carregarContexto(ids), vendasRecentes(30)]);
 
-    const linhas = anuncios.map((a) => {
+    const avaliarUm = (a) => {
       const av = a.produto_id
         ? piso.avaliar(ctx, { produtoId: a.produto_id, marketplace: a.marketplace, tipoAnuncio: a.tipo_anuncio, integracaoId: a.origem_integracao_id, preco: a.preco })
         : { ok: false, motivo: 'anúncio sem referência vinculada' };
@@ -152,7 +154,7 @@ async function auditarPiso(query = {}) {
       const situacao = !av.ok ? 'sem_piso' : (av.prejuizo ? 'prejuizo' : (av.abaixoDoPiso ? 'abaixo' : (av.piso > 0 && a.preco < av.piso * 1.05 ? 'no_limite' : 'ok')));
       return {
         anuncio_id: a.id, marketplace: a.marketplace, loja_nome: a.loja_nome, origem_integracao_id: a.origem_integracao_id,
-        anuncio_id_externo: a.anuncio_id_externo, titulo: a.titulo, foto_url: a.foto_url, tem_foto: a.tem_foto === true,
+        anuncio_id_externo: a.anuncio_id_externo, titulo: a.titulo, foto_url: a.foto_url, tem_foto: a.tem_foto === true, url: a.url || null,
         produto_id: a.produto_id, referencia: a.referencia, descricao: a.descricao, tipo_anuncio: a.tipo_anuncio,
         preco: a.preco == null ? null : Number(a.preco), preco_original: a.preco_original == null ? null : Number(a.preco_original),
         estoque: a.estoque,
@@ -168,12 +170,46 @@ async function auditarPiso(query = {}) {
         unidades_30d: unidades30,
         perda_30d: av.ok && av.perdaPorPeca > 0 && unidades30 != null ? Number((av.perdaPorPeca * unidades30).toFixed(2)) : (av.ok && av.perdaPorPeca > 0 ? null : 0),
       };
+    };
+    const variacoes = anuncios.map(avaliarUm);
+
+    // 23/09/2026 — uma linha por PUBLICAÇÃO, não por variação. No Mercado
+    // Livre cada cor é um item (MLB…) com o mesmo título, o mesmo preço e o
+    // mesmo piso; a auditoria mostrava 14 linhas "Vestido Midi… VM002". A
+    // linha da publicação carrega a PIOR situação entre as variações (é a que
+    // pede ação), o menor preço, a soma das vendas e da perda, e a lista das
+    // variações — a tela abre se alguém quiser ver uma a uma. O simulador e
+    // a trava continuam trabalhando por variação (anuncio_ids), porque é
+    // nela que a plataforma cobra.
+    const ORDEM_SIT = { prejuizo: 0, abaixo: 1, no_limite: 2, sem_piso: 3, ok: 4 };
+    const grupos = new Map();
+    anuncios.forEach((a, i) => {
+      const chave = `${a.origem_integracao_id}|${a.publicacao}`;
+      if (!grupos.has(chave)) grupos.set(chave, []);
+      grupos.get(chave).push(variacoes[i]);
+    });
+    const linhas = [...grupos.values()].map((vs) => {
+      const pior = [...vs].sort((x, y) => (ORDEM_SIT[x.situacao] ?? 9) - (ORDEM_SIT[y.situacao] ?? 9) || (x.preco ?? 1e9) - (y.preco ?? 1e9))[0];
+      const comVenda = vs.filter((v) => v.unidades_30d != null);
+      const comPerda = vs.filter((v) => v.perda_30d != null);
+      const precos = vs.map((v) => v.preco).filter((p) => p != null);
+      return {
+        ...pior,
+        variacoes: vs.length,
+        anuncio_ids: vs.map((v) => v.anuncio_id),
+        preco: precos.length ? Math.min(...precos) : null,
+        preco_max: precos.length ? Math.max(...precos) : null,
+        unidades_30d: comVenda.length ? comVenda.reduce((s, v) => s + v.unidades_30d, 0) : null,
+        perda_30d: comPerda.length ? Number(comPerda.reduce((s, v) => s + (Number(v.perda_30d) || 0), 0).toFixed(2)) : (vs.some((v) => v.perda_30d === null) ? null : 0),
+        situacoes: vs.reduce((m, v) => { m[v.situacao] = (m[v.situacao] || 0) + 1; return m; }, {}),
+        itens: vs.length > 1 ? vs : undefined,
+      };
     });
     const contar = (s) => linhas.filter((l) => l.situacao === s).length;
     return {
       linhas,
       totais: {
-        anuncios: linhas.length, abaixo: contar('abaixo'), prejuizo: contar('prejuizo'), noLimite: contar('no_limite'), ok: contar('ok'), semPiso: contar('sem_piso'),
+        anuncios: linhas.length, variacoes: variacoes.length, abaixo: contar('abaixo'), prejuizo: contar('prejuizo'), noLimite: contar('no_limite'), ok: contar('ok'), semPiso: contar('sem_piso'),
         perda30d: linhas.reduce((s, l) => s + (Number(l.perda_30d) || 0), 0),
         semVenda30d: linhas.filter((l) => l.unidades_30d == null && (l.situacao === 'abaixo' || l.situacao === 'prejuizo')).length,
       },
@@ -183,6 +219,7 @@ async function auditarPiso(query = {}) {
         'A margem mostrada é a do preço CORRENTE do anúncio (o que a plataforma cobra hoje, já com desconto de vitrine se houver).',
         '"Deixado na mesa" = (lucro no piso − lucro no preço atual) × peças vendidas por este anúncio nos últimos 30 dias. Anúncio sem venda ligada a ele nos 30 dias fica sem esse número — não é zero.',
         'Anúncio sem referência vinculada, referência sem custo ou canal sem tabela de comissão aparecem como "sem piso", com o motivo. A trava não dispara neles: não se trava o que não se mede.',
+        'Uma linha por anúncio, como no painel da plataforma: no Mercado Livre cada cor é um item separado com o mesmo preço; a linha mostra a pior situação entre as variações e a soma das vendas delas.',
       ],
     };
   }
@@ -257,6 +294,8 @@ router.post('/simular', async (req, res, next) => {
       };
     });
     const validos = itens.filter((i) => i.situacao && i.situacao !== 'sem_calculo');
+    // As 300 de teto contam variações; a tela manda os anuncio_ids da
+    // publicação inteira, então 300 é confortável para uma campanha.
     const totais = {
       itens: itens.length, avaliados: validos.length,
       naoFecha: validos.filter((i) => i.situacao === 'nao_fecha').length,

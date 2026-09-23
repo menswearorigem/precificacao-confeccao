@@ -150,10 +150,10 @@ function paramsAds(janela) {
 //
 // O NULLIF protege contra família de nome vazio: sem ele, todos os anúncios
 // com family_name = '' cairiam no mesmo balde e virariam um anúncio só.
-const CHAVE_PUBLICACAO = `COALESCE(
-                NULLIF(a.bruto->>'family_name', ''),
-                NULLIF(a.bruto->>'family_id', ''),
-                a.anuncio_id_externo)`;
+// 23/09/2026: a expressão mora em lib/anuncioPublicacao.js, porque o Piso de
+// Preço passou a auditar por PUBLICAÇÃO também (14 variações do VM002 eram
+// 14 linhas). Um lugar só, os dois contam igual.
+const { CHAVE_PUBLICACAO } = require('../lib/anuncioPublicacao');
 
 // As colunas do anúncio que a tela usa.
 //

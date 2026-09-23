@@ -246,6 +246,34 @@ async function comBanco() {
     await chamar('post', '/sincronizar', { body: {} });
     const { rows: [c1b] } = await pool.query(`SELECT aberto, tratado_em FROM posvenda_eventos WHERE id = $1`, [c1.id]);
     ok(c1b.aberto === false && c1b.tratado_em, 'a sincronização não reabre o que foi tratado');
+
+    // 23/09/2026 — abrir UM evento pelo id (o "Abrir" da lista de ação), sem
+    // depender do filtro de situação; avaliação fechada continua aparecendo.
+    const um = await chamar('get', '/eventos', { query: { evento_id: String(av.id), inicio: '2000-01-01' } });
+    ok(um.body.eventos.length === 1 && um.body.eventos[0].id === av.id, 'evento_id devolve o evento certo (avaliação fechada inclusive)');
+    const rel = await chamar('get', '/eventos', { query: { relevantes: '1' } });
+    ok(rel.body.eventos.every((e) => e.tipo !== 'avaliacao' || Number(e.nota) <= 3 || (e.texto && e.texto.trim())), 'relevantes=1 esconde avaliação 4★+ sem texto');
+    const acaoItens = (await chamar('get', '/painel', { query: {} })).body.acao;
+    ok(acaoItens.every((i) => i.resumo && (i.eventoId ? i.ocorridoEm : true)), 'itens de ação trazem resumo e quando (para a lista com colunas)');
+
+    // Evolução e comparação de períodos
+    const hoje = new Date().toISOString().slice(0, 10);
+    const ini = new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10);
+    const evo = await chamar('get', '/evolucao', { query: { inicio: ini, fim: hoje, granularidade: 'mes' } });
+    igual(evo.status, 200, 'evolução responde');
+    ok(Array.isArray(evo.body.serie) && evo.body.serie.length >= 4 && evo.body.serie.length <= 6 && evo.body.serie.every((b) => /^\d{4}-\d{2}-01$/.test(b.balde)), `série mensal contínua, um balde por mês (${evo.body.serie?.length} baldes)`);
+    const somaDev = evo.body.serie.reduce((s, b) => s + b.devolvidas, 0);
+    ok(somaDev === 9, `a série soma as mesmas 9 peças devolvidas do painel (${somaDev})`);
+    ok(evo.body.serie.every((b) => b.vendidas > 0 || b.taxa === null), 'balde sem venda tem taxa nula, não zero');
+    const evoSem = await chamar('get', '/evolucao', { query: { inicio: ini, fim: hoje, granularidade: 'semana' } });
+    ok(evoSem.body.serie.length > evo.body.serie.length, 'por semana tem mais baldes que por mês');
+    const meio = new Date(Date.now() - 45 * 86400000).toISOString().slice(0, 10);
+    const cmp = await chamar('get', '/comparar', { query: { a_inicio: ini, a_fim: meio, b_inicio: meio, b_fim: hoje } });
+    igual(cmp.status, 200, 'comparar responde');
+    ok(cmp.body.a && cmp.body.b && Array.isArray(cmp.body.linhas), 'comparar traz A, B e linhas por referência');
+    ok(cmp.body.linhas.every((l) => l.delta == null || Math.abs(l.delta - (l.b.taxa - l.a.taxa)) < 1e-6), 'delta = taxa B − taxa A');
+    const semB = await chamar('get', '/comparar', { query: { a_inicio: ini } });
+    igual(semB.status, 400, 'comparar sem os dois períodos: 400');
   } finally {
     Object.assign(mercadoLivre, { buscarPerguntas: orig.perguntas, buscarReclamacoes: orig.reclamacoes, buscarAvaliacoesAnuncio: orig.avaliacoes, responderPergunta: orig.responder });
     Object.assign(shopee, { buscarDevolucoes: orig.devolucoes, buscarAvaliacoesLoja: orig.avaliacoesLoja });

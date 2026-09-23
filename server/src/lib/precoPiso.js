@@ -256,6 +256,10 @@ function simularItem({ precoAtual, precoCampanha, avaliacaoAtual, avaliacaoCampa
       situacao = fatorEmpate <= 1 ? 'melhora' : 'precisa_vender_mais';
     }
     if (temNumero(vendasDia) && fatorEmpate != null) vendasDiaParaEmpatar = Number((Number(vendasDia) * fatorEmpate).toFixed(2));
+    // 23/09/2026: sem venda medida no período não dá para dizer "precisa
+    // vender mais" — a tela mostrava "×1.446" solto, sem base. O fator
+    // continua (é matemática do lucro por peça), mas a situação diz o que é.
+    if (!temNumero(vendasDia) && situacao === 'precisa_vender_mais') situacao = 'sem_venda';
   }
   return {
     precoAtual: Number(precoAtual), precoCampanha: Number(precoCampanha),

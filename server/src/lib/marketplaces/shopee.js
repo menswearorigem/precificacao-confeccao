@@ -493,24 +493,36 @@ async function buscarIdsPedidosCancelados({ partnerId, partnerKey, accessToken, 
 // Só LISTA (não muda situação de pedido sozinho): uma devolução aceita já
 // aparece no escrow do pedido como valor menor, e é o escrow que manda no
 // cálculo. Mexer na situação por fora arriscaria descontar duas vezes.
+//
+// 23/09/2026: a listagem de devoluções tem o MESMO teto de 15 dias entre
+// create_time_from e create_time_to que a listagem de pedidos. O Pós-venda
+// pedia 90 dias numa chamada só e a Shopee respondia erro em toda loja —
+// era o "ERRO" na coluna Devolução do quadro de lojas, nas duas lojas. Agora
+// a janela é quebrada em pedaços de 15 dias, como `listarOrderSns` já faz.
 async function buscarDevolucoes({ partnerId, partnerKey, accessToken, shopId, desdeUnix, ateUnix }) {
   const credenciais = { partnerId, partnerKey, accessToken, shopId };
   const fim = ateUnix || Math.floor(Date.now() / 1000);
-  const devolucoes = [];
-  for (let pagina = 0; pagina < 20; pagina += 1) {
-    const data = await chamarDaLoja('/api/v2/returns/get_return_list', {
-      ...credenciais,
-      query: {
-        page_no: String(pagina + 1),
-        page_size: '100',
-        create_time_from: String(desdeUnix),
-        create_time_to: String(fim),
-      },
-    });
-    const lista = data.response?.return || data.response?.return_list || [];
-    devolucoes.push(...lista);
-    if (!data.response?.more) break;
+  const vistos = new Map(); // return_sn -> devolução (a mesma pode aparecer em dois pedaços se foi atualizada)
+  let inicioJanela = desdeUnix;
+  while (inicioJanela < fim) {
+    const fimJanela = Math.min(inicioJanela + JANELA_MAXIMA_SEGUNDOS, fim);
+    for (let pagina = 0; pagina < 20; pagina += 1) {
+      const data = await chamarDaLoja('/api/v2/returns/get_return_list', {
+        ...credenciais,
+        query: {
+          page_no: String(pagina + 1),
+          page_size: '100',
+          create_time_from: String(inicioJanela),
+          create_time_to: String(fimJanela),
+        },
+      });
+      const lista = data.response?.return || data.response?.return_list || [];
+      for (const d of lista) vistos.set(d.return_sn || `${d.order_sn}-${d.create_time}`, d);
+      if (!data.response?.more) break;
+    }
+    inicioJanela = fimJanela;
   }
+  const devolucoes = [...vistos.values()];
   return devolucoes.map((d) => ({
     returnSn: d.return_sn || null,
     orderSn: d.order_sn || null,

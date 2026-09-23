@@ -160,6 +160,17 @@ async function comBanco() {
     ok(lSh && (lSh.situacao === 'abaixo' || lSh.situacao === 'prejuizo'), `Shopee a 69,90 aparece abaixo (${lSh?.situacao})`);
     ok(lSem && lSem.situacao === 'sem_piso' && /vincul/.test(lSem.motivo), 'anúncio sem vínculo aparece como sem piso com motivo');
 
+    // 23/09/2026 — uma linha por PUBLICAÇÃO: duas cores do ML com a mesma
+    // família viram uma linha só, com as variações dentro.
+    await pool.query(`INSERT INTO anuncios_marketplace (origem_integracao_id, marketplace, anuncio_id_externo, titulo, produto_id, preco, estoque, status, tipo_anuncio, ativo, bruto) VALUES ($1,'mercado_livre','TSTP-MLB2','Polo piquet ML',$2,99.90,10,'ativo','classico',TRUE,'{"family_name":"Polo piquet fam"}'), ($1,'mercado_livre','TSTP-MLB3','Polo piquet ML',$2,89.90,10,'ativo','classico',TRUE,'{"family_name":"Polo piquet fam"}')`, [ids.ml, ids.prod]);
+    const aud2 = await chamar(rotas, 'get', '/auditoria', { query: {} });
+    const fam = aud2.body.linhas.filter((l) => l.anuncio_id_externo === 'TSTP-MLB2' || l.anuncio_id_externo === 'TSTP-MLB3');
+    ok(fam.length === 1 && fam[0].variacoes === 2 && fam[0].anuncio_ids.length === 2, `duas cores da mesma família viram uma linha (${fam.length} linha, ${fam[0]?.variacoes} variações)`);
+    ok(fam[0] && Number(fam[0].preco) === 89.90 && Number(fam[0].preco_max) === 99.90 && Array.isArray(fam[0].itens) && fam[0].itens.length === 2, 'a linha traz o menor e o maior preço e as variações');
+    ok(aud2.body.totais.variacoes === aud2.body.totais.anuncios + 1, 'totais: variações = anúncios + 1');
+    ok(aud2.body.linhas.find((l) => l.anuncio_id === ids.aSh)?.variacoes === 1, 'Shopee (sem família) continua uma linha por item');
+    await pool.query(`DELETE FROM anuncios_marketplace WHERE anuncio_id_externo IN ('TSTP-MLB2','TSTP-MLB3')`);
+
     // Trava no anúncio (ML): preço 50 fica abaixo do piso.
     const t1 = await chamar(anunciosRotas, 'post', '/:id/publicar', { params: { id: ids.aMl }, body: { confirmar: true, preco: 50 } });
     igual(t1.status, 400, 'preço abaixo do piso: 400');
@@ -202,6 +213,9 @@ async function comBanco() {
     ok(sMl.lucroCampanha != null && sMl.margemCampanha != null, 'margem e lucro na campanha calculados');
     ok(sim.body.itens.find((i) => i.anuncio_id === ids.aSem).situacao === 'sem_calculo', 'anúncio sem vínculo: sem cálculo');
     ok(sim.body.totais.avaliados === 2, 'dois avaliados');
+    ok(sim.body.itens.filter((i) => i.situacao).every((i) => i.vendasDia != null || i.situacao !== 'precisa_vender_mais'), 'sem venda medida ninguém diz "precisa vender mais" (23/09)');
+    const semVenda = sim.body.itens.find((i) => i.vendasDia == null && i.lucroCampanha != null && i.lucroAtual != null && i.lucroCampanha > 0 && i.lucroAtual > i.lucroCampanha);
+    ok(!semVenda || semVenda.situacao === 'sem_venda', `anúncio sem venda com sobra menor na campanha fica "sem_venda" (${semVenda?.situacao || 'n/a'})`);
     const salvo = await chamar(rotas, 'post', '/simulacoes', { body: { nome: 'BF 20%', parametros: sim.body.parametros, resultado: sim.body } });
     igual(salvo.status, 201, 'simulação guardada');
 

@@ -39,6 +39,12 @@ async function eventosDaJanela({ inicio, fim }, filtros = {}) {
   if (filtros.produtoId) { params.push(filtros.produtoId); cond.push(`e.produto_id = $${params.length}`); }
   if (filtros.aberto === true) cond.push('e.aberto');
   if (filtros.motivo === 'sem') cond.push('e.motivo IS NULL'); else if (filtros.motivo) { params.push(filtros.motivo); cond.push(`e.motivo = $${params.length}`); }
+  // "Abrir" na lista de ação leva a UM evento — sem depender de filtro de
+  // situação (a avaliação nunca está "em aberto", e o filtro antigo a sumia).
+  if (filtros.eventoId) { params.push(filtros.eventoId); cond.push(`e.id = $${params.length}`); }
+  // Só o que tem o que ler: avaliação sem texto e com 4★+ é ruído na lista.
+  if (filtros.relevantes === true) cond.push(`(e.tipo <> 'avaliacao' OR e.nota <= 3 OR NULLIF(TRIM(e.texto), '') IS NOT NULL)`);
+  if (filtros.semVinculo === true) cond.push('e.produto_id IS NULL');
   const { rows: plataforma } = await pool.query(
     `SELECT e.*, p.referencia, p.descricao, im.nome AS loja_nome, a.titulo AS anuncio_titulo, pvd.numero AS pedido_numero,
             u1.nome AS tratado_por_nome, u2.nome AS respondida_por_nome
@@ -60,6 +66,7 @@ async function eventosDaJanela({ inicio, fim }, filtros = {}) {
     if (filtros.motivo && filtros.motivo !== 'sem') { pm.push(filtros.motivo); condM.push(`d.motivo = $${pm.length}`); }
     if (filtros.motivo === 'sem') condM.push('FALSE');
     if (filtros.aberto === true) condM.push(`d.situacao IN ('aguardando','recebida')`);
+    if (filtros.eventoId || filtros.semVinculo === true) condM.push('FALSE');
     const { rows } = await pool.query(
       `SELECT d.id AS devolucao_id, di.id AS item_id, d.numero, d.canal, d.motivo, d.motivo_detalhe, d.situacao, d.criado_em, d.pedido_id, d.valor_reembolsado,
               di.variante_id, di.quantidade, di.destino, ev.produto_id, ev.cor, ev.tamanho, p.referencia, p.descricao, pvd.numero AS pedido_numero
@@ -153,8 +160,128 @@ router.get('/eventos', async (req, res, next) => {
       tipo: ['devolucao', 'reclamacao', 'pergunta', 'avaliacao'].includes(req.query.tipo) ? req.query.tipo : null,
       marketplace: req.query.marketplace || null, produtoId: inteiroPositivo(req.query.produto_id),
       aberto: req.query.aberto === '1', motivo: req.query.motivo || null,
+      eventoId: inteiroPositivo(req.query.evento_id), relevantes: req.query.relevantes === '1', semVinculo: req.query.sem_vinculo === '1',
     });
     res.json({ janela: j, eventos: eventos.slice(0, 1000), total: eventos.length });
+  } catch (err) { next(err); }
+});
+
+// ---------------------------------------------------------------------------
+// Análise por período (23/09/2026)
+// ---------------------------------------------------------------------------
+// "Tive 10% de devolução na OG1192 no período X e 15% no período Y" — a
+// pergunta que o painel de janela única não respondia. Duas leituras:
+//
+//   GET /evolucao   — a série no tempo (por mês ou por semana) de peças
+//                     devolvidas ÷ peças vendidas, nota média e reclamações;
+//                     geral ou de UMA referência (produto_id).
+//   GET /comparar   — dois períodos lado a lado, POR REFERÊNCIA, com a
+//                     diferença em pontos e o motivo que mais cresceu.
+//
+// A venda vem das mesmas CTEs da Cobertura (kit aberto em peças); a
+// devolução soma plataforma + registrada no Hub, como no painel. Balde sem
+// venda fica com taxa nula — nunca 0% — porque 0 devolvido de 0 vendido não
+// é "zero por cento", é "sem medida" (REGRA 2).
+const GRANULARIDADES = { mes: 'month', semana: 'week' };
+
+async function serieDevolucao({ inicio, fim, granularidade = 'mes', produtoId = null }) {
+  const trunc = GRANULARIDADES[granularidade] || 'month';
+  const params = [inicio, fim];
+  const filtroProd = produtoId ? (params.push(produtoId), `AND produto_id = $${params.length}`) : '';
+  const filtroProdE = produtoId ? `AND e.produto_id = $${params.length}` : '';
+  const filtroProdEv = produtoId ? `AND ev.produto_id = $${params.length}` : '';
+  const [{ rows: vend }, { rows: dev }, { rows: man }, { rows: aval }] = await Promise.all([
+    pool.query(
+      `WITH ${vendas.ctesVendasEmPecas(`pv.data_pedido >= $1::date AND pv.data_pedido < $2::date + INTERVAL '1 day'`)}
+       SELECT date_trunc('${trunc}', data_pedido)::date AS balde, SUM(pecas)::numeric AS pecas
+         FROM vendas_em_pecas WHERE TRUE ${filtroProd} GROUP BY 1`, params
+    ),
+    pool.query(
+      `SELECT date_trunc('${trunc}', e.ocorrido_em)::date AS balde,
+              SUM(CASE WHEN e.tipo = 'devolucao' THEN GREATEST(COALESCE(e.quantidade, 1), 1) ELSE 0 END)::numeric AS devolvidas,
+              COUNT(*) FILTER (WHERE e.tipo = 'devolucao') AS devolucoes,
+              COUNT(*) FILTER (WHERE e.tipo = 'reclamacao') AS reclamacoes,
+              COUNT(*) FILTER (WHERE e.tipo = 'devolucao' AND e.motivo IN ('ficou_pequeno','ficou_grande','tamanho')) AS dev_tamanho,
+              COUNT(*) FILTER (WHERE e.tipo = 'devolucao' AND e.motivo = 'defeito') AS dev_defeito
+         FROM posvenda_eventos e
+        WHERE e.ocorrido_em >= $1::date AND e.ocorrido_em < $2::date + INTERVAL '1 day' ${filtroProdE}
+        GROUP BY 1`, params
+    ),
+    pool.query(
+      `SELECT date_trunc('${trunc}', d.criado_em)::date AS balde, SUM(di.quantidade)::numeric AS devolvidas, COUNT(DISTINCT d.id) AS devolucoes
+         FROM devolucoes d JOIN devolucao_itens di ON di.devolucao_id = d.id LEFT JOIN estoque_variantes ev ON ev.id = di.variante_id
+        WHERE d.situacao <> 'cancelada' AND d.criado_em >= $1::date AND d.criado_em < $2::date + INTERVAL '1 day' ${filtroProdEv}
+        GROUP BY 1`, params
+    ),
+    pool.query(
+      `SELECT date_trunc('${trunc}', e.ocorrido_em)::date AS balde, AVG(e.nota)::numeric AS nota, COUNT(*) AS avaliacoes, COUNT(*) FILTER (WHERE e.nota <= 2) AS ruins
+         FROM posvenda_eventos e
+        WHERE e.tipo = 'avaliacao' AND e.nota IS NOT NULL AND e.ocorrido_em >= $1::date AND e.ocorrido_em < $2::date + INTERVAL '1 day' ${filtroProdE}
+        GROUP BY 1`, params
+    ),
+  ]);
+  // Baldes contínuos (o mês sem venda existe, com venda 0), do início ao fim.
+  // O pg devolve `::date` como Date local (meia-noite); a chave é a data em
+  // texto, montada no fuso local para não escorregar um dia.
+  const chave = (d) => (d instanceof Date ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : String(d).slice(0, 10));
+  const mapa = new Map();
+  const garantir = (k) => { if (!mapa.has(k)) mapa.set(k, { balde: k, vendidas: 0, devolvidas: 0, devolucoes: 0, reclamacoes: 0, devTamanho: 0, devDefeito: 0, avaliacoes: 0, ruins: 0, somaNota: 0 }); return mapa.get(k); };
+  const cursor = new Date(`${inicio}T00:00:00Z`);
+  const limite = new Date(`${fim}T00:00:00Z`);
+  if (trunc === 'month') cursor.setUTCDate(1); else { const dow = (cursor.getUTCDay() + 6) % 7; cursor.setUTCDate(cursor.getUTCDate() - dow); }
+  while (cursor <= limite) { garantir(cursor.toISOString().slice(0, 10)); if (trunc === 'month') cursor.setUTCMonth(cursor.getUTCMonth() + 1); else cursor.setUTCDate(cursor.getUTCDate() + 7); }
+  for (const r of vend) garantir(chave(r.balde)).vendidas += Number(r.pecas) || 0;
+  for (const r of dev) { const b = garantir(chave(r.balde)); b.devolvidas += Number(r.devolvidas) || 0; b.devolucoes += Number(r.devolucoes) || 0; b.reclamacoes += Number(r.reclamacoes) || 0; b.devTamanho += Number(r.dev_tamanho) || 0; b.devDefeito += Number(r.dev_defeito) || 0; }
+  for (const r of man) { const b = garantir(chave(r.balde)); b.devolvidas += Number(r.devolvidas) || 0; b.devolucoes += Number(r.devolucoes) || 0; }
+  for (const r of aval) { const b = garantir(chave(r.balde)); b.avaliacoes += Number(r.avaliacoes) || 0; b.ruins += Number(r.ruins) || 0; b.somaNota += (Number(r.nota) || 0) * (Number(r.avaliacoes) || 0); }
+  return [...mapa.values()].sort((a, b) => a.balde.localeCompare(b.balde)).map((b) => ({
+    balde: b.balde, vendidas: b.vendidas, devolvidas: b.devolvidas, devolucoes: b.devolucoes, reclamacoes: b.reclamacoes,
+    devTamanho: b.devTamanho, devDefeito: b.devDefeito, avaliacoes: b.avaliacoes, ruins: b.ruins,
+    taxa: b.vendidas > 0 ? Number((b.devolvidas / b.vendidas).toFixed(4)) : null,
+    notaMedia: b.avaliacoes > 0 ? Number((b.somaNota / b.avaliacoes).toFixed(2)) : null,
+  }));
+}
+
+router.get('/evolucao', async (req, res, next) => {
+  try {
+    const j = janela(req);
+    const granularidade = GRANULARIDADES[req.query.granularidade] ? req.query.granularidade : 'mes';
+    const produtoId = inteiroPositivo(req.query.produto_id);
+    const serie = await serieDevolucao({ ...j, granularidade, produtoId });
+    res.json({ janela: j, granularidade, produtoId, serie });
+  } catch (err) { next(err); }
+});
+
+// Por referência, um período contra o outro.
+async function porReferenciaNoPeriodo(j) {
+  const [eventos, totaisProduto] = await Promise.all([eventosDaJanela(j), vendas.totaisPorProduto(pool, vendas.normalizarJanela(j))]);
+  const vendaPorProduto = new Map([...totaisProduto.entries()].map(([pid, t]) => [pid, t.pecas]));
+  const paraAgregar = eventos.map((e) => ({ tipo: e.tipo, produtoId: e.produto_id, referencia: e.referencia, descricao: e.descricao, cor: e.cor, tamanho: e.tamanho, motivo: e.motivo, quantidade: e.quantidade, nota: e.nota, texto: e.texto }));
+  return pv.agregarPorReferencia(paraAgregar, { vendaPorProduto });
+}
+
+router.get('/comparar', async (req, res, next) => {
+  try {
+    const a = { inicio: dataOk(req.query.a_inicio) ? req.query.a_inicio : null, fim: dataOk(req.query.a_fim) ? req.query.a_fim : null };
+    const b = { inicio: dataOk(req.query.b_inicio) ? req.query.b_inicio : null, fim: dataOk(req.query.b_fim) ? req.query.b_fim : null };
+    if (!a.inicio || !a.fim || !b.inicio || !b.fim) return res.status(400).json({ error: 'Informe os dois períodos (a_inicio, a_fim, b_inicio, b_fim).' });
+    const [ra, rb] = await Promise.all([porReferenciaNoPeriodo(a), porReferenciaNoPeriodo(b)]);
+    const mapaA = new Map(ra.map((r) => [r.produtoId, r]));
+    const mapaB = new Map(rb.map((r) => [r.produtoId, r]));
+    const ids = new Set([...mapaA.keys(), ...mapaB.keys()]);
+    const resumo = (r) => (r ? { taxa: r.taxaDevolucao, devolvidas: r.pecasDevolvidas, vendidas: r.vendidas, reclamacoes: r.reclamacoes, notaMedia: r.notaMedia, avaliacoes: r.avaliacoes, amostraPequena: r.amostraPequena, motivos: r.motivos } : { taxa: null, devolvidas: 0, vendidas: null, reclamacoes: 0, notaMedia: null, avaliacoes: 0, amostraPequena: false, motivos: [] });
+    const linhas = [...ids].map((pid) => {
+      const A = resumo(mapaA.get(pid)); const B = resumo(mapaB.get(pid));
+      const ref = mapaA.get(pid) || mapaB.get(pid);
+      const delta = A.taxa != null && B.taxa != null ? Number((B.taxa - A.taxa).toFixed(4)) : null;
+      // O motivo que mais cresceu (em peças) de A para B — é o que explica a piora.
+      const mA = new Map(A.motivos.map((m) => [m.motivo, m.n])); const mB = new Map(B.motivos.map((m) => [m.motivo, m.n]));
+      let cresceu = null;
+      for (const [motivo, n] of mB) { const d = n - (mA.get(motivo) || 0); if (d > 0 && (!cresceu || d > cresceu.diferenca)) cresceu = { motivo, rotulo: pv.MOTIVOS[motivo]?.rotulo || motivo, alimenta: pv.MOTIVOS[motivo]?.alimenta || null, diferenca: d, de: mA.get(motivo) || 0, para: n }; }
+      return { produtoId: pid, referencia: ref.referencia, descricao: ref.descricao, a: A, b: B, delta, deltaNota: A.notaMedia != null && B.notaMedia != null ? Number((B.notaMedia - A.notaMedia).toFixed(2)) : null, motivoQueCresceu: cresceu };
+    }).sort((x, y) => (y.delta ?? -9) - (x.delta ?? -9) || (y.b.devolvidas - x.b.devolvidas));
+    const total = (lista) => { const dev = lista.reduce((s, r) => s + r.pecasDevolvidas, 0); const ven = lista.reduce((s, r) => s + (r.vendidas || 0), 0); return { devolvidas: dev, vendidas: ven, taxa: ven > 0 ? Number((dev / ven).toFixed(4)) : null }; };
+    res.json({ a: { ...a, ...total(ra) }, b: { ...b, ...total(rb) }, linhas });
   } catch (err) { next(err); }
 });
 

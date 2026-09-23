@@ -25,6 +25,8 @@ export const FORMATADORES = {
   moeda: brl,
   numero: formatQtd,
   decimal: (v) => numeroBr(v, 2),
+  // Percentual já em pontos (12,5 → "12,5%") — a Evolução do Pós-venda usa.
+  percentual: (v) => `${numeroBr(v, 1)}%`,
 };
 
 // Eixo de dinheiro em escala compacta ("R$ 12,4 mil"): com o valor cheio, um
