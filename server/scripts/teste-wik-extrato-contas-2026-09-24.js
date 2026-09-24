@@ -102,9 +102,11 @@ const EXTRATO_BASE = [
   ok('⚠️ GrpEmpId 192, mas o NOME diz: "BANCO ITAU - ORIGEM" -> ORIGEM', conta('BANCO ITAU - ORIGEM').empresa_id === 922);
   ok('"BANCO BRADESCO - HOGGAR" -> HOGGAR', conta('BANCO BRADESCO - HOGGAR').empresa_id === 921);
   ok('GrpContaCaixa "S" vira caixa', conta('CAIXA INTERNO - TESOURARIA').tipo === 'caixa');
-  ok('só as contas cujo nome não diz o CNPJ ficam "sem vínculo"',
-    JSON.stringify([...r1.contas_sem_vinculo].sort()) === JSON.stringify(['CAIXA INTERNO - TESOURARIA', 'INATIVO SICOOB', 'TRANSITÓRIO - TRANSFERÊNCIAS']),
-    JSON.stringify(r1.contas_sem_vinculo));
+  ok('conta que o nome não resolve (TRANSITÓRIO) fica na empresa padrão, sem pergunta',
+    conta('TRANSITÓRIO - TRANSFERÊNCIAS').empresa_id === 921 && r1.contas_sem_vinculo === undefined);
+  const t26 = (await q("SELECT empresa_id, observacao FROM fin_titulos WHERE natureza='receber' AND wik_id=26624"))[0];
+  ok('⚠️ a empresa da conta no Hub vale: recebido na TRANSITÓRIO -> HOGGAR, pela conta (não "a classificar")',
+    t26 && t26.empresa_id === 921 && !String(t26.observacao || '').startsWith('[a classificar]'), JSON.stringify(t26));
 
   secao('2. Extrato: a chave não é mais o ExtId');
   const ext = await q("SELECT data_lancamento, valor, historico FROM fin_extrato_bancario WHERE hash_dedup LIKE 'wik:%' ORDER BY id");

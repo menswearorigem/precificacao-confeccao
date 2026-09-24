@@ -146,8 +146,8 @@ const reabrir = (extra = '') => pool.query(`UPDATE integracoes_wik SET web_job_a
   ok('o resumo conta de onde veio cada CNPJ',
     r1.classificacao.conta === 4 && r1.classificacao.contraparte === 2 && r1.classificacao.padrao === 2,
     JSON.stringify(r1.classificacao));
-  ok('conta bancária da matriz aparece como "CNPJ a confirmar"',
-    r1.contas_sem_vinculo.length === 1 && r1.contas_sem_vinculo[0] === 'CAIXA MATRIZ', JSON.stringify(r1.contas_sem_vinculo));
+  ok('conta bancária da matriz entra na empresa padrão, sem ficar pendente de confirmação',
+    (await q("SELECT empresa_id FROM fin_contas WHERE nome = 'CAIXA MATRIZ'"))[0].empresa_id === 911 && r1.contas_sem_vinculo === undefined);
   ok('extrato: 2 lançamentos, cada um pela sua conta', r1.extrato_linhas === 2, r1.extrato_linhas);
   const st1 = (await q('SELECT * FROM integracoes_wik WHERE id=1'))[0];
   ok('status "idle" com a hora da sincronização', st1.financeiro_status === 'idle' && st1.financeiro_ultima_sincronizacao !== null);

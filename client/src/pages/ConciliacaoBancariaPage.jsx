@@ -59,6 +59,18 @@ const ESTADO_LABEL = {
   transferencia: 'Transferência entre contas',
 };
 
+// Linha que veio do Wik e que ninguém tocou aqui: quem conciliou foi o Wik
+// (a baixa do título e o lançamento no banco nascem juntos lá). A tela diz
+// isso, para ninguém achar que precisa refazer à mão.
+const doWik = (l) => Boolean(l.hash_dedup && String(l.hash_dedup).startsWith('wik:'));
+function rotuloEstado(l) {
+  const e = estadoDe(l);
+  if (!doWik(l) || l.conciliado_por || e === 'pendente') return ESTADO_LABEL[e];
+  if (e === 'titulo') return 'Conciliado no Wik';
+  if (e === 'categoria') return 'Classificado no Wik';
+  return ESTADO_LABEL[e];
+}
+
 const ESTADO_TONE = {
   pendente: 'tone-atencao',
   titulo: 'tone-saudavel',
@@ -99,7 +111,7 @@ const COLUNAS_EXPORTACAO = [
   { rotulo: 'Histórico', valor: (l) => l.historico || '' },
   { rotulo: 'Documento', valor: (l) => l.documento || '' },
   { rotulo: 'Valor', valor: (l) => brl(l.valor) },
-  { rotulo: 'Situação', valor: (l) => ESTADO_LABEL[estadoDe(l)] },
+  { rotulo: 'Situação', valor: (l) => rotuloEstado(l) },
   { rotulo: 'Categoria', valor: (l) => l.plano_nome || '' },
   { rotulo: 'Arquivo de origem', valor: (l) => l.arquivo_origem || '' },
   { rotulo: 'Origem', valor: (l) => (l.wik_ext_id ? 'Wik — Extrato de Contas' : 'OFX') },
@@ -325,7 +337,11 @@ export default function ConciliacaoBancariaPage() {
   const [plano, setPlano] = useState([]);
   const [contaId, setContaId] = useState('');
   const [periodo, setPeriodo] = useState({ inicio: '', fim: '' });
-  const [soPendentes, setSoPendentes] = useState(true);
+  // 24/09/2026: abria com "só pendentes" ligado e sem conta escolhida — com o
+  // Wik conciliando quase tudo sozinho, a tela parecia vazia ("não puxou a
+  // conciliação"). Agora abre mostrando tudo, na conta com o movimento mais
+  // recente.
+  const [soPendentes, setSoPendentes] = useState(false);
 
   const [extrato, setExtrato] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -343,7 +359,11 @@ export default function ConciliacaoBancariaPage() {
       .then((r) => {
         const lista = Array.isArray(r) ? r : [];
         setContas(lista);
+        const comMovimento = lista
+          .filter((c) => c.ultimo_lancamento)
+          .sort((a, b) => String(b.ultimo_lancamento).localeCompare(String(a.ultimo_lancamento)));
         if (lista.length === 1) setContaId(String(lista[0].conta_id));
+        else if (comMovimento[0]) setContaId((atual) => atual || String(comMovimento[0].conta_id));
       })
       .catch((err) => setErro(mensagemErro(err)));
     api.get(`${BASE}/plano`).then((r) => setPlano(Array.isArray(r) ? r : [])).catch(() => setPlano([]));
@@ -421,9 +441,10 @@ export default function ConciliacaoBancariaPage() {
         <div>
           <h2>Conciliação bancária</h2>
           <p className="page-sub">
-            O extrato do banco, lido do arquivo OFX, ao lado do que o sistema registrou. Cada linha
-            pendente é uma pergunta em aberto: isso é um título, é uma tarifa, ou é o mesmo dinheiro
-            mudando de conta?
+            O extrato do banco ao lado do que o sistema registrou. As contas do Wik chegam sozinhas a cada
+            ciclo, já conciliadas com os pagamentos e recebimentos que o Wik baixou — sobra aqui só o que
+            ninguém explicou ainda. Para as outras contas, importe o OFX. Cada linha pendente é uma
+            pergunta em aberto: isso é um título, é uma tarifa, ou é o mesmo dinheiro mudando de conta?
           </p>
         </div>
       </div>
@@ -646,7 +667,7 @@ export default function ConciliacaoBancariaPage() {
                     <td><ValorAssinado valor={l.valor} /></td>
                     <td>
                       <span className="cel-dupla">
-                        <span className={'stamp sm ' + ESTADO_TONE[estado]}>{ESTADO_LABEL[estado]}</span>
+                        <span className={'stamp sm ' + ESTADO_TONE[estado]}>{rotuloEstado(l)}</span>
                         {estado === 'categoria' && l.plano_nome && <small>{l.plano_nome}</small>}
                         {estado !== 'pendente' && l.conciliado_em && <small>{tempoRelativo(l.conciliado_em)}</small>}
                       </span>

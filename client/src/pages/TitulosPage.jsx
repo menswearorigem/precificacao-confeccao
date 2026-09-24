@@ -261,7 +261,6 @@ function FaixaWik({ aoSincronizar }) {
   const res = integ.financeiro_resumo || null;
   const lidoTitulos = res ? (Number(res.pagar_titulos) || 0) + (Number(res.receber_titulos) || 0) : 0;
   const lidoExtrato = res ? Number(res.extrato_linhas) || 0 : 0;
-  const semVinculo = st.contasSemVinculo || [];
 
   return (
     <div className="faixa-wik no-print">
@@ -291,18 +290,9 @@ function FaixaWik({ aoSincronizar }) {
         <Link
           to={`${pathname}?busca=${encodeURIComponent('[a classificar]')}`}
           className="stamp sm tone-atencao"
-          title={`Títulos do Wik sem conta bancária e sem histórico do fornecedor/cliente: entraram na ${st.empresaPadrao || 'empresa padrão'} até alguém dizer o CNPJ certo. Quando forem pagos no Wik, mudam de empresa sozinhos pela conta bancária.`}
+          title={`Títulos do Wik sem conta bancária e sem histórico do fornecedor/cliente: entraram na ${st.empresaPadrao || 'empresa padrão'} até alguém dizer o CNPJ certo. Quando forem pagos no Wik, vão sozinhos para a empresa da conta bancária que pagou.`}
         >
           {st.aClassificar} a classificar
-        </Link>
-      )}
-      {semVinculo.length > 0 && (
-        <Link
-          to="/financeiro/contas-bancarias"
-          className="stamp sm tone-atencao"
-          title={`Contas do Wik lançadas na matriz, sem CNPJ definido: ${semVinculo.map((c) => c.nome).join(', ')}. Diga de qual empresa é cada uma em Contas Bancárias — os títulos pagos por elas mudam junto.`}
-        >
-          {plural(semVinculo.length, 'conta')} com CNPJ a confirmar
         </Link>
       )}
       {st.semMapa?.length > 0 && (

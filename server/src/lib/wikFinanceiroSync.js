@@ -400,15 +400,12 @@ async function carregarMapas(fonte, mapaEmpresas, empresas = []) {
     ),
   ]);
 
-  // Uma conta bancária diz o CNPJ quando o GrpEmpId dela está mapeado no Hub,
-  // ou quando alguém já a moveu para uma empresa diferente da padrão.
-  const empresasMapeadasSet = new Set(mapaEmpresas.keys());
-  const contaInfo = new Map(contas.rows.map((r) => [r.id, {
-    empresaId: r.empresa_id,
-    vinculada: (r.wik_emp_id && empresasMapeadasSet.has(Number(r.wik_emp_id)))
-      || r.empresa_id !== fonte.id
-      || empresaPeloNomeDaConta(r.nome, empresas) === r.empresa_id,
-  }]));
+  // A empresa da conta bancária NO HUB é a autoridade (decisão do dono em
+  // 24/09/2026, à tarde: "elas já estão cadastradas em algum CNPJ"). Ela nasce
+  // do GrpEmpId, ou do nome ("BANCO ITAU - ORIGEM"), ou da empresa padrão — e
+  // quem quiser muda na aba Contas Bancárias. Não existe mais "conta a
+  // confirmar": título pago por uma conta vai para a empresa dessa conta.
+  const contaInfo = new Map(contas.rows.map((r) => [r.id, { empresaId: r.empresa_id, vinculada: true }]));
 
   const mapas = {
     contaPorGrp: new Map(contas.rows.map((r) => [Number(r.wik_grp_id), r.id])),
@@ -416,7 +413,6 @@ async function carregarMapas(fonte, mapaEmpresas, empresas = []) {
     // conta bancária -> empresa do Wik (GrpEmpId). Carimba o extrato.
     empWikPorConta: new Map(contas.rows.map((r) => [r.id, r.wik_emp_id ? Number(r.wik_emp_id) : null])),
     contaInfo,
-    contasSemVinculo: contas.rows.filter((r) => !contaInfo.get(r.id).vinculada).map((r) => r.nome),
     planoPorNome: new Map(plano.rows.map((r) => [String(r.nome).toUpperCase(), r.id])),
     // `CtaGrupoDespId` da conta a pagar É o `PcId` do plano.
     planoPorPcId: new Map(plano.rows.filter((r) => r.wik_pc_id).map((r) => [Number(r.wik_pc_id), r.id])),
@@ -1022,7 +1018,6 @@ function resumoVazio() {
     conciliadas: 0,
     // conta | contraparte | padrao — de onde saiu o CNPJ de cada título gravado
     classificacao: { conta: 0, contraparte: 0, padrao: 0 },
-    contas_sem_vinculo: [],
     lixo: {},
     erros: [],
   };
@@ -1152,7 +1147,6 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
         await passo('contas bancárias', () => importarContasBancarias(sessao, fonte, mapaEmpresas, empresas, resumo));
       }
       const mapas = await carregarMapas(fonte, mapaEmpresas, empresas);
-      resumo.contas_sem_vinculo = mapas.contasSemVinculo.slice(0, 40);
       await passo('contas a pagar', () => importarContasPagar(sessao, fonte, janela, mapas, resumo));
       await passo('contas a receber', () => importarContasReceber(sessao, fonte, janela, mapas, resumo));
       await passo('extrato bancário', () => importarExtrato(sessao, fonte, janela, mapas, resumo));
