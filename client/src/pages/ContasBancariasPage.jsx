@@ -393,7 +393,7 @@ export default function ContasBancariasPage() {
                   <Icone size={15} /> {c.nome}
                   {!c.ativo && <span className="stamp sm tone-neutro">desativada</span>}
                   {doWik && <span className="stamp sm tone-neutro"><LogoWik size={12} /> Wik</span>}
-                  {doWik && c.cnpj_do_wik_indefinido && (
+                  {doWik && c.cnpj_a_confirmar && (
                     <span
                       className="stamp sm tone-atencao"
                       title="No Wik esta conta está na matriz, sem CNPJ. Entrou na empresa padrão — confira e, se for outra, troque em Editar."

@@ -81,6 +81,15 @@ router.post('/centros-custo', async (req, res, next) => {
 // POST antigo devolvia a linha crua de `fin_contas`, cuja chave é `id` — quem
 // já consumia o retorno do POST (e os testes) lê `.id`. Os dois nomes saem
 // juntos: nada que já funcionava precisa mudar de campo.
+// A conta do Wik tem o CNPJ no NOME ("BANCO ITAU - ORIGEM"): a primeira
+// palavra do nome da empresa do Hub aparecendo como palavra no nome da conta.
+// Mesma regra de lib/wikFinanceiroSync.js (empresaPeloNomeDaConta).
+const SQL_CONTA_TEM_EMPRESA_NO_NOME = `EXISTS (
+  SELECT 1 FROM empresas en
+   WHERE en.ativo AND en.wik_emp_id IS NOT NULL
+     AND length(split_part(trim(regexp_replace(upper(en.nome), '[^A-Z0-9 ]', ' ', 'g')), ' ', 1)) >= 4
+     AND upper(c.nome) ~ ('\\m' || split_part(trim(regexp_replace(upper(en.nome), '[^A-Z0-9 ]', ' ', 'g')), ' ', 1) || '\\M'))`;
+
 const COLUNAS_CONTA = `s.*, s.conta_id AS id, c.banco_codigo, c.banco_nome, c.agencia, c.conta,
          c.ativo, c.saldo_inicial_data, c.wik_grp_id, c.wik_tipo, c.cedente, c.carteira,
          c.nosso_numero_ini, c.nosso_numero_fin, c.conta_matriz, c.wik_dados, e.nome AS empresa_nome,
@@ -89,7 +98,12 @@ const COLUNAS_CONTA = `s.*, s.conta_id AS id, c.banco_codigo, c.banco_nome, c.ag
          -- 192, a filial 193): o CNPJ dela foi CHUTADO (empresa padrão) e o dono
          -- confirma na tela. Ver lib/wikFinanceiroSync.js.
          (c.wik_grp_id IS NOT NULL
-          AND NOT EXISTS (SELECT 1 FROM empresas ex WHERE ex.ativo AND ex.wik_emp_id = c.wik_emp_id)) AS cnpj_do_wik_indefinido`;
+          AND NOT EXISTS (SELECT 1 FROM empresas ex WHERE ex.ativo AND ex.wik_emp_id = c.wik_emp_id)) AS cnpj_do_wik_indefinido,
+         -- ...e o selo "CNPJ a confirmar" só aparece quando nem o nome da conta
+         -- diz de qual empresa ela é.
+         (c.wik_grp_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM empresas ex WHERE ex.ativo AND ex.wik_emp_id = c.wik_emp_id)
+          AND NOT ${SQL_CONTA_TEM_EMPRESA_NO_NOME}) AS cnpj_a_confirmar`;
 
 router.get('/contas', async (req, res, next) => {
   try {
@@ -951,6 +965,7 @@ router.get('/wik/status', async (req, res, next) => {
       `SELECT c.id, c.nome, c.wik_emp_id FROM fin_contas c
         WHERE c.wik_grp_id IS NOT NULL AND c.ativo
           AND NOT EXISTS (SELECT 1 FROM empresas e WHERE e.ativo AND e.wik_emp_id = c.wik_emp_id)
+          AND NOT ${SQL_CONTA_TEM_EMPRESA_NO_NOME}
           AND c.empresa_id = $1
         ORDER BY c.nome`,
       [padrao ? padrao.id : 0]

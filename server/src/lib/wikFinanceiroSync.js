@@ -32,6 +32,7 @@
 // 4. SOMENTE LEITURA DO WIK. Nada aqui escreve de volta. Baixa, cancelamento e
 //    lançamento continuam sendo feitos na tela do Wik.
 
+const crypto = require('crypto');
 const wikWeb = require('./wikWeb');
 const { obterSessao, renovarSessao } = require('./wikWebSessao');
 const pool = require('../db/pool');
@@ -157,6 +158,36 @@ async function empresasMapeadas() {
 function empresaPadraoDe(empresas) {
   const porWik = new Map(empresas.map((e) => [Number(e.wik_emp_id), e]));
   return porWik.get(EMPRESA_PADRAO_WIK) || porWik.get(FONTE_EMP_ID) || empresas[0] || null;
+}
+
+// ── o CNPJ de uma conta bancária pelo NOME (24/09/2026, à tarde) ──────────
+// Medido ao vivo: as 36 contas bancárias do Wik estão TODAS na matriz
+// (GrpEmpId = 192). O GrpEmpId não diz nada — mas o nome diz: "BANCO ITAU -
+// ORIGEM", "BRADESCO ORIGEM", "BANCO BRADESCO - HOGGAR". A primeira palavra do
+// nome da empresa no Hub (ORIGEM, HOGGAR) aparecendo como PALAVRA no nome da
+// conta decide o CNPJ. Duas empresas casando = não decide (volta null).
+function semAcento(t) {
+  return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+}
+function palavraDaEmpresa(nome) {
+  const p = semAcento(nome).split(/[^A-Z0-9]+/).filter(Boolean)[0] || '';
+  return p.length >= 4 ? p : null;
+}
+function empresaPeloNomeDaConta(nomeConta, empresas) {
+  const alvo = ` ${semAcento(nomeConta).replace(/[^A-Z0-9]+/g, ' ')} `;
+  const achou = empresas.filter((e) => {
+    const p = palavraDaEmpresa(e.nome);
+    return p && alvo.includes(` ${p} `);
+  });
+  return achou.length === 1 ? achou[0].id : null;
+}
+// Conta com "INATIVO" no começo do nome é conta encerrada no Wik. É o ÚNICO
+// sinal de conta inativa que o Wik dá: o `blContaAtiva` vem FALSE nas 36
+// contas, inclusive nas que movimentam todo dia (medido em 24/09/2026 — o
+// mesmo tipo de campo enganoso do `blReceita`). Usar o booleano desativava
+// todas as contas, e a Conciliação, que só lista conta ativa, ficava vazia.
+function contaAtivaPeloNome(nome) {
+  return !/^\s*INATIV[OA]\b/i.test(String(nome || ''));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -285,14 +316,17 @@ function primeiroCampo(obj, nomes) {
 // 192, ou a filial, 193) entra na empresa padrão e aparece na tela como
 // "CNPJ a confirmar" — o dono corrige na aba Contas Bancárias, e a correção
 // fica (o upsert abaixo NUNCA reescreve `empresa_id`).
-async function importarContasBancarias(sessao, fonte, mapaEmpresas, resumo) {
+async function importarContasBancarias(sessao, fonte, mapaEmpresas, empresas, resumo) {
   const linhas = await lerComGuarda('contas bancárias', 'GrpId', () => wikWeb.contasBancarias(sessao), resumo);
   for (const l of linhas) {
     const grpId = Number(l.GrpId);
     if (!(grpId > 0)) continue;
     const empWik = Number(l.GrpEmpId) || fonte.wik_emp_id;
-    const empresaId = mapaEmpresas.get(empWik) || fonte.id;
-    const ehCaixa = Number(l.GrpContaCaixa) === 1 || /caixa|tesouraria/i.test(String(l.GrpDescicao || ''));
+    const nomeConta = texto(l.GrpDescicao, 120) || `Conta ${grpId}`;
+    const empresaId = mapaEmpresas.get(empWik) || empresaPeloNomeDaConta(nomeConta, empresas) || fonte.id;
+    // `GrpContaCaixa` vem 'S'/'N' (não 1/0).
+    const ehCaixa = String(l.GrpContaCaixa).toUpperCase() === 'S' || Number(l.GrpContaCaixa) === 1
+      || /caixa|tesouraria/i.test(nomeConta);
 
     const agencia = primeiroCampo(l, ['GrpAg', 'GrpAgencia', 'GrpAgenciaConta', 'Agencia']);
     const conta = primeiroCampo(l, ['GrpCc', 'GrpConta', 'GrpContaCorrente', 'GrpNumConta', 'Conta']);
@@ -319,9 +353,9 @@ async function importarContasBancarias(sessao, fonte, mapaEmpresas, resumo) {
                      carteira = EXCLUDED.carteira, nosso_numero_ini = EXCLUDED.nosso_numero_ini,
                      nosso_numero_fin = EXCLUDED.nosso_numero_fin, conta_matriz = EXCLUDED.conta_matriz,
                      wik_dados = EXCLUDED.wik_dados`,
-      [empresaId, texto(l.GrpDescicao, 120) || `Conta ${grpId}`, ehCaixa ? 'caixa' : 'bancaria',
+      [empresaId, nomeConta, ehCaixa ? 'caixa' : 'bancaria',
         texto(bancoCod, 5), texto(bancoNome, 80), texto(agencia, 15), texto(conta, 25),
-        l.blContaAtiva !== false,
+        contaAtivaPeloNome(nomeConta),
         texto(wikTipo, 40), texto(cedente, 80), texto(carteira, 20),
         texto(nnIni, 30), texto(nnFin, 30), contaMatriz,
         JSON.stringify(l), empWik, grpId]
@@ -347,7 +381,7 @@ async function garantirPlanoTransferencia(empWik) {
 }
 
 // ── mapas de apoio, lidos uma vez por ciclo ────────────────────────────────
-async function carregarMapas(fonte, mapaEmpresas) {
+async function carregarMapas(fonte, mapaEmpresas, empresas = []) {
   const idTransferencia = await garantirPlanoTransferencia(fonte.wik_emp_id);
   const [contas, plano, fornecedores, historico] = await Promise.all([
     pool.query('SELECT id, wik_grp_id, nome, wik_emp_id, empresa_id FROM fin_contas WHERE wik_grp_id IS NOT NULL'),
@@ -371,7 +405,9 @@ async function carregarMapas(fonte, mapaEmpresas) {
   const empresasMapeadasSet = new Set(mapaEmpresas.keys());
   const contaInfo = new Map(contas.rows.map((r) => [r.id, {
     empresaId: r.empresa_id,
-    vinculada: (r.wik_emp_id && empresasMapeadasSet.has(Number(r.wik_emp_id))) || r.empresa_id !== fonte.id,
+    vinculada: (r.wik_emp_id && empresasMapeadasSet.has(Number(r.wik_emp_id)))
+      || r.empresa_id !== fonte.id
+      || empresaPeloNomeDaConta(r.nome, empresas) === r.empresa_id,
   }]));
 
   const mapas = {
@@ -424,6 +460,10 @@ function decidirEmpresa(mapas, fonte, natureza, nome, pelaConta) {
   const pelaPessoa = k ? mapas.empresaPorContraparte.get(k) : null;
   if (pelaPessoa) return { empresaId: pelaPessoa, como: 'contraparte' };
   return { empresaId: fonte.id, como: 'padrao' };
+}
+
+function parcelaPaga(p) {
+  return Boolean(dataDe(p.DataBaixa)) || /baixad|pago|liquidad/i.test(String(p.Situacao || ''));
 }
 
 function contarClassificacao(resumo, como) {
@@ -548,9 +588,13 @@ async function importarContasPagar(sessao, fonte, janela, mapas, resumo) {
       resumo.erros.push(`conta a pagar ${ctaId}: ${err.message}`);
       continue;
     }
+    // O `ListaItens` vem com linhas de ENCHIMENTO (CtaiId 0, valor 0, sem
+    // vencimento) depois das parcelas de verdade — medido em 24/09/2026. Eram
+    // elas as ~878 "travadas" do resumo: não eram trava nenhuma.
+    detalhe.parcelas = (detalhe.parcelas || []).filter((p) => Number(p.CtaiId) > 0);
     lidos.push({ c, detalhe });
-    for (const p of detalhe.parcelas || []) {
-      if (!dataDe(p.DataBaixa)) continue;
+    for (const p of detalhe.parcelas) {
+      if (!parcelaPaga(p)) continue;
       aprenderContraparte(mapas, 'pagar', c.Pessoa, empresaPelaContaWik(mapas, p.GrupoReceitaId));
     }
   }
@@ -569,7 +613,7 @@ async function importarContasPagar(sessao, fonte, janela, mapas, resumo) {
     // A empresa é da CONTA inteira (as parcelas não mudam de CNPJ entre si):
     // conta bancária de uma parcela baixada > conta prevista da conta a pagar >
     // conta de qualquer parcela > fornecedor > padrão.
-    const pelaConta = parcelas.filter((p) => dataDe(p.DataBaixa))
+    const pelaConta = parcelas.filter(parcelaPaga)
       .map((p) => empresaPelaContaWik(mapas, p.GrupoReceitaId)).find(Boolean)
       || empresaPelaContaWik(mapas, detalhe.contaBancariaId)
       || parcelas.map((p) => empresaPelaContaWik(mapas, p.GrupoReceitaId)).find(Boolean)
@@ -601,16 +645,19 @@ async function importarContasPagar(sessao, fonte, janela, mapas, resumo) {
         wik_id: ctaId,
         wik_item_id: itemId,
       });
-      if (!tituloId) { resumo.pagar_travados += 1; continue; }
+      if (!tituloId) {
+        if (valor > 0 && dataDe(p.DataVencimento)) resumo.pagar_travados += 1; else resumo.pagar_invalidas += 1;
+        continue;
+      }
       resumo.pagar_titulos += 1;
       contarClassificacao(resumo, como);
 
+      // ⚠️ No `ListaItens` a `DataBaixa` vem NULA mesmo em parcela BAIXADA
+      // (medido em 24/09/2026). A baixa do contas a pagar sai do EXTRATO
+      // ("Saida de conta a pagar numero: <CtaId> parcela <CtaiId>"), com a
+      // data, a conta e o valor de verdade — ver baixasDoExtrato. Aqui só entra
+      // a baixa se algum dia o Wik passar a mandar a data na parcela.
       const dataBaixa = dataDe(p.DataBaixa);
-      // Parcela "BAIXADO" sem data: não se inventa data (mentiria no fluxo de
-      // caixa), mas o caso é CONTADO.
-      if (!dataBaixa && /baixad|pago|liquidad/i.test(String(p.Situacao || ''))) {
-        resumo.pagar_baixa_sem_data += 1;
-      }
       if (dataBaixa && !cancelada) {
         const ok = await gravarBaixa({
           tituloId,
@@ -706,20 +753,60 @@ async function importarContasReceber(sessao, fonte, janela, mapas, resumo) {
 
 // ── EXTRATO — entra pela mesma porta do OFX ────────────────────────────────
 // Só o REALIZADO ('1,'). Uma leitura por ciclo (EmpId = 0 = todas); a empresa
-// de cada linha vem da CONTA BANCÁRIA, que é dado real.
+// de cada linha vem da CONTA BANCÁRIA.
+//
+// ⚠️ O `ExtId` NÃO É ID DA LINHA (medido ao vivo em 24/09/2026): em 90 dias o
+// Wik devolveu 5.087 lançamentos com só 702 `ExtId` diferentes — o número se
+// repete de um dia para o outro. Usado como chave, cada linha sobrescrevia a
+// anterior: das 5.087 lidas, sobravam 906, com o valor da última que chegou —
+// extrato e saldo errados, e a conciliação sem ter com o que casar.
+//
+// A chave agora é a IMPRESSÃO DIGITAL da linha (data, conta, sinal, valor,
+// histórico, pessoa, plano, observação, operação, forma, vencimento) mais a
+// ordem de ocorrência entre linhas idênticas (o Wik tem lançamentos idênticos
+// de verdade: duas transferências de R$ 97.422,88 no mesmo dia). Vai em
+// `hash_dedup`, que já é UNIQUE por conta desde a 0055.
+function impressaoDigital(l) {
+  const v = Math.abs(valorDe(l.Valor)).toFixed(2);
+  return [dataDe(l.Data), String(l.GrpDescricao || '').trim().toUpperCase(), String(l.Tipo || '').trim(), v,
+    texto(l.Historico), texto(l.Nome), texto(l.PcDescricao), texto(l.Observacao), texto(l.Operacao),
+    texto(l.FormaPgto), dataDe(l.DataVencimento)].map((x) => (x === null || x === undefined ? '' : String(x))).join('|');
+}
+function hashLinha(base, ocorrencia) {
+  return `wik:${crypto.createHash('sha1').update(`${base}#${ocorrencia}`).digest('hex')}`;
+}
+
+// "Saida de conta a pagar numero: 45339 parcela 1" / "Saída por dinheiro da
+// matriz Doc nº: 45326 parcela: 1" -> pagar 45339/1 (CtaId/CtaiId).
+// "Entrada por baixa de titulos Doc nº: 26624 parcela: 1" / "Entrada por
+// dinheiro na matriz Doc nº: …" -> receber 26624/1 (ReciRecId/ReciId).
+// Conferido ao vivo: o Doc nº de uma entrada É o ReciRecId, e o de uma saída É
+// o CtaId.
+function documentoDaLinha(l) {
+  const h = String(l.Historico || '');
+  let m = h.match(/conta a pagar\s+n[uú]mero:?\s*(\d+)\s*parcela:?\s*(\d+)/i);
+  if (m) return { natureza: 'pagar', wikId: Number(m[1]), item: Number(m[2]) };
+  m = h.match(/Doc\s*n\S*\s*:?\s*(\d+)\s*parcela:?\s*(\d+)/i);
+  if (!m) return null;
+  if (/^\s*sa[ií]da/i.test(h) || String(l.Tipo).trim() === '-') return { natureza: 'pagar', wikId: Number(m[1]), item: Number(m[2]) };
+  return { natureza: 'receber', wikId: Number(m[1]), item: Number(m[2]) };
+}
+
 async function importarExtrato(sessao, fonte, janela, mapas, resumo) {
   const linhas = await lerComGuarda('extrato de contas', 'ExtId',
     () => wikWeb.extratoFinanceiro(sessao, { de: janela.de, ate: janela.ateExtrato, empId: '0', situacoes: '1,' }),
     resumo);
   resumo.extrato_vistos += linhas.length;
 
-  for (const l of linhas) {
-    const extId = Number(l.ExtId);
-    const data = dataDe(l.Data);
-    if (!(extId > 0) || !data) continue;
+  const ocorrencias = new Map();
+  const vistosPorConta = new Map(); // conta_id -> Set(hash)
+  const comDocumento = [];          // linhas que são pagamento/recebimento de título
 
-    // `IdGrupo` vem 0 em boa parte das linhas, mesmo com `GrpDescricao`
-    // preenchido — o nome é a chave principal.
+  for (const l of linhas) {
+    const data = dataDe(l.Data);
+    if (!data) continue;
+
+    // `IdGrupo` vem 0 em boa parte das linhas — o nome é a chave principal.
     const contaId = mapas.contaPorNome.get(String(l.GrpDescricao || '').toUpperCase())
       || (Number(l.IdGrupo) > 0 ? mapas.contaPorGrp.get(Number(l.IdGrupo)) : null);
     if (!contaId) {
@@ -737,6 +824,13 @@ async function importarExtrato(sessao, fonte, janela, mapas, resumo) {
     const valor = String(l.Tipo).trim() === '-' ? -bruto : bruto;
     if (valor === 0) continue;
 
+    const base = impressaoDigital(l);
+    const n = (ocorrencias.get(base) || 0) + 1;
+    ocorrencias.set(base, n);
+    const hash = hashLinha(base, n);
+    if (!vistosPorConta.has(contaId)) vistosPorConta.set(contaId, new Set());
+    vistosPorConta.get(contaId).add(hash);
+
     const historico = [texto(l.Historico), texto(l.Nome), texto(l.Observacao)]
       .filter(Boolean).join(' — ') || texto(l.PcDescricao) || 'Lançamento do Wik';
 
@@ -745,20 +839,105 @@ async function importarExtrato(sessao, fonte, janela, mapas, resumo) {
          (conta_id, data_lancamento, valor, historico, documento, hash_dedup,
           tipo_ofx, arquivo_origem, plano_id, wik_emp_id, wik_ext_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,'Wik — Extrato de Contas',$8,$9,$10)
-       ON CONFLICT (wik_emp_id, wik_ext_id) WHERE wik_ext_id IS NOT NULL
-       DO UPDATE SET data_lancamento = EXCLUDED.data_lancamento, valor = EXCLUDED.valor,
-                     historico = EXCLUDED.historico, documento = EXCLUDED.documento,
+       ON CONFLICT (conta_id, hash_dedup)
+       DO UPDATE SET historico = EXCLUDED.historico, documento = EXCLUDED.documento,
+                     wik_emp_id = EXCLUDED.wik_emp_id, wik_ext_id = EXCLUDED.wik_ext_id,
                      plano_id = COALESCE(fin_extrato_bancario.plano_id, EXCLUDED.plano_id)
         WHERE NOT fin_extrato_bancario.wik_travado
-       RETURNING id`,
-      [contaId, data, valor, historico, texto(l.Operacao, 60),
-        `wik:${empWikDaLinha}:${extId}`, texto(l.FormaPgto, 20),
+       RETURNING id, baixa_id`,
+      [contaId, data, valor, historico, texto(l.Operacao, 60), hash, texto(l.FormaPgto, 20),
         (NOMES_TRANSFERENCIA.includes(String(l.PcDescricao || '').trim().toUpperCase())
           ? mapas.idTransferencia
           : mapas.planoPorNome.get(String(l.PcDescricao || '').trim().toUpperCase())) || null,
-        empWikDaLinha, extId]
+        empWikDaLinha, Number(l.ExtId) || null]
     );
-    if (rows[0]) resumo.extrato_linhas += 1; else resumo.extrato_travados += 1;
+    if (!rows[0]) { resumo.extrato_travados += 1; continue; }
+    resumo.extrato_linhas += 1;
+    const doc = documentoDaLinha(l);
+    if (doc) comDocumento.push({ doc, extratoId: rows[0].id, jaLigada: rows[0].baixa_id, contaId, data, valor: bruto, forma: l.FormaPgto, hash });
+  }
+
+  // ESPELHO: o que o Wik não devolve mais na janela lida (lançamento apagado ou
+  // corrigido lá) sai daqui — senão a linha antiga e a corrigida somavam as
+  // duas. Só linhas do Wik, só na janela lida, nunca travada nem conciliada à
+  // mão (conciliado_por preenchido = foi gente).
+  if (linhas.length || janela.modo === 'corrente') {
+    const contasDoWik = [...mapas.contaInfo.keys()];
+    const manter = [];
+    for (const set of vistosPorConta.values()) manter.push(...set);
+    const { rows: removidas } = await pool.query(
+      `DELETE FROM fin_extrato_bancario
+        WHERE wik_emp_id IS NOT NULL AND hash_dedup LIKE 'wik:%'
+          AND conta_id = ANY($1) AND data_lancamento BETWEEN $2 AND $3
+          AND NOT wik_travado AND conciliado_por IS NULL
+          AND NOT (hash_dedup = ANY($4))
+       RETURNING hash_dedup`,
+      [contasDoWik, janela.de, janela.ateExtrato, manter]
+    );
+    resumo.extrato_removidas += removidas.length;
+    // A baixa do pagar que nasceu de uma linha que sumiu some junto — senão o
+    // título ficaria "pago" por um pagamento que o Wik não tem mais.
+    const refs = removidas.map((r) => `ext:${String(r.hash_dedup).slice(4, 44)}`).filter((x) => x.length === 44);
+    if (refs.length) {
+      const { rows: orfas } = await pool.query(
+        'DELETE FROM fin_baixas WHERE wik_ref = ANY($1) RETURNING titulo_id', [refs]
+      );
+      for (const o of orfas) await recalcularSituacao(pool, o.titulo_id);
+    }
+  }
+
+  await baixasDoExtrato(fonte, comDocumento, resumo);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BAIXAS QUE SÓ O EXTRATO CONTA
+// ═══════════════════════════════════════════════════════════════════════════
+// Contas a PAGAR: a parcela do Wik não traz a data de pagamento — o extrato
+// traz ("Saida de conta a pagar numero: 45339 parcela 1", com data, conta e
+// valor). Então a baixa do pagar nasce DAQUI, uma por linha de extrato (paga-
+// mento parcial em duas vezes = duas baixas), e a linha já sai CONCILIADA com
+// ela: foi o próprio Wik que ligou uma coisa à outra.
+//
+// Contas a RECEBER: a baixa já vem do grid (com a conta). Aqui só se liga a
+// linha do extrato à baixa certa pelo documento — sem depender de data e valor
+// baterem.
+async function baixasDoExtrato(fonte, itens, resumo) {
+  for (const it of itens) {
+    const { rows: t } = await pool.query(
+      `SELECT id, situacao FROM fin_titulos
+        WHERE wik_emp_id = $1 AND natureza = $2 AND wik_id = $3 AND wik_item_id = $4`,
+      [fonte.wik_emp_id, it.doc.natureza, it.doc.wikId, it.doc.item]
+    );
+    if (!t[0]) { resumo.extrato_titulo_ainda_nao_lido += 1; continue; }
+
+    let baixaId = null;
+    if (it.doc.natureza === 'pagar') {
+      if (t[0].situacao === 'cancelado') continue;
+      const wikRef = `ext:${it.hash.slice(4, 44)}`;
+      const ok = await gravarBaixa({
+        tituloId: t[0].id, wikRef, data: it.data, valor: it.valor, contaId: it.contaId, forma: it.forma,
+      });
+      if (!ok) continue;
+      resumo.pagar_baixas += 1;
+      const { rows: b } = await pool.query('SELECT id FROM fin_baixas WHERE wik_ref = $1', [wikRef]);
+      baixaId = b[0] ? b[0].id : null;
+    } else {
+      const { rows: b } = await pool.query(
+        `SELECT b.id FROM fin_baixas b
+          WHERE b.wik_ref = $1 AND b.estornada_em IS NULL
+            AND NOT EXISTS (SELECT 1 FROM fin_extrato_bancario x WHERE x.baixa_id = b.id AND x.id <> $2)`,
+        [`cr:${fonte.wik_emp_id}:${it.doc.wikId}:${it.doc.item}`, it.extratoId]
+      );
+      baixaId = b[0] ? b[0].id : null;
+    }
+    if (!baixaId || it.jaLigada === baixaId) continue;
+    const { rowCount } = await pool.query(
+      `UPDATE fin_extrato_bancario SET baixa_id = $2, conciliado_em = COALESCE(conciliado_em, now())
+        WHERE id = $1 AND NOT wik_travado AND conciliado_por IS NULL
+          AND (baixa_id IS NULL OR baixa_id <> $2)`,
+      [it.extratoId, baixaId]
+    );
+    if (rowCount > 0) resumo.conciliadas += 1;
   }
 }
 
@@ -835,9 +1014,10 @@ function resumoVazio() {
     fonte_wik: FONTE_EMP_ID,
     plano_contas: 0, centros_custo: 0, contas: 0,
     pagar_contas_vistas: 0, pagar_titulos: 0, pagar_baixas: 0, pagar_travados: 0,
-    pagar_detalhes_pendentes: 0, pagar_sem_categoria: 0, pagar_baixa_sem_data: 0,
+    pagar_detalhes_pendentes: 0, pagar_sem_categoria: 0,
     receber_vistos: 0, receber_titulos: 0, receber_baixas: 0, receber_travados: 0,
     extrato_vistos: 0, extrato_linhas: 0, extrato_travados: 0, extrato_sem_conta: 0,
+    extrato_removidas: 0, extrato_titulo_ainda_nao_lido: 0, pagar_invalidas: 0,
     extrato_contas_desconhecidas: [],
     conciliadas: 0,
     // conta | contraparte | padrao — de onde saiu o CNPJ de cada título gravado
@@ -952,13 +1132,9 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
   );
 
   try {
-    // Cadastros valem para o dia inteiro — mas só se a base já os tem.
-    const rodouHoje = integracao.financeiro_ultima_sincronizacao
-      && new Date(integracao.financeiro_ultima_sincronizacao).toISOString().slice(0, 10) === hojeIso();
-    const { rows: temCadastro } = await pool.query(
-      'SELECT count(*)::int AS n FROM fin_contas WHERE wik_grp_id IS NOT NULL'
-    );
-    const cadastrosHoje = rodouHoje && temCadastro[0].n > 0;
+    // Cadastros (plano, centros, contas bancárias) a CADA ciclo (24/09/2026):
+    // são três leituras pequenas (170 + 11 + 36 linhas) e uma conta nova ou
+    // encerrada no Wik tem de aparecer junto com o resto, não no dia seguinte.
 
     // Toda a leitura numa função só, para poder REFAZER do zero com uma sessão
     // nova se a do Wik cair no meio. Gravação idempotente: refazer não duplica.
@@ -970,12 +1146,12 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
     };
     async function rodar(sessao) {
       sessao = await passo('pôr a sessão na matriz', () => sessaoNaMatriz(sessao, integracao, resumo));
-      if (forcarCadastros || !cadastrosHoje) {
+      {
         await passo('plano de contas', () => importarPlanoContas(sessao, fonte, resumo));
         await passo('centros de custo', () => importarCentrosCusto(sessao, fonte, resumo));
-        await passo('contas bancárias', () => importarContasBancarias(sessao, fonte, mapaEmpresas, resumo));
+        await passo('contas bancárias', () => importarContasBancarias(sessao, fonte, mapaEmpresas, empresas, resumo));
       }
-      const mapas = await carregarMapas(fonte, mapaEmpresas);
+      const mapas = await carregarMapas(fonte, mapaEmpresas, empresas);
       resumo.contas_sem_vinculo = mapas.contasSemVinculo.slice(0, 40);
       await passo('contas a pagar', () => importarContasPagar(sessao, fonte, janela, mapas, resumo));
       await passo('contas a receber', () => importarContasReceber(sessao, fonte, janela, mapas, resumo));
