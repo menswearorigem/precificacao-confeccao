@@ -153,6 +153,7 @@ function SeloOrigem({ titulo }) {
 // Some sozinha quando a importação está desligada — quem não usa o Wik não
 // precisa ver nada disso.
 function FaixaWik({ aoSincronizar }) {
+  const { pathname } = useLocation();
   const [st, setSt] = useState(null);
   const [rodando, setRodando] = useState(false);
   const [msg, setMsg] = useState('');
@@ -241,8 +242,8 @@ function FaixaWik({ aoSincronizar }) {
         </div>
         {st.semMapa?.length > 0 && (
           <div className="stamp sm tone-atencao" style={{ marginTop: 10, display: 'inline-flex' }}>
-            Empresa(s) sem ID do Wik configurado: {st.semMapa.join(', ')} — os títulos dela(s) não serão
-            importados até o Id ser preenchido (em vez de cair no CNPJ errado).
+            Empresa(s) sem ID do Wik configurado: {st.semMapa.join(', ')} — o financeiro é lido da matriz do
+            Wik e separado pela conta bancária; sem o Id, nenhuma conta do Wik consegue apontar para ela(s).
           </div>
         )}
         {msg && <div className="login-error" style={{ marginTop: 10 }}>{msg}</div>}
@@ -254,6 +255,13 @@ function FaixaWik({ aoSincronizar }) {
   // omissão: dava a entender que estava andando quando nunca tinha rodado.
   const carregando = !integ.financeiro_carga_inicial_fim && !!integ.financeiro_ultima_sincronizacao;
   const ultima = integ.financeiro_ultima_sincronizacao;
+  // 24/09/2026: "sincronizado" sem dizer QUANTO entrou era como o financeiro
+  // parecia funcionar sem trazer nada. Agora a faixa diz o que o último ciclo
+  // leu de verdade.
+  const res = integ.financeiro_resumo || null;
+  const lidoTitulos = res ? (Number(res.pagar_titulos) || 0) + (Number(res.receber_titulos) || 0) : 0;
+  const lidoExtrato = res ? Number(res.extrato_linhas) || 0 : 0;
+  const semVinculo = st.contasSemVinculo || [];
 
   return (
     <div className="faixa-wik no-print">
@@ -263,6 +271,11 @@ function FaixaWik({ aoSincronizar }) {
           ? <strong>A última importação do Wik falhou.</strong>
           : <>Importando do Wik · <strong>{ultima ? dataBr(dataIso(ultima)) : 'ainda não rodou'}</strong></>}
       </span>
+      {res && !res.erro && (
+        <span title={`Último ciclo (${res.janela ? `${dataBr(res.janela.de)} a ${dataBr(res.janela.ate)}` : ''}) lido da matriz do Wik.`}>
+          · último ciclo: <strong>{plural(lidoTitulos, 'título')}</strong> e <strong>{plural(lidoExtrato, 'lançamento')}</strong>
+        </span>
+      )}
       {carregando && (
         <span title="A carga do histórico anda para trás em fatias, uma por ciclo, para não pesar no servidor do Wik.">
           · histórico ainda carregando
@@ -274,8 +287,26 @@ function FaixaWik({ aoSincronizar }) {
           <Copy size={11} /> {st.duplicados} possível(is) duplicidade(s)
         </span>
       )}
+      {st.aClassificar > 0 && (
+        <Link
+          to={`${pathname}?busca=${encodeURIComponent('[a classificar]')}`}
+          className="stamp sm tone-atencao"
+          title={`Títulos do Wik sem conta bancária e sem histórico do fornecedor/cliente: entraram na ${st.empresaPadrao || 'empresa padrão'} até alguém dizer o CNPJ certo. Quando forem pagos no Wik, mudam de empresa sozinhos pela conta bancária.`}
+        >
+          {st.aClassificar} a classificar
+        </Link>
+      )}
+      {semVinculo.length > 0 && (
+        <Link
+          to="/financeiro/contas-bancarias"
+          className="stamp sm tone-atencao"
+          title={`Contas do Wik lançadas na matriz, sem CNPJ definido: ${semVinculo.map((c) => c.nome).join(', ')}. Diga de qual empresa é cada uma em Contas Bancárias — os títulos pagos por elas mudam junto.`}
+        >
+          {plural(semVinculo.length, 'conta')} com CNPJ a confirmar
+        </Link>
+      )}
       {st.semMapa?.length > 0 && (
-        <span className="stamp sm tone-prejuizo" title="Empresa sem o ID do Wik configurado: os títulos dela não são importados, em vez de cair no CNPJ errado.">
+        <span className="stamp sm tone-prejuizo" title="Empresa sem o ID do Wik configurado: nenhuma conta bancária do Wik consegue apontar para ela.">
           sem ID do Wik: {st.semMapa.join(', ')}
         </span>
       )}
@@ -286,9 +317,13 @@ function FaixaWik({ aoSincronizar }) {
       )}
       <span className="faixa-wik-sep">
         {msg && <span className="tone-prejuizo">{msg}</span>}
-        {integ.financeiro_erro && !msg && (
-          <button type="button" className="btn btn-ghost btn-mini tone-prejuizo" onClick={() => setVerErro((v) => !v)}>
-            {verErro ? 'esconder o erro' : 'ver erro'}
+        {!msg && (
+          <button
+            type="button"
+            className={`btn btn-ghost btn-mini${integ.financeiro_erro ? ' tone-prejuizo' : ''}`}
+            onClick={() => setVerErro((v) => !v)}
+          >
+            {verErro ? 'esconder' : (integ.financeiro_erro ? 'ver erro' : 'testar')}
           </button>
         )}
         <button type="button" className="btn btn-ghost btn-mini" onClick={sincronizar} disabled={rodando}>
@@ -297,16 +332,17 @@ function FaixaWik({ aoSincronizar }) {
         </button>
       </span>
 
-      {verErro && integ.financeiro_erro && (
+      {verErro && (
         <div className="faixa-wik-detalhe card" style={{ flexBasis: '100%', marginTop: 8 }}>
-          <p style={{ margin: 0 }}>{integ.financeiro_erro}</p>
+          {integ.financeiro_erro && <p style={{ margin: 0 }}>{integ.financeiro_erro}</p>}
           <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
             <button type="button" className="btn btn-sec btn-mini" onClick={diagnosticar} disabled={diagnosticando}>
               <RefreshCw size={13} className={diagnosticando ? 'girando' : undefined} />
               {diagnosticando ? 'Testando…' : 'Testar o caminho do Wik'}
             </button>
             <span className="page-sub" style={{ margin: 0 }}>
-              Faz um login e duas leituras de uma linha, só para descobrir qual caminho o Wik aceita. Não grava nada.
+              Faz o caminho do sync (login, matriz, contas a pagar e a receber, extrato dos últimos 30 dias) e mostra
+              quanto veio de verdade em cada um. Não grava nada.
             </span>
           </div>
           {diag && (
@@ -1085,8 +1121,15 @@ export default function TitulosPage() {
   const [periodo, setPeriodo] = useState({ inicio: '', fim: '' });
   const [soVencidos, setSoVencidos] = useState(false);
   const [origem, setOrigem] = useState('');
-  const [termoDigitado, setTermoDigitado] = useState('');
-  const [busca, setBusca] = useState('');
+  // A busca pode chegar pela URL (?busca=…) — é assim que o selo "a
+  // classificar" da faixa do Wik abre a lista já filtrada.
+  const { search } = useLocation();
+  const buscaDaUrl = new URLSearchParams(search).get('busca') || '';
+  const [termoDigitado, setTermoDigitado] = useState(buscaDaUrl);
+  const [busca, setBusca] = useState(buscaDaUrl);
+  useEffect(() => {
+    if (buscaDaUrl) { setTermoDigitado(buscaDaUrl); setBusca(buscaDaUrl); }
+  }, [buscaDaUrl]);
 
   const [titulos, setTitulos] = useState([]);
   const [totaisServidor, setTotaisServidor] = useState(null);

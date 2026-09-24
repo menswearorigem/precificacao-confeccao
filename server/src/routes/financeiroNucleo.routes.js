@@ -9,7 +9,9 @@ const {
   criarTitulo, baixar, estornarBaixa, saldoTitulo, calcularEncargos,
 } = require('../lib/financeiroTitulos');
 const { lerOfx } = require('../lib/ofx');
-const { sincronizarFinanceiroAgora, travarTitulo } = require('../lib/wikFinanceiroSync');
+const {
+  sincronizarFinanceiroAgora, travarTitulo, FONTE_EMP_ID, MARCA_A_CLASSIFICAR, empresaPadraoDe,
+} = require('../lib/wikFinanceiroSync');
 
 const router = express.Router();
 
@@ -81,7 +83,13 @@ router.post('/centros-custo', async (req, res, next) => {
 // juntos: nada que já funcionava precisa mudar de campo.
 const COLUNAS_CONTA = `s.*, s.conta_id AS id, c.banco_codigo, c.banco_nome, c.agencia, c.conta,
          c.ativo, c.saldo_inicial_data, c.wik_grp_id, c.wik_tipo, c.cedente, c.carteira,
-         c.nosso_numero_ini, c.nosso_numero_fin, c.conta_matriz, c.wik_dados, e.nome AS empresa_nome`;
+         c.nosso_numero_ini, c.nosso_numero_fin, c.conta_matriz, c.wik_dados, e.nome AS empresa_nome,
+         c.wik_emp_id,
+         -- Conta do Wik cujo GrpEmpId não é de nenhuma empresa mapeada (a matriz
+         -- 192, a filial 193): o CNPJ dela foi CHUTADO (empresa padrão) e o dono
+         -- confirma na tela. Ver lib/wikFinanceiroSync.js.
+         (c.wik_grp_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM empresas ex WHERE ex.ativo AND ex.wik_emp_id = c.wik_emp_id)) AS cnpj_do_wik_indefinido`;
 
 router.get('/contas', async (req, res, next) => {
   try {
@@ -153,12 +161,38 @@ router.put('/contas/:id', async (req, res, next) => {
     if (dados.nome !== undefined && !String(dados.nome || '').trim()) {
       return res.status(400).json({ error: 'A conta precisa de um nome.' });
     }
+    // EXCEÇÃO À REGRA "empresa não muda" (24/09/2026): conta que veio do Wik com
+    // a empresa CHUTADA (o GrpEmpId dela é a matriz/filial, não a Hoggar nem a
+    // Origem). Para essa, dizer o CNPJ certo é o que o dono PRECISA fazer — e é
+    // coerente: o extrato vai junto pela conta, e os títulos do Wik são
+    // reclassificados pela conta no próximo ciclo. Conta criada aqui no Hub, ou
+    // do Wik com empresa mapeada, continua travada.
+    if (req.body && req.body.empresa_id !== undefined && String(req.body.empresa_id) !== String(atual.empresa_id)) {
+      if (!atual.wik_grp_id || !atual.cnpj_do_wik_indefinido) {
+        return res.status(400).json({ error: 'A empresa desta conta não pode mudar (só a de conta do Wik com CNPJ a confirmar).' });
+      }
+      const alvo = Number(req.body.empresa_id);
+      const { rows: emp } = await pool.query('SELECT id FROM empresas WHERE id = $1 AND ativo', [alvo]);
+      if (!emp[0]) return res.status(400).json({ error: 'Empresa inválida.' });
+      dados.empresa_id = alvo;
+    }
     const campos = Object.keys(dados);
     if (campos.length > 0) {
       await pool.query(
         `UPDATE fin_contas SET ${campos.map((c, i) => `${c} = $${i + 1}`).join(', ')}
           WHERE id = $${campos.length + 1}`,
         [...campos.map((c) => dados[c]), req.params.id]
+      );
+    }
+    // Conta do Wik que mudou de CNPJ: os títulos do Wik PAGOS por ela vão junto
+    // já agora (os em aberto seguem no próximo ciclo, pelo fornecedor/cliente).
+    // Título mexido à mão aqui (wik_travado) não é tocado.
+    if (dados.empresa_id !== undefined) {
+      await pool.query(
+        `UPDATE fin_titulos t SET empresa_id = $1, atualizado_em = now()
+          WHERE t.wik_id IS NOT NULL AND NOT t.wik_travado AND t.empresa_id <> $1
+            AND EXISTS (SELECT 1 FROM fin_baixas b WHERE b.titulo_id = t.id AND b.conta_id = $2 AND b.estornada_em IS NULL)`,
+        [dados.empresa_id, req.params.id]
       );
     }
     res.json(await lerConta(req.params.id));
@@ -228,8 +262,11 @@ router.get('/titulos', async (req, res, next) => {
     }
     if (req.query.busca) {
       params.push(`%${req.query.busca}%`);
+      // A observação entra na busca para o selo "[a classificar]" do Wik abrir
+      // a lista já filtrada (é lá que a marca fica).
       cond.push(`(t.descricao ILIKE $${params.length} OR t.documento ILIKE $${params.length}
-                  OR f.nome ILIKE $${params.length} OR t.contraparte_nome ILIKE $${params.length})`);
+                  OR f.nome ILIKE $${params.length} OR t.contraparte_nome ILIKE $${params.length}
+                  OR t.observacao ILIKE $${params.length})`);
     }
     const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
 
@@ -900,13 +937,36 @@ router.get('/wik/status', async (req, res, next) => {
     const { rows: dup } = await pool.query(
       'SELECT COUNT(*)::int AS total FROM vw_fin_titulos_duplicados WHERE NOT ja_resolvido'
     );
+    // O que a tela precisa para dizer a verdade (24/09/2026): quantos títulos
+    // do Wik entraram na empresa padrão por falta de conta bancária e de
+    // histórico do fornecedor/cliente, e quais contas bancárias do Wik ainda
+    // não têm o CNPJ confirmado.
+    const padrao = empresaPadraoDe(empresas.filter((e) => e.ativo && e.wik_emp_id));
+    const { rows: aClassificar } = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM fin_titulos
+        WHERE wik_id IS NOT NULL AND situacao <> 'cancelado' AND observacao LIKE $1`,
+      [`${MARCA_A_CLASSIFICAR}%`]
+    );
+    const { rows: semVinculo } = await pool.query(
+      `SELECT c.id, c.nome, c.wik_emp_id FROM fin_contas c
+        WHERE c.wik_grp_id IS NOT NULL AND c.ativo
+          AND NOT EXISTS (SELECT 1 FROM empresas e WHERE e.ativo AND e.wik_emp_id = c.wik_emp_id)
+          AND c.empresa_id = $1
+        ORDER BY c.nome`,
+      [padrao ? padrao.id : 0]
+    );
     res.json({
       integracao: integ[0] || null,
       empresas,
+      // A matriz (192) NÃO precisa estar mapeada: é de onde se lê, não para onde vai.
       semMapa: empresas.filter((e) => e.ativo && !e.wik_emp_id).map((e) => e.nome),
+      fonteWik: FONTE_EMP_ID,
+      empresaPadrao: padrao ? padrao.nome : null,
       titulos: contagem,
       extrato: extrato[0]?.total || 0,
       duplicados: dup[0]?.total || 0,
+      aClassificar: aClassificar[0]?.total || 0,
+      contasSemVinculo: semVinculo,
     });
   } catch (err) { next(err); }
 });
@@ -969,45 +1029,27 @@ router.post('/wik/sincronizar', async (req, res, next) => {
 });
 
 // ── Testar o caminho do Wik ────────────────────────────────────────────────
-// Diagnóstico de UMA página, para acabar com o chute sobre a "sessão
-// derrubada". Faz o mínimo possível — um login, e por empresa algumas leituras
-// curtas do contas a pagar — e responde, em português, o que REALMENTE
-// acontece.
+// Diagnóstico de UMA página: faz exatamente o caminho do sync (login → sessão
+// na MATRIZ → contas a pagar, contas a receber e extrato dos últimos 30 dias)
+// e diz, degrau por degrau, quanto veio de VERDADE.
 //
-// ⚠️ REESCRITO NO CHECAPE DE 18/09/2026. A versão anterior tinha três defeitos,
-// e os três apareciam juntos na tela:
-//
-//   1. Contava LINHA, não conteúdo. O Wik devolve HTTP 200 com N linhas de
-//      `CtaId = 0` e todos os campos nulos — lixo. O diagnóstico via "9 linhas"
-//      e dizia "funcionou".
-//   2. Concluía, quando o caminho sem troca lia e o com troca não, que a
-//      resposta era **definir `WIK_FIN_TROCA_EMPRESA=0`**. Está medido que o
-//      `EmpId` do contas a pagar é IGNORADO pelo Wik: sem a troca de empresa,
-//      o Hub grava os títulos da MATRIZ carimbados como se fossem de cada
-//      CNPJ — dívida duplicada, Simples Nacional misturado com Lucro Real.
-//      Era o conselho mais caro do sistema.
-//   3. Usava o endpoint de troca que devolve HTTP 500 nesta instalação — e o
-//      500 deixa a sessão SEM empresa ativa, então todas as leituras seguintes
-//      também davam 500 e o diagnóstico culpava a leitura.
-//
-// Agora: conta só linha com `CtaId > 0`, compara as listas entre empresas (se
-// vierem iguais, o filtro não separa), refaz o login quando a troca falha (para
-// os passos seguintes valerem alguma coisa) e nunca recomenda desligar a troca.
+// ⚠️ REESCRITO EM 24/09/2026 junto com o modelo novo (ler a matriz, 192, uma
+// vez só). As versões anteriores testavam a troca para Hoggar e Origem — que
+// no Wik não têm título nenhum — e contavam lixo (linhas de id 0) como leitura.
+// Aqui cada leitura mostra: linhas devolvidas, quantas são títulos de verdade,
+// quantas são lixo. "Funcionou" só com título de verdade.
 //
 // Só leitura: não grava nada no Hub nem no Wik.
 router.post('/wik/diagnostico', async (req, res) => {
   const wikWeb = require('../lib/wikWeb');
   const { obterSessao, renovarSessao } = require('../lib/wikWebSessao');
-  const MATRIZ_EMP_ID = Number(process.env.WIK_PRODUCAO_EMP_ID || 192);
   const passos = [];
   const anota = (o) => { passos.push(o); return o; };
-  // Assinatura do lote: se duas empresas devolverem a mesma, não houve
-  // separação nenhuma — foi a mesma lista duas vezes.
-  const assinatura = (linhas) => {
-    const ids = linhas.map((l) => Number(l.CtaId) || 0).filter((n) => n > 0);
-    return `${ids.length}:${ids.slice(0, 10).join(',')}`;
+  const contar = (linhas, campo) => {
+    const arr = Array.isArray(linhas) ? linhas : [];
+    const boas = arr.filter((l) => l && Number(l[campo]) > 0).length;
+    return { devolvidas: arr.length, boas, lixo: arr.length - boas };
   };
-  const validas = (linhas) => linhas.filter((l) => Number(l.CtaId) > 0);
 
   try {
     const { rows: ints } = await pool.query('SELECT * FROM integracoes_wik ORDER BY id LIMIT 1');
@@ -1015,135 +1057,78 @@ router.post('/wik/diagnostico', async (req, res) => {
     if (!integracao || !integracao.ativo) {
       return res.status(409).json({ error: 'A integração com o Wik não está ativa.' });
     }
-    const { rows: empresas } = await pool.query(
-      'SELECT id, nome, wik_emp_id FROM empresas WHERE ativo AND wik_emp_id IS NOT NULL ORDER BY ordem, id'
-    );
-    if (!empresas.length) {
-      return res.status(409).json({ error: 'Nenhuma empresa com Id do Wik configurado.' });
-    }
-
     const hoje = new Date().toISOString().slice(0, 10);
     const de = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
     let sessao;
     try {
       sessao = await obterSessao(integracao);
-      anota({ passo: 'login', ok: true, detalhe: 'A sessão web do Wik abriu.' });
+      anota({ passo: 'login no Wik', ok: true, detalhe: 'a sessão web abriu' });
     } catch (e) {
-      anota({ passo: 'login', ok: false, detalhe: e.message });
-      return res.json({ conclusao: 'Nem o login funcionou — o problema é a credencial, não o caminho.', passos });
+      anota({ passo: 'login no Wik', ok: false, detalhe: e.message });
+      return res.json({ conclusao: 'Nem o login funcionou — o problema é a credencial do Wik web, não o caminho.', passos });
     }
 
-    // A descrição e a matriz que a troca de empresa espera são as DO WIK, não as
-    // do cadastro do Hub — o combo é a mesma chamada que a tela deles faz.
-    const comboWik = new Map();
-    try {
-      for (const e of await wikWeb.listarEmpresas(sessao)) comboWik.set(Number(e.id), e);
-      anota({ passo: 'ler a lista de empresas do Wik', ok: true, detalhe: [...comboWik.values()].map((e) => `${e.id} ${e.nome}`).join(' · ') });
-    } catch (e) {
-      anota({ passo: 'ler a lista de empresas do Wik', ok: false, detalhe: e.message });
+    let naMatriz = await wikWeb.trocarEmpresa(sessao, FONTE_EMP_ID).catch(() => false);
+    if (!naMatriz) {
+      sessao = await renovarSessao(integracao).catch(() => sessao);
+      naMatriz = await wikWeb.trocarEmpresa(sessao, FONTE_EMP_ID).catch(() => false);
     }
+    anota({
+      passo: `pôr a sessão na matriz (${FONTE_EMP_ID})`,
+      ok: naMatriz,
+      detalhe: naMatriz ? 'aceitou' : 'o Wik recusou — as leituras abaixo saem da empresa em que o login caiu',
+    });
 
-    const porEmpresa = new Map();   // wik_emp_id -> assinatura do lote lido DEPOIS de trocar
-    let trocaFuncionou = false;
-    let trocaRecusada = false;
-    let leuAlgumaCoisa = false;
-    let veioLixo = false;
-
-    for (const emp of empresas) {
-      // 1) A troca de empresa — é ela que escopa o contas a pagar no Wik.
-      let trocou = false;
+    const degraus = [
+      ['contas a pagar', 'CtaId', () => wikWeb.contasPagar(sessao, { de, ate: hoje, tipoData: 2 })],
+      ['contas a receber em aberto', 'ReciRecId', () => wikWeb.contasReceber(sessao, { de, ate: hoje, tipoData: 2, situacao: '1', empId: '0' })],
+      ['contas a receber baixadas', 'ReciRecId', () => wikWeb.contasReceber(sessao, { de, ate: hoje, tipoData: 2, situacao: '2', empId: '0' })],
+      ['extrato (realizado)', 'ExtId', () => wikWeb.extratoFinanceiro(sessao, { de, ate: hoje, empId: '0', situacoes: '1,' })],
+      ['contas bancárias', 'GrpId', () => wikWeb.contasBancarias(sessao)],
+    ];
+    let boasTotal = 0;
+    let lixoTotal = 0;
+    let caiu = false;
+    for (const [nome, campo, fn] of degraus) {
       try {
-        const noWik = comboWik.get(Number(emp.wik_emp_id));
-        trocou = await wikWeb.trocarEmpresa(sessao, emp.wik_emp_id, {
-          descricao: (noWik && noWik.nome) || emp.nome,
-          matriz: (noWik && noWik.matriz) || MATRIZ_EMP_ID,
-        });
+        const c = contar(await fn(), campo);
+        boasTotal += nome === 'contas bancárias' ? 0 : c.boas;
+        lixoTotal += c.lixo;
         anota({
-          passo: `trocar a empresa da sessão para ${emp.nome}`,
-          ok: trocou,
-          detalhe: trocou ? 'aceitou' : 'o Wik recusou a troca nos três endereços conhecidos',
+          passo: `${nome} · últimos 30 dias`.replace('contas bancárias · últimos 30 dias', 'contas bancárias (cadastro)'),
+          ok: c.boas > 0,
+          linhas: c.boas,
+          detalhe: c.lixo > 0 ? `${c.devolvidas} devolvida(s), ${c.lixo} VAZIA(S) (id 0 — lixo do Wik, não é título)` : undefined,
         });
       } catch (e) {
-        anota({ passo: `trocar a empresa da sessão para ${emp.nome}`, ok: false, detalhe: e.message });
-      }
-      if (trocou) trocaFuncionou = true; else trocaRecusada = true;
-
-      if (!trocou) {
-        // O endpoint antigo devolve 500 e deixa a sessão sem empresa ativa —
-        // dali em diante TODA leitura do contas a pagar dá 500. Sem refazer o
-        // login, os passos seguintes não diriam nada sobre o Wik, só sobre a
-        // sessão que este próprio teste estragou.
-        try {
-          sessao = await renovarSessao(integracao);
-          anota({ passo: `refazer o login depois da troca recusada · ${emp.nome}`, ok: true, detalhe: 'sessão nova, para os próximos passos valerem' });
-        } catch (e) {
-          anota({ passo: `refazer o login depois da troca recusada · ${emp.nome}`, ok: false, detalhe: e.message });
-        }
-        continue;
-      }
-
-      // 2) A leitura, já com a empresa certa na sessão.
-      try {
-        const linhas = await wikWeb.contasPagar(sessao, { de, ate: hoje, tipoData: 2 });
-        const boas = validas(linhas);
-        if (linhas.length && !boas.length) {
-          veioLixo = true;
-          anota({
-            passo: `contas a pagar · ${emp.nome}`,
-            ok: false,
-            linhas: 0,
-            detalhe: `o Wik devolveu ${linhas.length} linha(s) VAZIAS (CtaId 0, todos os campos nulos) — não é título, é uma página de preenchimento`,
-          });
-        } else {
-          if (boas.length) leuAlgumaCoisa = true;
-          porEmpresa.set(emp.wik_emp_id, { nome: emp.nome, assinatura: assinatura(boas), n: boas.length });
-          anota({ passo: `contas a pagar · ${emp.nome}`, ok: true, linhas: boas.length });
-        }
-      } catch (e) {
-        anota({
-          passo: `contas a pagar · ${emp.nome}`,
-          ok: false,
-          detalhe: e.sessaoExpirada ? 'o Wik devolveu a tela de login (HTTP 401 ou o formulário)' : e.message,
-        });
+        if (e.sessaoExpirada) caiu = true;
+        anota({ passo: nome, ok: false, detalhe: e.sessaoExpirada ? 'o Wik devolveu a tela de login' : e.message });
       }
     }
 
-    // 3) As listas das empresas são as mesmas? Então não houve separação.
-    const listas = [...porEmpresa.values()].filter((x) => x.n > 0);
-    const iguais = listas.length > 1 && new Set(listas.map((x) => x.assinatura)).size === 1;
-    if (listas.length > 1) {
-      anota({
-        passo: 'as empresas devolveram listas diferentes?',
-        ok: !iguais,
-        detalhe: iguais
-          ? `NÃO: ${listas.map((x) => `${x.nome} ${x.n}`).join(' · ')} — a mesma lista para todas, ou seja, a sessão não trocou de verdade`
-          : `sim: ${listas.map((x) => `${x.nome} ${x.n}`).join(' · ')}`,
-      });
-    }
+    // Para onde vai cada conta bancária do Wik (é ela que decide o CNPJ).
+    const { rows: empresas } = await pool.query('SELECT id, nome, wik_emp_id, ativo FROM empresas ORDER BY ordem, id');
+    const padrao = empresaPadraoDe(empresas.filter((e) => e.ativo && e.wik_emp_id));
+    anota({
+      passo: 'empresa padrão (título sem conta bancária nem histórico do fornecedor/cliente)',
+      ok: Boolean(padrao),
+      detalhe: padrao ? padrao.nome : 'nenhuma empresa com Id do Wik — preencha Hoggar = 198 e Origem = 202 em Empresas',
+    });
 
     let conclusao;
-    if (iguais) {
-      conclusao = 'A troca de empresa foi aceita, mas as empresas devolveram A MESMA lista de títulos — '
-        + 'ou seja, a sessão continuou na mesma empresa. Importar assim gravaria a dívida de um CNPJ dentro do outro, '
-        + 'então o sync PULA a segunda empresa em vez de duplicar. Isso é assunto para o suporte da Wik.';
-    } else if (!trocaFuncionou && trocaRecusada) {
-      conclusao = 'O Wik recusou a troca da empresa da sessão em todos os endereços conhecidos '
-        + '(/Login/AdicionarEmpresaNasessao e /Home/AtualizaEmpresaSessao). Sem a troca não dá para ler o contas a pagar '
-        + 'de cada empresa: o filtro de empresa do grid é IGNORADO pelo Wik, então sem trocar viriam sempre os títulos '
-        + 'da mesma empresa. NÃO defina WIK_FIN_TROCA_EMPRESA=0 — isso não conserta e ainda duplica a dívida entre os CNPJs. '
-        + 'Abra chamado na Wik com este resultado.';
-    } else if (veioLixo && !leuAlgumaCoisa) {
-      conclusao = 'A sessão abriu e a troca de empresa funcionou, mas o Wik devolveu só linhas VAZIAS — '
-        + 'essas empresas não têm título nenhum na janela testada (30 dias). Provavelmente o financeiro do grupo está '
-        + 'lançado em outra empresa do Wik (a matriz), que ainda não está mapeada em Empresas aqui no Hub.';
-    } else if (leuAlgumaCoisa) {
-      conclusao = 'O caminho está funcionando: login, troca de empresa e leitura do contas a pagar, com títulos de verdade. '
-        + 'Se a tela ainda estiver vazia, o que falta é rodar a importação (botão "Sincronizar agora") ou esperar o próximo ciclo.';
+    if (caiu) {
+      conclusao = 'A sessão caiu no meio do teste — alguém entrou no Wik com o MESMO usuário do Hub, ou há um deploy com '
+        + 'duas instâncias no ar. Tente de novo em alguns minutos.';
+    } else if (boasTotal > 0) {
+      conclusao = `O caminho está funcionando: a matriz devolveu ${boasTotal} registro(s) de verdade nos últimos 30 dias. `
+        + 'Se a tela ainda estiver vazia, clique em "Sincronizar agora" ou espere o próximo ciclo.';
+    } else if (lixoTotal > 0) {
+      conclusao = 'O Wik respondeu, mas só com linhas VAZIAS (id 0) — é a instabilidade conhecida do Wik, não falta de '
+        + 'dado. O sync trata isso como erro e tenta de novo; se persistir por horas, é chamado na Wik.';
     } else {
-      conclusao = 'O login abre mas nenhuma leitura do contas a pagar passou. As causas, nesta ordem: alguém entrou no Wik '
-        + 'com o MESMO usuário do Hub (o Wik só permite uma sessão por login); o usuário não tem permissão de financeiro no Wik; '
-        + 'ou o Wik está instável agora. Tente de novo em alguns minutos antes de mexer em configuração.';
+      conclusao = 'O login abre mas nenhuma leitura trouxe registro. As causas, nesta ordem: o usuário do Hub no Wik não '
+        + 'tem permissão no módulo Financeiro; a sessão não ficou na matriz; ou o Wik está instável agora.';
     }
     res.json({ conclusao, passos });
   } catch (err) {

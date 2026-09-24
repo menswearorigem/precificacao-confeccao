@@ -74,10 +74,13 @@ const checa = (c, m) => { if (!ok(c, m)) falhas++; };
   // ── limpeza: o teste tem que poder rodar duas vezes seguidas no mesmo banco.
   // Sem isto, a duplicidade marcada na rodada anterior faz a última seção
   // falhar por já estar resolvida — falha do teste, não do produto.
-  await pool.query("DELETE FROM fin_baixas WHERE titulo_id IN (SELECT id FROM fin_titulos WHERE empresa_id = 900)");
-  await pool.query("DELETE FROM fin_extrato_bancario WHERE conta_id IN (SELECT id FROM fin_contas WHERE empresa_id = 900)");
-  await pool.query("UPDATE fin_titulos SET wik_duplicado_de_id = NULL WHERE empresa_id = 900");
-  await pool.query("DELETE FROM fin_titulos WHERE empresa_id = 900");
+  // (Tudo que veio do Wik sai, não só o da empresa 900: desde 24/09/2026 o
+  // título do Wik muda de empresa conforme a conta bancária, e um resto de outro
+  // teste noutra empresa seguraria o detalhe pelo TTL.)
+  await pool.query("DELETE FROM fin_extrato_bancario WHERE conta_id IN (SELECT id FROM fin_contas WHERE empresa_id = 900 OR wik_grp_id IS NOT NULL)");
+  await pool.query("DELETE FROM fin_baixas WHERE titulo_id IN (SELECT id FROM fin_titulos WHERE empresa_id = 900 OR wik_id IS NOT NULL)");
+  await pool.query("UPDATE fin_titulos SET wik_duplicado_de_id = NULL WHERE wik_duplicado_de_id IS NOT NULL");
+  await pool.query("DELETE FROM fin_titulos WHERE empresa_id = 900 OR wik_id IS NOT NULL");
   await pool.query("DELETE FROM fin_contas WHERE empresa_id = 900 OR wik_grp_id IS NOT NULL");
   await pool.query("UPDATE fin_plano SET pai_id = NULL WHERE wik_pc_id IS NOT NULL");
   await pool.query("DELETE FROM fin_plano WHERE wik_pc_id IS NOT NULL");
@@ -85,7 +88,10 @@ const checa = (c, m) => { if (!ok(c, m)) falhas++; };
   await pool.query("UPDATE integracoes_wik SET financeiro_carga_inicial_ate = NULL, financeiro_carga_inicial_fim = NULL, financeiro_ultima_sincronizacao = NULL, web_job_ativo = NULL WHERE id = 1");
 
   // ── cenário ──
-  await pool.query("INSERT INTO empresas (id, nome, regime_tributario, ordem, wik_emp_id) VALUES (900,'Origem Teste','Simples Nacional',1,192) ON CONFLICT (id) DO UPDATE SET wik_emp_id=192");
+  // Banco descartável: só a empresa 900 fica mapeada (outro teste mapeia 198/202,
+  // e a Hoggar mapeada viraria a empresa padrão do modelo de 24/09/2026).
+  await pool.query("UPDATE empresas SET wik_emp_id = NULL WHERE id <> 900 AND wik_emp_id IS NOT NULL");
+  await pool.query("INSERT INTO empresas (id, nome, regime_tributario, ordem, wik_emp_id) VALUES (900,'Origem Teste','Simples Nacional',1,192) ON CONFLICT (id) DO UPDATE SET wik_emp_id=192, ativo=TRUE");
   await pool.query("INSERT INTO fornecedores (id, nome, wik_forn_id) VALUES (900,'FACÇÃO-KLEVES POLO',1151) ON CONFLICT (id) DO NOTHING");
   await pool.query(`INSERT INTO integracoes_wik (id, email, senha, financeiro_ativo, web_usuario, web_senha)
                     VALUES (1,'a@b','x',TRUE,'u','p')

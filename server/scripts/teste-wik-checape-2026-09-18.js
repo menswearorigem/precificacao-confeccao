@@ -254,9 +254,11 @@ const TELA_DE_LOGIN = '<html><body><form><input name="UsrNome"/><input name="Usr
   ok('sem OprDtFim, a data fica NULA em vez de virar hoje', (await opPorWik(9001)).data_conclusao === null);
 
   secao('10. Financeiro: empresa que não trocou é PULADA, não duplicada');
-  await pool.query("DELETE FROM fin_baixas WHERE titulo_id IN (SELECT id FROM fin_titulos WHERE empresa_id IN (901,902))");
+  await pool.query("UPDATE fin_extrato_bancario SET baixa_id = NULL WHERE baixa_id IS NOT NULL");
+  await pool.query("DELETE FROM fin_baixas WHERE titulo_id IN (SELECT id FROM fin_titulos WHERE empresa_id IN (901,902) OR wik_id IS NOT NULL)");
+  await pool.query("UPDATE fin_titulos SET wik_duplicado_de_id = NULL WHERE wik_duplicado_de_id IS NOT NULL");
   await pool.query("DELETE FROM fin_extrato_bancario WHERE conta_id IN (SELECT id FROM fin_contas WHERE empresa_id IN (901,902) OR wik_grp_id IS NOT NULL)");
-  await pool.query("DELETE FROM fin_titulos WHERE empresa_id IN (901,902)");
+  await pool.query("DELETE FROM fin_titulos WHERE empresa_id IN (901,902) OR wik_id IS NOT NULL");
   await pool.query("DELETE FROM fin_contas WHERE empresa_id IN (901,902) OR wik_grp_id IS NOT NULL");
   await pool.query("UPDATE fin_plano SET pai_id = NULL WHERE wik_pc_id IS NOT NULL");
   await pool.query("DELETE FROM fin_plano WHERE wik_pc_id IS NOT NULL");
@@ -267,34 +269,30 @@ const TELA_DE_LOGIN = '<html><body><form><input name="UsrNome"/><input name="Usr
                     ON CONFLICT (id) DO UPDATE SET financeiro_ativo=TRUE, web_usuario='u', web_senha='p'`);
   await pool.query("UPDATE integracoes_wik SET financeiro_carga_inicial_ate=NULL, financeiro_carga_inicial_fim=NULL, financeiro_ultima_sincronizacao=NULL, web_job_ativo=NULL, producao_job_ativo=NULL WHERE id=1");
 
+  // ATUALIZADO 24/09/2026 — modelo novo: o financeiro lê a MATRIZ (192) uma
+  // vez por ciclo e separa o CNPJ pela conta bancária. Não existe mais "pular
+  // empresa": existe ler a matriz ou falhar dizendo por quê.
   TROCA_FUNCIONA = false;
   const r0 = await fin.sincronizarFinanceiroAgora();
-  ok('⚠️ com a troca de empresa recusada, NENHUM título é gravado',
-    (await q("SELECT count(*)::int n FROM fin_titulos WHERE empresa_id IN (901,902)"))[0].n === 0);
-  ok('…e a tela recebe o motivo, empresa por empresa',
-    Array.isArray(r0.empresas_puladas) && r0.empresas_puladas.length === 2, JSON.stringify(r0.empresas_puladas));
-  // Medido na tela em 18/09: a troca recusada deixa a sessão sem empresa ativa
-  // e todo o resto do ciclo passa a dar HTTP 500. O sync refaz o login UMA vez.
-  ok('⚠️ a sessão é refeita uma vez (a recusa deixa a sessão sem empresa ativa)',
-    (r0.erros || []).filter((e) => /sessão refeita/i.test(e)).length === 1, JSON.stringify(r0.erros));
+  ok('⚠️ troca para a matriz recusada: a sessão é refeita e a leitura segue (o login cai na matriz)',
+    (r0.erros || []).some((e) => /recusou pôr a sessão na matriz/.test(e)), JSON.stringify(r0.erros));
+  ok('…e a troca pedida foi para a MATRIZ (192), não para Hoggar/Origem',
+    ULTIMA_TROCA && Number(ULTIMA_TROCA.empId) === 192, JSON.stringify(ULTIMA_TROCA));
 
-  secao('11. Financeiro: o filtro de empresa é ignorado pelo Wik — a guarda segura');
+  secao('11. Financeiro: a mesma conta a pagar entra UMA vez, no CNPJ da conta bancária');
   await pool.query("UPDATE integracoes_wik SET financeiro_carga_inicial_ate=NULL, financeiro_carga_inicial_fim=NULL, financeiro_ultima_sincronizacao=NULL, web_job_ativo=NULL WHERE id=1");
   TROCA_FUNCIONA = true;
-  const r1 = await fin.sincronizarFinanceiroAgora();
-  const porEmpresa = await q("SELECT empresa_id, count(*)::int n FROM fin_titulos WHERE wik_id=45009 GROUP BY empresa_id ORDER BY empresa_id");
-  ok('⚠️ a MESMA conta a pagar não entra em dois CNPJs', porEmpresa.length === 1, JSON.stringify(porEmpresa));
-  ok('…e a segunda empresa é registrada como pulada, com o porquê',
-    (r1.empresas_puladas || []).length === 1 && /IDÊNTICO/.test((r1.erros || []).join(' ')), JSON.stringify(r1.empresas_puladas));
-  ok('⚠️ a troca usa a descrição e a matriz QUE O WIK conhece, não o nome do Hub',
-    ULTIMA_TROCA && ULTIMA_TROCA.descricao === 'HEBRON - ORIGEM' && Number(ULTIMA_TROCA.matriz) === 192,
-    JSON.stringify(ULTIMA_TROCA));
+  await fin.sincronizarFinanceiroAgora();
+  const porEmpresa = await q("SELECT empresa_id, wik_emp_id, count(*)::int n FROM fin_titulos WHERE wik_id=45009 AND wik_item_id=1 GROUP BY empresa_id, wik_emp_id ORDER BY empresa_id");
+  ok('⚠️ a MESMA conta a pagar não entra em dois CNPJs', porEmpresa.length === 1 && porEmpresa[0].n === 1, JSON.stringify(porEmpresa));
+  ok('…carimbada com a chave da matriz (192)', porEmpresa.length === 1 && Number(porEmpresa[0].wik_emp_id) === 192, JSON.stringify(porEmpresa));
+  ok('…e no CNPJ da conta bancária dela (Bradesco Hoggar -> HOGGAR Teste)', porEmpresa.length === 1 && porEmpresa[0].empresa_id === 901, JSON.stringify(porEmpresa));
 
   secao('12. Financeiro: o extrato bancário entra UMA vez');
   const ext = await q("SELECT wik_emp_id, count(*)::int n, sum(valor) s FROM fin_extrato_bancario WHERE wik_ext_id=430 GROUP BY wik_emp_id");
   ok('⚠️ o mesmo ExtId não vira duas linhas (uma por empresa)', ext.length === 1 && ext[0].n === 1, JSON.stringify(ext));
   ok('…e o valor não dobra', ext.length === 1 && Number(ext[0].s) === -1200.30, JSON.stringify(ext));
-  ok('a empresa do lançamento veio da CONTA BANCÁRIA (198), não do laço',
+  ok('a empresa do lançamento veio da CONTA BANCÁRIA (198)',
     ext.length === 1 && Number(ext[0].wik_emp_id) === 198, JSON.stringify(ext));
 
   console.log(`\n${falhas === 0 ? 'TUDO PASSOU' : `${falhas} FALHA(S)`}`);

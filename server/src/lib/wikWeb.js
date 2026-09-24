@@ -498,12 +498,11 @@ async function gridCompleto(sessao, caminho, colunas, jsonData, opcoes) {
 
 // TipoData: 1 = cadastro · 2 = vencimento · 3 = baixa
 const COLS_CONTA_PAGAR = ['CorTexto', 'CtaId', 'CtaDocumento', 'Pessoa', 'CtaVlrBruto', 'CtaVlrLiq', 'Situacao'];
-// `empId` é opcional e vai no jsonData como FILTRO. O contas a receber e o
-// extrato já funcionam assim; só o contas a pagar dependia da empresa ATIVA da
-// sessão, o que obrigava a chamar /Home/AtualizaEmpresaSessao a cada volta —
-// a mesma chamada que aparece em toda investigação de sessão derrubada.
-// Mandar o filtro é inofensivo se o Wik ignorar, e é o que permite parar de
-// trocar a empresa da sessão (ver WIK_FIN_TROCA_EMPRESA em wikFinanceiroSync).
+// `empId` é opcional e vai no jsonData como FILTRO — mas ⚠️ o Wik IGNORA esse
+// filtro no contas a pagar (medido em 18/09/2026: mesma lista para 192, 198,
+// 202 e sem filtro). Quem escopa é a empresa ATIVA da sessão. O sync do
+// financeiro põe a sessão na matriz (192), onde está tudo, e lê uma vez só —
+// ver "O MODELO DE EMPRESA" em wikFinanceiroSync.js.
 async function contasPagar(sessao, { de, ate, tipoData = 2, empId = null } = {}) {
   const filtro = {
     ListaFiltros: {},

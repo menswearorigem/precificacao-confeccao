@@ -40,34 +40,41 @@ const { recalcularSituacao } = require('./financeiroTitulos');
 // Quanto tempo o detalhe (parcelas) de uma conta a pagar vale antes de ser
 // relido. Cada leitura custa 1 GET de página inteira no servidor deles.
 const DETALHE_TTL_MS = 6 * 60 * 60 * 1000;
-// Teto de contas a pagar cujo detalhe é lido por ciclo, por empresa. As que
-// sobrarem entram no ciclo seguinte — o mesmo desenho do GRADE_CAP da 0067.
+// Teto de contas a pagar cujo detalhe é lido por ciclo. As que sobrarem entram
+// no ciclo seguinte — o mesmo desenho do GRADE_CAP da 0067.
 const DETALHE_CAP = Number(process.env.WIK_FIN_DETALHE_CAP || 120);
 
-// ── A chave do problema da "sessão derrubada" (18/09/2026) ─────────────────
-// O contas a pagar era o ÚNICO leitor que dependia da empresa ATIVA da sessão,
-// e por isso este sync chamava /Home/AtualizaEmpresaSessao (trocarEmpresa) uma
-// vez por empresa, a cada volta. É a única chamada que MUDA estado no Wik em
-// todo o caminho — o resto é leitura — e é a suspeita de sempre quando a
-// sessão cai. Agora o filtro de empresa vai no próprio jsonData do grid
-// (wikWeb.contasPagar recebe `empId`), então dá para parar de trocar.
+// ═══════════════════════════════════════════════════════════════════════════
+// O MODELO DE EMPRESA (24/09/2026) — "sincroniza no horário e não puxa nada"
+// ═══════════════════════════════════════════════════════════════════════════
+// Até aqui o sync andava empresa por empresa (Hoggar 198, Origem 202), trocando
+// a empresa ativa da sessão do Wik antes de cada uma. Três fatos medidos ao vivo
+// (checape de 18/09/2026) derrubam esse desenho:
 //
-// ⚠️ MEDIDO AO VIVO EM 18/09/2026, EM TRÊS APURAÇÕES INDEPENDENTES:
-// `/ContaPagar/CarregaGrid` **IGNORA** o `EmpId` do jsonData. Pedindo sem
-// filtro, 192, 198 ou 202, volta EXATAMENTE a mesma lista (as mesmas centenas
-// de títulos, o mesmo primeiro CtaId, a mesma soma). Quem separa empresa no
-// contas a pagar é a EMPRESA ATIVA DA SESSÃO — e só ela.
+//   1. TODO o financeiro do grupo está lançado na MATRIZ do Wik (192 — HEBRON
+//      DINAMICA MATRIZ): 1.197 contas a pagar, 2.224 parcelas a receber, 1.335
+//      lançamentos de extrato em 18 dias. Hoggar e Origem, como empresa ativa,
+//      não têm título nenhum (o grid volta vazio ou com as 9 linhas de lixo).
+//   2. A 192 nunca esteve mapeada no Hub — só 198 e 202.
+//   3. O `EmpId` do contas a pagar é IGNORADO pelo Wik: quem escopa é a sessão.
 //
-// Portanto: desligar a troca de empresa (WIK_FIN_TROCA_EMPRESA=0) NÃO conserta
-// nada e GRAVA A DÍVIDA DA MATRIZ DENTRO DOS DOIS CNPJs (a chave única é
-// (wik_emp_id, natureza, wik_id, wik_item_id), e o wik_emp_id difere — nada
-// impede a duplicação). Simples Nacional e Lucro Real misturados, DRE e fluxo
-// de caixa inflados, e a fila de duplicados do Hub não enxerga (ela compara
-// dentro da MESMA empresa). É pior do que não importar.
+// Resultado: o ciclo rodava no horário, lia Hoggar e Origem (vazias), não lia
+// a matriz, gravava "idle" com a hora certa — e nada entrava. Falha silenciosa.
 //
-// Por isso a flag continua existindo, mas com guarda: com mais de uma empresa
-// mapeada, desligar a troca é RECUSADO em vez de obedecido.
-const TROCAR_EMPRESA = String(process.env.WIK_FIN_TROCA_EMPRESA ?? '1') !== '0';
+// O desenho novo:
+//   · lê UMA vez por ciclo, com a sessão na matriz (192), onde está tudo;
+//   · a chave de unicidade é sempre `wik_emp_id = 192` — o mesmo título do Wik
+//     nunca pode existir duas vezes, em CNPJ nenhum;
+//   · o CNPJ do Hub (Origem × Hoggar) de cada título sai, nesta ordem, de:
+//       a) a CONTA BANCÁRIA do título (baixa, ou a conta prevista na conta a
+//          pagar) — a conta sabe de qual empresa é (GrpEmpId do Wik);
+//       b) o FORNECEDOR/CLIENTE: a empresa em que ele já foi pago antes;
+//       c) a empresa PADRÃO (Hoggar, decisão do dono em 24/09/2026), marcada
+//          "[a classificar]" na observação e contada na tela.
+const FONTE_EMP_ID = Number(process.env.WIK_PRODUCAO_EMP_ID || 192);
+const EMPRESA_PADRAO_WIK = Number(process.env.WIK_FIN_EMPRESA_PADRAO_WIK || 198);
+const MARCA_A_CLASSIFICAR = '[a classificar]';
+
 // Tamanho da fatia da carga histórica inicial ("puxar tudo"), em dias.
 const FATIA_CARGA_DIAS = Number(process.env.WIK_FIN_FATIA_DIAS || 90);
 // Até onde a carga inicial vai para trás quando ninguém disse até onde.
@@ -75,11 +82,20 @@ const ANOS_HISTORICO_PADRAO = 3;
 // Janela para a frente: título a vencer daqui a meses precisa aparecer no
 // fluxo de caixa, então a leitura por VENCIMENTO olha adiante, não só para trás.
 const DIAS_FUTURO = 400;
+// O dia a dia olha no MÍNIMO 180 dias para trás. Com 45 (o padrão antigo), um
+// título vencido há dois meses e ainda em aberto sumia da leitura e nunca mais
+// era atualizado — pago no Wik, aberto no Hub para sempre.
+const DIAS_RETRO_MIN = 180;
+
+// Lixo do Wik: tentativas e espera entre elas (a espera é curta nos testes).
+const TENTATIVAS_GRID = 3;
+const ESPERA_GRID_MS = Number(process.env.WIK_FIN_ESPERA_GRID_MS || 5000);
+// Piso de sanidade: no dia a dia, um grid que devolve menos de 30% do último
+// resultado bom (com base de pelo menos 50) é tratado como leitura quebrada.
+const PISO_FRACAO = 0.3;
+const PISO_BASE_MIN = 50;
 
 const MOTIVO_TRAVA = 'alterado no Hub';
-// A matriz do grupo no Wik — é o `matriz` que a troca de empresa da sessão
-// espera receber (o mesmo que /Login/ListarComboEmpresas devolve por empresa).
-const MATRIZ_EMP_ID = Number(process.env.WIK_PRODUCAO_EMP_ID || 192);
 
 // ── utilidades de conversão ────────────────────────────────────────────────
 
@@ -124,32 +140,10 @@ async function buscarIntegracao() {
   return rows[0] || null;
 }
 
-// Trava COMPARTILHADA com o job de produção — ver regra 3 no topo e o
-// comentário longo na migration 0069.
-async function reservarJob(id, nome) {
-  const { rowCount } = await pool.query(
-    `UPDATE integracoes_wik
-        SET web_job_ativo = $2, web_job_ativo_desde = now()
-      WHERE id = $1
-        AND (web_job_ativo IS NULL OR web_job_ativo_desde < now() - interval '25 minutes')
-        AND (producao_job_ativo IS NULL OR producao_job_ativo_desde < now() - interval '25 minutes')`,
-    [id, nome]
-  );
-  return rowCount > 0;
-}
-// CORRIGIDO (18/09/2026): soltava a trava SEM conferir de quem ela era. Um job
-// que passou do tempo tinha a trava tomada por outro e, ao terminar, apagava a
-// trava de quem estava rodando — liberando um terceiro para a mesma sessão
-// única do Wik. Agora só solta a própria.
-async function liberarJob(id, nome = 'financeiro') {
-  await pool.query(
-    'UPDATE integracoes_wik SET web_job_ativo = NULL, web_job_ativo_desde = NULL WHERE id = $1 AND web_job_ativo = $2',
-    [id, nome]
-  );
-}
-
-// Empresas com mapa Wik -> HBN. Sem mapa, a empresa é PULADA e dito na tela:
-// chutar aqui misturaria Simples Nacional com Lucro Real no mesmo DRE.
+// Empresas do Hub com o Id do Wik preenchido. Aqui elas NÃO são mais "de onde
+// ler" (lê-se sempre a matriz), e sim "para onde vai o dinheiro": o mapa
+// Id do Wik -> empresa do Hub é o que transforma o GrpEmpId de uma conta
+// bancária num CNPJ.
 async function empresasMapeadas() {
   const { rows } = await pool.query(
     'SELECT id, nome, wik_emp_id FROM empresas WHERE wik_emp_id IS NOT NULL AND ativo ORDER BY ordem, id'
@@ -157,43 +151,81 @@ async function empresasMapeadas() {
   return rows;
 }
 
+// A empresa do Hub que recebe o que não tem conta bancária nem histórico do
+// fornecedor/cliente. Decisão do dono (24/09/2026): a Hoggar. Se a Hoggar não
+// estiver mapeada, a matriz mapeada; se nem isso, a primeira mapeada.
+function empresaPadraoDe(empresas) {
+  const porWik = new Map(empresas.map((e) => [Number(e.wik_emp_id), e]));
+  return porWik.get(EMPRESA_PADRAO_WIK) || porWik.get(FONTE_EMP_ID) || empresas[0] || null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LEITURA COM GUARDA — o lixo do Wik vira erro, nunca "sincronizado"
+// ═══════════════════════════════════════════════════════════════════════════
+// O Wik às vezes devolve HTTP 200 com N linhas de id 0 e todos os campos nulos.
+// Não é erro HTTP, não é tela de login: é lixo, e é INTERMITENTE (a mesma
+// chamada volta boa minutos depois). Então: tenta até 3 vezes com uma pausa;
+// se continuar lixo, lança GRID_DEGENERADO — o ciclo inteiro para, NADA é
+// gravado a partir daí e a tela mostra o erro, em vez do "sincronizado agora"
+// numa rodada que não leu nada.
+function degenerado(linhas, campoId) {
+  if (!Array.isArray(linhas) || linhas.length === 0) return false;
+  const vazias = linhas.filter((l) => !l || !(Number(l[campoId]) > 0)).length;
+  return vazias >= linhas.length * 0.8;
+}
+
+async function lerComGuarda(nome, campoId, fn, resumo) {
+  for (let t = 1; t <= TENTATIVAS_GRID; t += 1) {
+    const linhas = await fn();
+    if (!degenerado(linhas, campoId)) {
+      // Sobra de lixo misturada a linhas boas (menos de 80%) é descartada aqui.
+      return (linhas || []).filter((l) => l && Number(l[campoId]) > 0);
+    }
+    resumo.lixo[nome] = (resumo.lixo[nome] || 0) + 1;
+    if (t < TENTATIVAS_GRID) await new Promise((r) => setTimeout(r, ESPERA_GRID_MS * t));
+  }
+  const e = new Error(
+    `GRID_DEGENERADO: o Wik devolveu ${nome} com linhas VAZIAS (id 0, todos os campos nulos) em `
+    + `${TENTATIVAS_GRID} tentativas seguidas. Nada foi gravado neste ciclo — gravar isso apagaria a diferença `
+    + 'entre "não tem título" e "o Wik não respondeu direito". O próximo ciclo tenta de novo.'
+  );
+  e.gridDegenerado = true;
+  e.etapaFinanceiro = nome;
+  throw e;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // CADASTROS — plano de contas, centro de custo, contas bancárias
 // ═══════════════════════════════════════════════════════════════════════════
 
-// `fin_plano.codigo` é UNIQUE no sistema inteiro e o Wik numera por empresa, o
-// que colidiria entre os dois CNPJs. Por isso o código entra prefixado:
-// 'W202.3.1.02'. Duas árvores separadas, de propósito — fundir o plano do Wik
-// com o plano gerencial do Hub é decisão de gente, não de importador.
+// `fin_plano.codigo` é UNIQUE no sistema inteiro. O código entra prefixado com
+// a empresa do Wik de onde veio: 'W192.3.1.02'. Fundir o plano do Wik com o
+// plano gerencial do Hub é decisão de gente, não de importador.
 function codigoPlano(empId, conta, pcId) {
   const base = texto(conta) || String(pcId);
   return `W${empId}.${base}`.slice(0, 20);
 }
 
-async function importarPlanoContas(sessao, emp, resumo) {
-  const linhas = await wikWeb.planoContas(sessao);
+async function importarPlanoContas(sessao, fonte, resumo) {
+  const linhas = await lerComGuarda('plano de contas', 'PcId', () => wikWeb.planoContas(sessao), resumo);
   if (!linhas.length) return;
   const idPorWik = new Map();
   // `fin_plano.codigo` é UNIQUE. O PcConta do Wik é hierárquico ('3.1.02') e é
   // ele que faz o DRE ordenar certo, mas nada garante que ele não se repita.
-  // Repetiu, o segundo leva o PcId no fim — o DRE continua ordenando, e o
-  // INSERT não estoura numa constraint que não tem nada a ver com o Wik.
+  // Repetiu, o segundo leva o PcId no fim.
   const codigosUsados = new Set();
 
-  // Duas passadas: primeiro todos os nós, depois o pai. Uma passada só falharia
-  // sempre que o filho viesse antes do pai na listagem.
+  // Duas passadas: primeiro todos os nós, depois o pai.
   for (const l of linhas) {
     const pcId = Number(l.PcId);
-    if (!Number.isFinite(pcId)) continue;
-    // ⚠️ `blReceita`/`blDespesa` vêm SEMPRE false — conferido ao vivo nas 170
-    // contas em 10/09/2026 (0 verdadeiras em cada). Quem diz o lado é
-    // `PcTipo` ('Receita' | 'Despesa'): 31 receitas e 139 despesas. Usar os
-    // booleanos jogava TODA conta em despesa e invertia o sinal das receitas
-    // no DRE.
+    if (!(pcId > 0)) continue;
+    // ⚠️ `blReceita`/`blDespesa` vêm SEMPRE false (0 verdadeiras em 170 contas,
+    // 10/09/2026). Quem diz o lado é `PcTipo`. Usar os booleanos invertia o
+    // sinal das receitas no DRE.
     const natureza = String(l.PcTipo || '').toLowerCase().startsWith('rec') ? 'receita' : 'despesa';
     const analitica = String(l.PcCategoria || '').toLowerCase().startsWith('anal');
     const nome = texto(l.PcDescricao, 120) || `Conta ${pcId}`;
-    let codigo = codigoPlano(emp.wik_emp_id, l.PcConta, pcId);
+    let codigo = codigoPlano(fonte.wik_emp_id, l.PcConta, pcId);
     if (codigosUsados.has(codigo)) codigo = `${codigo}-${pcId}`.slice(0, 20);
     codigosUsados.add(codigo);
     const { rows } = await pool.query(
@@ -205,7 +237,7 @@ async function importarPlanoContas(sessao, emp, resumo) {
                      wik_dre_linha = EXCLUDED.wik_dre_linha
        RETURNING id`,
       [codigo, nome, natureza, analitica,
-        String(l.PcSituacao || '').toLowerCase() !== 'inativa', emp.wik_emp_id, pcId,
+        String(l.PcSituacao || '').toLowerCase() !== 'inativa', fonte.wik_emp_id, pcId,
         Number(l.PcIdDre) > 0 ? Number(l.PcIdDre) : null]
     );
     if (rows[0]) idPorWik.set(pcId, rows[0].id);
@@ -220,30 +252,26 @@ async function importarPlanoContas(sessao, emp, resumo) {
   resumo.plano_contas += idPorWik.size;
 }
 
-async function importarCentrosCusto(sessao, emp, resumo) {
-  const linhas = await wikWeb.centrosCusto(sessao);
+async function importarCentrosCusto(sessao, fonte, resumo) {
+  const linhas = await lerComGuarda('centros de custo', 'CentId', () => wikWeb.centrosCusto(sessao), resumo);
   for (const l of linhas) {
     const centId = Number(l.CentId);
-    if (!Number.isFinite(centId)) continue;
+    if (!(centId > 0)) continue;
     await pool.query(
       `INSERT INTO fin_centros_custo (codigo, nome, ativo, wik_emp_id, wik_cent_id)
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (wik_emp_id, wik_cent_id) WHERE wik_cent_id IS NOT NULL
        DO UPDATE SET nome = EXCLUDED.nome, ativo = EXCLUDED.ativo
        RETURNING id`,
-      [`W${emp.wik_emp_id}.${centId}`.slice(0, 20), texto(l.CentDescricao, 120) || `Centro ${centId}`,
-        String(l.CentSituacao) !== '1', emp.wik_emp_id, centId]
+      [`W${fonte.wik_emp_id}.${centId}`.slice(0, 20), texto(l.CentDescricao, 120) || `Centro ${centId}`,
+        String(l.CentSituacao) !== '1', fonte.wik_emp_id, centId]
     );
     resumo.centros_custo += 1;
   }
 }
 
-// As contas bancárias do Wik viram `fin_contas`. `GrpEmpId` decide de qual CNPJ
-// a conta é — o extrato da matriz mostra contas de outras empresas, então
-// carimbar tudo na empresa do ciclo criaria conta duplicada no CNPJ errado.
 // Pega o primeiro campo preenchido dentre vários nomes possíveis — o grid do
-// Wik varia o nome exato de agência/conta/banco entre telas, então tentamos os
-// candidatos conhecidos em vez de fixar um só (e ainda guardamos a linha crua).
+// Wik varia o nome exato de agência/conta/banco entre telas.
 function primeiroCampo(obj, nomes) {
   for (const n of nomes) {
     const v = obj[n];
@@ -252,17 +280,20 @@ function primeiroCampo(obj, nomes) {
   return null;
 }
 
-async function importarContasBancarias(sessao, emp, mapaEmpresas, resumo) {
-  const linhas = await wikWeb.contasBancarias(sessao);
+// As contas bancárias do Wik viram `fin_contas`. `GrpEmpId` decide de qual CNPJ
+// a conta é. Conta cujo GrpEmpId não está mapeado no Hub (a própria matriz,
+// 192, ou a filial, 193) entra na empresa padrão e aparece na tela como
+// "CNPJ a confirmar" — o dono corrige na aba Contas Bancárias, e a correção
+// fica (o upsert abaixo NUNCA reescreve `empresa_id`).
+async function importarContasBancarias(sessao, fonte, mapaEmpresas, resumo) {
+  const linhas = await lerComGuarda('contas bancárias', 'GrpId', () => wikWeb.contasBancarias(sessao), resumo);
   for (const l of linhas) {
     const grpId = Number(l.GrpId);
-    if (!Number.isFinite(grpId)) continue;
-    const empWik = Number(l.GrpEmpId) || emp.wik_emp_id;
-    const empresaId = mapaEmpresas.get(empWik) || emp.id;
+    if (!(grpId > 0)) continue;
+    const empWik = Number(l.GrpEmpId) || fonte.wik_emp_id;
+    const empresaId = mapaEmpresas.get(empWik) || fonte.id;
     const ehCaixa = Number(l.GrpContaCaixa) === 1 || /caixa|tesouraria/i.test(String(l.GrpDescicao || ''));
 
-    // Campos com nome variável: tentamos os candidatos e, no fim, a linha crua
-    // (wik_dados) guarda tudo — o dono pediu "com todas as informações".
     const agencia = primeiroCampo(l, ['GrpAg', 'GrpAgencia', 'GrpAgenciaConta', 'Agencia']);
     const conta = primeiroCampo(l, ['GrpCc', 'GrpConta', 'GrpContaCorrente', 'GrpNumConta', 'Conta']);
     const bancoNome = primeiroCampo(l, ['GrpBanco', 'GrpBancoNome', 'BancoDescricao', 'Banco']);
@@ -299,16 +330,8 @@ async function importarContasBancarias(sessao, emp, mapaEmpresas, resumo) {
   }
 }
 
-// O extrato classifica cada lançamento pelo NOME da conta do plano, e o
-// casamento por nome funciona: 63 das 64 categorias distintas de um mês real
-// batem exatamente com o cadastro (conferido ao vivo em 10/09/2026).
-//
-// A única que não bate é "Transf." — transferência entre contas próprias, que
-// no cadastro do Wik não é conta do plano. E ainda bem que é diferente: mover
-// dinheiro entre contas da casa NÃO é receita nem despesa, e contar como tal
-// infla os dois lados do DRE. A 0055 já previu isso com
-// `natureza = 'transferencia'`, que a `vw_fin_dre` exclui. Aqui a conta é
-// criada uma vez, por empresa, para esses lançamentos terem onde cair.
+// "Transf." — transferência entre contas próprias — não é receita nem despesa.
+// Cai numa conta `natureza = 'transferencia'`, que a `vw_fin_dre` exclui.
 const NOMES_TRANSFERENCIA = ['TRANSF.', 'TRANSF', 'TRANSFERENCIA', 'TRANSFERÊNCIA'];
 
 async function garantirPlanoTransferencia(empWik) {
@@ -324,28 +347,93 @@ async function garantirPlanoTransferencia(empWik) {
 }
 
 // ── mapas de apoio, lidos uma vez por ciclo ────────────────────────────────
-async function carregarMapas(empWik) {
-  const idTransferencia = await garantirPlanoTransferencia(empWik);
-  const [contas, plano, fornecedores] = await Promise.all([
-    pool.query('SELECT id, wik_grp_id, nome, wik_emp_id FROM fin_contas WHERE wik_grp_id IS NOT NULL'),
-    pool.query('SELECT id, nome, wik_pc_id FROM fin_plano WHERE wik_emp_id = $1', [empWik]),
+async function carregarMapas(fonte, mapaEmpresas) {
+  const idTransferencia = await garantirPlanoTransferencia(fonte.wik_emp_id);
+  const [contas, plano, fornecedores, historico] = await Promise.all([
+    pool.query('SELECT id, wik_grp_id, nome, wik_emp_id, empresa_id FROM fin_contas WHERE wik_grp_id IS NOT NULL'),
+    pool.query('SELECT id, nome, wik_pc_id FROM fin_plano WHERE wik_emp_id = $1', [fonte.wik_emp_id]),
     pool.query('SELECT id, wik_forn_id FROM fornecedores WHERE wik_forn_id IS NOT NULL'),
+    // A empresa em que cada fornecedor/cliente foi pago por último — pela
+    // CONTA BANCÁRIA da baixa. É a regra (b) do modelo de empresa.
+    pool.query(
+      `SELECT DISTINCT ON (t.natureza, upper(trim(t.contraparte_nome)))
+              t.natureza, upper(trim(t.contraparte_nome)) AS chave, c.id AS conta_id
+         FROM fin_titulos t
+         JOIN fin_baixas b ON b.titulo_id = t.id AND b.estornada_em IS NULL
+         JOIN fin_contas c ON c.id = b.conta_id
+        WHERE t.contraparte_nome IS NOT NULL AND t.wik_id IS NOT NULL
+        ORDER BY t.natureza, upper(trim(t.contraparte_nome)), b.data_baixa DESC`
+    ),
   ]);
-  return {
+
+  // Uma conta bancária diz o CNPJ quando o GrpEmpId dela está mapeado no Hub,
+  // ou quando alguém já a moveu para uma empresa diferente da padrão.
+  const empresasMapeadasSet = new Set(mapaEmpresas.keys());
+  const contaInfo = new Map(contas.rows.map((r) => [r.id, {
+    empresaId: r.empresa_id,
+    vinculada: (r.wik_emp_id && empresasMapeadasSet.has(Number(r.wik_emp_id))) || r.empresa_id !== fonte.id,
+  }]));
+
+  const mapas = {
     contaPorGrp: new Map(contas.rows.map((r) => [Number(r.wik_grp_id), r.id])),
     contaPorNome: new Map(contas.rows.map((r) => [String(r.nome).toUpperCase(), r.id])),
-    // conta bancária -> empresa do Wik (vem do GrpEmpId do cadastro). É por
-    // ela que o extrato é carimbado — ver importarExtrato.
+    // conta bancária -> empresa do Wik (GrpEmpId). Carimba o extrato.
     empWikPorConta: new Map(contas.rows.map((r) => [r.id, r.wik_emp_id ? Number(r.wik_emp_id) : null])),
-    // O extrato dá o NOME do plano de contas (PcDescricao), não o id — por isso
-    // o casamento aqui é por nome, e só dentro da árvore importada do Wik.
+    contaInfo,
+    contasSemVinculo: contas.rows.filter((r) => !contaInfo.get(r.id).vinculada).map((r) => r.nome),
     planoPorNome: new Map(plano.rows.map((r) => [String(r.nome).toUpperCase(), r.id])),
-    // `CtaGrupoDespId` da conta a pagar É o `PcId` do plano — este mapa é o
-    // que tira o DRE de "Sem classificação".
+    // `CtaGrupoDespId` da conta a pagar É o `PcId` do plano.
     planoPorPcId: new Map(plano.rows.filter((r) => r.wik_pc_id).map((r) => [Number(r.wik_pc_id), r.id])),
     idTransferencia,
     fornecedorPorWik: new Map(fornecedores.rows.map((r) => [Number(r.wik_forn_id), r.id])),
+    // natureza|NOME -> empresa do Hub (só entra conta vinculada)
+    empresaPorContraparte: new Map(),
   };
+  for (const h of historico.rows) {
+    const info = contaInfo.get(h.conta_id);
+    if (info && info.vinculada) mapas.empresaPorContraparte.set(`${h.natureza}|${h.chave}`, info.empresaId);
+  }
+  return mapas;
+}
+
+// ── a empresa do Hub de um título ──────────────────────────────────────────
+function chaveContraparte(natureza, nome) {
+  const n = String(nome || '').trim().toUpperCase();
+  return n ? `${natureza}|${n}` : null;
+}
+
+// Devolve a empresa pela CONTA BANCÁRIA do Wik (GrpId), se ela for vinculada.
+function empresaPelaContaWik(mapas, grpId) {
+  const n = Number(grpId);
+  if (!(n > 0)) return null;
+  const contaId = mapas.contaPorGrp.get(n);
+  const info = contaId ? mapas.contaInfo.get(contaId) : null;
+  return info && info.vinculada ? info.empresaId : null;
+}
+
+// Aprende "este fornecedor/cliente é desta empresa" com uma baixa deste ciclo,
+// para os títulos em aberto dele que vêm depois.
+function aprenderContraparte(mapas, natureza, nome, empresaId) {
+  const k = chaveContraparte(natureza, nome);
+  if (k && empresaId) mapas.empresaPorContraparte.set(k, empresaId);
+}
+
+function decidirEmpresa(mapas, fonte, natureza, nome, pelaConta) {
+  if (pelaConta) return { empresaId: pelaConta, como: 'conta' };
+  const k = chaveContraparte(natureza, nome);
+  const pelaPessoa = k ? mapas.empresaPorContraparte.get(k) : null;
+  if (pelaPessoa) return { empresaId: pelaPessoa, como: 'contraparte' };
+  return { empresaId: fonte.id, como: 'padrao' };
+}
+
+function contarClassificacao(resumo, como) {
+  resumo.classificacao[como] = (resumo.classificacao[como] || 0) + 1;
+}
+
+function observacaoCom(como, obs) {
+  const limpa = texto(obs);
+  if (como !== 'padrao') return limpa;
+  return [MARCA_A_CLASSIFICAR, limpa].filter(Boolean).join(' ');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -355,8 +443,10 @@ async function carregarMapas(empWik) {
 // Grava (ou atualiza) UM título vindo do Wik. Devolve o id, ou null se o
 // registro está travado ou é inválido.
 //
-// O UPDATE tem `AND NOT wik_travado`: título que alguém mexeu no Hub não é
-// tocado. O `RETURNING` some nesse caso, e é assim que sabemos que ficou de fora.
+// A empresa (`empresa_id`) é atualizada a cada ciclo enquanto ninguém mexer no
+// título aqui: um título "a classificar" que ganha conta bancária no Wik (foi
+// pago) passa sozinho para o CNPJ certo. O `WHERE NOT wik_travado` protege a
+// mão humana.
 async function gravarTitulo(t) {
   if (!(t.valor_bruto > 0)) return null;   // fin_titulo_valor_positivo
   if (!t.data_vencimento) return null;
@@ -368,6 +458,7 @@ async function gravarTitulo(t) {
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20, now())
      ON CONFLICT (wik_emp_id, natureza, wik_id, wik_item_id) WHERE wik_id IS NOT NULL
      DO UPDATE SET
+        empresa_id       = EXCLUDED.empresa_id,
         contraparte_nome = EXCLUDED.contraparte_nome,
         fornecedor_id    = COALESCE(EXCLUDED.fornecedor_id, fin_titulos.fornecedor_id),
         descricao        = EXCLUDED.descricao,
@@ -376,15 +467,12 @@ async function gravarTitulo(t) {
         data_competencia = EXCLUDED.data_competencia,
         data_vencimento  = EXCLUDED.data_vencimento,
         valor_bruto      = EXCLUDED.valor_bruto,
-        -- 'previsto' e 'cancelado' aqui são estado do WIK, não decisão humana
-        -- do Hub; aberto/parcial/liquidado quem decide é recalcularSituacao a
-        -- partir das baixas, então não se sobrescreve situação por aqui.
+        -- 'cancelado' aqui é estado do WIK; aberto/parcial/liquidado quem
+        -- decide é recalcularSituacao a partir das baixas.
         situacao         = CASE WHEN EXCLUDED.situacao = 'cancelado' THEN 'cancelado'
                                 WHEN fin_titulos.situacao = 'cancelado' THEN 'cancelado'
                                 ELSE fin_titulos.situacao END,
         observacao       = EXCLUDED.observacao,
-        -- A categoria segue o Wik enquanto ninguem mexer no titulo aqui; a
-        -- trava wik_travado (no WHERE abaixo) e o que protege a mao humana.
         plano_id         = COALESCE(EXCLUDED.plano_id, fin_titulos.plano_id),
         wik_sincronizado_em = now(),
         atualizado_em    = now()
@@ -413,77 +501,43 @@ async function gravarBaixa({ tituloId, wikRef, data, valor, contaId, forma }) {
     [tituloId, contaId || null, data, valor, texto(forma, 40), wikRef]
   );
   if (!rows[0]) return false;
-  // `recalcularSituacao` só faz query — o pool serve de client aqui, e evita
-  // pegar/soltar conexão a cada baixa importada.
   await recalcularSituacao(pool, tituloId);
   return true;
 }
 
 // ── contas a PAGAR ─────────────────────────────────────────────────────────
 // O grid dá a conta; as PARCELAS só existem no HTML da conta (input escondido
-// `ListaItens`). Como cada detalhe custa uma página inteira no servidor deles,
-// só se lê o detalhe de quem precisa: conta nova, ou conta cujo detalhe está
-// mais velho que DETALHE_TTL_MS — e no máximo DETALHE_CAP por ciclo.
-// Assinatura do lote: quantidade + os primeiros ids. Duas empresas diferentes
-// não podem devolver a MESMA assinatura — se devolverem, a troca de empresa não
-// aconteceu e o que está na mão é a lista da empresa anterior (a da matriz, na
-// prática). Gravar isso carimbaria a dívida de um CNPJ dentro do outro.
-function assinaturaDoLote(linhas, campoId) {
-  const ids = linhas.map((l) => Number(l[campoId]) || 0).filter((n) => n > 0);
-  return `${ids.length}:${ids.slice(0, 25).join(',')}`;
-}
+// `ListaItens`). Cada detalhe custa uma página inteira no servidor deles, então
+// só se lê o de quem precisa (conta nova ou detalhe velho), no máximo
+// DETALHE_CAP por ciclo.
+async function importarContasPagar(sessao, fonte, janela, mapas, resumo) {
+  const contas = await lerComGuarda('contas a pagar', 'CtaId',
+    () => wikWeb.contasPagar(sessao, { de: janela.de, ate: janela.ate, tipoData: 2 }), resumo);
+  resumo.pagar_contas_vistas += contas.length;
+  if (!contas.length) return;
 
-async function importarContasPagar(sessao, emp, janela, mapas, resumo) {
-  const contas = await wikWeb.contasPagar(sessao, {
-    de: janela.de, ate: janela.ate, tipoData: 2, empId: emp.wik_emp_id,
-  });
-  // Lixo do Wik: HTTP 200 com N linhas de CtaId 0 e todos os campos nulos.
-  // Não é erro nem tela de login — e contar essas linhas como sucesso é o que
-  // fazia o diagnóstico concluir "funcionou" numa leitura vazia.
-  const validas = contas.filter((c) => Number(c.CtaId) > 0);
-  if (contas.length && !validas.length) {
-    resumo.pagar_lixo += contas.length;
-    return;
-  }
-  // GUARDA DE EMPRESA (18/09/2026): o EmpId do grid é ignorado pelo Wik; quem
-  // separa é a sessão. Se a lista desta empresa for idêntica à da anterior, a
-  // sessão NÃO trocou — aborta a empresa em vez de duplicar a dívida.
-  const assinatura = assinaturaDoLote(validas, 'CtaId');
-  if (resumo._assinaturaPagar && resumo._assinaturaPagar.assinatura === assinatura
-      && resumo._assinaturaPagar.empWik !== emp.wik_emp_id && validas.length > 0) {
-    const e = new Error(
-      `o contas a pagar de ${emp.nome} (Wik ${emp.wik_emp_id}) voltou IDÊNTICO ao de `
-      + `${resumo._assinaturaPagar.empNome}: a empresa da sessão não trocou, então estes títulos são de outra empresa. `
-      + 'Nada foi gravado para esta empresa (gravar duplicaria a dívida em dois CNPJs).'
-    );
-    e.empresaNaoSeparou = true;
-    throw e;
-  }
-  resumo._assinaturaPagar = { assinatura, empWik: emp.wik_emp_id, empNome: emp.nome };
-
-  resumo.pagar_contas_vistas += validas.length;
-  if (!validas.length) return;
-  const contasBoas = validas;
-
-  const ids = [...new Set(contasBoas.map((c) => Number(c.CtaId)).filter(Number.isFinite))];
+  const ids = [...new Set(contas.map((c) => Number(c.CtaId)))];
   const { rows: jaTem } = await pool.query(
     `SELECT wik_id, MAX(wik_sincronizado_em) AS visto
        FROM fin_titulos
       WHERE wik_emp_id = $1 AND natureza = 'pagar' AND wik_id = ANY($2)
       GROUP BY wik_id`,
-    [emp.wik_emp_id, ids]
+    [fonte.wik_emp_id, ids]
   );
   const vistoEm = new Map(jaTem.map((r) => [Number(r.wik_id), r.visto ? new Date(r.visto).getTime() : 0]));
   const agora = Date.now();
 
   // Quem nunca foi lido vem primeiro; depois os mais velhos.
-  const fila = contasBoas
-    .filter((c) => Number.isFinite(Number(c.CtaId)))
-    .filter((c) => (agora - (vistoEm.get(Number(c.CtaId)) ?? 0)) > DETALHE_TTL_MS)
+  const vencidas = contas.filter((c) => (agora - (vistoEm.get(Number(c.CtaId)) ?? 0)) > DETALHE_TTL_MS);
+  const fila = vencidas
     .sort((a, b) => (vistoEm.get(Number(a.CtaId)) ?? 0) - (vistoEm.get(Number(b.CtaId)) ?? 0))
     .slice(0, DETALHE_CAP);
-  resumo.pagar_detalhes_pendentes += Math.max(0, contasBoas.filter((c) => (agora - (vistoEm.get(Number(c.CtaId)) ?? 0)) > DETALHE_TTL_MS).length - fila.length);
+  resumo.pagar_detalhes_pendentes += Math.max(0, vencidas.length - fila.length);
 
+  // 1ª passada: lê os detalhes e APRENDE as empresas pelas baixas — assim o
+  // título em aberto de um fornecedor que foi pago nesta mesma leva já cai no
+  // CNPJ certo, sem esperar o próximo ciclo.
+  const lidos = [];
   for (const c of fila) {
     const ctaId = Number(c.CtaId);
     let detalhe;
@@ -494,24 +548,40 @@ async function importarContasPagar(sessao, emp, janela, mapas, resumo) {
       resumo.erros.push(`conta a pagar ${ctaId}: ${err.message}`);
       continue;
     }
+    lidos.push({ c, detalhe });
+    for (const p of detalhe.parcelas || []) {
+      if (!dataDe(p.DataBaixa)) continue;
+      aprenderContraparte(mapas, 'pagar', c.Pessoa, empresaPelaContaWik(mapas, p.GrupoReceitaId));
+    }
+  }
+
+  // 2ª passada: grava.
+  for (const { c, detalhe } of lidos) {
+    const ctaId = Number(c.CtaId);
+    const parcelas = detalhe.parcelas || [];
     const cancelada = /cancel/i.test(String(c.Situacao || ''));
     // REGRA 2: a competência é da CONTA e é a mesma para todas as parcelas.
-    const competencia = dataDe(c.CtaDataCadastro)
-      || dataDe((detalhe.parcelas[0] || {}).DataEmissao)
-      || janela.de;
+    const competencia = dataDe(c.CtaDataCadastro) || dataDe((parcelas[0] || {}).DataEmissao) || janela.de;
     const fornecedorId = mapas.fornecedorPorWik.get(Number(c.CtaFornId)) || null;
-    // A CATEGORIA da despesa. Sem ela o DRE mostra os totais certos e nenhuma
-    // quebra — todo mundo na linha "Sem classificação".
     const planoId = mapas.planoPorPcId.get(Number(detalhe.grupoDespId)) || null;
     if (!planoId) resumo.pagar_sem_categoria += 1;
 
-    for (const p of detalhe.parcelas) {
+    // A empresa é da CONTA inteira (as parcelas não mudam de CNPJ entre si):
+    // conta bancária de uma parcela baixada > conta prevista da conta a pagar >
+    // conta de qualquer parcela > fornecedor > padrão.
+    const pelaConta = parcelas.filter((p) => dataDe(p.DataBaixa))
+      .map((p) => empresaPelaContaWik(mapas, p.GrupoReceitaId)).find(Boolean)
+      || empresaPelaContaWik(mapas, detalhe.contaBancariaId)
+      || parcelas.map((p) => empresaPelaContaWik(mapas, p.GrupoReceitaId)).find(Boolean)
+      || null;
+    const { empresaId, como } = decidirEmpresa(mapas, fonte, 'pagar', c.Pessoa, pelaConta);
+
+    for (const p of parcelas) {
       const itemId = Number(p.CtaiId);
       if (!Number.isFinite(itemId)) continue;
-      const venc = dataDe(p.DataVencimento);
       const valor = valorDe(p.Valor);
       const tituloId = await gravarTitulo({
-        empresa_id: emp.id,
+        empresa_id: empresaId,
         natureza: 'pagar',
         fornecedor_id: fornecedorId,
         contraparte_nome: c.Pessoa,
@@ -520,32 +590,31 @@ async function importarContasPagar(sessao, emp, janela, mapas, resumo) {
         parcela: String(itemId),
         data_emissao: dataDe(p.DataEmissao) || competencia,
         data_competencia: competencia,
-        data_vencimento: venc,
+        data_vencimento: dataDe(p.DataVencimento),
         valor_bruto: valor,
         situacao: cancelada ? 'cancelado' : 'aberto',
         plano_id: planoId,
         origem_tipo: 'wik_conta_pagar',
         origem_id: ctaId,
-        observacao: detalhe.observacao,
-        wik_emp_id: emp.wik_emp_id,
+        observacao: observacaoCom(como, detalhe.observacao),
+        wik_emp_id: fonte.wik_emp_id,
         wik_id: ctaId,
         wik_item_id: itemId,
       });
       if (!tituloId) { resumo.pagar_travados += 1; continue; }
       resumo.pagar_titulos += 1;
+      contarClassificacao(resumo, como);
 
       const dataBaixa = dataDe(p.DataBaixa);
-      // Visto ao vivo: parcela com Situacao "BAIXADO" e DataBaixa null. Sem
-      // data não se grava baixa (inventar data seria mentir no fluxo de caixa),
-      // mas o caso passa a ser CONTADO — antes sumia, e o título ficava aberto
-      // aqui e pago no Wik, sem ninguém saber.
+      // Parcela "BAIXADO" sem data: não se inventa data (mentiria no fluxo de
+      // caixa), mas o caso é CONTADO.
       if (!dataBaixa && /baixad|pago|liquidad/i.test(String(p.Situacao || ''))) {
         resumo.pagar_baixa_sem_data += 1;
       }
       if (dataBaixa && !cancelada) {
         const ok = await gravarBaixa({
           tituloId,
-          wikRef: `cp:${emp.wik_emp_id}:${ctaId}:${itemId}`,
+          wikRef: `cp:${fonte.wik_emp_id}:${ctaId}:${itemId}`,
           data: dataBaixa,
           valor,
           contaId: mapas.contaPorGrp.get(Number(p.GrupoReceitaId)),
@@ -558,30 +627,16 @@ async function importarContasPagar(sessao, emp, janela, mapas, resumo) {
 }
 
 // ── contas a RECEBER ───────────────────────────────────────────────────────
-// Aqui o grid já vem no nível da PARCELA, com vencimento, valor, baixa e forma
-// de pagamento — nenhuma leitura de detalhe é necessária.
-//
-// ⚠️ `SituacaoSelecionada` NÃO está confirmado: só o valor '1' (em aberto) foi
-// visto funcionando ao vivo; a confirmação dos demais ficou impedida porque o
-// Wik derrubou a sessão ("logado em outra sessão"). Por isso aqui se consulta
-// cada valor conhecido em separado e se tolera falha de qualquer um, em vez de
-// apostar num '3 = todos' que pode não existir. Quando alguém confirmar o valor
-// certo, trocar por uma chamada só.
+// O grid já vem no nível da PARCELA. `SituacaoSelecionada`: 1 = aberto,
+// 2 = baixado (3 é "substituído", NÃO "todos" — medido em 18/09/2026).
 const SITUACOES_RECEBER = ['1', '2'];
 
-async function importarContasReceber(sessao, emp, janela, mapas, resumo) {
+async function importarContasReceber(sessao, fonte, janela, mapas, resumo) {
   const vistos = new Map();
   for (const situacao of SITUACOES_RECEBER) {
-    let linhas;
-    try {
-      linhas = await wikWeb.contasReceber(sessao, {
-        de: janela.de, ate: janela.ate, tipoData: 2, situacao, empId: emp.wik_emp_id,
-      });
-    } catch (err) {
-      if (err.sessaoExpirada) throw err;
-      resumo.erros.push(`contas a receber (situação ${situacao}): ${err.message}`);
-      continue;
-    }
+    const linhas = await lerComGuarda(`contas a receber (situação ${situacao})`, 'ReciRecId',
+      () => wikWeb.contasReceber(sessao, { de: janela.de, ate: janela.ate, tipoData: 2, situacao, empId: '0' }),
+      resumo);
     for (const l of linhas) {
       const recId = Number(l.ReciRecId);
       const itemId = Number(l.ReciId);
@@ -591,55 +646,56 @@ async function importarContasReceber(sessao, emp, janela, mapas, resumo) {
   }
   resumo.receber_vistos += vistos.size;
 
+  // 1ª passada: aprende o cliente -> empresa pelas parcelas já recebidas.
+  // ⚠️ No receber, `GrupoReceitaId` vem SEMPRE 0; a conta está em `ReciGrpReceita`.
+  for (const l of vistos.values()) {
+    if (dataDe(l.ReciDataBaixa)) aprenderContraparte(mapas, 'receber', l.Pessoa, empresaPelaContaWik(mapas, l.ReciGrpReceita));
+  }
+
   for (const l of vistos.values()) {
     const recId = Number(l.ReciRecId);
     const itemId = Number(l.ReciId);
     const venc = dataDe(l.ReciDataVencimento);
     const valor = valorDe(l.ReciValor);
     const cancelada = /cancel/i.test(String(l.Situacao || ''));
-
-    // `PedIntegracao` e `NumeroVenda` são a ponte com o pedido de origem
-    // (marketplace) — guardados na observação porque é a informação que faz o
-    // financeiro casar com a conciliação de repasse depois.
-    // (`Origem` NÃO entra aqui: apesar do nome, ela devolve o nome da EMPRESA
-    // — "HEBRON - DINAMICA MATRIZ" —, não a origem da venda.)
     const ponte = [texto(l.NumeroVenda) && `Venda ${texto(l.NumeroVenda)}`,
       texto(l.PedIntegracao) && `Pedido ${texto(l.PedIntegracao)}`,
     ].filter(Boolean).join(' · ') || null;
+    const { empresaId, como } = decidirEmpresa(mapas, fonte, 'receber', l.Pessoa,
+      empresaPelaContaWik(mapas, l.ReciGrpReceita));
 
     const tituloId = await gravarTitulo({
-      empresa_id: emp.id,
+      empresa_id: empresaId,
       natureza: 'receber',
       contraparte_nome: l.Pessoa,
       descricao: texto(l.Pessoa, 200),
       documento: texto(l.NumeroVenda) || texto(l.PedIntegracao),
       parcela: texto(l.ReciParcela, 10) || String(itemId),
       data_emissao: venc,
-      // Sem data de emissão própria no grid do receber, a competência é o
-      // vencimento. Fica explícito aqui porque é uma aproximação, não um dado.
+      // Sem data de emissão no grid do receber, a competência é o vencimento
+      // (aproximação, não dado).
       data_competencia: venc,
       data_vencimento: venc,
       valor_bruto: valor,
       situacao: cancelada ? 'cancelado' : 'aberto',
       origem_tipo: 'wik_conta_receber',
       origem_id: recId,
-      observacao: ponte,
-      wik_emp_id: emp.wik_emp_id,
+      observacao: observacaoCom(como, ponte),
+      wik_emp_id: fonte.wik_emp_id,
       wik_id: recId,
       wik_item_id: itemId,
     });
     if (!tituloId) { resumo.receber_travados += 1; continue; }
     resumo.receber_titulos += 1;
+    contarClassificacao(resumo, como);
 
     const dataBaixa = dataDe(l.ReciDataBaixa);
     if (dataBaixa && !cancelada) {
       const ok = await gravarBaixa({
         tituloId,
-        wikRef: `cr:${emp.wik_emp_id}:${recId}:${itemId}`,
+        wikRef: `cr:${fonte.wik_emp_id}:${recId}:${itemId}`,
         data: dataBaixa,
         valor: valorDe(l.ReciValorPago) || valor,
-        // ⚠️ No receber, `GrupoReceitaId` vem SEMPRE 0 (conferido ao vivo em
-        // 219 títulos). Quem carrega a conta bancária é `ReciGrpReceita`.
         contaId: mapas.contaPorGrp.get(Number(l.ReciGrpReceita)),
         forma: l.FormaPgto,
       });
@@ -649,42 +705,34 @@ async function importarContasReceber(sessao, emp, janela, mapas, resumo) {
 }
 
 // ── EXTRATO — entra pela mesma porta do OFX ────────────────────────────────
-// Só o REALIZADO ('1,'). O não-realizado do Wik é previsão, e previsão não é
-// "a verdade do banco" — colocar previsão em fin_extrato_bancario faria a
-// conciliação casar com dinheiro que não andou.
-// ⚠️ MEDIDO AO VIVO EM 18/09/2026: o `EmpId` do extrato NÃO separa as empresas
-// — pedindo 198 e 202, a grande maioria dos `ExtId` devolvidos é a MESMA (104
-// de 108 numa das medições), e a leitura de "198" vinha com contas da Origem.
-// Como este sync lia o extrato DENTRO do laço de empresas e carimbava
-// `wik_emp_id` com a empresa do laço, e a chave única é
-// (wik_emp_id, wik_ext_id), o MESMO lançamento bancário entrava DUAS vezes —
-// o extrato do banco dobrava e o fluxo de caixa com ele.
-//
-// Conserto: UMA leitura por ciclo (EmpId = 0), fora do laço, e a empresa de
-// cada linha vem da CONTA BANCÁRIA (fin_contas.wik_emp_id, que sai do GrpEmpId
-// do cadastro do Wik) — que é um dado real, não um chute do laço.
-async function importarExtrato(sessao, emp, janela, mapas, resumo) {
-  const linhas = await wikWeb.extratoFinanceiro(sessao, {
-    de: janela.de, ate: janela.ateExtrato, empId: '0', situacoes: '1,',
-  });
+// Só o REALIZADO ('1,'). Uma leitura por ciclo (EmpId = 0 = todas); a empresa
+// de cada linha vem da CONTA BANCÁRIA, que é dado real.
+async function importarExtrato(sessao, fonte, janela, mapas, resumo) {
+  const linhas = await lerComGuarda('extrato de contas', 'ExtId',
+    () => wikWeb.extratoFinanceiro(sessao, { de: janela.de, ate: janela.ateExtrato, empId: '0', situacoes: '1,' }),
+    resumo);
   resumo.extrato_vistos += linhas.length;
 
   for (const l of linhas) {
     const extId = Number(l.ExtId);
     const data = dataDe(l.Data);
-    if (!Number.isFinite(extId) || !data) continue;
+    if (!(extId > 0) || !data) continue;
 
-    // `IdGrupo` vem 0 em boa parte das linhas (conferido ao vivo), mesmo com
-    // `GrpDescricao` preenchido — por isso o nome é a chave principal aqui, e
-    // o id só entra quando é um id de verdade.
+    // `IdGrupo` vem 0 em boa parte das linhas, mesmo com `GrpDescricao`
+    // preenchido — o nome é a chave principal.
     const contaId = mapas.contaPorNome.get(String(l.GrpDescricao || '').toUpperCase())
       || (Number(l.IdGrupo) > 0 ? mapas.contaPorGrp.get(Number(l.IdGrupo)) : null);
-    if (!contaId) { resumo.extrato_sem_conta += 1; continue; }  // conta_id é NOT NULL
-    // A empresa do lançamento é a da CONTA (o Wik não separa por EmpId aqui).
-    const empWikDaLinha = mapas.empWikPorConta.get(contaId) || emp.wik_emp_id;
+    if (!contaId) {
+      resumo.extrato_sem_conta += 1;
+      const nome = texto(l.GrpDescricao, 80);
+      if (nome && !resumo.extrato_contas_desconhecidas.includes(nome) && resumo.extrato_contas_desconhecidas.length < 20) {
+        resumo.extrato_contas_desconhecidas.push(nome);
+      }
+      continue;  // conta_id é NOT NULL
+    }
+    const empWikDaLinha = mapas.empWikPorConta.get(contaId) || fonte.wik_emp_id;
 
-    // ASSINADO: o Wik manda o sinal em `Tipo` ('+' ou '-') e o valor sempre
-    // positivo. `fin_extrato_bancario.valor` é assinado por contrato da 0055.
+    // ASSINADO: o Wik manda o sinal em `Tipo` ('+' ou '-').
     const bruto = Math.abs(valorDe(l.Valor));
     const valor = String(l.Tipo).trim() === '-' ? -bruto : bruto;
     if (valor === 0) continue;
@@ -715,34 +763,20 @@ async function importarExtrato(sessao, emp, janela, mapas, resumo) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CONCILIAÇÃO JÁ FEITA NO WIK — trazer o que o Wik já casou (pedido do dono)
+// CONCILIAÇÃO JÁ FEITA NO WIK
 // ═══════════════════════════════════════════════════════════════════════════
-// No Wik, cada baixa de título gera o lançamento no extrato: título e banco já
-// nascem casados lá dentro. O Hub importa os dois lados (a baixa via
-// contas a pagar/receber, a linha via extrato), mas até agora não LIGAVA um ao
-// outro — então tudo aparecia como "a conciliar" no Hub, e o dono teria que
-// refazer à mão o que o Wik já fez.
-//
-// Aqui ligamos os dois usando o que já temos: uma linha de extrato do Wik e uma
-// baixa do Wik na MESMA conta, MESMA data e MESMO valor são o mesmo movimento —
-// e como os dois lados vêm do MESMO sistema, o casamento é muito mais seguro do
-// que o de OFX (onde os dados vêm de fontes diferentes). Só concilia quando há
-// exatamente UMA baixa candidata (sem ambiguidade) e ela ainda não está ligada
-// a outra linha — o resto fica pro conciliador do Hub, como antes. Respeita
-// `wik_travado` (linha mexida à mão aqui não é tocada) e é idempotente.
-async function conciliarExtratoComBaixasWik(emp, resumo) {
+// Uma linha de extrato do Wik e uma baixa do Wik na MESMA conta, MESMA data e
+// MESMO valor são o mesmo movimento. Só concilia com exatamente UMA candidata.
+// Idempotente; respeita `wik_travado`. Vale para todas as contas do Wik (a
+// empresa não filtra mais — é tudo uma leitura só).
+async function conciliarExtratoComBaixasWik(resumo) {
   const { rows: linhas } = await pool.query(
     `SELECT e.id, e.conta_id, e.data_lancamento, ABS(e.valor) AS valor
        FROM fin_extrato_bancario e
-       JOIN fin_contas c ON c.id = e.conta_id
       WHERE e.wik_ext_id IS NOT NULL AND e.conciliado_em IS NULL AND e.baixa_id IS NULL
-        AND NOT e.wik_travado AND c.wik_emp_id = $1`,
-    [emp.wik_emp_id]
+        AND NOT e.wik_travado`
   );
   for (const l of linhas) {
-    // Candidatas: baixa do Wik, mesma conta/data, cujo dinheiro efetivo
-    // (principal + juros + multa + tarifa − desconto) bate com a linha, não
-    // estornada e ainda não ligada a nenhuma linha do extrato.
     const { rows: cand } = await pool.query(
       `SELECT b.id
          FROM fin_baixas b
@@ -768,24 +802,21 @@ async function conciliarExtratoComBaixasWik(emp, resumo) {
 // ═══════════════════════════════════════════════════════════════════════════
 // A JANELA — "puxar tudo" sem derrubar o servidor deles
 // ═══════════════════════════════════════════════════════════════════════════
-// O dono pediu o histórico inteiro. Pedir 3 anos de uma vez seria uma consulta
-// gigante contra o ERP em produção. Então a carga inicial anda para trás em
-// fatias de FATIA_CARGA_DIAS, uma por ciclo, até alcançar o limite — e só
-// depois o job passa a olhar a janela curta do dia a dia.
+// A carga inicial anda para trás em fatias de FATIA_CARGA_DIAS, uma por ciclo;
+// depois o job olha a janela do dia a dia (no mínimo DIAS_RETRO_MIN para trás).
 function calcularJanela(integracao) {
   const hoje = hojeIso();
   if (integracao.financeiro_carga_inicial_fim) {
-    const de = somarDias(hoje, -Math.max(1, integracao.financeiro_dias_retro || 45));
-    return { modo: 'corrente', de, ate: somarDias(hoje, DIAS_FUTURO), ateExtrato: hoje, concluiCarga: false };
+    const retro = Math.max(DIAS_RETRO_MIN, Number(integracao.financeiro_dias_retro) || 0);
+    const de = somarDias(hoje, -retro);
+    return { modo: 'corrente', de, ate: somarDias(hoje, DIAS_FUTURO), ateExtrato: hoje, concluiCarga: false, primeira: false };
   }
   const limite = integracao.financeiro_carga_inicial_desde
-    || `${new Date().getUTCFullYear() - ANOS_HISTORICO_PADRAO}-01-01`;
+    ? new Date(integracao.financeiro_carga_inicial_desde).toISOString().slice(0, 10)
+    : `${new Date().getUTCFullYear() - ANOS_HISTORICO_PADRAO}-01-01`;
 
-  // PRIMEIRO ciclo de todos: a fatia é [hoje − FATIA, hoje + DIAS_FUTURO].
-  // Ancorar em `hoje` (e não em `hoje + DIAS_FUTURO`) é o que faz a foto do
-  // presente chegar já na primeira rodada — do contrário a carga começaria
-  // pelo futuro e levaria vários ciclos até alcançar o mês corrente, com a
-  // tela vazia enquanto isso.
+  // PRIMEIRO ciclo: [hoje − FATIA, hoje + DIAS_FUTURO] — a foto do presente
+  // chega já na primeira rodada.
   const primeira = !integracao.financeiro_carga_inicial_ate;
   const ate = primeira
     ? somarDias(hoje, DIAS_FUTURO)
@@ -795,31 +826,31 @@ function calcularJanela(integracao) {
   let de = somarDias(ancora, -FATIA_CARGA_DIAS);
   let concluiCarga = false;
   if (de <= limite) { de = limite; concluiCarga = true; }
-  // O extrato não tem por que olhar para o futuro: lançamento realizado é
-  // sempre passado. Pedir 400 dias à frente só faria consulta maior à toa.
   const ateExtrato = ate > hoje ? hoje : ate;
-  return { modo: 'carga_inicial', de, ate, ateExtrato, concluiCarga, proximaAte: de };
+  return { modo: 'carga_inicial', de, ate, ateExtrato, concluiCarga, proximaAte: de, primeira };
 }
 
 function resumoVazio() {
   return {
+    fonte_wik: FONTE_EMP_ID,
     plano_contas: 0, centros_custo: 0, contas: 0,
     pagar_contas_vistas: 0, pagar_titulos: 0, pagar_baixas: 0, pagar_travados: 0,
-    pagar_detalhes_pendentes: 0, pagar_sem_categoria: 0,
-    pagar_lixo: 0, pagar_baixa_sem_data: 0, empresas_puladas: [],
+    pagar_detalhes_pendentes: 0, pagar_sem_categoria: 0, pagar_baixa_sem_data: 0,
     receber_vistos: 0, receber_titulos: 0, receber_baixas: 0, receber_travados: 0,
     extrato_vistos: 0, extrato_linhas: 0, extrato_travados: 0, extrato_sem_conta: 0,
+    extrato_contas_desconhecidas: [],
     conciliadas: 0,
-    empresas_sem_mapa: [], erros: [],
+    // conta | contraparte | padrao — de onde saiu o CNPJ de cada título gravado
+    classificacao: { conta: 0, contraparte: 0, padrao: 0 },
+    contas_sem_vinculo: [],
+    lixo: {},
+    erros: [],
   };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // O CICLO
 // ═══════════════════════════════════════════════════════════════════════════
-// "Pulado" que não chega à tela é o que deixava o financeiro em "NUNCA
-// SINCRONIZOU", sem motivo, para sempre: o maestro descarta o retorno das
-// etapas, então a explicação morria aqui dentro.
 async function registrarPulado(integracaoId, motivo) {
   try {
     await pool.query(
@@ -827,6 +858,61 @@ async function registrarPulado(integracaoId, motivo) {
       [integracaoId, String(motivo).slice(0, 400)]
     );
   } catch { /* best-effort */ }
+}
+
+// Trava COMPARTILHADA com o job de produção — ver regra 3 no topo e a 0069.
+async function reservarJob(id, nome) {
+  const { rowCount } = await pool.query(
+    `UPDATE integracoes_wik
+        SET web_job_ativo = $2, web_job_ativo_desde = now()
+      WHERE id = $1
+        AND (web_job_ativo IS NULL OR web_job_ativo_desde < now() - interval '25 minutes')
+        AND (producao_job_ativo IS NULL OR producao_job_ativo_desde < now() - interval '25 minutes')`,
+    [id, nome]
+  );
+  return rowCount > 0;
+}
+// Só solta a trava se ela ainda for deste job.
+async function liberarJob(id, nome = 'financeiro') {
+  await pool.query(
+    'UPDATE integracoes_wik SET web_job_ativo = NULL, web_job_ativo_desde = NULL WHERE id = $1 AND web_job_ativo = $2',
+    [id, nome]
+  );
+}
+
+// Põe a sessão na MATRIZ. A troca usa a descrição/matriz que o próprio Wik
+// devolve no combo (wikWeb.trocarEmpresa cuida disso). Se o Wik recusar, a
+// sessão pode ficar sem empresa ativa (todo grid dá 500): refaz o login UMA vez
+// — o login do Hub cai na matriz — e tenta de novo. Nunca um laço de relogin.
+async function sessaoNaMatriz(sessao, integracao, resumo) {
+  if (await wikWeb.trocarEmpresa(sessao, FONTE_EMP_ID)) return sessao;
+  const nova = await renovarSessao(integracao);
+  if (await wikWeb.trocarEmpresa(nova, FONTE_EMP_ID)) return nova;
+  resumo.erros.push(
+    `o Wik recusou pôr a sessão na matriz (${FONTE_EMP_ID}) mesmo depois de um login novo — a leitura seguiu na `
+    + 'empresa em que o login caiu. Se os números vierem menores que os do Wik, é isso.'
+  );
+  return nova;
+}
+
+// Piso de sanidade (só no dia a dia, que tem janela comparável ciclo a ciclo).
+function conferirPiso(integracao, janela, resumo) {
+  if (janela.modo !== 'corrente') return;
+  const base = integracao.financeiro_resumo && integracao.financeiro_resumo.base_corrente;
+  if (!base) return;
+  const agora = { pagar: resumo.pagar_contas_vistas, receber: resumo.receber_vistos, extrato: resumo.extrato_vistos };
+  for (const k of Object.keys(agora)) {
+    const antes = Number(base[k]) || 0;
+    if (antes >= PISO_BASE_MIN && agora[k] < antes * PISO_FRACAO) {
+      const e = new Error(
+        `PISO_DE_SANIDADE: ${k} veio com ${agora[k]} registro(s), menos de 30% dos ${antes} do último ciclo bom. `
+        + 'Tratado como leitura quebrada do Wik; o ciclo não foi dado como sincronizado. Se o número caiu de verdade, '
+        + 'o próximo ciclo confirma e passa.'
+      );
+      e.pisoSanidade = true;
+      throw e;
+    }
+  }
 }
 
 async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
@@ -838,20 +924,10 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
   }
 
   const empresas = await empresasMapeadas();
-  if (!empresas.length) {
-    const motivo = 'nenhuma empresa do Hub tem o Id de Empresa do Wik preenchido — sem esse mapa o sync não sabe '
-      + 'a qual CNPJ o título pertence, e chutar misturaria Simples Nacional com Lucro Real. '
-      + 'Preencha em Empresas (campo "Id de Empresa do Wik").';
-    await registrarPulado(integracao.id, motivo);
-    return { pulado: motivo };
-  }
-  // GUARDA: desligar a troca de empresa com mais de uma empresa mapeada grava a
-  // dívida da MESMA empresa dentro de todos os CNPJs (o EmpId do grid é
-  // ignorado pelo Wik — ver a nota em TROCAR_EMPRESA). É recusado, não obedecido.
-  if (!TROCAR_EMPRESA && empresas.length > 1) {
-    const motivo = 'WIK_FIN_TROCA_EMPRESA=0 com mais de uma empresa mapeada foi RECUSADO: o filtro de empresa do '
-      + 'contas a pagar é ignorado pelo Wik (medido em 18/09/2026), então sem a troca de sessão os títulos de uma '
-      + 'empresa seriam gravados em todos os CNPJs. Remova a variável no Render.';
+  const padrao = empresaPadraoDe(empresas);
+  if (!padrao) {
+    const motivo = 'nenhuma empresa do Hub tem o Id de Empresa do Wik preenchido — sem esse mapa não dá para saber '
+      + 'de qual CNPJ é cada conta bancária. Preencha em Empresas (Hoggar = 198, Origem = 202).';
     await registrarPulado(integracao.id, motivo);
     return { pulado: motivo };
   }
@@ -861,9 +937,13 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
     return { pulado: 'outro job do Wik está rodando agora (a sessão web é uma só)' };
   }
 
-  const resumo = resumoVazio();
+  // A "fonte": de onde se lê (a matriz do Wik) e a empresa padrão do Hub.
+  const fonte = { id: padrao.id, nome: padrao.nome, wik_emp_id: FONTE_EMP_ID };
+  const mapaEmpresas = new Map(empresas.map((e) => [Number(e.wik_emp_id), e.id]));
+  let resumo = resumoVazio();
   const janela = calcularJanela(integracao);
   resumo.janela = { de: janela.de, ate: janela.ate, modo: janela.modo };
+  resumo.empresa_padrao = padrao.nome;
   const t0 = Date.now();
 
   await pool.query(
@@ -872,171 +952,73 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
   );
 
   try {
-    const mapaEmpresas = new Map(empresas.map((e) => [Number(e.wik_emp_id), e.id]));
-
-    // Cadastros valem para o dia inteiro; sem isso todo ciclo regravaria 170
-    // contas de plano por empresa à toa.
+    // Cadastros valem para o dia inteiro — mas só se a base já os tem.
     const rodouHoje = integracao.financeiro_ultima_sincronizacao
       && new Date(integracao.financeiro_ultima_sincronizacao).toISOString().slice(0, 10) === hojeIso();
-    // CORRIGIDO (18/09/2026): o "já rodou hoje" bastava para pular os cadastros
-    // — mas um ciclo que termina sem ler NADA (todas as empresas puladas)
-    // também carimba a data. Resultado: plano de contas, centros de custo e
-    // contas bancárias nunca entravam, e sem conta bancária o extrato inteiro
-    // cai em "não achei a conta". Se a base ainda não tem os cadastros do Wik,
-    // eles são lidos independentemente da data.
     const { rows: temCadastro } = await pool.query(
       'SELECT count(*)::int AS n FROM fin_contas WHERE wik_grp_id IS NOT NULL'
     );
     const cadastrosHoje = rodouHoje && temCadastro[0].n > 0;
 
-    // Toda a leitura das 4 empresas numa função só, para poder REFAZER do zero
-    // com uma sessão nova se a do Wik cair no meio. A gravação é toda idempotente
-    // (upsert por chave do Wik), então refazer não duplica nada.
-    async function rodarEmpresas(sessao) {
-      // Um relogin por ciclo, no máximo: refazer a sessão é a única coisa que
-      // este caminho faz contra o Wik além de ler, e login repetido é o que
-      // derruba a conta.
-      let sessaoJaRefeita = false;
-      // A troca de empresa manda `{id, descricao, matriz}` — e quem sabe a
-      // descrição e a matriz CERTAS é o próprio Wik, não o cadastro do Hub
-      // (aqui a empresa se chama "HOGGAR (Simples Nacional)"; lá, "HOGGAR MISS
-      // MANU - NFE - 198"). Mandar o nome do Hub é o tipo de detalhe que faz o
-      // Wik recusar a troca sem dizer por quê. O combo é uma chamada só por
-      // ciclo, e é o mesmo que a tela deles usa.
-      let comboWik = new Map();
-      try {
-        for (const e of await wikWeb.listarEmpresas(sessao)) comboWik.set(Number(e.id), e);
-      } catch (e) {
-        resumo.erros.push(`não consegui ler a lista de empresas do Wik (a troca vai usar o nome do Hub): ${e.message}`);
-      }
-      for (const emp of empresas) {
-        // Troca a empresa ativa da sessão (o contas a pagar depende dela; o
-        // contas a receber e o extrato usam EmpId como filtro e independem).
-        // A troca pode devolver 500 para empresas não-matriz, MAS isso NÃO
-        // derruba a sessão (confirmado ao vivo 16/09: a sessão segue viva depois
-        // do 500) — então NÃO tratamos como sessão caída (fazer isso causava 3
-        // renovações inúteis e falha). Só a derrubada REAL do grid (tela de
-        // login) dispara o retry lá embaixo.
-        // Cada etapa carimba ONDE estava quando falhou. Até 17/09/2026 o erro
-        // que chegava na tela era sempre a mesma frase genérica sobre sessão
-        // derrubada, sem dizer em qual empresa nem em qual leitura — e com
-        // isso a investigação recomeçava do zero toda vez.
-        const passo = async (nome, fn) => {
-          try { return await fn(); } catch (err) {
-            err.etapaFinanceiro = `${nome} · ${emp.nome} (Wik ${emp.wik_emp_id})`;
-            throw err;
-          }
-        };
-
-        // A EMPRESA TEM QUE SER A DA SESSÃO — e a troca tem que dar certo.
-        // `trocarEmpresa` já tenta o endpoint que a tela do Wik usa
-        // (/Login/AdicionarEmpresaNasessao) e só depois os antigos. Se nenhum
-        // pegar, a empresa é PULADA com o motivo escrito: ler assim mesmo
-        // traria os títulos da empresa anterior carimbados como se fossem
-        // desta (ver a guarda em importarContasPagar).
-        if (TROCAR_EMPRESA) {
-          const noWik = comboWik.get(Number(emp.wik_emp_id));
-          const trocou = await passo('trocar empresa da sessão',
-            () => wikWeb.trocarEmpresa(sessao, emp.wik_emp_id, {
-              descricao: (noWik && noWik.nome) || emp.nome,
-              matriz: (noWik && noWik.matriz) || MATRIZ_EMP_ID,
-            }));
-          if (!trocou) {
-            resumo.empresas_puladas.push(`${emp.nome} (Wik ${emp.wik_emp_id})`);
-            resumo.erros.push(
-              `${emp.nome}: o Wik não aceitou trocar a empresa da sessão, então os títulos desta empresa NÃO foram `
-              + 'lidos (ler sem trocar traria os da empresa anterior e duplicaria a dívida entre CNPJs).'
-            );
-            // ⚠️ MEDIDO NA TELA DE PRODUÇÃO EM 18/09/2026: quando o endpoint
-            // antigo recusa a troca (HTTP 500), a sessão fica SEM empresa
-            // ativa — e daí em diante TODA leitura do contas a pagar devolve
-            // 500, inclusive a das outras empresas e a que nem depende de
-            // troca. Era isso que fazia o diagnóstico culpar a leitura.
-            // Refazemos o login UMA vez por ciclo para as empresas seguintes
-            // (e o extrato) não herdarem a sessão estragada.
-            if (!sessaoJaRefeita) {
-              sessaoJaRefeita = true;
-              try {
-                sessao = await renovarSessao(integracao);
-                resumo.erros.push('sessão refeita depois da troca de empresa recusada (o Wik deixa a sessão sem empresa ativa quando recusa).');
-              } catch (e) {
-                resumo.erros.push(`não consegui refazer a sessão depois da troca recusada: ${e.message}`);
-              }
-            }
-            continue;
-          }
-        }
-
-        if (forcarCadastros || !cadastrosHoje) {
-          await passo('plano de contas', () => importarPlanoContas(sessao, emp, resumo));
-          await passo('centros de custo', () => importarCentrosCusto(sessao, emp, resumo));
-          await passo('contas bancárias', () => importarContasBancarias(sessao, emp, mapaEmpresas, resumo));
-        }
-        const mapas = await carregarMapas(emp.wik_emp_id);
-
-        try {
-          await passo('contas a pagar', () => importarContasPagar(sessao, emp, janela, mapas, resumo));
-        } catch (err) {
-          // Empresa que não separou não derruba o ciclo inteiro: registra,
-          // pula, e as outras continuam.
-          if (!err.empresaNaoSeparou) throw err;
-          resumo.empresas_puladas.push(`${emp.nome} (Wik ${emp.wik_emp_id})`);
-          resumo.erros.push(err.message);
-          continue;
-        }
-        await passo('contas a receber', () => importarContasReceber(sessao, emp, janela, mapas, resumo));
-        // Depois de ter os dois lados (baixas + extrato), liga o que o Wik já
-        // conciliou — assim não cai tudo como "a conciliar" no Hub.
-        await passo('conciliação com as baixas do Wik', () => conciliarExtratoComBaixasWik(emp, resumo));
-      }
-
-      // ── O EXTRATO É LIDO UMA VEZ POR CICLO, FORA DO LAÇO ─────────────────
-      // Ver a nota em importarExtrato: o EmpId do extrato não separa as
-      // empresas, então ler dentro do laço duplicava o extrato bancário
-      // inteiro. Aqui é uma leitura só (EmpId=0) e a empresa de cada linha vem
-      // da conta bancária.
-      const empParaExtrato = empresas[0];
-      const mapasExtrato = await carregarMapas(empParaExtrato.wik_emp_id);
-      try {
-        await importarExtrato(sessao, empParaExtrato, janela, mapasExtrato, resumo);
-      } catch (err) {
-        err.etapaFinanceiro = 'extrato bancário (leitura única do ciclo)';
+    // Toda a leitura numa função só, para poder REFAZER do zero com uma sessão
+    // nova se a do Wik cair no meio. Gravação idempotente: refazer não duplica.
+    const passo = async (nome, fn) => {
+      try { return await fn(); } catch (err) {
+        if (!err.etapaFinanceiro) err.etapaFinanceiro = `${nome} · matriz do Wik (${FONTE_EMP_ID})`;
         throw err;
       }
+    };
+    async function rodar(sessao) {
+      sessao = await passo('pôr a sessão na matriz', () => sessaoNaMatriz(sessao, integracao, resumo));
+      if (forcarCadastros || !cadastrosHoje) {
+        await passo('plano de contas', () => importarPlanoContas(sessao, fonte, resumo));
+        await passo('centros de custo', () => importarCentrosCusto(sessao, fonte, resumo));
+        await passo('contas bancárias', () => importarContasBancarias(sessao, fonte, mapaEmpresas, resumo));
+      }
+      const mapas = await carregarMapas(fonte, mapaEmpresas);
+      resumo.contas_sem_vinculo = mapas.contasSemVinculo.slice(0, 40);
+      await passo('contas a pagar', () => importarContasPagar(sessao, fonte, janela, mapas, resumo));
+      await passo('contas a receber', () => importarContasReceber(sessao, fonte, janela, mapas, resumo));
+      await passo('extrato bancário', () => importarExtrato(sessao, fonte, janela, mapas, resumo));
+      await passo('conciliação com as baixas do Wik', () => conciliarExtratoComBaixasWik(resumo));
     }
 
-    // ⭐ O CONSERTO: sessão viva na entrada; se ela CAIR no meio (o Wik derruba
-    // quando o mesmo login aparece noutro lugar — o Render roda 2 instâncias no
-    // overlap de deploy — ou por timeout, ou porque a troca de empresa foi
-    // recusada), renova e REFAZ. Tenta até 3x com uma pequena espera entre
-    // elas, porque a derrubada costuma ser INTERMITENTE — uma tentativa só (o
-    // que o sync de produção faz) às vezes não basta. Gravação idempotente,
-    // então refazer nunca duplica.
+    // Sessão cai no meio (mesmo login usado noutro lugar, deploy com duas
+    // instâncias, timeout): renova e refaz, até 3x, com pausa crescente.
     let sessao = await obterSessao(integracao);
     for (let tentativa = 1; ; tentativa += 1) {
       try {
-        await rodarEmpresas(sessao);
+        await rodar(sessao);
         break;
       } catch (err) {
         if (!err.sessaoExpirada || tentativa >= 3) throw err;
-        // Zera os contadores parciais desta tentativa (a gravação já feita fica
-        // — é idempotente e será reescrita igual) e refaz com uma sessão nova,
-        // depois de uma pausa curta e crescente para a outra ponta soltar.
-        Object.assign(resumo, resumoVazio(), { janela: resumo.janela });
+        resumo = Object.assign(resumoVazio(), { janela: resumo.janela, empresa_padrao: resumo.empresa_padrao });
         await new Promise((r) => setTimeout(r, 1500 * tentativa));
         sessao = await renovarSessao(integracao);
       }
     }
 
     resumo.segundos = Math.round((Date.now() - t0) / 1000);
-    delete resumo._assinaturaPagar; // controle interno, não vai para a tela
 
-    // Só avança a carga histórica quando o ciclo inteiro deu certo — avançar
-    // depois de um erro pularia uma fatia do passado em silêncio.
-    // A carga histórica só anda quando a fatia atual foi lida INTEIRA. Antes, a
-    // janela avançava 90 dias por ciclo enquanto só 120 detalhes eram lidos —
-    // o que sobrava da fatia não voltava nunca, e o passado entrava sem as
-    // parcelas (medido no clone: 180 de 300 contas perdidas por fatia).
+    // ── A VERDADE NA TELA ──────────────────────────────────────────────────
+    // "Sincronizado" só quando algo foi LIDO. Um ciclo que não leu nenhum
+    // título nem lançamento no presente é erro, não sucesso — era exatamente
+    // assim que o financeiro "rodava no horário e não puxava nada". (Fatia
+    // antiga da carga histórica pode ser vazia de verdade — essa passa.)
+    const vistos = resumo.pagar_contas_vistas + resumo.receber_vistos + resumo.extrato_vistos;
+    if (vistos === 0 && (janela.modo === 'corrente' || janela.primeira)) {
+      const e = new Error(
+        `NADA_LIDO: o Wik não devolveu nenhuma conta a pagar, conta a receber nem lançamento de extrato entre `
+        + `${janela.de} e ${janela.ate}, lendo a matriz (${FONTE_EMP_ID}). O Wik tem esses dados — o mais provável é o `
+        + 'usuário do Hub no Wik estar sem permissão no Financeiro, ou a sessão ter caído em outra empresa. '
+        + 'Use "Testar o caminho do Wik".'
+      );
+      e.etapaFinanceiro = 'leitura da matriz';
+      throw e;
+    }
+    conferirPiso(integracao, janela, resumo);
+
+    // A carga histórica só anda quando a fatia foi lida INTEIRA.
     if (janela.modo === 'carga_inicial' && resumo.pagar_detalhes_pendentes > 0) {
       resumo.carga_inicial_segurada = `a janela não avançou: ${resumo.pagar_detalhes_pendentes} conta(s) desta fatia ainda `
         + 'estão sem as parcelas lidas. O próximo ciclo termina esta fatia antes de ir mais para trás.';
@@ -1055,6 +1037,12 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
       }
     }
 
+    const anterior = integracao.financeiro_resumo || {};
+    resumo.base_corrente = janela.modo === 'corrente'
+      ? { pagar: resumo.pagar_contas_vistas, receber: resumo.receber_vistos, extrato: resumo.extrato_vistos }
+      : (anterior.base_corrente || null);
+    resumo.ultima_com_dados = vistos > 0 ? new Date().toISOString() : (anterior.ultima_com_dados || null);
+
     await pool.query(
       `UPDATE integracoes_wik
           SET financeiro_status = 'idle', financeiro_erro = NULL, financeiro_resumo = $2,
@@ -1064,28 +1052,22 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
     );
     return resumo;
   } catch (err) {
-    // Sessão derrubada não é falha da integração: é o Wik dizendo que o mesmo
-    // login está em uso na tela. Some sozinho no ciclo seguinte.
     const derrubada = err.sessaoExpirada || /outra sess/i.test(err.message || '');
     const onde = err.etapaFinanceiro ? `Parou em: ${err.etapaFinanceiro}. ` : '';
+    // O resumo parcial vai junto (sem virar "sincronizado"): mostra o que foi
+    // lido até o erro. `financeiro_ultima_sincronizacao` NÃO é tocada.
+    const anterior = integracao.financeiro_resumo || {};
+    const parcial = { ...resumo, erro: true,
+      base_corrente: anterior.base_corrente || null, ultima_com_dados: anterior.ultima_com_dados || null };
     await pool.query(
-      `UPDATE integracoes_wik SET financeiro_status = 'erro', financeiro_erro = $2 WHERE id = $1`,
+      `UPDATE integracoes_wik SET financeiro_status = 'erro', financeiro_erro = $2, financeiro_resumo = $3 WHERE id = $1`,
       [integracao.id, derrubada
-        // ⚠️ A frase anterior mandava "defina WIK_FIN_TROCA_EMPRESA=0 no
-        // Render". Está PROVADO (18/09/2026) que seguir esse conselho grava a
-        // dívida de uma empresa dentro de todos os CNPJs, porque o filtro de
-        // empresa do contas a pagar é ignorado pelo Wik. Recomendar isso era o
-        // conselho mais caro do sistema — foi removido.
-        ? `${onde}O Wik devolveu a tela de login (HTTP 401 ou o formulário de login) no meio da leitura. `
-          + 'Causas, nesta ordem: alguém entrou no Wik com o MESMO usuário que o Hub usa (o Wik só permite uma '
-          + 'sessão por login); duas instâncias do serviço no ar durante um deploy; ou a sessão venceu. '
-          + 'NÃO mexa em WIK_FIN_TROCA_EMPRESA: desligar a troca de empresa duplica os títulos entre os CNPJs. '
-          + 'O próximo ciclo tenta de novo.'
-        : `${onde}${err.message}`]
+        ? `${onde}O Wik devolveu a tela de login no meio da leitura. Causas, nesta ordem: alguém entrou no Wik com o `
+          + 'MESMO usuário que o Hub usa (o Wik só permite uma sessão por login); duas instâncias do serviço no ar '
+          + 'durante um deploy; ou a sessão venceu. O próximo ciclo tenta de novo.'
+        : `${onde}${err.message}`, JSON.stringify(parcial)]
     );
-    // NÃO apagar o web_cookie aqui: ele é COMPARTILHADO com produção, vendas e
-    // facções — limpar por causa de uma falha do financeiro derrubava a sessão
-    // de todo mundo. Quem decide se a sessão presta é o `sessaoViva`.
+    // NÃO apagar o web_cookie: é compartilhado com produção, vendas e facções.
     throw err;
   } finally {
     await liberarJob(integracao.id, 'financeiro');
@@ -1106,6 +1088,7 @@ async function travarTitulo(tituloId, usuarioId, motivo = MOTIVO_TRAVA) {
 module.exports = {
   sincronizarFinanceiroAgora,
   travarTitulo,
+  FONTE_EMP_ID, EMPRESA_PADRAO_WIK, MARCA_A_CLASSIFICAR, empresaPadraoDe,
   // exportados para teste
-  valorDe, dataDe, calcularJanela, codigoPlano,
+  valorDe, dataDe, calcularJanela, codigoPlano, degenerado,
 };

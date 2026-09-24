@@ -63,14 +63,19 @@ const contaVazia = () => ({
 // nomeados na padronização de cadastro.
 const soNumeroEHifen = (v) => String(v ?? '').replace(/[^0-9\-.]/g, '');
 
-function Formulario({ valor, onChange, empresas, travado, novo }) {
+function Formulario({ valor, onChange, empresas, travado, novo, empresaEditavel }) {
   return (
     <div className="form-grid">
-      <Field label="Empresa (CNPJ)" hint={novo ? 'Decide de qual CNPJ é esse dinheiro. Não muda depois.' : 'Não muda depois que a conta tem lançamento.'}>
+      <Field
+        label="Empresa (CNPJ)"
+        hint={novo ? 'Decide de qual CNPJ é esse dinheiro. Não muda depois.'
+          : empresaEditavel ? 'No Wik esta conta está na matriz, sem CNPJ. Diga de qual empresa ela é — os títulos do Wik pagos por ela mudam junto no próximo ciclo.'
+            : 'Não muda depois que a conta tem lançamento.'}
+      >
         <Select
           value={String(valor.empresa_id || '')}
           onChange={(e) => onChange({ empresa_id: e.target.value })}
-          disabled={!novo}
+          disabled={!novo && !empresaEditavel}
           placeholder="Escolha a empresa"
         >
           {empresas.map((e) => <option key={e.id} value={e.id}>{e.nome}</option>)}
@@ -388,6 +393,14 @@ export default function ContasBancariasPage() {
                   <Icone size={15} /> {c.nome}
                   {!c.ativo && <span className="stamp sm tone-neutro">desativada</span>}
                   {doWik && <span className="stamp sm tone-neutro"><LogoWik size={12} /> Wik</span>}
+                  {doWik && c.cnpj_do_wik_indefinido && (
+                    <span
+                      className="stamp sm tone-atencao"
+                      title="No Wik esta conta está na matriz, sem CNPJ. Entrou na empresa padrão — confira e, se for outra, troque em Editar."
+                    >
+                      CNPJ a confirmar
+                    </span>
+                  )}
                 </div>
                 <div className="painel-acoes-inline">
                   {!editando && (
@@ -460,6 +473,7 @@ export default function ContasBancariasPage() {
                     onChange={(patch) => setRascunho((r) => ({ ...r, ...patch }))}
                     empresas={empresas}
                     travado={doWik}
+                    empresaEditavel={doWik && Boolean(c.cnpj_do_wik_indefinido)}
                   />
                   <div className="painel-acoes-inline" style={{ marginTop: 14 }}>
                     <button type="button" className="btn btn-primary" disabled={salvando} onClick={() => salvarEdicao(c.conta_id)}>
