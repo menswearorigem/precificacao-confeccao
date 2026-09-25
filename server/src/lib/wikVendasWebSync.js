@@ -35,6 +35,17 @@ function somarDias(iso, d) { const dt = new Date(iso + 'T00:00:00'); dt.setDate(
 function txt(v) { if (v === null || v === undefined) return null; const s = String(v).trim(); return s === '' ? null : s; }
 function num(v) { const n = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(n) ? n : 0; }
 
+// O item do Wik, gravado já com a VARIANTE (25/09/2026): sem ela a venda do
+// atacado sumia de toda conta por cor×tamanho — grade da Cobertura, OP do
+// Planejamento, Projeção, consumo de tecido, devolução. A variante é casada
+// pela grafia normalizada; sem par na grade, fica NULA (e a tela de
+// Qualidade de dados conta). Exportada para o teste usar a MESMA consulta.
+const SQL_INSERIR_ITEM_WIK = `INSERT INTO pedido_itens
+             (pedido_id, produto_id, referencia, descricao, cor, tamanho,
+              quantidade, valor_unitario, desconto_pct, desconto_valor, total, ordem, variante_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,
+                   (SELECT e2.id FROM estoque_variantes e2 WHERE e2.produto_id = $2::int AND upper(btrim(e2.cor)) = upper(btrim(COALESCE($5::varchar, ''))) AND upper(btrim(e2.tamanho)) = upper(btrim(COALESCE($6::varchar, ''))) ORDER BY e2.ativo DESC, e2.id LIMIT 1))`;
+
 async function buscarIntegracao() {
   const { rows } = await pool.query('SELECT * FROM integracoes_wik ORDER BY id LIMIT 1');
   return rows[0] || null;
@@ -269,14 +280,7 @@ async function preencherItensPendentes(sessao, { cap, horas = 12, forcar = false
           || (it.ref && porRef.get(String(it.ref).toUpperCase()))
           || null;
         await client.query(
-          // variante_id pela grade (25/09/2026): sem ele a venda do atacado
-          // sumia de toda conta por cor×tamanho — grade da Cobertura, OP do
-          // Planejamento, Projeção, consumo de tecido, devolução.
-          `INSERT INTO pedido_itens
-             (pedido_id, produto_id, referencia, descricao, cor, tamanho,
-              quantidade, valor_unitario, desconto_pct, desconto_valor, total, ordem, variante_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,
-                   (SELECT e2.id FROM estoque_variantes e2 WHERE e2.produto_id = $2::int AND upper(btrim(e2.cor)) = upper(btrim(COALESCE($5::text, ''))) AND upper(btrim(e2.tamanho)) = upper(btrim(COALESCE($6::text, ''))) ORDER BY e2.ativo DESC, e2.id LIMIT 1))`,
+          SQL_INSERIR_ITEM_WIK,
           [ped.id, produtoId, it.ref ? String(it.ref).slice(0, 60) : null,
             it.descricao ? it.descricao.slice(0, 200) : null,
             it.cor ? it.cor.slice(0, 60) : null, it.tamanho ? it.tamanho.slice(0, 20) : null,
@@ -456,6 +460,7 @@ async function estadoVendasWik() {
 }
 
 module.exports = {
+  SQL_INSERIR_ITEM_WIK,
   importarVendasWebAgora, preencherItensPendentesAgora, estadoVendasWik,
   situacaoVenda, lerVendedor,
 };

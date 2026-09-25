@@ -14,6 +14,7 @@
 //
 // REGRA 4 — nenhuma tabela nova, nenhuma coluna nova, nenhuma permissão
 // nova. Fica sob o módulo `analises`, que é onde a pergunta vive.
+const { CANAIS_MARKETPLACE } = require('../lib/mixTributario');
 const { condOperacaoVenda } = require('../lib/operacaoVenda');
 const express = require('express');
 const pool = require('../db/pool');
@@ -60,6 +61,10 @@ async function buscarPedidos({ desde, empresaId }) {
     valores.push(empresaId);
     filtroEmpresa = ' AND pv.empresa_id = $2';
   }
+  // canal digitado à mão ("Mercado Livre") conta como marketplace mesmo sem
+  // origem_marketplace — a mesma reserva de lib/mixTributario.js
+  valores.push(CANAIS_MARKETPLACE);
+  const pCanais = valores.length;
   const { rows } = await pool.query(
     `SELECT to_char(date_trunc('month', pv.data_pedido), 'YYYY-MM') AS mes,
             pv.id,
@@ -78,7 +83,8 @@ async function buscarPedidos({ desde, empresaId }) {
         -- própria só depois de faturada — pedido 'aberto' do Hub é orçamento.
         -- Marketplace nunca é faturado aqui, então entra sempre.
         AND ${condOperacaoVenda('pv')}
-        AND (pv.situacao = 'faturado' OR pv.origem_marketplace IS NOT NULL)
+        AND (pv.situacao = 'faturado' OR pv.origem_marketplace IS NOT NULL
+             OR LOWER(BTRIM(COALESCE(pv.canal_venda, ''))) = ANY($${pCanais}::text[]))
         AND pv.data_pedido >= $1::date${filtroEmpresa}
       ORDER BY pv.data_pedido`,
     valores

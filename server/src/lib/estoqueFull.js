@@ -81,4 +81,28 @@ async function pecasNoFullPorVariante(db) {
   return { porVariante, semVariantePorProduto };
 }
 
-module.exports = { pecasNoFullPorProduto, pecasNoFullPorVariante };
+// Map produto_id → peças vendidas FORA do Full na janela [inicio, fim] (datas
+// ISO, com o mesmo arredondamento por semana de vendasEmPecas). Serve para a
+// pergunta que o saldo somado não responde: "o galpão zerado é problema?".
+// O Full só atende a venda do próprio anúncio no Full; atacado, venda direta,
+// viagem e anúncio fora do Full dependem do galpão.
+async function vendaForaDoFullPorProduto(db, [inicio, fim]) {
+  const { PEDIDO_VALIDO, pecasDoItemSql } = require('./vendasEmPecas');
+  const { CONDICAO_ANUNCIO_NO_FULL } = require('./filtroFull');
+  const { rows } = await db.query(
+    `SELECT COALESCE(ev.produto_id, pi.produto_id) AS produto_id,
+            SUM(${pecasDoItemSql('pi')})::numeric AS pecas
+       FROM pedido_itens pi
+       JOIN pedidos_venda pv ON pv.id = pi.pedido_id
+       LEFT JOIN estoque_variantes ev ON ev.id = pi.variante_id
+      WHERE ${PEDIDO_VALIDO}
+        AND pv.data_pedido >= date_trunc('week', $1::date)
+        AND pv.data_pedido < date_trunc('week', $2::date) + INTERVAL '7 days'
+        AND NOT ${CONDICAO_ANUNCIO_NO_FULL('pv')}
+      GROUP BY 1`,
+    [inicio, fim]
+  );
+  return new Map(rows.filter((r) => r.produto_id).map((r) => [r.produto_id, Number(r.pecas) || 0]));
+}
+
+module.exports = { pecasNoFullPorProduto, pecasNoFullPorVariante, vendaForaDoFullPorProduto };

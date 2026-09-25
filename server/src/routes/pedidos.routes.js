@@ -935,7 +935,11 @@ async function mapaCustoPorKit(kitIds, ctx) {
         pctImpostos: pecasNoKit > 0 ? pctPonderado / pecasNoKit : 0,
       });
     } catch {
-      mapa.set(kitId, { custoPeca: null, imposto: 0, pctImpostos: 0 });
+      // Sem custo, mas as PEÇAS do kit continuam conhecidas pela composição.
+      const { rows: pk } = await pool.query(
+        'SELECT COALESCE(SUM(quantidade), 0)::int AS pecas FROM kits_manuais_itens WHERE kit_id = $1', [kitId]
+      ).catch(() => ({ rows: [] }));
+      mapa.set(kitId, { custoPeca: null, pecasNoKit: pk[0]?.pecas || null, imposto: 0, pctImpostos: 0 });
     }
   }
   return mapa;

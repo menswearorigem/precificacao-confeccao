@@ -87,7 +87,9 @@ async function buscarPedidosDoMarketplace(integracao, desde) {
       sellerId: integracao.conta_externa_id,
       desde: desde.toISOString(),
     });
-    return orders.map(mercadoLivre.mapearPedido);
+    const mapeados = orders.map(mercadoLivre.mapearPedido);
+    if (orders.avisoTeto) mapeados.avisoTeto = orders.avisoTeto;
+    return mapeados;
   }
   if (integracao.marketplace === 'shopee') {
     // Quais pedidos dessa janela já estão no banco. Vai junto pra Shopee
@@ -394,7 +396,7 @@ async function importarPedido(client, pedidoGenerico, integracao) {
     // CNPJ. Aqui só se PREENCHE o que está vazio (COALESCE): nenhum valor
     // gravado é trocado — a regra de "não reescrever o pedido" continua.
     if (integracao?.id) {
-      await client.query(
+      const { rowCount: completou } = await client.query(
         `UPDATE pedidos_venda SET
             origem_integracao_id = COALESCE(origem_integracao_id, $2),
             empresa_id = COALESCE(empresa_id, $3),
@@ -407,7 +409,10 @@ async function importarPedido(client, pedidoGenerico, integracao) {
         [existentes[0].id, integracao.id, integracao.empresa_id || null, integracao.pct_nota_fiscal ?? null,
           pedidoGenerico.pagamentoIdExterno || null, pedidoGenerico.packId || null, pedidoGenerico.taxaMarketplace ?? null]
       );
-      const { rows: semAnuncio } = await client.query(
+      // Só o pedido que acabou de ser completado (veio da planilha) tem os
+      // itens olhados — o resto da janela, relida a cada ciclo, não custa
+      // consulta nenhuma a mais.
+      const { rows: semAnuncio } = completou === 0 ? { rows: [] } : await client.query(
         `SELECT id, sku_externo FROM pedido_itens
           WHERE pedido_id = $1 AND anuncio_id_marketplace IS NULL ORDER BY ordem, id`,
         [existentes[0].id]
@@ -1781,9 +1786,12 @@ async function sincronizarIntegracao(integracaoId) {
     await corrigirTaxaMarketplaceHistorico(integracao, { limite: 15 });
     await sincronizarAdsSeNecessario(integracao);
 
+    // Dia com mais de 1.000 pedidos pagos no ML: vai para a tela de Saúde
+    // (ultimo_erro), e não só para o log do servidor.
+    const avisoTeto = pedidosGenericos.avisoTeto ? pedidosGenericos.avisoTeto.join(' ') : null;
     await pool.query(
       `UPDATE integracoes_marketplace SET ultima_sincronizacao = now(), ultimo_erro = $1, atualizado_em = now() WHERE id = $2`,
-      [ultimoErroImportacao, integracaoId]
+      [ultimoErroImportacao || avisoTeto, integracaoId]
     );
     return { pedidosEncontrados: pedidosGenericos.length, pedidosImportados: importados, pedidosCancelados: cancelados };
   } catch (err) {

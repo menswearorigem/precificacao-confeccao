@@ -217,7 +217,7 @@ async function gravarVenda(empId, ped, det, marcaId) {
       await client.query(
         `INSERT INTO pedido_itens (pedido_id, produto_id, referencia, descricao, cor, tamanho, quantidade, ordem, variante_id)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,
-                 (SELECT e2.id FROM estoque_variantes e2 WHERE e2.produto_id = $2::int AND upper(btrim(e2.cor)) = upper(btrim(COALESCE($5::text, ''))) AND upper(btrim(e2.tamanho)) = upper(btrim(COALESCE($6::text, ''))) ORDER BY e2.ativo DESC, e2.id LIMIT 1))`,
+                 (SELECT e2.id FROM estoque_variantes e2 WHERE e2.produto_id = $2::int AND upper(btrim(e2.cor)) = upper(btrim(COALESCE($5::varchar, ''))) AND upper(btrim(e2.tamanho)) = upper(btrim(COALESCE($6::varchar, ''))) ORDER BY e2.ativo DESC, e2.id LIMIT 1))`,
         [pedidoId, produtoId, it.ref, null, it.cor, it.tamanho, it.qtd, ordem++]
       );
     }

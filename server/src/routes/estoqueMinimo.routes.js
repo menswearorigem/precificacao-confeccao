@@ -13,7 +13,7 @@
 // escrito. Item sem histórico, item que ficou zerado (e por isso "não
 // vendeu"), fornecedor sem prazo cadastrado: os três aparecem na tela com a
 // causa, nunca com um número plausível.
-const { pecasNoFullPorProduto, pecasNoFullPorVariante } = require('../lib/estoqueFull');
+const { pecasNoFullPorProduto, pecasNoFullPorVariante, vendaForaDoFullPorProduto } = require('../lib/estoqueFull');
 const express = require('express');
 const pool = require('../db/pool');
 const produtosRoutes = require('./produtos.routes');
@@ -181,7 +181,7 @@ async function calcularCobertura(query = {}) {
     // Quantas vezes o mínimo é "sobra". 3× é o corte da planilha da casa.
     const fatorExcesso = temNumero(req.query.fator_excesso) ? Number(req.query.fator_excesso) : 3;
 
-    const [serie, zeradas, saldos, margemPorProduto, semReferencia, kitsSemComposicao, emProducao, reservado, noFull] = await Promise.all([
+    const [serie, zeradas, saldos, margemPorProduto, semReferencia, kitsSemComposicao, emProducao, reservado, noFull, foraDoFull] = await Promise.all([
       vendas.serieSemanalPorProduto(pool, janela),
       semanasZeradasPorProduto(janela),
       pool.query(
@@ -230,6 +230,7 @@ async function calcularCobertura(query = {}) {
       // já está na demanda acima; sem isto, a oferta não tinha a outra metade
       // e o sistema pedia produção para peça que está no centro do ML.
       pecasNoFullPorProduto(pool),
+      vendaForaDoFullPorProduto(pool, vendas.paramsJanela(janela)),
     ]);
 
     // Custo de producao por produto, LIDO do motor de calculo — a mesma
@@ -301,6 +302,12 @@ async function calcularCobertura(query = {}) {
       const saldoGalpao = Number(s.saldo);
       const pecasNoFull = noFull.get(s.produto_id) || 0;
       const saldo = saldoGalpao + pecasNoFull;
+      // O galpão zerado continua sendo FALTA quando há venda que só o galpão
+      // atende (atacado, venda direta, viagem, anúncio fora do Full) — ou
+      // quando nem o Full tem nada. Só a referência que vende 100% pelo Full
+      // e tem saldo lá deixa de gritar "sem estoque" por causa do galpão.
+      const vendeForaDoFull = (foraDoFull.get(s.produto_id) || 0) > 0;
+      const faltaNoGalpao = saldoGalpao <= 0 && (vendeForaDoFull || pecasNoFull <= 0);
       const naFaccao = emProducao.get(s.produto_id) || 0;
       // ⚠️ 14/09/2026: faltava a PARCELA NEGATIVA. Era `saldo + naFaccao`,
       // enquanto estoqueMinimo.js:360 declara que a posição é o galpão MAIS o
@@ -360,7 +367,7 @@ async function calcularCobertura(query = {}) {
       });
 
       const situacao = (() => {
-        if (saldo <= 0) return 'sem_estoque';
+        if (faltaNoGalpao) return 'sem_estoque';
         if (rop.valor == null) return 'indeterminado';
         if (posicao <= rop.valor) return 'comprar_agora';
         if (seguranca.valor != null && posicao <= rop.valor * 1.2) return 'atencao';
@@ -386,7 +393,7 @@ async function calcularCobertura(query = {}) {
       const bloco = (() => {
         if (comportamento.quadrante === 'sem_venda' && saldo > 0) return 'parado';
         if (rop.valor == null) return 'sem_calculo';
-        if (saldo <= 0 && Number.isFinite(mediaDia) && mediaDia > 0) return 'produzir_agora';
+        if (faltaNoGalpao && Number.isFinite(mediaDia) && mediaDia > 0) return 'produzir_agora';
         if (posicao <= rop.valor) {
           return cadenciaAplicada.chave === 'semanal' ? 'produzir_agora' : 'programar';
         }
@@ -405,6 +412,7 @@ async function calcularCobertura(query = {}) {
         saldo,
         saldo_galpao: saldoGalpao,
         no_full: pecasNoFull,
+        falta_no_galpao: faltaNoGalpao,
         em_producao: naFaccao,
         reservado: jaVendidoNaoSaiu,
         posicao,

@@ -12,6 +12,7 @@ const createApp = require('../src/app');
 const pool = require('../src/db/pool');
 const { importarPedido } = require('../src/lib/marketplaceSync');
 const vendas = require('../src/lib/vendasEmPecas');
+const { SQL_INSERIR_ITEM_WIK } = require('../src/lib/wikVendasWebSync');
 
 const SENHA = 'Senha-forte-123!';
 const linhas = [];
@@ -56,7 +57,9 @@ async function semear() {
   // S5 — Wik atacado, como wikVendasWebSync grava (item sem variante_id)
   const wik1 = (await q(`INSERT INTO pedidos_venda (data_pedido, operacao, situacao, total_bruto, total_liquido, origem, sincroniza_wik, wik_emp_id, wik_ped_id, quantidade_pecas)
       VALUES (CURRENT_DATE,'VENDA','faturado',600,600,'wik',TRUE,192,1001,20) RETURNING id`)).rows[0].id;
-  await q(`INSERT INTO pedido_itens (pedido_id, produto_id, referencia, cor, tamanho, quantidade, valor_unitario, total, ordem) VALUES ($1,$2,'OG1620','PRETO','G',20,30,600,0)`, [wik1, prod]);
+  // A MESMA consulta que a importação do Wik usa — com a grafia do Wik
+  // ('preto ' e 'g'), para provar que a variante é casada normalizada.
+  await q(SQL_INSERIR_ITEM_WIK, [wik1, prod, 'OG1620', null, 'preto ', 'g', 20, 30, 0, 0, 600, 0]);
   // S5 — DEVOLUÇÃO no Wik (8 peças) — não é venda
   const wikDev = (await q(`INSERT INTO pedidos_venda (data_pedido, operacao, situacao, total_bruto, total_liquido, origem, sincroniza_wik, wik_emp_id, wik_ped_id, quantidade_pecas)
       VALUES (CURRENT_DATE,'DEVOLUÇÃO','faturado',240,240,'wik',TRUE,192,1002,8) RETURNING id`)).rows[0].id;
@@ -68,6 +71,20 @@ async function semear() {
   // S6 — Viagem, como viagens.routes grava
   const via = (await q(`INSERT INTO pedidos_venda (data_pedido, empresa_id, operacao, canal_venda, situacao) VALUES (CURRENT_DATE,$1,'Venda','Viagem','aberto') RETURNING id`, [emp])).rows[0].id;
   await q(`INSERT INTO pedido_itens (pedido_id, variante_id, produto_id, referencia, cor, tamanho, quantidade, valor_unitario, total, ordem) VALUES ($1,$2,$3,'OG1620','PRETO','M',1,60,60,0)`, [via, vM, prod]);
+  // Duas referências com o galpão ZERADO e 50 peças no Full: a OG2000 vende
+  // só pelo Full (não falta nada); a OG3000 vende no atacado (o Full não
+  // atende atacado — falta no galpão).
+  for (const [ref, anuncio, pelaFull] of [['OG2000', 'MLB20', true], ['OG3000', 'MLB30', false]]) {
+    const pr = (await q(`INSERT INTO produtos (referencia, descricao) VALUES ($1,'TESTE') RETURNING id`, [ref])).rows[0].id;
+    const va = (await q(`INSERT INTO estoque_variantes (produto_id, cor, tamanho, quantidade, ativo) VALUES ($1,'AZUL','M',0,TRUE) RETURNING id`, [pr])).rows[0].id;
+    await q(`INSERT INTO full_itens (origem_integracao_id, marketplace, anuncio_id_externo, produto_id, variante_id, no_full, desde, estoque_disponivel, estoque_total)
+             VALUES ($1,'mercado_livre',$2,$3,$4,TRUE,CURRENT_DATE - 60,50,50)`, [integ, anuncio, pr, va]);
+    const pv = pelaFull
+      ? (await q(`INSERT INTO pedidos_venda (data_pedido, operacao, situacao, origem_marketplace, origem_pedido_id, origem_integracao_id) VALUES (CURRENT_DATE,'Venda','aberto','mercado_livre',$1,$2) RETURNING id`, [`X-${ref}`, integ])).rows[0].id
+      : (await q(`INSERT INTO pedidos_venda (data_pedido, operacao, situacao, origem, wik_emp_id, wik_ped_id) VALUES (CURRENT_DATE,'VENDA','faturado','wik',192,$1) RETURNING id`, [ref === 'OG3000' ? 3000 : 2000])).rows[0].id;
+    await q(`INSERT INTO pedido_itens (pedido_id, variante_id, produto_id, referencia, cor, tamanho, quantidade, valor_unitario, total, ordem, anuncio_id_marketplace)
+             VALUES ($1,$2,$3,$4,'AZUL','M',5,50,250,0,$5)`, [pv, va, pr, ref, pelaFull ? anuncio : null]);
+  }
   return { emp, integ, prod, vM, vG };
 }
 
@@ -98,6 +115,9 @@ async function semear() {
     // Full 10 + kit 6 + planilha/API 4 + manual 5 + Wik 20 + viagem 1 = 46
     const VERDADE = 46;
 
+    const { rows: wv } = await pool.query(`SELECT pi.variante_id FROM pedido_itens pi JOIN pedidos_venda pv ON pv.id = pi.pedido_id WHERE pv.wik_ped_id = 1001`);
+    reg('Importação do Wik', 'item do atacado grava a variante (PRETO G), mesmo com grafia "preto "/"g"', d.vG, wv[0]?.variante_id);
+
     // 1. Base de todos os planejamentos (vendasEmPecas)
     const tot = await vendas.totaisPorProduto(pool, 4);
     reg('Base de demanda (vendasEmPecas → Cobertura, Planejamento, Piso, Pós-venda)', 'peças da OG1620 (Devolução do Wik não pode contar)', VERDADE, tot.get(d.prod)?.pecas);
@@ -116,6 +136,10 @@ async function semear() {
     console.log('cobertura linha:', JSON.stringify(linha)?.slice(0, 900));
     reg('Cobertura / Estoque mínimo', 'saldo considerado (galpão 15 + Full 300)', 315, linha ? linha.saldo : `status ${cob.status} ${Object.keys(cob.dados||{})}`);
     if (linha) reg('Cobertura / Estoque mínimo', 'peças no Full informadas à parte', 300, linha.no_full);
+    const l2 = lista?.find((x) => x.referencia === 'OG2000');
+    const l3 = lista?.find((x) => x.referencia === 'OG3000');
+    reg('Cobertura / Estoque mínimo', 'galpão 0 + 50 no Full, vende só pelo Full: NÃO é "sem estoque"', 'não', l2 ? (l2.situacao === 'sem_estoque' ? 'sim' : 'não') : 'não achado');
+    reg('Cobertura / Estoque mínimo', 'galpão 0 + 50 no Full, vende no atacado: É "sem estoque"', 'sim', l3 ? (l3.situacao === 'sem_estoque' ? 'sim' : 'não') : 'não achado');
 
     // 3. Lucratividade
     const luc = await chamar('/api/pedidos/relatorio-lucratividade?dataInicio=2000-01-01&dataFim=2100-01-01');
@@ -128,13 +152,13 @@ async function semear() {
 
     // 4. Métricas › movimento de estoque (marketplace)
     const mov = await chamar('/api/pedidos/metricas/movimento-estoque?dataInicio=2000-01-01&dataFim=2100-01-01');
-    reg('Marketplace › movimentação de estoque', 'peças que saíram (Full 10 + kit 6 + planilha 4)', 20, mov.dados?.totalUnidades);
+    reg('Marketplace › movimentação de estoque', 'peças que saíram (Full 10 + kit 6 + planilha 4 + OG2000 5)', 25, mov.dados?.totalUnidades);
 
     // 5. Curva de tamanho
     const curva = await chamar(`/api/analises-estoque/curva-tamanho?produtoId=${d.prod}&dias=30`);
     const itc = curva.dados?.curva?.itens || [];
     reg('Análises › curva de tamanho', 'peças G (kit 6 + manual 5 + Wik 20; devolução fora)', 31, itc.find((x) => x.tamanho === 'G')?.unidades);
-    reg('Análises › curva de tamanho', 'peças M (Full 10 + planilha 4 + viagem 1)', 15, itc.find((x) => x.tamanho === 'M')?.unidades);
+    reg('Análises › curva de tamanho', 'peças M (OG1620: Full 10 + planilha 4 + viagem 1; OG2000 5; OG3000 5)', 25, itc.find((x) => x.tamanho === 'M')?.unidades);
 
     // 6. Conferência: pedido do Full na fila de quem embala
     const fila = await chamar('/api/conferencia/fila');

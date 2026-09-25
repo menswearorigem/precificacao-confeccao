@@ -305,7 +305,9 @@ async function vendaPorVariante(db, janela, produtoId) {
   const { rows: itens } = await db.query(
     `SELECT COALESCE(pi.variante_id, evt.id) AS variante_id,
             (pi.quantidade * COALESCE(k.pecas_desta, 1))::numeric AS pecas,
-            (pi.kit_id IS NOT NULL) AS de_kit
+            -- kit sem composição cadastrada vale como avulso (a mesma regra
+            -- de ctesVendasEmPecas), e não como kit
+            (pi.kit_id IS NOT NULL AND k.so_esta IS NOT NULL) AS de_kit
        FROM pedido_itens pi
        JOIN pedidos_venda pv ON pv.id = pi.pedido_id
        LEFT JOIN estoque_variantes ev ON ev.id = pi.variante_id
@@ -327,6 +329,7 @@ async function vendaPorVariante(db, janela, produtoId) {
         AND (
           (pi.kit_id IS NULL AND COALESCE(ev.produto_id, pi.produto_id) = $1)
           OR (pi.kit_id IS NOT NULL AND k.so_esta IS TRUE)
+          OR (pi.kit_id IS NOT NULL AND k.so_esta IS NULL AND COALESCE(ev.produto_id, pi.produto_id) = $1)
         )`,
     [produtoId, inicio, fim]
   );
