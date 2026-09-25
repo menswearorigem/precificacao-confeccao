@@ -164,18 +164,63 @@ function analisar(zpl) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Texto: ^FH, fonte 0 e negrito por impressão dupla
+// ---------------------------------------------------------------------------
+// Três coisas que a etiqueta do Mercado Livre faz e que o render antigo não
+// entendia — e que juntas deixavam a etiqueta ilegível (25/09/2026):
+//
+// 1. `^FH` liga o escape hexadecimal: `B_C3_A1sica` são os bytes UTF-8 de
+//    "Básica", e `_2D` é o hífen. Sem decodificar, saía o código cru.
+// 2. A fonte 0 é CONDENSADA. Desenhar com Helvetica de largura normal faz a
+//    linha do SKU passar da borda e ser cortada.
+// 3. Negrito em ZPL é o mesmo texto impresso duas vezes, deslocado em poucos
+//    pontos. Se as duas cópias caem em alturas diferentes, o código vira
+//    "NODP35698" escrito por cima de si mesmo. Aqui as duas cópias viram UM
+//    texto em negrito.
+
+// Proporções da fonte 0 medidas contra a Labelary: a altura de maiúscula é
+// ~75% da célula (^A0N,h), e ela é NEGRITO condensado — a Helvetica-Bold a
+// 80% da largura dá a mesma medida de linha. As fontes de bitmap (A–H) são
+// finas e mais largas: Helvetica normal a 100%.
+const FONTE0_BASE = 0.75;
+const FONTE0_CORPO = 1.045;
+const LARGURA_POR_FONTE = { 0: 80 };
+
+function decodificarHex(dado, escape) {
+  if (!escape) return dado;
+  const esc = escape.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!new RegExp(`${esc}[0-9A-Fa-f]{2}`).test(dado)) return dado;
+  const bytes = [];
+  const re = new RegExp(`${esc}([0-9A-Fa-f]{2})|([\\s\\S])`, 'g');
+  let m;
+  while ((m = re.exec(dado))) {
+    if (m[1]) bytes.push(parseInt(m[1], 16));
+    else bytes.push(...Buffer.from(m[2], 'utf8'));
+  }
+  const buf = Buffer.from(bytes);
+  // ^CI28 (UTF-8) é o que o Mercado Livre manda. Se os bytes não formarem
+  // UTF-8 válido, a etiqueta veio na página de código antiga (Latin-1).
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+  catch { return buf.toString('latin1'); }
+}
+
 // Renderiza UMA etiqueta numa página.
 function desenharEtiqueta(pagina, comandos, { dots2pt, larguraDots }) {
-  let x = 0; let y = 0;
+  let x = 0; let y = 0; let modoPos = 'FO';
   let homeX = 0; let homeY = 0;
-  let alturaFonte = 20; let larguraFonte = 0;
+  let alturaFonte = 20; let larguraFonte = 0; let fonte = '0';
   let byLargura = 2; let byAltura = 40;
   let barcodePendente = null;
-  let blocoLargura = null;
+  let bloco = null;
   let inverso = false;
+  let escapeHex = null;
+  const textos = [];
 
   const num = (v, padrao = 0) => {
-    const n = Number(String(v).trim());
+    const s = String(v ?? '').trim();
+    if (s === '') return padrao;
+    const n = Number(s);
     return Number.isFinite(n) ? n : padrao;
   };
 
@@ -187,25 +232,37 @@ function desenharEtiqueta(pagina, comandos, { dots2pt, larguraDots }) {
         break;
       case 'FO':
       case 'FT':
+        // ^FO posiciona pelo TOPO; ^FT pela LINHA DE BASE. A conversão fica
+        // para a hora do ^FD, quando a fonte do campo já é conhecida — o ^A
+        // costuma vir DEPOIS do ^FT.
         x = homeX + num(partes[0]);
         y = homeY + num(partes[1]);
-        // ^FT posiciona pela LINHA DE BASE; ^FO pelo topo. Guardar a diferença
-        // evita texto subindo meia linha na etiqueta inteira.
-        y = c.nome === 'FT' ? y - alturaFonte : y;
+        modoPos = c.nome;
         break;
       case 'A':
       case 'A0':
       case 'AD':
       case 'AA':
-      case 'AB': {
+      case 'AB':
+      case 'AC':
+      case 'AE':
+      case 'AF':
+      case 'AG':
+      case 'AH': {
         // ^A0N,altura,largura
+        fonte = c.nome === 'A' ? (c.args.trim()[0] || '0').toUpperCase() : c.nome[1];
         const p = c.args.replace(/^[0-9A-Z]/i, '').split(',');
         alturaFonte = num(p[1], alturaFonte) || alturaFonte;
         larguraFonte = num(p[2], 0);
         break;
       }
       case 'CF':
+        fonte = (partes[0] || fonte).trim().toUpperCase() || fonte;
         alturaFonte = num(partes[1], alturaFonte) || alturaFonte;
+        larguraFonte = num(partes[2], larguraFonte);
+        break;
+      case 'FH':
+        escapeHex = (c.args.trim()[0]) || '_';
         break;
       case 'BY':
         byLargura = num(partes[0], byLargura) || byLargura;
@@ -214,11 +271,16 @@ function desenharEtiqueta(pagina, comandos, { dots2pt, larguraDots }) {
       case 'BC':
         barcodePendente = {
           altura: num(partes[1], byAltura) || byAltura,
-          linhaTexto: String(partes[2] || 'Y').toUpperCase() !== 'N',
+          linhaTexto: String(partes[2] || 'Y').trim().toUpperCase() !== 'N',
         };
         break;
       case 'FB':
-        blocoLargura = num(partes[0], null);
+        bloco = {
+          largura: num(partes[0], 0),
+          linhas: Math.max(1, num(partes[1], 1)),
+          espaco: num(partes[2], 0),
+          alinhamento: String(partes[3] || 'L').trim().toUpperCase(),
+        };
         break;
       case 'GB': {
         const w = num(partes[0]);
@@ -237,51 +299,148 @@ function desenharEtiqueta(pagina, comandos, { dots2pt, larguraDots }) {
         inverso = true;
         break;
       case 'FD': {
-        const dado = c.args.replace(/\^FS.*$/i, '');
+        const dado = decodificarHex(c.args.replace(/\^FS.*$/i, ''), escapeHex);
         if (barcodePendente) {
           const elementos = codificarCode128(dado);
+          const topo = modoPos === 'FT' ? y - barcodePendente.altura : y;
           const alturaPt = dots2pt(barcodePendente.altura);
           let cursor = x;
           let barra = true;
           for (const largura of elementos) {
-            const larguraDots = largura * byLargura;
-            if (barra) pagina.retangulo(dots2pt(cursor), dots2pt(y), dots2pt(larguraDots), alturaPt);
-            cursor += larguraDots;
+            const larguraBarra = largura * byLargura;
+            if (barra) pagina.retangulo(dots2pt(cursor), dots2pt(topo), dots2pt(larguraBarra), alturaPt);
+            cursor += larguraBarra;
             barra = !barra;
           }
           if (barcodePendente.linhaTexto) {
-            pagina.texto(dots2pt(x), dots2pt(y + barcodePendente.altura) + 9, dado, { tamanho: 8 });
+            // Centralizado embaixo das barras, como a impressora faz.
+            const tam = 9;
+            const meio = dots2pt(x + (cursor - x) / 2);
+            textos.push({
+              xPt: meio, baseDots: topo + barcodePendente.altura, extraPt: tam + 2,
+              texto: dado, tamanho: tam, escala: 100, centro: true,
+            });
           }
           barcodePendente = null;
         } else {
-          const tamanhoPt = Math.max(5, dots2pt(alturaFonte) * 0.95);
-          // ^FB quebra o texto na largura pedida. Sem ele, texto longo vazava
-          // para fora da etiqueta e sumia na impressão.
-          if (blocoLargura) {
-            const larguraPt = dots2pt(blocoLargura);
-            const porLinha = Math.max(8, Math.floor(larguraPt / (tamanhoPt * 0.5)));
-            const palavras = dado.split(/\s+/);
-            let linha = '';
-            let linhaY = y + alturaFonte;
-            for (const p of palavras) {
-              if ((`${linha} ${p}`).trim().length > porLinha && linha) {
-                pagina.texto(dots2pt(x), dots2pt(linhaY), linha, { tamanho: tamanhoPt, negrito: inverso });
-                linha = p; linhaY += alturaFonte * 1.15;
-              } else linha = (`${linha} ${p}`).trim();
-            }
-            if (linha) pagina.texto(dots2pt(x), dots2pt(linhaY), linha, { tamanho: tamanhoPt, negrito: inverso });
-            blocoLargura = null;
-          } else {
-            pagina.texto(dots2pt(x), dots2pt(y + alturaFonte), dado, { tamanho: tamanhoPt, negrito: inverso });
-          }
+          const tamanho = Math.max(5, dots2pt(alturaFonte) * FONTE0_CORPO);
+          const proporcao = larguraFonte > 0 ? larguraFonte / alturaFonte : 1;
+          const larguraBase = LARGURA_POR_FONTE[fonte] ?? 100;
+          const escala = Math.min(130, Math.max(45, larguraBase * proporcao));
+          const base = modoPos === 'FT' ? y : y + alturaFonte * FONTE0_BASE;
+          textos.push({
+            x, baseDots: base, texto: dado, tamanho, escala, negrito: inverso || fonte === '0',
+            alturaDots: alturaFonte, bloco,
+          });
+          bloco = null;
         }
         inverso = false;
+        escapeHex = null;
         break;
       }
+      case 'FS':
+        escapeHex = null;
+        bloco = null;
+        barcodePendente = null;
+        break;
       default:
         break;
     }
   }
+
+  escreverTextos(pagina, textos, { dots2pt, larguraDots });
+}
+
+// Junta as cópias do "negrito por impressão dupla" e escreve cada texto
+// cabendo na etiqueta.
+function escreverTextos(pagina, textos, { dots2pt, larguraDots }) {
+  const { larguraTexto } = require('./pdfMinimo');
+  const TOL_X = 10; const TOL_Y = 14; // em pontos da impressora (~1,3 mm e ~1,8 mm)
+
+  const finais = [];
+  for (const t of textos) {
+    const gemeo = finais.find((f) => f.texto === t.texto && !f.centro === !t.centro
+      && Math.abs((f.x ?? 0) - (t.x ?? 0)) <= TOL_X && Math.abs(f.baseDots - t.baseDots) <= TOL_Y
+      && (t.centro ? Math.abs(f.xPt - t.xPt) < 4 : true));
+    if (gemeo) { gemeo.negrito = true; gemeo.reforco = true; continue; }
+    finais.push({ ...t });
+  }
+  // Um texto solto que repete a linha legível do código de barras (o ML
+  // imprime o código embaixo, à mão, em negrito) também conta como a mesma.
+  for (const t of finais) {
+    if (!t.centro) continue;
+    const manual = finais.find((f) => !f.centro && f.texto === t.texto
+      && f.baseDots > t.baseDots - 10 && f.baseDots < t.baseDots + 80);
+    if (manual) t.descartar = true;
+  }
+
+  const margemPt = 6;
+  const larguraPaginaPt = dots2pt(larguraDots);
+
+  for (const t of finais) {
+    if (t.descartar) continue;
+    if (t.centro) {
+      const w = larguraTexto(t.texto, t.tamanho, false);
+      pagina.texto(t.xPt - w / 2, dots2pt(t.baseDots) + t.extraPt, t.texto, { tamanho: t.tamanho, negrito: true });
+      continue;
+    }
+
+    const xPt = dots2pt(t.x);
+    const disponivel = t.bloco && t.bloco.largura > 0
+      ? dots2pt(t.bloco.largura)
+      : Math.max(20, larguraPaginaPt - xPt - Math.max(margemPt, Math.min(xPt, 18)));
+
+    // Encolhe a LARGURA antes do corpo: a letra continua alta e legível, só
+    // mais estreita. Abaixo de 60% passa a reduzir o corpo também.
+    const cabe = (texto, tamanho, escala) => larguraTexto(texto, tamanho, t.negrito) * (escala / 100);
+
+    if (t.bloco) {
+      const linhas = quebrarLinhas(t.texto, (s) => cabe(s, t.tamanho, t.escala), disponivel);
+      const maxLinhas = t.bloco.linhas;
+      const usadas = linhas.slice(0, maxLinhas);
+      if (linhas.length > maxLinhas) {
+        // ZPL descarta o que passa do número de linhas; aqui a última linha
+        // leva o resto, espremida, para não sumir informação.
+        usadas[maxLinhas - 1] = linhas.slice(maxLinhas - 1).join(' ');
+      }
+      const passo = dots2pt(t.alturaDots + t.bloco.espaco);
+      usadas.forEach((linha, i) => {
+        const { escala, tamanho } = ajustar(linha, t.tamanho, t.escala, disponivel, cabe);
+        const w = cabe(linha, tamanho, escala);
+        let lx = xPt;
+        if (t.bloco.alinhamento === 'C') lx = xPt + (disponivel - w) / 2;
+        else if (t.bloco.alinhamento === 'R') lx = xPt + disponivel - w;
+        pagina.texto(lx, dots2pt(t.baseDots) + passo * i, linha, { tamanho, negrito: t.negrito, escalaH: escala, reforco: t.reforco });
+      });
+      continue;
+    }
+
+    const { escala, tamanho } = ajustar(t.texto, t.tamanho, t.escala, disponivel, cabe);
+    pagina.texto(xPt, dots2pt(t.baseDots), t.texto, { tamanho, negrito: t.negrito, escalaH: escala, reforco: t.reforco });
+  }
+}
+
+function ajustar(texto, tamanho, escala, disponivel, cabe) {
+  let e = escala; let tam = tamanho;
+  const w = cabe(texto, tam, e);
+  if (w <= disponivel) return { escala: e, tamanho: tam };
+  e = Math.max(60, e * (disponivel / w));
+  const w2 = cabe(texto, tam, e);
+  if (w2 > disponivel) tam = Math.max(4, tam * (disponivel / w2));
+  return { escala: e, tamanho: tam };
+}
+
+function quebrarLinhas(texto, medir, largura) {
+  const palavras = String(texto).split(/\s+/).filter(Boolean);
+  const linhas = [];
+  let linha = '';
+  for (const p of palavras) {
+    const tentativa = linha ? `${linha} ${p}` : p;
+    if (linha && medir(tentativa) > largura) { linhas.push(linha); linha = p; }
+    else linha = tentativa;
+  }
+  if (linha) linhas.push(linha);
+  return linhas.length ? linhas : [''];
 }
 
 // Converte ZPL em PDF. `dpmm` é a densidade da impressora que GEROU o ZPL
@@ -305,4 +464,4 @@ function zplParaPdf(zpl, { dpmm = 8, larguraMm = 101.6, alturaMm = 152.4 } = {})
   return { pdf: doc.buffer(), info };
 }
 
-module.exports = { zplParaPdf, analisar, codificarCode128, separarEtiquetas };
+module.exports = { zplParaPdf, analisar, codificarCode128, separarEtiquetas, decodificarHex };

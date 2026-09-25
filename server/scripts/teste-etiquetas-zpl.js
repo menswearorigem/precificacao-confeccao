@@ -131,6 +131,36 @@ async function main() {
   const r300 = zplParaPdf(ETIQUETA('1', 'X'), { dpmm: 12 });
   checa('aceita ZPL de impressora 300dpi', r300.pdf.slice(0, 4).toString() === '%PDF');
 
+  console.log('\n== ETIQUETA DE PRODUTO DO MERCADO LIVRE (25/09) ==');
+  // Formato real do ML Full: ^FH com acento em hexa UTF-8, fonte 0
+  // condensada, e negrito feito imprimindo o mesmo texto duas vezes.
+  const ML = [
+    '^XA^CI28^LH0,0',
+    '^FO120,50^BY3,,0^BCN,80,N,N^FDNODP35698^FS',
+    '^FO245,150^A0N,30,30^FDNODP35698^FS',
+    '^FT244,170^A0N,30,30^FDNODP35698^FS',
+    '^FO43,212^A0N,32,32^FH^FDKit 3 Camisa Gola Polo B_C3_A1sica^FS',
+    '^FO43,249^A0N,32,32^FH^FDConfort_C3_A1vel 100% Algod_C3_A3o^FS',
+    '^FO43,282^A0N,32,32^FH^FDMarinho_2DMarrom_2DMescla - M^FS',
+    '^FO42,282^A0N,32,32^FH^FDMarinho_2DMarrom_2DMescla - M^FS',
+    '^FO43,322^A0N,32,32^FH^FDSKU: Kit_2D3_2DOG1620_2DMarinho_2DMarrom_2DMescla_2DM^FS',
+    '^XZ',
+  ].join('\n');
+  const ml = zplParaPdf(ML).pdf.toString('latin1');
+  checa('^FH decodifica o acento (Básica, Algodão)', ml.includes('(Kit 3 Camisa Gola Polo B\xe1sica)') && ml.includes('Algod\xe3o'));
+  checa('^FH decodifica o hífen do SKU', ml.includes('(SKU: Kit-3-OG1620-Marinho-Marrom-Mescla-M)'));
+  checa('nenhum código hexa cru sobra na etiqueta', !/_C3|_2D/.test(ml));
+  checa('o texto impresso duas vezes sai UMA vez só', (ml.match(/\(NODP35698\)/g) || []).length === 1
+    && (ml.match(/\(Marinho-Marrom-Mescla - M\)/g) || []).length === 1);
+  checa('a fonte 0 sai condensada', /\n80(\.0)? Tz/.test(ml));
+  const { larguraTexto } = require('../src/lib/pdfMinimo');
+  const blocos = [...ml.matchAll(/\/F(\d) ([\d.]+) Tf\n([\d.]+) Tz\n([\d.]+) [\d.]+ Td\n(?:[^\n]*\n)?\(([^)]*)\) Tj/g)];
+  const vaza = blocos.filter((m) => Number(m[4]) + larguraTexto(m[5], Number(m[2]), m[1] === '2') * Number(m[3]) / 100 > 288);
+  checa('nenhuma linha passa da borda da etiqueta', blocos.length >= 5 && vaza.length === 0, vaza.map((m) => m[5]));
+  if (temZbar()) {
+    checa('o código de barras do ML continua legível', decodificar(zplParaPdf(ML).pdf, 1) === 'NODP35698');
+  }
+
   console.log('\n== LISTA DE SEPARAÇÃO ==');
   const semPedidos = await req('POST', '/api/etiquetas/picking', { pedido_ids: [] });
   checa('recusa separação sem pedidos', semPedidos.status === 400);
