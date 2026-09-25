@@ -22,6 +22,7 @@ import {
 } from '../components/graficos';
 import { usePaletaGrafico, corPorIndice } from '../lib/coresGrafico';
 import { definicaoMovimentacao, definicaoRepasses, definicaoConferencia } from '../lib/relatorioFinanceiro';
+import ErroIntegracao from '../components/ErroIntegracao';
 
 // Tela do módulo Financeiro. Três abas, mesma fonte de dado (o extrato lido
 // da própria plataforma), três perguntas diferentes:
@@ -232,21 +233,14 @@ export default function FinanceiroPage({ aba = 'movimentacao' }) {
   return (
     <div className="page-wide">
       <div className="no-print">
-        <h1>Financeiro</h1>
+        {/* 25/09/2026 (revisão visual): o título era só "Financeiro" e a
+            fileira Movimentação/Repasses/Conferência repetia as sub-abas que o
+            menu do módulo já mostra logo acima. Fica o nome do assunto e uma
+            linha de descrição; a troca de aba é só pelo menu. */}
+        <h1>Repasses de marketplace</h1>
         <p className="page-sub">
-          Movimentação bancária dos marketplaces: quanto cada plataforma liberou (e descontou) na conta, por
-          data. É lido do extrato da própria plataforma — inclui o que não pertence a venda nenhuma, como
-          publicidade, multa, ajuste e estorno.
+          Quanto cada plataforma liberou (e descontou) na conta, por data, lido do extrato da própria plataforma.
         </p>
-
-        <div className="subtab-row">
-          {/* Link do react-router, não <a href>: com <a> o navegador recarrega
-              a aplicação inteira a cada troca de aba e o filtro de período
-              volta pro padrão. */}
-          <Link to="/financeiro/movimentacao" className={'subtab-btn' + (aba === 'movimentacao' ? ' active' : '')}>Movimentação</Link>
-          <Link to="/financeiro/repasses" className={'subtab-btn' + (aba === 'repasses' ? ' active' : '')}>Repasses</Link>
-          <Link to="/financeiro/conferencia" className={'subtab-btn' + (aba === 'conferencia' ? ' active' : '')}>Conferência</Link>
-        </div>
 
         <div className="filtros-barra">
           <PeriodoFiltro inicio={dataInicio} fim={dataFim} onChange={({ inicio, fim }) => setPeriodo({ inicio, fim })} />
@@ -354,14 +348,33 @@ function AvisosDasConexoes({ conexoes }) {
       {comAviso.map((c) => (
         <div key={`aviso-${c.id}`} className="aviso-compacto tone-atencao">
           <AlertTriangle size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
-          <strong>{c.nome || PLATAFORMA_LABEL[c.marketplace]}:</strong> {c.ultimo_aviso}
+          <strong>{c.nome || PLATAFORMA_LABEL[c.marketplace]}:</strong> <AvisoResumido texto={c.ultimo_aviso} />
         </div>
       ))}
       {comErro.map((c) => (
         <div key={`erro-${c.id}`} className="aviso-compacto tone-prejuizo">
-          <strong>{c.nome || PLATAFORMA_LABEL[c.marketplace]}:</strong> a última leitura do extrato falhou — {c.ultimo_erro}
+          <strong>{c.nome || PLATAFORMA_LABEL[c.marketplace]}:</strong> a última leitura do extrato falhou. <ErroIntegracao erro={c.ultimo_erro} sistema="a plataforma" />
         </div>
       ))}
+    </>
+  );
+}
+
+// O aviso do servidor termina com o trecho cru da primeira linha que não deu
+// para ler ("Primeira delas, linha 7105: ;;0,00;0,00;67321.46;…"). Isso serve
+// para diagnóstico, não para a tela: fica o resumo e o trecho vai para
+// "Ver detalhes" (revisão visual 25/09/2026).
+function AvisoResumido({ texto }) {
+  const [aberto, setAberto] = useState(false);
+  const corte = String(texto || '').search(/\s*Primeira delas,/);
+  if (corte < 0) return <>{texto}</>;
+  const resumo = texto.slice(0, corte).replace(/\.?$/, '.');
+  const detalhe = texto.slice(corte).trim();
+  return (
+    <>
+      {resumo}{' '}
+      <button type="button" className="botao-link" onClick={() => setAberto((v) => !v)}>{aberto ? 'Esconder detalhes' : 'Ver detalhes'}</button>
+      {aberto && <code className="aviso-detalhe-tecnico">{detalhe}</code>}
     </>
   );
 }

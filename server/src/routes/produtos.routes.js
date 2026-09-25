@@ -139,6 +139,18 @@ router.get('/', async (req, res, next) => {
     const ctx = await getCalcContext();
     const { rows: fotoRows } = await pool.query('SELECT produto_id FROM produto_fotos WHERE produto_id = ANY($1)', [ids]);
     const idsComFoto = new Set(fotoRows.map((f) => f.produto_id));
+    // Foto do ANÚNCIO para quem não tem foto no cadastro (revisão visual
+    // 25/09/2026): a lista inteira mostrava o ícone de "sem imagem" enquanto
+    // o Catálogo tinha a foto da mesma peça. Mesma regra do Estoque mínimo:
+    // o anúncio ativo mais recente. É link da plataforma, não arquivo nosso.
+    const { rows: fotoAnuncioRows } = await pool.query(
+      `SELECT DISTINCT ON (a.produto_id) a.produto_id, a.foto_url
+         FROM anuncios_marketplace a
+        WHERE a.produto_id = ANY($1) AND a.foto_url IS NOT NULL
+        ORDER BY a.produto_id, (a.status = 'ativo') DESC, a.atualizado_em_plataforma DESC NULLS LAST`,
+      [ids]
+    );
+    const fotoAnuncio = new Map(fotoAnuncioRows.map((f) => [f.produto_id, f.foto_url]));
 
     const result = produtos.map((p) => {
       const materiais = materiaisRows.filter((m) => m.produto_id === p.id);
@@ -160,6 +172,7 @@ router.get('/', async (req, res, next) => {
         lucroPct: calculo.formacaoPreco.lucroPct,
         status: calculo.formacaoPreco.status,
         temFoto: idsComFoto.has(p.id),
+        fotoUrl: idsComFoto.has(p.id) ? null : (fotoAnuncio.get(p.id) || null),
       };
     });
 

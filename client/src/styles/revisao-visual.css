@@ -1,0 +1,446 @@
+/* =====================================================================
+   REVISÃO VISUAL — 25/09/2026
+   ---------------------------------------------------------------------
+   Carregado DEPOIS do theme.css (ver main.jsx). Aplica o que a revisão
+   visual (percorrendo o sistema no Chrome, claro e escuro) apontou:
+     1. cores de status separadas da cor da marca (o laranja deixou de ser
+        ao mesmo tempo botão, aba, "Vencendo", "Sem prazo" e "Confirmado");
+     2. cor própria por módulo, viva, só em ícone/rótulo/aba — nunca em
+        botão ou status;
+     3. verde-petróleo como cor de dado nos gráficos (complementar ao cobre);
+     4. modo escuro em três camadas: fundo < card < campo;
+     5. um só jeito de mostrar número de indicador;
+     6. peças novas: barra dentro da célula, progresso da OP, notificações,
+        seção recolhível, esqueleto do Dashboard.
+   Paleta "Couro vivo" (a recomendada na revisão). Tudo aqui é token ou
+   classe nova — nenhum componente escreve cor solta (REGRA 3).
+   ===================================================================== */
+
+/* ---------- 1–3. tokens: claro ---------- */
+:root {
+  /* Status. Âmbar puxado para o amarelo, para não confundir com o cobre dos
+     botões; azul para "informativo / no prazo" (antes era um bege quase
+     igual ao laranja). */
+  --success: #1f7a47;
+  --success-bg: #daf1e3;
+  --success-ring: #2e8b57;
+  --warning: #8a6300;
+  --warning-bg: #fcefc2;
+  --warning-ring: #d4a017;
+  --danger: #a3271c;
+  --danger-bg: #fadcd6;
+  --danger-ring: #c0392b;
+  --info: #1f5f99;
+  --info-bg: #dcebf8;
+  --info-ring: #2f7fc1;
+  --dot-ok: #2e8b57;
+  --dot-warn: #d4a017;
+  --dot-bad: #c0392b;
+
+  /* Calendário e selos de cor cheia (texto branco em cima). */
+  --cal-atrasado: #c0392b;
+  --cal-vencendo: #a37400;
+  --cal-no-prazo: #2f7fc1;
+  --cal-concluido: #2e8b57;
+  --cal-cancelado: #6f655a;
+  --vivo-info: #2f7fc1;
+
+  /* Dado: série principal dos gráficos e barras dentro de tabela. */
+  --dado: #1f7a74;
+  --dado-suave: rgba(31, 122, 116, 0.16);
+  --gr-1: #1f7a74;
+  --gr-6: #b5651d;
+  --gr-positivo: #2e8b57;
+  --gr-negativo: #c0392b;
+
+  /* Cor por módulo (ícone do menu, rótulo acima do título, aba ativa). */
+  --mod-produto: #b8651f;
+  --mod-estoque: #9a7a1c;
+  --mod-producao: #a8532f;
+  --mod-vendas: #2f7fc1;
+  --mod-marketplace: #7a5bb5;
+  --mod-financeiro: #2e8b57;
+  --mod-viagens: #1f7a74;
+  --mod-compras: #c0506a;
+  --mod-analises: #5f7d3a;
+  --mod-calendario: #a37400;
+  --mod-configuracoes: #7a6553;
+}
+
+/* ---------- tokens: escuro (preferência do sistema e botão do topo) ---------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --success: #7fd39c;
+    --success-bg: #1b3325;
+    --success-ring: #5dbb7e;
+    --warning: #f2c14e;
+    --warning-bg: #3a3019;
+    --warning-ring: #e0ae3a;
+    --danger: #f39385;
+    --danger-bg: #3d1f1c;
+    --danger-ring: #e5604f;
+    --info: #8cc4ef;
+    --info-bg: #1c2c38;
+    --info-ring: #5aa9e6;
+    --dot-ok: #5dbb7e;
+    --dot-warn: #f2c14e;
+    --dot-bad: #e5604f;
+    --cal-atrasado: #d0493a;
+    --cal-vencendo: #b58300;
+    --cal-no-prazo: #3d86c6;
+    --cal-concluido: #2f8f5a;
+    --cal-cancelado: #6b6259;
+    --vivo-info: #3d86c6;
+    --dado: #3fa7a0;
+    --dado-suave: rgba(63, 167, 160, 0.22);
+    --gr-1: #3fa7a0;
+    --gr-6: #d9832f;
+    --gr-positivo: #5dbb7e;
+    --gr-negativo: #e5604f;
+    --mod-produto: #d9893b;
+    --mod-estoque: #d8b45a;
+    --mod-producao: #c96f4a;
+    --mod-vendas: #5aa9e6;
+    --mod-marketplace: #a98bd8;
+    --mod-financeiro: #5dbb7e;
+    --mod-viagens: #3fa7a0;
+    --mod-compras: #e07a8a;
+    --mod-analises: #9bb57a;
+    --mod-calendario: #f2c14e;
+    --mod-configuracoes: #b7a493;
+    /* 4. Campo um pouco MAIS CLARO que o card (antes era mais escuro e
+       parecia um buraco na tela). */
+    --field-bg: #33261a;
+    --producao-azul: #6fa8e0;
+  }
+}
+:root[data-theme="dark"] {
+  --success: #7fd39c;
+  --success-bg: #1b3325;
+  --success-ring: #5dbb7e;
+  --warning: #f2c14e;
+  --warning-bg: #3a3019;
+  --warning-ring: #e0ae3a;
+  --danger: #f39385;
+  --danger-bg: #3d1f1c;
+  --danger-ring: #e5604f;
+  --info: #8cc4ef;
+  --info-bg: #1c2c38;
+  --info-ring: #5aa9e6;
+  --dot-ok: #5dbb7e;
+  --dot-warn: #f2c14e;
+  --dot-bad: #e5604f;
+  --cal-atrasado: #d0493a;
+  --cal-vencendo: #b58300;
+  --cal-no-prazo: #3d86c6;
+  --cal-concluido: #2f8f5a;
+  --cal-cancelado: #6b6259;
+  --vivo-info: #3d86c6;
+  --dado: #3fa7a0;
+  --dado-suave: rgba(63, 167, 160, 0.22);
+  --gr-1: #3fa7a0;
+  --gr-6: #d9832f;
+  --gr-positivo: #5dbb7e;
+  --gr-negativo: #e5604f;
+  --mod-produto: #d9893b;
+  --mod-estoque: #d8b45a;
+  --mod-producao: #c96f4a;
+  --mod-vendas: #5aa9e6;
+  --mod-marketplace: #a98bd8;
+  --mod-financeiro: #5dbb7e;
+  --mod-viagens: #3fa7a0;
+  --mod-compras: #e07a8a;
+  --mod-analises: #9bb57a;
+  --mod-calendario: #f2c14e;
+  --mod-configuracoes: #b7a493;
+  --field-bg: #33261a;
+}
+
+/* ---------- 4. modo escuro: campo com borda visível, desativado apagado ---------- */
+:root[data-theme="dark"] :is(input, select, textarea):not([type="checkbox"]):not([type="radio"]):not([type="range"]) {
+  border-color: color-mix(in srgb, var(--border) 80%, #fff 20%);
+}
+:root[data-theme="dark"] :is(input, select, textarea):disabled { opacity: 0.5; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) :is(input, select, textarea):not([type="checkbox"]):not([type="radio"]):not([type="range"]) {
+    border-color: color-mix(in srgb, var(--border) 80%, #fff 20%);
+  }
+  :root:not([data-theme="light"]) :is(input, select, textarea):disabled { opacity: 0.5; }
+}
+
+/* ---------- 5. número de indicador: sempre a mesma fonte ----------
+   "Ainda em aberto" e "Cancelado" saíam em Fraunces e os vizinhos em Inter,
+   na mesma fileira. Número é Inter com algarismo de largura fixa, em
+   qualquer variante (aviso, perigo, sucesso) e em qualquer módulo. */
+.stat-card-value,
+.stat-card.stat-card-danger .stat-card-value,
+.stat-card.stat-card-warning .stat-card-value,
+.stat-card.stat-card-success .stat-card-value,
+.modulo-vivo .stat-card-value,
+.indicador-valor,
+.modulo-vivo .indicador-valor {
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.stat-card.stat-card-danger .stat-card-value,
+.stat-card.stat-card-warning .stat-card-value,
+.stat-card.stat-card-success .stat-card-value { font-size: inherit; }
+
+/* Coluna numérica: cabeçalho alinhado com o valor (à direita). */
+table.data-table th.num,
+.data-table-wrap table.data-table th.num,
+.modulo-vivo table.data-table th.num { text-align: right; }
+table.data-table td.num,
+.data-table-wrap table.data-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- menu lateral: ícone na cor do módulo, ativo com barra ---------- */
+.sidebar-module { color: rgba(244, 239, 228, 0.78); }
+.sidebar-module:not(.active) .module-badge {
+  color: color-mix(in srgb, var(--module-color, #fbf5e9) 88%, #fff);
+  background: color-mix(in srgb, var(--module-color, #fbf5e9) 20%, rgba(244, 239, 228, 0.05));
+}
+.sidebar-module.active::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 8px;
+  bottom: 8px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--module-color, var(--terracotta));
+}
+.shell.sidebar-colapsado .sidebar-module.active::before { left: -10px; }
+.sidebar-module.active .module-badge { color: #fff; }
+
+/* ---------- Manu: não cobre gaveta, modal nem o fim da página ----------
+   O botão flutuante tapava "Concluir e dar entrada no estoque" (gaveta da
+   OP) e o "mm" do campo de altura (Etiquetas). Com gaveta/modal aberto ele
+   sai de cena; e o conteúdo ganha folga no fim para a última linha rolar
+   acima dele. */
+.manu-botao-wrap { transition: bottom 0.2s var(--ease), opacity 0.18s var(--ease), transform 0.18s var(--ease); }
+body:has(.gaveta-fundo, .anuncio-painel-fundo, [aria-modal="true"]:not(.manu-painel)) .manu-botao-wrap {
+  opacity: 0;
+  transform: scale(0.8);
+  pointer-events: none;
+}
+.shell-main > :is(.page, .page-wide, .pagina):last-child { padding-bottom: 96px; }
+
+/* ---------- cabeçalho de página ----------
+   Algumas telas tinham ícone ao lado do título (Produção, Etiquetas) e
+   outras não. O rótulo do módulo acima do título já identifica a tela. */
+.shell-main :is(h1) > svg:first-child { display: none; }
+.anuncio-painel-topo h2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* Descrição da página: uma linha. Clicar abre o resto (Shell marca as que
+   foram cortadas com .descricao-cortavel). */
+.descricao-cortavel {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  overflow: hidden;
+  cursor: pointer;
+}
+.descricao-cortavel.aberta { display: block; -webkit-line-clamp: unset; line-clamp: unset; overflow: visible; }
+.descricao-cortavel:not(.aberta):hover { color: var(--ink); }
+
+/* Texto de ajuda dentro de formulário/gaveta (era corpo grande). */
+.texto-ajuda { font-size: 12.5px; line-height: 1.45; color: var(--ink-soft); font-weight: 400; }
+
+/* ---------- erro técnico atrás de "Ver detalhes" ---------- */
+.aviso-detalhe-tecnico {
+  display: block;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  font-family: var(--font-codigo);
+  font-size: 11.5px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink-soft);
+}
+
+/* ---------- Financeiro › Títulos: vencimento pinta pelo estado ---------- */
+table.data-table tr > td.titulo-venc.titulo-venc-atrasado.mono,
+.modulo-vivo table.data-table tr > td.titulo-venc.titulo-venc-atrasado.mono { color: var(--danger); font-weight: 700; }
+table.data-table tr > td.titulo-venc.titulo-venc-aberto.mono,
+.modulo-vivo table.data-table tr > td.titulo-venc.titulo-venc-aberto.mono { color: var(--ink); }
+table.data-table tr > td.titulo-venc.titulo-venc-pago.mono,
+.modulo-vivo table.data-table tr > td.titulo-venc.titulo-venc-pago.mono { color: var(--ink-faint); font-weight: 500; }
+
+/* ---------- valor negativo ---------- */
+.valor-negativo { color: var(--danger); }
+
+/* ---------- 6. barra dentro da célula ---------- */
+.barra-celula {
+  display: inline-block;
+  position: relative;
+  width: 100%;
+  min-width: 48px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--dado-suave);
+  overflow: hidden;
+  vertical-align: middle;
+}
+.barra-celula > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 99px;
+  background: var(--dado);
+  transform-origin: left center;
+  animation: rv-barra 0.6s var(--ease) backwards;
+}
+@keyframes rv-barra { from { transform: scaleX(0); } }
+.celula-com-barra { display: grid; grid-template-columns: minmax(60px, 1fr) auto; align-items: center; gap: 10px; min-width: 150px; }
+.celula-com-barra-valor { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; text-align: right; }
+.celula-com-barra.curta .barra-celula > span { background: var(--warning-ring); }
+.celula-com-barra.curta .celula-com-barra-valor { color: var(--warning); }
+
+/* Curva ABC: a classe vira a faixa da linha. */
+tr.abc-linha > td:first-child { box-shadow: inset 3px 0 0 var(--abc-cor, transparent); }
+tr.abc-linha.abc-a { --abc-cor: var(--success-ring); }
+tr.abc-linha.abc-b { --abc-cor: var(--info-ring); }
+tr.abc-linha.abc-c { --abc-cor: var(--border); }
+
+/* ---------- Dashboard: canal com selo e participação ---------- */
+.canal-participacao { display: grid; gap: 6px; flex: 1; min-width: 0; margin-right: 18px; }
+.canal-participacao-nome { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.canal-participacao-icone { color: var(--ink-soft); }
+.dashboard-recarregando { opacity: 0.55; transition: opacity 0.2s var(--ease); pointer-events: none; }
+
+/* ---------- seção recolhível (análise que não é o motivo da visita) ---------- */
+details.secao-recolhivel { margin: 4px 0 16px; }
+details.secao-recolhivel > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+details.secao-recolhivel > summary::-webkit-details-marker { display: none; }
+details.secao-recolhivel > summary::before {
+  content: '›';
+  font-size: 18px;
+  line-height: 1;
+  color: var(--ink-faint);
+  transition: transform 0.2s var(--ease);
+}
+details.secao-recolhivel[open] > summary::before { transform: rotate(90deg); }
+details.secao-recolhivel > summary:focus-visible { outline: 2px solid var(--terracotta); outline-offset: 2px; }
+.secao-recolhivel-titulo { font-family: var(--font-display); font-weight: 700; font-size: 15px; }
+.secao-recolhivel-resumo { color: var(--ink-soft); font-size: 12.5px; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ---------- Produção: cartão da OP ---------- */
+.op-cartao-cabeca { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.op-cartao-cabeca .kanban-cartao-titulo { min-width: 0; }
+.op-cartao-foto {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  object-fit: cover;
+  background: var(--surface-alt);
+  border: 1px solid var(--border-soft);
+}
+.op-progresso {
+  height: 5px;
+  border-radius: 99px;
+  background: var(--dado-suave);
+  overflow: hidden;
+  margin: 6px 0 2px;
+}
+.op-progresso > span {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: var(--dado);
+  transform-origin: left center;
+  animation: rv-barra 0.6s var(--ease) backwards;
+}
+.op-progresso.completo > span { background: var(--success-ring); }
+
+/* Faixa de cor no topo de cada coluna do quadro, pela situação. */
+.producao-kanban .kanban-coluna { border-top: 3px solid var(--coluna-cor, var(--border)); }
+.producao-kanban .kanban-coluna[data-situacao="rascunho"] { --coluna-cor: var(--cal-cancelado); }
+.producao-kanban .kanban-coluna[data-situacao="planejada"] { --coluna-cor: var(--info-ring); }
+.producao-kanban .kanban-coluna[data-situacao="em_producao"] { --coluna-cor: var(--mod-producao); }
+.producao-kanban .kanban-coluna[data-situacao="concluida"] { --coluna-cor: var(--success-ring); }
+.producao-kanban .kanban-coluna[data-situacao="cancelada"] { --coluna-cor: var(--danger-ring); }
+.kanban-ver-todas {
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.kanban-ver-todas:hover { color: var(--ink); border-color: var(--ink-faint); }
+
+/* ---------- notificações: um item por linha, com ícone do módulo ---------- */
+.sino-item.sino-item-rico {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+}
+.sino-item-icone {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--sino-cor);
+  background: color-mix(in srgb, var(--sino-cor) 14%, transparent);
+}
+.sino-item-texto { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.sino-item-resumo { font-size: 11.5px; color: var(--ink-soft); line-height: 1.4; }
+.sino-item-resumo strong { color: var(--ink); font-weight: 700; }
+.sino-item-nivel {
+  flex-shrink: 0;
+  align-self: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+.sino-nivel-urgente { background: var(--danger-bg); color: var(--danger); }
+.sino-nivel-atencao { background: var(--warning-bg); color: var(--warning); }
+.sino-nivel-ok { background: var(--success-bg); color: var(--success); }
+.sino-nivel-sem_dado { background: var(--border-soft); color: var(--ink-soft); }
+
+/* ---------- movimento: respeita "reduzir movimento" ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .barra-celula > span, .op-progresso > span { animation: none; }
+  .manu-botao-wrap, .dashboard-recarregando { transition: none; }
+}
+
+/* No escuro a cor do módulo já vem viva do token — clarear mais 30% com
+   branco (regra do theme.css) deixava rótulo e 1ª coluna quase pastel. */
+:root[data-theme="dark"] .modulo-vivo { --mc: var(--module-color, var(--terracotta)); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .modulo-vivo { --mc: var(--module-color, var(--terracotta)); }
+}
+
+/* Ações da linha lado a lado (antes quebravam em duas linhas e cada linha
+   de Títulos ficava com 96 px de altura). */
+table.data-table td .painel-acoes-inline { flex-wrap: nowrap; }
+.origem-icone { display: inline-flex; vertical-align: -1px; margin-left: 4px; opacity: 0.75; }
+.aviso-compacto + .stat-strip { margin-top: 14px; }

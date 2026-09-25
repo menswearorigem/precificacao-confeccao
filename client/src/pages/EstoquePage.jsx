@@ -8,6 +8,7 @@ import DataTable from '../components/DataTable';
 import IndicadoresEstoque from '../components/IndicadoresEstoque';
 import WikStatusBanner from '../components/WikStatusBanner';
 import { formatQtd, plural } from '../lib/format';
+import ErroIntegracao from '../components/ErroIntegracao';
 
 function EanEditavel({ variante, onFeito }) {
   const [editando, setEditando] = useState(false);
@@ -55,7 +56,7 @@ function EanEditavel({ variante, onFeito }) {
       />
       <button type="button" className="icon-btn" title="Salvar" aria-label="Salvar" disabled={salvando} onClick={salvar} style={{ color: 'var(--success)' }}><Check size={13} /></button>
       <button type="button" className="icon-btn" title="Cancelar" aria-label="Cancelar" disabled={salvando} onClick={() => setEditando(false)}><X size={13} /></button>
-      {erro && <span className="login-error" style={{ marginLeft: 4 }}>{erro}</span>}
+      {erro && <span className="login-error" style={{ marginLeft: 4 }}><ErroIntegracao erro={erro} sistema="auto" /></span>}
     </span>
   );
 }
@@ -86,7 +87,7 @@ function NovaVarianteForm({ produtoId, onCriada }) {
       <Field label="Tamanho"><input value={tamanho} onChange={(e) => setTamanho(e.target.value)} style={{ width: 90 }} /></Field>
       <Field label="Qtd. inicial"><input type="number" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} style={{ width: 90 }} /></Field>
       <button className="btn btn-dashed" type="submit"><Plus size={13} /> Adicionar variante</button>
-      {erro && <span className="login-error">{erro}</span>}
+      {erro && <span className="login-error"><ErroIntegracao erro={erro} sistema="auto" /></span>}
     </form>
   );
 }
@@ -258,7 +259,7 @@ function CorrigirEmMassa() {
         </div>
       )}
 
-      {erro && <div className="login-error" style={{ marginTop: 10 }}>{erro}</div>}
+      {erro && <div className="login-error" style={{ marginTop: 10 }}><ErroIntegracao erro={erro} sistema="auto" /></div>}
 
       {resultado && (
         <div style={{ marginTop: 10 }}>
@@ -431,14 +432,11 @@ export default function EstoquePage() {
         </div>
       </div>
 
-      {erro && <div className="login-error" style={{ marginBottom: 12 }}>{erro}</div>}
+      {erro && <div className="login-error" style={{ marginBottom: 12 }}><ErroIntegracao erro={erro} sistema="auto" /></div>}
 
       <WikStatusBanner />
 
-      <IndicadoresEstoque />
-
-      <CorrigirEmMassa />
-
+      <IndicadoresEstoque>
       <div className="card" style={{ marginBottom: 16 }}>
         <label className="toggle" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
           <Toggle checked={somenteMarketplace} onChange={() => setSomenteMarketplace((v) => !v)} />
@@ -473,7 +471,7 @@ export default function EstoquePage() {
         )}
       </div>
 
-      <div className="card">
+      <div className="card" style={{ marginBottom: 16 }}>
         <Field label="Referência">
           <Select value={produtoId} onChange={(e) => setProdutoId(e.target.value)} chaveRecentes="estoque_produto">
             <option value="">Selecione uma referência…</option>
@@ -545,6 +543,9 @@ export default function EstoquePage() {
           </>
         )}
       </div>
+
+      <CorrigirEmMassa />
+      </IndicadoresEstoque>
 
       {extratoDe && <ExtratoVariante variante={extratoDe} onFechar={() => setExtratoDe(null)} />}
     </div>

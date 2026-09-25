@@ -5,10 +5,16 @@ import { api } from '../api/client';
 import { brl, formatQtd, pct, numeroBr } from '../lib/format';
 import { StatCard, Skeleton } from './ui';
 import SeloDeConfianca from './SeloDeConfianca';
+import ErroIntegracao from './ErroIntegracao';
 
-const CLASSE_TONE = { A: 'tone-saudavel', B: 'tone-atencao', C: 'tone-neutro' };
+const CLASSE_TONE = { A: 'tone-saudavel', B: 'tone-elevada', C: 'tone-neutro' };
 
-export default function IndicadoresEstoque() {
+// 25/09/2026 (revisão visual): a busca e a lista do estoque ficavam no FIM
+// da página, depois de dezenas de linhas de análise. Agora a página passa o
+// seu miolo (busca + referência) como `children`, e ele entra logo depois dos
+// indicadores do topo — a análise (rupturas, cobertura, curva ABC) desce para
+// baixo, recolhível.
+export default function IndicadoresEstoque({ children }) {
   const [dados, setDados] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -28,22 +34,31 @@ export default function IndicadoresEstoque() {
 
   if (loading) {
     return (
-      <div className="card" style={{ marginBottom: 16 }}>
-        <Skeleton width="60%" height={16} style={{ marginBottom: 10 }} />
-        <Skeleton width="80%" />
-      </div>
+      <>
+        <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', marginBottom: 16 }}>
+          {Array.from({ length: 6 }, (_, k) => (
+            <div key={k} className="stat-card"><div className="stat-card-corpo"><Skeleton width="60%" height={11} /><Skeleton width="70%" height={22} style={{ marginTop: 8 }} /></div></div>
+          ))}
+        </div>
+        {children}
+      </>
     );
   }
   if (erro) {
     return (
-      <div className="card" style={{ marginBottom: 16 }}>
-        <p className="login-error" style={{ margin: 0 }}>
-          Não consegui carregar os indicadores de estoque: {erro}
-        </p>
-      </div>
+      <>
+        <div className="card" style={{ marginBottom: 16 }}>
+          <p className="login-error" style={{ margin: 0 }}>
+            Não consegui carregar os indicadores de estoque. <ErroIntegracao erro={erro} sistema="auto" />
+          </p>
+        </div>
+        {children}
+      </>
     );
   }
-  if (!dados) return null;
+  if (!dados) return <>{children}</>;
+  const maxCobertura = Math.max(1, ...dados.cobertura.slice(0, 20).map((c) => Number(c.coberturaDias) || 0));
+  const maxAbc = Math.max(0.0001, ...dados.curvaAbc.slice(0, 30).map((c) => Number(c.participacaoPct) || 0));
 
   const { indicadores: i } = dados;
   const considerado = dados.totalVariantesAtivas - i.variantesSemCustoComSaldo;
@@ -69,10 +84,23 @@ export default function IndicadoresEstoque() {
         <StatCard label={<><Tag size={11} style={{ marginRight: 4, verticalAlign: -2 }} />Variantes sem EAN</>} value={formatQtd(i.variantesSemEan)} />
       </div>
 
-      <div className="grid-2" style={{ marginBottom: 16 }}>
+      {children}
+
+      <details className="secao-recolhivel" open={dados.rupturas.length > 0}>
+        <summary>
+          <span className="secao-recolhivel-titulo">Análise do estoque</span>
+          <span className="secao-recolhivel-resumo">
+            {dados.rupturas.length > 0
+              ? <span className="stamp sm tone-prejuizo">{formatQtd(dados.rupturas.length)} em ruptura</span>
+              : <span className="stamp sm tone-saudavel">sem ruptura</span>}
+            {' '}Cobertura em dias e curva ABC
+          </span>
+        </summary>
+      {/* Card de ruptura vazio ocupava meia tela: sem item, vira uma linha. */}
+      <div className={dados.rupturas.length > 0 ? 'grid-2' : undefined} style={{ marginBottom: 16 }}>
+        {dados.rupturas.length > 0 && (
         <div className="card">
           <div className="card-head">Rupturas — saldo zero com venda nos últimos 30 dias</div>
-          {dados.rupturas.length === 0 && <p className="page-sub">Nenhuma variante nessa condição agora.</p>}
           {dados.rupturas.length > 0 && (
             <table className="data-table">
               <thead><tr><th>Referência</th><th>Cor / Tam.</th><th>Vendido em 30d</th><th /></tr></thead>
@@ -89,6 +117,7 @@ export default function IndicadoresEstoque() {
             </table>
           )}
         </div>
+        )}
 
         <div className="card">
           <div className="card-head">Cobertura em Dias</div>
@@ -96,16 +125,19 @@ export default function IndicadoresEstoque() {
             Saldo atual ÷ média diária de venda dos últimos 30 dias. Sem venda no período, mostra "—" — não é possível estimar cobertura sem dado.
           </p>
           <table className="data-table">
-            <thead><tr><th>Referência</th><th>Saldo</th><th>Vendido 30d</th><th>Cobertura</th></tr></thead>
+            <thead><tr><th>Referência</th><th className="num">Saldo</th><th className="num">Vendido 30d</th><th>Cobertura</th></tr></thead>
             <tbody>
               {dados.cobertura.slice(0, 20).map((c) => (
                 <tr key={c.produtoId}>
                   <td className="mono"><Link to={`/produtos/${c.produtoId}`} style={{ color: 'inherit' }}>{c.referencia}</Link></td>
-                  <td className="mono">{formatQtd(c.saldo)}</td>
-                  <td className="mono">{formatQtd(c.vendido30d)}</td>
-                  <td className="mono">
+                  <td className="num">{formatQtd(c.saldo)}</td>
+                  <td className="num">{formatQtd(c.vendido30d)}</td>
+                  <td>
                     {c.coberturaDias === null ? '—' : (
-                      <span className={c.coberturaDias < 15 ? 'stamp sm tone-atencao' : ''}>{numeroBr(c.coberturaDias, 0)} dias</span>
+                      <span className={`celula-com-barra${c.coberturaDias < 15 ? ' curta' : ''}`}>
+                        <span className="barra-celula" aria-hidden="true"><span style={{ width: `${Math.max(3, Math.min(100, (Number(c.coberturaDias) / maxCobertura) * 100))}%` }} /></span>
+                        <span className="celula-com-barra-valor">{numeroBr(c.coberturaDias, 0)} dias</span>
+                      </span>
                     )}
                   </td>
                 </tr>
@@ -120,15 +152,23 @@ export default function IndicadoresEstoque() {
         {dados.curvaAbc.length === 0 && <p className="page-sub">Sem referências com custo cadastrado pra classificar.</p>}
         {dados.curvaAbc.length > 0 && (
           <table className="data-table">
-            <thead><tr><th>Referência</th><th>Valor</th><th>Participação</th><th>Acumulado</th><th>Classe</th></tr></thead>
+            <thead><tr><th>Classe</th><th>Referência</th><th className="num">Valor</th><th>Participação</th><th className="num">Acumulado</th></tr></thead>
             <tbody>
-              {dados.curvaAbc.slice(0, 30).map((c) => (
-                <tr key={c.produtoId}>
+              {/* A classe deixou de ser um selo "A" repetido em trinta linhas:
+                  vira a faixa colorida da linha, e o selo só aparece na
+                  primeira linha de cada classe. */}
+              {dados.curvaAbc.slice(0, 30).map((c, idx, lista) => (
+                <tr key={c.produtoId} className={`abc-linha abc-${String(c.classe).toLowerCase()}`}>
+                  <td>{(idx === 0 || lista[idx - 1].classe !== c.classe) ? <span className={'stamp sm ' + CLASSE_TONE[c.classe]}>Classe {c.classe}</span> : null}</td>
                   <td className="mono"><Link to={`/produtos/${c.produtoId}`} style={{ color: 'inherit' }}>{c.referencia}</Link></td>
-                  <td className="mono">{brl(c.valor)}</td>
-                  <td className="mono">{pct(c.participacaoPct)}</td>
-                  <td className="mono">{pct(c.pctAcumulado)}</td>
-                  <td><span className={'stamp sm ' + CLASSE_TONE[c.classe]}>{c.classe}</span></td>
+                  <td className="num">{brl(c.valor)}</td>
+                  <td>
+                    <span className="celula-com-barra">
+                      <span className="barra-celula" aria-hidden="true"><span style={{ width: `${Math.max(2, (Number(c.participacaoPct) / maxAbc) * 100)}%` }} /></span>
+                      <span className="celula-com-barra-valor">{pct(c.participacaoPct)}</span>
+                    </span>
+                  </td>
+                  <td className="num">{pct(c.pctAcumulado)}</td>
                 </tr>
               ))}
             </tbody>
@@ -148,6 +188,7 @@ export default function IndicadoresEstoque() {
         unidade="variantes ativas"
         excluidos={[{ label: 'sem custo cadastrado (fora do valor em estoque)', total: i.variantesSemCustoComSaldo }]}
       />
+      </details>
     </>
   );
 }

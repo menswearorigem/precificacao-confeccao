@@ -6,7 +6,7 @@ import {
   Flame, Layers, Star, ShieldCheck, Swords, Megaphone, MousePointerClick, Eye, RefreshCw, ChevronDown, Search,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, pct, numeroBr, formatQtd } from '../lib/format';
+import { brl, pct, numeroBr, formatQtd, brlEixo } from '../lib/format';
 import { DateInput, Select, MultiSelect, StatCard } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { PRESETS_PERIODO } from '../lib/periodos';
@@ -163,13 +163,13 @@ function GraficoComparativo({ serie, serieAnterior }) {
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
         <XAxis dataKey="dataLabel" tick={tickStyle} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
-        <YAxis tick={tickStyle} tickFormatter={(v) => brl(v)} width={92} axisLine={false} tickLine={false} />
+        <YAxis tick={tickStyle} tickFormatter={brlEixo} width={58} axisLine={false} tickLine={false} />
         <Tooltip content={<TooltipVendas />} />
         <Legend wrapperStyle={{ fontFamily: FONTE_GRAFICO, fontSize: 12.5, color: 'var(--ink-soft)', paddingTop: 8 }} iconType="plainline" />
         {serieAnterior && (
-          <Area type="monotone" dataKey="valorVendasAnterior" name="Período Anterior" stroke={corAnterior(paleta)} strokeDasharray="5 4" fill="none" strokeWidth={1.75} dot={false} />
+          <Area type="linear" dataKey="valorVendasAnterior" name="Período Anterior" stroke={corAnterior(paleta)} strokeDasharray="5 4" fill="none" strokeWidth={1.75} dot={false} />
         )}
-        <Area type="monotone" dataKey="valorVendas" name="Vendas Válidas" stroke={corPrincipal(paleta)} fill="url(#corVendas)" strokeWidth={2.25} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+        <Area type="linear" dataKey="valorVendas" name="Vendas Válidas" stroke={corPrincipal(paleta)} fill="url(#corVendas)" strokeWidth={2.25} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -191,9 +191,9 @@ function GraficoSimples({ serie, dataKey = 'valorVendasValidas', nome = 'Vendas 
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
         <XAxis dataKey="dataLabel" tick={tickStyle} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
-        <YAxis tick={tickStyle} tickFormatter={(v) => brl(v)} width={92} axisLine={false} tickLine={false} />
+        <YAxis tick={tickStyle} tickFormatter={brlEixo} width={58} axisLine={false} tickLine={false} />
         <Tooltip content={<TooltipVendas />} />
-        <Area type="monotone" dataKey={dataKey} name={nome} stroke={corSerie} fill="url(#corVendasSimples)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+        <Area type="linear" dataKey={dataKey} name={nome} stroke={corSerie} fill="url(#corVendasSimples)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -306,13 +306,13 @@ function GraficoPorLoja({ serieDiaria, lojas }) {
       <AreaChart data={dados} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
         <XAxis dataKey="dataLabel" tick={tickStyle} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
-        <YAxis tick={tickStyle} tickFormatter={(v) => brl(v)} width={92} axisLine={false} tickLine={false} />
+        <YAxis tick={tickStyle} tickFormatter={brlEixo} width={58} axisLine={false} tickLine={false} />
         <Tooltip content={<TooltipVendas />} />
         <Legend wrapperStyle={{ fontFamily: FONTE_GRAFICO, fontSize: 12.5, color: 'var(--ink-soft)', paddingTop: 8 }} iconType="circle" iconSize={8} />
         {lojas.map((l, i) => (
           <Area
             key={l.nome}
-            type="monotone"
+            type="linear"
             dataKey={l.nome}
             name={l.nome}
             stackId="1"

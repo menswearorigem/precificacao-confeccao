@@ -10,7 +10,7 @@ import { Field, Select, NumInput, EstadoVazio, AvisoDeFalha, Skeleton } from '..
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { PRESETS_PERIODO } from '../lib/periodos';
 import { confirmar } from '../components/ConfirmDialog';
-import { brl, pct, formatQtd, hojeIso, plural } from '../lib/format';
+import { brl, pct, formatQtd, hojeIso, plural, brlEixo } from '../lib/format';
 import DataTable from '../components/DataTable';
 import { usePaletaGrafico, corPorIndice } from '../lib/coresGrafico';
 
@@ -306,7 +306,7 @@ export default function DespesasVendasPage() {
                 <BarChart data={porMes} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
                   <XAxis dataKey="mes" tick={{ fontSize: 11.5, fill: 'var(--ink-soft)' }} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11.5, fill: 'var(--ink-soft)' }} tickFormatter={(v) => brl(v)} width={86} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11.5, fill: 'var(--ink-soft)' }} tickFormatter={brlEixo} width={58} axisLine={false} tickLine={false} />
                   <Tooltip content={<TooltipDespesa />} cursor={{ fill: 'var(--accent-softer)' }} />
                   <Bar dataKey="publicidade" name="Publicidade" fill={corPorIndice(paleta, 0)} radius={[4, 4, 0, 0]} stackId="d" />
                   <Bar dataKey="outras" name="Outras despesas" fill={corPorIndice(paleta, 3)} radius={[4, 4, 0, 0]} stackId="d" />

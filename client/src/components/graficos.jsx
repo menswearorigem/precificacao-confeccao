@@ -171,7 +171,7 @@ export function GraficoEvolucao({ dados, series, rotuloX = 'rotulo', formato = '
           return (
             <Area
               key={s.chave}
-              type="monotone"
+              type="linear"
               dataKey={s.chave}
               name={s.nome}
               stackId={empilhado ? 'pilha' : undefined}
@@ -256,7 +256,7 @@ export function GraficoLinha({ dados, series, rotuloX = 'rotulo', formato = 'moe
         {series.map((s, i) => (
           <Line
             key={s.chave}
-            type="monotone"
+            type="linear"
             dataKey={s.chave}
             name={s.nome}
             stroke={s.cor || corPorIndice(paleta, i)}

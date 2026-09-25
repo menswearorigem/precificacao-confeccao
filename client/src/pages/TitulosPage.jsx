@@ -6,6 +6,7 @@ import {
   ReceiptText, Banknote,
 } from 'lucide-react';
 import { api } from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 import { brl, dataBr, formatQtd, numeroBr, plural } from '../lib/format';
 import DataTable from '../components/DataTable';
 import {
@@ -15,6 +16,7 @@ import {
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { useTabela } from '../lib/useTabela';
 import LogoWik from '../components/LogoWik';
+import ErroIntegracao from '../components/ErroIntegracao';
 
 // Contas a pagar e a receber — a mesma tela, lendo a natureza da rota.
 //
@@ -121,13 +123,23 @@ const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 //   Wik            -> veio do ERP e é atualizado sozinho a cada ciclo
 //   alterado à mão -> alguém baixou/cancelou/marcou aqui, e o Wik não encosta
 //                     mais neste título (decisão "Edita e trava a sincronização")
-function SeloOrigem({ titulo }) {
+// Origem do título (revisão visual 25/09/2026): o selo "Wik" em TODA linha
+// deixava cada linha alta e repetia a mesma palavra mil vezes. A origem virou
+// um ícone pequeno ao lado da contraparte (OrigemIcone); aqui ficam só os
+// selos que pedem atenção — alterado à mão e duplicado.
+function OrigemIcone({ titulo }) {
   if (!titulo.wik_id) return null;
   return (
+    <span className="origem-icone" title={`Importado do Wik (conta ${titulo.wik_id})`} aria-label="Importado do Wik">
+      <LogoWik size={12} />
+    </span>
+  );
+}
+
+function SeloOrigem({ titulo }) {
+  if (!titulo.wik_id || (!titulo.wik_travado && !titulo.wik_duplicado_de_id)) return null;
+  return (
     <span className="selos-linha">
-      <span className="stamp sm tone-neutro" title={`Importado do Wik (conta ${titulo.wik_id})`}>
-        <LogoWik size={12} /> Wik
-      </span>
       {titulo.wik_travado && (
         <span
           className="stamp sm tone-atencao"
@@ -153,6 +165,11 @@ function SeloOrigem({ titulo }) {
 // Some sozinha quando a importação está desligada — quem não usa o Wik não
 // precisa ver nada disso.
 function FaixaWik({ aoSincronizar }) {
+  // 25/09/2026: o botão "testar" ao lado de "Sincronizar agora" parecia
+  // sobra de desenvolvimento. Aparece quando há erro ("ver erro") ou para o
+  // administrador, que é quem faz o diagnóstico.
+  const { user } = useAuth();
+  const ehAdmin = user?.role === 'admin';
   const { pathname } = useLocation();
   const [st, setSt] = useState(null);
   const [rodando, setRodando] = useState(false);
@@ -307,13 +324,14 @@ function FaixaWik({ aoSincronizar }) {
       )}
       <span className="faixa-wik-sep">
         {msg && <span className="tone-prejuizo">{msg}</span>}
-        {!msg && (
+        {!msg && (integ.financeiro_erro || ehAdmin || verErro) && (
           <button
             type="button"
             className={`btn btn-ghost btn-mini${integ.financeiro_erro ? ' tone-prejuizo' : ''}`}
             onClick={() => setVerErro((v) => !v)}
+            title={integ.financeiro_erro ? undefined : 'Diagnóstico do caminho do Wik (só administrador)'}
           >
-            {verErro ? 'esconder' : (integ.financeiro_erro ? 'ver erro' : 'testar')}
+            {verErro ? 'esconder' : (integ.financeiro_erro ? 'ver erro' : 'diagnóstico')}
           </button>
         )}
         <button type="button" className="btn btn-ghost btn-mini" onClick={sincronizar} disabled={rodando}>
@@ -324,7 +342,7 @@ function FaixaWik({ aoSincronizar }) {
 
       {verErro && (
         <div className="faixa-wik-detalhe card" style={{ flexBasis: '100%', marginTop: 8 }}>
-          {integ.financeiro_erro && <p style={{ margin: 0 }}>{integ.financeiro_erro}</p>}
+          {integ.financeiro_erro && <p style={{ margin: 0 }}><ErroIntegracao erro={integ.financeiro_erro} sistema="o Wik" /></p>}
           <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
             <button type="button" className="btn btn-sec btn-mini" onClick={diagnosticar} disabled={diagnosticando}>
               <RefreshCw size={13} className={diagnosticando ? 'girando' : undefined} />
@@ -1469,10 +1487,13 @@ export default function TitulosPage() {
                 const podeBaixar = num(t.saldo_aberto) > 0 && t.situacao !== 'cancelado';
                 return (
                   <tr key={t.id} className="clickable-row" onClick={() => setDetalheId(t.id)}>
-                    <td className="mono">{dataBr(dataIso(t.data_vencimento))}</td>
+                    {/* Vencimento pinta pelo estado, não pela cor do módulo (o
+                        verde do Financeiro deixava data de 2020 com 2.000 dias
+                        de atraso parecendo "tudo certo"). */}
+                    <td className={'mono titulo-venc ' + (atraso > 0 && podeBaixar ? 'titulo-venc-atrasado' : (t.situacao === 'liquidado' ? 'titulo-venc-pago' : 'titulo-venc-aberto'))}>{dataBr(dataIso(t.data_vencimento))}</td>
                     <td>
                       <span className="cel-dupla">
-                        <strong>{contraparteDe(t) || '—'}</strong>
+                        <strong>{contraparteDe(t) || '—'} <OrigemIcone titulo={t} /></strong>
                         {t.empresa_nome && <small>{t.empresa_nome}</small>}
                         <SeloOrigem titulo={t} />
                       </span>

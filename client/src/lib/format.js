@@ -10,6 +10,21 @@ export const brl = (n, casas) =>
     ...(casas === undefined ? {} : { minimumFractionDigits: casas, maximumFractionDigits: casas }),
   });
 
+// Rótulo de EIXO de gráfico (revisão visual 25/09/2026): "R$ 120.000,00" em
+// cada marca do eixo ocupava 92px e competia com o gráfico. No eixo o que
+// importa é a ordem de grandeza — "120 mil", "1,2 mi". O valor exato continua
+// no tooltip. Negativo mantém o sinal.
+export const brlEixo = (n) => {
+  const v = Number.isFinite(Number(n)) ? Number(n) : 0;
+  const a = Math.abs(v);
+  const sinal = v < 0 ? '-' : '';
+  const fmt = (x, d) => x.toLocaleString('pt-BR', { maximumFractionDigits: d });
+  if (a >= 1e9) return `${sinal}${fmt(a / 1e9, 1)} bi`;
+  if (a >= 1e6) return `${sinal}${fmt(a / 1e6, 1)} mi`;
+  if (a >= 1e3) return `${sinal}${fmt(a / 1e3, a >= 1e4 ? 0 : 1)} mil`;
+  return `${sinal}${fmt(a, 0)}`;
+};
+
 export const pct = (n, digits = 1) =>
   `${((Number.isFinite(Number(n)) ? Number(n) : 0) * 100).toLocaleString('pt-BR', {
     minimumFractionDigits: digits,

@@ -5,6 +5,7 @@ import { Field } from './ui';
 import { formatQtd, plural } from '../lib/format';
 import { CampoEmail } from './campos';
 import LogoWik from './LogoWik';
+import ErroIntegracao from './ErroIntegracao';
 
 function hoje(iso) {
   if (!iso) return '—';
@@ -309,7 +310,7 @@ export default function WikIntegracaoCard() {
       {erro && <div className="login-error" style={{ marginBottom: 12 }}>{erro}</div>}
       {aviso && <div className="stamp sm tone-saudavel" style={{ marginBottom: 12, display: 'inline-flex' }}>{aviso}</div>}
       {integracao?.ultimoErro && !erro && (
-        <div className="login-error" style={{ marginBottom: 12 }}>Última tentativa falhou: {integracao.ultimoErro}</div>
+        <div className="login-error" style={{ marginBottom: 12 }}>Última tentativa falhou. <ErroIntegracao erro={integracao.ultimoErro} sistema="o Wik" /></div>
       )}
 
       <div className="card-head" style={{ marginTop: 4 }}>Id da Empresa por marca</div>

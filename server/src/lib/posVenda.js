@@ -42,6 +42,9 @@ const CODIGO_PLATAFORMA = {
   NOT_RECEIPT: 'nao_recebido', DIFF: 'diferente_da_foto', DAMAGE: 'defeito', WRONG_ITEM: 'errado',
   NOT_AS_DESCRIBED: 'diferente_da_foto', CHANGE_MIND: 'arrependimento', FUNCTIONAL_DAMAGE: 'defeito',
   PHYSICAL_DAMAGE: 'defeito', MISSING_ITEMS: 'errado', SIZE_NOT_FIT: 'tamanho', OTHER: null,
+  // Vistos na tela em 25/09/2026 sem classificação (revisão visual).
+  ITEM_NOT_FIT: 'tamanho', ITEM_MISSING: 'errado', MISSING_ITEM: 'errado', DAMAGED_ITEM: 'defeito', DEFECTIVE_ITEM: 'defeito',
+  NOT_AS_EXPECTED: 'diferente_da_foto', ITEM_NOT_AS_DESCRIBED: 'diferente_da_foto', CHANGED_MIND: 'arrependimento',
   // Mercado Livre (reason / reason_id conhecidos)
   PNR: 'nao_recebido', PDD: 'diferente_da_foto', UNDELIVERED: 'nao_recebido', DIFFERENT: 'diferente_da_foto',
   DEFECTIVE: 'defeito', WRONG_PRODUCT: 'errado', DELAY: 'atraso', SIZE: 'tamanho', REGRET: 'arrependimento',

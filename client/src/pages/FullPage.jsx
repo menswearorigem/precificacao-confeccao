@@ -1247,7 +1247,7 @@ function AbaVendasFull({ alvo, a }) {
                   formatter={(v) => [formatQtd(v), unidade]}
                   labelFormatter={(l) => `Dia ${l}`}
                 />
-                <Area type="monotone" dataKey="unidades" stroke={paleta.series[1]} fill={paleta.series[1]} fillOpacity={0.2} />
+                <Area type="linear" dataKey="unidades" stroke={paleta.series[1]} fill={paleta.series[1]} fillOpacity={0.2} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -1327,8 +1327,8 @@ function AbaEstoqueFull({ a, curva }) {
               formatter={(v, nome) => [formatQtd(v), nome === 'disponivel' ? 'Disponível' : 'A caminho']}
               labelFormatter={(l) => `Dia ${l}`}
             />
-            <Area type="monotone" dataKey="disponivel" stroke={paleta.series[0]} fill={paleta.series[0]} fillOpacity={0.2} />
-            <Area type="monotone" dataKey="emTransito" stroke={paleta.series[2]} fill={paleta.series[2]} fillOpacity={0.12} />
+            <Area type="linear" dataKey="disponivel" stroke={paleta.series[0]} fill={paleta.series[0]} fillOpacity={0.2} />
+            <Area type="linear" dataKey="emTransito" stroke={paleta.series[2]} fill={paleta.series[2]} fillOpacity={0.12} />
             {a.reposicao.estoqueMinimo != null && (
               <ReferenceLine y={a.reposicao.estoqueMinimo} stroke={paleta.negativo} strokeDasharray="5 4" />
             )}

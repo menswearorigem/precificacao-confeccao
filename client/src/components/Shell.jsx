@@ -69,6 +69,38 @@ function findActiveModule(pathname, visibleModules) {
   return visibleModules[0] || null;
 }
 
+// Descrição da página em UMA linha (revisão visual 25/09/2026): quase toda
+// tela abria com um parágrafo de 2–3 linhas empurrando o conteúdo para baixo.
+// O parágrafo logo abaixo do título ganha .descricao-cortavel quando não cabe
+// numa linha; clicar nele mostra o resto (e clicar de novo recolhe). Só mexe
+// em classe — o texto de cada tela continua onde está, sem reescrever nada.
+const SELETOR_DESCRICAO = ':is(.page, .page-wide, .pagina) :is(h1 + p.page-sub, h1 + p.ink-soft)';
+function useDescricaoCortavel(refMain, chave) {
+  useEffect(() => {
+    const main = refMain.current;
+    if (!main) return undefined;
+    const marcar = () => {
+      main.querySelectorAll(SELETOR_DESCRICAO).forEach((p) => {
+        if (p.dataset.cortavelVisto) return;
+        p.dataset.cortavelVisto = '1';
+        p.classList.add('descricao-cortavel');
+        // Coube numa linha: não há o que abrir — tira a marca.
+        if (p.scrollHeight <= p.clientHeight + 2) p.classList.remove('descricao-cortavel');
+        else p.title = 'Clique para ler a descrição inteira';
+      });
+    };
+    const t1 = setTimeout(marcar, 0);
+    const t2 = setTimeout(marcar, 900);
+    const aoClicar = (e) => {
+      const p = e.target.closest?.('.descricao-cortavel');
+      if (!p || !main.contains(p) || e.target.closest('a, button')) return;
+      p.classList.toggle('aberta');
+    };
+    main.addEventListener('click', aoClicar);
+    return () => { clearTimeout(t1); clearTimeout(t2); main.removeEventListener('click', aoClicar); };
+  }, [refMain, chave]);
+}
+
 export default function Shell({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -86,6 +118,7 @@ export default function Shell({ children }) {
   const [refSubsub, posSubsub] = useMarcadorDeslizante(vivo, location.pathname);
   const refMain = useRef(null);
   useTabelasEmCartao(refMain, activeModule?.key);
+  useDescricaoCortavel(refMain, location.pathname);
 
   // Celular: a fileira de abas rola de lado; a aba acesa vem pro meio da
   // tela (antes ela podia ficar escondida depois da borda direita).

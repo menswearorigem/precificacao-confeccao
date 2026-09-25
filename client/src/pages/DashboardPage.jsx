@@ -3,11 +3,12 @@ import { Link } from 'react-router-dom';
 import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import {
   ArrowUpRight, ArrowDownRight, Banknote, TrendingUp, ShoppingCart,
-  Package, Receipt, ChevronRight, X,
+  Package, Receipt, ChevronRight, X, AlertTriangle, Store,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, pct, formatQtd, dataBr, numeroBr } from '../lib/format';
-import { StatCard, Select } from '../components/ui';
+import { brl, pct, formatQtd, dataBr, numeroBr, brlEixo } from '../lib/format';
+import { StatCard, Select, Skeleton } from '../components/ui';
+import { SeloPlataforma, chaveDaPlataforma } from '../lib/canalMarketplace';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import SeloDeConfianca from '../components/SeloDeConfianca';
 import { PRESETS_PERIODO } from '../lib/periodos';
@@ -72,10 +73,10 @@ function GraficoEvolucao({ serie }) {
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
         <XAxis dataKey="dataLabel" tick={tickStyle} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
-        <YAxis tick={tickStyle} tickFormatter={(v) => brl(v)} width={92} axisLine={false} tickLine={false} />
+        <YAxis tick={tickStyle} tickFormatter={brlEixo} width={58} axisLine={false} tickLine={false} />
         <Tooltip content={<TooltipEvolucao />} />
-        <Area type="monotone" dataKey="receita" name="Faturamento" stroke={corReceita(paleta)} fill="url(#corReceita)" strokeWidth={2.25} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
-        <Area type="monotone" dataKey="lucro" name="Lucro" stroke={corLucro(paleta)} fill="url(#corLucro)" strokeWidth={2.25} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+        <Area type="linear" dataKey="receita" name="Faturamento" stroke={corReceita(paleta)} fill="url(#corReceita)" strokeWidth={2.25} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+        <Area type="linear" dataKey="lucro" name="Lucro" stroke={corLucro(paleta)} fill="url(#corLucro)" strokeWidth={2.25} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -143,9 +144,15 @@ export default function DashboardPage() {
 
       {erro && <div className="login-error" style={{ marginTop: 12 }}>{erro}</div>}
 
-      {!loading && indicadores && (
-        <>
-          <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(5, 1fr)', marginTop: 16 }}>
+      {/* 25/09/2026: o relatório executivo leva alguns segundos e a tela
+          ficava em branco — parecia quebrada. Agora o esqueleto aparece na
+          hora; e, ao trocar filtro, os números anteriores ficam (esmaecidos)
+          até os novos chegarem, em vez de sumir. */}
+      {loading && !indicadores && <DashboardEsqueleto />}
+
+      {indicadores && (
+        <div className={loading ? 'dashboard-recarregando' : undefined} aria-busy={loading || undefined}>
+          <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', marginTop: 16 }}>
             {campos.map((c) => (
               <StatCard
                 key={c.chave}
@@ -174,10 +181,18 @@ export default function DashboardPage() {
                   className="linha-clicavel"
                   onClick={() => setCanalVenda(c.canal === canalVenda ? '' : c.canal)}
                 >
-                  <span>{c.canal}</span>
+                  <span className="canal-participacao">
+                    <span className="canal-participacao-nome">
+                      {chaveDaPlataforma(c.canal)
+                        ? <SeloPlataforma chave={chaveDaPlataforma(c.canal)} size={18} />
+                        : <Store size={16} className="canal-participacao-icone" />}
+                      {c.canal}
+                    </span>
+                    <span className="barra-celula" aria-hidden="true"><span style={{ width: `${Math.max(1.5, Math.min(100, Number(c.participacaoPct || 0) * 100))}%` }} /></span>
+                  </span>
                   <span style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
-                    <span className="mono" style={{ color: 'var(--ink-soft)', fontSize: 12 }}>{pct(c.participacaoPct)}</span>
-                    <span className="mono" style={{ fontWeight: 600 }}>{brl(c.receita)}</span>
+                    <span className="mono" style={{ color: 'var(--ink-soft)', fontSize: 12, minWidth: 46, textAlign: 'right' }}>{pct(c.participacaoPct)}</span>
+                    <span className="mono" style={{ fontWeight: 600, minWidth: 110, textAlign: 'right' }}>{brl(c.receita)}</span>
                     <ChevronRight size={14} style={{ color: 'var(--ink-faint)' }} />
                   </span>
                 </button>
@@ -215,7 +230,7 @@ export default function DashboardPage() {
             unidade="pedidos"
             excluidos={[{ label: 'com custo de produção incompleto', total: dados.confianca.pedidosExcluidosPorCustoIncompleto }]}
           />
-        </>
+        </div>
       )}
     </div>
   );
@@ -235,7 +250,7 @@ function TabelaProdutos({ produtos, limite = 10 }) {
   return (
     <table className="data-table">
       <thead>
-        <tr><th>Referência</th><th>Descrição</th><th>Unid.</th><th>Faturado</th><th>Lucro</th><th>Margem</th></tr>
+        <tr><th>Referência</th><th>Descrição</th><th className="num">Unid.</th><th className="num">Faturado</th><th className="num">Lucro</th><th className="num">Margem</th></tr>
       </thead>
       <tbody>
         {produtos.slice(0, limite).map((p) => (
@@ -244,13 +259,49 @@ function TabelaProdutos({ produtos, limite = 10 }) {
               <Link to={`/produtos/${p.produtoId}`} style={{ color: 'inherit' }}>{p.referencia}</Link>
             </td>
             <td>{p.descricao || '—'}</td>
-            <td className="mono">{formatQtd(p.unidadesVendidas)}</td>
-            <td className="mono">{brl(p.totalFaturado)}</td>
-            <td className="mono">{brl(p.lucro)}</td>
-            <td className="mono">{pct(p.margemPct)}</td>
+            <td className="num">{formatQtd(p.unidadesVendidas)}</td>
+            <td className="num">{brl(p.totalFaturado)}</td>
+            <td className="num">{brl(p.lucro)}</td>
+            <td className="num"><Margem valor={p.margemPct} /></td>
           </tr>
         ))}
       </tbody>
     </table>
+  );
+}
+
+// Margem fora de qualquer realidade de confecção (-1.122.400,0% apareceu no
+// teste) quase sempre é faturamento de centavos ou custo errado — não é um
+// número para ler, é um dado para conferir. Acima de ±1.000% vira selo
+// "dado suspeito" com o valor no tooltip (revisão visual 25/09/2026).
+function Margem({ valor }) {
+  const v = Number(valor);
+  if (!Number.isFinite(v)) return <>—</>;
+  if (Math.abs(v) > 10) {
+    return (
+      <span className="stamp sm tone-atencao" title={`Margem calculada: ${pct(v)}. Confira o custo e o faturamento desta referência.`}>
+        <AlertTriangle size={11} /> dado suspeito
+      </span>
+    );
+  }
+  return <span className={v < 0 ? 'valor-negativo' : undefined}>{pct(v)}</span>;
+}
+
+function DashboardEsqueleto() {
+  return (
+    <div aria-busy="true" aria-label="Carregando o dashboard">
+      <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', marginTop: 16 }}>
+        {Array.from({ length: 6 }, (_, i) => (
+          <div key={i} className="stat-card"><div className="stat-card-corpo"><Skeleton width="60%" height={11} /><Skeleton width="80%" height={24} style={{ marginTop: 8 }} /><Skeleton width="40%" height={10} style={{ marginTop: 8 }} /></div></div>
+        ))}
+      </div>
+      <div className="grid-2" style={{ marginTop: 16 }}>
+        <div className="card"><Skeleton width="40%" height={14} /><div style={{ display: 'grid', gap: 12, marginTop: 16 }}>{Array.from({ length: 4 }, (_, i) => <Skeleton key={i} height={22} />)}</div></div>
+        <div className="card"><Skeleton width="50%" height={14} /><Skeleton height={220} style={{ marginTop: 16 }} /></div>
+      </div>
+      <div className="grid-2" style={{ marginTop: 16 }}>
+        {[0, 1].map((k) => <div key={k} className="card"><Skeleton width="45%" height={14} /><div style={{ display: 'grid', gap: 10, marginTop: 16 }}>{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} height={16} />)}</div></div>)}
+      </div>
+    </div>
   );
 }

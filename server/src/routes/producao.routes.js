@@ -480,7 +480,14 @@ router.get('/ordens', async (req, res, next) => {
               a.gasto_mao_de_obra, a.apontamentos,
               i.custo_material_reservado, i.insumos_sem_custo,
               fl.referencias_do_kit, fl.filhas,
-              ev.id AS evento_calendario_id
+              ev.id AS evento_calendario_id,
+              -- Miniatura no cartão da OP (revisão visual 25/09/2026): a foto
+              -- do cadastro, e na falta dela a do anúncio.
+              EXISTS (SELECT 1 FROM produto_fotos pf WHERE pf.produto_id = op.produto_id) AS tem_foto,
+              (SELECT an.foto_url FROM anuncios_marketplace an
+                WHERE an.produto_id = op.produto_id AND an.foto_url IS NOT NULL
+                ORDER BY (an.status = 'ativo') DESC, an.atualizado_em_plataforma DESC NULLS LAST
+                LIMIT 1) AS foto_url
          FROM ordens_producao op
          JOIN produtos p ON p.id = op.produto_id
          LEFT JOIN fornecedores f ON f.id = op.fornecedor_id

@@ -366,7 +366,7 @@ function DetalheOrdem({ ordemId, fornecedores, insumos: catalogoInsumos = [], on
                     } catch (e) { setErro(e.message); }
                   }}
                 ><Plus size={15} /> Lançar material gasto</button>
-                <span className="ink-soft">
+                <span className="texto-ajuda">
                   Corrigir a quantidade aqui muda o custo real da ordem e <strong>não</strong> mexe no que
                   já foi reservado — reserva é movimento de estoque.
                 </span>
@@ -1256,10 +1256,7 @@ export default function ProducaoPage() {
       <header className="pagina-topo">
         <div>
           <h1><Factory size={22} /> Produção</h1>
-          <p className="ink-soft">
-            A ordem de produção com grade, material reservado e o custo REAL comparado
-            com o padrão da ficha — que é o número que ninguém tinha.
-          </p>
+          <p className="ink-soft">Ordens com grade, material reservado e custo real comparado ao padrão da ficha.</p>
         </div>
         <div className="pagina-acoes">
           <button type="button" className="btn-sec" onClick={carregar} disabled={carregando}>
@@ -1429,7 +1426,9 @@ export default function ProducaoPage() {
                                 )}
                               </>
                             )
-                            : <span className="selo tone-atencao" title="Sem chegada prevista, a ordem não entra no calendário e não tem como atrasar.">sem prazo</span>}
+                            : (o.situacao === 'em_producao'
+                              ? <span className="selo tone-atencao" title="Em produção sem chegada prevista: a ordem não entra no calendário e não tem como atrasar.">sem prazo</span>
+                              : <span className="ink-faint">—</span>)}
                         </td>
                       </tr>
                     ))}

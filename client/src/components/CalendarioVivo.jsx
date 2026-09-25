@@ -50,6 +50,16 @@ export function ehOrdemDeProducao(evento) {
 
 // No chip do dia o ícone de fábrica já diz "ordem de produção" — o "OP "
 // do começo do título só roubava espaço de uma célula estreita.
+// Chip do MÊS: a célula é estreita e "7037 · OG1340 — C…" cortava justo a
+// parte útil. Na OP fica a referência na frente e o número da ordem depois;
+// o título inteiro continua no tooltip (revisão visual 25/09/2026).
+export function tituloChip(evento) {
+  const t = evento.titulo || '';
+  if (!ehOrdemDeProducao(evento)) return t;
+  const m = t.match(/^OP\s+(\S+)\s*·\s*([^—–-]+?)\s*(?:[—–-]|$)/i);
+  return m ? `${m[2]} · ${m[1]}` : tituloCurto(evento);
+}
+
 export function tituloCurto(evento) {
   const t = evento.titulo || '';
   return ehOrdemDeProducao(evento) ? t.replace(/^OP\s+/i, '') : t;
@@ -174,7 +184,7 @@ export function ChipEvento({ evento, diasAlerta, foco, indice = 0, onClick, resu
     >
       {op ? <Factory size={11} className="cal-chip-icone" />
         : evento.categoria && <span className="categoria-dot" style={{ background: corDaCategoria(evento.categoria) }} />}
-      <span className="cal-chip-texto">{tituloCurto(evento)}</span>
+      <span className="cal-chip-texto">{tituloChip(evento)}</span>
       {compartilhado && <Users size={10} className="cal-chip-icone cal-chip-fim" />}
     </button>
   );

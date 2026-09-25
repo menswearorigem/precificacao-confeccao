@@ -22,6 +22,7 @@ import { PrecoVitrine, FaixaPrecoVitrine, marcarFotoCarregada, refFotoJaCarregad
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import { SeloPlataforma, nomeDaLoja, chaveDaPlataforma, PREFIXO_PLATAFORMA } from '../lib/canalMarketplace';
 import { usePaletaGrafico } from '../lib/coresGrafico';
+import ErroIntegracao from '../components/ErroIntegracao';
 
 // Marketplace › Anúncios.
 //
@@ -939,7 +940,7 @@ function FaixaDeLojas({ lojas, onSincronizar, sincronizando }) {
             <div className="loja-ficha-nome">{nomeDaLoja(l)}</div>
             <div className="loja-ficha-sub">
               {l.ultimo_erro
-                ? `Falhou: ${l.ultimo_erro}`
+                ? <>Falhou. <ErroIntegracao erro={l.ultimo_erro} sistema="a plataforma" /></>
                 : l.ultima_sincronizacao
                   // `anuncios` é a contagem de PUBLICAÇÕES no ar (ativas,
                   // pausadas e em análise) — o mesmo recorte que o painel da
@@ -1605,8 +1606,8 @@ function AbaAds({ dado }) {
                 />
                 <Tooltip formatter={(v, n) => [brl(v), n === 'gasto' ? 'Gasto' : 'Receita atribuída']} />
                 <Legend wrapperStyle={{ fontSize: 11 }} formatter={(v) => (v === 'gasto' ? 'Gasto' : 'Receita atribuída')} />
-                <Area type="monotone" dataKey="receita" stroke={paleta.positivo} fill={paleta.positivo} fillOpacity={0.18} />
-                <Area type="monotone" dataKey="gasto" stroke={paleta.series[0]} fill={paleta.series[0]} fillOpacity={0.18} />
+                <Area type="linear" dataKey="receita" stroke={paleta.positivo} fill={paleta.positivo} fillOpacity={0.18} />
+                <Area type="linear" dataKey="gasto" stroke={paleta.series[0]} fill={paleta.series[0]} fillOpacity={0.18} />
               </AreaChart>
             </ResponsiveContainer>
           </div>

@@ -7,7 +7,7 @@ import {
   PackageMinus, Search, User, Tags, Layers, CreditCard, Percent, Info, Flame, Clock,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, pct, formatQtd, dataBr, plural } from '../lib/format';
+import { brl, pct, formatQtd, dataBr, plural, brlEixo } from '../lib/format';
 import { Select, StatCard, AvisoDeFalha, Skeleton, ThOrdenavel, Paginacao, BotaoExportar } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { PRESETS_PERIODO } from '../lib/periodos';
@@ -116,6 +116,7 @@ function VisaoGeralTab({ filtros }) {
     anteriorValor: serieAnterior ? serieAnterior[i]?.valorVendasValidas : undefined,
   }));
   const tick = { fontSize: 11.5, fontFamily: FONTE, fill: 'var(--ink-soft)' };
+  const maiorDia = Math.max(0, ...serie.map((d) => Number(d.valorVendasValidas) || 0));
 
   return (
     <>
@@ -173,17 +174,17 @@ function VisaoGeralTab({ filtros }) {
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
               <XAxis dataKey="dataLabel" tick={tick} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
-              <YAxis tick={tick} tickFormatter={(v) => brl(v)} width={92} axisLine={false} tickLine={false} />
+              <YAxis tick={tick} tickFormatter={brlEixo} width={58} axisLine={false} tickLine={false} />
               <Tooltip content={<TooltipGrafico />} />
               <Legend wrapperStyle={{ fontFamily: FONTE, fontSize: 12.5, color: 'var(--ink-soft)', paddingTop: 8 }} iconType="plainline" />
               {serieAnterior && (
                 <Area
-                  type="monotone" dataKey="anteriorValor" name="Período anterior"
+                  type="linear" dataKey="anteriorValor" name="Período anterior"
                   stroke={corPorIndice(paleta, 3)} strokeDasharray="5 4" fill="none" strokeWidth={1.75} dot={false}
                 />
               )}
               <Area
-                type="monotone" dataKey="vendido" name="Vendido"
+                type="linear" dataKey="vendido" name="Vendido"
                 stroke={corPorIndice(paleta, 0)} fill="url(#corVendaDireta)" strokeWidth={2.25} dot={false}
                 activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }}
               />
@@ -224,7 +225,14 @@ function VisaoGeralTab({ filtros }) {
                   <td className="mono">{dataBr(d.data)}</td>
                   <td className="num">{formatQtd(d.pedidosValidos)}</td>
                   <td className="num">{formatQtd(d.unidades)}</td>
-                  <td className="num">{brl(d.valorVendasValidas)}</td>
+                  <td className="num">
+                    {/* Barra proporcional ao maior dia: o dia forte e o dia
+                        parado aparecem sem precisar ler os números. */}
+                    <span className="celula-com-barra">
+                      <span className="barra-celula" aria-hidden="true"><span style={{ width: `${maiorDia > 0 ? Math.max(d.valorVendasValidas > 0 ? 2 : 0, (d.valorVendasValidas / maiorDia) * 100) : 0}%` }} /></span>
+                      <span className="celula-com-barra-valor">{brl(d.valorVendasValidas)}</span>
+                    </span>
+                  </td>
                   <td className="num">{brl(d.ticketMedio)}</td>
                   <td className="num">{brl(d.descontoConcedido)}</td>
                   <td className="num">{formatQtd(d.clientes)}</td>
@@ -300,7 +308,7 @@ function VendedoresTab({ filtros }) {
           <ResponsiveContainer width="100%" height={Math.max(220, lista.length * 42)}>
             <BarChart data={lista} layout="vertical" margin={{ top: 6, right: 20, left: 8, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 11.5, fill: 'var(--ink-soft)' }} tickFormatter={(v) => brl(v)} axisLine={false} tickLine={false} />
+              <XAxis type="number" tick={{ fontSize: 11.5, fill: 'var(--ink-soft)' }} tickFormatter={brlEixo} axisLine={false} tickLine={false} />
               <YAxis type="category" dataKey="rotulo" width={128} tick={{ fontSize: 11.5, fill: 'var(--ink-soft)' }} axisLine={false} tickLine={false} />
               <Tooltip content={<TooltipGrafico />} cursor={{ fill: 'var(--accent-softer)' }} />
               <Bar dataKey="valorVendasValidas" name="Vendido" fill={corPorIndice(paleta, 0)} radius={[0, 4, 4, 0]} />

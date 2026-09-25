@@ -12,6 +12,7 @@ import { useTabela } from '../lib/useTabela';
 import { confirmar } from '../components/ConfirmDialog';
 import { tratarTravaDoPiso } from '../components/MotivoDialog';
 import { SeloPlataforma } from '../lib/canalMarketplace';
+import ErroIntegracao from '../components/ErroIntegracao';
 
 // Marketplace › Catálogo › Piso de Preço — repaginada em 23/09/2026 depois do
 // teste de uso (ver claude/hbn-pos-venda-piso-diagnostico-2026-09-23.md).
@@ -409,7 +410,7 @@ function Concorrentes({ produtos }) {
                       {c.origem === 'catalogo' && <span className="stamp sm tone-elevada">vitrine do catálogo</span>} {c.titulo || c.vendedor || c.item_id_externo}
                       {c.url && <a href={c.url} target="_blank" rel="noreferrer" style={{ marginLeft: 6 }} title="Abrir"><ExternalLink size={11} /></a>}
                       {c.observacao && <div className="ink-soft" style={{ fontSize: 11.5 }}>{c.observacao}</div>}
-                      {c.ultimo_erro && <div className="pv-ruim" style={{ fontSize: 11.5 }}><TriangleAlert size={11} /> {c.ultimo_erro}</div>}
+                      {c.ultimo_erro && <div className="pv-ruim" style={{ fontSize: 11.5 }}><TriangleAlert size={11} /> <ErroIntegracao erro={c.ultimo_erro} sistema="a plataforma" /></div>}
                     </td>
                     <td>{c.origem === 'manual' ? <NumInput className="pp-preco-manual" step="0.01" min={0} value={c.preco ?? ''} onChange={() => {}} onBlur={(e) => { const v = Number(String(e.target.value).replace(/\./g, '').replace(',', '.')); if (v > 0 && v !== Number(c.preco)) editarPreco(c, v); }} /> : <b>{money(c.preco)}</b>}</td>
                     <td>{money(c.nosso_preco)}{c.nossos_anuncios > 1 && <small className="ink-soft"> (menor de {c.nossos_anuncios})</small>}</td>

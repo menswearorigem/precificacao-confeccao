@@ -16,6 +16,15 @@ import { useTabela } from '../lib/useTabela';
 import { novaAba } from '../lib/novaAba';
 import LogoWik from '../components/LogoWik';
 
+// Pedido importado com o campo de pagamento ainda no texto da lista
+// ("– Selecione…") aparecia no cartão como se fosse uma forma de pagamento.
+// Placeholder não é dado: some da tela (revisão visual 25/09/2026).
+function formaPagamentoReal(v) {
+  const t = String(v || '').trim();
+  if (!t || /selecione|^[-–—\s.…]*$/i.test(t)) return '';
+  return t;
+}
+
 // Lista de pedidos de venda direta — repaginada em 09/09/2026.
 //
 // Separada de PedidosListPage (que continua servindo o Marketplace) porque as
@@ -51,7 +60,7 @@ const COLUNAS_EXPORTACAO = [
   { rotulo: 'Vendedor', valor: (p) => p.vendedor_nome || p.vendedor || '' },
   { rotulo: 'Canal', valor: (p) => p.canal_venda || '' },
   { rotulo: 'Tabela de preço', valor: (p) => p.tabela_preco_nome || '' },
-  { rotulo: 'Forma de pagamento', valor: (p) => p.forma_pagamento || '' },
+  { rotulo: 'Forma de pagamento', valor: (p) => formaPagamentoReal(p.forma_pagamento) },
   { rotulo: 'Qtd. peças', valor: (p) => formatQtd(p.quantidade_pecas) },
   { rotulo: 'Total bruto', valor: (p) => brl(p.total_bruto) },
   { rotulo: 'Descontos', valor: (p) => brl(p.total_desconto) },
@@ -403,8 +412,9 @@ export default function PedidosVendaListPage() {
         <div className="aviso-inline" style={{ marginBottom: 12 }}>
           <User size={14} />
           <span>
-            {plural(resumo.semVendedor, 'pedido')} deste período estão sem vendedor vinculado —
-            eles contam no faturamento, mas ficam de fora do relatório de comissão.
+            {resumo.semVendedor === 1
+              ? '1 pedido deste período está sem vendedor vinculado — ele conta no faturamento, mas fica de fora do relatório de comissão.'
+              : `${plural(resumo.semVendedor, 'pedido')} deste período estão sem vendedor vinculado — eles contam no faturamento, mas ficam de fora do relatório de comissão.`}
           </span>
         </div>
       )}
@@ -461,7 +471,7 @@ export default function PedidosVendaListPage() {
                 <div className="venda-pedido-rodape">
                   <div className="venda-pedido-valor">
                     {brl(p.total_liquido)}
-                    <small>{plural(p.quantidade_pecas, 'peça')}{p.forma_pagamento ? ` · ${p.forma_pagamento}` : ''}</small>
+                    <small>{plural(p.quantidade_pecas, 'peça')}{formaPagamentoReal(p.forma_pagamento) ? ` · ${formaPagamentoReal(p.forma_pagamento)}` : ''}</small>
                   </div>
                   <ChevronRight size={18} style={{ color: 'var(--ink-soft)' }} />
                 </div>

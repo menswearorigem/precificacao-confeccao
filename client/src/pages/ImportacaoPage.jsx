@@ -72,7 +72,7 @@ export default function ImportacaoPage() {
 
   return (
     <div className="page-wide">
-      <h1>Importação em Massa</h1>
+      <h1>Importar ficha/planilha</h1>
       <p className="page-sub">
         Envie um .xlsx com as abas <strong>Cadastro_Produto</strong>, <strong>Materiais</strong> e/ou{' '}
         <strong>Custos_Industriais</strong> (mesmo formato da planilha original), um .csv com uma

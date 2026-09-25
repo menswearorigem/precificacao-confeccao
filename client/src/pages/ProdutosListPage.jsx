@@ -241,7 +241,7 @@ export default function ProdutosListPage() {
                   <Checkbox checked={selecionados.has(p.id)} onChange={() => alternarSelecao(p.id)} />
                 </td>
                 <td onClick={(e) => e.stopPropagation()}>
-                  <FotoProduto produtoId={p.id} temFoto={p.temFoto} size={36} alt={p.descricao} />
+                  <FotoProduto produtoId={p.id} temFoto={p.temFoto} url={p.fotoUrl} size={36} alt={p.descricao} />
                 </td>
                 <td className="mono">{p.referencia}</td>
                 <td>{p.descricao}</td>

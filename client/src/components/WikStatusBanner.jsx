@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, RefreshCw, X } from 'lucide-react';
 import { api } from '../api/client';
+import ErroIntegracao from './ErroIntegracao';
 
 // Limiar pra considerar a sincronização "parada" — o ciclo automático roda a
 // cada 15min (ver WIK_SYNC_INTERVAL_MS em index.js), então passar disso é
@@ -119,7 +120,7 @@ export default function WikStatusBanner() {
               <>O Wik bloqueou o acesso desta conta (geralmente por token duplicado) — é preciso abrir chamado no suporte
               da Wik pra destravar. Não adianta tentar de novo por aqui.{status.rejeicoesConsecutivasToken >= 5 && ' Já tentamos várias vezes seguidas; reduzimos o ritmo até normalizar.'}</>
             ) : status.ultimoErro ? (
-              <>Sincronização com o Wik Sistemas com erro: <strong>{status.ultimoErro}</strong></>
+              <><strong>Sincronização com o Wik:</strong> <ErroIntegracao erro={status.ultimoErro} sistema="o Wik" /></>
             ) : (
               <>Sincronização com o Wik Sistemas parada há {formatarTempo(horas)}</>
             )}

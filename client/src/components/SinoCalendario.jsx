@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell } from 'lucide-react';
+import { Bell, CalendarDays } from 'lucide-react';
+import { moduloDaRota } from '../lib/modules';
 import { api } from '../api/client';
 import { carregarBriefing, rotuloNivel } from '../lib/manu/analista';
 
@@ -67,11 +68,15 @@ export default function SinoCalendario({ comCalendario = true }) {
                 <button
                   key={s.chave}
                   type="button"
-                  className={`sino-item${s.nivel === 'urgente' ? ' urgente' : ''}`}
+                  className={`sino-item sino-item-rico${s.nivel === 'urgente' ? ' urgente' : ''}`}
                   onClick={() => { setAberto(false); navigate(s.rota); }}
                 >
-                  <span className="sino-item-titulo">{s.titulo}</span>
-                  <span className="sino-item-prazo">{rotuloNivel(s.nivel)} · {s.resumo}</span>
+                  <IconeModulo rota={s.rota} />
+                  <span className="sino-item-texto">
+                    <span className="sino-item-titulo">{s.titulo}</span>
+                    <span className="sino-item-resumo">{destacarNumeros(s.resumo)}</span>
+                  </span>
+                  <span className={`sino-item-nivel sino-nivel-${s.nivel}`}>{rotuloNivel(s.nivel)}</span>
                 </button>
               ))}
             </div>
@@ -85,16 +90,19 @@ export default function SinoCalendario({ comCalendario = true }) {
                 <button
                   key={item.id}
                   type="button"
-                  className={`sino-item${item.nivel === 'urgente' ? ' urgente' : ''}`}
+                  className={`sino-item sino-item-rico${item.nivel === 'urgente' ? ' urgente' : ''}`}
                   onClick={() => abrirEvento(item.id)}
                 >
-                  <span className="sino-item-titulo">{item.titulo}</span>
-                  <span className="sino-item-prazo">
+                  <span className="sino-item-icone" style={{ '--sino-cor': 'var(--terracotta)' }}><CalendarDays size={14} /></span>
+                  <span className="sino-item-texto">
+                    <span className="sino-item-titulo">{item.titulo}</span>
+                  </span>
+                  <span className={`sino-item-nivel ${item.atrasado ? 'sino-nivel-urgente' : 'sino-nivel-atencao'}`}>
                     {item.atrasado
-                      ? `Atrasado há ${Math.abs(item.diasParaPrazo)} dia(s)`
+                      ? `${Math.abs(item.diasParaPrazo)} ${Math.abs(item.diasParaPrazo) === 1 ? 'dia' : 'dias'} atrasado`
                       : item.diasParaPrazo === 0
-                        ? 'Vence hoje'
-                        : `Vence em ${item.diasParaPrazo} dia(s)`}
+                        ? 'vence hoje'
+                        : `vence em ${item.diasParaPrazo} ${item.diasParaPrazo === 1 ? 'dia' : 'dias'}`}
                   </span>
                 </button>
               ))}
@@ -104,4 +112,23 @@ export default function SinoCalendario({ comCalendario = true }) {
       )}
     </div>
   );
+}
+
+// Ícone do módulo da rota, na cor do módulo — a pessoa sabe de onde vem o
+// aviso antes de ler (revisão visual 25/09/2026).
+function IconeModulo({ rota }) {
+  const mod = moduloDaRota(rota);
+  const Icone = mod?.icon || Bell;
+  return (
+    <span className="sino-item-icone" style={{ '--sino-cor': mod?.color || 'var(--ink-soft)' }}>
+      <Icone size={14} />
+    </span>
+  );
+}
+
+// Número no meio da frase ganha peso, para a leitura bater o olho no que
+// importa ("12 títulos vencidos somando R$ 3.400,00").
+function destacarNumeros(texto) {
+  const partes = String(texto || '').split(/(R\$\s?[\d.,]+|\d[\d.,]*%?)/g);
+  return partes.map((p, i) => (i % 2 === 1 ? <strong key={i}>{p}</strong> : p));
 }

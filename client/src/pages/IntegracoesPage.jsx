@@ -14,6 +14,7 @@ import logoShopee from '../assets/logos/shopee.png';
 import logoTiktokShop from '../assets/logos/tiktok-shop.svg';
 import logoWikSistemas from '../assets/logos/wik.png';
 import { CampoTextoLimitado } from '../components/campos';
+import ErroIntegracao from '../components/ErroIntegracao';
 
 // Logos reais como arquivo SVG no repositório (client/src/assets/logos) —
 // nada de URL externa nem selo com só a cor de marca (que era o que existia
@@ -475,7 +476,7 @@ export default function IntegracoesPage() {
                               </Field>
                             </div>
                             {item.ultimoErro && (
-                              <div className="login-error">Última tentativa falhou: {item.ultimoErro}</div>
+                              <div className="login-error">Última tentativa falhou. <ErroIntegracao erro={item.ultimoErro} sistema="a plataforma" /></div>
                             )}
                             {item.ultimoErroFaturamento && (
                               <div className="login-error" style={{ marginTop: item.ultimoErro ? 8 : 0 }}>

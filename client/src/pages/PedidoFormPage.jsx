@@ -1045,7 +1045,7 @@ export default function PedidoFormPage() {
                     {pedido.valor_recebido_marketplace != null ? (
                       <>
                         {brl(pedido.valor_recebido_marketplace)}{' '}
-                        <span className={'stamp sm ' + (pedido.valor_recebido_status === 'liberado' ? 'tone-elevada' : 'tone-atencao')}>
+                        <span className={'stamp sm ' + (pedido.valor_recebido_status === 'liberado' ? 'tone-saudavel' : 'tone-elevada')}>
                           {pedido.valor_recebido_status === 'liberado' ? 'liberado' : 'confirmado'}
                         </span>
                         {pedido.valor_recebido_status !== 'liberado' && pedido.valor_recebido_liberacao_em && (

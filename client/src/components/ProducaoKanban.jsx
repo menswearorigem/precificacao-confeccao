@@ -1,3 +1,4 @@
+import { memo, useState } from 'react';
 import {
   DndContext, useDraggable, useDroppable, PointerSensor, useSensor, useSensors,
 } from '@dnd-kit/core';
@@ -35,7 +36,14 @@ export const COLUNAS = [
   { valor: 'cancelada', rotulo: 'Cancelada', ajuda: 'Não vai acontecer. Nada é apagado.' },
 ];
 
-function Cartao({ ordem, onClick }) {
+// Quantas concluídas o quadro mostra antes do "ver todas". Com 275 cartões
+// na coluna Concluída o quadro virava uma parede — e renderizar tudo de novo
+// a cada troca de tema chegou a travar a aba (revisão visual 25/09/2026).
+const CONCLUIDAS_VISIVEIS = 10;
+
+// memo: o cartão só redesenha quando a própria ordem muda, não a cada
+// arrastar/soltar ou troca de tema do quadro inteiro.
+const Cartao = memo(function Cartao({ ordem, onClick }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: String(ordem.id),
     // Ordem concluída não se arrasta: as peças já entraram no estoque e não há
@@ -48,6 +56,8 @@ function Cartao({ ordem, onClick }) {
     && new Date(ordem.data_prevista) < new Date()
     && !['concluida', 'cancelada'].includes(ordem.situacao);
   const falta = Number(ordem.quantidade_planejada) - Number(ordem.quantidade_produzida);
+  const planejada = Number(ordem.quantidade_planejada) || 0;
+  const progresso = planejada > 0 ? Math.max(0, Math.min(1, (Number(ordem.quantidade_produzida) || 0) / planejada)) : 0;
 
   return (
     <div
@@ -58,9 +68,12 @@ function Cartao({ ordem, onClick }) {
       {...listeners}
       {...attributes}
     >
-      <div className="kanban-cartao-titulo">
-        {ordem.tipo === 'kit' ? <Layers size={13} /> : <Factory size={13} />}
-        OP {ordem.numero} · {ordem.tipo === 'kit' ? (ordem.nome || 'Kit') : ordem.referencia}
+      <div className="op-cartao-cabeca">
+        <MiniaturaOp ordem={ordem} />
+        <div className="kanban-cartao-titulo">
+          {ordem.tipo === 'kit' ? <Layers size={13} /> : <Factory size={13} />}
+          OP {ordem.numero} · {ordem.tipo === 'kit' ? (ordem.nome || 'Kit') : ordem.referencia}
+        </div>
       </div>
       <div className="op-cartao-linha ink-soft">
         {ordem.tipo === 'kit'
@@ -73,10 +86,19 @@ function Cartao({ ordem, onClick }) {
         </span>
         <span>{ordem.data_prevista ? dataBr(ordem.data_prevista) : 'sem prazo'}</span>
       </div>
+      {/* "0 / 959 peças" vira uma barra — lê-se de longe. */}
+      {ordem.situacao !== 'cancelada' && planejada > 0 && (
+        <div className={`op-progresso${progresso >= 1 ? ' completo' : ''}`} title={`${Math.round(progresso * 100)}% produzido`}>
+          <span style={{ width: `${progresso * 100}%` }} />
+        </div>
+      )}
       <div className="op-cartao-selos">
         {atrasada && <span className="selo tone-prejuizo"><AlertTriangle size={11} /> atrasada</span>}
-        {!ordem.data_prevista && (
-          <span className="selo tone-atencao" title="Sem previsão de entrega, esta ordem não entra no calendário e não tem como atrasar.">sem prazo</span>
+        {/* "sem prazo" em âmbar em quase todo cartão virava ruído. Só vira
+            selo quando é problema: ordem já em produção sem data de chegada.
+            Nas outras, a própria linha de data já diz "sem prazo". */}
+        {!ordem.data_prevista && ordem.situacao === 'em_producao' && (
+          <span className="selo tone-atencao" title="Em produção sem previsão de entrega: esta ordem não entra no calendário e não tem como atrasar.">sem prazo</span>
         )}
         {Number(ordem.insumos_sem_custo) > 0 && (
           <span className="selo tone-atencao" title="Há insumo sem custo conhecido: o custo desta ordem está incompleto, não é zero.">custo parcial</span>
@@ -88,14 +110,35 @@ function Cartao({ ordem, onClick }) {
       </div>
     </div>
   );
+});
+
+// Miniatura da peça no cartão (revisão visual 25/09/2026). Foto do cadastro;
+// sem ela, a do anúncio; link quebrado ou sem foto nenhuma: nada (o cartão
+// não ganha um ícone de "sem imagem" a mais).
+function MiniaturaOp({ ordem }) {
+  const [falhou, setFalhou] = useState(false);
+  if (ordem.tipo === 'kit') return null;
+  const src = ordem.tem_foto ? `/api/produtos/${ordem.produto_id}/foto` : (ordem.foto_url || null);
+  if (!src || falhou) return null;
+  return <img className="op-cartao-foto" src={src} alt="" loading="lazy" draggable={false} onError={() => setFalhou(true)} />;
 }
 
 function Coluna({ coluna, ordens, onClickCartao }) {
   const { setNodeRef, isOver } = useDroppable({ id: coluna.valor, disabled: coluna.recebe === false });
   const pecas = ordens.reduce((s, o) => s + Number(o.quantidade_planejada || 0), 0);
+  const [todas, setTodas] = useState(false);
+  // Concluída: só as mais recentes, com "ver todas". As outras colunas são
+  // trabalho em andamento — ali cada cartão importa e nada é escondido.
+  const recolhe = coluna.valor === 'concluida' && ordens.length > CONCLUIDAS_VISIVEIS && !todas;
+  const visiveis = recolhe
+    ? [...ordens]
+      .sort((a, b) => String(b.data_conclusao || b.data_prevista || '').localeCompare(String(a.data_conclusao || a.data_prevista || '')) || Number(b.numero) - Number(a.numero))
+      .slice(0, CONCLUIDAS_VISIVEIS)
+    : ordens;
   return (
     <div
       ref={setNodeRef}
+      data-situacao={coluna.valor}
       className={`kanban-coluna${isOver && coluna.recebe !== false ? ' sobre-drop' : ''}${coluna.recebe === false ? ' kanban-coluna-fechada' : ''}`}
     >
       <div className="kanban-coluna-head" title={coluna.ajuda}>
@@ -105,7 +148,12 @@ function Coluna({ coluna, ordens, onClickCartao }) {
       {ordens.length > 0 && (
         <div className="kanban-coluna-sub ink-soft">{formatQtd(pecas)} peças</div>
       )}
-      {ordens.map((o) => <Cartao key={o.id} ordem={o} onClick={onClickCartao} />)}
+      {visiveis.map((o) => <Cartao key={o.id} ordem={o} onClick={onClickCartao} />)}
+      {coluna.valor === 'concluida' && ordens.length > CONCLUIDAS_VISIVEIS && (
+        <button type="button" className="kanban-ver-todas" onClick={() => setTodas((v) => !v)}>
+          {todas ? 'Mostrar só as 10 mais recentes' : `Ver todas as ${formatQtd(ordens.length)} concluídas`}
+        </button>
+      )}
     </div>
   );
 }

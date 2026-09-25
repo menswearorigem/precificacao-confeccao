@@ -49,7 +49,7 @@ export const MODULES = [
     key: 'produto',
     label: 'Produto',
     icon: Package,
-    color: 'var(--terracotta)',
+    color: 'var(--mod-produto)',
     entradas: [
       { to: '/produtos', label: 'Produtos', icon: Package },
       { to: '/kits', label: 'Kits', icon: Boxes },
@@ -61,8 +61,8 @@ export const MODULES = [
         label: 'Importar e imprimir',
         icon: Upload,
         paginas: [
-          { to: '/importacao', label: 'Importar Produtos', icon: Upload },
-          { to: '/importacao-massa', label: 'Importar em Massa', icon: FileSpreadsheet },
+          { to: '/importacao', label: 'Importar ficha/planilha', icon: Upload },
+          { to: '/importacao-massa', label: 'Importar grade', icon: FileSpreadsheet },
           { to: '/ficha-tecnica', label: 'Ficha Técnica', icon: FileText },
         ],
       },
@@ -72,7 +72,7 @@ export const MODULES = [
     key: 'estoque',
     label: 'Estoque',
     icon: Warehouse,
-    color: 'var(--brass)',
+    color: 'var(--mod-estoque)',
     entradas: [
       { to: '/estoque', label: 'Estoque', icon: Warehouse },
       // Bipagem fica sozinha de propósito: é a única tela deste módulo que se
@@ -123,7 +123,7 @@ export const MODULES = [
     key: 'producao',
     label: 'Produção',
     icon: Factory,
-    color: 'var(--leather-dark)',
+    color: 'var(--mod-producao)',
     tambemPor: ['estoque'],
     entradas: [
       { to: '/producao', label: 'Ordens de Produção', icon: Factory },
@@ -151,7 +151,7 @@ export const MODULES = [
     key: 'vendas',
     label: 'Vendas',
     icon: ClipboardList,
-    color: 'var(--info)',
+    color: 'var(--mod-vendas)',
     entradas: [
       { to: '/pedidos', label: 'Pedidos de Venda', icon: ClipboardList },
       { to: '/clientes', label: 'Clientes', icon: Users },
@@ -174,7 +174,7 @@ export const MODULES = [
     key: 'marketplace',
     label: 'Marketplace',
     icon: Store,
-    color: 'var(--plum)',
+    color: 'var(--mod-marketplace)',
     entradas: [
       // Etiqueta, conferência e romaneio são a MESMA meia hora da expedição,
       // na ordem em que acontecem: imprime a etiqueta, bipa a caixa, fecha o
@@ -228,7 +228,7 @@ export const MODULES = [
     key: 'financeiro',
     label: 'Financeiro',
     icon: Wallet,
-    color: 'var(--success)',
+    color: 'var(--mod-financeiro)',
     entradas: [
       // Pagar e Receber eram DUAS abas para o que é um alternador de dois
       // estados: mesmos filtros, mesmos quatro cartões, mesmas onze colunas,
@@ -288,7 +288,7 @@ export const MODULES = [
     key: 'viagens',
     label: 'Viagens',
     icon: Plane,
-    color: 'var(--teal)',
+    color: 'var(--mod-viagens)',
     entradas: [
       { to: '/viagens', label: 'Viagens', icon: Plane },
     ],
@@ -297,7 +297,7 @@ export const MODULES = [
     key: 'compras',
     label: 'Compras',
     icon: ShoppingCart,
-    color: 'var(--danger)',
+    color: 'var(--mod-compras)',
     entradas: [
       {
         label: 'Compras',
@@ -327,7 +327,7 @@ export const MODULES = [
     key: 'analises',
     label: 'Análises',
     icon: LayoutDashboard,
-    color: 'var(--success)',
+    color: 'var(--mod-analises)',
     entradas: [
       { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { to: '/alertas', label: 'Central de Alertas', icon: AlertTriangle },
@@ -350,7 +350,7 @@ export const MODULES = [
     key: 'calendario',
     label: 'Calendário',
     icon: CalendarDays,
-    color: 'var(--leather)',
+    color: 'var(--mod-calendario)',
     entradas: [
       { to: '/calendario', label: 'Calendário', icon: CalendarDays },
       { to: '/calendario/modelos', label: 'Modelos', icon: LayoutTemplate, adminOnly: true },
@@ -360,7 +360,7 @@ export const MODULES = [
     key: 'configuracoes',
     label: 'Configurações',
     icon: Settings,
-    color: 'var(--warning)',
+    color: 'var(--mod-configuracoes)',
     entradas: [
       // Os três já eram rotulados como grupo "Cálculo" no submenu; agora são
       // uma entrada só, como o rótulo sempre prometeu.
@@ -515,4 +515,22 @@ export function canAccessPath(user, pathname) {
   if (user?.role === 'admin') return true;
   const visible = getVisibleModules(user);
   return visible.some((mod) => mod.pages.some((p) => pathname === p.to || pathname.startsWith(`${p.to}/`)));
+}
+
+// Módulo dono de uma rota (a de prefixo mais longo). Usado para dar ícone e
+// cor do módulo a itens que só conhecem a rota — as notificações do sino, por
+// exemplo (revisão visual 25/09/2026).
+export function moduloDaRota(rota) {
+  const caminho = String(rota || '').split('?')[0];
+  let melhor = null;
+  let tamanho = 0;
+  for (const mod of MODULES) {
+    for (const p of mod.pages) {
+      if (p.to && (caminho === p.to || caminho.startsWith(`${p.to}/`)) && p.to.length > tamanho) {
+        melhor = mod;
+        tamanho = p.to.length;
+      }
+    }
+  }
+  return melhor;
 }

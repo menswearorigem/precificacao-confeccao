@@ -7,7 +7,7 @@ import {
   User, Tags, CreditCard, Layers, Target,
 } from 'lucide-react';
 import { api } from '../api/client';
-import { brl, pct, formatQtd, dataBr, plural } from '../lib/format';
+import { brl, pct, formatQtd, dataBr, plural, brlEixo } from '../lib/format';
 import {
   Select, StatCard, AvisoDeFalha, Skeleton, ThOrdenavel, ThGrupoOrdenavel,
   Paginacao, BotaoExportar,
@@ -473,12 +473,12 @@ export default function LucratividadeVendasPage() {
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
                       <XAxis dataKey="dataLabel" tick={tick} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
-                      <YAxis tick={tick} tickFormatter={(v) => brl(v)} width={92} axisLine={false} tickLine={false} />
+                      <YAxis tick={tick} tickFormatter={brlEixo} width={58} axisLine={false} tickLine={false} />
                       <Tooltip content={<TooltipLucro />} />
                       <Legend wrapperStyle={{ fontFamily: FONTE, fontSize: 12.5, color: 'var(--ink-soft)', paddingTop: 8 }} iconType="plainline" />
-                      <Area type="monotone" dataKey="receita" name="Faturamento" stroke={corPorIndice(paleta, 0)} fill="url(#corReceitaVendas)" strokeWidth={2} dot={false} />
-                      <Area type="monotone" dataKey="lucroBruto" name="Lucro bruto" stroke={corPorIndice(paleta, 5)} fill="none" strokeWidth={2} dot={false} />
-                      <Area type="monotone" dataKey="lucroPosComissao" name="Depois da comissão" stroke={corPorIndice(paleta, 4)} fill="url(#corLucroVendas)" strokeWidth={2} dot={false} />
+                      <Area type="linear" dataKey="receita" name="Faturamento" stroke={corPorIndice(paleta, 0)} fill="url(#corReceitaVendas)" strokeWidth={2} dot={false} />
+                      <Area type="linear" dataKey="lucroBruto" name="Lucro bruto" stroke={corPorIndice(paleta, 5)} fill="none" strokeWidth={2} dot={false} />
+                      <Area type="linear" dataKey="lucroPosComissao" name="Depois da comissão" stroke={corPorIndice(paleta, 4)} fill="url(#corLucroVendas)" strokeWidth={2} dot={false} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>

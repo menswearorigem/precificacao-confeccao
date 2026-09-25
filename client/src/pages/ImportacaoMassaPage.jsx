@@ -159,7 +159,7 @@ export default function ImportacaoMassaPage() {
     <div className="pagina">
       <header className="pagina-topo">
         <div>
-          <h1><FileSpreadsheet size={22} /> Importar em massa</h1>
+          <h1><FileSpreadsheet size={22} /> Importar grade</h1>
           <p className="ink-soft">
             Grade, cadastro e variante por planilha — com a conta antes de gravar, e desfazer depois.
           </p>

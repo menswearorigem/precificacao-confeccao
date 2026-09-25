@@ -280,7 +280,7 @@ export const verbetesProduto = [
   {
     id: 'produto-importacao-massa',
     modulo: 'produto',
-    tela: 'Importação em Massa',
+    tela: 'Importar ficha/planilha',
     titulo: 'Importar produtos, materiais e custos em massa',
     rota: '/importacao',
     perguntas: [
@@ -298,13 +298,13 @@ export const verbetesProduto = [
       'planilha de importacao modelo',
     ],
     resposta:
-      'A tela **Importação em Massa** aceita três formatos: uma planilha **.xlsx** com as abas Cadastro_Produto, Materiais e/ou Custos_Industriais (mesmo layout da planilha original), um **.csv** com uma dessas três tabelas por vez (você escolhe qual, no campo que aparece ao selecionar um .csv), ou uma **Ficha de Custo em PDF** no formato Wiki Sistemas/Dinâmica, com uma referência por página.\n\nEscolha o arquivo e clique em **Pré-visualizar** — nada é gravado nesse momento, é só uma conferência (ver o verbete sobre a prévia e os erros de importação). Só depois de olhar a prévia e clicar em **Confirmar importação** é que os dados entram de verdade no cadastro.',
+      'A tela **Importar ficha/planilha** aceita três formatos: uma planilha **.xlsx** com as abas Cadastro_Produto, Materiais e/ou Custos_Industriais (mesmo layout da planilha original), um **.csv** com uma dessas três tabelas por vez (você escolhe qual, no campo que aparece ao selecionar um .csv), ou uma **Ficha de Custo em PDF** no formato Wiki Sistemas/Dinâmica, com uma referência por página.\n\nEscolha o arquivo e clique em **Pré-visualizar** — nada é gravado nesse momento, é só uma conferência (ver o verbete sobre a prévia e os erros de importação). Só depois de olhar a prévia e clicar em **Confirmar importação** é que os dados entram de verdade no cadastro.',
     relacionados: ['produto-importacao-erros'],
   },
   {
     id: 'produto-importacao-erros',
     modulo: 'produto',
-    tela: 'Importação em Massa',
+    tela: 'Importar ficha/planilha',
     titulo: 'Conferir a prévia e os erros antes de confirmar a importação',
     rota: '/importacao',
     perguntas: [
@@ -390,7 +390,7 @@ export const verbetesProduto = [
   {
     id: 'produto-importacao-massa-grade-tipos',
     modulo: 'produto',
-    tela: 'Importar em Massa',
+    tela: 'Importar grade',
     titulo: 'Importar em massa (grade, cadastro ou variante) — diferença pra outra importação',
     rota: '/importacao-massa',
     perguntas: [
@@ -406,13 +406,13 @@ export const verbetesProduto = [
       'colunas da planilha de importacao em massa',
     ],
     resposta:
-      'A tela **Importar em Massa** (Produto › Importar e imprimir › Importar em Massa) existe pra resolver o dia de digitação que uma coleção nova dá — 12 referências × 4 cores × 5 tamanhos são 240 variantes pra cadastrar uma por uma. Ela é diferente da **Importação em Massa** de ficha de custo (a que lê planilha/PDF do sistema antigo): esta tela cria **grade** de variantes e atualiza cadastro/variante de produtos já existentes, a partir de uma planilha própria.\n\nNo campo **"O que a planilha traz"** você escolhe o tipo — **Grade**, **Cadastro** ou **Variante** — e o botão **Baixar modelo** entrega a planilha .xlsx correspondente, já com as colunas certas; a tela também mostra a frase de explicação e a lista de colunas esperadas pra aquele tipo. Os formatos aceitos pra enviar são **.xlsx** e **.csv**.',
+      'A tela **Importar grade** (Produto › Importar e imprimir › Importar grade) existe pra resolver o dia de digitação que uma coleção nova dá — 12 referências × 4 cores × 5 tamanhos são 240 variantes pra cadastrar uma por uma. Ela é diferente da tela **Importar ficha/planilha** (a de ficha de custo, que lê planilha/PDF do sistema antigo): esta tela cria **grade** de variantes e atualiza cadastro/variante de produtos já existentes, a partir de uma planilha própria.\n\nNo campo **"O que a planilha traz"** você escolhe o tipo — **Grade**, **Cadastro** ou **Variante** — e o botão **Baixar modelo** entrega a planilha .xlsx correspondente, já com as colunas certas; a tela também mostra a frase de explicação e a lista de colunas esperadas pra aquele tipo. Os formatos aceitos pra enviar são **.xlsx** e **.csv**.',
     relacionados: ['produto-importacao-massa-grade-fluxo', 'produto-importacao-massa'],
   },
   {
     id: 'produto-importacao-massa-grade-fluxo',
     modulo: 'produto',
-    tela: 'Importar em Massa',
+    tela: 'Importar grade',
     titulo: 'O fluxo: conferir sem gravar (simular), depois Aplicar',
     rota: '/importacao-massa',
     perguntas: [
@@ -435,7 +435,7 @@ export const verbetesProduto = [
   {
     id: 'produto-importacao-massa-grade-desfazer',
     modulo: 'produto',
-    tela: 'Importar em Massa',
+    tela: 'Importar grade',
     titulo: 'Desfazer uma importação aplicada, e o histórico de importações',
     rota: '/importacao-massa',
     perguntas: [

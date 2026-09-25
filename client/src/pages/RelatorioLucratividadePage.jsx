@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { usePaletaGrafico, corPorIndice } from '../lib/coresGrafico';
-import { brl, pct, formatQtd, plural } from '../lib/format';
+import { brl, pct, formatQtd, plural, brlEixo } from '../lib/format';
 import { Select, MultiSelect, StatCard, ThOrdenavel, ThGrupoOrdenavel, Paginacao, BotaoExportar } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { periodoDeHoje } from '../lib/periodos';
@@ -230,16 +230,16 @@ function GraficoLucratividade({ serie }) {
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" vertical={false} />
         <XAxis dataKey="dataLabel" tick={tickStyle} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
-        <YAxis tick={tickStyle} tickFormatter={(v) => brl(v)} width={92} axisLine={false} tickLine={false} />
+        <YAxis tick={tickStyle} tickFormatter={brlEixo} width={58} axisLine={false} tickLine={false} />
         <Tooltip content={<TooltipGrafico />} />
         <Legend
           wrapperStyle={{ fontFamily: FONTE_GRAFICO, fontSize: 12.5, color: 'var(--ink-soft)', paddingTop: 8 }}
           iconType="circle"
           iconSize={8}
         />
-        <Area type="monotone" dataKey="faturamento" name="Faturamento" stroke={corFaturamento(paleta)} fill="url(#corFaturamento)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
-        <Area type="monotone" dataKey="liquidoMarketplace" name="Líq. do Marketplace" stroke={corLiquido(paleta)} fill="url(#corLiquido)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
-        <Area type="monotone" dataKey="lucro" name="Lucro Bruto" stroke={corLucroGrafico(paleta)} fill="url(#corLucro)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+        <Area type="linear" dataKey="faturamento" name="Faturamento" stroke={corFaturamento(paleta)} fill="url(#corFaturamento)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+        <Area type="linear" dataKey="liquidoMarketplace" name="Líq. do Marketplace" stroke={corLiquido(paleta)} fill="url(#corLiquido)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+        <Area type="linear" dataKey="lucro" name="Lucro Bruto" stroke={corLucroGrafico(paleta)} fill="url(#corLucro)" strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -1401,7 +1401,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                                 <div className="cel-empilhada">
                                   <span className="cel-principal mono">
                                     {brl(p.valorRecebido)}
-                                    <span className={'stamp sm ' + (p.valorRecebidoStatus === 'liberado' ? 'tone-elevada' : 'tone-atencao')}>
+                                    <span className={'stamp sm ' + (p.valorRecebidoStatus === 'liberado' ? 'tone-saudavel' : 'tone-elevada')}>
                                       {p.valorRecebidoStatus === 'liberado' ? 'liberado' : 'confirmado'}
                                     </span>
                                   </span>

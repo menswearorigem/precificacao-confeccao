@@ -9,6 +9,7 @@ import { TAMANHOS_PAGINA } from '../lib/useTabela';
 import { exportarCsv, exportarXlsx } from '../lib/exportar';
 import { gerarRelatorio } from '../lib/relatorio';
 import { Download, FileDown, Search, X, SlidersHorizontal, Loader2 } from 'lucide-react';
+import ErroIntegracao from './ErroIntegracao';
 
 // Painéis flutuantes (lista do Select, calendário do DateInput) precisam
 // escapar de qualquer ancestral com overflow:hidden/auto (todo .card do
@@ -405,7 +406,7 @@ export function AvisoDeFalha({ mensagem, aoTentarDeNovo }) {
   if (!mensagem) return null;
   return (
     <div className="login-error" role="alert" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-      <span>Não deu para carregar: {mensagem}</span>
+      <span>Não deu para carregar. <ErroIntegracao erro={mensagem} sistema="auto" /></span>
       {aoTentarDeNovo && (
         <button type="button" className="btn btn-ghost" onClick={aoTentarDeNovo}>
           Tentar de novo

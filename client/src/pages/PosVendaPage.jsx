@@ -14,6 +14,7 @@ import { useTabela } from '../lib/useTabela';
 import { SeloPlataforma } from '../lib/canalMarketplace';
 import { confirmar } from '../components/ConfirmDialog';
 import { periodoTresMeses } from '../lib/periodos';
+import { traduzirMotivoPlataforma } from '../lib/motivoPlataforma';
 
 // Marketplace › Pós-venda — repaginada em 23/09/2026 depois do teste de uso.
 //
@@ -103,7 +104,7 @@ function GavetaEvento({ evento, opcoes, onFechar, onMudou, onDevolucao }) {
       <section className="pv-gaveta-bloco">
         <h4>O que o cliente disse</h4>
         {e.nota != null && <div style={{ marginBottom: 6 }}><Estrelas n={Number(e.nota)} /> <b>{e.nota} de 5</b></div>}
-        <p className="pv-gaveta-texto">{e.texto || <span className="ink-soft">{e.motivo_externo || 'sem texto'}</span>}</p>
+        <p className="pv-gaveta-texto">{e.texto || <span className="ink-soft" title={e.motivo_externo || undefined}>{traduzirMotivoPlataforma(e.motivo_externo) || 'sem texto'}</span>}</p>
         {e.resposta && <p className="pv-gaveta-resposta"><Send size={12} /> <span><b>Resposta:</b> {e.resposta}{e.respondida_por_nome ? <span className="ink-soft"> — {e.respondida_por_nome}, {quando(e.respondida_em)}</span> : null}</span></p>}
       </section>
       <section className="pv-gaveta-bloco">
@@ -116,7 +117,7 @@ function GavetaEvento({ evento, opcoes, onFechar, onMudou, onDevolucao }) {
           {e.comprador_nome && <><dt>Comprador</dt><dd>{e.comprador_nome}</dd></>}
           {e.quantidade != null && <><dt>Peças</dt><dd>{formatQtd(e.quantidade)}</dd></>}
           {e.valor != null && <><dt>Valor</dt><dd>{brl(Number(e.valor))}</dd></>}
-          {e.motivo_externo && <><dt>Motivo na plataforma</dt><dd>{e.motivo_externo}</dd></>}
+          {e.motivo_externo && <><dt>Motivo na plataforma</dt><dd title={e.motivo_externo}>{traduzirMotivoPlataforma(e.motivo_externo)}</dd></>}
           {e.status_externo && <><dt>Situação na plataforma</dt><dd>{e.status_externo}</dd></>}
           {e.destino && <><dt>Destino</dt><dd>{e.destino}</dd></>}
           {e.tratado_em && <><dt>Tratada por</dt><dd>{e.tratado_por_nome || '—'} em {quando(e.tratado_em)}{e.tratamento ? ` — ${e.tratamento}` : ''}</dd></>}
@@ -423,7 +424,7 @@ function Eventos({ periodo, opcoes, filtroInicial, onAbrir, recarregarChave }) {
                     <td><Tipo chave={e.tipo} /></td>
                     <td><Canal chave={e.marketplace} nome={e.manual ? 'No Hub' : e.loja_nome} /></td>
                     <td>{e.referencia ? <><b>{e.referencia}</b>{(e.cor || e.tamanho) && <span className="ink-soft"> · {[e.cor, e.tamanho].filter(Boolean).join(' / ')}</span>}</> : <span className="stamp sm tone-atencao">sem vínculo</span>}</td>
-                    <td className="pv-col-texto"><div className="pv-texto">{e.nota != null && <Estrelas n={Number(e.nota)} />} {e.texto || <span className="ink-soft">{e.motivo_externo || '—'}</span>}</div>{e.resposta && <div className="pv-resposta"><Send size={11} /> respondida</div>}</td>
+                    <td className="pv-col-texto"><div className="pv-texto">{e.nota != null && <Estrelas n={Number(e.nota)} />} {e.texto || <span className="ink-soft" title={e.motivo_externo || undefined}>{traduzirMotivoPlataforma(e.motivo_externo) || '—'}</span>}</div>{e.resposta && <div className="pv-resposta"><Send size={11} /> respondida</div>}</td>
                     <td>{e.motivo ? <span className={`stamp sm ${e.motivo_origem === 'manual' ? 'tone-saudavel' : 'tone-neutro'}`}>{opcoes?.motivos.find((m) => m.chave === e.motivo)?.rotulo || e.motivo}</span> : (e.tipo === 'pergunta' ? <span className="ink-soft">{e.tema || '—'}</span> : ((e.tipo === 'devolucao' || e.tipo === 'reclamacao' || (e.tipo === 'avaliacao' && Number(e.nota) <= 3)) ? <span className="stamp sm tone-atencao">classificar</span> : <span className="ink-soft">—</span>))}</td>
                     <td><Situacao e={e} /></td>
                   </tr>
