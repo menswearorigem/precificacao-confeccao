@@ -100,6 +100,22 @@ router.get('/', async (req, res, next) => {
       WHERE pv.origem_marketplace IS NOT NULL AND pv.situacao != 'cancelado' AND pi.produto_id IS NULL
     `);
 
+    // ---------- B2) vendas do Wik (atacado) — 25/09/2026 ----------
+    // Buracos que antes ninguém contava: pedido do Wik ainda sem itens (não
+    // entra em nenhuma conta por produto, e a lucratividade não tem custo) e
+    // item do Wik cuja referência não existe no cadastro.
+    const { rows: wikRows } = await pool.query(`
+      SELECT
+        (SELECT COUNT(*)::int FROM pedidos_venda pv
+          WHERE pv.origem = 'wik' AND pv.situacao <> 'cancelado'
+            AND NOT EXISTS (SELECT 1 FROM pedido_itens pi WHERE pi.pedido_id = pv.id)) AS pedidos_sem_itens,
+        (SELECT COUNT(*)::int FROM pedido_itens pi JOIN pedidos_venda pv ON pv.id = pi.pedido_id
+          WHERE pv.origem = 'wik' AND pv.situacao <> 'cancelado' AND pi.produto_id IS NULL) AS itens_sem_produto,
+        (SELECT COUNT(*)::int FROM pedido_itens pi JOIN pedidos_venda pv ON pv.id = pi.pedido_id
+          WHERE pv.origem = 'wik' AND pv.situacao <> 'cancelado' AND pi.produto_id IS NOT NULL
+            AND pi.variante_id IS NULL AND pi.kit_id IS NULL) AS itens_sem_grade
+    `);
+
     // ---------- C) estoque ----------
     const { rows: estoqueRows } = await pool.query(`
       SELECT
@@ -112,7 +128,8 @@ router.get('/', async (req, res, next) => {
     `);
 
     const totalAchados = materiaisZerados.length + empresasSemImpostos.length
-      + Number(itensSemProdutoRows[0].total) + precoSugeridoZero;
+      + Number(itensSemProdutoRows[0].total) + precoSugeridoZero
+      + Number(wikRows[0].pedidos_sem_itens) + Number(wikRows[0].itens_sem_produto);
 
     res.json({
       total: totalAchados,
@@ -135,6 +152,11 @@ router.get('/', async (req, res, next) => {
         confirmados: Number(pedidosRows[0].confirmados),
         estimados: Number(pedidosRows[0].estimados),
         itensSemProdutoVinculado: Number(itensSemProdutoRows[0].total),
+      },
+      vendasWik: {
+        pedidosSemItens: Number(wikRows[0].pedidos_sem_itens),
+        itensSemProduto: Number(wikRows[0].itens_sem_produto),
+        itensSemCorTamanhoNaGrade: Number(wikRows[0].itens_sem_grade),
       },
       estoque: {
         totalVariantes: Number(estoqueRows[0].total_variantes),

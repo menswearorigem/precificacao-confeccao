@@ -95,7 +95,12 @@ async function vendaPorVarianteEmMassa(produtoIds, janela) {
   const [inicio, fim] = vendas.paramsJanela(janela);
   const { rows } = await pool.query(
     `SELECT ev.produto_id, ev.cor, ev.tamanho, ev.ativo, p.categoria,
-            COALESCE(SUM(pi.quantidade), 0)::numeric AS pecas
+            -- 25/09/2026: só soma o item cujo PEDIDO passou no filtro. O filtro
+            -- mora no ON do LEFT JOIN, então o item de pedido cancelado, de
+            -- devolução ou de fora da janela sobrava com pv NULO e era somado
+            -- do mesmo jeito — a participação cor×tamanho da OP saía do
+            -- histórico inteiro, cancelados incluídos.
+            COALESCE(SUM(pi.quantidade) FILTER (WHERE pv.id IS NOT NULL), 0)::numeric AS pecas
        FROM estoque_variantes ev
        JOIN produtos p ON p.id = ev.produto_id
        LEFT JOIN pedido_itens pi ON pi.variante_id = ev.id

@@ -137,6 +137,20 @@ export default function QualidadeDadosPage() {
             </p>
           )}
 
+          {dados.vendasWik && (
+            <>
+              <div className="card-head" style={{ marginBottom: 8, marginTop: 8 }}>B2 — Vendas do Wik (atacado)</div>
+              <div className="grid-3" style={{ marginBottom: 16 }}>
+                <Resumo label="Pedidos ainda sem itens" valor={formatQtd(dados.vendasWik.pedidosSemItens)} tom={dados.vendasWik.pedidosSemItens > 0 ? 'tone-atencao' : ''} />
+                <Resumo label="Itens sem produto no cadastro" valor={formatQtd(dados.vendasWik.itensSemProduto)} tom={dados.vendasWik.itensSemProduto > 0 ? 'tone-atencao' : ''} />
+                <Resumo label="Itens sem cor/tamanho na grade" valor={formatQtd(dados.vendasWik.itensSemCorTamanhoNaGrade)} tom={dados.vendasWik.itensSemCorTamanhoNaGrade > 0 ? 'tone-atencao' : ''} />
+              </div>
+              <p className="page-sub" style={{ marginTop: -8, marginBottom: 16 }}>
+                Pedido sem itens não entra em nenhuma conta por referência (Cobertura, Planejamento, curva) e fica fora da margem. Item sem cor/tamanho que case com a grade conta no total da referência, mas não na grade da OP.
+              </p>
+            </>
+          )}
+
           <div className="card-head" style={{ marginBottom: 8, marginTop: 8 }}>C — Estoque</div>
           <div className="grid-4" style={{ marginBottom: 8 }}>
             <Resumo label="Variantes ativas" valor={formatQtd(dados.estoque.totalVariantes)} />

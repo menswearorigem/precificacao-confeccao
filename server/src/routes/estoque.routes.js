@@ -1,3 +1,4 @@
+const vendasPecas = require('../lib/vendasEmPecas');
 const express = require('express');
 const multer = require('multer');
 const pool = require('../db/pool');
@@ -863,10 +864,10 @@ router.get('/indicadores', async (req, res, next) => {
 
     // ---------- vendas dos últimos 30 dias, só por variante_id exato ----------
     const { rows: vendasRows } = await pool.query(`
-      SELECT pi.variante_id, SUM(pi.quantidade)::numeric AS unidades
+      SELECT pi.variante_id, SUM(${vendasPecas.pecasDoItemSql('pi')})::numeric AS unidades
       FROM pedido_itens pi
       JOIN pedidos_venda pv ON pv.id = pi.pedido_id
-      WHERE pv.situacao != 'cancelado'
+      WHERE ${vendasPecas.PEDIDO_VALIDO}
         AND pv.data_pedido >= CURRENT_DATE - INTERVAL '30 days'
       GROUP BY pi.variante_id
     `);

@@ -258,15 +258,15 @@ const COMPONENTES = [
   ['frete', 'frete'],
   ['custoEmbalagem', 'embalagem'],
 ];
-function margemDe(t) { return t && t.receita > 0 ? t.lucro / t.receita : null; }
+function margemDe(t) { const base = t && (t.receitaComCusto ?? t.receita); return base > 0 ? t.lucro / base : null; }
 function diagnosticarMargem(atual, anterior, { rotuloAtual = 'este período', rotuloAnterior = 'o anterior' } = {}) {
-  if (!atual || !(atual.receita > 0)) return { ok: false, motivo: `sem venda com custo conhecido ${rotuloAtual}` };
-  if (!anterior || !(anterior.receita > 0)) return { ok: false, motivo: `sem venda com custo conhecido de ${rotuloAnterior} para comparar`, margemAtual: margemDe(atual) };
+  if (!atual || !((atual.receitaComCusto ?? atual.receita) > 0)) return { ok: false, motivo: `sem venda com custo conhecido ${rotuloAtual}` };
+  if (!anterior || !((anterior.receitaComCusto ?? anterior.receita) > 0)) return { ok: false, motivo: `sem venda com custo conhecido de ${rotuloAnterior} para comparar`, margemAtual: margemDe(atual) };
   const mA = margemDe(atual);
   const mB = margemDe(anterior);
   const causas = COMPONENTES.map(([chave, rotulo]) => {
-    const a = (atual[chave] || 0) / atual.receita;
-    const b = (anterior[chave] || 0) / anterior.receita;
+    const a = (atual[chave] || 0) / (atual.receitaComCusto ?? atual.receita);
+    const b = (anterior[chave] || 0) / (anterior.receitaComCusto ?? anterior.receita);
     return { chave, rotulo, pctAtual: a, pctAnterior: b, deltaPp: (a - b) * 100 };
   }).filter((c) => Math.abs(c.deltaPp) >= 0.3).sort((x, y) => Math.abs(y.deltaPp) - Math.abs(x.deltaPp));
   const precoA = atual.unidades > 0 ? atual.receita / atual.unidades : null;

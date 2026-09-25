@@ -57,6 +57,7 @@
 // ele faz é MEDIR a suspeita (`entregaParcialSuspeita`) para a tela poder
 // sugerir a baixa a quem sabe. Sugere; quem decide é gente.
 
+const { pecasNoFullPorVariante } = require('./estoqueFull');
 const pool = require('../db/pool');
 
 // As situações em que uma ordem ainda tem peça para entregar. 'rascunho' fica
@@ -255,7 +256,7 @@ async function saldoPorVariante({ produtoIds = null, client = pool } = {}) {
     filtro = ` WHERE v.produto_id = ANY($${params.length}::int[])`;
   }
   const { rows } = await client.query(
-    `SELECT v.produto_id, v.cor, v.tamanho, v.quantidade,
+    `SELECT v.id AS variante_id, v.produto_id, v.cor, v.tamanho, v.quantidade,
             pc.hex                           AS hex,
             COALESCE(pc.eh_qualidade, FALSE) AS eh_qualidade
        FROM estoque_variantes v
@@ -264,13 +265,22 @@ async function saldoPorVariante({ produtoIds = null, client = pool } = {}) {
        ${filtro}`,
     params
   );
+  // O que está no FULL entra no saldo (25/09/2026): a venda do Full está na
+  // demanda destas contas, então o estoque de lá tem que estar na oferta —
+  // senão a Projeção, o Mínimo de matéria-prima e a grade venda × estoque
+  // mandam produzir peça que já está no centro do marketplace.
+  const full = await pecasNoFullPorVariante(client);
   const mapa = new Map();
   for (const r of rows) {
+    const saldoGalpao = num(r.quantidade);
+    const noFull = full.porVariante.get(r.variante_id) || 0;
     mapa.set(chave(r.produto_id, r.cor, r.tamanho), {
       produtoId: r.produto_id,
       cor: r.cor || '',
       tamanho: r.tamanho || '',
-      saldo: num(r.quantidade),
+      saldo: saldoGalpao + noFull,
+      saldoGalpao,
+      noFull,
       hex: r.hex || null,
       ehQualidade: r.eh_qualidade === true,
     });

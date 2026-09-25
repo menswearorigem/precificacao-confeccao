@@ -21,6 +21,7 @@
 //   3. margem consolidada é soma(lucro) ÷ soma(receita) — nunca média de
 //      margens.
 
+const { condOperacaoVenda } = require('../lib/operacaoVenda');
 const express = require('express');
 const pool = require('../db/pool');
 const { registrar, diferenca } = require('../lib/auditoria');
@@ -94,6 +95,9 @@ async function buscarVendas(filtros) {
   if (filtros.empresa_id) add('pv.empresa_id = $?', filtros.empresa_id);
   if (filtros.forma_pagamento) add('pv.forma_pagamento = $?', filtros.forma_pagamento);
   if (filtros.operacao) add('pv.operacao = $?', filtros.operacao);
+  // Sem operação escolhida, só entra o que é VENDA (25/09/2026): devolução,
+  // troca e bonificação do Wik somavam na receita e nas peças. Ver lib/operacaoVenda.js.
+  else conditions.push(condOperacaoVenda('pv'));
   if (filtros.situacao) add('pv.situacao = $?', filtros.situacao);
 
   const { rows } = await pool.query(

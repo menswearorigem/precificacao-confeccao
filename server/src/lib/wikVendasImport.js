@@ -215,8 +215,9 @@ async function gravarVenda(empId, ped, det, marcaId) {
       let produtoId = null;
       if (it.ref) { const r = await client.query('SELECT id FROM produtos WHERE upper(btrim(referencia)) = upper(btrim($1)) LIMIT 1', [it.ref]); produtoId = r.rows[0]?.id || null; }
       await client.query(
-        `INSERT INTO pedido_itens (pedido_id, produto_id, referencia, descricao, cor, tamanho, quantidade, ordem)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        `INSERT INTO pedido_itens (pedido_id, produto_id, referencia, descricao, cor, tamanho, quantidade, ordem, variante_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,
+                 (SELECT e2.id FROM estoque_variantes e2 WHERE e2.produto_id = $2::int AND upper(btrim(e2.cor)) = upper(btrim(COALESCE($5::text, ''))) AND upper(btrim(e2.tamanho)) = upper(btrim(COALESCE($6::text, ''))) ORDER BY e2.ativo DESC, e2.id LIMIT 1))`,
         [pedidoId, produtoId, it.ref, null, it.cor, it.tamanho, it.qtd, ordem++]
       );
     }

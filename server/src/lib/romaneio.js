@@ -17,6 +17,7 @@
 //
 // REGRA 1: romaneio não tem valor. Nada aqui lê preço, margem ou imposto.
 
+const { CONDICAO_ANUNCIO_NO_FULL } = require('./filtroFull');
 const { DocumentoPdf } = require('./pdfMinimo');
 const { codificarCode128 } = require('./zpl');
 
@@ -79,12 +80,19 @@ async function acrescentar(client, { romaneioId, pedidos, usuarioId }) {
     if (!pedidoId) { recusados.push({ pedidoId: item, motivo: 'Pedido inválido.' }); continue; }
 
     const { rows: ped } = await client.query(
-      'SELECT id, numero, situacao, codigos_rastreio FROM pedidos_venda WHERE id = $1', [pedidoId]
+      `SELECT pv.id, pv.numero, pv.situacao, pv.codigos_rastreio,
+              ${CONDICAO_ANUNCIO_NO_FULL('pv')} AS do_full
+         FROM pedidos_venda pv WHERE pv.id = $1`, [pedidoId]
     );
     if (ped.length === 0) { recusados.push({ pedidoId, motivo: 'Pedido não encontrado.' }); continue; }
     const p = ped[0];
     if (p.situacao === 'cancelado') {
       recusados.push({ pedidoId, numero: p.numero, motivo: 'Pedido cancelado não entra em romaneio.' });
+      continue;
+    }
+    // 25/09/2026: quem despacha o Full é o marketplace, não a casa.
+    if (p.do_full) {
+      recusados.push({ pedidoId, numero: p.numero, motivo: 'Pedido do Full: quem despacha é o marketplace.' });
       continue;
     }
 

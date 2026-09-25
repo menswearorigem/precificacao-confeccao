@@ -10,6 +10,7 @@
 // aplicado aqui dentro, rota a rota, e não muda nenhuma regra de permissão
 // existente (REGRA 4): nenhuma chave de módulo nova foi criada.
 
+const { condOperacaoVenda } = require('../lib/operacaoVenda');
 const express = require('express');
 const pool = require('../db/pool');
 const { requireModulo } = require('../middleware/auth');
@@ -95,7 +96,7 @@ router.get('/', async (req, res, next) => {
     );
     if (comResumo !== '1') return res.json(rows.map((v) => filtrarSensiveis(v, req)));
 
-    const condicoes = ["pv.situacao <> 'cancelado'", 'pv.vendedor_id IS NOT NULL', 'pv.origem_marketplace IS NULL'];
+    const condicoes = ["pv.situacao <> 'cancelado'", 'pv.vendedor_id IS NOT NULL', 'pv.origem_marketplace IS NULL', condOperacaoVenda('pv')];
     const valores = [];
     let i = 1;
     if (dataInicio) { condicoes.push(`pv.data_pedido >= $${i}`); valores.push(dataInicio); i += 1; }

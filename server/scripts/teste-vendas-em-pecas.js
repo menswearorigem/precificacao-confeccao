@@ -51,7 +51,7 @@ CREATE TABLE kits_manuais_itens (
 );
 CREATE TABLE pedidos_venda (
   id SERIAL PRIMARY KEY, data_pedido DATE, situacao TEXT DEFAULT 'aberto',
-  cancelado_em TIMESTAMPTZ
+  cancelado_em TIMESTAMPTZ, operacao TEXT DEFAULT 'Venda'
 );
 CREATE TABLE pedido_itens (
   id SERIAL PRIMARY KEY, pedido_id INTEGER REFERENCES pedidos_venda(id),

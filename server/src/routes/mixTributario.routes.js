@@ -14,6 +14,7 @@
 //
 // REGRA 4 — nenhuma tabela nova, nenhuma coluna nova, nenhuma permissão
 // nova. Fica sob o módulo `analises`, que é onde a pergunta vive.
+const { condOperacaoVenda } = require('../lib/operacaoVenda');
 const express = require('express');
 const pool = require('../db/pool');
 const mix = require('../lib/mixTributario');
@@ -73,6 +74,11 @@ async function buscarPedidos({ desde, empresaId }) {
        FROM pedidos_venda pv
        LEFT JOIN clientes c ON c.id = pv.cliente_id
       WHERE pv.situacao <> 'cancelado'
+        -- 25/09/2026: só VENDA (não devolução/troca/bonificação), e venda
+        -- própria só depois de faturada — pedido 'aberto' do Hub é orçamento.
+        -- Marketplace nunca é faturado aqui, então entra sempre.
+        AND ${condOperacaoVenda('pv')}
+        AND (pv.situacao = 'faturado' OR pv.origem_marketplace IS NOT NULL)
         AND pv.data_pedido >= $1::date${filtroEmpresa}
       ORDER BY pv.data_pedido`,
     valores

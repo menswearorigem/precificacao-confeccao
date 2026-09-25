@@ -1,3 +1,4 @@
+const { condOperacaoVenda } = require('../lib/operacaoVenda');
 const express = require('express');
 const pool = require('../db/pool');
 
@@ -81,7 +82,7 @@ router.get('/', async (req, res, next) => {
                   MAX(data_pedido)            AS ultima_compra,
                   (SUM(total_liquido) / NULLIF(COUNT(*), 0))::numeric AS ticket_medio
              FROM pedidos_venda
-            WHERE cliente_id IS NOT NULL AND situacao <> 'cancelado'
+            WHERE cliente_id IS NOT NULL AND situacao <> 'cancelado' AND ${condOperacaoVenda('pedidos_venda')}
             GROUP BY cliente_id
          ) h ON h.cliente_id = c.id
          ${where}
@@ -151,12 +152,12 @@ router.get('/:id/historico', async (req, res, next) => {
     // e mostrava os R$ 25.000,00 certos. O LIMIT 200 continua valendo só para a
     // LISTA de pedidos, que é paginação de tela, não conta.
     const { rows: agregadoRows } = await pool.query(
-      `SELECT COUNT(*) FILTER (WHERE situacao <> 'cancelado')                     AS pedidos_validos,
+      `SELECT COUNT(*) FILTER (WHERE situacao <> 'cancelado' AND ${condOperacaoVenda('pedidos_venda')})                     AS pedidos_validos,
               COUNT(*) FILTER (WHERE situacao = 'cancelado')                      AS pedidos_cancelados,
-              COALESCE(SUM(total_liquido) FILTER (WHERE situacao <> 'cancelado'), 0)    AS total_comprado,
-              COALESCE(SUM(quantidade_pecas) FILTER (WHERE situacao <> 'cancelado'), 0) AS pecas,
-              MIN(data_pedido) FILTER (WHERE situacao <> 'cancelado')             AS primeira_compra,
-              MAX(data_pedido) FILTER (WHERE situacao <> 'cancelado')             AS ultima_compra
+              COALESCE(SUM(total_liquido) FILTER (WHERE situacao <> 'cancelado' AND ${condOperacaoVenda('pedidos_venda')}), 0)    AS total_comprado,
+              COALESCE(SUM(quantidade_pecas) FILTER (WHERE situacao <> 'cancelado' AND ${condOperacaoVenda('pedidos_venda')}), 0) AS pecas,
+              MIN(data_pedido) FILTER (WHERE situacao <> 'cancelado' AND ${condOperacaoVenda('pedidos_venda')})             AS primeira_compra,
+              MAX(data_pedido) FILTER (WHERE situacao <> 'cancelado' AND ${condOperacaoVenda('pedidos_venda')})             AS ultima_compra
          FROM pedidos_venda WHERE cliente_id = $1`,
       [id]
     );
@@ -176,7 +177,7 @@ router.get('/:id/historico', async (req, res, next) => {
               SUM(pi.total)::numeric AS valor
          FROM pedido_itens pi
          JOIN pedidos_venda pv ON pv.id = pi.pedido_id
-        WHERE pv.cliente_id = $1 AND pv.situacao <> 'cancelado'
+        WHERE pv.cliente_id = $1 AND pv.situacao <> 'cancelado' AND ${condOperacaoVenda('pv')}
         GROUP BY COALESCE(pi.produto_id, 0)
         ORDER BY SUM(pi.total) DESC NULLS LAST
         LIMIT 10`,
@@ -192,7 +193,7 @@ router.get('/:id/historico', async (req, res, next) => {
               COUNT(*)::int AS pedidos,
               COALESCE(SUM(pv.total_liquido), 0) AS valor
          FROM pedidos_venda pv
-        WHERE pv.cliente_id = $1 AND pv.situacao <> 'cancelado'
+        WHERE pv.cliente_id = $1 AND pv.situacao <> 'cancelado' AND ${condOperacaoVenda('pv')}
         GROUP BY 1`,
       [id]
     );

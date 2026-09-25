@@ -201,10 +201,18 @@ function extrairSku(item, variationId) {
 // anúncio, não no pedido) e o GTIN (código de barras) — tudo com cache por
 // item pra não repetir a mesma chamada quando o mesmo anúncio aparece em
 // vários pedidos.
-async function buscarPedidos({ accessToken, sellerId, desde }) {
+// 25/09/2026 — a janela é lida em FATIAS DE UM DIA. Antes era uma busca só,
+// do mais novo para o mais antigo, com teto de 20 páginas (1.000 pedidos):
+// com a sincronização parada alguns dias e mais de 1.000 pedidos pagos no
+// intervalo, os mais antigos ficavam de fora e o ciclo seguinte já começava
+// de "agora" — perdidos para sempre, sem erro nenhum. Com um teto por DIA, só
+// se perde algo num dia de mais de 1.000 pedidos pagos, e aí o aviso vai para
+// o log e para `pedidos.avisoTeto` em vez de sumir calado.
+async function buscarPedidosDaFatia({ accessToken, sellerId, de, ate }) {
   const pedidos = [];
   let offset = 0;
   const limit = 50;
+  let bateuTeto = false;
   for (let pagina = 0; pagina < 20; pagina += 1) {
     const params = new URLSearchParams({
       seller: sellerId,
@@ -213,11 +221,41 @@ async function buscarPedidos({ accessToken, sellerId, desde }) {
       offset: String(offset),
       limit: String(limit),
     });
-    if (desde) params.set('order.date_created.from', desde);
+    if (de) params.set('order.date_created.from', de);
+    if (ate) params.set('order.date_created.to', ate);
     const data = await chamarApi(`/orders/search?${params.toString()}`, accessToken);
     pedidos.push(...(data.results || []));
     if (!data.results || data.results.length < limit) break;
     offset += limit;
+    if (pagina === 19) bateuTeto = true;
+  }
+  return { pedidos, bateuTeto };
+}
+
+async function buscarPedidos({ accessToken, sellerId, desde }) {
+  const pedidos = [];
+  const avisos = [];
+  const DIA = 24 * 60 * 60 * 1000;
+  const fim = Date.now();
+  let inicio = desde ? new Date(desde).getTime() : fim - DIA;
+  if (!Number.isFinite(inicio)) inicio = fim - DIA;
+  const vistos = new Set();
+  for (let de = inicio; de < fim; de += DIA) {
+    const ate = Math.min(de + DIA, fim);
+    const fatia = await buscarPedidosDaFatia({
+      accessToken, sellerId, de: new Date(de).toISOString(), ate: new Date(ate).toISOString(),
+    });
+    for (const o of fatia.pedidos) {
+      // as pontas das fatias se tocam: o mesmo pedido não entra duas vezes
+      if (vistos.has(o.id)) continue;
+      vistos.add(o.id);
+      pedidos.push(o);
+    }
+    if (fatia.bateuTeto) {
+      const msg = `Mercado Livre: mais de 1.000 pedidos pagos entre ${new Date(de).toISOString()} e ${new Date(ate).toISOString()} — os mais antigos dessa fatia podem ter ficado de fora.`;
+      avisos.push(msg);
+      console.warn(`[mercado-livre] ${msg}`);
+    }
   }
 
   for (const order of pedidos) {
@@ -243,6 +281,7 @@ async function buscarPedidos({ accessToken, sellerId, desde }) {
     }
   }
 
+  if (avisos.length) pedidos.avisoTeto = avisos;
   return pedidos;
 }
 

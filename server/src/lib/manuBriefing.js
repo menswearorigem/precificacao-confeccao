@@ -45,16 +45,23 @@ function diaDaData(v) {
 // ---------------------------------------------------------------------------
 // Agregação de pedidos do relatório de lucratividade (sem recalcular nada)
 // ---------------------------------------------------------------------------
+// 25/09/2026: VOLUME (receita, pedidos, peças) conta TODOS os pedidos; só a
+// MARGEM e o LUCRO ficam restritos aos que têm custo completo. Antes a
+// receita somava só os pedidos com custo e a contagem somava todos: "R$ X em
+// 20 pedidos" onde X era de 12 — e toda venda com um SKU sem ficha sumia do
+// faturamento do dia.
 function totalizar(pedidos) {
   const validos = pedidos.filter((p) => !p.custoIncompleto);
-  const soma = (k) => validos.reduce((s, p) => s + (Number(p[k]) || 0), 0);
-  const receita = soma('receita');
+  const somaDe = (lista, k) => lista.reduce((s, p) => s + (Number(p[k]) || 0), 0);
+  const soma = (k) => somaDe(validos, k);
+  const receita = somaDe(pedidos, 'receita');
+  const receitaComCusto = soma('receita');
   return {
-    receita, lucro: soma('lucro'), custoPeca: soma('custoPeca'), imposto: soma('imposto'), custoAds: soma('custoAds'),
+    receita, receitaComCusto, lucro: soma('lucro'), custoPeca: soma('custoPeca'), imposto: soma('imposto'), custoAds: soma('custoAds'),
     frete: soma('frete'), taxaMarketplace: soma('taxaMarketplace'), custoEmbalagem: soma('custoEmbalagem'),
-    unidades: validos.reduce((s, p) => s + (Number(p.unidades) || 0), 0),
-    pedidos: validos.length, semCusto: pedidos.length - validos.length,
-    margem: receita > 0 ? soma('lucro') / receita : null,
+    unidades: pedidos.reduce((s, p) => s + (Number(p.pecas ?? p.unidades) || 0), 0),
+    pedidos: pedidos.length, pedidosComCusto: validos.length, semCusto: pedidos.length - validos.length,
+    margem: receitaComCusto > 0 ? soma('lucro') / receitaComCusto : null,
   };
 }
 function agruparPorCanal(pedidos) {
@@ -82,7 +89,7 @@ function totalizarReferencia(pedidos, referencia) {
     const custoItens = itens.reduce((s, it) => s + (Number(it.custoUnitario) || 0) * (Number(it.quantidade) || 0), 0);
     t.receita += receitaItens; t.custoPeca += custoItens;
     for (const k of ['imposto', 'custoAds', 'frete', 'taxaMarketplace', 'custoEmbalagem']) t[k] += (Number(p[k]) || 0) * parte;
-    t.unidades += itens.reduce((s, it) => s + (Number(it.quantidade) || 0), 0);
+    t.unidades += itens.reduce((s, it) => s + (Number(it.pecas ?? it.quantidade) || 0), 0);
     t.pedidos += 1;
   }
   t.lucro = t.receita - t.custoPeca - t.imposto - t.custoAds - t.taxaMarketplace - t.custoEmbalagem;
@@ -315,7 +322,7 @@ async function responderVendas(q) {
     }
     if (!produto && q.ranking) {
       const porRef = new Map();
-      for (const p of atual) for (const it of p.itens || []) if (it.referencia) { const r = porRef.get(it.referencia) || { referencia: it.referencia, pecas: 0, receita: 0 }; r.pecas += Number(it.quantidade) || 0; r.receita += Number(it.totalItem) || 0; porRef.set(it.referencia, r); }
+      for (const p of atual) for (const it of p.itens || []) if (it.referencia) { const r = porRef.get(it.referencia) || { referencia: it.referencia, pecas: 0, receita: 0 }; r.pecas += Number(it.pecas ?? it.quantidade) || 0; r.receita += Number(it.totalItem) || 0; porRef.set(it.referencia, r); }
       const top = [...porRef.values()].sort((a, b) => b.pecas - a.pecas).slice(0, 5);
       if (top.length) { linhas.push(''); linhas.push('**Mais vendidas (peças)**'); for (const r of top) linhas.push(`- ${r.referencia}: ${ma.plural(r.pecas, 'peça', 'peças')} · ${ma.brl(r.receita)}`); }
     }

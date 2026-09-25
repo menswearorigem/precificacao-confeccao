@@ -465,7 +465,8 @@ function DetalheDaLinha({ linha, periodo, parametros, aoSalvarReposicao }) {
             <div>
               <dt>Posição de estoque</dt>
               <dd>
-                {formatQtd(linha.saldo)} no galpão
+                {formatQtd(linha.saldo_galpao ?? linha.saldo)} no galpão
+                {linha.no_full > 0 ? ` + ${formatQtd(linha.no_full)} no Full` : ''}
                 {linha.em_producao > 0 ? ` + ${formatQtd(linha.em_producao)} na facção` : ' (nada na facção)'}
               </dd>
             </div>
@@ -1002,9 +1003,14 @@ export default function CoberturaEstoquePage() {
                               : <ValorOuMotivo valor={null} motivo={l.cobertura?.motivo} />}
                           </td>
                           <td className="num">
-                            <span className="mono" title={l.em_producao > 0 ? `${formatQtd(l.saldo)} no galpão + ${formatQtd(l.em_producao)} na facção` : 'Saldo no galpão'}>
+                            <span className="mono" title={`${formatQtd(l.saldo_galpao ?? l.saldo)} no galpão${l.no_full > 0 ? ` + ${formatQtd(l.no_full)} no Full` : ''}${l.em_producao > 0 ? ` + ${formatQtd(l.em_producao)} na facção` : ''}`}>
                               {formatQtd(l.saldo)}
                             </span>
+                            {l.no_full > 0 && (
+                              <small className="ink-soft" style={{ display: 'block' }}>
+                                {formatQtd(l.no_full)} no Full
+                              </small>
+                            )}
                             {l.em_producao > 0 && (
                               <small className="ink-soft" style={{ display: 'block' }}>
                                 +{formatQtd(l.em_producao)} na facção

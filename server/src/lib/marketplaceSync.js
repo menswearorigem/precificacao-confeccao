@@ -99,6 +99,10 @@ async function buscarPedidosDoMarketplace(integracao, desde) {
     const { rows: existentes } = await pool.query(
       `SELECT origem_pedido_id FROM pedidos_venda
         WHERE origem_marketplace = 'shopee' AND origem_pedido_id IS NOT NULL
+          -- o pedido que veio da PLANILHA (sem loja) não conta como "já
+          -- importado": a API precisa passar por ele para completar loja e
+          -- anúncio (25/09/2026, ver importarPedido)
+          AND origem_integracao_id IS NOT NULL
           AND data_pedido >= $1`,
       [new Date(desde.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)]
     );
@@ -119,6 +123,7 @@ async function buscarPedidosDoMarketplace(integracao, desde) {
   const { rows: existentesTikTok } = await pool.query(
     `SELECT origem_pedido_id FROM pedidos_venda
       WHERE origem_marketplace = 'tiktok_shop' AND origem_pedido_id IS NOT NULL
+        AND origem_integracao_id IS NOT NULL -- planilha: a API completa (25/09/2026)
         AND data_pedido >= $1`,
     [new Date(desde.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)]
   );
@@ -381,6 +386,48 @@ async function importarPedido(client, pedidoGenerico, integracao) {
     // conseguiria abri-lo bipando. É acréscimo puro numa coluna nova
     // (0047) — nenhum campo existente é tocado.
     await acrescentarRastreios(client, existentes[0].id, pedidoGenerico.codigosRastreio);
+    // COMPLETAR o que a planilha não trouxe (25/09/2026). Pedido que entrou
+    // primeiro pela planilha fica sem loja (integração), sem empresa, sem % de
+    // nota e sem o ID do anúncio no item — e a API, quando passava por ele,
+    // pulava porque "já existe". Resultado: a venda sumia para sempre da
+    // velocidade do Full, do filtro Full, das vendas por anúncio e do mix por
+    // CNPJ. Aqui só se PREENCHE o que está vazio (COALESCE): nenhum valor
+    // gravado é trocado — a regra de "não reescrever o pedido" continua.
+    if (integracao?.id) {
+      await client.query(
+        `UPDATE pedidos_venda SET
+            origem_integracao_id = COALESCE(origem_integracao_id, $2),
+            empresa_id = COALESCE(empresa_id, $3),
+            pct_nota_fiscal = COALESCE(pct_nota_fiscal, $4),
+            pagamento_id_marketplace = COALESCE(pagamento_id_marketplace, $5),
+            pack_id_marketplace = COALESCE(pack_id_marketplace, $6),
+            taxa_marketplace = COALESCE(taxa_marketplace, $7),
+            updated_at = now()
+          WHERE id = $1 AND origem_integracao_id IS NULL`,
+        [existentes[0].id, integracao.id, integracao.empresa_id || null, integracao.pct_nota_fiscal ?? null,
+          pedidoGenerico.pagamentoIdExterno || null, pedidoGenerico.packId || null, pedidoGenerico.taxaMarketplace ?? null]
+      );
+      const { rows: semAnuncio } = await client.query(
+        `SELECT id, sku_externo FROM pedido_itens
+          WHERE pedido_id = $1 AND anuncio_id_marketplace IS NULL ORDER BY ordem, id`,
+        [existentes[0].id]
+      );
+      const chegando = (pedidoGenerico.itens || []).filter((it) => it.anuncioIdExterno);
+      for (const item of semAnuncio) {
+        const porSku = chegando.find((it) => it.skuExterno && item.sku_externo
+          && normalizarComparacao(it.skuExterno) === normalizarComparacao(item.sku_externo));
+        // Sem SKU para casar, só é seguro quando os dois lados têm UM item.
+        const unico = !porSku && semAnuncio.length === 1 && chegando.length === 1 ? chegando[0] : null;
+        const alvo = porSku || unico;
+        if (!alvo) continue;
+        await client.query(
+          `UPDATE pedido_itens SET anuncio_id_marketplace = $2,
+                  tipo_anuncio_marketplace = COALESCE(tipo_anuncio_marketplace, $3)
+            WHERE id = $1`,
+          [item.id, alvo.anuncioIdExterno, alvo.tipoAnuncio || null]
+        );
+      }
+    }
     return false;
   }
 

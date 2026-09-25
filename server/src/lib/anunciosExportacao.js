@@ -381,7 +381,7 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
            JOIN pedidos_venda pv ON pv.id = pi.pedido_id
           WHERE pi.anuncio_id_marketplace = a.anuncio_id_externo
             AND pv.origem_integracao_id = a.origem_integracao_id
-            AND pv.situacao <> 'cancelado'
+            AND pv.situacao <> 'cancelado' AND pv.cancelado_em IS NULL
             AND pv.data_pedido >= CURRENT_DATE - $${posVendidos}::int
        ) v ON TRUE
        LEFT JOIN LATERAL (

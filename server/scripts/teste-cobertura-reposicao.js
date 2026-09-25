@@ -58,13 +58,14 @@ CREATE TABLE kits_manuais_itens (
 );
 CREATE TABLE pedidos_venda (
   id SERIAL PRIMARY KEY, data_pedido DATE, situacao TEXT DEFAULT 'aberto',
-  cancelado_em TIMESTAMPTZ
+  cancelado_em TIMESTAMPTZ, operacao TEXT DEFAULT 'Venda'
 );
 CREATE TABLE pedido_itens (
   id SERIAL PRIMARY KEY, pedido_id INTEGER REFERENCES pedidos_venda(id),
   variante_id INTEGER REFERENCES estoque_variantes(id),
   produto_id INTEGER REFERENCES produtos(id),
-  quantidade NUMERIC, valor_unitario NUMERIC, kit_id INTEGER REFERENCES kits_manuais(id)
+  quantidade NUMERIC, valor_unitario NUMERIC, kit_id INTEGER REFERENCES kits_manuais(id),
+  cor TEXT, tamanho TEXT
 );
 `;
 

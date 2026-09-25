@@ -1,5 +1,7 @@
 const { condMulti } = require('../lib/filtrosMulti');
-const { aplicarFiltroFull } = require('../lib/filtroFull');
+const { aplicarFiltroFull, CONDICAO_ANUNCIO_NO_FULL } = require('../lib/filtroFull');
+const { condOperacaoVenda } = require('../lib/operacaoVenda');
+const { pecasDoItemSql } = require('../lib/vendasEmPecas');
 const express = require('express');
 const multer = require('multer');
 const pool = require('../db/pool');
@@ -928,6 +930,7 @@ async function mapaCustoPorKit(kitIds, ctx) {
       }
       mapa.set(kitId, {
         custoPeca: algumaPecaSemFicha ? null : custoPeca,
+        pecasNoKit,
         imposto,
         pctImpostos: pecasNoKit > 0 ? pctPonderado / pecasNoKit : 0,
       });
@@ -972,6 +975,8 @@ async function calcularRelatorioPedidos({
   if (empresa_id) { conditions.push(`pv.empresa_id = $${i}`); values.push(empresa_id); i += 1; }
   if (forma_pagamento) { conditions.push(`pv.forma_pagamento = $${i}`); values.push(forma_pagamento); i += 1; }
   if (operacao) { conditions.push(`pv.operacao = $${i}`); values.push(operacao); i += 1; }
+  // Sem operação escolhida, só VENDA entra na lucratividade (25/09/2026).
+  else conditions.push(condOperacaoVenda('pv'));
   if (situacao) { conditions.push(`pv.situacao = $${i}`); values.push(situacao); i += 1; }
   if (origem === 'marketplace') conditions.push('pv.origem_marketplace IS NOT NULL');
   if (origem === 'manual') conditions.push('pv.origem_marketplace IS NULL');
@@ -995,7 +1000,7 @@ async function calcularRelatorioPedidos({
     receita: 0, custoPeca: 0, imposto: 0, custoEmbalagem: 0, custoAds: 0, frete: 0, taxaMarketplace: 0, custo: 0, lucro: 0, margemPct: 0,
     valorRecebidoLiberado: 0, valorRecebidoConfirmado: 0, valorRecebidoSemConfirmacao: 0, custoAdsNaoAtribuido: 0,
     custoAdsAtribuido: 0, custoAdsTotal: 0,
-    lucroBruto: 0, margemBrutaPct: 0, tacos: 0, mpaPct: 0, numeroVendas: 0, numeroUnidadesVendidas: 0, ticketMedio: 0, roiPct: 0,
+    lucroBruto: 0, margemBrutaPct: 0, tacos: 0, mpaPct: 0, numeroVendas: 0, numeroUnidadesVendidas: 0, numeroPecasVendidas: 0, ticketMedio: 0, roiPct: 0,
     liquidoMarketplace: 0, pedidosConsiderados: 0, totalPedidosPeriodo: 0, pedidosExcluidosPorCustoIncompleto: 0, pedidosNaoAvaliaveis: [],
   };
   if (pedidosBrutos.length === 0) {
@@ -1154,6 +1159,8 @@ async function calcularRelatorioPedidos({
     // entra quando dá pra usar o cálculo real (ver `calculoReal` abaixo).
     const custoEmbalagemConfig = Number(ctx.config.custo_embalagem_marketplace) || 0;
 
+    const pecasDoItem = (it) => Number(it.quantidade)
+      * (it.kit_id ? (mapaCustoKit.get(it.kit_id)?.pecasNoKit || 1) : 1);
     const resultado = pedidos.map((p) => {
       const idsMembros = new Set(p._membros.map((m) => m.id));
       const itensDoPedido = itens.filter((it) => idsMembros.has(it.pedido_id));
@@ -1169,7 +1176,11 @@ async function calcularRelatorioPedidos({
       // Item sem cadastro nenhum (nem produto, nem kit) já era "sem custo".
       // O que faltava era o item COM cadastro e SEM ficha, cujo custo agora vem
       // NULO em vez de R$ 0,00 — ver mapaCustoPorProduto/mapaCustoPorKit.
-      const semCusto = itensDoPedido.some((it) => {
+      // Pedido SEM ITEM (venda do Wik cujo detalhe ainda não veio) não tem
+      // custo nenhum conhecido: é "sem custo", não lucro = receita inteira
+      // (25/09/2026 — `[].some()` é falso, e o pedido de R$ 5.000 aparecia
+      // com lucro de R$ 5.000 e margem 100%).
+      const semCusto = itensDoPedido.length === 0 || itensDoPedido.some((it) => {
         if (it.kit_id) return !mapaCustoKit.has(it.kit_id) || mapaCustoKit.get(it.kit_id).custoPeca == null;
         if (!it.produto_id || !mapaCusto.has(it.produto_id)) return true;
         return mapaCusto.get(it.produto_id).custoPeca == null;
@@ -1275,6 +1286,9 @@ async function calcularRelatorioPedidos({
         condicaoPagamento: p.condicao_pagamento,
         operacao: p.operacao,
         unidades: itensDoPedido.reduce((s2, it) => s2 + Number(it.quantidade), 0),
+        // PEÇAS (kit aberto) — 25/09/2026. `unidades` segue sendo o que o
+        // cliente comprou (2 kits); `pecas` é o que saiu do estoque (6 peças).
+        pecas: itensDoPedido.reduce((s2, it) => s2 + pecasDoItem(it), 0),
         descontoCabecalho: Number(p.total_desconto) || 0,
         totalLiquido: Number(p.total_liquido) || 0,
         receita,
@@ -1303,6 +1317,7 @@ async function calcularRelatorioPedidos({
           skuExterno: it.sku_externo || (it.produto_id ? null : it.referencia),
           anuncioId: it.anuncio_id_marketplace || null,
           quantidade: Number(it.quantidade),
+          pecas: pecasDoItem(it),
           produtoId: it.produto_id,
           varianteId: it.variante_id,
           kitId: it.kit_id,
@@ -1403,6 +1418,7 @@ async function calcularRelatorioPedidos({
     totalGeral.liquidoMarketplace = pedidosValidos.reduce((s, p) => s + (p.calculoReal ? p.valorRecebido : p.receita - p.taxaMarketplace), 0);
     totalGeral.numeroVendas = pedidosValidos.length;
     totalGeral.numeroUnidadesVendidas = pedidosValidos.reduce((s, p) => s + p.itens.reduce((si, it) => si + it.quantidade, 0), 0);
+    totalGeral.numeroPecasVendidas = pedidosValidos.reduce((s, p) => s + p.itens.reduce((si, it) => si + (it.pecas ?? it.quantidade), 0), 0);
     totalGeral.ticketMedio = totalGeral.numeroVendas > 0 ? totalGeral.receita / totalGeral.numeroVendas : 0;
     // ROI = lucro (já pós Ads) sobre tudo que a venda "consumiu" antes de
     // virar lucro (receita - lucro) — cobre custo do produto, imposto,
@@ -1744,7 +1760,8 @@ router.get('/relatorio-lucratividade/dashboard-executivo', async (req, res, next
       const validos = lista.filter((p) => !p.custoIncompleto);
       const receita = validos.reduce((s, p) => s + p.receita, 0);
       const lucro = validos.reduce((s, p) => s + p.lucro, 0);
-      const numeroPecas = validos.reduce((s, p) => s + p.itens.reduce((si, it) => si + it.quantidade, 0), 0);
+      // Peças com o kit aberto (25/09/2026): KIT-3 × 2 são 6 peças, não 2.
+      const numeroPecas = validos.reduce((s, p) => s + p.itens.reduce((si, it) => si + (it.pecas ?? it.quantidade), 0), 0);
       return {
         receita,
         lucro,
@@ -2121,13 +2138,14 @@ router.get('/metricas/movimento-estoque', async (req, res, next) => {
     if (data_fim) { conditions.push(`pv.data_pedido <= $${i}`); values.push(data_fim); i += 1; }
     if (canal_venda) { conditions.push(`pv.canal_venda = $${i}`); values.push(canal_venda); i += 1; }
     if (origem_integracao_id) { conditions.push(`pv.origem_integracao_id = $${i}`); values.push(origem_integracao_id); i += 1; }
+    // É SAÍDA DE ESTOQUE, então conta PEÇAS: kit aberto (25/09/2026).
     // Recorte do fulfillment. Esta rota monta o WHERE à mão, e a variável de
     // query sozinha não filtrava nada: a tela dizia "Só anúncios no Full" no
     // topo e este gráfico mostrava o marketplace inteiro — dois números
     // contraditórios na mesma página.
     aplicarFiltroFull(conditions, recorteFull, 'pv');
     const { rows } = await pool.query(
-      `SELECT pv.data_pedido::text AS data, COALESCE(SUM(pi.quantidade), 0) AS unidades, COUNT(DISTINCT pv.id) AS pedidos
+      `SELECT pv.data_pedido::text AS data, COALESCE(SUM(${pecasDoItemSql('pi')}), 0) AS unidades, COUNT(DISTINCT pv.id) AS pedidos
        FROM pedidos_venda pv JOIN pedido_itens pi ON pi.pedido_id = pv.id
        WHERE ${conditions.join(' AND ')}
        GROUP BY pv.data_pedido ORDER BY pv.data_pedido`,
@@ -2773,6 +2791,13 @@ router.post('/:id/faturar', async (req, res, next) => {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'Esse pedido não está com situação "aberto".' });
     }
+    // Venda do Wik se fatura NO WIK (25/09/2026): lá sai a baixa de estoque e
+    // o título a receber, e os dois chegam aqui pela sincronização. Faturar
+    // aqui também baixaria a peça e criaria o título uma segunda vez.
+    if (pedidoRows[0].origem === 'wik') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Este pedido veio do Wik: fature pelo Wik. O estoque e o contas a receber chegam aqui pela sincronização.' });
+    }
     const { rows: itens } = await client.query('SELECT * FROM pedido_itens WHERE pedido_id = $1', [req.params.id]);
     if (itens.length === 0) {
       await client.query('ROLLBACK');
@@ -2891,13 +2916,40 @@ router.post('/:id/cancelar', async (req, res, next) => {
       return res.status(409).json({ error: 'Esse pedido já está cancelado.' });
     }
 
-    if (pedido.situacao === 'faturado') {
+    // Venda do Wik foi baixada NO WIK, e o saldo daqui é espelho do Wik: o
+    // estorno também acontece lá. Estornar aqui somaria a peça duas vezes
+    // até o próximo ciclo de estoque (25/09/2026).
+    if (pedido.situacao === 'faturado' && pedido.origem !== 'wik') {
       const { rows: itens } = await client.query('SELECT * FROM pedido_itens WHERE pedido_id = $1', [req.params.id]);
       for (const item of itens) {
         if (!item.variante_id) continue;
         await registrarMovimento(client, item.variante_id, 'entrada', Number(item.quantidade), `Estorno do pedido de venda #${pedido.numero} (cancelado)`);
       }
     }
+
+    // O DINHEIRO (25/09/2026). Faturar criou um título a receber firme; cancelar
+    // deixava esse título em Contas a Receber, no fluxo e no DRE — receita de
+    // uma venda que não existe mais. Agora: a pendência e o título previsto
+    // caem pela ponte, e o título firme SEM nenhum recebimento é cancelado
+    // junto. O que já teve recebimento não é apagado (o dinheiro entrou): volta
+    // na resposta para a tela avisar e alguém decidir o estorno.
+    const financeiroCancelado = await ponte.cancelar(client, {
+      origem_codigo: 'pedido_venda', origem_id: Number(req.params.id),
+      motivo: `Pedido de venda #${pedido.numero} cancelado`, usuarioId: req.user?.id || null,
+    });
+    const { rows: titulosSemBaixa } = await client.query(
+      `UPDATE fin_titulos t SET situacao = 'cancelado', cancelado_em = now(),
+              cancelado_motivo = $2, atualizado_em = now()
+        WHERE t.origem_tipo = 'pedido_venda' AND t.origem_id = $1 AND t.situacao = 'aberto'
+          AND NOT EXISTS (SELECT 1 FROM fin_baixas b WHERE b.titulo_id = t.id AND b.estornada_em IS NULL)
+        RETURNING t.id`,
+      [Number(req.params.id), `Pedido de venda #${pedido.numero} cancelado.`]
+    );
+    const { rows: titulosComRecebimento } = await client.query(
+      `SELECT id, valor_bruto, situacao FROM fin_titulos
+        WHERE origem_tipo = 'pedido_venda' AND origem_id = $1 AND situacao IN ('aberto', 'parcial', 'liquidado')`,
+      [Number(req.params.id)]
+    );
 
     // Pedido cancelado não segura mais peça nenhuma. A reserva ficava ATIVA
     // depois do cancelamento, e o saldo continuava bloqueado para uma venda que
@@ -2913,7 +2965,13 @@ router.post('/:id/cancelar', async (req, res, next) => {
     await client.query('COMMIT');
 
     const data = await fetchPedidoCompleto(req.params.id);
-    res.json(data);
+    res.json({
+      ...data,
+      financeiro: {
+        titulosCancelados: titulosSemBaixa.length + (financeiroCancelado.titulosCancelados || 0),
+        titulosComRecebimento,
+      },
+    });
   } catch (err) {
     await client.query('ROLLBACK');
     next(err);

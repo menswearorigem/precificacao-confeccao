@@ -269,10 +269,14 @@ async function preencherItensPendentes(sessao, { cap, horas = 12, forcar = false
           || (it.ref && porRef.get(String(it.ref).toUpperCase()))
           || null;
         await client.query(
+          // variante_id pela grade (25/09/2026): sem ele a venda do atacado
+          // sumia de toda conta por cor×tamanho — grade da Cobertura, OP do
+          // Planejamento, Projeção, consumo de tecido, devolução.
           `INSERT INTO pedido_itens
              (pedido_id, produto_id, referencia, descricao, cor, tamanho,
-              quantidade, valor_unitario, desconto_pct, desconto_valor, total, ordem)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+              quantidade, valor_unitario, desconto_pct, desconto_valor, total, ordem, variante_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,
+                   (SELECT e2.id FROM estoque_variantes e2 WHERE e2.produto_id = $2::int AND upper(btrim(e2.cor)) = upper(btrim(COALESCE($5::text, ''))) AND upper(btrim(e2.tamanho)) = upper(btrim(COALESCE($6::text, ''))) ORDER BY e2.ativo DESC, e2.id LIMIT 1))`,
           [ped.id, produtoId, it.ref ? String(it.ref).slice(0, 60) : null,
             it.descricao ? it.descricao.slice(0, 200) : null,
             it.cor ? it.cor.slice(0, 60) : null, it.tamanho ? it.tamanho.slice(0, 20) : null,

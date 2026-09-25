@@ -18,6 +18,7 @@ const curva = require('../lib/curvaTamanho');
 const { gradesDeCorte } = require('../lib/gradeCorte');
 const cobertura = require('../lib/coberturaTamanho');
 const projecao = require('../lib/producaoProjecao');
+const vendas = require('../lib/vendasEmPecas');
 
 const router = express.Router();
 
@@ -88,7 +89,7 @@ router.get('/parado', async (req, res, next) => {
              FROM pedido_itens pi
              JOIN pedidos_venda pv ON pv.id = pi.pedido_id
             WHERE pi.variante_id = ev.id
-              AND pv.situacao <> 'cancelado' AND pv.cancelado_em IS NULL
+              AND ${vendas.PEDIDO_VALIDO}
          ) vd ON TRUE
          LEFT JOIN LATERAL (
            SELECT MAX(pv.data_pedido)::timestamptz AS ultima
@@ -96,9 +97,9 @@ router.get('/parado', async (req, res, next) => {
              JOIN pedidos_venda pv ON pv.id = pi.pedido_id
             WHERE pi.variante_id IS NULL
               AND pi.produto_id = ev.produto_id
-              AND COALESCE(pi.cor, '') = ev.cor
-              AND COALESCE(pi.tamanho, '') = ev.tamanho
-              AND pv.situacao <> 'cancelado' AND pv.cancelado_em IS NULL
+              AND upper(btrim(COALESCE(pi.cor, ''))) = upper(btrim(ev.cor))
+              AND upper(btrim(COALESCE(pi.tamanho, ''))) = upper(btrim(ev.tamanho))
+              AND ${vendas.PEDIDO_VALIDO}
          ) vt ON TRUE
          LEFT JOIN LATERAL (
            SELECT MIN(em.criado_em) AS primeira
@@ -118,7 +119,7 @@ router.get('/parado', async (req, res, next) => {
          FROM pedido_itens pi
          JOIN pedidos_venda pv ON pv.id = pi.pedido_id
         WHERE pi.variante_id IS NULL
-          AND pv.situacao <> 'cancelado' AND pv.cancelado_em IS NULL
+          AND ${vendas.PEDIDO_VALIDO}
           AND pv.data_pedido >= CURRENT_DATE - INTERVAL '2 years'`
     );
 
@@ -188,12 +189,12 @@ router.get('/curva-tamanho', async (req, res, next) => {
     async function vendasPor(filtro, params) {
       const { rows } = await pool.query(
         `SELECT COALESCE(NULLIF(pi.tamanho, ''), ev.tamanho, '') AS tamanho,
-                SUM(pi.quantidade)::numeric AS unidades
+                SUM(${vendas.pecasDoItemSql('pi')})::numeric AS unidades
            FROM pedido_itens pi
            JOIN pedidos_venda pv ON pv.id = pi.pedido_id
            LEFT JOIN estoque_variantes ev ON ev.id = pi.variante_id
            LEFT JOIN produtos p ON p.id = COALESCE(pi.produto_id, ev.produto_id)
-          WHERE pv.situacao <> 'cancelado' AND pv.cancelado_em IS NULL
+          WHERE ${vendas.PEDIDO_VALIDO}
             AND pv.data_pedido >= (CURRENT_DATE - ($1::int || ' months')::interval)
             ${filtro}
           GROUP BY 1`,
@@ -282,11 +283,11 @@ router.get('/curva-tamanho', async (req, res, next) => {
       if (produto) { params.push(produto.id); filtro = 'AND COALESCE(pi.produto_id, ev.produto_id) = $2'; }
       const { rows } = await pool.query(
         `SELECT COALESCE(NULLIF(pi.tamanho, ''), ev.tamanho, '') AS tamanho,
-                SUM(pi.quantidade)::numeric AS unidades
+                SUM(${vendas.pecasDoItemSql('pi')})::numeric AS unidades
            FROM pedido_itens pi
            JOIN pedidos_venda pv ON pv.id = pi.pedido_id
            LEFT JOIN estoque_variantes ev ON ev.id = pi.variante_id
-          WHERE pv.situacao <> 'cancelado' AND pv.cancelado_em IS NULL
+          WHERE ${vendas.PEDIDO_VALIDO}
             AND pv.data_pedido >= (CURRENT_DATE - ($1::int || ' days')::interval)
             ${filtro}
           GROUP BY 1`,

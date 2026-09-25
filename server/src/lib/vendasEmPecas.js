@@ -43,7 +43,11 @@
 // Filtro de pedido válido, igual ao usado em analisesEstoque.routes.js:
 // `situacao` cobre o cancelamento manual e `cancelado_em` o cancelamento
 // vindo do marketplace. Os dois existem e não são redundantes.
-const PEDIDO_VALIDO = "pv.situacao <> 'cancelado' AND pv.cancelado_em IS NULL";
+//
+// 25/09/2026: e só OPERAÇÃO DE VENDA — devolução, troca, bonificação etc.
+// (do Hub ou do Wik) não é demanda. Ver lib/operacaoVenda.js.
+const { condOperacaoVenda } = require('./operacaoVenda');
+const PEDIDO_VALIDO = `pv.situacao <> 'cancelado' AND pv.cancelado_em IS NULL AND ${condOperacaoVenda('pv')}`;
 
 /**
  * A JANELA de análise, em datas (10/09/2026).
@@ -290,24 +294,62 @@ async function itensDeKitSemComposicao(db, janela) {
  */
 async function vendaPorVariante(db, janela, produtoId) {
   const [inicio, fim] = paramsJanela(janela);
+  // 25/09/2026 — a grade passou a receber TRÊS vendas que antes sumiam dela:
+  //   · a venda do Wik (atacado), que chega sem variante_id mas com cor e
+  //     tamanho em texto: casa pela grafia normalizada;
+  //   · o kit de UMA referência só (o caso do marketplace, SKU KIT-3-REF-COR-TAM),
+  //     cujo item guarda cor e tamanho: entra na célula com as peças do kit;
+  //   · o item avulso que não casou com variante mas tem cor/tamanho.
+  // Continua fora (e é devolvido à parte, com aviso) só o que não tem como
+  // ter célula: kit de referências misturadas e item sem cor/tamanho.
+  const { rows: itens } = await db.query(
+    `SELECT COALESCE(pi.variante_id, evt.id) AS variante_id,
+            (pi.quantidade * COALESCE(k.pecas_desta, 1))::numeric AS pecas,
+            (pi.kit_id IS NOT NULL) AS de_kit
+       FROM pedido_itens pi
+       JOIN pedidos_venda pv ON pv.id = pi.pedido_id
+       LEFT JOIN estoque_variantes ev ON ev.id = pi.variante_id
+       LEFT JOIN LATERAL (
+         SELECT SUM(ki.quantidade) FILTER (WHERE ki.produto_id = $1)::numeric AS pecas_desta,
+                BOOL_AND(ki.produto_id = $1) AS so_esta
+           FROM kits_manuais_itens ki WHERE ki.kit_id = pi.kit_id
+       ) k ON pi.kit_id IS NOT NULL
+       LEFT JOIN LATERAL (
+         SELECT e2.id FROM estoque_variantes e2
+          WHERE pi.variante_id IS NULL AND e2.produto_id = $1
+            AND upper(btrim(e2.cor)) = upper(btrim(COALESCE(pi.cor, '')))
+            AND upper(btrim(e2.tamanho)) = upper(btrim(COALESCE(pi.tamanho, '')))
+          ORDER BY e2.ativo DESC, e2.id LIMIT 1
+       ) evt ON TRUE
+      WHERE ${PEDIDO_VALIDO}
+        AND pv.data_pedido >= date_trunc('week', $2::date)
+        AND pv.data_pedido < date_trunc('week', $3::date) + INTERVAL '7 days'
+        AND (
+          (pi.kit_id IS NULL AND COALESCE(ev.produto_id, pi.produto_id) = $1)
+          OR (pi.kit_id IS NOT NULL AND k.so_esta IS TRUE)
+        )`,
+    [produtoId, inicio, fim]
+  );
+  const vendidoPorVariante = new Map();
+  let pecasKitNaGrade = 0;
+  let pecasSemVarianteNaoKit = 0;
+  for (const r of itens) {
+    const p = Number(r.pecas) || 0;
+    if (r.variante_id) {
+      vendidoPorVariante.set(r.variante_id, (vendidoPorVariante.get(r.variante_id) || 0) + p);
+      if (r.de_kit) pecasKitNaGrade += p;
+    } else if (!r.de_kit) {
+      pecasSemVarianteNaoKit += p;
+    }
+  }
+
   const { rows } = await db.query(
     `SELECT ev.id AS variante_id, ev.cor, ev.tamanho,
-            ev.quantidade::numeric AS saldo,
-            ev.ativo,
-            COALESCE(v.pecas, 0)::numeric AS pecas
+            ev.quantidade::numeric AS saldo, ev.ativo
        FROM estoque_variantes ev
-       LEFT JOIN LATERAL (
-         SELECT SUM(pi.quantidade)::numeric AS pecas
-           FROM pedido_itens pi
-           JOIN pedidos_venda pv ON pv.id = pi.pedido_id
-          WHERE pi.variante_id = ev.id
-            AND ${PEDIDO_VALIDO}
-            AND pv.data_pedido >= date_trunc('week', $2::date)
-            AND pv.data_pedido < date_trunc('week', $3::date) + INTERVAL '7 days'
-       ) v ON TRUE
       WHERE ev.produto_id = $1
       ORDER BY ev.cor, ev.tamanho`,
-    [produtoId, inicio, fim]
+    [produtoId]
   );
 
   const { rows: kitRows } = await db.query(
@@ -324,14 +366,28 @@ async function vendaPorVariante(db, janela, produtoId) {
       cor: r.cor || '—',
       tamanho: r.tamanho || '—',
       saldo: Number(r.saldo) || 0,
-      pecas: Number(r.pecas) || 0,
+      pecas: vendidoPorVariante.get(r.variante_id) || 0,
       ativo: r.ativo,
     })),
-    pecasEmKitSemGrade: Number(kitRows[0]?.pecas_em_kit) || 0,
+    // Só o kit que não dá para pôr numa célula (misturado, ou sem cor/tamanho).
+    pecasEmKitSemGrade: Math.max(0, (Number(kitRows[0]?.pecas_em_kit) || 0) - pecasKitNaGrade),
+    // Item avulso ligado à referência mas sem cor/tamanho que case com a grade.
+    pecasSemVariante: pecasSemVarianteNaoKit,
   };
 }
 
+/**
+ * PEÇAS de um item de pedido, em SQL (25/09/2026): quantidade × peças do kit
+ * (1 quando não é kit). Para as consultas que somam item a item — curva de
+ * tamanho, movimentação de estoque — e não passam por ctesVendasEmPecas.
+ * Sem isto, KIT-3 vendido 2 vezes contava 2 peças em vez de 6.
+ */
+function pecasDoItemSql(alias = 'pi') {
+  return `(${alias}.quantidade * COALESCE((SELECT SUM(ki.quantidade) FROM kits_manuais_itens ki WHERE ki.kit_id = ${alias}.kit_id), 1))`;
+}
+
 module.exports = {
+  pecasDoItemSql,
   PEDIDO_VALIDO,
   normalizarJanela,
   paramsJanela,

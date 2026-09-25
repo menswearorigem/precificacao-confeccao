@@ -13,6 +13,7 @@ const express = require('express');
 const multer = require('multer');
 const pool = require('../db/pool');
 const { hojeEmBrasilia } = require('../lib/dataBrasil');
+const { CONDICAO_ANUNCIO_NO_FULL } = require('../lib/filtroFull');
 const { registrar } = require('../lib/auditoria');
 const {
   acharPedidoPorCodigo, montarEstado, avaliarLeitura, carregarItensDoPedido,
@@ -150,6 +151,9 @@ router.get('/fila', async (req, res, next) => {
       `${SELECT_PEDIDO}
         WHERE pv.origem_marketplace IS NOT NULL
           AND pv.situacao <> 'cancelado'
+          -- Pedido do FULL não é embalado aqui: quem despacha é o marketplace
+          -- (25/09/2026). Antes ficava na fila como "não conferido" para sempre.
+          AND NOT ${CONDICAO_ANUNCIO_NO_FULL('pv')}
           AND pv.data_pedido BETWEEN $1 AND $2
         ORDER BY pv.data_pedido DESC, pv.id DESC
         LIMIT 500`,
@@ -299,10 +303,16 @@ router.post('/pedidos/:pedidoId/iniciar', async (req, res, next) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { rows: travados } = await client.query('SELECT id FROM pedidos_venda WHERE id = $1 FOR UPDATE', [req.params.pedidoId]);
+    const { rows: travados } = await client.query('SELECT id, situacao FROM pedidos_venda WHERE id = $1 FOR UPDATE', [req.params.pedidoId]);
     if (travados.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Pedido não encontrado.' });
+    }
+    // Pedido cancelado pelo marketplace não se embala (25/09/2026): a etiqueta
+    // ainda pode estar na mesa, e bipar ela abria a conferência normalmente.
+    if (travados[0].situacao === 'cancelado') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Este pedido foi CANCELADO. Não embale — separe a peça de volta para o estoque.', cancelado: true });
     }
 
     const concluida = await carregarConcluida(client, req.params.pedidoId);

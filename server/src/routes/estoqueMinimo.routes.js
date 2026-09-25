@@ -13,6 +13,7 @@
 // escrito. Item sem histórico, item que ficou zerado (e por isso "não
 // vendeu"), fornecedor sem prazo cadastrado: os três aparecem na tela com a
 // causa, nunca com um número plausível.
+const { pecasNoFullPorProduto, pecasNoFullPorVariante } = require('../lib/estoqueFull');
 const express = require('express');
 const pool = require('../db/pool');
 const produtosRoutes = require('./produtos.routes');
@@ -180,7 +181,7 @@ async function calcularCobertura(query = {}) {
     // Quantas vezes o mínimo é "sobra". 3× é o corte da planilha da casa.
     const fatorExcesso = temNumero(req.query.fator_excesso) ? Number(req.query.fator_excesso) : 3;
 
-    const [serie, zeradas, saldos, margemPorProduto, semReferencia, kitsSemComposicao, emProducao, reservado] = await Promise.all([
+    const [serie, zeradas, saldos, margemPorProduto, semReferencia, kitsSemComposicao, emProducao, reservado, noFull] = await Promise.all([
       vendas.serieSemanalPorProduto(pool, janela),
       semanasZeradasPorProduto(janela),
       pool.query(
@@ -225,6 +226,10 @@ async function calcularCobertura(query = {}) {
       vendas.itensDeKitSemComposicao(pool, janela),
       emProducaoPorProduto(),
       reservadoPorProduto(),
+      // O que está no Full (vendável + a caminho), em peças. A venda do Full
+      // já está na demanda acima; sem isto, a oferta não tinha a outra metade
+      // e o sistema pedia produção para peça que está no centro do ML.
+      pecasNoFullPorProduto(pool),
     ]);
 
     // Custo de producao por produto, LIDO do motor de calculo — a mesma
@@ -292,7 +297,10 @@ async function calcularCobertura(query = {}) {
 
       const zeradasNaJanela = zeradas.get(s.produto_id) || 0;
       const totais = margemPorProduto.get(s.produto_id) || null;
-      const saldo = Number(s.saldo);
+      // 25/09/2026: saldo = galpão + Full. Ver lib/estoqueFull.js.
+      const saldoGalpao = Number(s.saldo);
+      const pecasNoFull = noFull.get(s.produto_id) || 0;
+      const saldo = saldoGalpao + pecasNoFull;
       const naFaccao = emProducao.get(s.produto_id) || 0;
       // ⚠️ 14/09/2026: faltava a PARCELA NEGATIVA. Era `saldo + naFaccao`,
       // enquanto estoqueMinimo.js:360 declara que a posição é o galpão MAIS o
@@ -395,6 +403,8 @@ async function calcularCobertura(query = {}) {
         tem_foto: s.tem_foto === true,
         foto_url: s.foto_url || null,
         saldo,
+        saldo_galpao: saldoGalpao,
+        no_full: pecasNoFull,
         em_producao: naFaccao,
         reservado: jaVendidoNaoSaiu,
         posicao,
@@ -472,6 +482,7 @@ async function calcularCobertura(query = {}) {
         `A janela é de ${numSemanas} semana(s) cheia(s) — de ${janela.inicio} a ${janela.fim}. A venda é medida por semana, então as duas pontas do período escolhido são arredondadas para a semana inteira.`,
         'O prazo de produção usado é o da CADÊNCIA de cada referência (semanal, quinzenal ou mensal), e não um prazo único para o catálogo inteiro. Onde a referência tem prazo próprio cadastrado, é ele que vale.',
         'A comparação com o ponto de pedido é feita com a POSIÇÃO de estoque (saldo + o que está na facção), não com o saldo físico — senão o sistema mandaria produzir de novo o que já está para chegar.',
+        'O saldo soma o GALPÃO e o que está no FULL (vendável + a caminho, em peças). A venda do Full entra na demanda, então o estoque de lá entra na oferta. O saldo do TikTok não é lido e não entra.',
         ...(temMargem
           ? ['A curva ABC usa MARGEM DE CONTRIBUIÇÃO (faturamento menos o custo de produção que o motor calcula). Ela não desconta taxa de marketplace nem publicidade.']
           : ['A curva ABC está sendo feita por FATURAMENTO, porque os produtos vendidos na janela não têm custo cadastrado. Faturamento alto com margem baixa vai aparecer como classe A.']),
@@ -555,7 +566,15 @@ router.get('/produtos/:id/grade', async (req, res, next) => {
     );
     if (prodRows.length === 0) return res.status(404).json({ erro: 'referência não encontrada' });
 
-    const { porVariante, pecasEmKitSemGrade } = await vendas.vendaPorVariante(pool, janela, produtoId);
+    const { porVariante, pecasEmKitSemGrade, pecasSemVariante } = await vendas.vendaPorVariante(pool, janela, produtoId);
+    // O Full por célula (25/09/2026): o saldo da grade é galpão + Full.
+    const full = await pecasNoFullPorVariante(pool);
+    for (const v of porVariante) {
+      v.saldo_galpao = v.saldo;
+      v.no_full = full.porVariante.get(v.variante_id) || 0;
+      v.saldo = v.saldo_galpao + v.no_full;
+    }
+    const noFullSemGrade = full.semVariantePorProduto.get(produtoId) || 0;
 
     const cores = [...new Set(porVariante.map((v) => v.cor))];
     // Tamanho de roupa não ordena em ordem alfabética: GG viria antes de M.
@@ -584,10 +603,19 @@ router.get('/produtos/:id/grade', async (req, res, next) => {
         saldo: porVariante.reduce((s, v) => s + v.saldo, 0),
         pecasComGrade,
         pecasEmKitSemGrade,
+        pecasSemVariante,
+        noFull: porVariante.reduce((s, v) => s + v.no_full, 0) + noFullSemGrade,
+        noFullSemGrade,
       },
       avisos: [
         ...(pecasEmKitSemGrade > 0
-          ? [`${Math.round(pecasEmKitSemGrade)} peça(s) desta referência saíram dentro de KIT na janela. O kit não guarda cor nem tamanho, então essas peças contam no total da referência mas NÃO aparecem na grade abaixo — a venda por cor/tamanho aqui está subestimada nessa proporção.`]
+          ? [`${Math.round(pecasEmKitSemGrade)} peça(s) desta referência saíram dentro de KIT de referências misturadas (ou sem cor/tamanho) na janela. Elas contam no total da referência mas NÃO aparecem na grade abaixo.`]
+          : []),
+        ...(pecasSemVariante > 0
+          ? [`${Math.round(pecasSemVariante)} peça(s) vendidas desta referência não têm cor/tamanho que case com a grade (grafia diferente no Wik ou no marketplace). Contam no total, não na grade.`]
+          : []),
+        ...(noFullSemGrade > 0
+          ? [`${Math.round(noFullSemGrade)} peça(s) no Full estão num anúncio lido sem variação (Shopee). Somam no saldo da referência, mas não numa célula da grade.`]
           : []),
         ...(pecasComGrade === 0 && pecasEmKitSemGrade === 0
           ? ['Nenhuma venda com cor e tamanho identificados nesta janela.']
