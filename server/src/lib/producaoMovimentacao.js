@@ -70,11 +70,20 @@ async function movimentar(client, {
   const ordensServico = [];
 
   const { rows: ordemRows } = await client.query(
-    'SELECT id, produto_id, empresa_id, situacao FROM ordens_producao WHERE id = $1 FOR UPDATE',
+    'SELECT id, produto_id, empresa_id, situacao, origem, sincroniza_wik, wik_op FROM ordens_producao WHERE id = $1 FOR UPDATE',
     [ordemId]
   );
   if (ordemRows.length === 0) throw Object.assign(new Error('Ordem de produção não encontrada.'), { status: 400 });
   const ordem = ordemRows[0];
+  // OP espelho do Wik: quem movimenta é o Wik, e o Hub copia a cada ciclo
+  // (wikMovimentosSync). Lançar aqui também contaria a mesma peça duas vezes.
+  if (ordem.origem === 'wik' && ordem.sincroniza_wik) {
+    throw Object.assign(
+      new Error(`A OP ${ordem.wik_op} é movimentada no Wik — o Hub copia de lá a cada 15 minutos. `
+        + 'Lance a movimentação no Wik (Produção › Movimentação).'),
+      { status: 409 }
+    );
+  }
   if (['cancelada', 'concluida'].includes(ordem.situacao)) {
     throw Object.assign(new Error(`Ordem ${ordem.situacao} não movimenta.`), { status: 400 });
   }
@@ -217,6 +226,12 @@ async function estornar(client, { movimentoId, usuarioId, motivo }) {
   const m = rows[0];
   if (m.estornado_em) throw Object.assign(new Error('Este movimento já foi estornado.'), { status: 400 });
   if (m.tipo === 'estorno') throw Object.assign(new Error('Estorno não se estorna.'), { status: 400 });
+  if (m.origem === 'wik') {
+    throw Object.assign(
+      new Error('Este movimento veio do Wik. Corrija ou apague lá — o Hub estorna sozinho no próximo ciclo.'),
+      { status: 409 }
+    );
+  }
   if (!String(motivo || '').trim()) {
     throw Object.assign(new Error('Escreva o motivo do estorno.'), { status: 400 });
   }

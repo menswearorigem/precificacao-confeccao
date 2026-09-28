@@ -104,8 +104,17 @@ async function importarFaccoesDoWik() {
       else throw e;
     }
 
-    const faccoes = consolidar(departamentos);
+    return await gravarFaccoes(consolidar(departamentos));
+  } finally {
+    importando = false;
+  }
+}
 
+// Grava (cria/vincula) as facções já consolidadas. Separado da leitura para o
+// sync de MOVIMENTAÇÕES da produção reusar os departamentos que ele já leu na
+// sessão dele — abrir outra sessão no meio do ciclo derrubaria a do ciclo.
+async function gravarFaccoes(faccoes) {
+  {
     // mapa nome-da-categoria -> id
     const { rows: catRows } = await pool.query('SELECT id, nome FROM faccao_categorias');
     const catId = new Map(catRows.map((c) => [c.nome, c.id]));
@@ -165,9 +174,7 @@ async function importarFaccoesDoWik() {
     }
     resumo.erros = resumo.erros.slice(0, 10);
     return resumo;
-  } finally {
-    importando = false;
   }
 }
 
-module.exports = { importarFaccoesDoWik, consolidar };
+module.exports = { importarFaccoesDoWik, gravarFaccoes, consolidar, parseForn };

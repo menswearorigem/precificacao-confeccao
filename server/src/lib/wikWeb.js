@@ -715,6 +715,45 @@ async function gridMateriasPrimas(sessao) {
   return gridCompleto(sessao, '/MateriaPrima/CarregaGrid', COLS_MATERIA_PRIMA, {}, { ordem: 1, dir: 'asc' });
 }
 
+// ── MOVIMENTAÇÃO DE PRODUÇÃO (origem → destino) ─────────────────────────────
+// A tela Produção › Movimentação (PRO9, /OrdemProducaoMov/Index) lê este grid.
+// Reverse-engineered ao vivo em 28/09/2026 (matriz 192): DataTables comum, com
+// jsonData { DataInicial, DataFinal, PesquisarPorSelecionado, ProdId, OprId }
+// — OprId = 0 traz todas as OPs do período. Uma linha por movimento:
+//   OprmiOprId (OP) · OprmiOprmId (sequência na OP) · OprmiId (item)
+//   OprmDtEnvio · OprmiOrigem/Origem ("268 - CORTE-EDY") · OprmiDestino/Destino
+//   OprmiTipoMov ("Normal" | "Conserto" | "Retorno Conserto") · OprmiQtdEnviada
+//   OsId · OprmiGeraOs · OprmiRetornoOs · OprmiPreco · Observacao
+// (OP, OprmiOprmId, OprmiId) é chave única: 13.783 linhas desde 2024, nenhuma
+// repetida. NÃO tem cor nem tamanho — o Wik movimenta só quantidade.
+const COLS_MOV_OP = [
+  'CorTexto', 'OprmiOprmId', 'OprmDtEnvio', 'OprmiOprId', 'ProdDescricao', 'Origem',
+  'Destino', 'OprmiTipoMov', 'OprmiQtdEnviada', 'OprmiGeraOs', 'OprmiRetornoOs',
+  'OprmiPreco', 'Observacao',
+];
+async function movimentacoesProducao(sessao, { de, ate, oprId = 0 } = {}) {
+  return gridCompleto(sessao, '/OrdemProducaoMov/BindOrdemProducaoMov', COLS_MOV_OP, {
+    ListaFiltros: {}, DataInicial: de, DataFinal: ate,
+    PesquisarPorSelecionado: '1', ProdId: 0, OprId: Number(oprId) || 0,
+  }, { ordem: 0, dir: 'asc' });
+}
+
+// ── PERDAS / VALES de produção (PRO10, /OrdemProducaoMov/Perda1) ────────────
+// POST /OrdemProducaoMov/BindGridPerda. Cada linha tira peça de UM
+// departamento (OprmipDepId) — é o que faz o saldo da facção bater com o painel
+// do Wik (OP 6891: 43 peças no livro de movimentos, 34 lançadas como perda,
+// 9 em conserto). Chave: (OprmipOprId, OprmipId). Esta, sim, tem cor e tamanho.
+// Situações 1 = Aberto, 2 = Pago; tipos 1 = Perda, 2 = Vale.
+const COLS_PERDA_OP = [
+  'OprmipOprId', 'DepDescricao', 'ProdDescricao', 'CorDescricao', 'OprmipTamanho',
+  'OprmipQtdEnviada', 'Situacao', 'OprmipData', 'OprmipId',
+];
+async function perdasProducao(sessao, { de, ate, oprId = 0 } = {}) {
+  return gridCompleto(sessao, '/OrdemProducaoMov/BindGridPerda', COLS_PERDA_OP, {
+    ListaFiltros: {}, DataInicial: de, DataFinal: ate, OprId: Number(oprId) || 0,
+    SituacoesSelecionadas: '1,2,', TipoSelecionados: '1,2,',
+  }, { ordem: 0, dir: 'asc' });
+}
 
 module.exports = {
   BASE_PADRAO,
@@ -724,6 +763,7 @@ module.exports = {
   pareceTelaDeLogin, pareceSessaoDerrubada, linhasDegeneradas,
   listarEmpresas, apontamentoPainel, ordemProducaoDetalhe, carregarGridDepartamentos,
   gridOrdensProducao, gridPedidos, pedidoItens, gridMateriasPrimas,
+  movimentacoesProducao, perdasProducao,
   // financeiro
   contasPagar, contaPagarDetalhe, contasReceber, extratoFinanceiro,
   planoContas, centrosCusto, contasBancarias,

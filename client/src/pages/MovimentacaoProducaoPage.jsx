@@ -400,27 +400,29 @@ function Extrato({ movimentos, onEstornado, onErro }) {
               <tr key={m.id} className={estornado ? 'linha-estornada' : undefined}>
                 <td>{dataBr(m.data_movimento)}</td>
                 <td>
-                  {m.etapa_origem_nome || 'entrada no fluxo'}
-                  {m.fornecedor_origem_nome ? <span className="ink-soft"> · {m.fornecedor_origem_nome}</span> : ''}
+                  {m.origem === 'wik' && m.wik_origem_dep
+                    ? <>{m.wik_origem_dep}{m.etapa_origem_nome ? <span className="ink-soft"> · {m.etapa_origem_nome}</span> : ''}</>
+                    : <>{m.etapa_origem_nome || 'entrada no fluxo'}{m.fornecedor_origem_nome ? <span className="ink-soft"> · {m.fornecedor_origem_nome}</span> : ''}</>}
                 </td>
                 <td>
-                  {m.etapa_destino_nome || 'saiu do fluxo'}
-                  {m.fornecedor_destino_nome ? <span className="ink-soft"> · {m.fornecedor_destino_nome}</span> : ''}
+                  {m.origem === 'wik' && m.wik_destino_dep
+                    ? <>{m.wik_destino_dep}{m.etapa_destino_nome ? <span className="ink-soft"> · {m.etapa_destino_nome}</span> : ''}</>
+                    : <>{m.etapa_destino_nome || (m.tipo === 'perda' ? 'perda' : 'saiu do fluxo')}{m.fornecedor_destino_nome ? <span className="ink-soft"> · {m.fornecedor_destino_nome}</span> : ''}</>}
                 </td>
-                <td>{rotuloGrade(m.cor, m.tamanho)}</td>
+                <td>{m.origem === 'wik' && !m.cor && !m.tamanho ? <span className="ink-soft">não informada no Wik</span> : rotuloGrade(m.cor, m.tamanho)}</td>
                 <td className="num">{formatQtd(m.quantidade)}</td>
                 <td>
-                  <span className={`selo ${TOM_TIPO_MOV[m.tipo] || 'tone-neutro'}`}>{m.tipo}</span>
+                  <span className={`selo ${TOM_TIPO_MOV[m.tipo] || 'tone-neutro'}`}>{m.origem === 'wik' && m.wik_tipo && m.tipo !== 'estorno' ? m.wik_tipo : m.tipo}</span>
                   {m.motivo_nome && <span className="ink-soft"> {m.motivo_nome}</span>}
                   {m.etapa_identificadora_nome && (
                     <span className="ink-soft"> · achado em {m.etapa_identificadora_nome}</span>
                   )}
                   {estornado && <span className="selo tone-prejuizo" title="Este movimento foi desfeito por um estorno. Ele fica aqui de propósito: movimento não se apaga.">estornado</span>}
                 </td>
-                <td>{m.os_numero ? `O.S. ${m.os_numero}` : '—'}</td>
-                <td>{m.usuario_nome || '—'}</td>
+                <td>{m.os_numero ? `O.S. ${m.os_numero}` : (m.origem === 'wik' && m.observacao ? <span className="ink-soft">{m.observacao}</span> : '—')}</td>
+                <td>{m.origem === 'wik' ? <span className="selo tone-neutro" title="Copiado da movimentação do Wik">Wik</span> : (m.usuario_nome || '—')}</td>
                 <td>
-                  {!estornado && !ehEstorno && estornando !== m.id && (
+                  {!estornado && !ehEstorno && m.origem !== 'wik' && estornando !== m.id && (
                     <button type="button" className="btn-sec" onClick={() => { setEstornando(m.id); setMotivo(''); }}>
                       <Undo2 size={14} /> Estornar
                     </button>
@@ -523,6 +525,10 @@ export default function MovimentacaoProducaoPage() {
   useEffect(() => { carregarOrdem(ordemId); }, [ordemId, carregarOrdem]);
 
   const ordemEscolhida = ordens.find((o) => String(o.id) === String(ordemId)) || null;
+  // OP que veio do Wik e ainda é espelho: quem movimenta é o Wik. A tela mostra
+  // onde as peças estão e o extrato copiado, e não deixa lançar aqui (contaria
+  // a mesma peça duas vezes).
+  const espelhoWik = Boolean(posicao?.wik?.espelho);
 
   // As origens possíveis: cada par (etapa, facção) que tem peça de verdade.
   const origens = useMemo(() => {
@@ -723,7 +729,7 @@ export default function MovimentacaoProducaoPage() {
         >
           {ordens.map((o) => (
             <option key={o.id} value={o.id}>
-              OP {o.numero} · {o.referencia} — {o.produto_descricao}
+              OP {o.wik_op || o.numero} · {o.referencia} — {o.produto_descricao}
             </option>
           ))}
         </Select>
@@ -770,6 +776,7 @@ export default function MovimentacaoProducaoPage() {
               Icone={Layers}
               explicacao="Somando todas as etapas desta ordem. É o que ainda está no meio do caminho — não inclui o que já saiu para o estoque."
             />
+            {!espelhoWik && (<>
             <IndicadorDestaque
               rotulo="Peças nesta movimentação"
               valor={formatQtd(totalPecas)}
@@ -785,8 +792,48 @@ export default function MovimentacaoProducaoPage() {
                 ? `${custo.semPreco} destino(s) externo(s) sem preço cadastrado ficaram de FORA desta soma. Fora não é zero — cadastre o preço da facção para a conta fechar.`
                 : 'O que as facções vão cobrar por esta remessa, pelo preço vigente de cada uma. Só destino externo custa serviço.'}
             />
+            </>)}
           </div>
 
+          {espelhoWik && (
+            <div className="card">
+              <h2 className="card-titulo"><Factory size={16} /> Onde estão as peças agora</h2>
+              <p className="ink-soft ajuda-bloco">
+                <Info size={14} /> A OP {posicao.wik.wik_op} é movimentada no Wik e o Hub copia de lá a
+                cada 15 minutos{posicao.wik.copiado_em ? ` (última cópia ${dataBr(posicao.wik.copiado_em)} às ${new Date(posicao.wik.copiado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})` : ''}.
+                Para mover peça, lance no Wik em Produção › Movimentação. O Wik não informa cor e
+                tamanho no movimento, por isso a posição aqui é por etapa e facção.
+              </p>
+              {origens.length === 0 ? (
+                <EstadoVazio
+                  Icone={Layers}
+                  titulo={posicao.wik.movimentos > 0 ? 'Nenhuma peça no meio do caminho' : 'Ainda na fase inicial'}
+                  descricao={posicao.wik.movimentos > 0
+                    ? 'Tudo o que foi movimentado desta OP no Wik já chegou à fase final.'
+                    : 'Esta OP ainda não teve nenhuma movimentação no Wik — no painel de lá ela aparece na FASE INICIAL, antes do corte.'}
+                />
+              ) : (
+                <div className="tabela-rolagem">
+                  <table className="tabela-nota">
+                    <thead>
+                      <tr><th>Etapa</th><th>Com quem</th><th className="num">Peças</th></tr>
+                    </thead>
+                    <tbody>
+                      {origens.map((o) => (
+                        <tr key={o.chave}>
+                          <td>{o.etapa_nome}</td>
+                          <td>{o.fornecedor_nome || 'interna'}</td>
+                          <td className="num">{formatQtd(o.pecas)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!espelhoWik && (<>
           <div className="grid-2">
             {/* ---------------- ORIGEM ---------------- */}
             <div className="card">
@@ -964,6 +1011,7 @@ export default function MovimentacaoProducaoPage() {
                 : 'Digite a quantidade de pelo menos uma linha da grade.'}
             </span>
           </div>
+          </>)}
 
           <div className="card">
             <h2 className="card-titulo"><ClipboardList size={16} /> Extrato desta ordem</h2>

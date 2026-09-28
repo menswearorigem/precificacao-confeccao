@@ -26,6 +26,7 @@ const wikWeb = require('./wikWeb');
 const poolReal = require('../db/pool');
 const { reconciliarCalendario } = require('./producaoCalendario');
 const { obterSessao, renovarSessao } = require('./wikWebSessao');
+const { sincronizarMovimentosWik } = require('./wikMovimentosSync');
 
 const GRADE_TTL_MS = 2 * 60 * 60 * 1000; // regravar grade no máx. a cada 2h
 // OPs por ciclo no backfill de grade. Baixo DE PROPÓSITO: cada OP é 1 GET de
@@ -878,6 +879,29 @@ async function sincronizarProducaoAgora() {
     }
     // Deixa a sessão de volta na matriz pro que vier depois.
     try { await wikWeb.trocarEmpresa(sessao, MATRIZ_EMP_ID); } catch { /* segue */ }
+
+    // MOVIMENTAÇÕES (28/09/2026): onde as peças estão, etapa por etapa, no
+    // livro-razão do Hub. Na MESMA sessão do ciclo (a sessão é uma só). Falha
+    // aqui não derruba o resto do ciclo, mas vai para o erro da tela.
+    try {
+      let mov;
+      try { mov = await sincronizarMovimentosWik(sessao); }
+      catch (e) {
+        if (!(e.sessaoExpirada || e.gridErroHttp >= 500)) throw e;
+        sessao = await renovarSessao(integracao);
+        await wikWeb.trocarEmpresa(sessao, MATRIZ_EMP_ID);
+        mov = await sincronizarMovimentosWik(sessao);
+      }
+      resumo.movimentos = mov;
+      for (const e of mov.erros.slice(0, 3)) resumo.erros.push(`movimentos: ${e}`);
+      if (mov.opsComMovimentoManual.length > 0) {
+        resumo.erros.push(`movimentos: ${mov.opsComMovimentoManual.length} OP(s) do Wik já têm movimento lançado à mão no Hub e não receberam os do Wik (${mov.opsComMovimentoManual.slice(0, 8).join(', ')})`);
+      }
+      await poolReal.query(
+        'UPDATE integracoes_wik SET producao_mov_sincronizado_em = now(), producao_mov_resumo = $2 WHERE id = $1',
+        [integracao.id, JSON.stringify(mov)]
+      );
+    } catch (e) { resumo.erros.push(`movimentos: ${e.message}`); }
 
     // Calendário: toda OP de produto de marketplace que entrou ou mudou neste
     // ciclo vai (ou é atualizada) no calendário. Falha aqui não derruba o sync.

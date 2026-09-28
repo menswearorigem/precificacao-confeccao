@@ -110,7 +110,26 @@ router.get('/ordens/:id/posicao', async (req, res, next) => {
       [req.params.id]
     );
     const total = rows.reduce((s, r) => s + Number(r.quantidade), 0);
-    res.json({ posicao: rows, total_em_producao: total });
+    // OP espelho do Wik: a tela vira só leitura e diz de quando é a cópia.
+    const { rows: op } = await pool.query(
+      `SELECT o.origem, o.sincroniza_wik, o.wik_op,
+              (SELECT i.producao_mov_sincronizado_em FROM integracoes_wik i ORDER BY i.id LIMIT 1) AS copiado_em,
+              (SELECT COUNT(*)::int FROM producao_movimentos m
+                WHERE m.ordem_id = o.id AND m.origem = 'wik') AS movimentos_wik
+         FROM ordens_producao o WHERE o.id = $1`,
+      [req.params.id]
+    );
+    const o = op[0] || {};
+    res.json({
+      posicao: rows,
+      total_em_producao: total,
+      wik: {
+        espelho: o.origem === 'wik' && o.sincroniza_wik === true,
+        wik_op: o.wik_op || null,
+        copiado_em: o.copiado_em || null,
+        movimentos: o.movimentos_wik || 0,
+      },
+    });
   } catch (err) { next(err); }
 });
 
