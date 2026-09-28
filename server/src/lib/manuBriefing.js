@@ -1145,9 +1145,19 @@ async function responderInvestigacao(q, hoje, { plataformaML } = {}) {
   if (q.referencia && !r.produto) return { titulo: 'Referência não encontrada', texto: `Não achei a referência ${q.referencia} no cadastro.`, rota: '/produtos' };
   // Vendedor e viagem ainda não têm investigação: responde com o número.
   if (r.vendedor || r.viagem) return responderVendas({ ...q, intencao: 'vendas' });
-  const A = { inicio: q.periodo.inicio, fim: q.periodo.fim, dias: q.periodo.dias, rotulo: q.periodo.rotulo };
-  const diasB = Math.round((new Date(`${q.periodo.anterior.fim}T12:00:00Z`) - new Date(`${q.periodo.anterior.inicio}T12:00:00Z`)) / 86400000) + 1;
-  const B = { inicio: q.periodo.anterior.inicio, fim: q.periodo.anterior.fim, dias: diasB };
+  const contarDias = (i, f) => Math.round((new Date(`${f}T12:00:00Z`) - new Date(`${i}T12:00:00Z`)) / 86400000) + 1;
+  let A = { inicio: q.periodo.inicio, fim: q.periodo.fim, dias: contarDias(q.periodo.inicio, q.periodo.fim), rotulo: q.periodo.rotulo };
+  let B = { inicio: q.periodo.anterior.inicio, fim: q.periodo.anterior.fim, dias: contarDias(q.periodo.anterior.inicio, q.periodo.anterior.fim) };
+  // Período curto demais ("essa semana" numa segunda = 1 dia contra 1 dia):
+  // compara os últimos 7 dias com os 7 anteriores — mesmos dias da semana
+  // dos dois lados, e amostra que aguenta uma conclusão.
+  let avisoJanela = '';
+  if (A.dias < 3) {
+    const fimA = A.fim;
+    A = { inicio: ma.somarDias(fimA, -6), fim: fimA, dias: 7, rotulo: 'últimos 7 dias' };
+    B = { inicio: ma.somarDias(fimA, -13), fim: ma.somarDias(fimA, -7), dias: 7 };
+    avisoJanela = `_O período pedido tinha só ${ma.plural(contarDias(q.periodo.inicio, q.periodo.fim), 'dia', 'dias')} — pouco para concluir. Comparei os últimos 7 dias (${ma.dataBr(A.inicio)} a ${ma.dataBr(A.fim)}) com os 7 anteriores._\n\n`;
+  }
   const alvo = {
     produtoId: r.produto?.id || null, referencia: r.produto?.referencia || null,
     corRaiz: q.cor?.raiz || null, corPalavra: q.cor?.palavra || null, tamanho: q.tamanho || null,
@@ -1160,7 +1170,7 @@ async function responderInvestigacao(q, hoje, { plataformaML } = {}) {
   else if (q.modo === 'mudancas') { res = inv.mudancas(f); titulo = `O que mudou nos anúncios ${ma.contrair(r.quem)}`; }
   else if (q.modo === 'ads') { res = inv.investigarAds(f, { foco: q.foco }); titulo = q.foco === 'gasto' ? 'Por que o gasto de Ads mudou' : 'Por que o ROAS mudou'; }
   else { res = inv.investigarVenda(f, { direcaoPerguntada: q.direcaoPerguntada }); titulo = `Por que as vendas ${ma.contrair(r.quem)} ${res.direcao === 'subiu' ? 'subiram' : res.direcao === 'caiu' ? 'caíram' : 'mudaram'}`; }
-  let texto = res.texto;
+  let texto = avisoJanela + res.texto;
   // "Caiu?" e o total subiu: investiga só o canal onde caiu (o que a pessoa viu).
   if (res.canalParaInvestigar) {
     const alvo2 = { ...alvo, canalChave: res.canalParaInvestigar, lojasIds: [], quem: `${r.quem} ${ma.noCanal(res.canalParaInvestigar)}` };

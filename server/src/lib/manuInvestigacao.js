@@ -24,6 +24,17 @@ const NOME_CANAL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee', tiktok_sh
 const nomeCanal = (c) => NOME_CANAL[c] || c;
 const FORCA = { forte: 3, media: 2, fraca: 1 };
 const LIMITE_ESTAVEL = 0.10;     // ±10% por dia = "estável"
+// Primeiro dia do diário automático de campanhas: o que "entrou na campanha"
+// nesse dia é o retrato inicial, não mudança.
+const INICIO_DIARIO_ADS = '2026-09-28';
+
+// Junta frases repetidas ("foto em 05/09" três vezes → "foto em 05/09 (3 anúncios)").
+const semRetrato = (h) => !(h.campo === 'Ads · entrou na campanha' && h.dia <= INICIO_DIARIO_ADS);
+function unicos(textos) {
+  const conta = new Map();
+  for (const t of textos) conta.set(t, (conta.get(t) || 0) + 1);
+  return [...conta].map(([t, n]) => (n > 1 ? `${t} (${n} anúncios)` : t));
+}
 const LIMITE_PRECO = 0.03;       // preço médio +3% conta
 const LIMITE_PEDIDO_GRANDE = 0.30; // um pedido > 30% das peças do período
 const MIN_PEDIDOS_ADS = 10;      // menos que isso de venda atribuída = amostra pequena
@@ -289,7 +300,7 @@ function investigarVenda(f, { direcaoPerguntada = null } = {}) {
     const preco = precoA || precoB;
     const deltaPecasAds = preco ? (atA - atB) / preco : null;
     if (caiu && deltaPecasAds != null && deltaPecasAds < -0.05 && gB > 0) {
-      const diario = (f.historico || []).filter((h) => /^Ads/.test(h.campo) && h.dia >= B.inicio);
+      const diario = (f.historico || []).filter((h) => /^Ads/.test(h.campo) && h.dia >= B.inicio && semRetrato(h));
       hips.push(hip('A10', { explica: Math.min(-deltaPecasAds, Math.abs(delta)), forca: 'media', coincide: diario.length > 0, texto: `Ads: venda atribuída ao anúncio caiu de ${ma.brl(atB)} para ${ma.brl(atA)} por dia (gasto ${ma.brl(gB)} → ${ma.brl(gA)} por dia)${diario.length ? `; mudança na campanha: ${diario.slice(0, 3).map((d) => `${d.campo.replace('Ads · ', '')} ${d.antes ?? '—'} → ${d.depois ?? '—'} em ${ma.dataBr(d.dia)}`).join('; ')}` : ''}. Pergunte "por que o ROAS caiu" para abrir o Ads.`, acao: diario.length ? 'Conferir se a mudança na campanha foi intencional.' : null }));
     } else if (!caiu && deltaPecasAds != null && deltaPecasAds > 0.05) {
       hips.push(hip('A10', { explica: Math.min(deltaPecasAds, Math.abs(delta)), forca: 'media', texto: `Ads: venda atribuída subiu de ${ma.brl(atB)} para ${ma.brl(atA)} por dia (gasto ${ma.brl(gB)} → ${ma.brl(gA)} por dia).` }));
@@ -306,16 +317,26 @@ function investigarVenda(f, { direcaoPerguntada = null } = {}) {
   } else if (f.anuncios && f.anuncios.some((a) => a.marketplace === 'mercado_livre')) naoMedido.push('Visitas do Mercado Livre (a leitura na hora falhou).');
   else naoMedido.push('Visitas por dia (só o Mercado Livre entrega).');
 
-  // A5 — anúncio fora do ar
-  const pausas = (f.historico || []).filter((h) => h.campo === 'situação' && h.dia >= A.inicio && h.depois && h.depois !== 'ativo');
-  const sumiram = (f.anuncios || []).filter((a) => a.sumiu_em && a.sumiu_em >= A.inicio);
-  if (caiu && (pausas.length || sumiram.length)) {
-    hips.push(hip('A5', { forca: 'media', coincide: true, texto: `Anúncio fora do ar: ${[...pausas.slice(0, 2).map((p) => `${(f.anuncios || []).find((a) => a.id === p.anuncio_id)?.loja || 'anúncio'} passou para "${p.depois}" em ${ma.dataBr(p.dia)}`), ...sumiram.slice(0, 2).map((a) => `${a.loja} saiu da loja em ${ma.dataBr(a.sumiu_em)}`)].join('; ')}.`, acao: 'Reativar o anúncio ou conferir a moderação.' }));
-  } else if (f.historico) descartei.push('Anúncio pausado ou fora do ar: nenhum no período.');
+  // A5 — anúncio fora do ar · A18 — mudança no anúncio.
+  // Atacado não vende por anúncio: pausa ou foto trocada no marketplace não
+  // explica o atacado — as duas ficam de fora.
+  if (!semAds) {
+    const pausas = (f.historico || []).filter((h) => h.campo === 'situação' && h.dia >= A.inicio && h.depois && h.depois !== 'ativo');
+    const sumiram = (f.anuncios || []).filter((a) => a.sumiu_em && a.sumiu_em >= A.inicio);
+    if (caiu && (pausas.length || sumiram.length)) {
+      const partes = unicos([
+        ...pausas.map((p) => `${(f.anuncios || []).find((a) => a.id === p.anuncio_id)?.loja || 'anúncio'} passou para "${p.depois}" em ${ma.dataBr(p.dia)}`),
+        ...sumiram.map((a) => `${a.loja} saiu da loja em ${ma.dataBr(a.sumiu_em)}`),
+      ]);
+      hips.push(hip('A5', { forca: 'media', coincide: true, texto: `Anúncio fora do ar: ${partes.slice(0, 3).join('; ')}${partes.length > 3 ? ` (e mais ${partes.length - 3})` : ''}.`, acao: 'Reativar o anúncio ou conferir a moderação.' }));
+    } else if (f.historico) descartei.push('Anúncio pausado ou fora do ar: nenhum no período.');
 
-  // A18 — mudança no anúncio
-  const mudancas = (f.historico || []).filter((h) => ['título', 'foto', 'tipo de anúncio'].includes(h.campo) && h.dia >= ma.somarDias(A.inicio, -7));
-  if (caiu && mudancas.length) hips.push(hip('A18', { forca: 'fraca', coincide: true, texto: `Mudança no anúncio: ${mudancas.slice(0, 3).map((m) => `${m.campo} em ${ma.dataBr(m.dia)}`).join('; ')} (pode ter reindexado a busca).` }));
+    const mudancas = (f.historico || []).filter((h) => ['título', 'foto', 'tipo de anúncio'].includes(h.campo) && h.dia >= ma.somarDias(A.inicio, -7));
+    if (caiu && mudancas.length) {
+      const partes = unicos(mudancas.map((m) => `${m.campo} em ${ma.dataBr(m.dia)}`));
+      hips.push(hip('A18', { forca: 'fraca', coincide: true, texto: `Mudança no anúncio: ${partes.slice(0, 3).join('; ')} (pode ter reindexado a busca).` }));
+    }
+  }
 
   // A12 — pós-venda
   if (f.posVenda) {
@@ -435,9 +456,13 @@ function investigarAds(f, { foco = 'roas' } = {}) {
   }
 
   // diário automático: mudanças na campanha (C1, C2, D1, D3, C8, C15)
-  const diario = (f.historico || []).filter((h) => /^Ads/.test(h.campo) && h.dia >= B.inicio);
+  const diario = (f.historico || []).filter((h) => /^Ads/.test(h.campo) && h.dia >= B.inicio && semRetrato(h));
   if (diario.length) {
-    hips.push(hip('C1', { explica: null, forca: 'forte', coincide: true, texto: `Mudanças na campanha: ${diario.slice(0, 4).map((d) => `${d.campo.replace('Ads · ', '')} ${d.antes ?? '—'} → ${d.depois ?? '—'} em ${ma.dataBr(d.dia)}`).join('; ')}.`, acao: 'Conferir se as mudanças na campanha foram intencionais.' }));
+    // "entrou na campanha" vem em lote (um por anúncio): vira uma frase só por campanha e dia.
+    const partes = unicos(diario.map((d) => (d.campo === 'Ads · entrou na campanha'
+      ? `entrada na campanha ${d.depois ?? ''} em ${ma.dataBr(d.dia)}`
+      : `${d.campo.replace('Ads · ', '')} ${d.antes ?? '—'} → ${d.depois ?? '—'} em ${ma.dataBr(d.dia)}`)));
+    hips.push(hip('C1', { explica: null, forca: 'forte', coincide: true, texto: `Mudanças na campanha: ${partes.slice(0, 4).join('; ')}${partes.length > 4 ? ` (e mais ${partes.length - 4})` : ''}.`, acao: 'Conferir se as mudanças na campanha foram intencionais.' }));
   } else if (f.historico) descartei.push('Mudança de orçamento, meta ou situação da campanha: nenhuma registrada no período (o diário automático começou em 28/09/2026).');
 
   // impressões perdidas (ML)
@@ -526,17 +551,17 @@ function raioX(f) {
     const p = f.posVenda.A;
     L.push(`**Pós-venda** — ${ma.plural(p.devolucao, 'devolução', 'devoluções')}, ${ma.plural(p.reclamacao, 'reclamação', 'reclamações')}, ${ma.plural(p.notasBaixas, 'avaliação baixa', 'avaliações baixas')} no período.`);
   }
-  const recentes = (f.historico || []).slice(-5).reverse();
+  const recentes = (f.historico || []).filter(semRetrato).slice(-5).reverse();
   if (recentes.length) L.push(`**Mudanças recentes nos anúncios** — ${recentes.map((h) => `${h.campo} ${h.antes ?? '—'} → ${h.depois ?? '—'} (${ma.dataBr(h.dia)})`).join('; ')}.`);
   return { ok: true, texto: [`**Raio-x ${ma.contrair(alvo.quem)}** (${rotuloPer(A)}, comparado a ${rotuloPer(B)})`, '', ...L.flatMap((l) => [l, ''])].join('\n').trim() };
 }
 
 // "O que mudou no anúncio/Ads da OG1192" — lê direto o diário.
 function mudancas(f) {
-  const h = f.historico || [];
+  const h = (f.historico || []).filter(semRetrato);
   if (!h.length) return { ok: true, texto: `Nenhuma mudança registrada nos anúncios ${ma.contrair(f.alvo.quem)} de ${rotuloPer(f.B)} a ${ma.dataBr(f.A.fim)}. (O diário automático de Ads começou em 28/09/2026; preço, título, foto e situação, em 05/09/2026.)` };
   const lojaDe = (id) => (f.anuncios || []).find((a) => a.id === id)?.loja || 'anúncio';
-  const linhas = [...h].reverse().slice(0, 15).map((x) => `- ${ma.dataBr(x.dia)} · ${lojaDe(x.anuncio_id)} · ${x.campo}: ${x.antes ?? '—'} → ${x.depois ?? '—'}${x.origem === 'hbn_hub' ? ' (feito pelo Hub)' : ''}`);
+  const linhas = [...new Set([...h].reverse().map((x) => `- ${ma.dataBr(x.dia)} · ${lojaDe(x.anuncio_id)} · ${x.campo}: ${x.antes ?? '—'} → ${x.depois ?? '—'}${x.origem === 'hbn_hub' ? ' (feito pelo Hub)' : ''}`))].slice(0, 15);
   return { ok: true, texto: [`**Mudanças nos anúncios ${ma.contrair(f.alvo.quem)}** desde ${ma.dataBr(f.B.inicio)}`, '', ...linhas].join('\n') };
 }
 

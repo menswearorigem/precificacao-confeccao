@@ -167,6 +167,32 @@ async function pedido({ dia, integ = null, canal = null, itens }) {
   const r7 = inv.investigarAds({ ...f6, ads: null });
   ok('sem Ads → diz que não há gasto', r7.ok === false && /Não há gasto de Ads/.test(r7.texto));
 
+  secao('10. Ajustes do teste em produção (28/09/2026)');
+  const hist = [
+    { anuncio_id: 1, campo: 'situação', antes: 'ativo', depois: 'pausado', dia: '2026-09-09' },
+    { anuncio_id: 2, campo: 'situação', antes: 'ativo', depois: 'pausado', dia: '2026-09-09' },
+    { anuncio_id: 1, campo: 'foto', antes: 'a', depois: 'b', dia: '2026-09-05' },
+    { anuncio_id: 2, campo: 'foto', antes: 'a', depois: 'b', dia: '2026-09-05' },
+    { anuncio_id: 3, campo: 'foto', antes: 'a', depois: 'b', dia: '2026-09-05' },
+  ];
+  const anuncios = [1, 2, 3].map((id) => ({ id, loja: 'MELI hoggar', marketplace: 'mercado_livre' }));
+  const fAtac = { ...fatos, alvo: { ...fatos.alvo, canalChave: 'atacado' }, historico: hist, anuncios };
+  const rAtac = inv.investigarVenda(fAtac, { direcaoPerguntada: 'caiu' });
+  ok('atacado: sem "anúncio fora do ar" nem "mudança no anúncio"', !/Anúncio fora do ar|Mudança no anúncio/.test(rAtac.texto), rAtac.texto);
+  const rMk = inv.investigarVenda({ ...fatos, historico: hist, anuncios }, { direcaoPerguntada: 'caiu' });
+  ok('pausa repetida vira uma frase com contagem', /pausado" em 09\/09\/2026 \(2 anúncios\)/.test(rMk.texto) && !/pausado" em 09\/09\/2026; MELI/.test(rMk.texto), rMk.texto);
+  ok('foto repetida vira uma frase com contagem', /foto em 05\/09\/2026 \(3 anúncios\)/.test(rMk.texto), rMk.texto);
+  const fRetrato = { ...f6, historico: [
+    { anuncio_id: 1, campo: 'Ads · entrou na campanha', antes: null, depois: 'Campanha X', dia: '2026-09-28' },
+    { anuncio_id: 2, campo: 'Ads · entrou na campanha', antes: null, depois: 'Campanha X', dia: '2026-09-28' },
+  ] };
+  ok('"entrou na campanha" do primeiro dia do diário não é mudança', !/Mudanças na campanha/.test(inv.investigarAds(fRetrato).texto));
+  const fLote = { ...f6, historico: [
+    { anuncio_id: 1, campo: 'Ads · entrou na campanha', antes: null, depois: 'Campanha X', dia: '2026-10-10' },
+    { anuncio_id: 2, campo: 'Ads · entrou na campanha', antes: null, depois: 'Campanha X', dia: '2026-10-10' },
+  ] };
+  ok('entrada em lote vira uma frase', /entrada na campanha Campanha X em 10\/10\/2026 \(2 anúncios\)/.test(inv.investigarAds(fLote).texto), inv.investigarAds(fLote).texto);
+
   console.log(`\n${falhas === 0 ? 'TUDO OK' : `${falhas} FALHA(S)`}`);
   await pool.end();
   process.exit(falhas === 0 ? 0 : 1);
