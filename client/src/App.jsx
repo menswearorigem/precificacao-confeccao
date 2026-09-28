@@ -85,6 +85,11 @@ const ProjecaoEstoquePage = lazy(() => import('./pages/ProjecaoEstoquePage'));
 const MateriaPrimaPage = lazy(() => import('./pages/MateriaPrimaPage'));
 const PlanejamentoPage = lazy(() => import('./pages/PlanejamentoPage'));
 const CalculadoraTecidoPage = lazy(() => import('./pages/CalculadoraTecidoPage'));
+const CortePage = lazy(() => import('./pages/CortePage'));
+const CorteDetalhePage = lazy(() => import('./pages/CorteDetalhePage'));
+const CobrancaFaccaoPage = lazy(() => import('./pages/CobrancaFaccaoPage'));
+const FichaLotePage = lazy(() => import('./pages/FichaLotePage'));
+const RetornoLotePage = lazy(() => import('./pages/RetornoLotePage'));
 const PisoPrecoPage = lazy(() => import('./pages/PisoPrecoPage'));
 const PosVendaPage = lazy(() => import('./pages/PosVendaPage'));
 const InsumosPage = lazy(() => import('./pages/InsumosPage'));
@@ -211,6 +216,14 @@ function AppRoutes() {
                       para um pedido, em kg ou metro, com vários clientes e a
                       grade. Só lê a ficha — mesmo módulo `producao`. */}
                   <Route path="/producao/calculadora-tecido" element={<CalculadoraTecidoPage />} />
+                  {/* 28/09/2026: ordem de corte com consumo real, cobrança de
+                      facção e o lote com QR (ficha para imprimir + retorno
+                      pelo celular). Tudo sob o módulo `producao`. */}
+                  <Route path="/producao/corte" element={<CortePage />} />
+                  <Route path="/producao/corte/:id" element={<CorteDetalhePage />} />
+                  <Route path="/producao/cobranca" element={<CobrancaFaccaoPage />} />
+                  <Route path="/producao/lote/:id" element={<RetornoLotePage />} />
+                  <Route path="/producao/lote/:id/ficha" element={<FichaLotePage />} />
                   <Route path="/marketplace/piso" element={<PisoPrecoPage />} />
                   <Route path="/marketplace/pos-venda" element={<PosVendaPage />} />
                   <Route path="/estoque/locais" element={<EstoqueLocaisPage />} />

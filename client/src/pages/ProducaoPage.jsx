@@ -5,7 +5,7 @@ import {
   Building2, LayoutGrid, List, CalendarDays, Wallet,
   DownloadCloud,
 } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import {
   EstadoVazio, Select, Skeleton, CampoBusca, IndicadorDestaque,
@@ -512,6 +512,10 @@ function DetalheOrdem({ ordemId, fornecedores, insumos: catalogoInsumos = [], on
 
         <footer className="painel-rodape">
           <button type="button" className="btn-sec" onClick={onFechar}>Fechar</button>
+          {/* 28/09/2026: a folha do cortador sai da própria OP. */}
+          {podeMexer && ordem.tipo !== 'kit' && (
+            <Link className="btn-sec" to={`/producao/corte?op=${ordem.id}`}><Scissors size={15} /> Ordem de corte</Link>
+          )}
           {podeMexer && (
             <button
               type="button" className="btn-sec"

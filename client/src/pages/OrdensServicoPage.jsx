@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ClipboardList, RefreshCw, AlertTriangle, Check, X, Truck,
-  ReceiptText, PackageCheck, Info,
+  ReceiptText, PackageCheck, Info, QrCode, ScanLine,
 } from 'lucide-react';
+import LeitorCamera from '../components/LeitorCamera';
+import { loteDoCodigo } from '../components/QrCodigo';
 import { api } from '../api/client';
 import {
   EstadoVazio, Select, Skeleton, CampoBusca, ChipsFiltros, IndicadorDestaque,
@@ -284,6 +286,10 @@ function DetalheOS({ ordemServicoId, etapas, onFechar, onMudou }) {
             <ClipboardList size={18} /> O.S. {os.numero} · {os.fornecedor_nome}
             <SeloSituacao situacao={os.situacao} />
           </h2>
+          {/* 28/09/2026: a ficha que acompanha o lote, com o QR do retorno. */}
+          <Link className="btn-sec" to={`/producao/lote/${ordemServicoId}/ficha`} title="Ficha para imprimir e mandar junto com o lote">
+            <QrCode size={15} /> Ficha do lote (QR)
+          </Link>
           <button type="button" className="btn-icone" onClick={onFechar} aria-label="Fechar"><X size={18} /></button>
         </header>
 
@@ -545,6 +551,8 @@ export default function OrdensServicoPage() {
   // Caixa de Entrada abria a lista genérica e a pessoa tinha de procurar a O.S.
   // à mão, justamente no momento em que ela já sabia qual era.
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [camera, setCamera] = useState(false);
   useEffect(() => {
     const alvo = params.get('os');
     if (alvo) {
@@ -647,11 +655,24 @@ export default function OrdensServicoPage() {
           </p>
         </div>
         <div className="pagina-acoes">
+          <button type="button" className="btn-sec" onClick={() => setCamera(true)} title="Aponte para o QR da ficha do lote para registrar o retorno">
+            <ScanLine size={15} /> Ler QR do lote
+          </button>
           <button type="button" className="btn-sec" onClick={carregar} disabled={carregando}>
             <RefreshCw size={15} className={carregando ? 'girando' : ''} /> Atualizar
           </button>
         </div>
       </header>
+      <LeitorCamera
+        aberto={camera}
+        onFechar={() => setCamera(false)}
+        titulo="Ler o QR do lote"
+        subtitulo="Aponte para o QR da ficha ou da etiqueta do amarrado."
+        onLer={(codigo) => {
+          const n = loteDoCodigo(codigo);
+          if (n) { setCamera(false); navigate(`/producao/lote/${n}`); }
+        }}
+      />
 
       <div className="indicadores-linha">
         <IndicadorDestaque

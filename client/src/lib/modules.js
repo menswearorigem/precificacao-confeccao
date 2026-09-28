@@ -7,7 +7,7 @@ import {
   LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer,
   Banknote, MapPin, Gauge, PackageCheck, FileSpreadsheet,
   Inbox, Radar, Megaphone, Scissors, PackageOpen, HeartPulse, Calculator,
-  BookUser, Send, Sparkles, MessageSquareWarning } from 'lucide-react';
+  BookUser, Send, Sparkles, MessageSquareWarning, BellRing } from 'lucide-react';
 
 /* ---------------------------------------------------------------------------
  * NAVEGAÇÃO EM TRÊS NÍVEIS (14/09/2026)
@@ -127,8 +127,13 @@ export const MODULES = [
     tambemPor: ['estoque'],
     entradas: [
       { to: '/producao', label: 'Ordens de Produção', icon: Factory },
+      // 28/09/2026: a folha do cortador vem logo depois da OP — é o passo
+      // seguinte dela.
+      { to: '/producao/corte', label: 'Corte', icon: Scissors },
       { to: '/producao/ordens-servico', label: 'Ordens de Serviço', icon: ClipboardList },
       { to: '/producao/movimentacao', label: 'Movimentação', icon: ArrowLeftRight },
+      // 28/09/2026: tudo que passou do prazo, por facção, pronto para cobrar.
+      { to: '/producao/cobranca', label: 'Cobrança', icon: BellRing },
       // 28/09/2026: a planilha "cálculo de tecido por pedido" dentro do Hub.
       // Fica no primeiro nível (e não dentro de Planejamento) porque é a
       // conta que o chão de fábrica faz todo dia, antes de pedir tecido.

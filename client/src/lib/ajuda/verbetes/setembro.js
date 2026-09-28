@@ -536,4 +536,51 @@ export const verbetesSetembro = [
       '**Calculadora de Tecido** (Produção › Calculadora de Tecido) responde "quanto tecido comprar para este pedido".\n\n1. **Referência** — escolha e o Hub traz as cores, os tamanhos e o consumo da ficha. Dá para usar sem referência também.\n2. **Medir o tecido em** — **Quilo** (o consumo é digitado em **gramas**, ex.: 180) ou **Metro** (em metros, ex.: 0,45).\n3. **Consumo por peça** — **Por tamanho** (cada tamanho gasta diferente, com a grade: P 2 · M 2 · G 1 · GG 1) ou **Igual p/ todos**.\n4. **Pedidos** — uma linha por cor, uma coluna por cliente. Dois clientes na mesma cor (150 + 100) a tela soma. **+ cliente** e **+ nova cor** acrescentam.\n\nO quadro **Preciso de** mostra o total, o total por cor, a média por peça e o rendimento (1 kg ≈ X peças). **Peças por tamanho** diz quanto cortar de cada tamanho. **Copiar resumo** copia o texto pronto para o WhatsApp; **Imprimir** tira só o resultado.\n\nNada é gravado ao calcular. **Guardar consumo na ficha** grava o consumo por tamanho no produto, e as próximas ordens de produção passam a usar.',
     relacionados: ['producao-materia-prima-referencia', 'producao-planejamento-sugestoes'],
   },
+
+  // -------------------------------------------------------------------
+  // Corte, Cobrança e Lote com QR — 28/09/2026
+  // -------------------------------------------------------------------
+  {
+    id: 'producao-corte',
+    modulo: 'producao',
+    tela: 'Corte',
+    titulo: 'Ordem de corte: a folha do cortador e o consumo real de tecido',
+    rota: '/producao/corte',
+    perguntas: [
+      'ordem de corte', 'folha do cortador', 'quantas camadas cortar', 'grade do risco',
+      'enfesto', 'quanto tecido separar', 'lancar corte', 'quanto sobrou do tecido',
+      'consumo real de tecido', 'ficha gasta mais tecido', 'corrigir consumo da ficha', 'sobra de tecido',
+    ],
+    resposta:
+      '**Corte** (Produção › Corte) monta a folha do cortador de uma OP e compara o tecido previsto com o gasto de verdade.\n\n1. **Nova ordem de corte** — escolha a OP (ou clique em **Ordem de corte** dentro da própria OP). O Hub sugere a **grade do risco** (ex.: P 2 · M 2 · G 1 · GG 1) e as **camadas** de cada cor, e calcula quanto tecido **separar**, já com a perda da ficha. Dá para mudar a grade e as camadas.\n2. **Imprimir folha** — sai com colunas em branco para o cortador anotar à caneta o que **separou**, o que **sobrou** e as camadas feitas.\n3. **Lançar o corte** — digite o que ele anotou. **Gastou** = separou − sobrou (ou digite o gasto direto).\n\nA coluna **Real × ficha** fica vermelha quando gastou 5% ou mais acima do previsto. Quando a referência gasta sempre mais (ou sempre menos) em 2 ou mais cortes, aparece **Corrigir a ficha**, que ajusta o consumo de todos os tamanhos. A aba **Sobras** lista o que sobrou em cada corte — é só registro, o saldo de tecido não muda.',
+    relacionados: ['producao-calculadora-tecido', 'producao-materia-prima-referencia'],
+  },
+  {
+    id: 'producao-cobranca',
+    modulo: 'producao',
+    tela: 'Cobrança',
+    titulo: 'Cobrança de facção: o que passou do prazo, com mensagem pronta',
+    rota: '/producao/cobranca',
+    perguntas: [
+      'cobrar faccao', 'op atrasada', 'ordens vencidas', 'faccao atrasada', 'mensagem para faccao',
+      'cobrar no whatsapp', 'quem esta atrasado', 'os atrasada',
+    ],
+    resposta:
+      '**Cobrança** (Produção › Cobrança) lista, por facção, toda OP vencida e toda O.S. que passou da previsão de retorno — inclusive as OPs do Wik. Cada facção mostra quantas peças faltam e o maior atraso.\n\n**Cobrar no WhatsApp** abre a conversa com a mensagem pronta (dá para editar em **Mensagem para a facção**); **Copiar mensagem** serve para mandar por outro lugar. Os dois gravam a cobrança, e o cartão passa a dizer **cobrada há X dias**. Os filtros **Mais de 7 dias** e **Mais de 30 dias** mostram só os atrasos maiores. OP **sem facção definida** aparece no fim: defina a facção na OP para poder cobrar.',
+    relacionados: ['producao-corte', 'producao-lote-qr'],
+  },
+  {
+    id: 'producao-lote-qr',
+    modulo: 'producao',
+    tela: 'Ordens de Serviço',
+    titulo: 'Ficha do lote com QR: registrar o retorno da facção pelo celular',
+    rota: '/producao/ordens-servico',
+    perguntas: [
+      'qr code do lote', 'ficha do lote', 'etiqueta do amarrado', 'bipar lote', 'retorno pelo celular',
+      'registrar retorno da faccao', 'segunda qualidade no retorno', 'imprimir ficha para faccao',
+    ],
+    resposta:
+      'Abra a O.S. em **Ordens de Serviço** e clique em **Ficha do lote (QR)**. A ficha sai com a grade que foi para a facção, o prazo, um QR code grande e uma etiqueta com QR para cada cor, para prender no amarrado.\n\nNa volta, aponte a câmera do celular para o QR (ou use **Ler QR do lote** na tela de Ordens de Serviço). Abre a tela de retorno: **Voltou tudo bom** preenche tudo, e os botões **+** e **−** separam **Boas**, **2ª qualidade** e **Perdidas** por cor e tamanho. Confira para qual etapa as boas vão e toque em **Registrar**. O retorno é o mesmo da O.S.: gera o título da facção no financeiro e mede a quebra.',
+    relacionados: ['producao-cobranca'],
+  },
 ];

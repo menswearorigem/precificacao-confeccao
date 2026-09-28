@@ -54,6 +54,8 @@ const posVendaRoutes = require('./routes/posVenda.routes');
 const manuRoutes = require('./routes/manu.routes');
 const inicioRoutes = require('./routes/inicio.routes');
 const producaoMateriaPrimaRoutes = require('./routes/producaoMateriaPrima.routes');
+const producaoCorteRoutes = require('./routes/producaoCorte.routes');
+const producaoCobrancaRoutes = require('./routes/producaoCobranca.routes');
 const faccoesRoutes = require('./routes/faccoes.routes');
 const produtoGradeRoutes = require('./routes/produtoGrade.routes');
 const mixTributarioRoutes = require('./routes/mixTributario.routes');
@@ -272,6 +274,11 @@ function createApp() {
   // (REGRA 4). `/api/insumos` nao serve: aquela vive sob `compras` e daria 403
   // justamente para o time de producao, que e' quem usa esta aba.
   app.use('/api/producao-materia-prima', requireAuth, requireModulo(['producao', 'estoque']), producaoMateriaPrimaRoutes);
+  // Ordem de corte e cobrança de facção (28/09/2026). Mesma chave das demais
+  // abas de Produção — nenhuma permissão nova. As tabelas do corte (0098)
+  // foram autorizadas pela dona (REGRA 4); a cobrança não cria tabela.
+  app.use('/api/producao-corte', requireAuth, requireModulo(['producao', 'estoque']), producaoCorteRoutes);
+  app.use('/api/producao-cobranca', requireAuth, requireModulo(['producao', 'estoque']), producaoCobrancaRoutes);
   // Planejamento que sugere (21/09/2026): previsão com sazonalidade → OP
   // sugerida → compra de tecido sugerida, para a dona só aprovar. Mesma chave
   // das demais abas de Produção: quem aprova a OP é quem já abre OP à mão.
