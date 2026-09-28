@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { LogOut, Menu, X, ChevronsLeft, ChevronsRight, Sun, Moon, Rows3, AlignJustify, HelpCircle, Search } from 'lucide-react';
+import { LogOut, Menu, X, ChevronsLeft, ChevronsRight, Sun, Moon, Rows3, AlignJustify, HelpCircle, Search, House } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getVisibleModules, getEntradasVisiveis, acharEntradaAtiva } from '../lib/modules';
 import { useTema } from '../lib/useTema';
@@ -108,7 +108,10 @@ export default function Shell({ children }) {
   const { tema, setTema } = useTema();
   const densidadeCtx = useDensidade();
   const visibleModules = getVisibleModules(user);
-  const activeModule = findActiveModule(location.pathname, visibleModules);
+  // Início (28/09/2026) não pertence a módulo: sem fileira de abas e sem o
+  // visual "vivo" do módulo — é a página da pessoa, não de um setor.
+  const naInicio = location.pathname === '/inicio';
+  const activeModule = naInicio ? null : findActiveModule(location.pathname, visibleModules);
   // Entradas de menu do módulo aberto (o segundo nível) e qual delas está
   // acesa — é ela que decide se existe um terceiro nível.
   const entradas = activeModule ? getEntradasVisiveis(activeModule, user) : [];
@@ -185,7 +188,7 @@ export default function Shell({ children }) {
           >
             {menuAberto ? <X size={20} /> : <Menu size={20} />}
           </button>
-          <div className="brand-mark"><img src={logoHbnHub} alt="" /></div>
+          <Link to="/inicio" className="brand-mark" title="Início" aria-label="Início"><img src={logoHbnHub} alt="" /></Link>
           <div className="brand-textos">
             {activeModule && <div className="brand-modulo">{location.pathname.startsWith('/ajuda') ? 'Ajuda' : activeModule.label}</div>}
             <div className="brand-name">HBN Hub</div>
@@ -240,6 +243,18 @@ export default function Shell({ children }) {
       <div className="shell-body">
         {menuAberto && <div className="mobile-sidebar-backdrop" onClick={() => setMenuAberto(false)} />}
         <nav className={'shell-sidebar' + (menuAberto ? ' mobile-open' : '')}>
+          {visibleModules.length > 0 && (
+            <Link
+              to="/inicio"
+              className={'sidebar-module sidebar-inicio' + (naInicio ? ' active' : '')}
+              style={{ '--module-color': 'var(--brass)' }}
+              title={sidebarColapsado ? 'Início' : undefined}
+              onClick={() => setMenuAberto(false)}
+            >
+              <span className="module-badge"><House size={16} /></span>
+              <span className="module-label">Início</span>
+            </Link>
+          )}
           {visibleModules.map((mod) => {
             const Icon = mod.icon;
             const isActive = activeModule && mod.key === activeModule.key;
@@ -288,7 +303,9 @@ export default function Shell({ children }) {
             '--modulo-nome': JSON.stringify(location.pathname.startsWith('/ajuda') ? 'Ajuda · Manu' : activeModule.label),
           } : undefined}
         >
-          {activeModule ? (
+          {naInicio ? (
+            <main className="shell-main" ref={refMain}>{children}</main>
+          ) : activeModule ? (
             <>
               {/* Segundo nível: as ENTRADAS do módulo (14/09/2026).
                   Era a lista lisa de todas as páginas — 11 no Estoque, 12 no

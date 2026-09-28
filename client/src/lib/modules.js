@@ -495,8 +495,11 @@ export function getVisibleModules(user) {
 // Primeira página que o usuário realmente pode acessar — usado pra saber
 // pra onde mandar ele logo após o login, em vez de assumir "/produtos".
 export function getDefaultPath(user) {
+  // 28/09/2026: todo mundo entra pelo Início (o dia da pessoa, por setor).
+  // Quem ainda não tem módulo nenhum continua caindo onde caía.
   const visible = getVisibleModules(user);
-  return visible[0]?.pages[0]?.to || null;
+  if (visible.length) return '/inicio';
+  return null;
 }
 
 // Confere se o usuário pode acessar esse caminho, pra bloquear navegação
@@ -512,6 +515,9 @@ export function getDefaultPath(user) {
 // módulo, do mesmo jeito que /login já fica fora de toda essa guarda.
 export function canAccessPath(user, pathname) {
   if (pathname === '/ajuda') return true;
+  // Início (28/09/2026): também não é de módulo nenhum — o servidor decide o
+  // que cada um vê lá dentro (inicio.routes.js), frente por frente.
+  if (pathname === '/inicio') return true;
   if (user?.role === 'admin') return true;
   const visible = getVisibleModules(user);
   return visible.some((mod) => mod.pages.some((p) => pathname === p.to || pathname.startsWith(`${p.to}/`)));

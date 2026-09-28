@@ -113,6 +113,7 @@ const CoberturaFinanceiraPage = lazy(() => import('./pages/CoberturaFinanceiraPa
 const ViagensListPage = lazy(() => import('./pages/ViagensListPage'));
 const ViagemDetailPage = lazy(() => import('./pages/ViagemDetailPage'));
 const AjudaPage = lazy(() => import('./pages/AjudaPage'));
+const InicioPage = lazy(() => import('./pages/InicioPage'));
 
 import EsqueciSenhaPage from './pages/EsqueciSenhaPage';
 import RedefinirSenhaPage from './pages/RedefinirSenhaPage';
@@ -324,6 +325,8 @@ function AppRoutes() {
                       propósito — liberada pra qualquer usuário autenticado (ver
                       a exceção em lib/modules.js#canAccessPath). */}
                   <Route path="/ajuda" element={<AjudaPage />} />
+                  {/* Início (28/09/2026): o dia de quem está logado, por setor. */}
+                  <Route path="/inicio" element={<InicioPage />} />
                   <Route path="*" element={<Navigate to={getDefaultPath(user) || '/produtos'} replace />} />
                 </Routes>
                 </Suspense>

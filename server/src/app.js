@@ -52,6 +52,7 @@ const planejamentoRoutes = require('./routes/planejamento.routes');
 const precoRegraRoutes = require('./routes/precoRegra.routes');
 const posVendaRoutes = require('./routes/posVenda.routes');
 const manuRoutes = require('./routes/manu.routes');
+const inicioRoutes = require('./routes/inicio.routes');
 const producaoMateriaPrimaRoutes = require('./routes/producaoMateriaPrima.routes');
 const faccoesRoutes = require('./routes/faccoes.routes');
 const produtoGradeRoutes = require('./routes/produtoGrade.routes');
@@ -289,6 +290,9 @@ function createApp() {
   // Manu analista (21/09/2026): só login — a permissão é por seção, dentro
   // da rota, porque o resumo do dia cruza módulos (ver manu.routes.js).
   app.use('/api/manu', requireAuth, manuRoutes);
+  // Início (28/09/2026): o dia de cada pessoa, por setor. Só requireAuth —
+  // cada frente confere o módulo por dentro (ver inicio.routes.js).
+  app.use('/api/inicio', requireAuth, inicioRoutes);
   // Cadastro de FACÇÃO e das categorias dela (09/09/2026). Mesma chave da
   // Produção: quem movimenta peça para a facção é quem sabe quem ela é, e a
   // dono pediu explicitamente para poder criar a facção NA HORA de gerar a
