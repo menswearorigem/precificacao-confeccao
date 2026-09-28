@@ -39,6 +39,10 @@ export const verbetesVendas = [
     titulo: 'Criar um pedido e vincular o cliente',
     rota: '/pedidos',
     perguntas: [
+      'como registrar uma venda',
+      'registrar venda',
+      'lancar venda',
+      'nova venda',
       'como crio um pedido novo',
       'novo pedido de venda',
       'vincular cliente no pedido',
@@ -244,6 +248,10 @@ export const verbetesVendas = [
     titulo: 'Definir a comissão de cada vendedor',
     rota: '/configuracoes/vendedores',
     perguntas: [
+      'como cadastrar vendedor',
+      'cadastrar vendedor novo',
+      'comissao do vendedor',
+      'definir comissao',
       'como defino a comissao do vendedor',
       'comissao por vendedor',
       'comissao sobre o lucro ou sobre a venda',
@@ -283,6 +291,10 @@ export const verbetesVendas = [
     titulo: 'Bipar a peça com a câmera do celular',
     rota: '/pedidos',
     perguntas: [
+      'como bipar peca com celular',
+      'bipar com a camera do celular',
+      'ler codigo de barras pelo celular',
+      'usar o celular como leitor',
       'bipar com a camera do celular',
       'ler codigo de barras pela camera',
       'vender pelo celular',

@@ -197,7 +197,7 @@ function RespostaAnalise({ resposta, carregando, onNavegar }) {
   const r = resposta.resposta;
   return (
     <div className="manu-analise">
-      <div className="manu-grupo-titulo"><Sparkles size={12} /> Resposta da Manu{carregando ? ' · atualizando…' : ''}</div>
+      <div className="manu-grupo-titulo"><Sparkles size={12} /> {r.naoSei ? 'Isso eu ainda não sei' : 'Resposta da Manu'}{carregando ? ' · atualizando…' : ''}</div>
       <div className="manu-resposta">
         {r.titulo && <p className="manu-resposta-subtitulo">{r.titulo}</p>}
         <div className="manu-resposta-texto">{renderizarResposta(r.texto || '')}</div>
@@ -211,7 +211,7 @@ function RespostaAnalise({ resposta, carregando, onNavegar }) {
             </button>
           </div>
         )}
-        {!r.semAcesso && !r.erro && (
+        {!r.semAcesso && !r.erro && !r.naoSei && (
           <p className="manu-analise-nota">Conta feita por regra fixa em cima dos motores do sistema. A tela é a fonte — confira lá.</p>
         )}
       </div>
@@ -286,11 +286,13 @@ export default function ManuPainel({ variante = 'flutuante', onFechar }) {
       .catch((e) => { if (perguntaEmVoo.current === t) setAnalise({ entendi: true, resposta: { titulo: 'Não consegui responder', texto: String(e.message || e), erro: true } }); })
       .finally(() => { if (perguntaEmVoo.current === t) setAnaliseCarregando(false); });
   }
-  // Pergunta enquanto a pessoa digita, com pausa de 700 ms — o servidor
-  // faz conta de verdade (lucratividade, cobertura…), não é busca em lista.
+  // Pergunta enquanto a pessoa digita, com pausa de 1,2 s (era 0,7 s) — o
+  // servidor faz conta de verdade (lucratividade, cobertura…), e 0,7 s
+  // disparava 2–3 contas pesadas para quem digita devagar. Com "?" no fim
+  // a pergunta está pronta: vai em 300 ms. Enter manda na hora.
   useEffect(() => {
     if (!ehAnalise) { setAnalise(null); perguntaEmVoo.current = ''; return undefined; }
-    const t = setTimeout(() => perguntar(termoLimpo), 700);
+    const t = setTimeout(() => perguntar(termoLimpo), /[?]$/.test(termoLimpo) ? 300 : 1200);
     return () => clearTimeout(t);
   }, [termoLimpo, ehAnalise]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -470,7 +472,7 @@ export default function ManuPainel({ variante = 'flutuante', onFechar }) {
               <EstadoVazio
                 Icone={MessageCircleQuestion}
                 descricao={analise && analise.entendi === false
-                  ? 'Não entendi a pergunta. Eu respondo sobre vendas, margem, devoluções, atrasos, piso, estoque e produção — por exemplo: "quanto vendi ontem?", "por que a margem da OG1620 caiu esse mês?".'
+                  ? 'Não entendi a pergunta. Eu respondo sobre vendas (por canal, loja, vendedor, viagem, kit), margem, ADS, preço e custo, devoluções, piso, anúncios, estoque (até por cor e tamanho), produção e facções, planejamento, tecido, contas a pagar e a receber, envios, conexões e atrasos — por exemplo: "quanto vendi ontem?", "tem OG1620 preta no M?", "quanto tenho a pagar essa semana?".'
                   : 'Não achei nada sobre isso. Tenta com outras palavras, ou fala com um administrador.'}
               />
             ))

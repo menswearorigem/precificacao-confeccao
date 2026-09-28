@@ -80,6 +80,9 @@ export const verbetesGeral = [
     titulo: 'Trocar a própria senha',
     rota: '/esqueci-senha',
     perguntas: [
+      'como muda a senha',
+      'mudar minha senha',
+      'trocar senha',
       'como troco minha senha',
       'trocar minha senha',
       'mudar senha',

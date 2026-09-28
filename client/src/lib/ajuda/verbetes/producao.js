@@ -711,6 +711,9 @@ export const verbetesProducao = [
     titulo: 'Exportar a Projeção de Estoque em PDF ou Excel',
     rota: '/producao/projecao',
     perguntas: [
+      'como gerar relatorio em pdf',
+      'relatorio em pdf',
+      'gerar pdf',
       'exportar projecao de estoque em pdf',
       'projecao em excel',
       'pdf da projecao com capa',

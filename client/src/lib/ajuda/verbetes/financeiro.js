@@ -150,6 +150,10 @@ export const verbetesFinanceiro = [
     titulo: 'Como lançar um novo título a pagar',
     rota: '/financeiro/pagar',
     perguntas: [
+      'como lancar conta a pagar',
+      'lancar conta a pagar',
+      'nova conta a pagar',
+      'cadastrar boleto',
       'como criar um titulo a pagar',
       'lancar uma conta a pagar nova',
       'novo titulo a pagar',
@@ -345,6 +349,10 @@ export const verbetesFinanceiro = [
     titulo: 'Para que serve a Conciliação Bancária e os três destinos de cada lançamento',
     rota: '/financeiro/conciliacao-bancaria',
     perguntas: [
+      'como fazer conciliacao bancaria',
+      'fazer conciliacao',
+      'conciliar extrato do banco',
+      'conciliacao do banco',
       'o que e conciliacao bancaria',
       'conciliar o extrato do banco',
       'casar o extrato com os titulos',

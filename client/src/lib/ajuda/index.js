@@ -21,6 +21,9 @@ import { verbetesCompras } from './verbetes/compras';
 import { verbetesAnalises } from './verbetes/analises';
 import { verbetesConfiguracoes } from './verbetes/configuracoes';
 import { verbetesCalendario } from './verbetes/calendario';
+// Telas novas de setembro (piso, planejamento, pós-venda, matéria-prima,
+// Full, contas bancárias) e "como faço" que faltavam — teste prático de 28/09/2026.
+import { verbetesSetembro } from './verbetes/setembro';
 
 const TODOS_OS_VERBETES = [
   ...verbetesGeral,
@@ -35,6 +38,7 @@ const TODOS_OS_VERBETES = [
   ...verbetesAnalises,
   ...verbetesConfiguracoes,
   ...verbetesCalendario,
+  ...verbetesSetembro,
 ];
 
 // "tambemPor" (lib/modules.js): o módulo Produção é visto tanto por quem

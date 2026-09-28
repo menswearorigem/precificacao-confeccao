@@ -9,34 +9,54 @@
 
 import { api } from '../../api/client';
 
-// Mesmas famílias de palavra do servidor (manuAnalista.INTENCOES), em
-// versão curta: aqui só se decide "vale perguntar?", quem entende é o
-// servidor. Uma referência no texto (OG1620, TST-POLO) também vale.
-const SINAIS_ANALISE = /(quanto|por que|porque|qual|quais|o que (esta|ta|tem|exige|precisa|vai)|vendi|vendeu|vendas|faturamento|margem|lucro|prejuizo|devolu|reclama|atrasad|atraso|vencid|vencendo|piso|zerar|zerando|cobertura|estoque|producao|\bop\b|ordens?|resumo do dia|resumo de hoje|prioridades|briefing|bom dia|ranking|mais vendid)/;
+// 28/09/2026 — o painel pergunta ao servidor SEMPRE (frase de 2+ palavras
+// ou com referência). Antes havia aqui uma lista de palavras mais estreita
+// que a do servidor: no teste em produção 13 perguntas que a Manu sabia
+// responder ("quantas OPs abertas", "o que vence hoje", "o que tenho pra
+// hoje") nunca chegavam a ela, e a pessoa via verbetes sem relação. Quem
+// decide se entendeu é o servidor; "como faço…" volta `entendi:false` e o
+// painel mostra só os verbetes.
 const RE_REFERENCIA = /\b[A-Za-z]{2,6}[\s-]?\d{3,5}\b|\b[A-Za-z]{2,6}-[A-Za-z0-9]{2,10}\b/;
 
 function semAcento(t) {
   return String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
+// "Como faço…/onde fica…/o que é…" é pergunta de verbete — nem pergunta ao
+// servidor (o servidor também recusaria). "Como está / como foram" é análise.
+const RE_AJUDA = /^(me ensina|como (?!(esta|ta|estao|foi|foram|vai|vao|anda|andam)\b)|onde |o que (e|sao|significa)\b|pra que serve|para que serve|esqueci|qual a diferenca)/;
+
 export function pareceAnalise(termo) {
   const t = semAcento(termo).trim();
-  if (t.length < 4) return false;
-  return SINAIS_ANALISE.test(t) || RE_REFERENCIA.test(termo);
+  if (RE_AJUDA.test(t)) return false;
+  if (t.length < 5) return RE_REFERENCIA.test(termo || '');
+  return t.split(/\s+/).filter(Boolean).length >= 2 || RE_REFERENCIA.test(termo);
 }
 
 export const EXEMPLOS_DE_PERGUNTA = [
   'Quanto vendi ontem?',
   'Por que a margem da OG1620 caiu esse mês?',
-  'Qual referência mais devolve?',
   'O que está atrasado?',
+  'Quanto tenho a pagar essa semana?',
+  'Tem OG1620 preta no M?',
+  'Qual facção está atrasada?',
   'Quais anúncios estão abaixo do piso?',
-  'O que vai zerar no estoque?',
+  'Estoque parado',
   'Resumo do dia',
 ];
 
+// A mesma pergunta em 3 min volta do cache do navegador — o servidor faz
+// conta de verdade (lucratividade de milhares de pedidos).
+const CACHE_PERGUNTAS = new Map();
 export function perguntarManu(pergunta) {
-  return api.post('/manu/perguntar', { pergunta });
+  const chave = semAcento(pergunta).replace(/[?!.]+$/, '').trim();
+  const c = CACHE_PERGUNTAS.get(chave);
+  if (c && Date.now() - c.quando < 3 * 60 * 1000) return c.promessa;
+  const promessa = api.post('/manu/perguntar', { pergunta });
+  CACHE_PERGUNTAS.set(chave, { quando: Date.now(), promessa });
+  promessa.catch(() => CACHE_PERGUNTAS.delete(chave));
+  if (CACHE_PERGUNTAS.size > 50) CACHE_PERGUNTAS.delete(CACHE_PERGUNTAS.keys().next().value);
+  return promessa;
 }
 
 // Cache curto do resumo do dia, partilhado entre o painel, o sino e o

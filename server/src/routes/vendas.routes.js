@@ -984,3 +984,5 @@ router.get('/lucratividade', async (req, res, next) => {
 });
 
 module.exports = router;
+// Exposta para a Manu somar a comissão do vendedor com a MESMA regra da tela (28/09/2026).
+module.exports.comissaoDoPedido = comissaoDoPedido;

@@ -739,6 +739,10 @@ export const verbetesEstoque = [
     titulo: 'Por que o valor parado é ao custo e o que significa o valor ser um "piso"',
     rota: '/estoque/parado',
     perguntas: [
+      'estoque parado',
+      'produto que nao vende',
+      'dinheiro parado no estoque',
+      'mercadoria encalhada',
       'por que o valor parado e ao custo',
       'valor parado nao e ao preco de venda',
       'o que e piso no dinheiro parado',

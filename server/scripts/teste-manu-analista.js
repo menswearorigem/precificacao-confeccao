@@ -212,7 +212,7 @@ if (!process.env.DATABASE_URL) {
     igual(sec('producao').nivel, 'urgente', 'produção urgente (OP atrasada)');
     ok(sec('producao').itens.some((i) => i.rota === `/producao?ordem=${s.op.id}` && /3 dias de atraso/.test(i.texto)), 'item da OP com dias de atraso e link', JSON.stringify(sec('producao').itens));
     igual(sec('financeiro').nivel, 'urgente', 'financeiro urgente (conta vencida)');
-    ok(/1 conta vencida a pagar \(R\$\s?350,00\)/.test(sec('financeiro').resumo), 'resumo financeiro com o valor', sec('financeiro').resumo);
+    ok(/1 conta vencida a pagar nos últimos 60 dias \(R\$\s?350,00\)/.test(sec('financeiro').resumo), 'resumo financeiro com o valor', sec('financeiro').resumo);
     ok(/R\$\s?500,00 a receber em 7 dias/.test(sec('financeiro').resumo), 'a receber em 7 dias entra');
     ok(sec('vendas').numeros.receita >= 180, 'vendas de ontem inclui o pedido de ontem', JSON.stringify(sec('vendas').numeros));
     ok(sec('vendas').numeros.margem != null && sec('vendas').numeros.margem < 0.6, 'margem de ontem calculada', String(sec('vendas').numeros.margem));

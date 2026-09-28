@@ -195,6 +195,11 @@ export const verbetesCompras = [
     titulo: 'Importar o XML da nota fiscal e dar entrada nos insumos',
     rota: '/compras/insumos',
     perguntas: [
+      'como lanco uma nota fiscal',
+      'lancar nota fiscal de compra',
+      'dar entrada na nota',
+      'nota fiscal xml',
+      'entrada de nota de tecido',
       'importar nota fiscal de compra',
       'importar xml da nota',
       'entrada de mercadoria por nota fiscal',
