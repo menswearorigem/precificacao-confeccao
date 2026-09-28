@@ -508,4 +508,32 @@ export const verbetesSetembro = [
       'Digite no campo "Pergunta pra Manu do jeito que quiser…" (na Ajuda ou no botão da Manu). Ela responde por regras fixas, com os números do próprio sistema, sem inventar.\n\nSabe: vendas (ontem, hoje, semana, mês; por canal, loja, vendedor, viagem, kit, referência, cor, tamanho), margem e por que caiu (inclusive mix entre canais), ADS/TACOS, preço, custo e piso, anúncios ativos e mais vendidos, devoluções, reclamações, perguntas e nota, estoque (o que vai zerar, parado, total, por cor e tamanho), produção (OP pelo número, por facção, o que chega na semana, atrasadas), planejamento, saldo de tecido e insumo, contas a pagar e receber, fluxo de caixa, vencidos, envios e coletas, conexões, atrasos e resumo do dia.\n\nAinda não sabe, e avisa com link: previsão de venda, saldo de banco, repasse do marketplace, venda por cliente, cidade ou horário, conferência.\n\nToda resposta tem botão para a tela de origem; "como faço…" vai para os verbetes. Exemplos:\n- Quanto vendi ontem?\n- Por que a margem da OG1620 caiu esse mês?\n- Tem OG1620 preta no M?\n- Qual facção está atrasada?',
     relacionados: ['geral-busca-cmdk', 'producao-planejamento-sugestoes', 'mkt-piso-auditoria-situacoes'],
   },
+
+  // -------------------------------------------------------------------
+  // Calculadora de Tecido — /producao/calculadora-tecido (28/09/2026)
+  // -------------------------------------------------------------------
+  {
+    id: 'producao-calculadora-tecido',
+    modulo: 'producao',
+    tela: 'Calculadora de Tecido',
+    titulo: 'Calculadora de Tecido: quantos quilos ou metros comprar para um pedido',
+    rota: '/producao/calculadora-tecido',
+    perguntas: [
+      'quantos quilos preciso',
+      'quantos kg de tecido para fabricar',
+      'quantos metros de tecido preciso',
+      'calcular tecido do pedido',
+      'calculadora de tecido',
+      'consumo em gramas por peca',
+      'dois clientes pediram a mesma cor',
+      'somar pedidos de clientes',
+      'grade p2 m2 g1 gg1',
+      'quantas pecas de cada tamanho cortar',
+      'rendimento do tecido',
+      'kg ou metro',
+    ],
+    resposta:
+      '**Calculadora de Tecido** (Produção › Calculadora de Tecido) responde "quanto tecido comprar para este pedido".\n\n1. **Referência** — escolha e o Hub traz as cores, os tamanhos e o consumo da ficha. Dá para usar sem referência também.\n2. **Medir o tecido em** — **Quilo** (o consumo é digitado em **gramas**, ex.: 180) ou **Metro** (em metros, ex.: 0,45).\n3. **Consumo por peça** — **Por tamanho** (cada tamanho gasta diferente, com a grade: P 2 · M 2 · G 1 · GG 1) ou **Igual p/ todos**.\n4. **Pedidos** — uma linha por cor, uma coluna por cliente. Dois clientes na mesma cor (150 + 100) a tela soma. **+ cliente** e **+ nova cor** acrescentam.\n\nO quadro **Preciso de** mostra o total, o total por cor, a média por peça e o rendimento (1 kg ≈ X peças). **Peças por tamanho** diz quanto cortar de cada tamanho. **Copiar resumo** copia o texto pronto para o WhatsApp; **Imprimir** tira só o resultado.\n\nNada é gravado ao calcular. **Guardar consumo na ficha** grava o consumo por tamanho no produto, e as próximas ordens de produção passam a usar.',
+    relacionados: ['producao-materia-prima-referencia', 'producao-planejamento-sugestoes'],
+  },
 ];

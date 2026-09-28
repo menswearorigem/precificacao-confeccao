@@ -129,6 +129,10 @@ export const MODULES = [
       { to: '/producao', label: 'Ordens de Produção', icon: Factory },
       { to: '/producao/ordens-servico', label: 'Ordens de Serviço', icon: ClipboardList },
       { to: '/producao/movimentacao', label: 'Movimentação', icon: ArrowLeftRight },
+      // 28/09/2026: a planilha "cálculo de tecido por pedido" dentro do Hub.
+      // Fica no primeiro nível (e não dentro de Planejamento) porque é a
+      // conta que o chão de fábrica faz todo dia, antes de pedir tecido.
+      { to: '/producao/calculadora-tecido', label: 'Calculadora de Tecido', icon: Calculator },
       // As três respondem "vou conseguir entregar?": em peça pronta, em
       // tecido e em minuto de facção. Mesmo horizonte, mesmo filtro de
       // período, mesma conta de suficiência.

@@ -1,0 +1,138 @@
+/* Produção › Calculadora de Tecido (28/09/2026). Só tokens do tema. */
+
+.ct-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  gap: 16px;
+  align-items: start;
+  margin-top: 12px;
+}
+.ct-entradas { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.ct-resultado { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 12px; }
+
+.ct-passo .card-titulo { display: flex; align-items: center; gap: 9px; }
+.ct-num {
+  display: inline-grid; place-items: center;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--terracotta); color: var(--on-accent);
+  font-size: 12.5px; font-weight: 700;
+}
+.ct-linha {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  align-items: flex-start;
+}
+.ct-linha > * { flex: 0 1 auto; min-width: 0; }
+.ct-linha > *:first-child { flex: 1 1 240px; max-width: 420px; }
+.ct-linha .numwrap { max-width: 120px; }
+.ct-linha-extra { margin-top: 10px; }
+.ct-seg { display: inline-flex; }
+.ct-seg button { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.ct-aviso { margin-top: 8px; }
+
+/* Grade */
+.ct-grade { border-collapse: separate; border-spacing: 6px 6px; margin-left: -6px; }
+.ct-grade th { font-weight: 600; }
+.ct-grade td, .ct-grade th { vertical-align: middle; }
+.ct-grade .numwrap input, .ct-pedidos .numwrap input { width: 78px; text-align: center; }
+.ct-rot { font-weight: 600; font-size: 13.5px; white-space: nowrap; padding-right: 8px; }
+.ct-rot small, .ct-soma small { display: block; font-weight: 400; color: var(--ink-faint); font-size: 11px; }
+.ct-soma { font-weight: 700; padding-left: 6px; white-space: nowrap; }
+.ct-th-tam, .ct-th-cli { display: flex; align-items: center; gap: 2px; justify-content: center; }
+.ct-input-tam, .ct-input-cli, .ct-input-cor, .ct-add-cor input {
+  border: 1px solid transparent; background: transparent; color: var(--ink);
+  font: inherit; font-weight: 700; border-radius: var(--radius-sm); padding: 4px 6px;
+}
+.ct-input-tam { width: 56px; text-align: center; font-size: 14px; }
+.ct-input-cli { width: 92px; text-align: center; font-size: 12.5px; }
+.ct-input-cor { flex: 1; min-width: 90px; font-size: 14px; }
+.ct-input-tam:hover, .ct-input-cli:hover, .ct-input-cor:hover { border-color: var(--border); }
+.ct-input-tam:focus, .ct-input-cli:focus, .ct-input-cor:focus, .ct-add-cor input:focus {
+  outline: none; border-color: var(--terracotta); background: var(--field-bg);
+}
+.ct-x {
+  display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
+  border: 0; background: transparent; color: var(--ink-faint); cursor: pointer; opacity: .55;
+}
+.ct-x:hover { background: var(--danger-bg); color: var(--danger); opacity: 1; }
+input.ct-falta { box-shadow: 0 0 0 1.5px var(--warning-ring); background: var(--warning-bg); }
+
+.ct-grade-rodape {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 6px; font-size: 13px;
+}
+.ct-atalhos { display: flex; gap: 6px; flex-wrap: wrap; }
+.ct-dica { margin-top: 8px; }
+
+/* Pedidos */
+.ct-pedidos { border-collapse: collapse; width: 100%; }
+.ct-pedidos th, .ct-pedidos td { padding: 5px 6px; border-bottom: 1px solid var(--border-soft); }
+.ct-pedidos thead th { font-size: 12px; color: var(--ink-soft); text-align: center; }
+.ct-pedidos .num { text-align: right; white-space: nowrap; }
+.ct-pedidos tfoot td { border-bottom: 0; border-top: 2px solid var(--border); font-weight: 600; }
+.ct-col-cor { text-align: left !important; min-width: 180px; }
+.ct-cor { display: flex; align-items: center; gap: 2px; }
+.ct-cor .pe-swatch { margin-right: 4px; flex: none; }
+.ct-add-cor { display: flex; gap: 4px; align-items: center; }
+.ct-add-cor input { font-weight: 500; border-color: var(--border); border-style: dashed; width: 140px; }
+
+/* Resultado */
+.ct-total {
+  display: flex; flex-direction: column; gap: 4px;
+  border-top: 4px solid var(--terracotta);
+}
+.ct-total-rot { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-faint); font-weight: 700; }
+.ct-total-num {
+  font-family: var(--font-display); font-size: 44px; line-height: 1.05; font-weight: 700; color: var(--terracotta);
+  font-variant-numeric: tabular-nums;
+}
+.ct-total-num small { font-size: 20px; color: var(--ink-soft); }
+.ct-total-sub { color: var(--ink-soft); font-size: 13.5px; }
+.ct-rendimento {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px;
+}
+.ct-rendimento span {
+  display: flex; flex-direction: column; background: var(--surface-alt);
+  border-radius: var(--radius-sm); padding: 8px 10px;
+}
+.ct-rendimento small { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-faint); }
+.ct-rendimento b { font-size: 14px; }
+.ct-pendencias {
+  margin-top: 10px; background: var(--warning-bg); border: 1px solid var(--warning-ring);
+  border-radius: var(--radius-sm); padding: 8px 10px;
+}
+.ct-pendencias p { margin: 0; font-size: 12.5px; color: var(--ink); display: flex; gap: 6px; align-items: flex-start; }
+.ct-pendencias p + p { margin-top: 5px; }
+.ct-pendencias svg { color: var(--warning); flex: none; margin-top: 2px; }
+.ct-vazio { margin: 12px 0 0; font-size: 13px; }
+
+.ct-por-cor { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.ct-por-cor-topo { display: flex; justify-content: space-between; gap: 8px; font-size: 13.5px; }
+.ct-por-cor-topo b { font-variant-numeric: tabular-nums; }
+.ct-barra { height: 6px; background: var(--border-soft); border-radius: 99px; overflow: hidden; margin: 4px 0 2px; }
+.ct-barra span { display: block; height: 100%; background: var(--terracotta); border-radius: 99px; transition: width .35s var(--ease); }
+
+.ct-corte .card-titulo small { font-weight: 400; margin-left: 4px; }
+.ct-corte-tab td .pe-swatch { margin-right: 6px; }
+
+.ct-como { font-size: 12.5px; color: var(--ink-soft); padding: 0 4px; }
+.ct-como summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+.ct-como p { margin: 8px 0 0; line-height: 1.5; }
+
+.ct-print-topo { font-size: 14px; margin-bottom: 8px; }
+
+@media (max-width: 1180px) {
+  .ct-layout { grid-template-columns: 1fr; }
+  .ct-resultado { position: static; order: -1; }
+}
+@media (max-width: 640px) {
+  .ct-total-num { font-size: 36px; }
+}
+
+@media print {
+  .ct-layout { display: block; }
+  .ct-resultado { position: static; }
+  .ct-total-num { font-size: 32px; }
+  .ct-resultado .card { margin-bottom: 12px; break-inside: avoid; }
+}

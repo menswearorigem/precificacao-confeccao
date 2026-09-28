@@ -84,6 +84,7 @@ const CargaProducaoPage = lazy(() => import('./pages/CargaProducaoPage'));
 const ProjecaoEstoquePage = lazy(() => import('./pages/ProjecaoEstoquePage'));
 const MateriaPrimaPage = lazy(() => import('./pages/MateriaPrimaPage'));
 const PlanejamentoPage = lazy(() => import('./pages/PlanejamentoPage'));
+const CalculadoraTecidoPage = lazy(() => import('./pages/CalculadoraTecidoPage'));
 const PisoPrecoPage = lazy(() => import('./pages/PisoPrecoPage'));
 const PosVendaPage = lazy(() => import('./pages/PosVendaPage'));
 const InsumosPage = lazy(() => import('./pages/InsumosPage'));
@@ -206,6 +207,10 @@ function AppRoutes() {
                       responde a pergunta seguinte: da' para produzir isso? */}
                   <Route path="/producao/materia-prima" element={<MateriaPrimaPage />} />
                   <Route path="/producao/planejamento" element={<PlanejamentoPage />} />
+                  {/* Calculadora de tecido (28/09/2026): quanto tecido comprar
+                      para um pedido, em kg ou metro, com vários clientes e a
+                      grade. Só lê a ficha — mesmo módulo `producao`. */}
+                  <Route path="/producao/calculadora-tecido" element={<CalculadoraTecidoPage />} />
                   <Route path="/marketplace/piso" element={<PisoPrecoPage />} />
                   <Route path="/marketplace/pos-venda" element={<PosVendaPage />} />
                   <Route path="/estoque/locais" element={<EstoqueLocaisPage />} />
