@@ -131,7 +131,7 @@ function extrairNumeroOP(textoNorm) {
 // Cor dita na pergunta. A comparação com o cadastro é por RAIZ ("pret" casa
 // com PRETO, PRETA, PRETO MESCLA) — a casa escreve a cor de vários jeitos.
 const CORES = [
-  ['off white', 'off'], ['preto', 'pret'], ['preta', 'pret'], ['branco', 'branc'], ['branca', 'branc'], ['azul marinho', 'marinho'],
+  ['verde militar', 'verde militar'], ['azul royal', 'royal'], ['off white', 'off'], ['preto', 'pret'], ['preta', 'pret'], ['branco', 'branc'], ['branca', 'branc'], ['azul marinho', 'marinho'],
   ['marinho', 'marinho'], ['azul', 'azul'], ['vermelho', 'vermelh'], ['vermelha', 'vermelh'], ['verde', 'verde'], ['cinza', 'cinz'],
   ['mescla', 'mescl'], ['bege', 'bege'], ['caqui', 'caqui'], ['marrom', 'marrom'], ['rosa', 'rosa'], ['amarelo', 'amarel'],
   ['amarela', 'amarel'], ['vinho', 'vinho'], ['grafite', 'grafit'], ['chumbo', 'chumbo'], ['nude', 'nude'], ['lilas', 'lilas'],
@@ -359,6 +359,23 @@ function extrairDimensao(t) {
   return null;
 }
 
+// Pergunta de investigação? Devolve { modo, foco, direcaoPerguntada } ou null.
+function detectarInvestigacao(t, referencias) {
+  if (/(margem|lucr|rentab|prejuizo)/.test(t)) return null;
+  const direcaoPerguntada = /(caiu|cairam|caindo|queda|diminu|piorou|piorar|baixou|despencou|menos)/.test(t) ? 'caiu'
+    : (/(subiu|subiram|aumentou|aumento|melhorou|cresceu|disparou|dobrou)/.test(t) ? 'subiu' : null);
+  if (referencias.length && /(raio[- ]?x|raiox|como (esta|anda|vai) (a|o) [a-z]{2,6}-?\d|situacao (da|do) [a-z]{2,6}-?\d|diagnostico (completo )?(da|do)|analise completa)/.test(t)) return { modo: 'raiox', direcaoPerguntada: null };
+  if (/(o que mudou|o que mudaram|mudanca|mudancas|alteracao|alteracoes|alterou|alteraram|mexeu|mexeram|historico d[oe]s? anuncio)/.test(t)
+    && (referencias.length || /(anuncio|ads|campanha|orcamento)/.test(t))) return { modo: 'mudancas', direcaoPerguntada: null };
+  const porque = /(por que|porque|por qual motivo|o que aconteceu|o que houve|o que explica|explica|motivo)/.test(t);
+  if (!porque) return null;
+  if (/(\bads\b|publicidade|roas|\bacos\b|tacos|campanha|patrocinad|cpc\b|clique)/.test(t)) {
+    return { modo: 'ads', foco: /(gasto|gastei|gastando|gastou|investimento|investi|custo)/.test(t) && !/roas/.test(t) ? 'gasto' : 'roas', direcaoPerguntada };
+  }
+  if (/(vend|pedido|faturament|saida|sairam|saiu|giro)/.test(t) || (referencias.length && direcaoPerguntada)) return { modo: 'venda', direcaoPerguntada };
+  return null;
+}
+
 function interpretar(perguntaCrua, { hoje = hojeEmBrasilia() } = {}) {
   const textoNorm = normalizar(perguntaCrua);
   const referencias = extrairReferencias(perguntaCrua);
@@ -381,6 +398,25 @@ function interpretar(perguntaCrua, { hoje = hojeEmBrasilia() } = {}) {
   const naoSei = NAO_SEI.find((n) => n.re.test(textoNorm));
   if (naoSei) {
     return { ...base, intencao: 'nao_sei', naoSei: { chave: naoSei.chave, titulo: naoSei.titulo, texto: naoSei.texto, rota: naoSei.rota, rotaRotulo: naoSei.rotaRotulo }, periodo: null, periodoDito: false, porque: false, ranking: false };
+  }
+
+  // 3. INVESTIGAÇÃO (28/09/2026): "por que caiu/subiu", "por que o ROAS
+  // caiu", "raio-x da OG1192", "o que mudou no anúncio da OG1192". Vem antes
+  // das intenções comuns — senão "por que as vendas caíram" virava só o
+  // número de vendas. "Por que a margem caiu" continua na margem, que já tem
+  // o seu diagnóstico.
+  const investigacao = detectarInvestigacao(textoNorm, referencias);
+  if (investigacao) {
+    let periodo = periodoDito && !periodoDito.futuro ? periodoDito : null;
+    // "do mês passado para este" / "da semana passada pra esta": o período
+    // pedido é o ATUAL, comparado com o anterior.
+    if (/mes passado (para|pra|ate|a|e) (este|esse|o atual|agora)|(este|esse|neste|nesse|deste|desse) mes/.test(textoNorm)) periodo = janela(inicioDoMes(hoje), hoje, 'este mês', 'mes');
+    else if (/(para|pra) (esta|essa) semana|(esta|essa|nesta|nessa|desta|dessa) semana/.test(textoNorm)) {
+      const dow = new Date(`${hoje}T12:00:00Z`).getUTCDay();
+      periodo = janela(somarDias(hoje, -((dow + 6) % 7)), hoje, 'esta semana', 'semana');
+    }
+    if (!periodo) periodo = janela(somarDias(hoje, -29), hoje, 'últimos 30 dias', 'ultimos');
+    return { ...base, intencao: 'investigar', ...investigacao, periodo, periodoDito: Boolean(periodoDito && !periodoDito.futuro), porque: true, ranking: false };
   }
 
   let intencao = null;
@@ -798,7 +834,7 @@ module.exports = {
   brl, pctBr, inteiro, plural, pp, variacaoPct, variacaoTexto, dataBr,
   normalizar, arrumarBlocos, extrairReferencias, extrairCanal, extrairPeriodo, janelaAFrente, somarDias, inicioDoMes, fimDoMes, mesAnterior,
   extrairCor, extrairTamanho, extrairNumeroOP, nomeCanal, noCanal, contrair, janela,
-  INTENCOES, CANAIS, NAO_SEI, RE_COMO_FAZER, interpretar,
+  INTENCOES, CANAIS, NAO_SEI, RE_COMO_FAZER, interpretar, detectarInvestigacao,
   diagnosticarMargem, textoDiagnosticoMargem, margemDe, baseAnteriorPequena, efeitoMix, textoMix, textoOPAtrasada,
   DIAS_VENCIDO_RECENTE,
   MODULOS_DA_SECAO, montarBriefing, fraseDoDia, filtrarPorUsuario,

@@ -35,12 +35,16 @@ export function pareceAnalise(termo) {
 
 export const EXEMPLOS_DE_PERGUNTA = [
   'Quanto vendi ontem?',
+  'Por que as vendas da OG1620 caíram esse mês?',
+  'Por que o ROAS da Shopee caiu?',
+  'Raio-x da OG1620',
   'Por que a margem da OG1620 caiu esse mês?',
   'O que está atrasado?',
   'Quanto tenho a pagar essa semana?',
   'Tem OG1620 preta no M?',
   'Qual facção está atrasada?',
   'Quais anúncios estão abaixo do piso?',
+  'O que mudou no anúncio da OG1620?',
   'Estoque parado',
   'Resumo do dia',
 ];

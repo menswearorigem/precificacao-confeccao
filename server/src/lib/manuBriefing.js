@@ -1131,7 +1131,48 @@ const MODULOS_DA_INTENCAO = {
   anuncios: ['marketplace'], estoque: ['estoque', 'producao'], producao: ['producao', 'estoque'], planejamento: ['producao', 'estoque'],
   insumo: ['compras', 'producao', 'estoque'], atrasos: ['producao', 'marketplace', 'financeiro', 'calendario'], financeiro: ['financeiro'],
   expedicao: ['marketplace', 'expedicao'], conexoes: ['marketplace'], briefing: [], nao_sei: [],
+  investigar: ['marketplace', 'analises', 'vendas'],
 };
+
+// ---------------------------------------------------------------------------
+// Manu investigadora (28/09/2026): por que caiu/subiu, por que o ROAS mudou,
+// raio-x e "o que mudou". Fatos: manuFatos.js · motor: manuInvestigacao.js.
+// ---------------------------------------------------------------------------
+async function responderInvestigacao(q, hoje, { plataformaML } = {}) {
+  const fatosLib = require('./manuFatos');
+  const inv = require('./manuInvestigacao');
+  const r = await recorte(q);
+  if (q.referencia && !r.produto) return { titulo: 'Referência não encontrada', texto: `Não achei a referência ${q.referencia} no cadastro.`, rota: '/produtos' };
+  // Vendedor e viagem ainda não têm investigação: responde com o número.
+  if (r.vendedor || r.viagem) return responderVendas({ ...q, intencao: 'vendas' });
+  const A = { inicio: q.periodo.inicio, fim: q.periodo.fim, dias: q.periodo.dias, rotulo: q.periodo.rotulo };
+  const diasB = Math.round((new Date(`${q.periodo.anterior.fim}T12:00:00Z`) - new Date(`${q.periodo.anterior.inicio}T12:00:00Z`)) / 86400000) + 1;
+  const B = { inicio: q.periodo.anterior.inicio, fim: q.periodo.anterior.fim, dias: diasB };
+  const alvo = {
+    produtoId: r.produto?.id || null, referencia: r.produto?.referencia || null,
+    corRaiz: q.cor?.raiz || null, corPalavra: q.cor?.palavra || null, tamanho: q.tamanho || null,
+    canalChave: r.lojas.length ? null : (q.canal?.chave || null), lojasIds: r.lojas.map((l) => l.id), quem: r.quem,
+  };
+  const f = await fatosLib.lerFatos(alvo, A, B, { hoje, comVisitas: q.modo === 'venda', plataformaML });
+  let res;
+  let titulo;
+  if (q.modo === 'raiox') { res = inv.raioX(f); titulo = `Raio-x ${ma.contrair(r.quem)}`; }
+  else if (q.modo === 'mudancas') { res = inv.mudancas(f); titulo = `O que mudou nos anúncios ${ma.contrair(r.quem)}`; }
+  else if (q.modo === 'ads') { res = inv.investigarAds(f, { foco: q.foco }); titulo = q.foco === 'gasto' ? 'Por que o gasto de Ads mudou' : 'Por que o ROAS mudou'; }
+  else { res = inv.investigarVenda(f, { direcaoPerguntada: q.direcaoPerguntada }); titulo = `Por que as vendas ${ma.contrair(r.quem)} ${res.direcao === 'subiu' ? 'subiram' : res.direcao === 'caiu' ? 'caíram' : 'mudaram'}`; }
+  let texto = res.texto;
+  // "Caiu?" e o total subiu: investiga só o canal onde caiu (o que a pessoa viu).
+  if (res.canalParaInvestigar) {
+    const alvo2 = { ...alvo, canalChave: res.canalParaInvestigar, lojasIds: [], quem: `${r.quem} ${ma.noCanal(res.canalParaInvestigar)}` };
+    const f2 = await fatosLib.lerFatos(alvo2, A, B, { hoje, comVisitas: true, plataformaML });
+    const res2 = inv.investigarVenda(f2, { direcaoPerguntada: null });
+    texto += `\n\n**Investigando só ${ma.noCanal(res.canalParaInvestigar)}**\n\n${res2.texto}`;
+    titulo = `Onde as vendas ${ma.contrair(r.quem)} ${q.direcaoPerguntada === 'caiu' ? 'caíram' : 'subiram'}`;
+  }
+  if (f.falhas && f.falhas.length) texto += `\n\nNão consegui ler agora: ${f.falhas.map((x) => x.split(':')[0]).join(', ')}.`;
+  const rota = q.modo === 'ads' || q.modo === 'mudancas' ? '/marketplace/anuncios' : '/marketplace/lucratividade';
+  return { titulo, texto, rota, rotaRotulo: q.modo === 'ads' || q.modo === 'mudancas' ? 'Abrir os anúncios' : 'Abrir a lucratividade', dados: { investigacao: { modo: q.modo, periodo: A, anterior: B, porque: (res.porque || []).map((h) => h.id), tambem: (res.tambem || []).map((h) => h.id) } } };
+}
 
 async function responder(perguntaCrua, { user, agora = new Date() } = {}) {
   const t0 = Date.now();
@@ -1143,7 +1184,8 @@ async function responder(perguntaCrua, { user, agora = new Date() } = {}) {
     else if (q.intencao === 'briefing') {
       const b = ma.filtrarPorUsuario(await briefingDeHoje({ agora }), user);
       resposta = { titulo: 'Resumo do dia', texto: [b.frase, '', ...b.secoes.filter((s) => s.nivel !== 'ok').map((s) => `- **${s.titulo}**: ${s.resumo}`)].join('\n'), rota: null, briefing: b };
-    } else if (q.intencao === 'vendas') resposta = await responderVendas(q, { agora });
+    } else if (q.intencao === 'investigar') resposta = await responderInvestigacao(q, hoje);
+    else if (q.intencao === 'vendas') resposta = await responderVendas(q, { agora });
     else if (q.intencao === 'margem') resposta = await responderMargem(q);
     else if (q.intencao === 'ads') resposta = await responderAds(q);
     else if (q.intencao === 'devolucao') resposta = await responderDevolucao(q);
@@ -1172,7 +1214,7 @@ async function responder(perguntaCrua, { user, agora = new Date() } = {}) {
   try {
     await pool.query(
       `INSERT INTO manu_perguntas (usuario_id, pergunta, intencao, entidades, respondida, duracao_ms) VALUES ($1, $2, $3, $4, $5, $6)`,
-      [user?.id || null, String(perguntaCrua).slice(0, 500), q.intencao, JSON.stringify({ referencia: q.referencia, canal: q.canal?.chave || null, cor: q.cor?.palavra || null, tamanho: q.tamanho || null, numeroOP: q.numeroOP, subtipo: q.subtipo || null, comoFazer: q.comoFazer || false, naoSei: q.naoSei?.chave || null, periodo: q.periodo ? { inicio: q.periodo.inicio, fim: q.periodo.fim, rotulo: q.periodo.rotulo } : null }), Boolean(resposta && !resposta.erro && !resposta.naoSei), duracao]
+      [user?.id || null, String(perguntaCrua).slice(0, 500), q.intencao, JSON.stringify({ modo: q.modo || null, referencia: q.referencia, canal: q.canal?.chave || null, cor: q.cor?.palavra || null, tamanho: q.tamanho || null, numeroOP: q.numeroOP, subtipo: q.subtipo || null, comoFazer: q.comoFazer || false, naoSei: q.naoSei?.chave || null, periodo: q.periodo ? { inicio: q.periodo.inicio, fim: q.periodo.fim, rotulo: q.periodo.rotulo } : null }), Boolean(resposta && !resposta.erro && !resposta.naoSei), duracao]
     );
   } catch { /* o registro é apoio, não pode derrubar a resposta */ }
   return { entendi: Boolean(resposta), comoFazer: Boolean(q.comoFazer), intencao: q.intencao, entidades: { referencia: q.referencia, canal: q.canal, periodo: q.periodo }, resposta, duracaoMs: duracao };
@@ -1187,7 +1229,7 @@ function aquecerCache(hoje = hojeEmBrasilia()) {
 }
 
 module.exports = {
-  gerarBriefing, lerBriefingGravado, briefingDeHoje, jobBriefingDiario, responder, aquecerCache, limparCache,
+  gerarBriefing, lerBriefingGravado, briefingDeHoje, jobBriefingDiario, responder, responderInvestigacao, aquecerCache, limparCache,
   // expostos para teste
   totalizar, totalizarReferencia, totalizarItens, totalizarComGeral, agruparPorCanal, pedidosDaReferencia, diaDaData, nomeDesconhecido,
   leitores: { lerVendas, lerPiso, lerProducao, lerEstoque, lerPlanejamento, lerPosVenda, lerExpedicao, lerIntegracoes, lerFinanceiro },
