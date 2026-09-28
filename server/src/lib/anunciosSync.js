@@ -47,6 +47,11 @@ function textoDoValor(valor) {
 // Comparação tolerante a tipo: o Postgres devolve NUMERIC como string
 // ("79.90"), e a API devolve número (79.9). Sem normalizar, TODA
 // sincronização registraria uma "mudança de preço" que não existiu.
+function cruzouZero(antes, depois) {
+  const semEstoque = (v) => v == null || v === '' || !(Number(v) > 0);
+  return semEstoque(antes) !== semEstoque(depois);
+}
+
 function mudou(antes, depois) {
   const a = textoDoValor(antes);
   const d = textoDoValor(depois);
@@ -253,6 +258,13 @@ async function gravarAnuncio(client, integracao, anuncio, indiceReferencias) {
   if (antes) {
     for (const [coluna, rotulo] of CAMPOS_HISTORICO) {
       if (!mudou(antes[coluna], valores[coluna])) continue;
+      // ESTOQUE só quando ZERA ou VOLTA de zero (28/09/2026). O estoque do
+      // anúncio muda a cada venda e, com a varredura de 3 em 3 horas, viraria
+      // milhares de linhas por dia sem dizer nada: na Shopee e no ML ele é
+      // virtual (951 peças com 2 na prateleira), e o estoque real já tem o
+      // livro próprio do Hub (estoque_movimentos). O que interessa aqui é
+      // "o anúncio ficou sem estoque em tal dia" (causas A5/A6/D2/D8).
+      if (coluna === 'estoque' && !cruzouZero(antes[coluna], valores[coluna])) continue;
       await client.query(
         `INSERT INTO anuncio_historico (anuncio_id, campo, valor_antes, valor_depois, origem)
          VALUES ($1, $2, $3, $4, 'sincronizacao')`,
@@ -530,6 +542,7 @@ module.exports = {
   sincronizarAnunciosTodasAtivas,
   sincronizarAnunciosAgendado,
   _gravarCampanhas: gravarCampanhas,
+  _cruzouZero: cruzouZero,
   resolverProdutoPeloSku,
   montarIndiceReferencias,
   mudou,

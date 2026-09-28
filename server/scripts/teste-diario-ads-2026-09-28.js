@@ -3,7 +3,7 @@
 // A varredura de anúncios passa a registrar em anuncio_historico as mudanças
 // de situação, orçamento, meta e tipo da campanha de Ads de cada anúncio.
 const pool = require('../src/db/pool');
-const { _gravarCampanhas: gravar } = require('../src/lib/anunciosSync');
+const { _gravarCampanhas: gravar, _cruzouZero: cruzouZero } = require('../src/lib/anunciosSync');
 
 let falhas = 0;
 const ok = (m, c, d) => { if (c) console.log(`  ok   ${m}`); else { falhas += 1; console.log(`  FALHA ${m}${d !== undefined ? ` -> ${d}` : ''}`); } };
@@ -44,6 +44,13 @@ const camp = (o = {}) => ({ campanhaId: 'C1', campanhaNome: 'GMV Max Origem', st
   console.log('\n5. Outro anúncio entrou na campanha');
   await rodar(integ, new Map([['111', camp({ orcamentoDiario: 80, acps: 5, status: 'pausada' })], ['222', camp({ orcamentoDiario: 80, acps: 5, status: 'pausada' })]]));
   ok('"entrou na campanha" com o nome', (await hist()).some((h) => h.campo === 'Ads · entrou na campanha' && h.valor_depois === 'GMV Max Origem'));
+
+  console.log('\n6. Estoque do anúncio só entra no histórico quando zera ou volta de zero');
+  ok('951 → 950 não registra', !cruzouZero(951, 950));
+  ok('3 → 0 registra', cruzouZero(3, 0));
+  ok('0 → 12 registra', cruzouZero(0, 12));
+  ok('null → 5 registra', cruzouZero(null, 5));
+  ok('0 → 0 não registra', !cruzouZero(0, 0));
 
   console.log(`\n${falhas === 0 ? 'TUDO OK' : `${falhas} FALHA(S)`}`);
   await pool.end(); process.exit(falhas ? 1 : 0);
