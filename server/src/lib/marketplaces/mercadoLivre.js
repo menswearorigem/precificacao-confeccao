@@ -1110,7 +1110,7 @@ async function buscarVisitasPorDia({ accessToken, itemId, dias = 60, ate = null 
     return (data?.results || []).map((r) => ({
       data: String(r.date || '').slice(0, 10),
       visitas: Number.isFinite(Number(r.total)) ? Number(r.total) : null,
-    })).filter((r) => r.data);
+    })).filter((r) => r.data).sort((x, y) => (x.data < y.data ? -1 : 1));
   } catch {
     return null;
   }
