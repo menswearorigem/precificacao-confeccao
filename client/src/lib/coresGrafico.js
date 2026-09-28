@@ -12,6 +12,17 @@ import { useEffect, useState } from 'react';
 
 const VARIAVEIS_SERIE = ['--gr-1', '--gr-2', '--gr-3', '--gr-4', '--gr-5', '--gr-6', '--gr-7', '--gr-8'];
 
+// Cor de cada PLATAFORMA nos gráficos (28/09/2026): a mesma borda de marca
+// que o selo, os cartões de anúncio e o Full já usam (--mkt-*-edge). Assim a
+// barra laranja do gráfico é a Shopee que a equipe já reconhece no resto do
+// sistema, nos dois temas.
+const VARIAVEIS_PLATAFORMA = {
+  mercado_livre: '--mkt-meli-edge',
+  shopee: '--mkt-shopee-edge',
+  tiktok_shop: '--mkt-tiktok-edge',
+  shein: '--mkt-shein-edge',
+};
+
 const VARIAVEIS_APOIO = {
   positivo: '--gr-positivo',
   negativo: '--gr-negativo',
@@ -29,6 +40,7 @@ const VARIAVEIS_APOIO = {
 // são os mesmos valores do bloco claro do theme.css.
 const RESERVA = {
   series: ['#b5651d', '#33512f', '#2c4a63', '#9c7a3c', '#5c3157', '#1f6f66', '#7a2a1d', '#6b4423'],
+  plataformas: { mercado_livre: '#d8b23a', shopee: '#e2622a', tiktok_shop: '#8b8177', shein: '#3f7099' },
   positivo: '#33512f',
   negativo: '#7a2a1d',
   neutro: '#96897a',
@@ -51,6 +63,8 @@ export function lerPaleta() {
   const estilo = getComputedStyle(document.documentElement);
   const paleta = {
     series: VARIAVEIS_SERIE.map((v, i) => ler(estilo, v, RESERVA.series[i])),
+    plataformas: Object.fromEntries(Object.entries(VARIAVEIS_PLATAFORMA)
+      .map(([chave, v]) => [chave, ler(estilo, v, RESERVA.plataformas[chave])])),
   };
   for (const [nome, variavel] of Object.entries(VARIAVEIS_APOIO)) {
     paleta[nome] = ler(estilo, variavel, RESERVA[nome] || RESERVA.neutro);

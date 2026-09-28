@@ -1618,6 +1618,10 @@ router.get('/relatorio-lucratividade/resumo-anuncio', async (req, res, next) => 
 
     const porAnuncio = new Map();
     for (const p of resultado) {
+      // data_pedido é DATE (o sincronismo já grava o dia de Brasília — ver
+      // dataPedidoBrasil nos conectores), então o slice do ISO é seguro aqui:
+      // é o mesmo padrão de agruparPedidosPorDia e da serie-diaria.
+      const dia = p.data_pedido.toISOString().slice(0, 10);
       for (const it of p.itens) {
         const chave = it.anuncioId || `sem-anuncio:${it.skuExterno || it.id}`;
         if (!porAnuncio.has(chave)) {
@@ -1626,16 +1630,35 @@ router.get('/relatorio-lucratividade/resumo-anuncio', async (req, res, next) => 
             produtoId: it.produtoId,
             referencia: it.referencia || it.skuExterno || '—',
             descricao: it.descricao || it.tituloExterno || '',
+            // Título do anúncio no marketplace. Quando o item casa com um
+            // produto (e não com um kit cadastrado), `descricao` é a do
+            // PRODUTO e perde o "Kit 4x" — o gráfico lê o tipo daqui.
+            tituloAnuncio: it.tituloExterno || '',
             temFoto: it.temFoto,
+            // Canal do pedido ("Mercado Livre", "Shopee"...) — o gráfico da
+            // aba usa isso pra colorir cada anúncio pela plataforma dele.
+            canalVenda: p.canal_venda || null,
             unidadesVendidas: 0,
             totalFaturado: 0,
             pedidosValidos: new Set(),
+            // Série diária DO ANÚNCIO, pro gráfico "Vendas por dia" poder
+            // ser recalculado no front já com o filtro de busca aplicado
+            // (a busca é local; um endpoint agregado por dia não saberia
+            // quais anúncios ela deixou de fora).
+            porDia: new Map(),
           });
         }
         const acc = porAnuncio.get(chave);
         acc.unidadesVendidas += it.quantidade;
         acc.totalFaturado += it.totalItem;
         acc.pedidosValidos.add(p.id);
+        if (!acc.porDia.has(dia)) acc.porDia.set(dia, { unidades: 0, faturado: 0, pedidos: new Set() });
+        const diaAcc = acc.porDia.get(dia);
+        diaAcc.unidades += it.quantidade;
+        diaAcc.faturado += it.totalItem;
+        // Ids e não contagem: um pedido com dois anúncios diferentes contaria
+        // duas vezes se o front somasse contagens por anúncio.
+        diaAcc.pedidos.add(p.id);
       }
     }
 
@@ -1646,10 +1669,15 @@ router.get('/relatorio-lucratividade/resumo-anuncio', async (req, res, next) => 
         referencia: x.referencia,
         descricao: x.descricao,
         temFoto: x.temFoto,
+        tituloAnuncio: x.tituloAnuncio,
+        canalVenda: x.canalVenda,
         unidadesVendidas: x.unidadesVendidas,
         pedidosValidos: x.pedidosValidos.size,
         precoMedio: x.unidadesVendidas > 0 ? x.totalFaturado / x.unidadesVendidas : 0,
         totalFaturado: x.totalFaturado,
+        porDia: [...x.porDia.entries()]
+          .map(([data, v]) => ({ data, unidades: v.unidades, faturado: v.faturado, pedidos: [...v.pedidos] }))
+          .sort((a, b) => a.data.localeCompare(b.data)),
       }))
       .sort((a, b) => b.totalFaturado - a.totalFaturado);
 

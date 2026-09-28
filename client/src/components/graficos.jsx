@@ -111,20 +111,26 @@ function CaixaTooltip({ titulo, linhas }) {
   );
 }
 
-function tooltipPadrao(formatar) {
+// `opcoes` (28/09/2026, todas opcionais — sem elas o tooltip é o de sempre):
+//   campoTitulo — campo da linha usado como título no lugar do rótulo do eixo
+//                 (o eixo diz "14/09"; o tooltip pode dizer "seg, 14/09");
+//   comTotal    — acrescenta a linha "Total" (útil em coluna empilhada, onde
+//                 cada pedaço aparece separado e a soma ficava de conta).
+function tooltipPadrao(formatar, opcoes = {}) {
   return function Conteudo({ active, payload, label }) {
     if (!active || !payload?.length) return null;
-    return (
-      <CaixaTooltip
-        titulo={label}
-        linhas={payload.map((p) => ({
-          chave: `${p.dataKey}`,
-          nome: p.name,
-          cor: p.color || p.payload?.cor,
-          valor: formatar(p.value),
-        }))}
-      />
-    );
+    const linhas = payload.map((p) => ({
+      chave: `${p.dataKey}`,
+      nome: p.name,
+      cor: p.color || p.payload?.cor,
+      valor: formatar(p.value),
+    }));
+    if (opcoes.comTotal && payload.length > 1) {
+      const total = payload.reduce((s, p) => s + (Number(p.value) || 0), 0);
+      linhas.push({ chave: '__total', nome: 'Total', valor: formatar(total) });
+    }
+    const titulo = (opcoes.campoTitulo && payload[0]?.payload?.[opcoes.campoTitulo]) || label;
+    return <CaixaTooltip titulo={titulo} linhas={linhas} />;
   };
 }
 
@@ -192,17 +198,32 @@ export function GraficoEvolucao({ dados, series, rotuloX = 'rotulo', formato = '
 // Colunas (comparação entre períodos ou categorias)
 // ---------------------------------------------------------------------------
 
-export function GraficoColunas({ dados, series, rotuloX = 'rotulo', formato = 'moeda', altura = 260, empilhado, comZero }) {
+// Props acrescentadas em 28/09/2026 (opcionais; sem elas nada muda):
+//   linhaMedia       — { valor, rotulo }: linha tracejada horizontal (média do
+//                      período) com o valor escrito na ponta;
+//   campoTituloTooltip / totalNoTooltip — ver tooltipPadrao;
+//   intervaloX       — repassado ao eixo X. O padrão 0 escreve todo rótulo;
+//                      com 30 dias num celular eles se atropelam, então quem
+//                      desenha muitos dias passa 'preserveStartEnd'.
+export function GraficoColunas({
+  dados, series, rotuloX = 'rotulo', formato = 'moeda', altura = 260, empilhado, comZero,
+  linhaMedia, campoTituloTooltip, totalNoTooltip, intervaloX = 0,
+}) {
   const paleta = usePaletaGrafico();
   const formatar = FORMATADORES[formato] || FORMATADORES.moeda;
-  const Tip = useMemo(() => tooltipPadrao(formatar), [formato]); // eslint-disable-line react-hooks/exhaustive-deps
+  const Tip = useMemo(
+    () => tooltipPadrao(formatar, { campoTitulo: campoTituloTooltip, comTotal: totalNoTooltip }),
+    [formato, campoTituloTooltip, totalNoTooltip], // eslint-disable-line react-hooks/exhaustive-deps
+  );
   const tick = { fontSize: 11.5, fontFamily: FONTE, fill: paleta.rotulo };
 
   return (
     <ResponsiveContainer width="100%" height={altura}>
-      <BarChart data={dados} margin={{ top: 16, right: 12, left: 0, bottom: 0 }} barCategoryGap="24%">
+      {/* Com linha de média, a margem da direita abre espaço para o rótulo
+          ficar FORA das colunas — dentro, a última coluna cobria o texto. */}
+      <BarChart data={dados} margin={{ top: 16, right: linhaMedia ? 92 : 12, left: 0, bottom: 0 }} barCategoryGap="24%">
         <CartesianGrid strokeDasharray="3 3" stroke={paleta.grade} vertical={false} />
-        <XAxis dataKey={rotuloX} tick={tick} axisLine={{ stroke: paleta.eixo }} tickLine={false} interval={0} />
+        <XAxis dataKey={rotuloX} tick={tick} axisLine={{ stroke: paleta.eixo }} tickLine={false} interval={intervaloX} minTickGap={4} />
         <YAxis
           tick={tick}
           tickFormatter={formato === 'moeda' ? moedaCompacta : formatar}
@@ -214,6 +235,19 @@ export function GraficoColunas({ dados, series, rotuloX = 'rotulo', formato = 'm
         {/* Linha do zero explícita: sem ela, um gráfico com entradas e saídas
             deixa a pessoa adivinhando onde o positivo vira negativo. */}
         {comZero && <ReferenceLine y={0} stroke={paleta.eixo} />}
+        {linhaMedia && Number.isFinite(linhaMedia.valor) && linhaMedia.valor > 0 && (
+          <ReferenceLine
+            y={linhaMedia.valor}
+            stroke={paleta.tinta}
+            strokeOpacity={0.55}
+            strokeDasharray="5 4"
+            ifOverflow="extendDomain"
+            label={{
+              value: linhaMedia.rotulo, position: 'right',
+              fill: paleta.tintaSuave, fontSize: 11.5, fontFamily: FONTE, fontWeight: 600,
+            }}
+          />
+        )}
         {series.map((s, i) => (
           <Bar
             key={s.chave}
