@@ -476,6 +476,33 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
+// Visitas POR DIA do anúncio (28/09/2026) — só Mercado Livre, que entrega
+// até 150 dias para trás; lido na hora, sem guardar. É o que separa "caiu o
+// tráfego" de "caiu a conversão". Shopee e TikTok: a API não entrega por dia
+// (a resposta diz isso em vez de devolver zero).
+router.get('/:id/visitas-dia', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT a.anuncio_id_externo, a.marketplace, i.*
+         FROM anuncios_marketplace a
+         JOIN integracoes_marketplace i ON i.id = a.origem_integracao_id
+        WHERE a.id = $1`,
+      [req.params.id]
+    );
+    const linha = rows[0];
+    if (!linha) return res.status(404).json({ error: 'Anúncio não encontrado.' });
+    if (linha.marketplace !== 'mercado_livre') {
+      return res.json({ disponivel: false, motivo: 'A plataforma não entrega visitas por dia pela API.', dias: [] });
+    }
+    await garantirTokenValido(linha);
+    const dias = await mercadoLivre.buscarVisitasPorDia({
+      accessToken: linha.access_token, itemId: linha.anuncio_id_externo, dias: req.query.dias || 60,
+    });
+    if (dias === null) return res.json({ disponivel: false, motivo: 'O Mercado Livre recusou a leitura agora.', dias: [] });
+    res.json({ disponivel: true, dias });
+  } catch (err) { next(err); }
+});
+
 router.get('/:id/historico', async (req, res, next) => {
   try {
     const { rows } = await pool.query(

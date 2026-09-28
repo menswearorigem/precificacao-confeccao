@@ -12,6 +12,7 @@ const { lerConcorrentes } = require('./lib/concorrentesSync');
 const { sincronizarPosVendaTodasAtivas } = require('./lib/posVendaSync');
 const { jobBriefingDiario } = require('./lib/manuBriefing');
 const { sincronizarAnunciosAgendado } = require('./lib/anunciosSync');
+const { sincronizarSaudeContaTodasAtivas } = require('./lib/saudeContaSync');
 
 // ── AUTO-CURA de travas ÓRFÃS do Wik no boot ────────────────────────────────
 // `web_job_ativo` e `producao_job_ativo` são FLAGS no banco (não advisory
@@ -194,4 +195,13 @@ app.listen(PORT, () => {
     .catch((err) => console.error('[anuncios]', err.message));
   setTimeout(varrerAnuncios, 10 * 60 * 1000);
   setInterval(varrerAnuncios, HORAS_ANUNCIOS * 60 * 60 * 1000);
+
+  // Saúde da conta (28/09/2026): reputação do Mercado Livre e desempenho da
+  // loja na Shopee, uma foto por dia (a última leitura do dia vale). A cada
+  // 6 h, 12 min depois da subida — mesmo token dos outros jobs.
+  const lerSaude = () => sincronizarSaudeContaTodasAtivas()
+    .then((r) => { if (Array.isArray(r) && r.some((x) => !x.ok)) console.log('[saude-conta]', JSON.stringify(r)); })
+    .catch((err) => console.error('[saude-conta]', err.message));
+  setTimeout(lerSaude, 12 * 60 * 1000);
+  setInterval(lerSaude, 6 * 60 * 60 * 1000);
 });

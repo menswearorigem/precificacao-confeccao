@@ -919,17 +919,28 @@ async function gravarMetricasAdsDoDia(integracaoId, dia, metricas) {
   for (const m of metricas) {
     await pool.query(
       `INSERT INTO ads_metricas_diarias
-        (origem_integracao_id, anuncio_id_marketplace, campanha_id, campanha_nome, data, impressoes, cliques, custo, vendas_diretas_qtd, vendas_diretas_valor, vendas_indiretas_qtd, vendas_indiretas_valor, atualizado_em)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
+        (origem_integracao_id, anuncio_id_marketplace, campanha_id, campanha_nome, data, impressoes, cliques, custo, vendas_diretas_qtd, vendas_diretas_valor, vendas_indiretas_qtd, vendas_indiretas_valor,
+         parcela_impressoes, parcela_impressoes_topo, perdidas_por_orcamento, perdidas_por_classificacao, vendas_organicas_qtd, vendas_organicas_valor, parcela_venda_ads,
+         atualizado_em)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19, now())
        ON CONFLICT (origem_integracao_id, anuncio_id_marketplace, data) DO UPDATE SET
          campanha_id = EXCLUDED.campanha_id, campanha_nome = EXCLUDED.campanha_nome,
          impressoes = EXCLUDED.impressoes, cliques = EXCLUDED.cliques, custo = EXCLUDED.custo,
          vendas_diretas_qtd = EXCLUDED.vendas_diretas_qtd, vendas_diretas_valor = EXCLUDED.vendas_diretas_valor,
          vendas_indiretas_qtd = EXCLUDED.vendas_indiretas_qtd, vendas_indiretas_valor = EXCLUDED.vendas_indiretas_valor,
+         parcela_impressoes = COALESCE(EXCLUDED.parcela_impressoes, ads_metricas_diarias.parcela_impressoes),
+         parcela_impressoes_topo = COALESCE(EXCLUDED.parcela_impressoes_topo, ads_metricas_diarias.parcela_impressoes_topo),
+         perdidas_por_orcamento = COALESCE(EXCLUDED.perdidas_por_orcamento, ads_metricas_diarias.perdidas_por_orcamento),
+         perdidas_por_classificacao = COALESCE(EXCLUDED.perdidas_por_classificacao, ads_metricas_diarias.perdidas_por_classificacao),
+         vendas_organicas_qtd = COALESCE(EXCLUDED.vendas_organicas_qtd, ads_metricas_diarias.vendas_organicas_qtd),
+         vendas_organicas_valor = COALESCE(EXCLUDED.vendas_organicas_valor, ads_metricas_diarias.vendas_organicas_valor),
+         parcela_venda_ads = COALESCE(EXCLUDED.parcela_venda_ads, ads_metricas_diarias.parcela_venda_ads),
          atualizado_em = now()`,
       [
         integracaoId, String(m.itemId), m.campanhaId || null, m.campanhaNome || null, dia,
         m.impressoes, m.cliques, m.custo, m.vendasDiretasQtd, m.vendasDiretasValor, m.vendasIndiretasQtd, m.vendasIndiretasValor,
+        m.parcelaImpressoes ?? null, m.parcelaImpressoesTopo ?? null, m.perdidasPorOrcamento ?? null, m.perdidasPorClassificacao ?? null,
+        m.vendasOrganicasQtd ?? null, m.vendasOrganicasValor ?? null, m.parcelaVendaAds ?? null,
       ]
     );
     registros += 1;
@@ -1868,6 +1879,7 @@ function sincronizarSeNecessario() {
 
 module.exports = {
   sincronizarIntegracao,
+  _gravarMetricasAdsDoDia: gravarMetricasAdsDoDia,
   sincronizarTodasAtivas,
   sincronizarSeNecessario,
   importarPedido,

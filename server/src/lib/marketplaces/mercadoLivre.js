@@ -643,6 +643,14 @@ function extrairMetricasAds(m) {
     vendasDiretasQtd: m.direct_units_quantity != null ? Number(m.direct_units_quantity) : null,
     vendasIndiretasValor: m.indirect_amount != null ? Number(m.indirect_amount) : null,
     vendasIndiretasQtd: m.indirect_units_quantity != null ? Number(m.indirect_units_quantity) : null,
+    // Extras (28/09/2026) — ficam como a API devolve; NULO = não veio.
+    parcelaImpressoes: m.impression_share != null ? Number(m.impression_share) : null,
+    parcelaImpressoesTopo: m.top_impression_share != null ? Number(m.top_impression_share) : null,
+    perdidasPorOrcamento: m.lost_impression_share_by_budget != null ? Number(m.lost_impression_share_by_budget) : null,
+    perdidasPorClassificacao: m.lost_impression_share_by_ad_rank != null ? Number(m.lost_impression_share_by_ad_rank) : null,
+    vendasOrganicasQtd: m.organic_units_quantity != null ? Number(m.organic_units_quantity) : null,
+    vendasOrganicasValor: m.organic_units_amount != null ? Number(m.organic_units_amount) : null,
+    parcelaVendaAds: m.sov != null ? Number(m.sov) : null,
   };
 }
 
@@ -681,18 +689,37 @@ async function buscarCampanhasAds({ accessToken, advertiserId, dataInicio, dataF
 // um gráfico do total por dia, mas não pra separar por anúncio; pedir
 // date_from=date_to=o mesmo dia (aggregation_type padrão "item") dá o total
 // de cada anúncio só NAQUELE dia, exatamente o que precisamos.
+// Métricas por anúncio e dia. As EXTRAS (28/09/2026 — parcela de impressões,
+// impressões perdidas por verba e por relevância, venda orgânica, sov) estão
+// na documentação de Product Ads, mas a busca por ANÚNCIO pode recusar alguma
+// delas. Se recusar, a leitura volta às métricas básicas (as que sempre
+// funcionaram) e lembra disso até o processo reiniciar — nunca derruba o
+// rateio de custo de Ads por causa de um dado acessório.
+const METRICAS_ANUNCIO_BASE = 'clicks,prints,cost,direct_amount,indirect_amount,direct_units_quantity,indirect_units_quantity';
+const METRICAS_ANUNCIO_EXTRAS = 'impression_share,top_impression_share,lost_impression_share_by_budget,lost_impression_share_by_ad_rank,organic_units_quantity,organic_units_amount,sov';
+let extrasRecusadas = false;
+
 async function buscarMetricasAnunciosPorDia({ accessToken, advertiserId, data: dia }) {
   const resultados = [];
   let offset = 0;
   for (let pagina = 0; pagina < 40; pagina += 1) {
-    const params = new URLSearchParams({
-      limit: '50', offset: String(offset), date_from: dia, date_to: dia,
-      metrics: 'clicks,prints,cost,direct_amount,indirect_amount,direct_units_quantity,indirect_units_quantity',
-    });
-    const resposta = await chamarApiAds(
-      `/advertising/${SITE_BRASIL}/advertisers/${advertiserId}/product_ads/ads/search?${params.toString()}`,
+    const pedir = (comExtras) => chamarApiAds(
+      `/advertising/${SITE_BRASIL}/advertisers/${advertiserId}/product_ads/ads/search?${new URLSearchParams({
+        limit: '50', offset: String(offset), date_from: dia, date_to: dia,
+        metrics: comExtras ? `${METRICAS_ANUNCIO_BASE},${METRICAS_ANUNCIO_EXTRAS}` : METRICAS_ANUNCIO_BASE,
+      }).toString()}`,
       accessToken
     );
+    let resposta;
+    if (extrasRecusadas) resposta = await pedir(false);
+    else {
+      try { resposta = await pedir(true); }
+      catch (err) {
+        if (!(err.status === 400 || /metric/i.test(err.message || ''))) throw err;
+        extrasRecusadas = true;
+        resposta = await pedir(false);
+      }
+    }
     const itens = resposta.results || [];
     resultados.push(...itens);
     const total = resposta.paging?.total ?? itens.length;
@@ -1068,6 +1095,25 @@ async function buscarVisitasAnuncios({ accessToken, ids }) {
     }
   }
   return porId;
+}
+
+// Visitas POR DIA de um anúncio (28/09/2026). /items/{id}/visits/time_window
+// devolve até 150 dias para trás — não precisa guardar: a Manu busca na hora
+// da pergunta. Devolve [{ data: 'AAAA-MM-DD', visitas }] ou null se a
+// plataforma recusar (nulo = "não li", nunca zero).
+async function buscarVisitasPorDia({ accessToken, itemId, dias = 60, ate = null }) {
+  const n = Math.max(1, Math.min(150, Number(dias) || 60));
+  const params = new URLSearchParams({ last: String(n), unit: 'day' });
+  if (ate) params.set('ending', ate);
+  try {
+    const data = await chamarApi(`/items/${encodeURIComponent(itemId)}/visits/time_window?${params.toString()}`, accessToken);
+    return (data?.results || []).map((r) => ({
+      data: String(r.date || '').slice(0, 10),
+      visitas: Number.isFinite(Number(r.total)) ? Number(r.total) : null,
+    })).filter((r) => r.data);
+  } catch {
+    return null;
+  }
 }
 
 // Traduz o item cru do ML pro formato comum das três plataformas, que é o
@@ -1854,6 +1900,7 @@ module.exports = {
   buscarAdvertiserIdAds,
   buscarCampanhasAds,
   buscarMetricasAnunciosPorDia,
+  buscarVisitasPorDia,
   solicitarRelatorioLiberacoes,
   listarRelatoriosLiberacoes,
   baixarRelatorioLiberacoes,
