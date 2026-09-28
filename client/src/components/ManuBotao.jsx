@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { MessageCircleQuestion } from 'lucide-react';
 import ManuPainel from './ManuPainel';
 import { carregarBriefing } from '../lib/manu/analista';
@@ -60,6 +61,9 @@ export default function ManuBotao() {
   const [balaoVisivel, setBalaoVisivel] = useState(false);
   const botaoRef = useRef(null);
   const desvio = useDesvioDeColisao();
+  const location = useLocation();
+  // Na /ajuda a própria tela já é o chat da Manu — o botão do canto sobra.
+  const naAjuda = location.pathname.startsWith('/ajuda');
 
   // Manu analista (21/09/2026): quantas frentes pedem ação hoje. Só o
   // número, na mascote — o quadro inteiro fica no painel. Recarrega a cada
@@ -127,6 +131,8 @@ export default function ManuBotao() {
     botaoRef.current?.focus();
   }
 
+  if (naAjuda) return null;
+
   return (
     <>
       <div
@@ -163,7 +169,7 @@ export default function ManuBotao() {
         </button>
       </div>
 
-      {aberto && <ManuPainel variante="flutuante" onFechar={fecharPainel} />}
+      {aberto && <ManuPainel onFechar={fecharPainel} />}
     </>
   );
 }
