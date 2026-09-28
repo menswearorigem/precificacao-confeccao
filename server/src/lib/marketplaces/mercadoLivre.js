@@ -7,6 +7,7 @@
 // (o usuário loga na própria conta ML e confirma o acesso).
 
 const { melhorFoto } = require('../fotoMarketplace');
+const { diaEmBrasilia } = require('../dataBrasil');
 
 const AUTH_BASE = 'https://auth.mercadolivre.com.br/authorization';
 const API_BASE = 'https://api.mercadolibre.com';
@@ -445,7 +446,15 @@ function mapearPedido(order) {
     marketplace: 'mercado_livre',
     idExterno: String(order.id),
     numeroExterno: String(order.id),
-    dataPedido: order.date_created ? order.date_created.slice(0, 10) : null,
+    // Dia de Brasília, não o dia do fuso que a API escreveu na string
+    // (28/09/2026). O ML devolve date_created em -04:00: cortar a string
+    // punha o pedido feito entre 00h e 01h de Brasília no dia ANTERIOR, e o
+    // gráfico "Vendas por dia" mostrava essa venda no dia errado. Shopee e
+    // TikTok já convertiam (dataPedidoBrasil); o ML era o único que não.
+    // Se a data vier ilegível, cai no corte antigo em vez de perder o dia.
+    dataPedido: order.date_created
+      ? (diaEmBrasilia(order.date_created) || order.date_created.slice(0, 10))
+      : null,
     clienteNome: order.buyer?.nickname || [order.buyer?.first_name, order.buyer?.last_name].filter(Boolean).join(' ') || 'Comprador Mercado Livre',
     valorFrete: frete,
     taxaMarketplace,

@@ -18,6 +18,7 @@ import FotoProduto from '../components/FotoProduto';
 import DataTable from '../components/DataTable';
 import { usePaletaGrafico, corPorIndice } from '../lib/coresGrafico';
 import { CarregandoVitrine } from '../components/VitrineMarketplace';
+import { GraficoVendasPorDia, RankingAnuncios } from '../components/GraficosVendasAnuncio';
 
 // As cores dos gráficos vêm do TEMA (lib/coresGrafico), não escritas aqui.
 // Antes eram quatro hexadecimais soltos — contra a REGRA 3 — e o efeito
@@ -420,17 +421,34 @@ function VendasPorAnuncioTab({ filtros, busca }) {
     ));
   }, [dados, busca]);
 
+  // Os quatro cartões somam a MESMA lista que a tabela mostra (28/09/2026).
+  // Antes vinham de `dados.totais`, calculado no servidor ANTES da busca:
+  // buscando "mm6387", a tabela listava 9 anúncios e os cartões continuavam
+  // dizendo 295 anúncios e R$ 598.808,16 — o total da loja inteira.
+  const totaisExibidos = useMemo(() => {
+    const unidadesVendidas = anunciosExibidos.reduce((s, a) => s + a.unidadesVendidas, 0);
+    const totalFaturado = anunciosExibidos.reduce((s, a) => s + a.totalFaturado, 0);
+    return {
+      anunciosVendidos: anunciosExibidos.length,
+      unidadesVendidas,
+      totalFaturado,
+      precoMedio: unidadesVendidas > 0 ? totalFaturado / unidadesVendidas : 0,
+    };
+  }, [anunciosExibidos]);
+
   if (erro) return <div className="login-error">{erro}</div>;
   if (!dados) return <CarregandoVitrine />;
 
   return (
     <>
       <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-        <StatCard label="Anúncios Vendidos" value={formatQtd(dados.totais.anunciosVendidos)} />
-        <StatCard label="Unidades Vendidas" value={formatQtd(dados.totais.unidadesVendidas)} />
-        <StatCard label="Total Faturado" value={brl(dados.totais.totalFaturado)} />
-        <StatCard label="Preço Médio" value={brl(dados.totais.precoMedio)} />
+        <StatCard label="Anúncios Vendidos" value={formatQtd(totaisExibidos.anunciosVendidos)} />
+        <StatCard label="Unidades Vendidas" value={formatQtd(totaisExibidos.unidadesVendidas)} />
+        <StatCard label="Total Faturado" value={brl(totaisExibidos.totalFaturado)} />
+        <StatCard label="Preço Médio" value={brl(totaisExibidos.precoMedio)} />
       </div>
+      <GraficoVendasPorDia anuncios={anunciosExibidos} dataInicio={filtros.data_inicio} dataFim={filtros.data_fim} />
+      <RankingAnuncios anuncios={anunciosExibidos} />
       <div className="card">
         <div className="card-head">Vendas por Anúncio ({anunciosExibidos.length})</div>
         <div style={{ overflowX: 'auto' }}>

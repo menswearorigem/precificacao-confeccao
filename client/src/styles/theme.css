@@ -4735,7 +4735,10 @@ table.ficha-doc-tabela {
 .ranking { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .ranking-linha {
   display: grid;
-  grid-template-columns: 22px minmax(90px, 1.5fr) minmax(60px, 2fr) auto 52px;
+  /* Coluna do valor com largura mínima (28/09/2026): em `auto`, cada linha
+     media o próprio número, e "R$ 945,54" ficava com a barra mais comprida
+     que a de "R$ 6.458,40" — as barras deixavam de começar/terminar alinhadas. */
+  grid-template-columns: 22px minmax(90px, 1.5fr) minmax(60px, 2fr) minmax(96px, auto) 52px;
   align-items: center;
   gap: 10px;
   width: 100%;
@@ -12260,4 +12263,28 @@ table.data-table th, .mp-tab th, .mp-tecido-tab th, .tabela-promocao thead th, .
 :root[data-theme="dark"] .modulo-vivo .subtab-btn.active { background: color-mix(in srgb, var(--module-color, var(--terracotta)) 82%, #fff); border-color: transparent; color: #fff !important; box-shadow: 0 6px 16px color-mix(in srgb, var(--module-color, var(--terracotta)) 35%, transparent); }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .modulo-vivo .subtab-btn.active { background: color-mix(in srgb, var(--module-color, var(--terracotta)) 82%, #fff); border-color: transparent; color: #fff !important; box-shadow: 0 6px 16px color-mix(in srgb, var(--module-color, var(--terracotta)) 35%, transparent); }
+}
+
+/* ── Seletor segmentado "cheio" (28/09/2026) ────────────────────────────────
+   Variante do .mp-seg para os chips dos gráficos de Vendas por Anúncio: a
+   opção escolhida fica PREENCHIDA na cor do módulo com texto branco — o mesmo
+   desenho da sub-aba ativa logo acima, em vez do botão claro sobre cinza do
+   .mp-seg comum, que na tela ao lado das sub-abas roxas parecia desligado.
+   No escuro, a mesma receita da sub-aba ativa (cor clareada, texto branco). */
+.mp-seg.mp-seg-cheio { background: var(--surface); }
+.mp-seg.mp-seg-cheio button[aria-pressed="true"] {
+  background: var(--mc, var(--module-color, var(--terracotta)));
+  color: #fff; box-shadow: none;
+}
+:root[data-theme="dark"] .mp-seg.mp-seg-cheio button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--module-color, var(--terracotta)) 82%, #fff);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .mp-seg.mp-seg-cheio button[aria-pressed="true"] {
+    background: color-mix(in srgb, var(--module-color, var(--terracotta)) 82%, #fff);
+  }
+}
+@media (max-width: 720px) {
+  .grafico-card .card-head-linha .mp-seg-cheio { width: 100%; }
+  .grafico-card .card-head-linha .mp-seg-cheio button { flex: 1; }
 }
