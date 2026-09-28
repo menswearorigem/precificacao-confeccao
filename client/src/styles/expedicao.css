@@ -1,0 +1,162 @@
+/* Expedição (Marketplace › Romaneio), 28/09/2026.
+   Cartão por loja em cor CHEIA da plataforma com texto branco (preferência da
+   casa: cor sólida e saturada, nada de pastel). As quatro cores são as mesmas
+   famílias dos tokens --mkt-* (ML amarelado, Shopee alaranjado, TikTok
+   acinzentado, Shein azulado), escurecidas até o branco ficar legível — e
+   valem nos dois temas, por isso não seguem o --mkt-*-ink, que clareia no
+   escuro. Estado (atrasado/vence hoje/no prazo) usa as cores de estado. */
+
+:root {
+  --exp-meli: #9a6f0b;
+  --exp-shopee: #c2491a;
+  --exp-tiktok: #4a443d;
+  --exp-shein: #2f5f86;
+  --exp-atraso: #c0392b;
+  --exp-hoje: #a37400;
+  --exp-ok: #2f7d4f;
+  --exp-neutro: #7a6c5a;
+}
+
+.exp .subtab-row { margin-bottom: 14px; }
+.exp-contador {
+  display: inline-block; margin-left: 6px; min-width: 18px; padding: 0 6px; border-radius: 99px;
+  background: var(--exp-atraso); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+}
+
+/* ---------- cartões por loja ---------- */
+.exp-lojas { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.exp-loja {
+  position: relative; border-radius: var(--radius-lg); padding: 16px 16px 12px; color: #fff;
+  box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 8px;
+  animation: exp-sobe .35s var(--ease) both;
+}
+.exp-loja.exp-mercado_livre, .exp-resumo.exp-mercado_livre { --exp-cor: var(--exp-meli); }
+.exp-loja.exp-shopee, .exp-resumo.exp-shopee { --exp-cor: var(--exp-shopee); }
+.exp-loja.exp-tiktok_shop, .exp-resumo.exp-tiktok_shop { --exp-cor: var(--exp-tiktok); }
+.exp-loja.exp-shein, .exp-resumo.exp-shein { --exp-cor: var(--exp-shein); }
+.exp-loja { background: var(--exp-cor, var(--exp-neutro)); }
+.exp-loja-off { opacity: .72; }
+.exp-loja-off p { margin: 0; font-size: 12.5px; color: rgba(255, 255, 255, .85); }
+.exp-loja-topo { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.exp-loja-topo strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exp-loja-num { font: 600 34px/1 var(--font-display); letter-spacing: -.02em; }
+.exp-loja-num small { font: 500 13px var(--font-body); letter-spacing: 0; opacity: .85; }
+.exp-loja-chips { display: flex; flex-wrap: wrap; gap: 5px; min-height: 4px; }
+.exp-loja .exp-pilula { box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .55); }
+/* Dentro do cartão colorido, "vence hoje" e "sem prazo" ficam em branco com
+   texto na cor do estado: âmbar sobre dourado sumia. */
+.exp-loja .exp-pilula.exp-tom-hoje { background: #fff; color: var(--exp-hoje); box-shadow: none; }
+.exp-loja .exp-pilula.exp-tom-neutro { background: rgba(255, 255, 255, .22); color: #fff; }
+.exp-loja-dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 2px 0 0; font-size: 12.5px; }
+.exp-loja-dl dt { display: flex; align-items: center; gap: 5px; color: rgba(255, 255, 255, .78); white-space: nowrap; }
+.exp-loja-dl dd { margin: 0; font-weight: 600; }
+.exp-loja-dl em { font-style: normal; font-weight: 500; color: rgba(255, 255, 255, .8); }
+.exp-loja-rodape {
+  display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  border-top: 1px solid rgba(255, 255, 255, .22); padding-top: 8px; font-size: 12px; color: rgba(255, 255, 255, .9);
+}
+.exp-loja-erro { margin: 0; display: flex; align-items: center; gap: 5px; font-size: 11.5px; background: rgba(0, 0, 0, .22); padding: 4px 8px; border-radius: 6px; }
+.exp-selo-almoco {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 99px;
+  background: #fff; color: var(--exp-atraso); font-size: 11px; font-weight: 700;
+}
+.exp-selo-almoco.inline { margin-left: 6px; background: var(--exp-atraso); color: #fff; }
+
+/* ---------- pílulas e chips ---------- */
+.exp-pilula {
+  display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: 11.5px; font-weight: 700;
+  color: #fff; background: var(--exp-neutro); white-space: nowrap;
+}
+.exp-pilula.exp-tom-atraso { background: var(--exp-atraso); }
+.exp-pilula.exp-tom-hoje { background: var(--exp-hoje); }
+.exp-pilula.exp-tom-ok { background: var(--exp-ok); }
+.exp-pilula.exp-tom-neutro { background: var(--exp-neutro); }
+
+.exp-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
+.exp-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 99px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink); font-size: 12.5px; font-weight: 600; cursor: pointer;
+  transition: background .15s, color .15s, transform .15s var(--ease);
+}
+.exp-chip b { font-weight: 700; opacity: .8; }
+.exp-chip:hover { background: var(--row-hover); }
+.exp-chip.ativo { background: var(--terracotta); border-color: var(--terracotta); color: #fff; }
+.exp-chip.exp-tom-atraso.ativo { background: var(--exp-atraso); border-color: var(--exp-atraso); }
+.exp-chip.exp-tom-hoje.ativo { background: var(--exp-hoje); border-color: var(--exp-hoje); }
+.exp-chip.exp-tom-ok.ativo { background: var(--exp-ok); border-color: var(--exp-ok); }
+.exp-chip.exp-tom-neutro.ativo { background: var(--exp-neutro); border-color: var(--exp-neutro); }
+.exp-chip.exp-tom-atraso:not(.ativo) b { color: var(--exp-atraso); opacity: 1; }
+.exp-chips .campo-busca, .exp-chips input[type="search"] { margin-left: auto; }
+
+.exp-barra { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.exp-barra p { margin: 0; }
+.exp-tag { display: inline-block; padding: 1px 8px; border-radius: 6px; background: var(--surface-alt); font-size: 12px; font-weight: 600; }
+.exp-ok { display: inline-flex; align-items: center; gap: 4px; color: var(--success); font-weight: 600; }
+.exp-atencao { color: var(--exp-atraso); font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .exp-atencao { color: #f08f80; } }
+:root[data-theme="dark"] .exp-atencao { color: #f08f80; }
+.exp-tabela td { vertical-align: middle; }
+.exp-tabela .ink-faint { font-size: 12px; }
+.exp-nota { font-size: 12px; margin: 8px 0 0; }
+
+.exp-alerta {
+  display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; border-radius: var(--radius);
+  color: #fff; margin-bottom: 14px;
+}
+.exp-alerta.exp-tom-atraso { background: var(--exp-atraso); }
+.exp-alerta p { margin: 4px 0 0; font-size: 12.5px; opacity: .92; }
+
+/* ---------- corte da casa ---------- */
+.exp-cortes { display: flex; flex-wrap: wrap; gap: 10px; }
+.exp-corte { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.exp-corte input { border: 0; background: transparent; color: var(--ink); font: 600 14px var(--font-mono); }
+
+/* ---------- enviados e indicadores ---------- */
+.exp-resumo-lojas { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.exp-resumo {
+  display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 12px 14px; border-radius: var(--radius);
+  background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-left: 5px solid var(--exp-cor, var(--exp-neutro));
+  font-size: 12.5px; cursor: pointer; transition: transform .15s var(--ease), box-shadow .15s;
+}
+.exp-resumo:hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.exp-resumo.ativo { background: var(--exp-cor); color: #fff; }
+.exp-resumo.ativo .exp-atencao { color: #fff; }
+.exp-ind { cursor: default; }
+.exp-resumo-topo { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; }
+.exp-resumo-num { font: 600 28px/1.1 var(--font-display); }
+.exp-ciclo { display: flex; flex-direction: column; gap: 1px; margin: 4px 0; }
+.exp-ciclo i { font-style: normal; display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px dashed var(--border-soft); padding: 2px 0; }
+
+.exp-horas { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; height: 150px; align-items: end; }
+.exp-hora { display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; gap: 3px; }
+.exp-hora-barra {
+  width: 100%; min-height: 2px; border-radius: 4px 4px 0 0; background: var(--terracotta);
+  display: flex; justify-content: center; align-items: flex-start; transition: height .4s var(--ease);
+}
+.exp-hora-barra b { font-size: 10px; color: #fff; padding-top: 2px; }
+.exp-hora small { font-size: 10px; color: var(--ink-faint); }
+
+.exp-mapa { display: grid; grid-template-columns: 34px repeat(24, minmax(0, 1fr)); gap: 2px; font-size: 10px; }
+.exp-mapa small { color: var(--ink-faint); text-align: center; align-self: center; }
+.exp-mapa-cel {
+  aspect-ratio: 1.3; border-radius: 3px; display: flex; align-items: center; justify-content: center; color: var(--ink); font-weight: 700;
+  background: color-mix(in srgb, var(--terracotta) calc(var(--i, 0) * 100%), var(--surface-alt));
+}
+
+.exp-mapa-cel.forte { color: #fff; }
+
+/* ---------- como calcula ---------- */
+.exp-como { margin-top: 16px; }
+.exp-como-btn { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; color: var(--ink-soft); font-weight: 600; cursor: pointer; padding: 0; }
+.exp-como-btn .virado { transform: rotate(180deg); }
+.exp-como ul { margin: 10px 0 0; padding-left: 18px; color: var(--ink-soft); font-size: 13px; display: grid; gap: 6px; }
+
+@keyframes exp-sobe { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .exp-loja { animation: none; } }
+
+@media (max-width: 640px) {
+  .exp-lojas { grid-template-columns: 1fr; }
+  .exp-horas { height: 110px; gap: 1px; }
+  .exp-mapa { grid-template-columns: 26px repeat(24, minmax(0, 1fr)); gap: 1px; }
+  .exp-mapa-cel { font-size: 0; }
+}

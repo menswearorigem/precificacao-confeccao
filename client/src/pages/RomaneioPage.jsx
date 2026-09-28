@@ -1,522 +1,612 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
-  Truck, ClipboardList, Info, AlertTriangle, Check, X, RefreshCw, Plus, Printer,
-  Clock, PackageCheck, Undo2, Timer, Ban, FileText,
+  Truck, ClipboardList, AlertTriangle, RefreshCw, Clock, PackageCheck, Timer, CalendarDays,
+  History, Gauge, ChevronDown, Utensils, Scissors, CheckCircle2, XCircle, Search, PackageX,
 } from 'lucide-react';
 import { api } from '../api/client';
-import {
-  EstadoVazio, Skeleton, IndicadorDestaque, Select, Field, NumInput,
-  CampoBusca, ChipsFiltros, Checkbox, Paginacao,
-} from '../components/ui';
+import { EstadoVazio, Skeleton, CampoBusca, DateInput, Paginacao } from '../components/ui';
 import { useTabela } from '../lib/useTabela';
-import { confirmar } from '../components/ConfirmDialog';
-import { formatQtd, tempoRelativo, plural } from '../lib/format';
+import { formatQtd, plural } from '../lib/format';
+import { SeloPlataforma, CanalMarketplace, indiceDeLojas, nomeDaLoja } from '../lib/canalMarketplace';
 
-// Marketplace › Romaneio.
+// "MELI Origem", "Shopee Origem": a casa tem mais de uma loja por plataforma.
+const loja = (nome, canal) => nomeDaLoja({ nome, marketplace: canal }, canal);
+import RomaneioPapel from '../components/RomaneioPapel';
+import '../styles/expedicao.css';
+
+// Marketplace › Romaneio — a expedição do dia (repaginada em 28/09/2026).
 //
-// A expedição do Hub terminava na etiqueta. Depois dela faltavam três coisas:
+// A aba estava em desuso porque TODO pedido aparecia atrasado: o "prazo" era
+// a entrada do pedido no Hub + um número de horas digitado, e só o romaneio de
+// papel parava o relógio. Agora o prazo, a modalidade e a hora em que a
+// transportadora pegou o pacote vêm da própria plataforma (migration 0094,
+// lib/expedicaoSync.js). Nada é estimado: onde a plataforma não disse, a tela
+// diz que ela não disse (REGRA 2).
 //
-//   · o papel que o motorista assina — sem ele, quando um pedido some, não há
-//     como provar que ele saiu daqui;
-//   · a pergunta "o que já devia ter sido coletado e não foi?", que em Shopee e
-//     Mercado Livre custa reputação antes de custar dinheiro;
-//   · a trava que impede a mesma caixa de entrar em duas remessas.
-//
-// ⚠️ O código de rastreio é congelado quando o pedido entra no romaneio: o
-// pedido pode ser reetiquetado depois, e o papel assinado tem que continuar
-// dizendo o que dizia.
+// Sub-abas: Hoje (cartão por loja + pendências), Enviados por dia, Coletas
+// (previsto × real), Indicadores (no prazo, ciclo, mapa de horário) e o
+// Romaneio de papel, que continua como era.
 
 const BASE = '/romaneios';
-
-const SITUACOES = {
-  aberto: 'Aberto', fechado: 'Fechado', coletado: 'Coletado', cancelado: 'Cancelado',
-};
-
-const COLETA = {
-  atrasado: { rotulo: 'Atrasado', tom: 'tone-prejuizo', frase: 'Passou do prazo de coleta do canal. Cada um destes é reputação em risco.' },
-  apertado: { rotulo: 'Apertado', tom: 'tone-atencao', frase: 'Já passou de dois terços do prazo. Ainda dá, mas não sobra dia.' },
-  no_prazo: { rotulo: 'No prazo', tom: 'tone-saudavel', frase: 'Dentro do prazo do canal.' },
-  sem_prazo: { rotulo: 'Sem prazo conhecido', tom: 'tone-neutro', frase: 'O canal não tem prazo cadastrado. Não é "em dia" — é "ninguém sabe". Cadastre o prazo para este canal entrar na conta.' },
-  nao_faturado: { rotulo: 'Não faturado', tom: 'tone-neutro', frase: 'O relógio só começa no faturamento.' },
-};
-
+const FUSO = 'America/Sao_Paulo';
 const mensagem = (e) => e?.data?.error || e?.data?.erro || e?.message || 'Erro inesperado.';
-const ouTraco = (v) => (v === null || v === undefined || v === '' ? '—' : v);
 
+const SUBABAS = [
+  { chave: 'hoje', label: 'Hoje', Icone: Clock },
+  { chave: 'enviados', label: 'Enviados por dia', Icone: CalendarDays },
+  { chave: 'coletas', label: 'Coletas', Icone: History },
+  { chave: 'indicadores', label: 'Indicadores', Icone: Gauge },
+  { chave: 'papel', label: 'Romaneio de papel', Icone: ClipboardList },
+];
+
+const SITUACAO = {
+  atrasado: { rotulo: 'Atrasados', curto: 'Atrasado', classe: 'exp-tom-atraso' },
+  apertado: { rotulo: 'Vencem hoje', curto: 'Vence hoje', classe: 'exp-tom-hoje' },
+  no_prazo: { rotulo: 'No prazo', curto: 'No prazo', classe: 'exp-tom-ok' },
+  sem_prazo: { rotulo: 'Sem prazo da plataforma', curto: 'Sem prazo', classe: 'exp-tom-neutro' },
+};
+
+const MODALIDADE = { coleta: 'Coleta', agencia: 'Agência', flex: 'Flex', full: 'Full', outro: 'Outro' };
+const ETAPA = { a_enviar: 'A preparar', pronto: 'Etiqueta pronta', enviado: 'Enviado', entregue: 'Entregue', cancelado: 'Cancelado' };
+const FONTE = { plataforma: 'bipe da transportadora', romaneio: 'romaneio de papel', detectado: 'aproximada: quando o Hub viu' };
+const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+// ------------------------------------------------------------ hora de Brasília
+const fmtHora = new Intl.DateTimeFormat('pt-BR', { timeZone: FUSO, hour: '2-digit', minute: '2-digit' });
+const fmtDiaIso = new Intl.DateTimeFormat('en-CA', { timeZone: FUSO });
+const fmtDiaCurto = new Intl.DateTimeFormat('pt-BR', { timeZone: FUSO, weekday: 'short', day: '2-digit', month: '2-digit' });
+
+function hora(v) { return v ? fmtHora.format(new Date(v)) : '—'; }
+function diaIso(v) { return fmtDiaIso.format(v instanceof Date ? v : new Date(v)); }
+function somarDias(iso, n) {
+  const d = new Date(`${iso}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10);
+}
+function diaBr(iso) { const [a, m, d] = String(iso).split('-'); return `${d}/${m}${a ? '' : ''}`; }
+
+// "hoje 14:00", "amanhã 09:00", "ontem 15:42", "sex. 26/09 14:00"
+function quando(v, agora = Date.now()) {
+  if (!v) return '—';
+  const hoje = diaIso(new Date(agora));
+  const d = diaIso(v);
+  const h = hora(v);
+  if (d === hoje) return `hoje ${h}`;
+  if (d === somarDias(hoje, 1)) return `amanhã ${h}`;
+  if (d === somarDias(hoje, -1)) return `ontem ${h}`;
+  return `${fmtDiaCurto.format(new Date(v))} ${h}`;
+}
+
+function duracao(min) {
+  const m = Math.abs(Math.round(min));
+  if (m < 60) return `${m} min`;
+  if (m < 48 * 60) return `${Math.floor(m / 60)} h${m % 60 ? ` ${String(m % 60).padStart(2, '0')}` : ''}`;
+  return `${Math.floor(m / 1440)} d ${Math.floor((m % 1440) / 60)} h`;
+}
+
+function falta(v, agora = Date.now()) {
+  if (!v) return null;
+  const min = (new Date(v).getTime() - agora) / 60000;
+  return min >= 0 ? { texto: `faltam ${duracao(min)}`, atrasado: false, min } : { texto: `atrasado ${duracao(min)}`, atrasado: true, min };
+}
+
+// O corte da casa (HH:MM) de hoje como instante.
+function corteHoje(hhmm, agora = Date.now()) {
+  if (!hhmm) return null;
+  return new Date(`${diaIso(new Date(agora))}T${hhmm}:00-03:00`);
+}
+
+// ================================================================ página
 export default function RomaneioPage() {
-  const [coleta, setColeta] = useState(null);
-  const [prazos, setPrazos] = useState([]);
-  const [romaneios, setRomaneios] = useState([]);
-  const [aberto, setAberto] = useState(null);
-  const [situacao, setSituacao] = useState('');
-  const [filtroColeta, setFiltroColeta] = useState('');
-  const [busca, setBusca] = useState('');
-  const [selecionados, setSelecionados] = useState([]);
-  const [carregando, setCarregando] = useState(true);
+  const [params, setParams] = useSearchParams();
+  const aba = SUBABAS.some((s) => s.chave === params.get('aba')) ? params.get('aba') : 'hoje';
+  const [agora, setAgora] = useState(Date.now());
+  const [hoje, setHoje] = useState(null);
+  const [pend, setPend] = useState(null);
   const [erro, setErro] = useState('');
-  const [sucesso, setSucesso] = useState('');
-  const [avisos, setAvisos] = useState([]);
+  const [sincronizando, setSincronizando] = useState(false);
+  const [aviso, setAviso] = useState('');
+
+  useEffect(() => { const t = setInterval(() => setAgora(Date.now()), 30000); return () => clearInterval(t); }, []);
 
   const carregar = useCallback(async () => {
-    setCarregando(true);
-    try {
-      const [c, r, p] = await Promise.all([
-        api.get(`${BASE}/coleta${filtroColeta ? `?situacao_coleta=${filtroColeta}` : ''}`),
-        api.get(`${BASE}${situacao ? `?situacao=${situacao}` : ''}`),
-        api.get(`${BASE}/prazos`),
-      ]);
-      setColeta(c); setRomaneios(r); setPrazos(p);
-    } catch (e) { setErro(mensagem(e)); } finally { setCarregando(false); }
-  }, [situacao, filtroColeta]);
-
-  useEffect(() => { carregar(); }, [carregar]);
-
-  const pendentes = useMemo(() => {
-    const alvo = busca.trim().toLowerCase();
-    return (coleta?.itens || [])
-      .filter((i) => !i.romaneio_id)
-      .filter((i) => !alvo || [i.numero, i.canal, (i.codigos_rastreio || []).join(' ')]
-        .some((c) => String(c || '').toLowerCase().includes(alvo)));
-  }, [coleta, busca]);
-
-  const tabelaPendentes = useTabela(pendentes, {
-    colunas: {
-      numero: (i) => Number(i.numero || 0),
-      canal: (i) => i.canal || i.canal_venda,
-      situacao: (i) => i.situacao_coleta,
-      coletar: (i) => i.coletar_ate || '',
-      faturado: (i) => i.faturado_em || '',
-    },
-    colunaPadrao: 'coletar',
-    prefixo: 'pend',
-  });
-
-  async function novoRomaneio() {
-    setErro(''); setSucesso('');
-    try {
-      const r = await api.post(BASE, { transportadora: null, canal: null });
-      await abrir(r.id);
-      setSucesso(`Romaneio ${r.numero} criado. Acrescente os pedidos e feche para imprimir.`);
-      carregar();
-    } catch (e) { setErro(mensagem(e)); }
-  }
-
-  async function abrir(id) {
-    setErro('');
-    try { setAberto(await api.get(`${BASE}/${id}`)); }
-    catch (e) { setErro(mensagem(e)); }
-  }
-
-  async function acrescentar() {
-    if (!aberto || selecionados.length === 0) return;
-    setErro(''); setSucesso(''); setAvisos([]);
-    try {
-      const r = await api.post(`${BASE}/${aberto.romaneio.id}/pedidos`, {
-        pedidos: selecionados.map((id) => ({ pedido_id: id })),
-      });
-      setSelecionados([]);
-      setSucesso(`${plural(r.entraram.length, 'pedido')} no romaneio.`);
-      // ⚠️ Os recusados sobem como aviso, um por um, com o motivo. Somar "2 de
-      // 5 entraram" e calar sobre os 3 é o que faz a caixa ficar para trás sem
-      // ninguém notar.
-      setAvisos(r.recusados.map((x) => `Pedido ${x.numero ?? x.pedidoId}: ${x.motivo}`));
-      await abrir(aberto.romaneio.id);
-      carregar();
-    } catch (e) { setErro(mensagem(e)); }
-  }
-
-  async function acao(tipo) {
-    const r = aberto.romaneio;
-    setErro(''); setSucesso(''); setAvisos([]);
-    try {
-      if (tipo === 'fechar') {
-        const ok = await confirmar(
-          'Fechar é imprimir: depois disto o romaneio não recebe mais pedido, porque o papel na mão do '
-          + 'motorista não pode discordar do sistema. Dá para reabrir enquanto ninguém coletou.',
-          { titulo: `Fechar o romaneio ${r.numero}?`, confirmarTexto: 'Fechar', perigo: false }
-        );
-        if (!ok) return;
-        await api.post(`${BASE}/${r.id}/fechar`);
-        setSucesso('Fechado. O papel já pode ser impresso.');
-      }
-      if (tipo === 'reabrir') {
-        const motivo = window.prompt('Por que está reabrindo?');
-        if (!motivo) return;
-        await api.post(`${BASE}/${r.id}/reabrir`, { motivo });
-        setSucesso('Reaberto.');
-      }
-      if (tipo === 'coletar') {
-        const motorista = window.prompt('Nome de quem está levando:');
-        if (!motorista) return;
-        const placa = window.prompt('Placa do veículo (opcional):') || '';
-        await api.post(`${BASE}/${r.id}/coletar`, { motorista, placa });
-        setSucesso('Coleta registrada. O relógio parou para estes pedidos.');
-      }
-      if (tipo === 'cancelar') {
-        const motivo = window.prompt('Motivo do cancelamento:');
-        if (!motivo) return;
-        await api.post(`${BASE}/${r.id}/cancelar`, { motivo });
-        setSucesso('Cancelado. Os pedidos voltaram a poder entrar em outro romaneio.');
-      }
-      await abrir(r.id);
-      carregar();
-    } catch (e) { setErro(mensagem(e)); }
-  }
-
-  async function tirar(pedidoId) {
-    const motivo = window.prompt('Por que este pedido está saindo do romaneio?');
-    if (!motivo) return;
     setErro('');
     try {
-      await api.post(`${BASE}/${aberto.romaneio.id}/pedidos/${pedidoId}/liberar`, { motivo });
-      await abrir(aberto.romaneio.id);
-      carregar();
+      const [h, p] = await Promise.all([api.get(`${BASE}/expedicao/hoje`), api.get(`${BASE}/expedicao/pendencias`)]);
+      setHoje(h); setPend(p);
     } catch (e) { setErro(mensagem(e)); }
+  }, []);
+  useEffect(() => { carregar(); const t = setInterval(carregar, 5 * 60000); return () => clearInterval(t); }, [carregar]);
+
+  const indiceLojas = useMemo(() => indiceDeLojas((hoje?.cartoes || []).map((c) => ({
+    id: c.integracao_id, nome: c.loja, marketplace: c.canal,
+  }))), [hoje]);
+
+  async function sincronizar() {
+    setSincronizando(true); setAviso(''); setErro('');
+    try {
+      const r = await api.post(`${BASE}/expedicao/sincronizar`);
+      const falhas = (r.lojas || []).filter((l) => l.erro);
+      const lidos = (r.lojas || []).reduce((s, l) => s + (l.gravados || 0), 0);
+      setAviso(falhas.length
+        ? `${plural(lidos, 'pedido relido', 'pedidos relidos')}. Falhou: ${falhas.map((f) => `${f.loja} (${f.erro})`).join('; ')}`
+        : `${plural(lidos, 'pedido relido', 'pedidos relidos')} nas plataformas.`);
+      await carregar();
+    } catch (e) { setErro(mensagem(e)); } finally { setSincronizando(false); }
   }
 
-  const chips = [
-    situacao && { chave: 's', rotulo: 'Romaneios', valor: SITUACOES[situacao], onRemover: () => setSituacao('') },
-    filtroColeta && { chave: 'c', rotulo: 'Coleta', valor: COLETA[filtroColeta]?.rotulo, onRemover: () => setFiltroColeta('') },
-    busca.trim() && { chave: 'b', rotulo: 'Busca', valor: busca.trim(), onRemover: () => setBusca('') },
-  ].filter(Boolean);
+  function trocarAba(chave) { setParams(chave === 'hoje' ? {} : { aba: chave }, { replace: true }); }
 
-  const noRomaneio = (aberto?.itens || []).filter((i) => !i.liberado_em);
-  const liberados = (aberto?.itens || []).filter((i) => i.liberado_em);
+  const atrasados = pend?.resumo?.atrasado || 0;
 
   return (
-    <div className="pagina">
+    <div className="pagina exp">
       <header className="pagina-topo">
         <div>
-          <h1><ClipboardList size={22} /> Romaneio de expedição</h1>
-          <p className="ink-soft">O que já devia ter saído, e o papel que o motorista assina.</p>
+          <h1><Truck size={22} /> Expedição</h1>
+          <p className="ink-soft">
+            Prazo e coleta como a plataforma registra. {hoje && <>Agora: {hora(agora)} · almoço {hoje.almoco.de}–{hoje.almoco.ate}</>}
+          </p>
         </div>
         <div className="pagina-acoes">
-          <button type="button" className="btn btn-primary" onClick={novoRomaneio}>
-            <Plus size={15} /> Novo romaneio
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={carregar}>
-            <RefreshCw size={15} className={carregando ? 'girando' : ''} /> Atualizar
+          <button type="button" className="btn btn-primary" onClick={sincronizar} disabled={sincronizando}>
+            <RefreshCw size={15} className={sincronizando ? 'girando' : ''} /> {sincronizando ? 'Lendo as plataformas…' : 'Atualizar das plataformas'}
           </button>
         </div>
       </header>
 
-      <p className="ink-soft ajuda-bloco">
-        <Info size={14} /> O relógio começa no faturamento e para quando o romaneio é coletado.
-        O código de rastreio é congelado na entrada: reetiquetar o pedido depois não muda o que o
-        papel assinado diz.
-      </p>
+      <div className="subtab-row">
+        {SUBABAS.map((s) => (
+          <button key={s.chave} type="button" className={`subtab-btn${aba === s.chave ? ' active' : ''}`} onClick={() => trocarAba(s.chave)}>
+            <s.Icone size={13} style={{ verticalAlign: -2, marginRight: 5 }} />
+            {s.label}
+            {s.chave === 'hoje' && atrasados > 0 && <span className="exp-contador">{atrasados}</span>}
+          </button>
+        ))}
+      </div>
 
       {erro && <p className="erro-inline">{erro}</p>}
-      {sucesso && <p className="sucesso-inline"><Check size={14} /> {sucesso}</p>}
-      {avisos.map((a, i) => <p className="aviso-inline" key={i}><AlertTriangle size={14} /> {a}</p>)}
+      {aviso && <p className="aviso-inline">{aviso}</p>}
 
-      {/* 1. O relógio -------------------------------------------------------- */}
-      {!coleta && <Skeleton height={96} />}
-      {coleta && (
-        <div className="indicadores-linha">
-          <IndicadorDestaque
-            rotulo="Atrasados" valor={formatQtd(coleta.resumo.atrasado)} Icone={AlertTriangle}
-            tom={coleta.resumo.atrasado > 0 ? 'prejuizo' : undefined}
-            explicacao={COLETA.atrasado.frase}
-          />
-          <IndicadorDestaque
-            rotulo="Apertados" valor={formatQtd(coleta.resumo.apertado)} Icone={Timer}
-            tom={coleta.resumo.apertado > 0 ? 'atencao' : undefined}
-            explicacao={COLETA.apertado.frase}
-          />
-          <IndicadorDestaque
-            rotulo="No prazo" valor={formatQtd(coleta.resumo.no_prazo)} Icone={Clock}
-            explicacao={COLETA.no_prazo.frase}
-          />
-          <IndicadorDestaque
-            rotulo="Sem prazo conhecido" valor={formatQtd(coleta.resumo.sem_prazo)} Icone={Info}
-            explicacao={COLETA.sem_prazo.frase}
-          />
+      {aba === 'hoje' && <AbaHoje hoje={hoje} pend={pend} agora={agora} indiceLojas={indiceLojas} aoMudarCorte={carregar} />}
+      {aba === 'enviados' && <AbaEnviados agora={agora} indiceLojas={indiceLojas} />}
+      {aba === 'coletas' && <AbaColetas />}
+      {aba === 'indicadores' && <AbaIndicadores />}
+      {aba === 'papel' && <RomaneioPapel pendentesTodos={pend?.itens || []} indiceLojas={indiceLojas} aoMudar={carregar} />}
+
+      <ComoCalcula />
+    </div>
+  );
+}
+
+// ================================================================ Hoje
+function AbaHoje({ hoje, pend, agora, indiceLojas, aoMudarCorte }) {
+  const [situacao, setSituacao] = useState('');
+  const [lojas, setLojas] = useState([]);
+  const [busca, setBusca] = useState('');
+
+  const itens = useMemo(() => {
+    const alvo = busca.trim().toLowerCase();
+    return (pend?.itens || [])
+      .filter((i) => !situacao || i.situacao_coleta === situacao)
+      .filter((i) => !lojas.length || lojas.includes(i.origem_integracao_id))
+      .filter((i) => !alvo || [i.numero, i.origem_pedido_id, i.loja, i.transportadora, (i.codigos_rastreio || []).join(' ')]
+        .some((c) => String(c || '').toLowerCase().includes(alvo)));
+  }, [pend, situacao, lojas, busca]);
+
+  const tabela = useTabela(itens, { colunas: { prazo: (i) => i.coletar_ate || '9' }, colunaPadrao: null, prefixo: 'exp-pend' });
+
+  if (!hoje || !pend) return <Skeleton height={260} />;
+
+  return (
+    <>
+      <div className="exp-lojas">
+        {hoje.cartoes.map((c) => <CartaoLoja key={c.integracao_id} c={c} agora={agora} />)}
+        <div className="exp-loja exp-shein exp-loja-off">
+          <div className="exp-loja-topo"><SeloPlataforma chave="shein" size={20} /><strong>Shein</strong></div>
+          <div className="exp-loja-num">—</div>
+          <p>Sem integração com o Hub ainda.</p>
+          {hoje.shein.corte_casa && <p>Corte da casa {hoje.shein.corte_casa}</p>}
         </div>
-      )}
+      </div>
 
-      {coleta?.resumo.sem_prazo > 0 && (
+      {hoje.sem_loja?.pendentes > 0 && (
         <p className="aviso-inline">
-          <AlertTriangle size={14} /> {plural(coleta.resumo.sem_prazo, 'pedido')} estão em canais
-          sem prazo de coleta cadastrado. Eles não entram na conta de atraso — o sistema não chuta um
-          prazo que não conhece. Cadastre o prazo do canal para eles passarem a ser cobrados.
+          <AlertTriangle size={14} /> {plural(hoje.sem_loja.pendentes, 'pedido veio', 'pedidos vieram')} de planilha, sem loja ligada.
+          Não dá para perguntar o prazo à plataforma: eles aparecem como “sem prazo”.
         </p>
       )}
 
-      {/* 2. Pendentes de coleta ---------------------------------------------- */}
-      <div className="card">
-        <h2 className="card-titulo"><Clock size={16} /> Esperando coleta</h2>
-        <p className="ink-soft">
-          Pedidos faturados que ainda não estão em nenhum romaneio. Marque e mande para o romaneio
-          aberto.
-        </p>
-
-        <div className="filtros-linha">
-          <CampoBusca valor={busca} onChange={setBusca} placeholder="Número do pedido, canal ou rastreio" />
-          <Select value={filtroColeta} onChange={(e) => setFiltroColeta(e.target.value)}>
-            <option value="">Todas as situações</option>
-            {Object.entries(COLETA).map(([k, v]) => <option key={k} value={k}>{v.rotulo}</option>)}
-          </Select>
+      {pend.cancelados_embalados?.length > 0 && (
+        <div className="exp-alerta exp-tom-atraso">
+          <PackageX size={18} />
+          <div>
+            <strong>Tirar da mesa: {plural(pend.cancelados_embalados.length, 'pedido cancelado', 'pedidos cancelados')} depois de conferido</strong>
+            <p>{pend.cancelados_embalados.map((c) => `${c.origem_pedido_id || c.numero} (${c.loja ? loja(c.loja, c.canal) : c.canal})`).join(' · ')}</p>
+          </div>
         </div>
-        <ChipsFiltros itens={chips} onLimparTudo={() => { setSituacao(''); setFiltroColeta(''); setBusca(''); }} />
+      )}
 
-        {carregando && <Skeleton height={180} />}
-        {!carregando && pendentes.length === 0 && (
-          <EstadoVazio Icone={PackageCheck} titulo="Nada esperando coleta" descricao="Todo pedido faturado já está num romaneio." />
+      <div className="card">
+        <div className="card-head-linha">
+          <h2 className="card-titulo"><AlertTriangle size={16} /> Pendências</h2>
+          <span className="ink-soft">{plural(pend.resumo.conferidos || 0, 'conferido', 'conferidos')} esperando a coleta</span>
+        </div>
+        <div className="exp-chips">
+          <button type="button" className={`exp-chip${!situacao ? ' ativo' : ''}`} onClick={() => setSituacao('')}>
+            Todos <b>{(pend.itens || []).length}</b>
+          </button>
+          {Object.entries(SITUACAO).map(([k, s]) => (
+            <button key={k} type="button" className={`exp-chip ${s.classe}${situacao === k ? ' ativo' : ''}`} onClick={() => setSituacao(situacao === k ? '' : k)}>
+              {s.rotulo} <b>{pend.resumo[k] || 0}</b>
+            </button>
+          ))}
+        </div>
+        <div className="exp-chips">
+          {hoje.cartoes.map((c) => (
+            <button
+              key={c.integracao_id} type="button"
+              className={`exp-chip${lojas.includes(c.integracao_id) ? ' ativo' : ''}`}
+              onClick={() => setLojas(lojas.includes(c.integracao_id) ? lojas.filter((x) => x !== c.integracao_id) : [...lojas, c.integracao_id])}
+            >
+              <SeloPlataforma chave={c.canal} size={13} /> {loja(c.loja, c.canal)}
+            </button>
+          ))}
+          <CampoBusca valor={busca} onChange={setBusca} placeholder="Pedido, loja, rastreio" />
+        </div>
+
+        {itens.length === 0 && (
+          <EstadoVazio Icone={PackageCheck} titulo="Nada pendente aqui" descricao="Tudo o que a plataforma cobra já saiu, ou o filtro não achou nada." />
         )}
-        {/* Paginação (14/09/2026). A lista vinha com `.slice(0, 300)` cru: um
-            teto invisível que SOME com o resto sem avisar ninguém — pior que
-            não paginar, porque a pessoa acha que viu tudo. Medido na varredura:
-            288 linhas renderizadas de uma vez. Agora pagina de verdade, e a
-            contagem diz quantos há no total. */}
-        {!carregando && pendentes.length > 0 && (
+        {itens.length > 0 && (
           <>
-            <div className="painel-acoes-inline">
-              <button
-                type="button" className="btn btn-primary"
-                onClick={acrescentar}
-                disabled={!aberto || aberto.romaneio.situacao !== 'aberto' || selecionados.length === 0}
-              >
-                <Plus size={15} /> Mandar {selecionados.length || ''} para o romaneio
-                {aberto ? ` ${aberto.romaneio.numero}` : ''}
-              </button>
-              {!aberto && <span className="ink-soft">Abra ou crie um romaneio para poder mandar.</span>}
-            </div>
-            <Paginacao {...tabelaPendentes} posicao="topo" />
+            <Paginacao {...tabela} posicao="topo" />
             <div className="tabela-rolagem">
-              <table className="tabela-nota">
+              <table className="tabela-nota exp-tabela">
                 <thead>
                   <tr>
-                    <th /><th className="num">Pedido</th><th>Canal</th><th>Situação</th>
-                    <th>Coletar até</th><th>Faturado</th><th>Rastreio</th>
+                    <th>Pedido</th><th>Loja</th><th>Modalidade</th><th>Na plataforma</th>
+                    <th>Conferido</th><th>Prazo da plataforma</th><th>Falta</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {tabelaPendentes.itensPagina.map((i) => {
-                    const s = COLETA[i.situacao_coleta] || {};
+                  {tabela.itensPagina.map((i) => {
+                    const f = falta(i.coletar_ate, agora);
+                    const s = SITUACAO[i.situacao_coleta] || SITUACAO.sem_prazo;
                     return (
                       <tr key={i.pedido_id}>
-                        <td>
-                          <Checkbox
-                            checked={selecionados.includes(i.pedido_id)}
-                            onChange={(e) => setSelecionados(e.target.checked
-                              ? [...selecionados, i.pedido_id]
-                              : selecionados.filter((x) => x !== i.pedido_id))}
-                          />
+                        <td className="mono">{i.origem_pedido_id || i.numero}</td>
+                        <td><CanalMarketplace registro={{ origem_marketplace: i.canal, origem_integracao_id: i.origem_integracao_id }} indiceLojas={indiceLojas} /></td>
+                        <td>{i.modalidade ? <span className="exp-tag">{MODALIDADE[i.modalidade]}</span> : <span className="ink-faint">—</span>}</td>
+                        <td title={[i.status_plataforma, i.substatus_plataforma].filter(Boolean).join(' / ')}>
+                          {ETAPA[i.etapa] || <span className="ink-faint">não consultado</span>}
+                          {i.pronto_ate && i.etapa === 'a_enviar' && <div className="ink-faint">etiqueta até {quando(i.pronto_ate, agora)}</div>}
                         </td>
-                        <td className="num">{i.numero}</td>
-                        <td>{ouTraco(i.canal || i.canal_venda)}</td>
-                        <td><span className={`stamp sm ${s.tom || 'tone-neutro'}`}>{s.rotulo || i.situacao_coleta}</span></td>
-                        <td>{i.coletar_ate ? tempoRelativo(i.coletar_ate) : '—'}</td>
-                        <td>{i.faturado_em ? tempoRelativo(i.faturado_em) : '—'}</td>
-                        <td>{(i.codigos_rastreio || []).join(', ') || '—'}</td>
+                        <td>{i.conferido_em ? <span className="exp-ok"><CheckCircle2 size={13} /> {hora(i.conferido_em)}</span> : <span className="ink-faint">não bipado</span>}</td>
+                        <td>{i.coletar_ate ? quando(i.coletar_ate, agora) : <span className="ink-faint" title={i.motivo_sem_prazo || ''}>{i.motivo_sem_prazo || 'não informado'}</span>}</td>
+                        <td>{f ? <span className={`exp-pilula ${s.classe}`}>{f.texto}</span> : <span className={`exp-pilula ${s.classe}`}>{s.curto}</span>}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
             </div>
-            <Paginacao {...tabelaPendentes} posicao="rodape" />
+            <Paginacao {...tabela} posicao="rodape" />
           </>
         )}
       </div>
 
-      {/* 3. O romaneio aberto ------------------------------------------------ */}
-      {aberto && (
-        <div className="card">
-          <div className="card-head-linha">
-            <h2 className="card-titulo">
-              <ClipboardList size={16} /> Romaneio {aberto.romaneio.numero}
-              <span className="stamp sm tone-neutro">{SITUACOES[aberto.romaneio.situacao]}</span>
-            </h2>
-            <div className="painel-acoes-inline">
-              {aberto.romaneio.situacao === 'aberto' && (
-                <button type="button" className="btn btn-primary" onClick={() => acao('fechar')}>
-                  <Check size={15} /> Fechar
-                </button>
-              )}
-              {aberto.romaneio.situacao === 'fechado' && (
-                <>
-                  <a className="btn btn-primary" href={`/api${BASE}/${aberto.romaneio.id}/pdf`} target="_blank" rel="noreferrer">
-                    <Printer size={15} /> Imprimir
-                  </a>
-                  <button type="button" className="btn btn-ghost" onClick={() => acao('coletar')}>
-                    <Truck size={15} /> Registrar coleta
-                  </button>
-                  <button type="button" className="btn btn-ghost" onClick={() => acao('reabrir')}>
-                    <Undo2 size={15} /> Reabrir
-                  </button>
-                </>
-              )}
-              {aberto.romaneio.situacao === 'coletado' && (
-                <a className="btn btn-ghost" href={`/api${BASE}/${aberto.romaneio.id}/pdf`} target="_blank" rel="noreferrer">
-                  <FileText size={15} /> Ver o papel
-                </a>
-              )}
-              {['aberto', 'fechado'].includes(aberto.romaneio.situacao) && (
-                <button type="button" className="btn btn-danger" onClick={() => acao('cancelar')}>
-                  <Ban size={15} /> Cancelar
-                </button>
-              )}
-              <button type="button" className="btn btn-ghost" onClick={() => setAberto(null)}>
-                <X size={15} /> Fechar tela
-              </button>
-            </div>
-          </div>
+      <CortesDaCasa cortes={hoje.cortes} aoMudar={aoMudarCorte} />
+    </>
+  );
+}
 
-          <p className="ink-soft">
-            {plural(noRomaneio.length, 'pedido')} ·
-            {' '}{formatQtd(noRomaneio.reduce((s, i) => s + Number(i.volumes || 1), 0))} volume(s)
-            {aberto.romaneio.coletado_em && (
-              <> · levado por <strong>{ouTraco(aberto.romaneio.motorista)}</strong>
-                {aberto.romaneio.placa ? ` (${aberto.romaneio.placa})` : ''} {tempoRelativo(aberto.romaneio.coletado_em)}</>
-            )}
-          </p>
-
-          {Number(aberto.romaneio.sem_rastreio) > 0 && (
-            <p className="aviso-inline">
-              <AlertTriangle size={14} /> {plural(aberto.romaneio.sem_rastreio, 'pedido')} sem
-              código de rastreio. Eles vão para o papel escritos como <strong>SEM RASTREIO</strong> —
-              é uma pergunta a se fazer antes de o motorista sair, não depois.
-            </p>
-          )}
-
-          {noRomaneio.length === 0 && (
-            <EstadoVazio Icone={ClipboardList} titulo="Romaneio vazio" descricao="Marque pedidos na lista acima e mande para cá." />
-          )}
-          {noRomaneio.length > 0 && (
-            <div className="tabela-rolagem">
-              <table className="tabela-nota">
-                <thead>
-                  <tr>
-                    <th className="num">Pedido</th><th>Canal</th><th>Rastreio (congelado)</th>
-                    <th className="num">Volumes</th><th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {noRomaneio.map((i) => (
-                    <tr key={i.id}>
-                      <td className="num">{i.pedido_numero}</td>
-                      <td>{ouTraco(i.origem_marketplace || i.canal_venda)}</td>
-                      <td className={i.codigo_rastreio ? '' : 'tone-prejuizo'}>
-                        {i.codigo_rastreio || 'SEM RASTREIO'}
-                      </td>
-                      <td className="num">{i.volumes}</td>
-                      <td className="num">
-                        {aberto.romaneio.situacao === 'aberto' && (
-                          <button type="button" className="btn btn-ghost" onClick={() => tirar(i.pedido_id)}>
-                            Tirar
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {liberados.length > 0 && (
-            <>
-              <p className="ink-soft">
-                Saíram deste romaneio ({liberados.length}) — a linha fica no histórico de propósito:
-              </p>
-              <div className="tabela-rolagem">
-                <table className="tabela-nota">
-                  <thead><tr><th className="num">Pedido</th><th>Quando</th><th>Por quê</th></tr></thead>
-                  <tbody>
-                    {liberados.map((i) => (
-                      <tr key={i.id}>
-                        <td className="num">{i.pedido_numero}</td>
-                        <td>{tempoRelativo(i.liberado_em)}</td>
-                        <td className="ink-soft">{ouTraco(i.liberado_motivo)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* 4. Romaneios --------------------------------------------------------- */}
-      <div className="card">
-        <h2 className="card-titulo"><Truck size={16} /> Romaneios</h2>
-        <div className="filtros-linha">
-          <Select value={situacao} onChange={(e) => setSituacao(e.target.value)}>
-            <option value="">Todas as situações</option>
-            {Object.entries(SITUACOES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </Select>
-        </div>
-        {carregando && <Skeleton height={160} />}
-        {!carregando && romaneios.length === 0 && (
-          <EstadoVazio Icone={ClipboardList} titulo="Nenhum romaneio" descricao="Crie o primeiro e mande os pedidos que estão esperando coleta." />
-        )}
-        {!carregando && romaneios.length > 0 && (
-          <div className="tabela-rolagem">
-            <table className="tabela-nota">
-              <thead>
-                <tr>
-                  <th className="num">Nº</th><th>Transportadora</th><th>Situação</th>
-                  <th className="num">Pedidos</th><th className="num">Volumes</th>
-                  <th className="num">Sem rastreio</th><th>Quem levou</th><th>Quando</th>
-                </tr>
-              </thead>
-              <tbody>
-                {romaneios.map((r) => (
-                  <tr key={r.id} className="linha-clicavel" onClick={() => abrir(r.id)}>
-                    <td className="num">{r.numero}</td>
-                    <td>{ouTraco(r.transportadora)}</td>
-                    <td><span className="stamp sm tone-neutro">{SITUACOES[r.situacao] || r.situacao}</span></td>
-                    <td className="num">{formatQtd(r.pedidos)}</td>
-                    <td className="num">{formatQtd(r.volumes)}</td>
-                    <td className={`num ${Number(r.sem_rastreio) > 0 ? 'tone-prejuizo' : ''}`}>{formatQtd(r.sem_rastreio)}</td>
-                    <td>{ouTraco(r.motorista)}</td>
-                    <td>{tempoRelativo(r.coletado_em || r.fechado_em || r.criado_em)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+function CartaoLoja({ c, agora }) {
+  const corte = corteHoje(c.corte_casa, agora);
+  const faltaCorte = corte ? falta(corte, agora) : null;
+  const passou = c.passou_hoje;
+  return (
+    <div className={`exp-loja exp-${c.canal}`}>
+      <div className="exp-loja-topo">
+        <SeloPlataforma chave={c.canal} size={20} />
+        <strong>{loja(c.loja, c.canal)}</strong>
+        {c.alerta_almoco && <span className="exp-selo-almoco" title="A coleta costuma cair na hora do almoço (ninguém para atender)"><Utensils size={12} /> almoço</span>}
       </div>
+      <div className="exp-loja-num">{c.pendentes}<small> para sair</small></div>
+      <div className="exp-loja-chips">
+        {c.atrasados > 0 && <span className="exp-pilula exp-tom-atraso">{c.atrasados} atrasado{c.atrasados > 1 ? 's' : ''}</span>}
+        {c.vencem_hoje > 0 && <span className="exp-pilula exp-tom-hoje">{c.vencem_hoje} vence{c.vencem_hoje > 1 ? 'm' : ''} hoje</span>}
+        {c.sem_prazo > 0 && <span className="exp-pilula exp-tom-neutro">{c.sem_prazo} sem prazo</span>}
+      </div>
+      <dl className="exp-loja-dl">
+        <dt><Timer size={12} /> Próximo prazo</dt>
+        <dd>{c.proximo_prazo ? quando(c.proximo_prazo, agora) : '—'}</dd>
+        <dt><Scissors size={12} /> Corte da casa</dt>
+        <dd>{c.corte_casa ? <>{c.corte_casa}{faltaCorte && <em> · {faltaCorte.atrasado ? 'passou' : faltaCorte.texto.replace('faltam ', 'em ')}</em>}</> : '—'}</dd>
+        <dt><Truck size={12} /> Coleta prevista</dt>
+        <dd>
+          {c.agenda_hoje?.de ? `${c.agenda_hoje.de}–${c.agenda_hoje.ate} (plataforma)`
+            : c.agenda_trabalha_hoje === false ? 'sem coleta hoje (plataforma)'
+              : c.horario_tipico ? `costuma passar ${c.horario_tipico}` : 'ainda sem histórico'}
+        </dd>
+        <dt><CheckCircle2 size={12} /> Coleta passou</dt>
+        <dd>
+          {passou ? <>hoje {passou.primeira}{passou.ultima !== passou.primeira ? `–${passou.ultima}` : ''} · {plural(passou.pacotes, 'pacote')}</>
+            : <>ainda não hoje{c.passou_ultima ? <em> · última {diaBr(c.passou_ultima.dia)} {c.passou_ultima.primeira}</em> : ''}</>}
+        </dd>
+      </dl>
+      <div className="exp-loja-rodape">
+        <span>{plural(c.enviados_hoje, 'enviado', 'enviados')} hoje</span>
+        {c.conferidos_esperando > 0 && <span>{c.conferidos_esperando} conferido{c.conferidos_esperando > 1 ? 's' : ''} na mesa</span>}
+      </div>
+      {c.sync?.ultimo_erro && <p className="exp-loja-erro" title={c.sync.ultimo_erro}><XCircle size={12} /> Falha ao ler a plataforma</p>}
+      {!c.sync?.ultima_execucao && <p className="exp-loja-erro"><Clock size={12} /> Ainda não lida: clique em “Atualizar das plataformas”</p>}
+    </div>
+  );
+}
 
-      {/* 5. Prazos ------------------------------------------------------------ */}
-      <div className="card">
-        <h2 className="card-titulo"><Timer size={16} /> Prazo de coleta por canal</h2>
-        <p className="ink-soft">
-          É daqui que sai a conta de atraso. Os números vieram do padrão divulgado de cada
-          plataforma e servem como ponto de partida — o prazo real depende do plano da loja, da
-          modalidade de envio e da região, e muda sem aviso. <strong>Confira no painel de cada
-          canal.</strong>
-        </p>
+function CortesDaCasa({ cortes, aoMudar }) {
+  const [editando, setEditando] = useState({});
+  const [erro, setErro] = useState('');
+  async function salvar(canal) {
+    setErro('');
+    try { await api.put(`${BASE}/prazos/${canal}`, { horario_corte: editando[canal] }); setEditando({ ...editando, [canal]: undefined }); aoMudar?.(); }
+    catch (e) { setErro(mensagem(e)); }
+  }
+  const canais = ['mercado_livre', 'tiktok_shop', 'shein', 'shopee'];
+  return (
+    <div className="card">
+      <h2 className="card-titulo"><Scissors size={16} /> Corte da casa</h2>
+      <p className="ink-soft">A hora em que a expedição fecha cada canal no dia. É meta da casa, não o prazo da plataforma.</p>
+      {erro && <p className="erro-inline">{erro}</p>}
+      <div className="exp-cortes">
+        {canais.map((k) => (
+          <label key={k} className="exp-corte">
+            <SeloPlataforma chave={k} size={16} />
+            <input
+              type="time" value={editando[k] ?? cortes?.[k] ?? ''}
+              onChange={(e) => setEditando({ ...editando, [k]: e.target.value })}
+              onBlur={() => editando[k] !== undefined && editando[k] !== cortes?.[k] && salvar(k)}
+            />
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ================================================================ Enviados
+function AbaEnviados({ agora, indiceLojas }) {
+  const [dia, setDia] = useState(diaIso(new Date()));
+  const [dados, setDados] = useState(null);
+  const [lojas, setLojas] = useState([]);
+  const [erro, setErro] = useState('');
+  useEffect(() => {
+    setDados(null); setErro('');
+    api.get(`${BASE}/expedicao/enviados?dia=${dia}`).then(setDados).catch((e) => setErro(mensagem(e)));
+  }, [dia]);
+  const itens = useMemo(() => (dados?.itens || []).filter((i) => !lojas.length || lojas.includes(i.origem_integracao_id)), [dados, lojas]);
+  const tabela = useTabela(itens, { colunas: { saiu: (i) => i.saiu_em }, colunaPadrao: null, prefixo: 'exp-env' });
+  const hojeIso = diaIso(new Date(agora));
+  const maxHora = Math.max(1, ...(dados?.por_hora || [0]));
+
+  return (
+    <>
+      <div className="exp-barra">
+        <div className="exp-chips">
+          <button type="button" className={`exp-chip${dia === hojeIso ? ' ativo' : ''}`} onClick={() => setDia(hojeIso)}>Hoje</button>
+          <button type="button" className={`exp-chip${dia === somarDias(hojeIso, -1) ? ' ativo' : ''}`} onClick={() => setDia(somarDias(hojeIso, -1))}>Ontem</button>
+          <DateInput value={dia} onChange={(e) => e.target.value && setDia(e.target.value)} />
+        </div>
+        {dados && <strong>{plural(dados.total, 'pedido enviado', 'pedidos enviados')} em {diaBr(dia)}</strong>}
+      </div>
+      {erro && <p className="erro-inline">{erro}</p>}
+      {!dados && !erro && <Skeleton height={220} />}
+      {dados && (
+        <>
+          <div className="exp-resumo-lojas">
+            {dados.por_loja.map((l) => (
+              <button
+                key={l.integracao_id} type="button"
+                className={`exp-resumo exp-${l.canal}${lojas.includes(l.integracao_id) ? ' ativo' : ''}`}
+                onClick={() => setLojas(lojas.includes(l.integracao_id) ? lojas.filter((x) => x !== l.integracao_id) : [...lojas, l.integracao_id])}
+              >
+                <span className="exp-resumo-topo"><SeloPlataforma chave={l.canal} size={16} /> {loja(l.loja, l.canal)}</span>
+                <span className="exp-resumo-num">{l.total}</span>
+                <span>{l.passagem ? `coleta passou ${l.passagem.primeira}${l.passagem.ultima !== l.passagem.primeira ? `–${l.passagem.ultima}` : ''}` : 'sem bipe de coleta'}</span>
+                {l.janela_prevista?.de && <span>janela {l.janela_prevista.de}–{l.janela_prevista.ate}</span>}
+                <span>{l.no_prazo} no prazo{l.fora_do_prazo ? ` · ${l.fora_do_prazo} fora` : ''}</span>
+                {l.sem_conferencia > 0 && <span className="exp-atencao">{l.sem_conferencia} saíram sem conferência</span>}
+                {l.alerta_almoco && <span className="exp-atencao"><Utensils size={11} /> coleta no almoço</span>}
+              </button>
+            ))}
+          </div>
+
+          <div className="card">
+            <h2 className="card-titulo"><Clock size={16} /> Saída por hora</h2>
+            <div className="exp-horas">
+              {dados.por_hora.map((n, h) => (
+                <div key={h} className="exp-hora" title={`${String(h).padStart(2, '0')}h: ${n}`}>
+                  <span className="exp-hora-barra" style={{ height: `${(n / maxHora) * 100}%` }}>{n > 0 && <b>{n}</b>}</span>
+                  <small>{h}</small>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card">
+            <h2 className="card-titulo"><Truck size={16} /> Pedidos enviados</h2>
+            {itens.length === 0 && <EstadoVazio Icone={Truck} titulo="Nenhum envio registrado" descricao="A plataforma não registrou saída neste dia." />}
+            {itens.length > 0 && (
+              <>
+                <Paginacao {...tabela} posicao="topo" />
+                <div className="tabela-rolagem">
+                  <table className="tabela-nota exp-tabela">
+                    <thead><tr><th>Saiu às</th><th>Pedido</th><th>Loja</th><th>Modalidade</th><th>Conferido</th><th>Prazo</th><th>No prazo?</th><th>Rastreio</th></tr></thead>
+                    <tbody>
+                      {tabela.itensPagina.map((i) => (
+                        <tr key={i.pedido_id}>
+                          <td title={FONTE[i.fonte]}>{hora(i.saiu_em)}{i.fonte === 'detectado' && <span className="ink-faint"> ≈</span>}</td>
+                          <td className="mono">{i.origem_pedido_id || i.numero}</td>
+                          <td><CanalMarketplace registro={{ origem_marketplace: i.canal, origem_integracao_id: i.origem_integracao_id }} indiceLojas={indiceLojas} /></td>
+                          <td>{i.modalidade ? MODALIDADE[i.modalidade] : '—'}</td>
+                          <td>{i.conferido_em ? hora(i.conferido_em) : <span className="exp-atencao">sem conferência</span>}</td>
+                          <td>{i.despachar_ate ? quando(i.despachar_ate, agora) : '—'}</td>
+                          <td>{i.no_prazo === true ? <span className="exp-pilula exp-tom-ok">sim</span> : i.no_prazo === false ? <span className="exp-pilula exp-tom-atraso">não</span> : '—'}</td>
+                          <td className="mono">{i.rastreio || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Paginacao {...tabela} posicao="rodape" />
+              </>
+            )}
+            <p className="ink-faint exp-nota">≈ hora aproximada: a plataforma disse “enviado” sem dizer a hora (ex.: postado em agência).</p>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+// ================================================================ Coletas
+const SIT_COLETA = {
+  na_janela: { t: 'Na janela', c: 'exp-tom-ok' },
+  depois: { t: 'Depois da janela', c: 'exp-tom-hoje' },
+  antes: { t: 'Antes da janela', c: 'exp-tom-hoje' },
+  nao_passou: { t: 'Não passou', c: 'exp-tom-atraso' },
+  aguardando: { t: 'Aguardando', c: 'exp-tom-neutro' },
+  sem_janela: { t: 'Sem janela da plataforma', c: 'exp-tom-neutro' },
+};
+
+function AbaColetas() {
+  const [dias, setDias] = useState(14);
+  const [dados, setDados] = useState(null);
+  const [erro, setErro] = useState('');
+  useEffect(() => {
+    setDados(null);
+    api.get(`${BASE}/expedicao/coletas?dias=${dias}`).then(setDados).catch((e) => setErro(mensagem(e)));
+  }, [dias]);
+  const noAlmoco = (dados?.linhas || []).filter((l) => l.alerta_almoco).length;
+  return (
+    <div className="card">
+      <div className="card-head-linha">
+        <h2 className="card-titulo"><History size={16} /> Quando a coleta passou</h2>
+        <div className="exp-chips">
+          {[7, 14, 30].map((n) => <button key={n} type="button" className={`exp-chip${dias === n ? ' ativo' : ''}`} onClick={() => setDias(n)}>{n} dias</button>)}
+        </div>
+      </div>
+      <p className="ink-soft">A hora é o primeiro e o último bipe da transportadora nos pacotes de coleta daquele dia. A janela é a que a plataforma divulga (hoje, só o Mercado Livre divulga).</p>
+      {noAlmoco > 0 && <p className="aviso-inline"><Utensils size={14} /> {plural(noAlmoco, 'coleta caiu', 'coletas caíram')} no horário de almoço (12:00–13:15) neste período.</p>}
+      {erro && <p className="erro-inline">{erro}</p>}
+      {!dados && !erro && <Skeleton height={200} />}
+      {dados && dados.linhas.length === 0 && <EstadoVazio Icone={Truck} titulo="Sem coletas registradas" descricao="Assim que as plataformas registrarem as saídas, o histórico aparece aqui." />}
+      {dados && dados.linhas.length > 0 && (
         <div className="tabela-rolagem">
-          <table className="tabela-nota">
-            <thead><tr><th>Canal</th><th className="num">Horas para coletar</th><th>Observação</th></tr></thead>
+          <table className="tabela-nota exp-tabela">
+            <thead><tr><th>Dia</th><th>Loja</th><th>Janela prevista</th><th>Passou</th><th>Último bipe</th><th className="num">Pacotes</th><th>Situação</th></tr></thead>
             <tbody>
-              {prazos.map((p) => (
-                <tr key={p.id}>
-                  <td>{p.canal}</td>
-                  <td className="num">
-                    <NumInput
-                      value={p.horas_para_coleta}
-                      onChange={async (v) => {
-                        if (!(Number(v) > 0)) return;
-                        try {
-                          await api.put(`${BASE}/prazos/${p.canal}`, { horas_para_coleta: Number(v) });
-                          carregar();
-                        } catch (e) { setErro(mensagem(e)); }
-                      }}
-                    />
-                  </td>
-                  <td className="ink-soft">{ouTraco(p.observacao)}</td>
+              {dados.linhas.map((l) => (
+                <tr key={`${l.dia}-${l.integracao_id}`}>
+                  <td>{DIAS_SEMANA[l.dia_semana]} {diaBr(l.dia)}</td>
+                  <td><SeloPlataforma chave={l.canal} size={14} /> {loja(l.loja, l.canal)}</td>
+                  <td>{l.janela?.de ? `${l.janela.de}–${l.janela.ate}` : '—'}</td>
+                  <td><strong>{l.passou || '—'}</strong>{l.alerta_almoco && <span className="exp-selo-almoco inline"><Utensils size={11} /> almoço</span>}</td>
+                  <td>{l.ultimo_bipe || '—'}</td>
+                  <td className="num">{l.pacotes || '—'}</td>
+                  <td><span className={`exp-pilula ${SIT_COLETA[l.situacao]?.c}`}>{SIT_COLETA[l.situacao]?.t}</span></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ================================================================ Indicadores
+function AbaIndicadores() {
+  const [dias, setDias] = useState(30);
+  const [dados, setDados] = useState(null);
+  const [erro, setErro] = useState('');
+  useEffect(() => {
+    setDados(null);
+    api.get(`${BASE}/expedicao/indicadores?dias=${dias}`).then(setDados).catch((e) => setErro(mensagem(e)));
+  }, [dias]);
+  const maxMapa = Math.max(1, ...((dados?.mapa_entrada || []).flat()));
+  const min = (m) => (m === null || m === undefined ? '—' : duracao(m));
+
+  return (
+    <>
+      <div className="exp-barra">
+        <div className="exp-chips">
+          {[7, 30, 90].map((n) => <button key={n} type="button" className={`exp-chip${dias === n ? ' ativo' : ''}`} onClick={() => setDias(n)}>{n} dias</button>)}
+        </div>
       </div>
+      {erro && <p className="erro-inline">{erro}</p>}
+      {!dados && !erro && <Skeleton height={240} />}
+      {dados && (
+        <>
+          <div className="exp-resumo-lojas">
+            {dados.por_loja.length === 0 && <EstadoVazio Icone={Gauge} titulo="Sem envios no período" descricao="Os indicadores aparecem quando as plataformas registrarem as saídas." />}
+            {dados.por_loja.map((l) => {
+              const pct = l.com_prazo ? Math.round((l.no_prazo / l.com_prazo) * 1000) / 10 : null;
+              return (
+                <div key={l.origem_integracao_id} className={`exp-resumo exp-${l.canal} exp-ind`}>
+                  <span className="exp-resumo-topo"><SeloPlataforma chave={l.canal} size={16} /> {loja(l.loja, l.canal)}</span>
+                  <span className="exp-resumo-num">{pct === null ? '—' : `${pct.toLocaleString('pt-BR')}%`}</span>
+                  <span>enviados no prazo ({l.no_prazo} de {l.com_prazo})</span>
+                  <span className="exp-ciclo">
+                    <i>Pago → conferido <b>{min(l.min_pago_conferido)}</b></i>
+                    <i>Conferido → coletado <b>{min(l.min_conferido_enviado)}</b></i>
+                    <i>Pago → coletado <b>{min(l.min_pago_enviado)}</b></i>
+                  </span>
+                  <span>{[l.m_coleta && `${l.m_coleta} coleta`, l.m_agencia && `${l.m_agencia} agência`, l.m_flex && `${l.m_flex} Flex`, l.m_outro && `${l.m_outro} outro`].filter(Boolean).join(' · ')}</span>
+                  {l.sem_conferencia > 0 && <span className="exp-atencao">{l.sem_conferencia} de {l.enviados} saíram sem conferência</span>}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="card">
+            <h2 className="card-titulo"><CalendarDays size={16} /> Pedidos que entram, por dia e hora</h2>
+            <p className="ink-soft">Últimas {dados.semanas_mapa} semanas, pela hora do pagamento. Serve para escalar gente no pico.</p>
+            <div className="exp-mapa">
+              <span />
+              {Array.from({ length: 24 }, (_, h) => <small key={h}>{h}</small>)}
+              {dados.mapa_entrada.map((linha, d) => (
+                [<small key={`d${d}`}>{DIAS_SEMANA[d]}</small>,
+                  ...linha.map((n, h) => (
+                    <span key={`${d}-${h}`} className={`exp-mapa-cel${n / maxMapa > 0.5 ? ' forte' : ''}`} title={`${DIAS_SEMANA[d]} ${h}h: ${n}`} style={{ '--i': n / maxMapa }}>{n > 0 ? n : ''}</span>
+                  ))]
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+// ================================================================ explicação
+function ComoCalcula() {
+  const [aberto, setAberto] = useState(false);
+  return (
+    <div className="card exp-como">
+      <button type="button" className="exp-como-btn" onClick={() => setAberto(!aberto)}>
+        <Search size={14} /> Como esta tela calcula <ChevronDown size={14} className={aberto ? 'virado' : ''} />
+      </button>
+      {aberto && (
+        <ul>
+          <li><b>Prazo</b>: o que a plataforma exige para o pacote sair. Mercado Livre: prazo de despacho do envio (o mesmo da reputação). Shopee: <i>ship by date</i>. TikTok: prazo da coleta (ou do envio; sem nenhum dos dois, o da etiqueta).</li>
+          <li><b>Coleta passou</b>: o primeiro bipe da transportadora nos pacotes de coleta do dia (ML <i>date_shipped</i>, Shopee <i>pickup done</i>, TikTok <i>collection time</i>).</li>
+          <li><b>Coleta prevista</b>: a janela que o Mercado Livre divulga para a conta. Sem janela, a mediana do horário real dos últimos 14 dias.</li>
+          <li><b>Atrasado</b>: passou do prazo da plataforma e ela ainda não registrou a saída. <b>Vence hoje</b>: o prazo é hoje. Pedido que a plataforma não informou fica em <b>sem prazo</b>. O sistema não chuta.</li>
+          <li><b>Conferido</b>: a hora em que a caixa foi bipada na Conferência.</li>
+          <li>As plataformas são relidas a cada 5 minutos. O botão “Atualizar das plataformas” relê na hora. Pedidos do Full ficam de fora: quem despacha é a plataforma.</li>
+        </ul>
+      )}
     </div>
   );
 }

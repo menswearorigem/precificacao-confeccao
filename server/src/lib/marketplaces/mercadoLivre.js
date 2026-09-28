@@ -146,6 +146,44 @@ async function buscarEnvioPorId(shipmentId, accessToken) {
   return chamarApi(`/shipments/${shipmentId}`, accessToken);
 }
 
+// ---------- Expedição (28/09/2026) ----------
+// O envio com o formato novo (`x-format-new: true`): é nele que vêm
+// `logistic.type` (cross_docking = coleta, drop_off / xd_drop_off = agência,
+// self_service = Flex, fulfillment = Full), `lead_time.estimated_handling_limit`
+// (até quando despachar) e `status_history.date_shipped` (a hora em que a
+// transportadora bipou o pacote). O /sla traz o prazo de despacho que o ML
+// usa na reputação (`expected_date`) e se o envio está `on_time` ou `delayed`.
+//
+// O /sla falhar não derruba o envio: o prazo cai no `estimated_handling_limit`.
+async function chamarApiComCabecalhos(path, accessToken, cabecalhos = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { Authorization: `Bearer ${accessToken}`, ...cabecalhos },
+  });
+  const data = await lerRespostaJson(res, path);
+  if (!res.ok) {
+    throw erroComStatus(data.message || `Erro na API do Mercado Livre (${res.status}): ${path}`, res.status);
+  }
+  return data;
+}
+
+async function buscarEnvioExpedicao(shipmentId, accessToken) {
+  const envio = await chamarApiComCabecalhos(`/shipments/${shipmentId}`, accessToken, { 'x-format-new': 'true' });
+  let sla = null;
+  try {
+    sla = await chamarApi(`/shipments/${shipmentId}/sla`, accessToken);
+  } catch (err) {
+    sla = { erro: err.message, status_http: err.status || null };
+  }
+  return { envio, sla };
+}
+
+// Agenda de coleta da conta: por dia da semana, o horário de corte e a janela
+// em que a transportadora passa. `tipo` é o logistic_type (cross_docking para
+// coleta). A resposta é guardada bruta — ver lib/expedicaoEnvio.js, que lê.
+async function buscarAgendaColetaML({ accessToken, sellerId, tipo = 'cross_docking' }) {
+  return chamarApi(`/users/${sellerId}/shipping/schedule/${tipo}`, accessToken);
+}
+
 // Todos os pedidos de um mesmo pacote (compra com mais de um anúncio
 // diferente, que o Mercado Livre divide num order por anúncio mas agrupa
 // num pack_id comum). Usa o recurso dedicado — mais direto que tentar achar
@@ -466,6 +504,10 @@ function mapearPedido(order) {
     // pra contagem de "pedidos"/"vendas" nas métricas poder agrupar do
     // mesmo jeito.
     packId: order.pack_id ? String(order.pack_id) : null,
+    // Expedição (28/09/2026): o envio tem número próprio, e é por ele que o
+    // prazo de despacho e a hora da coleta são lidos depois.
+    envioIdExterno: order.shipping?.id ? String(order.shipping.id) : null,
+    pagoEm: order.date_closed || order.payments?.[0]?.date_approved || null,
     itens,
   };
 }
@@ -1824,4 +1866,7 @@ module.exports = {
   buscarEnviosFullML,
   diagnosticarEnviosFullML,
   mapearRemessaML,
+  // Expedição (28/09/2026)
+  buscarEnvioExpedicao,
+  buscarAgendaColetaML,
 };

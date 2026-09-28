@@ -43,12 +43,22 @@ async function limpar() {
   await pool.query("DELETE FROM pedidos_venda WHERE observacao = 'TESTE ROM'");
 }
 
-async function criarPedido({ canal = 'shopee', horasAtras = 1, rastreio = null } = {}) {
+// Desde a 0094 o prazo vem da PLATAFORMA (pedido_envio.despachar_ate), e não
+// mais de "faturado + horas do cadastro". `prazoHoras` é quanto falta (negativo
+// = já venceu); null = a plataforma não informou.
+async function criarPedido({ canal = 'shopee', horasAtras = 1, rastreio = null, prazoHoras = null } = {}) {
   const { rows } = await pool.query(
     `INSERT INTO pedidos_venda (observacao, situacao, origem_marketplace, faturado_em, codigos_rastreio)
      VALUES ('TESTE ROM','faturado',$1, now() - make_interval(hours => $2), $3) RETURNING id, numero`,
     [canal, horasAtras, rastreio ? [rastreio] : null]
   );
+  if (prazoHoras !== null) {
+    await pool.query(
+      `INSERT INTO pedido_envio (pedido_id, canal, despachar_ate, consultado_em, etapa)
+       VALUES ($1, $2, now() + make_interval(mins => $3), now(), 'a_enviar')`,
+      [rows[0].id, canal, Math.round(prazoHoras * 60)]
+    );
+  }
   return rows[0];
 }
 
@@ -66,16 +76,16 @@ async function main() {
   checa('prazo se atualiza', bom.status === 200 && bom.body.horas_para_coleta === 24, bom.body);
 
   console.log('\n== O RELÓGIO DA COLETA ==');
-  const pNoPrazo = await criarPedido({ canal: 'shopee', horasAtras: 1, rastreio: 'BR111111111BR' });
-  const pApertado = await criarPedido({ canal: 'shopee', horasAtras: 20 });
-  const pAtrasado = await criarPedido({ canal: 'shopee', horasAtras: 40, rastreio: 'BR222222222BR' });
+  const pNoPrazo = await criarPedido({ canal: 'shopee', horasAtras: 1, rastreio: 'BR111111111BR', prazoHoras: 30 });
+  const pApertado = await criarPedido({ canal: 'shopee', horasAtras: 20, prazoHoras: 1 / 60 });
+  const pAtrasado = await criarPedido({ canal: 'shopee', horasAtras: 40, rastreio: 'BR222222222BR', prazoHoras: -16 });
   const pSemPrazo = await criarPedido({ canal: 'canal_novo', horasAtras: 100 });
 
   const col = await req('GET', '/api/rom/coleta');
   const linha = (id) => col.body.itens.find((i) => i.pedido_id === id);
-  checa('pedido de 1h está no prazo', linha(pNoPrazo.id)?.situacao_coleta === 'no_prazo', linha(pNoPrazo.id)?.situacao_coleta);
-  checa('pedido de 20h de 24 está apertado', linha(pApertado.id)?.situacao_coleta === 'apertado', linha(pApertado.id)?.situacao_coleta);
-  checa('pedido de 40h de 24 está atrasado', linha(pAtrasado.id)?.situacao_coleta === 'atrasado', linha(pAtrasado.id)?.situacao_coleta);
+  checa('prazo da plataforma depois de hoje = no prazo', linha(pNoPrazo.id)?.situacao_coleta === 'no_prazo', linha(pNoPrazo.id)?.situacao_coleta);
+  checa('prazo da plataforma vence hoje = apertado', linha(pApertado.id)?.situacao_coleta === 'apertado', linha(pApertado.id)?.situacao_coleta);
+  checa('prazo da plataforma já passou = atrasado', linha(pAtrasado.id)?.situacao_coleta === 'atrasado', linha(pAtrasado.id)?.situacao_coleta);
   checa('⚠️ canal sem prazo cadastrado NÃO vira "no prazo"',
     linha(pSemPrazo.id)?.situacao_coleta === 'sem_prazo', linha(pSemPrazo.id)?.situacao_coleta);
   checa('e o resumo conta "sem prazo" separado', col.body.resumo.sem_prazo >= 1, col.body.resumo);

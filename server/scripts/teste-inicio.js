@@ -102,7 +102,10 @@ console.log('\n1. Motor puro');
   const { rows: [fac] } = await q(`INSERT INTO fornecedores (nome, eh_faccao) VALUES ('Facção Teste', true) RETURNING id`);
   await q(`INSERT INTO ordens_producao (produto_id, empresa_id, fornecedor_id, situacao, quantidade_planejada, data_prevista) VALUES ($1,$2,$3,'em_producao',100,CURRENT_DATE - 3),($1,$2,$3,'em_producao',50,CURRENT_DATE)`, [prod.id, emp.id, fac.id]);
   // Shopee: 48 h. Faturado há 50 h = atrasado; há 30 h = sai hoje ou amanhã, conforme a hora.
-  await q(`INSERT INTO pedidos_venda (situacao, canal_venda, origem_marketplace, faturado_em, empresa_id) VALUES ('faturado','Shopee','shopee', now() - interval '50 hours', $1),('faturado','Shopee','shopee', now() - interval '30 hours', $1)`, [emp.id]);
+  // Desde a 0094 o prazo vem da plataforma (pedido_envio): um já venceu há 2 h,
+  // o outro vence daqui a 18 h.
+  const { rows: pedsIni } = await q(`INSERT INTO pedidos_venda (situacao, canal_venda, origem_marketplace, faturado_em, empresa_id) VALUES ('faturado','Shopee','shopee', now() - interval '50 hours', $1),('faturado','Shopee','shopee', now() - interval '30 hours', $1) RETURNING id`, [emp.id]);
+  await q(`INSERT INTO pedido_envio (pedido_id, canal, despachar_ate, consultado_em, etapa) VALUES ($1,'shopee', now() - interval '2 hours', now(), 'a_enviar'),($2,'shopee', now() + interval '18 hours', now(), 'a_enviar')`, [pedsIni[0].id, pedsIni[1].id]);
   await q(`INSERT INTO fin_titulos (empresa_id, natureza, descricao, data_competencia, data_vencimento, valor_bruto, situacao) VALUES ($1,'pagar','TSTINI hoje',CURRENT_DATE,${'(now() AT TIME ZONE \'America/Sao_Paulo\')::date'},700,'aberto')`, [emp.id]);
   const { rows: [ev] } = await q(`INSERT INTO calendario_eventos (titulo, data_prevista_fim, criado_por) VALUES ('Inventário C', (now() AT TIME ZONE 'America/Sao_Paulo')::date, $1) RETURNING id`, [adm.id]);
   await q(`INSERT INTO calendario_eventos_responsaveis VALUES ($1,$2)`, [ev.id, gal.id]);

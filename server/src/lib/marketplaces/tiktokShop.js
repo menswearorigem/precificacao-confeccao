@@ -244,6 +244,24 @@ async function buscarPedidoPorId({ appKey, appSecret, accessToken, shopCipher, o
   return lista[0];
 }
 
+// Expedição (28/09/2026): relê vários pedidos de uma vez (até 50 por
+// chamada). O pedido da TikTok já traz os prazos de envio — rts_sla_time
+// (etiqueta pronta), collection_due_time / shipping_due_time (até quando o
+// pacote tem de sair) — e as horas reais (rts_time, collection_time).
+async function buscarPedidosPorIds({ appKey, appSecret, accessToken, shopCipher, ids }) {
+  const todos = [];
+  for (let i = 0; i < ids.length; i += 50) {
+    const lote = ids.slice(i, i + 50);
+    if (lote.length === 0) continue;
+    const data = await chamarApi(`/order/${VERSAO}/orders`, {
+      appKey, appSecret, accessToken,
+      query: { shop_cipher: shopCipher, ids: lote.join(',') },
+    });
+    todos.push(...(data.orders || []));
+  }
+  return todos;
+}
+
 // order.create_time vem em unix timestamp (UTC) — convertendo direto com
 // .toISOString() a data do pedido fica errada pra pedidos feitos à noite no
 // Brasil (ex.: 22h de ontem em BRT já é depois da meia-noite em UTC, então
@@ -456,6 +474,8 @@ function mapearPedido(order) {
     valorRecebidoStatus: null,
     valorRecebidoLiberacaoEm: null,
     statusExterno: order.status || null,
+    // Expedição (28/09/2026): início do relógio de envio.
+    pagoEm: Number(order.paid_time) > 0 ? new Date(Number(order.paid_time) * 1000).toISOString() : null,
     itens,
   };
 }
@@ -1089,4 +1109,6 @@ module.exports = {
   dataPedidoBrasil,
   buscarLancamentosDoStatement,
   buscarSaques,
+  // Expedição (28/09/2026)
+  buscarPedidosPorIds,
 };

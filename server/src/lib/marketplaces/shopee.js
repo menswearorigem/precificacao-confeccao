@@ -236,6 +236,30 @@ async function buscarDetalhesPedidos(credenciais, orderSns) {
   return detalhes;
 }
 
+// ---------- Expedição (28/09/2026) ----------
+// O detalhe do pedido com os campos de envio: `ship_by_date` (até quando a
+// Shopee exige o envio — é o prazo do "Late Shipment Rate"), `pickup_done_time`
+// (a hora em que a transportadora pegou o pacote; 0 enquanto não pegou),
+// `order_status` e o pacote. Lote de 50, como o resto do arquivo.
+const CAMPOS_ENVIO_PEDIDO = [
+  'order_status', 'pay_time', 'pickup_done_time', 'shipping_carrier',
+  'package_list', 'fulfillment_flag', 'days_to_ship', 'checkout_shipping_carrier',
+].join(',');
+
+async function buscarEnviosPedidos(credenciais, orderSns) {
+  const detalhes = [];
+  for (let i = 0; i < orderSns.length; i += 50) {
+    const lote = orderSns.slice(i, i + 50);
+    if (lote.length === 0) continue;
+    const data = await chamarDaLoja('/api/v2/order/get_order_detail', {
+      ...credenciais,
+      query: { order_sn_list: lote.join(','), response_optional_fields: CAMPOS_ENVIO_PEDIDO },
+    });
+    detalhes.push(...(data.response?.order_list || []));
+  }
+  return detalhes;
+}
+
 // ---------- Conciliação financeira (escrow) ----------
 // `escrow_amount` é o valor que a Shopee efetivamente repassa ao vendedor
 // naquele pedido: já é líquido de comissão, taxa de serviço, taxa de
@@ -433,6 +457,8 @@ function mapearPedido(order) {
     valorRecebidoStatus: valorRecebido === null ? null : (liberado ? 'liberado' : 'confirmado'),
     valorRecebidoLiberacaoEm: liberacaoEscrow,
     statusExterno: order.order_status || null,
+    // Expedição (28/09/2026): início do relógio de envio.
+    pagoEm: Number(order.pay_time) > 0 ? new Date(Number(order.pay_time) * 1000).toISOString() : null,
     itens,
   };
 }
@@ -1957,4 +1983,6 @@ module.exports = {
   dataPedidoBrasil,
   buscarExtratoCarteira,
   mapearTransacaoCarteira,
+  // Expedição (28/09/2026)
+  buscarEnviosPedidos,
 };

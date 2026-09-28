@@ -12,6 +12,7 @@ const tiktokShop = require('./marketplaces/tiktokShop');
 // cliente próprio. Ver o cabeçalho de marketplaces/tiktokAds.js.
 const tiktokAds = require('./marketplaces/tiktokAds');
 const { recalcularTotais } = require('./pedidoRecalculo');
+const { sincronizarEnvios } = require('./expedicaoSync');
 const { registrarMovimento } = require('./estoqueMovimento');
 const { categorizarErro, JANELA_RESSINCRONIZACAO_DIAS } = require('./saudeIntegracao');
 
@@ -470,6 +471,16 @@ async function importarPedido(client, pedidoGenerico, integracao) {
     ]
   );
   const pedidoId = rows[0].id;
+  // Expedição (28/09/2026): o número do envio (ML) e a hora do pagamento
+  // entram já na importação; o prazo e a hora da coleta vêm depois, pela
+  // sincronização de envio (lib/expedicaoSync.js). ON CONFLICT: a linha só
+  // nasce aqui, nunca é reescrita por este caminho.
+  await client.query(
+    `INSERT INTO pedido_envio (pedido_id, origem_integracao_id, canal, envio_id_externo, pago_em)
+     VALUES ($1, $2, $3, $4, $5) ON CONFLICT (pedido_id) DO NOTHING`,
+    [pedidoId, integracao?.id || null, pedidoGenerico.marketplace,
+     pedidoGenerico.envioIdExterno || null, pedidoGenerico.pagoEm || null]
+  );
   // Etiqueta de envio, quando a origem trouxe (hoje: a planilha do UpSeller,
   // se a exportação tiver a coluna). É o que faz a Conferência de Pedidos
   // abrir a caixa certa só bipando a etiqueta.
@@ -1785,6 +1796,14 @@ async function sincronizarIntegracao(integracaoId) {
     await corrigirPackIdHistorico(integracao, { limite: 15 });
     await corrigirTaxaMarketplaceHistorico(integracao, { limite: 15 });
     await sincronizarAdsSeNecessario(integracao);
+    // Expedição (28/09/2026): prazo de envio e hora da coleta, lidos na
+    // plataforma. Falha aqui não derruba a importação de pedidos — o erro
+    // fica em expedicao_sync_estado e aparece na tela do Romaneio.
+    try {
+      await sincronizarEnvios(integracao);
+    } catch (err) {
+      console.error(`[expedicao] falha na integração ${integracaoId}:`, err.message);
+    }
 
     // Dia com mais de 1.000 pedidos pagos no ML: vai para a tela de Saúde
     // (ultimo_erro), e não só para o log do servidor.

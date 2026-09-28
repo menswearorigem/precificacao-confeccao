@@ -5,6 +5,9 @@ const pool = require('../db/pool');
 const {
   lerRomaneio, itensDo, acrescentar, liberar, fechar, reabrir, coletar, cancelar, gerarPdf,
 } = require('../lib/romaneio');
+const painel = require('../lib/expedicaoPainel');
+const { sincronizarEnvios } = require('../lib/expedicaoSync');
+const { garantirTokenValido } = require('../lib/marketplaceSync');
 
 const router = express.Router();
 const httpErr = (res, err) => (err && err.status ? res.status(err.status).json({ error: err.message }) : null);
@@ -13,28 +16,93 @@ const httpErr = (res, err) => (err && err.status ? res.status(err.status).json({
 
 router.get('/prazos', async (req, res, next) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM expedicao_prazos ORDER BY canal');
+    const { rows } = await pool.query("SELECT *, to_char(horario_corte, 'HH24:MI') AS corte FROM expedicao_prazos ORDER BY canal");
     res.json(rows);
   } catch (err) { next(err); }
 });
 
 router.put('/prazos/:canal', async (req, res, next) => {
   try {
-    const horas = Number(req.body?.horas_para_coleta);
-    if (!Number.isFinite(horas) || horas <= 0) {
+    // Desde a 0094 o que se edita na tela é o CORTE DA CASA (HH:MM). As horas
+    // de prazo continuam aceitas para quem ainda manda, mas não mandam mais no
+    // relógio: o prazo agora vem da plataforma.
+    const b = req.body || {};
+    const corte = b.horario_corte === undefined ? undefined : String(b.horario_corte || '').trim();
+    if (corte !== undefined && corte !== '' && !/^([01]\d|2[0-3]):[0-5]\d$/.test(corte)) {
+      return res.status(400).json({ error: 'O corte precisa estar no formato HH:MM (ex.: 14:00).' });
+    }
+    let horas = b.horas_para_coleta === undefined ? null : Number(b.horas_para_coleta);
+    if (horas !== null && (!Number.isFinite(horas) || horas <= 0)) {
       return res.status(400).json({ error: 'O prazo precisa ser um número de horas maior que zero.' });
     }
     const { rows } = await pool.query(
-      `INSERT INTO expedicao_prazos (canal, horas_para_coleta, observacao)
-       VALUES ($1,$2,$3)
+      `INSERT INTO expedicao_prazos (canal, horas_para_coleta, observacao, horario_corte)
+       VALUES ($1, COALESCE($2, 24), $3, NULLIF($4, '')::time)
        ON CONFLICT (lower(canal)) DO UPDATE
-         SET horas_para_coleta = EXCLUDED.horas_para_coleta,
+         SET horas_para_coleta = COALESCE($2, expedicao_prazos.horas_para_coleta),
              observacao = COALESCE(EXCLUDED.observacao, expedicao_prazos.observacao),
+             horario_corte = CASE WHEN $4::text IS NULL THEN expedicao_prazos.horario_corte
+                                  ELSE NULLIF($4, '')::time END,
              atualizado_em = now()
-       RETURNING *`,
-      [req.params.canal, Math.round(horas), req.body?.observacao || null]
+       RETURNING *, to_char(horario_corte, 'HH24:MI') AS corte`,
+      [req.params.canal, horas === null ? null : Math.round(horas), b.observacao || null, corte === undefined ? null : corte]
     );
     res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// ------------------------------------------------------------ expedição (0094)
+// Prazo, coleta e saída lidos na PLATAFORMA. Ver lib/expedicaoPainel.js.
+const lerIds = (v) => String(v || '').split(',').map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0);
+
+router.get('/expedicao/hoje', async (req, res, next) => {
+  try { res.json(await painel.painelHoje()); } catch (err) { next(err); }
+});
+
+router.get('/expedicao/pendencias', async (req, res, next) => {
+  try {
+    const situacao = ['atrasado', 'apertado', 'no_prazo', 'sem_prazo'].includes(req.query.situacao) ? req.query.situacao : null;
+    res.json(await painel.pendencias({ integracoes: lerIds(req.query.lojas), situacao }));
+  } catch (err) { next(err); }
+});
+
+router.get('/expedicao/enviados', async (req, res, next) => {
+  try { res.json(await painel.enviadosDoDia(req.query.dia)); } catch (err) { next(err); }
+});
+
+router.get('/expedicao/coletas', async (req, res, next) => {
+  try { res.json(await painel.historicoColetas(req.query.dias)); } catch (err) { next(err); }
+});
+
+router.get('/expedicao/indicadores', async (req, res, next) => {
+  try { res.json(await painel.indicadores(req.query.dias)); } catch (err) { next(err); }
+});
+
+router.get('/expedicao/diagnostico/:pedidoId', async (req, res, next) => {
+  try {
+    const d = await painel.diagnostico(Number(req.params.pedidoId));
+    if (!d) return res.status(404).json({ error: 'Pedido não encontrado.' });
+    res.json(d);
+  } catch (err) { next(err); }
+});
+
+// "Atualizar agora": relê as plataformas sem esperar o ciclo de 5 min.
+router.post('/expedicao/sincronizar', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM integracoes_marketplace
+        WHERE ativo AND access_token IS NOT NULL AND marketplace IN ('mercado_livre','shopee','tiktok_shop')`
+    );
+    const resultado = [];
+    for (const integracao of rows) {
+      try {
+        await garantirTokenValido(integracao);
+        resultado.push({ loja: integracao.nome, ...(await sincronizarEnvios(integracao)) });
+      } catch (err) {
+        resultado.push({ loja: integracao.nome, erro: err.message });
+      }
+    }
+    res.json({ lojas: resultado });
   } catch (err) { next(err); }
 });
 
