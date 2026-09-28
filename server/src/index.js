@@ -11,6 +11,7 @@ const { reconciliarCalendario } = require('./lib/producaoCalendario');
 const { lerConcorrentes } = require('./lib/concorrentesSync');
 const { sincronizarPosVendaTodasAtivas } = require('./lib/posVendaSync');
 const { jobBriefingDiario } = require('./lib/manuBriefing');
+const { sincronizarAnunciosAgendado } = require('./lib/anunciosSync');
 
 // ── AUTO-CURA de travas ÓRFÃS do Wik no boot ────────────────────────────────
 // `web_job_ativo` e `producao_job_ativo` são FLAGS no banco (não advisory
@@ -180,4 +181,17 @@ app.listen(PORT, () => {
     .catch((err) => console.error('[manu]', err.message));
   setTimeout(briefing, 4 * 60 * 1000);
   setInterval(briefing, 30 * 60 * 1000);
+
+  // Anúncios e campanhas de Ads (28/09/2026): de 3 em 3 horas, 10 min depois
+  // da subida (depois de pedidos, extrato, Full, pós-venda e concorrentes —
+  // mesmo token). É o que alimenta, sozinho, o histórico de preço, foto,
+  // título, situação e — agora — orçamento, meta e situação da campanha de
+  // Ads de cada anúncio: o "diário de mudanças" que a Manu investigadora usa
+  // para dar data às causas. Antes só rodava no clique.
+  const HORAS_ANUNCIOS = Number(process.env.ANUNCIOS_SYNC_HORAS || 3);
+  const varrerAnuncios = () => sincronizarAnunciosAgendado()
+    .then((r) => { if (Array.isArray(r)) console.log('[anuncios]', JSON.stringify(r)); })
+    .catch((err) => console.error('[anuncios]', err.message));
+  setTimeout(varrerAnuncios, 10 * 60 * 1000);
+  setInterval(varrerAnuncios, HORAS_ANUNCIOS * 60 * 60 * 1000);
 });

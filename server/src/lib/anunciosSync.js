@@ -310,9 +310,40 @@ async function gravarVariacoes(client, anuncioId, variacoes) {
   );
 }
 
+// O DIÁRIO AUTOMÁTICO DE ADS (28/09/2026). A varredura já lia, de cada
+// plataforma, a situação, o orçamento diário e a meta da campanha de cada
+// anúncio — e SOBRESCREVIA. Agora compara com o que estava gravado e registra
+// cada mudança em `anuncio_historico` (a mesma tabela das mudanças de preço,
+// foto e título), com o rótulo "Ads · …". É isso que dá DATA às causas "o
+// orçamento subiu", "a meta baixou", "a campanha foi pausada", "o anúncio
+// entrou no GMV Max" — sem ninguém precisar anotar nada, e sem tabela nova.
+//
+// Não registra:
+//   · a primeira varredura de uma loja (não há "antes" — seria uma parede de
+//     linhas "mudou de nada para X");
+//   · o anúncio que SAIU de uma campanha: a leitura de campanhas falha em
+//     silêncio quando a conta não tem permissão de Ads, e uma leitura vazia
+//     viraria "todos os anúncios saíram". A saída aparece como mudança de
+//     situação quando a plataforma a informa.
+const CAMPOS_CAMPANHA = [
+  ['status', 'Ads · situação'],
+  ['orcamento_diario', 'Ads · orçamento diário'],
+  ['acps', 'Ads · meta'],
+  ['tipo', 'Ads · tipo de campanha'],
+];
+
 async function gravarCampanhas(client, integracao, campanhasPorAnuncio) {
+  const { rows: atuais } = await client.query(
+    `SELECT anuncio_id_marketplace, campanha_id, campanha_nome, status, tipo, orcamento_diario, acps
+       FROM anuncio_campanhas WHERE origem_integracao_id = $1`,
+    [integracao.id]
+  );
+  const lojaJaTinhaCampanha = atuais.length > 0;
+  const antesPorChave = new Map(atuais.map((r) => [`${r.campanha_id}|${r.anuncio_id_marketplace}`, r]));
+
   for (const [anuncioIdExterno, c] of campanhasPorAnuncio) {
     if (!c.campanhaId) continue;
+    const antes = antesPorChave.get(`${c.campanhaId}|${String(anuncioIdExterno)}`) || null;
     await client.query(
       `INSERT INTO anuncio_campanhas
          (origem_integracao_id, anuncio_id_marketplace, campanha_id, campanha_nome,
@@ -331,6 +362,30 @@ async function gravarCampanhas(client, integracao, campanhasPorAnuncio) {
         c.status, c.statusExterno, c.tipo, c.orcamentoDiario, c.acps,
       ]
     );
+
+    if (!lojaJaTinhaCampanha) continue;
+    const { rows: an } = await client.query(
+      'SELECT id FROM anuncios_marketplace WHERE origem_integracao_id = $1 AND anuncio_id_externo = $2',
+      [integracao.id, String(anuncioIdExterno)]
+    );
+    if (!an[0]) continue;
+    const nome = c.campanhaNome || `campanha ${c.campanhaId}`;
+    const registrar = (campo, valorAntes, valorDepois) => client.query(
+      `INSERT INTO anuncio_historico (anuncio_id, campo, valor_antes, valor_depois, origem)
+       VALUES ($1, $2, $3, $4, 'sincronizacao')`,
+      [an[0].id, campo, valorAntes, valorDepois]
+    );
+    if (!antes) {
+      await registrar('Ads · entrou na campanha', null, nome);
+      continue;
+    }
+    const depois = {
+      status: c.status, tipo: c.tipo, orcamento_diario: c.orcamentoDiario, acps: c.acps,
+    };
+    for (const [coluna, rotulo] of CAMPOS_CAMPANHA) {
+      if (!mudou(antes[coluna], depois[coluna])) continue;
+      await registrar(rotulo, textoDoValor(antes[coluna]), textoDoValor(depois[coluna]));
+    }
   }
 }
 
@@ -416,6 +471,40 @@ async function sincronizarAnunciosDaIntegracao(integracaoId) {
 
 // Varre todas as lojas conectadas. Uma loja que falhar NÃO derruba as
 // outras: o resultado diz, loja a loja, o que deu certo e o que não deu.
+// Varredura AGENDADA (28/09/2026). Até aqui a varredura de anúncios só rodava
+// quando alguém clicava em "sincronizar" — o histórico de preço, foto, título,
+// situação e (agora) campanha de Ads só registrava o que mudou entre dois
+// cliques, às vezes com dias de distância. Rodando sozinha, a data da mudança
+// passa a ser a data de verdade (com a precisão do intervalo).
+// Pula loja com varredura em andamento há menos de 30 min (clique manual ou
+// a passada anterior ainda rodando).
+let agendadaEmVoo = false;
+async function sincronizarAnunciosAgendado() {
+  if (agendadaEmVoo) return { pulado: 'já em execução' };
+  agendadaEmVoo = true;
+  try {
+    const { rows } = await pool.query(
+      `SELECT i.id, i.nome, i.marketplace FROM integracoes_marketplace i
+         LEFT JOIN anuncios_sync_estado e ON e.origem_integracao_id = i.id
+        WHERE i.ativo = TRUE AND i.access_token IS NOT NULL
+          AND NOT (COALESCE(e.em_andamento, FALSE) AND e.iniciada_em > now() - interval '30 minutes')
+        ORDER BY i.id`
+    );
+    const resultado = [];
+    for (const loja of rows) {
+      try {
+        const r = await sincronizarAnunciosDaIntegracao(loja.id);
+        resultado.push({ loja: loja.nome, ok: true, anuncios: r.anuncios });
+      } catch (err) {
+        resultado.push({ loja: loja.nome, ok: false, erro: err.message });
+      }
+    }
+    return resultado;
+  } finally {
+    agendadaEmVoo = false;
+  }
+}
+
 async function sincronizarAnunciosTodasAtivas() {
   const { rows } = await pool.query(
     `SELECT id, nome, marketplace FROM integracoes_marketplace
@@ -439,6 +528,8 @@ async function sincronizarAnunciosTodasAtivas() {
 module.exports = {
   sincronizarAnunciosDaIntegracao,
   sincronizarAnunciosTodasAtivas,
+  sincronizarAnunciosAgendado,
+  _gravarCampanhas: gravarCampanhas,
   resolverProdutoPeloSku,
   montarIndiceReferencias,
   mudou,
