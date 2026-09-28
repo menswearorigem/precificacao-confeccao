@@ -484,7 +484,10 @@ export default function MovimentacaoProducaoPage() {
         api.get('/producao/apoio').catch(() => ({ fornecedores: [] })),
         api.get(`${ROTA}/motivos?tipo=reprocesso`).catch(() => []),
       ]);
-      setOrdens(o.filter((r) => !['cancelada', 'concluida'].includes(r.situacao)));
+      // "Finalizada Parcial" no Wik: o Hub chama de concluída, mas parte das
+      // peças ainda está nas facções — é exatamente a OP que se quer achar aqui.
+      setOrdens(o.filter((r) => !['cancelada', 'concluida'].includes(r.situacao)
+        || (r.origem === 'wik' && /finalizada parcial/i.test(r.wik_situacao || ''))));
       setEtapas(et);
       // A lista do combo passa a ser a de FACÇÕES (0063), não a de
       // fornecedores em geral: mandar 800 peças para o fornecedor de embalagem
@@ -729,7 +732,7 @@ export default function MovimentacaoProducaoPage() {
         >
           {ordens.map((o) => (
             <option key={o.id} value={o.id}>
-              OP {o.wik_op || o.numero} · {o.referencia} — {o.produto_descricao}
+              OP {o.wik_op || o.numero} · {o.referencia} — {o.produto_descricao}{o.situacao === 'concluida' ? ' (finalizada parcial no Wik)' : ''}
             </option>
           ))}
         </Select>

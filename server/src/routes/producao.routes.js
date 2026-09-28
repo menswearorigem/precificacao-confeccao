@@ -519,8 +519,10 @@ router.get('/ordens', async (req, res, next) => {
          ) ev ON TRUE
          ${where}
          ORDER BY
-           CASE op.situacao WHEN 'em_producao' THEN 0 WHEN 'planejada' THEN 1
-                            WHEN 'rascunho' THEN 2 ELSE 3 END,
+           CASE WHEN op.situacao = 'em_producao' THEN 0
+                WHEN op.origem = 'wik' AND op.wik_situacao ILIKE '%finalizada parcial%' THEN 0
+                WHEN op.situacao = 'planejada' THEN 1
+                WHEN op.situacao = 'rascunho' THEN 2 ELSE 3 END,
            op.data_abertura DESC, op.id DESC
          LIMIT 300`,
       vals

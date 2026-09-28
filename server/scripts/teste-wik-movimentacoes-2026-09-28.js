@@ -79,12 +79,19 @@ async function posicao(ordemId) {
   await pool.query("INSERT INTO produtos (referencia, descricao, marca) VALUES ('OG1621','GOLA POLO PIQUET','Origem')");
   const [{ id: prodId }] = await q("SELECT id FROM produtos WHERE referencia = 'OG1621'");
   const [{ id: ordemId }] = await q(
+    // Como está em produção: 'Finalizada Parcial' no Wik, que o Hub traduz para
+    // 'concluida' — e é justamente a OP que ainda tem peça na facção (0096).
     `INSERT INTO ordens_producao (produto_id, situacao, origem, sincroniza_wik, wik_emp_id, wik_op,
-                                  quantidade_planejada, data_abertura)
-     VALUES ($1, 'em_producao', 'wik', TRUE, 192, 6891, 2744, '2026-06-27') RETURNING id`, [prodId]);
+                                  quantidade_planejada, data_abertura, wik_situacao)
+     VALUES ($1, 'concluida', 'wik', TRUE, 192, 6891, 2744, '2026-06-27', '4 - Finalizada Parcial') RETURNING id`, [prodId]);
   // já existe a facção Paulo (vinculada); CORTE-EDY não existe — o sync cria
   await pool.query("INSERT INTO fornecedores (tipo_pessoa, nome, eh_faccao, wik_forn_id) VALUES ('PF','FACÇÃO-PAULO SERGIO BERMUDA', TRUE, 6731)");
   ok('OP 6891 criada como espelho do Wik', !!ordemId);
+  // OP de verdade concluída (Finalizada) não recebe nem conta
+  const [{ id: ordemFim }] = await q(
+    `INSERT INTO ordens_producao (produto_id, situacao, origem, sincroniza_wik, wik_emp_id, wik_op,
+                                  quantidade_planejada, data_abertura, wik_situacao)
+     VALUES ($1, 'concluida', 'wik', TRUE, 192, 6800, 10, '2026-06-27', '2 - Finalizada') RETURNING id`, [prodId]);
 
   secao('1. Classificação dos departamentos');
   const c = Object.fromEntries(DEPARTAMENTOS.map((d) => [d.DepId, mov.classificarDepartamento(d)]));
@@ -115,6 +122,12 @@ async function posicao(ordemId) {
   ok('movimento 1 guarda a O.S. do Wik', m1.observacao === 'O.S. 20800 no Wik');
   const [m3] = await q("SELECT * FROM producao_movimentos WHERE wik_chave = 'mov:192:6891:3:1'");
   ok('para a FASE FINAL é conclusão (destino nulo)', m3.tipo === 'conclusao' && m3.etapa_destino_id === null);
+
+  MOVS.push(linhaMov(['1', '2026-07-01', '1', '268', 'N', '10', '0'], 6800));
+  await rodar();
+  const [{ n: n6800 }] = await q('SELECT COUNT(*)::int AS n FROM producao_movimentos WHERE ordem_id=$1', [ordemFim]);
+  ok('OP "Finalizada" (de verdade) não recebe movimento', n6800 === 0, n6800);
+  MOVS = MOVS.filter((l) => l.OprmiOprId !== 6800);
 
   secao('3. Rodar de novo não duplica nada');
   const r2 = await rodar();

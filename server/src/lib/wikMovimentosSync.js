@@ -266,7 +266,11 @@ async function ordensAbertasDoWik(pool) {
        FROM ordens_producao o
       WHERE o.origem = 'wik' AND o.sincroniza_wik = TRUE
         AND o.wik_emp_id = $1 AND o.wik_op IS NOT NULL
-        AND o.situacao NOT IN ('concluida', 'cancelada')`,
+        AND (o.situacao NOT IN ('concluida', 'cancelada')
+             -- "Finalizada Parcial" no Wik: parte já entrou no estoque, o resto
+             -- ainda está nas facções. O Hub chama de concluída, mas a peça
+             -- ainda anda (ver 0096).
+             OR o.wik_situacao ILIKE '%finalizada parcial%')`,
     [MATRIZ_EMP_ID]
   );
   return rows;
