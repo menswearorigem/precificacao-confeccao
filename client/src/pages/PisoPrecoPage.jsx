@@ -79,15 +79,19 @@ function GavetaPreco({ linha, onFechar, onGravado }) {
     setEnviando(true); setErro(null); setOk(null);
     try {
       let extra = null;
+      const avisos = new Set();
       for (const i of itens) {
         const corpo = { confirmar: true, preco: Number(preco), ...(extra || {}) };
-        try { await api.post(`/anuncios/${i.anuncio_id}/publicar`, corpo); } catch (e) {
+        let resposta;
+        try { resposta = await api.post(`/anuncios/${i.anuncio_id}/publicar`, corpo); } catch (e) {
           if (extra) throw e;
           extra = await tratarTravaDoPiso(e);
           if (!extra) throw e;
-          await api.post(`/anuncios/${i.anuncio_id}/publicar`, { ...corpo, ...extra });
+          resposta = await api.post(`/anuncios/${i.anuncio_id}/publicar`, { ...corpo, ...extra });
         }
+        (resposta?.avisos || []).forEach((a) => avisos.add(a));
       }
+      if (avisos.size) setErro([...avisos].join(' '));
       setOk('Preço enviado para a plataforma e registrado no histórico.');
       await onGravado();
     } catch (e) { setErro(e.message); } finally { setEnviando(false); }

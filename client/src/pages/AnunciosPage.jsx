@@ -1729,15 +1729,20 @@ function AbaEditar({ dado, onGravado }) {
         titulo: titulo === '' ? null : titulo,
         situacao: situacao === '' ? null : situacao,
       };
+      let resposta;
       try {
-        await api.post(`/anuncios/${dado.id}/publicar`, corpo);
+        resposta = await api.post(`/anuncios/${dado.id}/publicar`, corpo);
       } catch (e) {
         // Abaixo do piso do canal (21/09/2026): não trava, mas pede o motivo
         // e grava quem assinou. Sem motivo, nada vai para a plataforma.
         const extra = await tratarTravaDoPiso(e);
         if (!extra) throw e;
-        await api.post(`/anuncios/${dado.id}/publicar`, { ...corpo, ...extra });
+        resposta = await api.post(`/anuncios/${dado.id}/publicar`, { ...corpo, ...extra });
       }
+      // A plataforma aceitou, mas pode não ter mudado o que o comprador vê
+      // (promoção segurando o preço) — isso aparece em vez do "tudo certo".
+      const avisos = resposta?.avisos || [];
+      if (avisos.length) setErro(avisos.join(' '));
       setOk('Alteração enviada para a plataforma e registrada no histórico.');
       setPreco(''); setEstoque(''); setTitulo(''); setSituacao('');
       onGravado();

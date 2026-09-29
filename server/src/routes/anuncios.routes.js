@@ -625,6 +625,7 @@ router.put('/:id/vinculo', async (req, res, next) => {
 // para trás na primeira correção.
 async function alterarAnuncioNaPlataforma(req, anuncioId, { preco, estoque, titulo, situacao, variacoes } = {}) {
   const client = await pool.connect();
+  let plataformaDoErro = null;
   try {
 
     const { rows } = await client.query(
@@ -653,6 +654,7 @@ async function alterarAnuncioNaPlataforma(req, anuncioId, { preco, estoque, titu
       conta_externa_id: linha.conta_externa_id,
       shop_cipher: linha.shop_cipher,
     };
+    plataformaDoErro = integracao.marketplace;
     await garantirTokenValido(integracao);
 
     // -----------------------------------------------------------------------
@@ -701,13 +703,17 @@ async function alterarAnuncioNaPlataforma(req, anuncioId, { preco, estoque, titu
     }
 
     const enviado = [];
+    const avisos = [];
     if (integracao.marketplace === 'mercado_livre') {
       await mercadoLivre.atualizarAnuncio({
         accessToken: integracao.access_token,
         anuncioId: linha.anuncio_id_externo,
         preco, estoque, titulo,
         status: situacao === 'ativo' ? 'active' : (situacao === 'pausado' ? 'paused' : null),
-        variacoes: alvoVariacoes.length > 1 ? alvoVariacoes : null,
+        // Anúncio com UMA variação também tem de ir por `variations`: o ML
+        // recusa preço no nível do item quando o item tem variação. Antes
+        // só ia por variação com duas ou mais.
+        variacoes: alvoVariacoes.length >= 1 ? alvoVariacoes : null,
       });
       enviado.push('mercado_livre');
     } else if (integracao.marketplace === 'shopee') {
@@ -718,8 +724,33 @@ async function alterarAnuncioNaPlataforma(req, anuncioId, { preco, estoque, titu
         shopId: integracao.conta_externa_id,
         itemId: linha.anuncio_id_externo,
       };
+      // Os models são lidos NA HORA da Shopee, e não do banco (29/09/2026).
+      // Dois defeitos saíam daqui calados:
+      //   · anúncio SEM variação: a Shopee não devolve model nenhum, o banco
+      //     ficava sem linha em anuncio_variacoes e NADA era enviado — mas a
+      //     tela dizia "preço enviado" e o histórico gravava a mudança. Para
+      //     esse anúncio a própria Shopee pede model_id 0;
+      //   · model que mudou depois da última sincronização ia com id velho.
+      let modelsShopee = null;
+      if ((preco != null || estoque != null) && !(Array.isArray(variacoes) && variacoes.length)) {
+        modelsShopee = await shopee.buscarModelsDoItem(cred, linha.anuncio_id_externo);
+        alvoVariacoes = modelsShopee.length
+          ? modelsShopee.map((m) => ({ variacaoIdExterna: m.variacaoIdExterna, preco, estoque }))
+          : [{ variacaoIdExterna: '0', preco, estoque }];
+      }
       if (preco != null && alvoVariacoes.length) {
         await shopee.atualizarPrecoShopee({ ...cred, precos: alvoVariacoes.map((v) => ({ ...v, preco: v.preco ?? preco })) });
+        // Confere o que ficou no ar. Anúncio dentro de uma promoção da
+        // Shopee aceita o preço CHEIO novo, mas continua vendendo pelo preço
+        // da promoção — para quem olha a loja, "não mudou nada".
+        try {
+          const depois = await shopee.buscarModelsDoItem(cred, linha.anuncio_id_externo);
+          const vendendo = depois.map((m) => m.preco).filter((v) => v != null);
+          const menor = vendendo.length ? Math.min(...vendendo) : null;
+          if (menor != null && Math.abs(menor - Number(preco)) > 0.009) {
+            avisos.push(`A Shopee aceitou o preço cheio de ${precoPiso.brl(preco)}, mas o anúncio está numa promoção e continua vendendo por ${precoPiso.brl(menor)}. Para mudar o preço de venda, ajuste ou encerre a promoção (Catálogo › Promoções ou no painel da Shopee).`);
+          }
+        } catch { /* conferência é bônus: a escrita já foi aceita */ }
       }
       if (estoque != null && alvoVariacoes.length) {
         await shopee.atualizarEstoqueShopee({ ...cred, estoques: alvoVariacoes.map((v) => ({ ...v, estoque: v.estoque ?? estoque })) });
@@ -740,6 +771,11 @@ async function alterarAnuncioNaPlataforma(req, anuncioId, { preco, estoque, titu
         shopCipher: integracao.shop_cipher,
         productId: linha.anuncio_id_externo,
       };
+      if ((preco != null || estoque != null) && !alvoVariacoes.length) {
+        const e = new Error('Este anúncio da TikTok Shop está sem as variações (SKUs) no Hub, então não há onde gravar preço ou estoque. Rode a sincronização de anúncios e tente de novo.');
+        Object.assign(e, { status: 409, paraUsuario: true });
+        throw e;
+      }
       if (preco != null && alvoVariacoes.length) {
         await tiktokShop.atualizarPrecoTikTok({ ...cred, precos: alvoVariacoes.map((v) => ({ ...v, preco: v.preco ?? preco })) });
       }
@@ -755,6 +791,7 @@ async function alterarAnuncioNaPlataforma(req, anuncioId, { preco, estoque, titu
     } else {
       const e = new Error(`Ainda não dá para alterar anúncio de "${integracao.marketplace}" por aqui.`);
       e.status = 400;
+      e.paraUsuario = true;
       throw e;
     }
 
@@ -803,7 +840,7 @@ async function alterarAnuncioNaPlataforma(req, anuncioId, { preco, estoque, titu
       sucesso: true,
     });
 
-    return { ok: true, enviado, alteracoes: mudancas.map(([campo]) => campo) };
+    return { ok: true, enviado, avisos, alteracoes: mudancas.map(([campo]) => campo) };
   } catch (err) {
     await registrar(req, {
       acao: 'alterar',
@@ -812,6 +849,19 @@ async function alterarAnuncioNaPlataforma(req, anuncioId, { preco, estoque, titu
       descricao: `Tentou alterar o anúncio e a plataforma recusou: ${err.message}`,
       sucesso: false,
     }).catch(() => {});
+    // O motivo da plataforma chega na TELA (29/09/2026). Antes a recusa da
+    // Shopee/ML/TikTok caía no tratador genérico e virava "Erro interno do
+    // servidor, código QBAD6M" — o motivo só existia no log do Render.
+    if (err && plataformaDoErro && !err.exige && !err.paraUsuario && err.message) {
+      const nomes = { mercado_livre: 'O Mercado Livre', shopee: 'A Shopee', tiktok_shop: 'A TikTok Shop' };
+      const quem = nomes[plataformaDoErro] || 'A plataforma';
+      const status = Number(err.status);
+      err.message = `${quem} recusou a alteração: ${err.message}`;
+      // Recusa de negócio (a Shopee manda até com HTTP 200) = 422; plataforma
+      // fora do ar ou sem resposta = 502.
+      err.status = Number.isFinite(status) && status < 500 ? 422 : 502;
+      err.paraUsuario = true;
+    }
     throw err;
   } finally {
     client.release();

@@ -1959,6 +1959,7 @@ module.exports = {
   removerItensRelampagoShopee,
   situacaoRelampagoShopee,
   apagarRelampagoShopee,
+  buscarModelsDoItem,
   atualizarPrecoShopee,
   atualizarEstoqueShopee,
   atualizarItemShopee,
