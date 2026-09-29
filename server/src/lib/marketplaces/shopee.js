@@ -60,15 +60,40 @@ async function lerRespostaJson(res, path) {
   }
 }
 
+// O motivo de verdade de uma recusa de preço/estoque vem por VARIAÇÃO, em
+// `response.failure_list[].failed_reason`. A `message` do topo é genérica
+// ("Update price failed, please try later.") e sozinha não diz nada.
+function motivosDaFalha(data) {
+  const lista = data?.response?.failure_list || data?.failure_list || [];
+  const motivos = [...new Set(lista.map((f) => f.failed_reason || f.fail_reason || f.reason).filter(Boolean))];
+  return motivos.join(' · ');
+}
+
 function conferirErro(data, res, path) {
   // A Shopee sinaliza erro no corpo (campo `error` preenchido), mesmo com
   // HTTP 200. Campo vazio ("") significa sucesso.
   if (!res.ok || (data.error && String(data.error).length > 0)) {
-    throw erroComStatus(
-      data.message || `Erro na API da Shopee (${res.status}) em ${path}: ${data.error || 'sem detalhe'}`,
+    const detalhe = motivosDaFalha(data);
+    const err = erroComStatus(
+      [data.message || `Erro na API da Shopee (${res.status}) em ${path}: ${data.error || 'sem detalhe'}`, detalhe].filter(Boolean).join(' — '),
       res.status,
       data.error || null
     );
+    err.respostaShopee = data;
+    throw err;
+  }
+  return data;
+}
+
+// Escrita que a Shopee "aceita" (error vazio) mas recusa em parte das
+// variações: sem esta conferência o Hub dizia "enviado" com a variação
+// recusada lá dentro da failure_list.
+function conferirFalhaParcial(data, oQue) {
+  const lista = data?.response?.failure_list || [];
+  if (lista.length) {
+    const err = erroComStatus(`A Shopee recusou ${oQue} em ${lista.length} variação(ões): ${motivosDaFalha(data) || 'sem motivo informado'}`, 200, 'failure_list');
+    err.respostaShopee = data;
+    throw err;
   }
   return data;
 }
@@ -1182,7 +1207,7 @@ async function buscarAnuncios({ partnerId, partnerKey, accessToken, shopId }) {
 // só. Quando o anúncio não tem variação, a própria Shopee cria um model
 // único, e é o model_id dele que vai aqui.
 async function atualizarPrecoShopee({ partnerId, partnerKey, accessToken, shopId, itemId, precos }) {
-  return chamarDaLoja('/api/v2/product/update_price', {
+  return conferirFalhaParcial(await chamarDaLoja('/api/v2/product/update_price', {
     partnerId,
     partnerKey,
     accessToken,
@@ -1192,11 +1217,41 @@ async function atualizarPrecoShopee({ partnerId, partnerKey, accessToken, shopId
       item_id: Number(itemId),
       price_list: precos.map((p) => ({ model_id: Number(p.variacaoIdExterna), original_price: Number(p.preco) })),
     },
+  }), 'o preço');
+}
+
+// Promoções em que o anúncio está AGORA (desconto da loja, flash sale,
+// campanha da Shopee). Usado para explicar uma recusa de preço: a Shopee não
+// deixa mexer no preço de anúncio preso em certas promoções, e a mensagem
+// dela não diz isso.
+async function buscarPromocoesDoItem(credenciais, itemId) {
+  const data = await chamarDaLoja('/api/v2/product/get_item_promotion', {
+    ...credenciais,
+    query: { item_id_list: String(itemId) },
   });
+  const agora = Date.now() / 1000;
+  const nomes = { discount: 'desconto da loja', flash_sale: 'oferta relâmpago', shop_flash_sale: 'oferta relâmpago da loja', bundle_deal: 'leve mais por menos', add_on_deal: 'compre junto', campaign: 'campanha da Shopee', welcome_package: 'pacote de boas-vindas', seller_discount: 'desconto da loja' };
+  const itens = data.response?.success_list || [];
+  const promos = [];
+  for (const it of itens) {
+    for (const p of it.promotion || []) {
+      if (p.end_time && p.end_time < agora) continue;
+      const tipo = String(p.promotion_type || '').toLowerCase().replace(/\s+/g, '_');
+      promos.push({
+        tipo: nomes[tipo] || p.promotion_type || 'promoção',
+        id: p.promotion_id != null ? String(p.promotion_id) : null,
+        inicio: p.start_time ? new Date(p.start_time * 1000) : null,
+        fim: p.end_time ? new Date(p.end_time * 1000) : null,
+        preco: p.promotion_price_info?.[0]?.promotion_price ?? null,
+        emAndamento: !p.start_time || p.start_time <= agora,
+      });
+    }
+  }
+  return promos;
 }
 
 async function atualizarEstoqueShopee({ partnerId, partnerKey, accessToken, shopId, itemId, estoques }) {
-  return chamarDaLoja('/api/v2/product/update_stock', {
+  return conferirFalhaParcial(await chamarDaLoja('/api/v2/product/update_stock', {
     partnerId,
     partnerKey,
     accessToken,
@@ -1209,7 +1264,7 @@ async function atualizarEstoqueShopee({ partnerId, partnerKey, accessToken, shop
         seller_stock: [{ stock: Number(e.estoque) }],
       })),
     },
-  });
+  }), 'o estoque');
 }
 
 // Só o título/estado do anúncio (update_item aceita os dois; preço e
@@ -1960,6 +2015,7 @@ module.exports = {
   situacaoRelampagoShopee,
   apagarRelampagoShopee,
   buscarModelsDoItem,
+  buscarPromocoesDoItem,
   atualizarPrecoShopee,
   atualizarEstoqueShopee,
   atualizarItemShopee,

@@ -739,7 +739,21 @@ async function alterarAnuncioNaPlataforma(req, anuncioId, { preco, estoque, titu
           : [{ variacaoIdExterna: '0', preco, estoque }];
       }
       if (preco != null && alvoVariacoes.length) {
-        await shopee.atualizarPrecoShopee({ ...cred, precos: alvoVariacoes.map((v) => ({ ...v, preco: v.preco ?? preco })) });
+        try {
+          await shopee.atualizarPrecoShopee({ ...cred, precos: alvoVariacoes.map((v) => ({ ...v, preco: v.preco ?? preco })) });
+        } catch (err) {
+          // Recusa de preço: pergunta à Shopee se o anúncio está preso numa
+          // promoção — é o motivo mais comum, e a mensagem dela não diz.
+          try {
+            const promos = await shopee.buscarPromocoesDoItem(cred, linha.anuncio_id_externo);
+            if (promos.length) {
+              const dia = (d) => (d ? d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : null);
+              const lista = promos.map((p) => `${p.tipo}${p.id ? ` nº ${p.id}` : ''}${p.fim ? ` até ${dia(p.fim)}` : ''}${p.emAndamento ? '' : ' (agendada)'}${p.preco != null ? `, a ${precoPiso.brl(p.preco)}` : ''}`).join('; ');
+              err.message = `${err.message}. O anúncio está em promoção na Shopee (${lista}) e ela não deixa mudar o preço enquanto isso. Tire o anúncio da promoção no painel da Shopee (Marketing › Descontos) ou espere ela acabar, e publique de novo.`;
+            }
+          } catch { /* sem a consulta, fica o motivo que a Shopee deu */ }
+          throw err;
+        }
         // Confere o que ficou no ar. Anúncio dentro de uma promoção da
         // Shopee aceita o preço CHEIO novo, mas continua vendendo pelo preço
         // da promoção — para quem olha a loja, "não mudou nada".

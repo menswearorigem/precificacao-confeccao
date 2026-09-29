@@ -124,6 +124,29 @@ const base = (mk, extra = {}) => ({
   r = await publicar({ confirmar: true, preco: 1 });
   ok(r.status === 422 && /O Mercado Livre recusou a alteração: Validation error — price is below minimum/.test(r.body.error), 'motivo do ML na tela', `${r.status} ${r.body.error}`);
 
+  console.log('\n7. Shopee genérica + motivo por variação + promoção');
+  linhaAtual = base('shopee'); chamadas = []; escritas.length = 0;
+  respostas = {
+    '/api/v2/product/get_model_list': { status: 200, json: { error: '', response: { model: [{ model_id: 222, price_info: [{ current_price: 49.37 }] }] } } },
+    '/api/v2/product/update_price': { status: 200, json: { error: 'product.error_busi', message: 'Update price failed, please try later.', response: { failure_list: [{ model_id: 222, failed_reason: 'Item is in ongoing promotion' }] } } },
+    '/api/v2/product/get_item_promotion': { status: 200, json: { error: '', response: { success_list: [{ item_id: 44902445068, promotion: [{ promotion_type: 'Discount', promotion_id: 777, start_time: Math.floor(Date.now() / 1000) - 86400, end_time: Math.floor(Date.now() / 1000) + 5 * 86400, promotion_price_info: [{ promotion_price: 49.37 }] }] }] } } },
+  };
+  r = await publicar({ confirmar: true, preco: 64.9 });
+  ok(r.status === 422, 'devolve 422', String(r.status));
+  ok(/please try later\. — Item is in ongoing promotion/.test(r.body.error), 'traz o motivo da variação', r.body.error);
+  ok(/em promoção na Shopee \(desconto da loja nº 777 até .*a R\$\s?49,37\)/.test(r.body.error), 'diz qual promoção prende o preço', r.body.error);
+
+  console.log('\n8. Shopee aceita mas recusa uma variação (failure_list com error vazio)');
+  linhaAtual = base('shopee'); chamadas = []; escritas.length = 0;
+  respostas = {
+    '/api/v2/product/get_model_list': { status: 200, json: { error: '', response: { model: [{ model_id: 222 }, { model_id: 333 }] } } },
+    '/api/v2/product/update_price': { status: 200, json: { error: '', response: { success_list: [{ model_id: 222 }], failure_list: [{ model_id: 333, failed_reason: 'price too low' }] } } },
+    '/api/v2/product/get_item_promotion': { status: 200, json: { error: '', response: { success_list: [] } } },
+  };
+  r = await publicar({ confirmar: true, preco: 64.9 });
+  ok(r.status === 422 && /1 variação\(ões\): price too low/.test(r.body.error), 'não diz "enviado" quando uma variação foi recusada', `${r.status} ${r.body.error}`);
+  ok(!escritas.some((e) => /UPDATE anuncios_marketplace/.test(e)), 'não gravou o preço novo no Hub');
+
   srv.close();
   console.log(`\n${passou} ok, ${falhou} falha(s)`);
   process.exit(falhou ? 1 : 0);
