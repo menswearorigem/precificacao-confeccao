@@ -45,11 +45,14 @@ async function getCalcContext({ comAcrescimoCusto = false } = {}) {
   const pctTaxas = Number(taxasRows[0]?.total_pct || 0);
   const valorFixoTaxas = Number(taxasRows[0]?.total_fixo || 0);
 
-  const pctAcrescimoCusto = comAcrescimoCusto && config.acrescimo_custo_ativo
-    ? Number(config.acrescimo_custo_pct) || 0
-    : 0;
+  // `pctAcrescimoCusto` é o PADRÃO da casa (30% sobre o preço = +42,86% sobre
+  // o custo), usado pela referência cujo markup o Wik não informa. A que tem
+  // markup lido da Ficha Técnica (produtos.wik_markup_pct) usa o dela — ver
+  // acrescimoDoProduto em calc.js.
+  const acrescimoCustoAtivo = Boolean(comAcrescimoCusto && config.acrescimo_custo_ativo);
+  const pctAcrescimoCusto = acrescimoCustoAtivo ? Number(config.acrescimo_custo_pct) || 0 : 0;
 
-  return { config, custoIndiretoPorPeca, motivoSemCustoIndireto, pctTaxas, valorFixoTaxas, pctAcrescimoCusto };
+  return { config, custoIndiretoPorPeca, motivoSemCustoIndireto, pctTaxas, valorFixoTaxas, acrescimoCustoAtivo, pctAcrescimoCusto };
 }
 
 async function getEmpresa(empresaId) {

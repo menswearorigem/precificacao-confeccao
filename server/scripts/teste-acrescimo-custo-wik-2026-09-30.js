@@ -131,7 +131,7 @@ async function main() {
   conferir('lista: custo R$ 27,00', perto(antes.item.custo, CUSTO), antes.item.custo);
   conferir('ficha: subtotal R$ 27,00 e acréscimo zero', perto(antes.ficha.calculo.custoTotal.subtotalProducao, CUSTO) && antes.ficha.calculo.custoTotal.acrescimoCustoRS === 0);
   conferir('lucratividade: custo das 2 peças R$ 54,00', perto(antes.pedido.custoPeca, 2 * CUSTO), antes.pedido.custoPeca);
-  conferir('lucratividade: totalGeral diz 0% de acréscimo', antes.rel.totalGeral.acrescimoCustoPct === 0);
+  conferir('lucratividade: totalGeral diz que não há acréscimo', antes.rel.totalGeral.acrescimoCustoAtivo === false);
 
   console.log('\n2. Liga a chave');
   const put = await chamar(porta, 'PUT', '/api/produtos/acrescimo-custo', cookie, { ativo: true });
@@ -149,7 +149,26 @@ async function main() {
   conferir('lucratividade: custo das 2 peças R$ 77,14', perto(depois.pedido.custoPeca, 2 * COM), depois.pedido.custoPeca);
   conferir('lucratividade: lucro cai exatamente 2 × R$ 11,57',
     perto(antes.pedido.lucro - depois.pedido.lucro, 2 * (COM - CUSTO)), `${antes.pedido.lucro} → ${depois.pedido.lucro}`);
-  conferir('lucratividade: totalGeral diz 42,86%', perto(depois.rel.totalGeral.acrescimoCustoPct, 0.428571, 0.000001));
+  conferir('lucratividade: totalGeral diz que há acréscimo, padrão 42,86%', depois.rel.totalGeral.acrescimoCustoAtivo === true && perto(depois.rel.totalGeral.acrescimoCustoPctPadrao, 0.428571, 0.000001));
+  conferir('lista: sem markup no Wik a origem é o padrão', depois.item.origemAcrescimo === 'padrao', depois.item.origemAcrescimo);
+
+  console.log('\n2b. Markup da própria referência lido do Wik');
+  // 14,05% (o grupo de "15%"): 27 ÷ (1 − 0,1405) = R$ 31,41.
+  await pool.query('UPDATE produtos SET wik_markup_pct = 0.1405 WHERE id = $1', [produtoId]);
+  const com15 = await foto();
+  const C15 = CUSTO / (1 - 0.1405);
+  conferir('lista: custo R$ 31,41 com o markup de 14,05% do Wik', perto(com15.item.custo, C15), com15.item.custo);
+  conferir('lista: origem do acréscimo é o Wik', com15.item.origemAcrescimo === 'wik');
+  conferir('ficha: mostra o markup do Wik (14,05%)', perto(com15.ficha.calculo.custoTotal.markupWik, 0.1405, 0.00001));
+  const aoVivo15 = (await chamar(porta, 'POST', '/api/produtos/calcular', cookie, {
+    produto_id: produtoId, empresa_id: com15.ficha.produto.empresa_id, materiais: com15.ficha.materiais, custosIndustriais: com15.ficha.custosIndustriais, preco_informado: 79.9,
+  })).json;
+  conferir('recálculo ao vivo usa o markup da referência', perto(aoVivo15.custoTotal.subtotalProducao, C15), aoVivo15.custoTotal.subtotalProducao);
+  conferir('lucratividade: custo das 2 peças com 14,05%', perto(com15.pedido.custoPeca, 2 * C15), com15.pedido.custoPeca);
+  await pool.query('UPDATE produtos SET wik_markup_pct = 0 WHERE id = $1', [produtoId]);
+  const com0 = await foto();
+  conferir('markup 0% no Wik é zero de verdade: custo R$ 27,00', perto(com0.item.custo, CUSTO) && com0.item.origemAcrescimo === 'wik');
+  await pool.query('UPDATE produtos SET wik_markup_pct = NULL WHERE id = $1', [produtoId]);
 
   console.log('\n3. Fora de Produtos e Lucratividade: custo puro');
   const ctxPuro = await getCalcContext();
@@ -164,6 +183,55 @@ async function main() {
   const volta = await foto();
   conferir('lista volta a R$ 27,00', perto(volta.item.custo, CUSTO));
   conferir('lucro volta ao de antes', perto(volta.pedido.lucro, antes.pedido.lucro));
+
+  console.log('\n5. Leitura do markup no Wik (formulário e rodada de sincronização)');
+  const wikWeb = require('../src/lib/wikWeb');
+  const { atualizarMarkupsWik, indexarFichas } = require('../src/lib/wikMarkupSync');
+  // Trecho REAL do formulário (/FichaTecnica/CarregaFichaCusto?fchId=641, 30/09/2026).
+  const htmlFicha = '<form><input data-val="true" id="hdFchuEmpId" name="FchuEmpId" type="hidden" value="192" />'
+    + '<input id="hdFchuCustoTotal" name="FchuCustoTotal" type="hidden" value="26,1030" />'
+    + '<input class="form-control" id="txtFchuPercOutros" name="FchuPercOutros" type="text" value="30,00" />'
+    + '<input data-val="true" data-val-number="The field Total: must be a number." id="hdFchuPercTotal" name="FchuPercTotal" type="hidden" value="30,00" /></form>';
+  const htmlSemCusto = '<form><input id="hdFchuEmpId" name="FchuEmpId" type="hidden" value="0" /><input id="hdFchuPercTotal" name="FchuPercTotal" type="hidden" value="" /></form>';
+  const sessaoFalsa = {};
+  const lidoOk = wikWeb.lerMarkupDoFormulario(htmlFicha, 641);
+  conferir('formulário: 30,00 vira 0,30', perto(lidoOk.markupPct, 0.30, 1e-9) && lidoOk.semCusto === false, JSON.stringify(lidoOk));
+  conferir('formulário: custo total 26,1030', perto(lidoOk.custoTotal, 26.103, 1e-9));
+  const lidoVazio = wikWeb.lerMarkupDoFormulario(htmlSemCusto, 1);
+  conferir('ficha sem aba de custo: markup NULO, não zero', lidoVazio.markupPct === null && lidoVazio.semCusto === true);
+
+  const idx = indexarFichas([
+    { FchId: 641, FchProdId: 900, Produto: 'OG1192 - CAMISA ML LISA', FchAprovado: 1, FchAtual: 1 },
+    { FchId: 600, FchProdId: 900, Produto: 'OG1192 - CAMISA ML LISA', FchAprovado: 1, FchAtual: 1 },
+    { FchId: 700, FchProdId: 900, Produto: 'OG1192 - CAMISA ML LISA', FchAprovado: 0, FchAtual: 1 },
+  ]);
+  conferir('escolhe a ficha aprovada e atual mais nova', idx.porProdId.get(900) === 641);
+
+  const { rows: p2 } = await pool.query(
+    "INSERT INTO produtos (referencia, descricao, wik_prod_id) VALUES ('OG1192', 'Camisa', 900) RETURNING id"
+  );
+  const { rows: p3 } = await pool.query("INSERT INTO produtos (referencia, descricao) VALUES ('SEMFICHA1', 'Sem ficha') RETURNING id");
+  const wikFalso = {
+    linhasDegeneradas: wikWeb.linhasDegeneradas,
+    gridFichasTecnicas: async () => [
+      { FchId: 641, FchProdId: 900, Produto: 'OG1192 - CAMISA ML LISA', FchAprovado: 1, FchAtual: 1 },
+      { FchId: 716, FchProdId: 55, Produto: 'WK0001 - CAMISETA', FchAprovado: 1, FchAtual: 1 },
+    ],
+    fichaCustoMarkup: async (_s, fchId) => (fchId === 641
+      ? { markupPct: 0.30, semCusto: false }
+      : { markupPct: 0.1405, semCusto: false }),
+  };
+  const resumo = await atualizarMarkupsWik(sessaoFalsa, { pool, wikWeb: wikFalso });
+  const { rows: gravados } = await pool.query('SELECT id, wik_markup_pct, wik_markup_fch_id, wik_markup_em FROM produtos WHERE id = ANY($1)', [[p2[0].id, p3[0].id, produtoId]]);
+  const g = new Map(gravados.map((r) => [r.id, r]));
+  conferir('OG1192 casou pelo ProdId e gravou 30%', Number(g.get(p2[0].id).wik_markup_pct) === 0.3 && g.get(p2[0].id).wik_markup_fch_id === 641);
+  conferir('WK0001 casou pela referência e gravou 14,05%', Number(g.get(produtoId).wik_markup_pct) === 0.1405, g.get(produtoId).wik_markup_pct);
+  conferir('referência sem ficha no Wik fica NULA (usa o padrão), mas marcada como lida', g.get(p3[0].id).wik_markup_pct === null && g.get(p3[0].id).wik_markup_em !== null);
+  conferir('resumo da rodada', resumo.gravados === 2 && resumo.semFicha === 1, JSON.stringify(resumo));
+  const vazio = await atualizarMarkupsWik(sessaoFalsa, { pool, wikWeb: { ...wikFalso, gridFichasTecnicas: async () => [] } });
+  conferir('grid vazio não apaga nada', Boolean(vazio.abortado));
+  const { rows: depoisVazio } = await pool.query('SELECT wik_markup_pct FROM produtos WHERE id = $1', [p2[0].id]);
+  conferir('OG1192 continua com 30% depois do grid vazio', Number(depoisVazio[0].wik_markup_pct) === 0.3);
 
   servidor.close();
   await pool.end();

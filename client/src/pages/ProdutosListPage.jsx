@@ -5,7 +5,7 @@ import { api } from '../api/client';
 import { statusToneClass } from '../lib/statusTone';
 import { brl, pct, plural } from '../lib/format';
 import FotoProduto from '../components/FotoProduto';
-import { Select, Checkbox, SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazio } from '../components/ui';
+import { Select, Checkbox, Toggle, SkeletonLinhasTabela, ThOrdenavel, Paginacao, BotaoExportar, EstadoVazio } from '../components/ui';
 import DataTable from '../components/DataTable';
 import { useTabela } from '../lib/useTabela';
 import { novaAba } from '../lib/novaAba';
@@ -16,10 +16,28 @@ const COLUNAS_ORDENAVEIS = {
   marca: (p) => p.marca,
   categoria: (p) => p.categoria,
   marketplace: (p) => (p.marketplace ? 0 : 1),
+  custo: (p) => (p.custo == null ? -1 : Number(p.custo)),
   preco: (p) => Number(p.precoAtivo) || 0,
   margem: (p) => Number(p.lucroPct) || 0,
   status: (p) => p.status,
 };
+
+// Selo ao lado do custo quando a chave "custo com os % do Wik" está ligada:
+// diz qual percentual entrou naquela referência.
+function SeloAcrescimo({ produto }) {
+  // Sem custo não há acréscimo a mostrar — o selo ao lado de "—" confundia.
+  if (!produto.origemAcrescimo || produto.custo == null) return null;
+  const doWik = produto.origemAcrescimo === 'wik';
+  return (
+    <span
+      className={'stamp sm ' + (doWik ? 'tone-elevada' : 'tone-neutro')}
+      style={{ marginLeft: 6 }}
+      title={doWik ? 'Percentual da Ficha Técnica desta referência no Wik' : 'Esta referência não tem % na ficha do Wik — usa o padrão de 30%'}
+    >
+      {doWik ? `Wik ${pct(produto.markupWik, 2)}` : 'padrão 30%'}
+    </span>
+  );
+}
 
 const COLUNAS_EXPORTACAO = [
   { rotulo: 'Referência', valor: (p) => p.referencia },
@@ -27,6 +45,8 @@ const COLUNAS_EXPORTACAO = [
   { rotulo: 'Marca', valor: (p) => p.marca },
   { rotulo: 'Categoria', valor: (p) => p.categoria },
   { rotulo: 'Marketplace', valor: (p) => (p.marketplace ? 'Sim' : 'Não') },
+  { rotulo: 'Custo', valor: (p) => (p.custo == null ? '' : brl(p.custo)) },
+  { rotulo: '% do Wik', valor: (p) => (p.markupWik == null ? '' : pct(p.markupWik, 2)) },
   { rotulo: 'Preço', valor: (p) => brl(p.precoAtivo) },
   { rotulo: 'Margem', valor: (p) => pct(p.lucroPct) },
   { rotulo: 'Status', valor: (p) => p.status },
@@ -48,6 +68,26 @@ export default function ProdutosListPage() {
   // Erro de carga separado do aviso de ação: antes os dois caíam no mesmo
   // cartão neutro e um erro de marcação em massa parecia confirmação.
   const [erroCarga, setErroCarga] = useState('');
+  // Chave "custo com os % do Wik" (30/09/2026): vale para a casa inteira e
+  // também muda o custo da Lucratividade.
+  const [acrescimo, setAcrescimo] = useState(null);
+  const [trocandoAcrescimo, setTrocandoAcrescimo] = useState(false);
+
+  useEffect(() => {
+    api.get('/produtos/acrescimo-custo').then(setAcrescimo).catch(() => {});
+  }, []);
+
+  async function alternarAcrescimo(ativo) {
+    setTrocandoAcrescimo(true);
+    try {
+      setAcrescimo(await api.put('/produtos/acrescimo-custo', { ativo }));
+      load();
+    } catch (err) {
+      setErroCarga(err.message);
+    } finally {
+      setTrocandoAcrescimo(false);
+    }
+  }
 
   useEffect(() => {
     api.get('/listas').then(setListas).catch((e) => setErroCarga(e.message));
@@ -176,7 +216,24 @@ export default function ProdutosListPage() {
             <option value="1">Somente do marketplace</option>
             <option value="0">Fora do marketplace</option>
           </Select>
+          {acrescimo && (
+            <label className="toggle" title="Soma ao custo o % de markup da Ficha Técnica do Wik de cada referência — o mesmo que dá o valor 'Personalizado' do Wik. Vale também para a Lucratividade.">
+              <Toggle
+                checked={acrescimo.ativo}
+                disabled={trocandoAcrescimo}
+                onChange={(e) => alternarAcrescimo(e.target.checked)}
+              />
+              Custo com os % do Wik
+            </label>
+          )}
         </div>
+        {acrescimo?.ativo && (
+          <p className="page-sub" style={{ margin: '10px 0 0' }}>
+            Cada referência usa o % da sua ficha no Wik, como o “Personalizado”. Vale também na Lucratividade.
+            {acrescimo.semMarkupWik === 1 && ' 1 referência sem % no Wik está com o padrão de 30%.'}
+            {acrescimo.semMarkupWik > 1 && ` ${acrescimo.semMarkupWik.toLocaleString('pt-BR')} referências sem % no Wik estão com o padrão de 30%.`}
+          </p>
+        )}
         {!loading && (
           <p className="page-sub" style={{ margin: '10px 0 0' }}>
             {tabela.totalItens.toLocaleString('pt-BR')} resultado(s)
@@ -227,6 +284,7 @@ export default function ProdutosListPage() {
               <ThOrdenavel coluna="marca" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Marca</ThOrdenavel>
               <ThOrdenavel coluna="categoria" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Categoria</ThOrdenavel>
               <ThOrdenavel coluna="marketplace" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Marketplace</ThOrdenavel>
+              <ThOrdenavel coluna="custo" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Custo</ThOrdenavel>
               <ThOrdenavel coluna="preco" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Preço</ThOrdenavel>
               <ThOrdenavel coluna="margem" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Margem</ThOrdenavel>
               <ThOrdenavel coluna="status" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Status</ThOrdenavel>
@@ -234,7 +292,7 @@ export default function ProdutosListPage() {
             </tr>
           </thead>
           <tbody>
-            {loading && produtos.length === 0 && <SkeletonLinhasTabela colunas={11} />}
+            {loading && produtos.length === 0 && <SkeletonLinhasTabela colunas={12} />}
             {tabela.itensPagina.map((p) => (
               <tr key={p.id} className="clickable-row" {...novaAba(`/produtos/${p.id}`)} onClick={() => navigate(`/produtos/${p.id}`)}>
                 <td onClick={(e) => e.stopPropagation()}>
@@ -248,6 +306,10 @@ export default function ProdutosListPage() {
                 <td>{p.marca}</td>
                 <td>{p.categoria}</td>
                 <td>{p.marketplace ? <span className="stamp sm tone-neutro"><Store size={11} /> sim</span> : ''}</td>
+                <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                  {p.custo == null ? '—' : brl(p.custo)}
+                  <SeloAcrescimo produto={p} />
+                </td>
                 <td className="mono">{brl(p.precoAtivo)}</td>
                 <td className="mono">{pct(p.lucroPct)}</td>
                 <td><span className={'stamp sm ' + statusToneClass(p.status)}>{p.status}</span></td>

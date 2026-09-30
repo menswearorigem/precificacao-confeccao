@@ -755,6 +755,68 @@ async function perdasProducao(sessao, { de, ate, oprId = 0 } = {}) {
   }, { ordem: 0, dir: 'asc' });
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// FICHA TÉCNICA — markup da "Custo - Formatação de Preço" (30/09/2026)
+// ═══════════════════════════════════════════════════════════════════════════
+// Mapeado ao vivo em 30/09/2026. O grid lista TODAS as fichas (2.089 na matriz
+// nesse dia) e já traz FchProdId (o ProdId do Wik = produtos.wik_prod_id). O
+// markup NÃO vem no grid: está no formulário parcial da aba de custo, um GET
+// por ficha. O filtro de data do grid é a data da ficha — de 2000 até hoje
+// pega todas.
+const COLS_FICHA_TECNICA = ['CorTexto', 'FchId', 'FchDescricao', 'Produto', 'FchAprovado', 'FchBloqueada', 'FchAtual', 'FchData'];
+async function gridFichasTecnicas(sessao, { ate } = {}) {
+  const hoje = ate || new Date().toISOString().slice(0, 10);
+  return gridCompleto(sessao, '/FichaTecnica/CarregaGrid', COLS_FICHA_TECNICA, {
+    ListaFiltros: {}, DataInicial: '2000-01-01', DataFinal: hoje, ProdId: 0,
+  }, { ordem: 1, dir: 'asc' });
+}
+
+// Número do Wik em texto brasileiro ("30,00", "26,1030") → Number. Vazio → null.
+function numeroBrWik(v) {
+  if (v === null || v === undefined) return null;
+  const t = String(v).trim();
+  if (t === '') return null;
+  const n = Number(t.replace(/\./g, '').replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+function valorDoCampo(html, nome) {
+  const m = html.match(new RegExp(`<input[^>]*\\bname="${nome}"[^>]*\\bvalue="([^"]*)"`, 'i'))
+         || html.match(new RegExp(`<input[^>]*\\bvalue="([^"]*)"[^>]*\\bname="${nome}"`, 'i'));
+  return m ? decodeHtml(m[1]) : null;
+}
+
+// Lê a aba de custo de UMA ficha. `semCusto` = a ficha não tem a aba de custo
+// preenchida no Wik (FchuEmpId 0 e campos vazios, visto em 3124, 1751, 4565):
+// aí o markup é DESCONHECIDO (null), nunca zero.
+async function fichaCustoMarkup(sessao, fchId) {
+  const html = await getHtml(sessao, `/FichaTecnica/CarregaFichaCusto?fchId=${encodeURIComponent(fchId)}`);
+  return lerMarkupDoFormulario(html, fchId);
+}
+// Separado da leitura de rede para o teste conferir com o HTML real.
+function lerMarkupDoFormulario(html, fchId) {
+  const empId = numeroBrWik(valorDoCampo(html, 'FchuEmpId'));
+  const pctTotal = numeroBrWik(valorDoCampo(html, 'FchuPercTotal'));
+  const custoTotal = numeroBrWik(valorDoCampo(html, 'FchuCustoTotal'));
+  const semCusto = !(empId > 0) || pctTotal === null;
+  return {
+    fchId: Number(fchId),
+    empId,
+    semCusto,
+    // Percentual sobre o PREÇO, em fração (30,00 → 0,30).
+    markupPct: semCusto ? null : pctTotal / 100,
+    custoTotal,
+    partes: {
+      comissao: numeroBrWik(valorDoCampo(html, 'FchuPercComissao')),
+      imposto: numeroBrWik(valorDoCampo(html, 'FchuPercImposto')),
+      juros: numeroBrWik(valorDoCampo(html, 'FchuPercJuros')),
+      outros: numeroBrWik(valorDoCampo(html, 'FchuPercOutros')),
+      frete: numeroBrWik(valorDoCampo(html, 'FchuPercFrete')),
+      marketing: numeroBrWik(valorDoCampo(html, 'FchuPercMarketing')),
+      prejuizo: numeroBrWik(valorDoCampo(html, 'FchuPercPrejuizo')),
+    },
+  };
+}
+
 module.exports = {
   BASE_PADRAO,
   novaSessao, restaurarCookies, serializarCookies,
@@ -768,4 +830,6 @@ module.exports = {
   contasPagar, contaPagarDetalhe, contasReceber, extratoFinanceiro,
   planoContas, centrosCusto, contasBancarias,
   getJson, getHtml,
+  // ficha técnica (markup)
+  gridFichasTecnicas, fichaCustoMarkup, lerMarkupDoFormulario, numeroBrWik,
 };

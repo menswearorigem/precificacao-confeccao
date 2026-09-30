@@ -961,9 +961,10 @@ async function calcularRelatorioPedidos({
   full,
 }) {
   if (origem === 'marketplace') sincronizarSeNecessario();
-  // Percentual da chave "30% do Wik" que entrou no custo deste relatório (0 =
-  // desligada). Sai no totalGeral para a tela dizer que o custo tem acréscimo.
-  let pctAcrescimoCustoDoRelatorio = 0;
+  // Chave "30% do Wik" (30/09/2026): se entrou no custo deste relatório. Sai
+  // no totalGeral para a tela dizer que o custo tem acréscimo. Cada referência
+  // usa o markup da própria Ficha Técnica do Wik; sem ele, o padrão da casa.
+  let acrescimoCustoDoRelatorio = { ativo: false, pctPadrao: 0 };
   const conditions = ["pv.situacao != 'cancelado'"];
   const values = [];
   let i = 1;
@@ -1148,7 +1149,7 @@ async function calcularRelatorioPedidos({
     // Custo com a chave "30% do Wik" da aba Produtos (30/09/2026): ligada,
     // o custo da peça na Lucratividade é o mesmo, maior, que a aba mostra.
     const ctx = await getCalcContext({ comAcrescimoCusto: true });
-    pctAcrescimoCustoDoRelatorio = ctx.pctAcrescimoCusto;
+    acrescimoCustoDoRelatorio = { ativo: ctx.acrescimoCustoAtivo, pctPadrao: ctx.pctAcrescimoCusto };
     const mapaCusto = await mapaCustoPorProduto(itens.map((it) => it.produto_id), ctx);
     const mapaCustoKit = await mapaCustoPorKit(itens.map((it) => it.kit_id), ctx);
     // Item vinculado a um kit usa o custo do kit inteiro (já multiplicado
@@ -1435,7 +1436,8 @@ async function calcularRelatorioPedidos({
     // embalagem, taxa de marketplace, frete e Ads de uma vez.
     const custoTotalInvestido = totalGeral.receita - totalGeral.lucro;
     totalGeral.roiPct = custoTotalInvestido > 0 ? totalGeral.lucro / custoTotalInvestido : 0;
-    totalGeral.acrescimoCustoPct = pctAcrescimoCustoDoRelatorio;
+    totalGeral.acrescimoCustoAtivo = acrescimoCustoDoRelatorio.ativo;
+    totalGeral.acrescimoCustoPctPadrao = acrescimoCustoDoRelatorio.pctPadrao;
 
   return { resultado, totalGeral };
 }

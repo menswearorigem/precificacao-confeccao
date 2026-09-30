@@ -275,8 +275,22 @@ function calcularProduto({ materiais, custosIndustriais, custoIndiretoPorPeca, p
   };
 }
 
+// Quanto o custo de UMA referência sobe com a chave "30% do Wik" ligada
+// (30/09/2026). O markup do Wik é um percentual sobre o PREÇO (custo ÷ (1 − m)),
+// então sobre o custo o acréscimo é m ÷ (1 − m): 30% → +42,86%, 14,05% →
+// +16,35%, 0% → nada. Sem markup lido do Wik vale o padrão da casa.
+function acrescimoDoProduto(produtoRow, ctx) {
+  if (!ctx || !ctx.acrescimoCustoAtivo) return { pct: 0, origem: null, markupWik: null };
+  const m = produtoRow ? produtoRow.wik_markup_pct : null;
+  const markup = m === null || m === undefined || m === '' ? null : Number(m);
+  if (Number.isFinite(markup) && markup >= 0 && markup < 1) {
+    return { pct: markup / (1 - markup), origem: 'wik', markupWik: markup };
+  }
+  return { pct: Number(ctx.pctAcrescimoCusto) || 0, origem: 'padrao', markupWik: null };
+}
+
 function pctLabel(v) {
   return `${(Number(v) * 100).toFixed(0)}%`;
 }
 
-module.exports = { calcularProduto, calcularPrecificacao, pctImpostosEmpresa };
+module.exports = { calcularProduto, calcularPrecificacao, pctImpostosEmpresa, acrescimoDoProduto };

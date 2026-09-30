@@ -1170,6 +1170,15 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
               Calculado em {new Date(relatorio.calculadoEm).toLocaleString('pt-BR')}
             </p>
           )}
+          {/* Chave "custo com os % do Wik" ligada na aba Produtos: o custo das
+              peças deste relatório já vem com o acréscimo. Aparece também na
+              impressão, para o número não circular sem essa informação. */}
+          {relatorio.totalGeral?.acrescimoCustoAtivo && (
+            <p className="page-sub" style={{ marginTop: -4, marginBottom: 12 }}>
+              <span className="stamp sm tone-elevada" style={{ marginRight: 8 }}>Custo com os % do Wik</span>
+              O custo das peças inclui o % de markup da ficha do Wik de cada referência (sem % na ficha, 30%). Desligue na aba Produtos.
+            </p>
+          )}
 
           {(!isMarketplace || subTab === 'pedidos') && (
             <>

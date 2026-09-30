@@ -21,6 +21,7 @@
 const { sincronizarEstoqueAgora, renovarTokenWikSeNecessario } = require('./wikSync');
 const { sincronizarProdutosAgora } = require('./wikProdutosImport');
 const { sincronizarFichaCustoAgora } = require('./wikFichaCustoImport');
+const { sincronizarMarkupWikAgora } = require('./wikMarkupSync');
 const { sincronizarProducaoAgora } = require('./wikProducaoSync');
 const { sincronizarFinanceiroAgora } = require('./wikFinanceiroSync');
 const { importarClientesAgora } = require('./wikVendasImport');
@@ -52,6 +53,9 @@ const ETAPAS = [
   { nome: 'financeiro', cada: 30 * MIN,      fn: sincronizarFinanceiroAgora },
   { nome: 'catalogo',   cada: 6 * 60 * MIN,  fn: sincronizarProdutosAgora },
   { nome: 'ficha',      cada: 6 * 60 * MIN,  fn: sincronizarFichaCustoAgora },
+  // Markup da Ficha Técnica (30/09/2026): até 400 referências por rodada, as
+  // nunca lidas primeiro — o catálogo inteiro gira em menos de um dia.
+  { nome: 'markup',     cada: 2 * 60 * MIN,  fn: sincronizarMarkupWikAgora },
 ];
 
 let emVoo = false;

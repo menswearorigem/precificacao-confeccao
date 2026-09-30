@@ -115,6 +115,9 @@ export default function ProdutoFichaPage() {
     if (calcTimer.current) clearTimeout(calcTimer.current);
     calcTimer.current = setTimeout(async () => {
       const data = await api.post('/produtos/calcular', {
+        // O servidor usa o id para achar o % do Wik desta referência (chave
+        // "custo com os % do Wik" da aba Produtos).
+        produto_id: isNew ? null : id,
         empresa_id: nextProduto.empresa_id || null,
         preco_informado: nextProduto.preco_informado,
         materiais: nextMateriais,
@@ -496,6 +499,17 @@ export default function ProdutoFichaPage() {
                 depende do preço chegam como ausência. Zero aqui barateava a
                 peça em silêncio — o traço obriga a olhar o motivo acima. */}
             <Row label="Custo indireto (rateio)" value={brlOuTraco(c.custoTotal.custoIndireto)} />
+            {/* Chave "custo com os % do Wik" ligada na aba Produtos: o
+                acréscimo aparece como linha própria para ninguém confundir
+                com material ou mão de obra. */}
+            {c.custoTotal.origemAcrescimo && (
+              <Row
+                label={c.custoTotal.origemAcrescimo === 'wik'
+                  ? `Acréscimo do Wik (${pct(c.custoTotal.markupWik, 2)} da ficha)`
+                  : 'Acréscimo do Wik (padrão 30% — sem % na ficha)'}
+                value={brlOuTraco(c.custoTotal.acrescimoCustoRS)}
+              />
+            )}
             <Row label="Subtotal de produção" value={brlOuTraco(c.custoTotal.subtotalProducao)} strong />
             <Row label={`Impostos (${pct(c.custoTotal.pctImpostos)})`} value={brlOuTraco(c.custoTotal.impostosRS)} />
             <Row label={`Taxas de venda (${pct(c.custoTotal.pctTaxas)})`} value={brlOuTraco(c.custoTotal.taxasRS)} />

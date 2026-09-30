@@ -1,7 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const pool = require('../db/pool');
-const { calcularProduto, pctImpostosEmpresa } = require('../lib/calc');
+const { calcularProduto, pctImpostosEmpresa, acrescimoDoProduto } = require('../lib/calc');
 const { getCalcContext, getEmpresa } = require('../lib/calcContext');
 const { lerVinculos, mesclar } = require('../lib/preservarVinculoFicha');
 
@@ -17,6 +17,14 @@ router.post('/calcular', async (req, res, next) => {
       getCalcContext({ comAcrescimoCusto: true }),
     ]);
     const pctImpostos = pctImpostosEmpresa(empresa);
+    // O recálculo ao vivo precisa do markup do Wik da referência aberta para
+    // bater com a ficha salva; sem produto_id (produto novo) vale o padrão.
+    let produtoMarkup = null;
+    if (ctx.acrescimoCustoAtivo && body.produto_id) {
+      const { rows } = await pool.query('SELECT wik_markup_pct FROM produtos WHERE id = $1', [body.produto_id]);
+      produtoMarkup = rows[0] || null;
+    }
+    const acrescimo = acrescimoDoProduto(produtoMarkup, ctx);
     const calculo = calcularProduto({
       materiais: body.materiais || [],
       custosIndustriais: body.custosIndustriais || [],
@@ -27,8 +35,10 @@ router.post('/calcular', async (req, res, next) => {
       valorFixoTaxas: ctx.valorFixoTaxas,
       config: ctx.config,
       precoInformado: body.preco_informado,
-      pctAcrescimoCusto: ctx.pctAcrescimoCusto,
+      pctAcrescimoCusto: acrescimo.pct,
     });
+    calculo.custoTotal.origemAcrescimo = acrescimo.origem;
+    calculo.custoTotal.markupWik = acrescimo.markupWik;
     res.json(calculo);
   } catch (err) {
     next(err);
@@ -72,7 +82,10 @@ async function fetchCustosIndustriais(client, produtoId) {
 
 function buildCalculo(produtoRow, materiais, custosIndustriais, ctx) {
   const pctImpostos = pctImpostosEmpresa(produtoRow);
-  return calcularProduto({
+  // Zero para todo ctx que não pediu o acréscimo (ver calcContext.js); com a
+  // chave ligada, o markup da própria referência lido do Wik, ou o padrão.
+  const acrescimo = acrescimoDoProduto(produtoRow, ctx);
+  const calculo = calcularProduto({
     materiais,
     custosIndustriais,
     custoIndiretoPorPeca: ctx.custoIndiretoPorPeca,
@@ -82,9 +95,11 @@ function buildCalculo(produtoRow, materiais, custosIndustriais, ctx) {
     valorFixoTaxas: ctx.valorFixoTaxas,
     config: ctx.config,
     precoInformado: produtoRow.preco_informado,
-    // Zero para todo ctx que não pediu o acréscimo (ver calcContext.js).
-    pctAcrescimoCusto: ctx.pctAcrescimoCusto,
+    pctAcrescimoCusto: acrescimo.pct,
   });
+  calculo.custoTotal.origemAcrescimo = acrescimo.origem;
+  calculo.custoTotal.markupWik = acrescimo.markupWik;
+  return calculo;
 }
 
 async function salvarHistorico(client, produtoId, referencia, calculo) {
@@ -174,6 +189,10 @@ router.get('/', async (req, res, next) => {
         // Custo da peça como a tela usa: com a chave dos 30% do Wik ligada,
         // já inclui o acréscimo. Nulo = sem ficha de custo (REGRA 2).
         custo: Number(calculo.custoTotal.subtotalProducao) > 0 ? calculo.custoTotal.subtotalProducao : null,
+        // De onde veio o acréscimo: 'wik' (markup da Ficha Técnica), 'padrao'
+        // (a referência não tem markup no Wik) ou null (chave desligada).
+        origemAcrescimo: calculo.custoTotal.origemAcrescimo,
+        markupWik: p.wik_markup_pct === null ? null : Number(p.wik_markup_pct),
         precoAtivo: calculo.formacaoPreco.precoAtivo,
         lucroPct: calculo.formacaoPreco.lucroPct,
         status: calculo.formacaoPreco.status,
@@ -195,9 +214,19 @@ router.get('/', async (req, res, next) => {
 // usa a aba Produtos. Precisa vir ANTES de /:id.
 async function lerAcrescimoCusto() {
   const { rows } = await pool.query('SELECT acrescimo_custo_ativo, acrescimo_custo_pct FROM configuracoes WHERE id = 1');
+  const { rows: cont } = await pool.query(
+    `SELECT COUNT(*) FILTER (WHERE wik_markup_pct IS NOT NULL)::int AS com_markup,
+            COUNT(*) FILTER (WHERE wik_markup_pct IS NULL)::int AS sem_markup,
+            MAX(wik_markup_em) AS lido_em
+       FROM produtos`
+  );
   return {
     ativo: Boolean(rows[0]?.acrescimo_custo_ativo),
+    // Padrão da casa (acréscimo sobre o custo) para quem não tem markup no Wik.
     pct: Number(rows[0]?.acrescimo_custo_pct) || 0,
+    comMarkupWik: cont[0].com_markup,
+    semMarkupWik: cont[0].sem_markup,
+    markupLidoEm: cont[0].lido_em,
   };
 }
 
