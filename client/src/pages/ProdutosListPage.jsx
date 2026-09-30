@@ -77,6 +77,23 @@ export default function ProdutosListPage() {
     api.get('/produtos/acrescimo-custo').then(setAcrescimo).catch(() => {});
   }, []);
 
+  // Puxa agora o % de cada ficha do Wik e acompanha até terminar.
+  async function puxarDoWik() {
+    try {
+      await api.post('/produtos/acrescimo-custo/puxar-do-wik', {});
+      setAcrescimo((a) => ({ ...a, ultimaLeitura: { ...(a?.ultimaLeitura || {}), emAndamento: true } }));
+      const acompanhar = async () => {
+        const est = await api.get('/produtos/acrescimo-custo');
+        setAcrescimo(est);
+        if (est.ultimaLeitura?.emAndamento) setTimeout(acompanhar, 5000);
+        else load();
+      };
+      setTimeout(acompanhar, 5000);
+    } catch (err) {
+      setErroCarga(err.message);
+    }
+  }
+
   async function alternarAcrescimo(ativo) {
     setTrocandoAcrescimo(true);
     try {
@@ -232,6 +249,17 @@ export default function ProdutosListPage() {
             Cada referência usa o % da sua ficha no Wik, como o “Personalizado”. Vale também na Lucratividade.
             {acrescimo.semMarkupWik === 1 && ' 1 referência sem % no Wik está com o padrão de 30%.'}
             {acrescimo.semMarkupWik > 1 && ` ${acrescimo.semMarkupWik.toLocaleString('pt-BR')} referências sem % no Wik estão com o padrão de 30%.`}
+            {' '}
+            {acrescimo.ultimaLeitura?.emAndamento ? (
+              <strong>Puxando os % do Wik…</strong>
+            ) : (
+              <button type="button" className="btn btn-ghost sm" onClick={puxarDoWik} style={{ marginLeft: 4 }}>
+                Puxar % do Wik agora
+              </button>
+            )}
+            {acrescimo.ultimaLeitura?.erro && !acrescimo.ultimaLeitura?.emAndamento && (
+              <span className="login-error" style={{ display: 'block', marginTop: 6 }}>Última leitura do Wik falhou: {acrescimo.ultimaLeitura.erro}</span>
+            )}
           </p>
         )}
         {!loading && (

@@ -4,6 +4,7 @@ const pool = require('../db/pool');
 const { calcularProduto, pctImpostosEmpresa, acrescimoDoProduto } = require('../lib/calc');
 const { getCalcContext, getEmpresa } = require('../lib/calcContext');
 const { lerVinculos, mesclar } = require('../lib/preservarVinculoFicha');
+const wikMarkup = require('../lib/wikMarkupSync');
 
 const router = express.Router();
 
@@ -227,6 +228,7 @@ async function lerAcrescimoCusto() {
     comMarkupWik: cont[0].com_markup,
     semMarkupWik: cont[0].sem_markup,
     markupLidoEm: cont[0].lido_em,
+    ultimaLeitura: wikMarkup.ultimaRodada,
   };
 }
 
@@ -246,6 +248,15 @@ router.put('/acrescimo-custo', async (req, res, next) => {
     }
     await pool.query('UPDATE configuracoes SET acrescimo_custo_ativo = $1, updated_at = now() WHERE id = 1', [ativo]);
     res.json(await lerAcrescimoCusto());
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Puxa agora o % de cada ficha do Wik (sem esperar o ciclo de 2h).
+router.post('/acrescimo-custo/puxar-do-wik', async (req, res, next) => {
+  try {
+    res.status(202).json(wikMarkup.dispararMarkupWik());
   } catch (err) {
     next(err);
   }

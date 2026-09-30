@@ -130,19 +130,41 @@ async function liberar(id) {
   );
 }
 
-async function sincronizarMarkupWikAgora() {
+// Última rodada, em memória, para a tela (e quem investiga) ver o que houve
+// sem precisar dos logs do Render: quando, quanto leu e o erro, se houve.
+const ultimaRodada = { emAndamento: false, iniciadaEm: null, terminadaEm: null, resumo: null, erro: null };
+
+async function sincronizarMarkupWikAgora({ limite = LIMITE_POR_RODADA } = {}) {
   const integracao = await integracaoWik();
   if (!integracao || !integracao.ativo) return { pulado: 'sem integração ativa do Wik' };
   if (!(await reservar(integracao.id))) return { pulado: 'outro job web do Wik em andamento' };
+  Object.assign(ultimaRodada, { emAndamento: true, iniciadaEm: new Date().toISOString(), terminadaEm: null, resumo: null, erro: null });
   try {
     let sessao = await obterSessao(integracao);
     try { await wikWebReal.trocarEmpresa(sessao, MATRIZ_EMP_ID); } catch { /* segue na empresa ativa */ }
-    const resumo = await atualizarMarkupsWik(sessao, { renovar: () => renovarSessao(integracao) });
-    console.log(`[wik-markup] ${resumo.gravados} referência(s) gravada(s), ${resumo.semFicha} sem ficha, ${resumo.semCusto} ficha sem custo, ${resumo.erros.length} erro(s)`);
+    const resumo = await atualizarMarkupsWik(sessao, { limite, renovar: () => renovarSessao(integracao) });
+    console.log(`[wik-markup] ${resumo.gravados} referência(s) gravada(s), ${resumo.semFicha} sem ficha, ${resumo.semCusto} ficha sem custo, ${resumo.erros.length} erro(s)${resumo.abortado ? ` — ${resumo.abortado}` : ''}`);
+    ultimaRodada.resumo = { ...resumo, erros: resumo.erros.slice(0, 10), totalErros: resumo.erros.length };
     return resumo;
+  } catch (e) {
+    ultimaRodada.erro = e.message;
+    throw e;
   } finally {
+    ultimaRodada.emAndamento = false;
+    ultimaRodada.terminadaEm = new Date().toISOString();
     await liberar(integracao.id);
   }
 }
 
-module.exports = { sincronizarMarkupWikAgora, atualizarMarkupsWik, indexarFichas };
+// Disparo manual (botão/rota): não espera terminar — ler o catálogo inteiro
+// leva alguns minutos e a requisição HTTP não aguenta. Lê TODAS as
+// referências de uma vez, não só as 400 da rodada automática.
+function dispararMarkupWik() {
+  if (ultimaRodada.emAndamento) return { jaRodando: true };
+  sincronizarMarkupWikAgora({ limite: 5000 })
+    .then((r) => { if (r && r.pulado) Object.assign(ultimaRodada, { erro: r.pulado, terminadaEm: new Date().toISOString() }); })
+    .catch((e) => console.error('[wik-markup]', e.message));
+  return { iniciado: true };
+}
+
+module.exports = { sincronizarMarkupWikAgora, dispararMarkupWik, ultimaRodada, atualizarMarkupsWik, indexarFichas };
