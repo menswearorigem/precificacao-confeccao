@@ -14,7 +14,7 @@ router.post('/calcular', async (req, res, next) => {
     const body = req.body || {};
     const [empresa, ctx] = await Promise.all([
       getEmpresa(body.empresa_id),
-      getCalcContext(),
+      getCalcContext({ comAcrescimoCusto: true }),
     ]);
     const pctImpostos = pctImpostosEmpresa(empresa);
     const calculo = calcularProduto({
@@ -27,6 +27,7 @@ router.post('/calcular', async (req, res, next) => {
       valorFixoTaxas: ctx.valorFixoTaxas,
       config: ctx.config,
       precoInformado: body.preco_informado,
+      pctAcrescimoCusto: ctx.pctAcrescimoCusto,
     });
     res.json(calculo);
   } catch (err) {
@@ -81,6 +82,8 @@ function buildCalculo(produtoRow, materiais, custosIndustriais, ctx) {
     valorFixoTaxas: ctx.valorFixoTaxas,
     config: ctx.config,
     precoInformado: produtoRow.preco_informado,
+    // Zero para todo ctx que não pediu o acréscimo (ver calcContext.js).
+    pctAcrescimoCusto: ctx.pctAcrescimoCusto,
   });
 }
 
@@ -136,7 +139,7 @@ router.get('/', async (req, res, next) => {
       [ids]
     );
 
-    const ctx = await getCalcContext();
+    const ctx = await getCalcContext({ comAcrescimoCusto: true });
     const { rows: fotoRows } = await pool.query('SELECT produto_id FROM produto_fotos WHERE produto_id = ANY($1)', [ids]);
     const idsComFoto = new Set(fotoRows.map((f) => f.produto_id));
     // Foto do ANÚNCIO para quem não tem foto no cadastro (revisão visual
@@ -168,6 +171,9 @@ router.get('/', async (req, res, next) => {
         empresa_id: p.empresa_id,
         empresa_nome: p.empresa_nome,
         marketplace: p.marketplace,
+        // Custo da peça como a tela usa: com a chave dos 30% do Wik ligada,
+        // já inclui o acréscimo. Nulo = sem ficha de custo (REGRA 2).
+        custo: Number(calculo.custoTotal.subtotalProducao) > 0 ? calculo.custoTotal.subtotalProducao : null,
         precoAtivo: calculo.formacaoPreco.precoAtivo,
         lucroPct: calculo.formacaoPreco.lucroPct,
         status: calculo.formacaoPreco.status,
@@ -182,6 +188,40 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// ---------- chave "custo com os 30% do Wik" (30/09/2026) ----------
+// Uma chave só, da casa inteira: ligada, o custo de todas as referências sobe
+// o percentual configurado (+42,86% = 30% sobre o preço) na aba Produtos e na
+// Lucratividade. Fica aqui, e não em /configuracoes, porque quem liga é quem
+// usa a aba Produtos. Precisa vir ANTES de /:id.
+async function lerAcrescimoCusto() {
+  const { rows } = await pool.query('SELECT acrescimo_custo_ativo, acrescimo_custo_pct FROM configuracoes WHERE id = 1');
+  return {
+    ativo: Boolean(rows[0]?.acrescimo_custo_ativo),
+    pct: Number(rows[0]?.acrescimo_custo_pct) || 0,
+  };
+}
+
+router.get('/acrescimo-custo', async (req, res, next) => {
+  try {
+    res.json(await lerAcrescimoCusto());
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/acrescimo-custo', async (req, res, next) => {
+  try {
+    const ativo = req.body?.ativo;
+    if (typeof ativo !== 'boolean') {
+      return res.status(400).json({ error: 'Informe "ativo" como verdadeiro ou falso.' });
+    }
+    await pool.query('UPDATE configuracoes SET acrescimo_custo_ativo = $1, updated_at = now() WHERE id = 1', [ativo]);
+    res.json(await lerAcrescimoCusto());
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ---------- detalhe + cálculo ----------
 
 router.get('/:id', async (req, res, next) => {
@@ -190,7 +230,7 @@ router.get('/:id', async (req, res, next) => {
     if (!produtoRow) return res.status(404).json({ error: 'Produto não encontrado.' });
     const materiais = await fetchMateriais(pool, req.params.id);
     const custosIndustriais = await fetchCustosIndustriais(pool, req.params.id);
-    const ctx = await getCalcContext();
+    const ctx = await getCalcContext({ comAcrescimoCusto: true });
     const calculo = buildCalculo(produtoRow, materiais, custosIndustriais, ctx);
     const { rows: fotoRows } = await pool.query('SELECT 1 FROM produto_fotos WHERE produto_id = $1', [req.params.id]);
     produtoRow.temFoto = fotoRows.length > 0;
@@ -302,7 +342,7 @@ router.post('/', async (req, res, next) => {
     const produtoRow = await fetchProdutoRow(client, produto.id);
     const materiais = await fetchMateriais(client, produto.id);
     const custosIndustriais = await fetchCustosIndustriais(client, produto.id);
-    const ctx = await getCalcContext();
+    const ctx = await getCalcContext({ comAcrescimoCusto: true });
     const calculo = buildCalculo(produtoRow, materiais, custosIndustriais, ctx);
     await salvarHistorico(client, produto.id, produto.referencia, calculo);
 
@@ -409,7 +449,7 @@ router.put('/:id', async (req, res, next) => {
     }
     const materiaisAtuais = await fetchMateriais(client, id);
     const custosAtuais = await fetchCustosIndustriais(client, id);
-    const ctx = await getCalcContext();
+    const ctx = await getCalcContext({ comAcrescimoCusto: true });
     const calculo = buildCalculo(produtoRow, materiaisAtuais, custosAtuais, ctx);
     await salvarHistorico(client, id, produtoRow.referencia, calculo);
 

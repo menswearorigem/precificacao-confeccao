@@ -142,7 +142,7 @@ function calcularPrecificacao({ subtotalProducao, pctImpostos, pctTaxas, valorFi
   };
 }
 
-function calcularProduto({ materiais, custosIndustriais, custoIndiretoPorPeca, pctImpostos, pctTaxas, valorFixoTaxas, config, precoInformado, motivoSemCustoIndireto }) {
+function calcularProduto({ materiais, custosIndustriais, custoIndiretoPorPeca, pctImpostos, pctTaxas, valorFixoTaxas, config, precoInformado, motivoSemCustoIndireto, pctAcrescimoCusto }) {
   const totalMateriais = materiais.reduce((s, m) => s + (Number(m.quantidade) || 0) * (Number(m.valor_unitario) || 0), 0);
   const totalIndustrial = custosIndustriais.reduce((s, c) => s + (Number(c.valor) || 0), 0);
   // Custo indireto AUSENTE (14/09/2026) é diferente de custo indireto zero:
@@ -153,7 +153,16 @@ function calcularProduto({ materiais, custosIndustriais, custoIndiretoPorPeca, p
   // motivo escrito (REGRA 2).
   const custoIndiretoAusente = custoIndiretoPorPeca === null || custoIndiretoPorPeca === undefined;
   const custoIndireto = custoIndiretoAusente ? null : (Number(custoIndiretoPorPeca) || 0);
-  const subtotalProducao = custoIndiretoAusente ? null : totalMateriais + totalIndustrial + custoIndireto;
+  const subtotalSemAcrescimo = custoIndiretoAusente ? null : totalMateriais + totalIndustrial + custoIndireto;
+  // Acréscimo "30% do Wik" (30/09/2026): chave da aba Produtos. Quando ligada,
+  // o custo de produção da peça sobe pelo percentual configurado (+42,86% =
+  // 30% sobre o preço) e TUDO que parte do custo — preço sugerido, lucro,
+  // status, lucratividade — enxerga o custo maior. Só entra quando quem chama
+  // pede (getCalcContext({ comAcrescimoCusto: true })); o padrão é zero, e aí
+  // o resultado é idêntico ao de antes.
+  const pctAcr = Number(pctAcrescimoCusto) > 0 ? Number(pctAcrescimoCusto) : 0;
+  const acrescimoCustoRS = subtotalSemAcrescimo === null ? null : subtotalSemAcrescimo * pctAcr;
+  const subtotalProducao = subtotalSemAcrescimo === null ? null : subtotalSemAcrescimo + acrescimoCustoRS;
 
   const preco = calcularPrecificacao({
     subtotalProducao,
@@ -211,7 +220,7 @@ function calcularProduto({ materiais, custosIndustriais, custoIndiretoPorPeca, p
     // separa margem de contribuição de margem bruta.
     margemContribuicao: preco.precoAtivo === null || preco.impostosRS === null
       ? null
-      : preco.precoAtivo - totalMateriais - totalIndustrial - preco.impostosRS - preco.taxasRS,
+      : preco.precoAtivo - totalMateriais - totalIndustrial - (acrescimoCustoRS || 0) - preco.impostosRS - preco.taxasRS,
     lucroLiquidoEstimado: preco.lucroRS,
     roiEstimado: !(subtotalProducao > 0) || preco.lucroRS === null ? null : preco.lucroRS / subtotalProducao,
     custoIndustrial: totalIndustrial,
@@ -226,6 +235,11 @@ function calcularProduto({ materiais, custosIndustriais, custoIndiretoPorPeca, p
       totalMateriais,
       totalIndustrial,
       custoIndireto,
+      // Com a chave dos 30% do Wik ligada, `subtotalProducao` já inclui o
+      // acréscimo; o valor antes dele fica em `subtotalSemAcrescimo`.
+      subtotalSemAcrescimo,
+      pctAcrescimoCusto: pctAcr,
+      acrescimoCustoRS,
       subtotalProducao,
       pctImpostos: preco.pctImpostos,
       impostosRS: preco.impostosRS,

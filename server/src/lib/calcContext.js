@@ -10,7 +10,13 @@ const pool = require('../db/pool');
 // pctTaxas. Migration aditiva: toda taxa existente nasce tipo='percentual',
 // valor_fixo=0, então esse SELECT soma 0 pra qualquer dado já cadastrado —
 // zero mudança de comportamento até alguém escolher o tipo novo na tela.
-async function getCalcContext() {
+// `comAcrescimoCusto` (30/09/2026): a chave "custo com os 30% do Wik" da aba
+// Produtos. Só as telas que o dono pediu — Produtos (lista, ficha e
+// recálculo ao vivo) e a Lucratividade — chamam com `true`; todo o resto
+// (estoque valorizado, ficha técnica, planilha de anúncios, piso de preço…)
+// continua no custo de produção puro. Com a chave desligada, `true` também
+// devolve 0 e nada muda.
+async function getCalcContext({ comAcrescimoCusto = false } = {}) {
   const [{ rows: cfgRows }, { rows: indiretosRows }, { rows: taxasRows }] = await Promise.all([
     pool.query('SELECT * FROM configuracoes WHERE id = 1'),
     pool.query('SELECT SUM(valor_mensal) AS total FROM custos_indiretos_itens'),
@@ -39,7 +45,11 @@ async function getCalcContext() {
   const pctTaxas = Number(taxasRows[0]?.total_pct || 0);
   const valorFixoTaxas = Number(taxasRows[0]?.total_fixo || 0);
 
-  return { config, custoIndiretoPorPeca, motivoSemCustoIndireto, pctTaxas, valorFixoTaxas };
+  const pctAcrescimoCusto = comAcrescimoCusto && config.acrescimo_custo_ativo
+    ? Number(config.acrescimo_custo_pct) || 0
+    : 0;
+
+  return { config, custoIndiretoPorPeca, motivoSemCustoIndireto, pctTaxas, valorFixoTaxas, pctAcrescimoCusto };
 }
 
 async function getEmpresa(empresaId) {
