@@ -6,6 +6,8 @@ import logoHbnHub from '../assets/logo-hbn-hub.png';
 export default function TelaEntrada({ children }) {
   return (
     <div className="login-screen">
+      {/* Fios claros da trama, que trocam de cor como LED (ver theme.css). */}
+      <div className="login-led" aria-hidden="true" />
       <div className="login-seal-wrap">
         <div className="login-seal">
           <img src={logoHbnHub} alt="Marca HBN Hub" />
