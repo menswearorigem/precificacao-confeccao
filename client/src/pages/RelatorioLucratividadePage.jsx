@@ -1176,7 +1176,7 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
           {relatorio.totalGeral?.acrescimoCustoAtivo && (
             <p className="page-sub" style={{ marginTop: -4, marginBottom: 12 }}>
               <span className="stamp sm tone-elevada" style={{ marginRight: 8 }}>Custo com os % do Wik</span>
-              O custo das peças inclui o % de markup da ficha do Wik de cada referência (sem % na ficha, 30%). Desligue na aba Produtos.
+              O custo das peças inclui o % de custo operacional da ficha do Wik de cada referência (sem % na ficha, 30%), e por isso a embalagem não é cobrada à parte. Desligue na aba Produtos.
             </p>
           )}
 

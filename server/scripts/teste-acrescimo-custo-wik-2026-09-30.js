@@ -147,8 +147,9 @@ async function main() {
   conferir('ficha: acréscimo separado R$ 11,57', perto(ct.acrescimoCustoRS, COM - CUSTO), ct.acrescimoCustoRS);
   conferir('recálculo ao vivo bate com a ficha', perto(depois.aoVivo.custoTotal.subtotalProducao, COM));
   conferir('lucratividade: custo das 2 peças R$ 77,14', perto(depois.pedido.custoPeca, 2 * COM), depois.pedido.custoPeca);
-  conferir('lucratividade: lucro cai exatamente 2 × R$ 11,57',
-    perto(antes.pedido.lucro - depois.pedido.lucro, 2 * (COM - CUSTO)), `${antes.pedido.lucro} → ${depois.pedido.lucro}`);
+  conferir('lucratividade: com a chave ligada a embalagem sai (está nos % do Wik)', antes.pedido.custoEmbalagem > 0 && depois.pedido.custoEmbalagem === 0, `${antes.pedido.custoEmbalagem} → ${depois.pedido.custoEmbalagem}`);
+  conferir('lucratividade: lucro cai 2 × R$ 11,57 e volta a embalagem',
+    perto(antes.pedido.lucro - depois.pedido.lucro, 2 * (COM - CUSTO) - antes.pedido.custoEmbalagem), `${antes.pedido.lucro} → ${depois.pedido.lucro}`);
   conferir('lucratividade: totalGeral diz que há acréscimo, padrão 42,86%', depois.rel.totalGeral.acrescimoCustoAtivo === true && perto(depois.rel.totalGeral.acrescimoCustoPctPadrao, 0.428571, 0.000001));
   conferir('lista: sem markup no Wik a origem é o padrão', depois.item.origemAcrescimo === 'padrao', depois.item.origemAcrescimo);
 

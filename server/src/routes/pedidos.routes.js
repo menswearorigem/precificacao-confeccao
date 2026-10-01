@@ -1168,7 +1168,10 @@ async function calcularRelatorioPedidos({
 
     // Custo de embalagem fixo por PEDIDO (não por peça, nem em kit) — só
     // entra quando dá pra usar o cálculo real (ver `calculoReal` abaixo).
-    const custoEmbalagemConfig = Number(ctx.config.custo_embalagem_marketplace) || 0;
+    // Com a chave "custo com os % do Wik" ligada, a embalagem já está dentro
+    // do % de custo operacional da ficha (pedido do dono, 01/10/2026): cobrar
+    // de novo aqui contaria duas vezes. Desligada, volta o valor configurado.
+    const custoEmbalagemConfig = ctx.acrescimoCustoAtivo ? 0 : (Number(ctx.config.custo_embalagem_marketplace) || 0);
 
     const pecasDoItem = (it) => Number(it.quantidade)
       * (it.kit_id ? (mapaCustoKit.get(it.kit_id)?.pecasNoKit || 1) : 1);
