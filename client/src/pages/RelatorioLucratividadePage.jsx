@@ -1237,6 +1237,19 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                       </div>
                     )}
                     <div className="row-line no-print"><span>Pedidos no Período</span><span className="mono">{relatorio.pedidos.length}</span></div>
+                    {/* Devolvidos/reembolsados (repasse zero ou negativo) ficam
+                        fora do lucro: a peça volta para o estoque. O frete de
+                        devolução cobrado aparece aqui para não sumir. */}
+                    {relatorio.totalGeral.devolvidos?.pedidos > 0 && (
+                      <div className="row-line">
+                        <span>
+                          Devolvidos/reembolsados, fora da conta: {plural(relatorio.totalGeral.devolvidos.pedidos, 'pedido')}
+                          {' '}({brl(relatorio.totalGeral.devolvidos.receita)} em venda)
+                          {relatorio.totalGeral.devolvidos.freteDevolucao < 0 && ' · frete de devolução cobrado pela plataforma'}
+                        </span>
+                        <span className="mono">{relatorio.totalGeral.devolvidos.freteDevolucao < 0 ? brl(relatorio.totalGeral.devolvidos.freteDevolucao) : '—'}</span>
+                      </div>
+                    )}
                     <SeloDeConfianca
                       considerado={relatorio.totalGeral.pedidosConsiderados}
                       total={relatorio.totalGeral.totalPedidosPeriodo}

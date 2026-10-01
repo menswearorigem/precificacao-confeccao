@@ -1172,7 +1172,7 @@ async function calcularRelatorioPedidos({
 
     const pecasDoItem = (it) => Number(it.quantidade)
       * (it.kit_id ? (mapaCustoKit.get(it.kit_id)?.pecasNoKit || 1) : 1);
-    const resultado = pedidos.map((p) => {
+    const todosOsPedidos = pedidos.map((p) => {
       const idsMembros = new Set(p._membros.map((m) => m.id));
       const itensDoPedido = itens.filter((it) => idsMembros.has(it.pedido_id));
       const custoPeca = itensDoPedido.reduce((s, it) => s + Number(it.quantidade) * (custoDoItem(it)?.custoPeca || 0), 0);
@@ -1345,6 +1345,22 @@ async function calcularRelatorioPedidos({
       };
     });
 
+    // DEVOLVIDO / REEMBOLSADO (01/10/2026). Pedido em que a plataforma
+    // repassou ZERO ou NEGATIVO é um pedido que voltou: na Shopee, 141 dos 186
+    // pedidos de setembro nessa situação têm devolução aceita no Pós-venda (o
+    // resto está em análise). Antes eles entravam com a receita cheia, o custo
+    // da peça cheio e repasse zero, e cada um tirava em média R$ 68 do lucro —
+    // R$ 12,7 mil no mês —, como se a peça tivesse sido vendida e dada de graça,
+    // quando ela volta para o estoque. Agora saem da conta (pedido do dono) e
+    // vão para `totalGeral.devolvidos`, com o frete de devolução cobrado
+    // (repasse negativo) mostrado à parte. O gasto de Ads que estava rateado
+    // neles continua no total: o dinheiro do anúncio saiu de verdade.
+    const ehDevolvido = (p) => p.calculoReal && p.valorRecebido !== null && p.valorRecebido <= 0;
+    const pedidosDevolvidos = todosOsPedidos.filter(ehDevolvido);
+    const resultado = todosOsPedidos.filter((p) => !ehDevolvido(p));
+    const adsDosDevolvidos = pedidosDevolvidos.reduce((s, p) => s + (p.custoAds || 0), 0);
+    custoAdsNaoAtribuido += adsDosDevolvidos;
+
     // Pedido sem custo de peça conhecido (custoIncompleto) fica de fora do
     // agregado — receita de verdade com custo zero infla a margem (custo
     // zero != custo pequeno), igual à regra que o Dashboard Executivo já
@@ -1436,6 +1452,17 @@ async function calcularRelatorioPedidos({
     // embalagem, taxa de marketplace, frete e Ads de uma vez.
     const custoTotalInvestido = totalGeral.receita - totalGeral.lucro;
     totalGeral.roiPct = custoTotalInvestido > 0 ? totalGeral.lucro / custoTotalInvestido : 0;
+    totalGeral.devolvidos = {
+      pedidos: pedidosDevolvidos.length,
+      receita: pedidosDevolvidos.reduce((s, p) => s + p.receita, 0),
+      // Repasse negativo = a plataforma cobrou o frete da devolução.
+      freteDevolucao: pedidosDevolvidos.reduce((s, p) => s + Math.min(0, p.valorRecebido || 0), 0),
+      adsMovidosParaSemVenda: adsDosDevolvidos,
+      lista: pedidosDevolvidos.slice(0, 500).map((p) => ({
+        id: p.id, numeroExibicao: p.numeroExibicao, data_pedido: p.data_pedido,
+        canal_venda: p.canal_venda, receita: p.receita, valorRecebido: p.valorRecebido,
+      })),
+    };
     totalGeral.acrescimoCustoAtivo = acrescimoCustoDoRelatorio.ativo;
     totalGeral.acrescimoCustoPctPadrao = acrescimoCustoDoRelatorio.pctPadrao;
 

@@ -233,6 +233,27 @@ async function main() {
   const { rows: depoisVazio } = await pool.query('SELECT wik_markup_pct FROM produtos WHERE id = $1', [p2[0].id]);
   conferir('OG1192 continua com 30% depois do grid vazio', Number(depoisVazio[0].wik_markup_pct) === 0.3);
 
+  console.log('\n6. Pedido devolvido/reembolsado (repasse zero ou negativo) sai da conta');
+  const antesDev = (await chamar(porta, 'GET', '/api/pedidos/relatorio-lucratividade?origem=marketplace', cookie)).json;
+  const { rows: ml2 } = await pool.query("SELECT * FROM integracoes_marketplace WHERE marketplace = 'mercado_livre' LIMIT 1");
+  const cli = await pool.connect();
+  try {
+    await cli.query('BEGIN');
+    await importarPedido(cli, {
+      marketplace: 'mercado_livre', idExterno: 'ML-DEV', numeroExterno: 'ML-DEV',
+      dataPedido: new Date().toISOString().slice(0, 10), clienteNome: 'Devolveu',
+      valorFrete: 0, taxaMarketplace: 20, formaPagamento: 'pix', pagamentoIdExterno: '556',
+      itens: [{ skuExterno: 'WK0001-AZUL-M', eanExterno: null, tituloExterno: 'Camiseta', quantidade: 1, valorUnitario: 79.9 }],
+    }, ml2[0]);
+    await cli.query('COMMIT');
+  } finally { cli.release(); }
+  await pool.query("UPDATE pedidos_venda SET valor_recebido_marketplace = -18.50, valor_recebido_status = 'liberado' WHERE origem_pedido_id = 'ML-DEV'");
+  const depoisDev = (await chamar(porta, 'GET', '/api/pedidos/relatorio-lucratividade?origem=marketplace', cookie)).json;
+  conferir('devolvido não aparece entre os pedidos da conta', !depoisDev.pedidos.some((p) => p.numeroExibicao === 'ML-DEV'));
+  conferir('lucro do topo não muda com o devolvido', perto(depoisDev.totalGeral.lucro, antesDev.totalGeral.lucro), `${antesDev.totalGeral.lucro} → ${depoisDev.totalGeral.lucro}`);
+  conferir('receita do topo não muda com o devolvido', perto(depoisDev.totalGeral.receita, antesDev.totalGeral.receita));
+  conferir('devolvidos listados à parte com o frete de devolução', depoisDev.totalGeral.devolvidos.pedidos === 1 && perto(depoisDev.totalGeral.devolvidos.freteDevolucao, -18.5), JSON.stringify(depoisDev.totalGeral.devolvidos).slice(0, 200));
+
   servidor.close();
   await pool.end();
   console.log(falhas === 0 ? '\nTodos os testes passaram.\n' : `\n${falhas} teste(s) falharam.\n`);
