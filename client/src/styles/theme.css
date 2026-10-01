@@ -2458,8 +2458,10 @@ table.data-table input, table.data-table select { font-size: 12.5px; padding: 6p
 
 @media (prefers-reduced-motion: reduce) {
   .login-seal-wrap, .login-card, .login-brands { animation: none; }
-  .login-screen, .login-led { animation: none; }
-  .login-led { opacity: 0.16; }
+  /* A trama em LED continua mesmo com "reduzir movimento": é só uma troca
+     lenta de cor, nada se desloca na tela. Antes ela parava aqui e, como o
+     Windows da casa está com "Mostrar animações" desligado, o efeito nunca
+     aparecia. */
 }
 @media (max-width: 520px) {
   .login-card { border-radius: 18px; }
