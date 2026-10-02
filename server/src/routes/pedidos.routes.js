@@ -1251,13 +1251,16 @@ async function calcularRelatorioPedidos({
       const custoAds = itensDoPedido.reduce((s, it) => s + custoAdsDoItem(it), 0);
       if (calculoReal) {
         const valorNotaFiscal = receita * pctNotaFiscal;
-        imposto = valorNotaFiscal * pctImpostosEmpresa(empresaVinculada);
+        // Chave "custo com os % do Wik" ligada (02/10/2026, pedido do dono):
+        // o imposto já está dentro do % de custo operacional da ficha, igual à
+        // embalagem — cobrar aqui de novo contaria duas vezes.
+        imposto = ctx.acrescimoCustoAtivo ? 0 : valorNotaFiscal * pctImpostosEmpresa(empresaVinculada);
         custoEmbalagem = custoEmbalagemConfig;
         custo = custoPeca + imposto + custoEmbalagem;
         lucro = valorRecebido - custoPeca - custoEmbalagem - imposto - custoAds;
         taxaMarketplaceExibicao = receita - valorRecebido;
       } else {
-        imposto = impostoEstimado;
+        imposto = ctx.acrescimoCustoAtivo ? 0 : impostoEstimado;
         custoEmbalagem = 0;
         custo = custoPeca + imposto;
         lucro = receita - custo - taxaMarketplace - custoAds;
