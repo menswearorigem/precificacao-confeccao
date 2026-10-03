@@ -63,6 +63,7 @@ const PedidoFormPage = lazy(() => import('./pages/PedidoFormPage'));
 const MetricasVendasPage = lazy(() => import('./pages/MetricasVendasPage'));
 const LucratividadeVendasPage = lazy(() => import('./pages/LucratividadeVendasPage'));
 const DespesasVendasPage = lazy(() => import('./pages/DespesasVendasPage'));
+const RelatorioVendasPage = lazy(() => import('./pages/RelatorioVendasPage'));
 const VendedoresPage = lazy(() => import('./pages/VendedoresPage'));
 const TabelasPrecoPage = lazy(() => import('./pages/TabelasPrecoPage'));
 const FornecedoresListPage = lazy(() => import('./pages/FornecedoresListPage'));
@@ -248,6 +249,7 @@ function AppRoutes() {
                   <Route path="/vendas/metricas" element={<MetricasVendasPage />} />
                   <Route path="/vendas/lucratividade" element={<LucratividadeVendasPage />} />
                   <Route path="/vendas/despesas" element={<DespesasVendasPage />} />
+                  <Route path="/vendas/relatorio" element={<RelatorioVendasPage />} />
                   {/* /vendas/lucratividade agora abre a tela NOVA — é a mesma
                       pergunta, respondida melhor, então quem tinha o link
                       salvo continua chegando ao lugar certo. A versão antiga

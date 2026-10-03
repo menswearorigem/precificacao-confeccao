@@ -175,6 +175,9 @@ export const MODULES = [
           { to: '/vendas/metricas', label: 'Métricas', icon: LineChart },
           { to: '/vendas/lucratividade', label: 'Lucratividade', icon: TrendingUp },
           { to: '/vendas/despesas', label: 'Publicidade e Despesas', icon: Megaphone },
+          // Relatório de Vendas (02/10/2026): drill-down Geral › Grupo › Subgrupo ›
+          // Referência sobre a exportação de vendas do Wik (ago/25–set/26).
+          { to: '/vendas/relatorio', label: 'Relatório de Vendas', icon: BarChart3 },
         ],
       },
     ],

@@ -356,6 +356,32 @@ async function buscarDespesas({ data_inicio: dataInicio, data_fim: dataFim, tipo
   return rows;
 }
 
+// ---------------------------------------------------------------------------
+// Relatório de Vendas (02/10/2026) — Vendas › Resultado › Relatório de Vendas.
+//
+// Os números vêm de uma exportação especial do Wik (itens de VENDA de
+// ago/2025 a set/2026, já agregados por referência × mês × canal, com grupo,
+// subgrupo, cor e tamanho). O Hub ainda não importa esse histórico, então o
+// arquivo mora no servidor, FORA da pasta pública: só sai por esta rota, que
+// exige login e acesso ao módulo Vendas (montagem em app.js). Para atualizar,
+// troque server/src/data/relatorio-vendas.json pelo JSON novo do Wik.
+// Nada aqui entra em cache (é dado do sistema).
+// ---------------------------------------------------------------------------
+const path = require('path');
+const ARQUIVO_RELATORIO_VENDAS = path.join(__dirname, '..', 'data', 'relatorio-vendas.json');
+
+router.get('/relatorio/dados', (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  res.type('application/json');
+  res.sendFile(ARQUIVO_RELATORIO_VENDAS, (err) => {
+    if (err && !res.headersSent) {
+      res.status(404).json({ error: 'O arquivo de dados do Relatório de Vendas não está no servidor.' });
+    } else if (err) {
+      next(err);
+    }
+  });
+});
+
 router.get('/despesas', async (req, res, next) => {
   try {
     const despesas = await buscarDespesas(req.query);

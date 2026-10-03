@@ -346,4 +346,25 @@ export const verbetesVendas = [
       'A tela **Métricas de Vendas** é o painel de volume da venda direta — o irmão do painel de Marketplace. Tem seis abas:\n\n· **Visão Geral** — vendido, pedidos, peças, ticket médio, preço médio por peça e clientes, cada um com a variação contra o período anterior de mesma duração; gráfico do vendido por dia com a linha do período anterior por cima; e a tabela dia a dia.\n· **Por Vendedor** — quanto cada um vendeu, em gráfico e em tabela, com ticket médio, desconto concedido e o quanto ficou **sem vendedor vinculado** (que é o que fica de fora da comissão).\n· **Produtos e ABC** — o que saiu, com curva de Pareto (A até 80% do faturamento, B até 95%, C o resto) e os tamanhos mais vendidos de cada referência.\n· **Clientes** — quem comprou, quanto, ticket médio, última compra e **há quantos dias não compra**.\n· **Canais e Pagamento** — quebras por canal, forma e condição de pagamento, tabela de preço, operação e empresa.\n· **Saída de Estoque** — quantas peças a venda tirou do estoque, separando o que já foi baixado (pedido faturado) do que ainda não foi.\n\nOs filtros do topo valem em todas as abas: período, vendedor, canal, tabela de preço, forma de pagamento e situação.',
     relacionados: ['vendas-lucratividade', 'mkt-metricas-visao-geral'],
   },
+  {
+    id: 'vendas-relatorio',
+    modulo: 'vendas',
+    tela: 'Relatório de Vendas',
+    titulo: 'Relatório de Vendas por grupo, subgrupo e referência',
+    rota: '/vendas/relatorio',
+    perguntas: [
+      'relatorio de vendas',
+      'relatorio para os diretores',
+      'vendas por grupo',
+      'vendas por subgrupo',
+      'quanto vendeu cada referencia',
+      'vendas por cor e tamanho',
+      'vendas por canal',
+      'como atualizar o relatorio de vendas',
+      'margem bruta do relatorio',
+    ],
+    resposta:
+      'A tela **Vendas › Resultado › Relatório de Vendas** abre no **Geral** com todos os grupos. Toque num grupo para ver os subgrupos, num subgrupo para ver as referências e numa referência para ver o detalhe dela (por mês, cor, tamanho e canal). O caminho no topo (Geral › CAMISAS › MANGA LONGA › …) volta a qualquer nível, e a busca acha a referência por código ou descrição.\n\nOs filtros de **período** e de **canal** recalculam tudo. O título, os **Destaques** e o campo **Comentários** de cada nível podem ser editados na própria tela; o texto fica guardado neste navegador, e **Salvar versão editada** baixa um arquivo avulso com tudo gravado dentro (abre com dois cliques, sem internet). **Imprimir / PDF** gera a folha limpa.\n\nOs números vêm de uma exportação de vendas do Wik (só operações de VENDA, ago/25 a set/26). A **margem bruta** é calculada só sobre os itens com custo cadastrado no Wik, e a tela diz quanto do faturamento ficou sem custo. Para atualizar o período, troque o arquivo server/src/data/relatorio-vendas.json pelo JSON novo; o botão **Abrir outro JSON do Wik** mostra um arquivo só na sua tela, para conferir antes.',
+    relacionados: ['vendas-metricas', 'vendas-lucratividade'],
+  },
 ];
