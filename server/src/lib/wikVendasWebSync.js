@@ -171,8 +171,9 @@ async function gravarPedido(client, ped) {
     `INSERT INTO pedidos_venda
        (data_pedido, cliente_id, vendedor, vendedor_id, operacao, condicao_pagamento, forma_pagamento,
         desconto_pct, desconto_valor, acrescimo, valor_frete, situacao, quantidade_pecas,
-        total_bruto, total_liquido, observacao, origem, sincroniza_wik, wik_emp_id, wik_ped_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'wik',TRUE,$17,$18)
+        total_bruto, total_liquido, observacao, origem, sincroniza_wik, wik_emp_id, wik_ped_id,
+        wik_cliente_nome, wik_canal_venda)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'wik',TRUE,$17,$18,$19,$20)
      ON CONFLICT (wik_emp_id, wik_ped_id) WHERE wik_ped_id IS NOT NULL DO UPDATE SET
        data_pedido=EXCLUDED.data_pedido, cliente_id=EXCLUDED.cliente_id, vendedor=EXCLUDED.vendedor,
        vendedor_id=COALESCE(EXCLUDED.vendedor_id, pedidos_venda.vendedor_id),
@@ -180,13 +181,21 @@ async function gravarPedido(client, ped) {
        forma_pagamento=EXCLUDED.forma_pagamento, desconto_pct=EXCLUDED.desconto_pct,
        desconto_valor=EXCLUDED.desconto_valor, acrescimo=EXCLUDED.acrescimo, valor_frete=EXCLUDED.valor_frete,
        situacao=EXCLUDED.situacao, total_bruto=EXCLUDED.total_bruto, total_liquido=EXCLUDED.total_liquido,
-       observacao=EXCLUDED.observacao, updated_at=now()
+       observacao=EXCLUDED.observacao,
+       wik_cliente_nome=EXCLUDED.wik_cliente_nome, wik_canal_venda=EXCLUDED.wik_canal_venda,
+       updated_at=now()
      WHERE pedidos_venda.sincroniza_wik = TRUE
      RETURNING (xmax = 0) AS inserido`,
     [dataPedido, clienteId, txt(ped.Vendedor), vendedorId, txt(ped.Operacao) || 'Venda',
      txt(ped.CondVenc), txt(ped.FormPgto), num(ped.PedPercDesc), num(ped.PedValorDesc), num(ped.PedAcrescimo),
      num(ped.PedFrete), situacaoVenda(ped.Situacao), 0, totalBruto, totalLiq,
-     txt(ped.PedObservacao), MATRIZ_EMP_ID, pedId]
+     txt(ped.PedObservacao), MATRIZ_EMP_ID, pedId,
+     // Nome do cliente e canal COMO O WIK MANDOU (05/10/2026): é do nome que o
+     // Relatório de Vendas tira o canal (Shopee/ML, TikTok, Shein, Atacado,
+     // Consumidor final) — e o pedido cujo cliente não casou com o cadastro
+     // do Hub ficava sem nome nenhum.
+     txt(ped.Cliente) ? txt(ped.Cliente).slice(0, 160) : null,
+     txt(ped.CanalVenda) ? txt(ped.CanalVenda).slice(0, 80) : null]
   );
   if (!up.rows[0]) return 'jaExistia'; // barrado pelo WHERE (descolado)
   return up.rows[0].inserido ? 'criado' : 'atualizado';
@@ -374,6 +383,8 @@ async function importarVendasWebAgora({ dias = 60 } = {}) {
 
     resumo.faltandoItensDepois = await contarPendentes();
     resumo.erros = resumo.erros.slice(0, 10);
+    // Venda nova chegou: o Relatório de Vendas monta de novo na próxima abertura.
+    require('./relatorioVendas').limparCacheRelatorio();
     await pool.query(
       `UPDATE integracoes_wik
           SET vendas_status = 'idle', vendas_erro = NULL, vendas_resumo = $2,

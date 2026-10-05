@@ -357,29 +357,30 @@ async function buscarDespesas({ data_inicio: dataInicio, data_fim: dataFim, tipo
 }
 
 // ---------------------------------------------------------------------------
-// Relatório de Vendas (02/10/2026) — Vendas › Resultado › Relatório de Vendas.
+// Relatório de Vendas (02/10/2026; automático desde 05/10/2026) —
+// Vendas › Resultado › Relatório de Vendas.
 //
-// Os números vêm de uma exportação especial do Wik (itens de VENDA de
-// ago/2025 a set/2026, já agregados por referência × mês × canal, com grupo,
-// subgrupo, cor e tamanho). O Hub ainda não importa esse histórico, então o
-// arquivo mora no servidor, FORA da pasta pública: só sai por esta rota, que
-// exige login e acesso ao módulo Vendas (montagem em app.js). Para atualizar,
-// troque server/src/data/relatorio-vendas.json pelo JSON novo do Wik.
-// Nada aqui entra em cache (é dado do sistema).
+// Os números saem de lib/relatorioVendas.js: o histórico congelado da
+// exportação do Wik (server/src/data/relatorio-vendas.json, fora da pasta
+// pública) MAIS os meses seguintes montados a partir dos pedidos que o ciclo
+// do Wik já sincroniza. A rota exige login e acesso ao módulo Vendas
+// (montagem em app.js). Nada aqui entra em cache do navegador; no servidor,
+// o resultado vale 5 minutos (ou até a próxima sincronização de vendas).
+// `?atualizar=1` monta na hora.
 // ---------------------------------------------------------------------------
-const path = require('path');
-const ARQUIVO_RELATORIO_VENDAS = path.join(__dirname, '..', 'data', 'relatorio-vendas.json');
+const { dadosRelatorioComCache } = require('../lib/relatorioVendas');
 
-router.get('/relatorio/dados', (req, res, next) => {
-  res.set('Cache-Control', 'no-store');
-  res.type('application/json');
-  res.sendFile(ARQUIVO_RELATORIO_VENDAS, (err) => {
-    if (err && !res.headersSent) {
-      res.status(404).json({ error: 'O arquivo de dados do Relatório de Vendas não está no servidor.' });
-    } else if (err) {
-      next(err);
+router.get('/relatorio/dados', async (req, res, next) => {
+  try {
+    res.set('Cache-Control', 'no-store');
+    const dados = await dadosRelatorioComCache({ forcar: req.query.atualizar === '1' });
+    res.json(dados);
+  } catch (err) {
+    if (err && err.code === 'ENOENT') {
+      return res.status(404).json({ error: 'O arquivo de histórico do Relatório de Vendas não está no servidor.' });
     }
-  });
+    next(err);
+  }
 });
 
 router.get('/despesas', async (req, res, next) => {

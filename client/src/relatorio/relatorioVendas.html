@@ -1,7 +1,10 @@
 <!DOCTYPE html>
-<!-- Modelo do Relatório de Vendas (HBN Hub). A tela RelatorioVendasPage troca o marcador de dados
-     (dentro do <script id="data">) pelo JSON de /api/vendas/relatorio/dados e abre isto num iframe. O mesmo modelo
-     gera o arquivo avulso (Salvar versão editada). -->
+<!-- Modelo do Relatório de Vendas (HBN Hub). A tela RelatorioVendasPage troca o
+     marcador de dados pelo JSON de /api/vendas/relatorio/dados e abre isto num
+     iframe srcdoc, que herda a CSP do Hub. O script principal (a única tag de
+     script SEM atributos) é liberado na CSP pelo sha256 dele, calculado deste
+     arquivo ao subir o servidor (middleware/seguranca.js): pode editar o código à
+     vontade que o hash acompanha, mas não crie outra tag de script sem atributos. -->
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
@@ -154,6 +157,8 @@ h1,h2,h3{font-family:var(--serif);font-weight:600;margin:0;letter-spacing:-.01em
 .bw{flex:1;display:flex;flex-direction:column;justify-content:flex-end;position:relative}
 .bar{background:var(--accent);border-radius:5px 5px 0 0;min-height:2px;transition:height .35s ease,background .15s;position:relative}
 .col:hover .bar,.col.hl .bar{background:var(--accent-h)}
+.col.parc .bar{background:repeating-linear-gradient(135deg,var(--accent) 0 6px,var(--accent-h) 6px 12px);opacity:.75}
+.col.parc .xl small{color:var(--accent);font-weight:600}
 .col.mx .bar{background:var(--leather-d)}
 :root[data-theme="dark"] .col.mx .bar{background:var(--brass)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .col.mx .bar{background:var(--brass)}}
@@ -457,8 +462,8 @@ var D=JSON.parse(document.getElementById('data').textContent);
 var E={};try{E=JSON.parse(document.getElementById('edits').textContent||'{}')||{}}catch(e){E={}}
 var dirty=false;
 /* Dentro do Hub, os textos editados ficam guardados neste navegador (não se perdem ao trocar de tela). */
-if(EMBED&&!Object.keys(E).length){try{var ls=JSON.parse(localStorage.getItem(LSK+':'+D.geradoEm)||'null');if(ls&&typeof ls==='object')E=ls}catch(e){}}
-function markDirty(){dirty=true;if(EMBED){try{localStorage.setItem(LSK+':'+D.geradoEm,JSON.stringify(E))}catch(e){}}}
+if(EMBED&&!Object.keys(E).length){try{var ls=JSON.parse(localStorage.getItem(LSK+':v1')||'null');if(ls&&typeof ls==='object')E=ls}catch(e){}}
+function markDirty(){dirty=true;if(EMBED){try{localStorage.setItem(LSK+':v1',JSON.stringify(E))}catch(e){}}}
 
 /* ---------- formatação pt-BR ---------- */
 var nf0=new Intl.NumberFormat('pt-BR',{maximumFractionDigits:0});
@@ -480,6 +485,8 @@ var CH_SHORT=['Shopee / ML','TikTok Shop','Shein','Atacado','Consumidor final'];
 
 /* ---------- índices ---------- */
 var NM=D.months.length,NC=D.canais.length;
+/* Mês em andamento (relatório automático do Hub): fica de fora de "pior mês" e da comparação dos últimos 3 meses. */
+var PARC=(D.auto&&D.auto.mesParcial)?D.months.indexOf(D.auto.mesParcial):-1;
 var subG=D.subs.map(function(s){return s[0]});
 var refS=D.refs.map(function(r){return r[2]});
 var refG=refS.map(function(s){return subG[s]});
@@ -589,7 +596,7 @@ function monthHTML(C){
   h+='<div class="bars">';
   for(i=S.a;i<=S.b;i++){
     var v2=vals[i-S.a],ht=Math.max(0,v2)/top*100,mp=mparts(i);
-    h+='<div class="col'+(i===best&&S.b>S.a?' mx':'')+'" data-mi="'+i+'"><div class="bw"><div class="bar" style="height:'+ht.toFixed(2)+'%">'+(v2>0?'<span class="bv">'+SH(v2,false)+'</span>':'')+'</div></div><div class="xl">'+mp[0]+'<small>'+mp[1]+'</small></div></div>';
+    h+='<div class="col'+(i===best&&S.b>S.a?' mx':'')+(i===PARC?' parc':'')+'" data-mi="'+i+'"><div class="bw"><div class="bar" style="height:'+ht.toFixed(2)+'%">'+(v2>0?'<span class="bv">'+SH(v2,false)+'</span>':'')+'</div></div><div class="xl">'+mp[0]+'<small>'+(i===PARC?'parcial':mp[1])+'</small></div></div>';
   }
   h+='</div></div></div>';return h;
 }
@@ -642,15 +649,15 @@ function destaques(C){
   var t10=0;refs.slice(0,10).forEach(function(o){t10+=o.fat});
   if(refs.length)out.push('As <b>10 maiores referências</b> concentram <b>'+P(t10/X.fat)+'</b> do faturamento ('+RA(t10)+'), num total de '+N(refs.length)+' referências vendidas. A líder é <b>'+esc(D.refs[refs[0].id][0])+'</b> ('+esc(D.refs[refs[0].id][1])+'), com '+RA(refs[0].fat)+'.');
   if(S.b>S.a){
-    var bi=S.a,wi=S.a;for(var i=S.a;i<=S.b;i++){if(C.mon[i].fat>C.mon[bi].fat)bi=i;if(C.mon[i].fat<C.mon[wi].fat)wi=i}
-    out.push('Melhor mês: <b>'+mlab(bi)+'</b> ('+RA(C.mon[bi].fat)+' · '+N(C.mon[bi].pcs)+' peças). Pior mês: <b>'+mlab(wi)+'</b> ('+RA(C.mon[wi].fat)+').');
+    var bi=-1,wi=-1;for(var i=S.a;i<=S.b;i++){if(i===PARC)continue;if(bi<0||C.mon[i].fat>C.mon[bi].fat)bi=i;if(wi<0||C.mon[i].fat<C.mon[wi].fat)wi=i}
+    if(bi>=0)out.push('Melhor mês: <b>'+mlab(bi)+'</b> ('+RA(C.mon[bi].fat)+' · '+N(C.mon[bi].pcs)+' peças). Pior mês: <b>'+mlab(wi)+'</b> ('+RA(C.mon[wi].fat)+').'+(PARC>=S.a&&PARC<=S.b?' <span class="edtag">('+mlab(PARC)+' ainda em andamento, fora da comparação)</span>':''));
   }
   /* últimos 3 meses vs 3 anteriores (termina no mês final do filtro, respeita os canais) */
-  var e=S.b;
+  var e=S.b,eParc=false;if(e===PARC){e=e-1;eParc=true}
   if(e-5>=0){
     var A=0,B=0,f=D.f;for(var j=0;j<f.length;j++){var r=f[j];if(!S.ch[r[2]])continue;if(r[1]>=e-2&&r[1]<=e)A+=r[4];else if(r[1]>=e-5&&r[1]<=e-3)B+=r[4]}
     var d=B?(A-B)/B:NaN,cls=d>=0?'up':'down',sg=d>=0?'+':'−';
-    out.push('Últimos 3 meses (<b>'+mlab(e-2)+'–'+mlab(e)+'</b>): '+RA(A)+' contra '+RA(B)+' nos 3 anteriores ('+mlab(e-5)+'–'+mlab(e-3)+'): <span class="'+cls+'">'+sg+nf1.format(Math.abs(d*100))+'%</span>.'+(S.b-S.a<5?' <span class="edtag">(inclui meses antes do período filtrado)</span>':''));
+    out.push('Últimos 3 meses (<b>'+mlab(e-2)+'–'+mlab(e)+'</b>): '+RA(A)+' contra '+RA(B)+' nos 3 anteriores ('+mlab(e-5)+'–'+mlab(e-3)+'): <span class="'+cls+'">'+sg+nf1.format(Math.abs(d*100))+'%</span>.'+(S.b-S.a<5?' <span class="edtag">(inclui meses antes do período filtrado)</span>':'')+(eParc?' <span class="edtag">(sem '+mlab(PARC)+', ainda em andamento)</span>':''));
   }
   var cl=C.chn.map(function(o,i){return {o:o,i:i}}).filter(function(x){return S.ch[x.i]}).sort(function(x,y){return y.o.fat-x.o.fat})[0];
   if(cl&&chOn()>1)out.push('Canal líder: <b>'+esc(D.canais[cl.i])+'</b>, com <b>'+P(cl.o.fat/X.fat)+'</b> do faturamento ('+RA(cl.o.fat)+' · '+N(cl.o.pcs)+' peças).');
@@ -733,7 +740,7 @@ function render(){
 var tip=document.getElementById('tip'),tipOn=false;
 function showTip(col,x,y){
   var i=+col.getAttribute('data-mi'),o=C.mon[i],mp=mparts(i),tot=C.X.fat;
-  tip.innerHTML='<b>'+cap(mp[2])+'</b><span>Faturamento <em>'+R(o.fat)+'</em></span><span>Peças <em>'+N(o.pcs)+'</em></span><span>Preço médio <em>'+(o.pcs?R(o.fat/o.pcs):'—')+'</em></span><span>% do período <em>'+P(tot?o.fat/tot:NaN)+'</em></span>';
+  tip.innerHTML='<b>'+cap(mp[2])+(i===PARC?' · em andamento':'')+'</b><span>Faturamento <em>'+R(o.fat)+'</em></span><span>Peças <em>'+N(o.pcs)+'</em></span><span>Preço médio <em>'+(o.pcs?R(o.fat/o.pcs):'—')+'</em></span><span>% do período <em>'+P(tot?o.fat/tot:NaN)+'</em></span>';
   tip.classList.add('on');tipOn=true;
   document.querySelectorAll('.col.hl').forEach(function(c){c.classList.remove('hl')});col.classList.add('hl');
   var w=tip.offsetWidth,hh=tip.offsetHeight,vw=window.innerWidth;
@@ -805,14 +812,16 @@ document.addEventListener('paste',function(e){
 });
 window.addEventListener('beforeunload',function(e){if(dirty&&!EMBED){e.preventDefault();e.returnValue=''}});
 
-function save(){
-  var dh=document.getElementById('destbody');
-  var json=JSON.stringify(E).replace(/</g,'\\u003c').replace(/>/g,'\\u003e').replace(/&/g,'\\u0026');
-  var out=SRC.replace(/<html([^>]*?)\sdata-embed(="[^"]*")?/,'<html$1').replace(/(<script type="application\/json" id="edits">)[\s\S]*?(<\/script>)/,function(_,a,b){return a+json+b});
+/* Salvar versão editada: baixa o próprio HTML com os textos editados gravados dentro. */
+function baixar(out){
   var blob=new Blob([out],{type:'text/html;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
   var d=new Date(),stamp=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   a.href=url;a.download='relatorio-vendas-hbn-editado-'+stamp+'.html';document.body.appendChild(a);a.click();
   setTimeout(function(){URL.revokeObjectURL(url);a.remove()},1500);dirty=false;closeSheets();
+}
+function save(){
+  var json=JSON.stringify(E).replace(/</g,'\\u003c').replace(/>/g,'\\u003e').replace(/&/g,'\\u0026');
+  baixar(SRC.replace(/<html([^>]*?)\sdata-embed(="[^"]*")?/,'<html$1').replace(/(<script type="application\/json" id="edits">)[\s\S]*?(<\/script>)/,function(_,a,b){return a+json+b}));
 }
 document.getElementById('bsave').addEventListener('click',save);
 document.getElementById('msave').addEventListener('click',save);

@@ -348,8 +348,18 @@ async function montarPreviewEstoque(integracao, porEmpId) {
 
   const porChave = new Map();
   const erros = [];
+  // Grupo/subgrupo/marca de cada referência, como o Wik classifica
+  // (05/10/2026) — é o que o Relatório de Vendas usa para montar os meses
+  // novos. Vem em toda linha do saldo; basta a primeira com valor.
+  const classificacao = new Map();
   for (const linha of linhasBrutas) {
     const referencia = linha.prod_referencia;
+    if (referencia && !classificacao.has(referencia)) {
+      const grupo = limparDescricaoWik(linha.grupo);
+      const subgrupo = limparDescricaoWik(linha.subgrupo);
+      const marca = limparDescricaoWik(linha.marca);
+      if (grupo || subgrupo || marca) classificacao.set(referencia, { grupo, subgrupo, marca });
+    }
     const cor = limparDescricaoWik(linha.cor);
     const tamanho = linha.estct_tamanho || '';
     const quantidade = quantidadeWik(linha.estct_saldo);
@@ -395,9 +405,40 @@ async function montarPreviewEstoque(integracao, porEmpId) {
   }
 
   return {
-    criar, atualizar, erros,
+    criar, atualizar, erros, classificacao,
     resumo: { totalLinhasWik: linhasBrutas.length, variantesCriar: criar.length, variantesAtualizar: atualizar.length, totalErros: erros.length },
   };
+}
+
+// Grava a classificação do Wik (grupo/subgrupo/marca) nas colunas próprias de
+// `produtos` (migration 0101). Não toca em `categoria` nem em `marca`, que a
+// casa edita. Só escreve quando mudou, para não reescrever 600 linhas a cada
+// ciclo de 15 minutos. Falhar aqui não pode derrubar a sincronização do
+// estoque: quem chama trata o erro como aviso.
+async function gravarClassificacaoWik(classificacao) {
+  if (!classificacao || classificacao.size === 0) return 0;
+  const refs = [];
+  const grupos = [];
+  const subgrupos = [];
+  const marcas = [];
+  for (const [ref, c] of classificacao.entries()) {
+    refs.push(ref);
+    grupos.push(c.grupo ? c.grupo.slice(0, 80) : null);
+    subgrupos.push(c.subgrupo ? c.subgrupo.slice(0, 80) : null);
+    marcas.push(c.marca ? c.marca.slice(0, 80) : null);
+  }
+  const { rowCount } = await pool.query(
+    `UPDATE produtos p
+        SET wik_grupo = x.grupo, wik_subgrupo = x.subgrupo, wik_marca = x.marca,
+            wik_classificacao_em = now()
+       FROM unnest($1::text[], $2::text[], $3::text[], $4::text[]) AS x(ref, grupo, subgrupo, marca)
+      WHERE p.referencia = x.ref
+        AND (p.wik_grupo IS DISTINCT FROM x.grupo
+             OR p.wik_subgrupo IS DISTINCT FROM x.subgrupo
+             OR p.wik_marca IS DISTINCT FROM x.marca)`,
+    [refs, grupos, subgrupos, marcas]
+  );
+  return rowCount;
 }
 
 // Número do Wik em qualquer um dos dois formatos que ele usa no MESMO campo:
@@ -526,6 +567,11 @@ async function sincronizarEstoqueAgora() {
   try {
     const resultado = await montarPreviewEstoque(integracao, porEmpId);
     const aplicado = await aplicarSincronizacaoEstoque(resultado);
+    try {
+      aplicado.classificacoesAtualizadas = await gravarClassificacaoWik(resultado.classificacao);
+    } catch (e) {
+      console.warn(`[wik-sync] classificação (grupo/subgrupo) não gravada: ${e.message}`);
+    }
     await pool.query(
       `UPDATE integracoes_wik SET preview_status = 'idle', preview_resultado = NULL, atualizado_em = now() WHERE id = $1`,
       [integracao.id]
@@ -664,6 +710,7 @@ async function corrigirJobsPresos(integracao) {
 
 module.exports = {
   _quantidadeWik: quantidadeWik,   // exportado para o teste de regressão do checape
+  gravarClassificacaoWik,
   buscarIntegracao,
   obterTokenBoxAtual,
   renovarTokenAgora,
