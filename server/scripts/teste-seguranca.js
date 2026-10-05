@@ -75,6 +75,13 @@ async function main() {
       'CSP proíbe o sistema dentro de iframe (clickjacking)',
       (saude.headers.get('content-security-policy') || '').includes("frame-ancestors 'none'")
     );
+    // Relatório de Vendas (05/10/2026): script embutido continua proibido; só
+    // o script do modelo do relatório passa, pela impressão digital dele.
+    const scriptSrc = ((saude.headers.get('content-security-policy') || '').split(';')
+      .map((d) => d.trim()).find((d) => d.startsWith('script-src')) || '');
+    const { HASH_RELATORIO_VENDAS } = require('../src/middleware/seguranca');
+    ok('CSP não libera script embutido em geral (sem unsafe-inline)', !scriptSrc.includes('unsafe-inline') && !scriptSrc.includes('unsafe-eval'));
+    ok('CSP libera o script do Relatório de Vendas pelo hash', Boolean(HASH_RELATORIO_VENDAS) && scriptSrc === `script-src 'self' ${HASH_RELATORIO_VENDAS}`, scriptSrc);
     ok('X-Content-Type-Options: nosniff', saude.headers.get('x-content-type-options') === 'nosniff');
     ok('X-Frame-Options: DENY', saude.headers.get('x-frame-options') === 'DENY');
     ok('Referrer-Policy definido', Boolean(saude.headers.get('referrer-policy')));

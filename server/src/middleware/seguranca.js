@@ -3,6 +3,9 @@
 // Escrito à mão, sem dependência nova (o helmet traria 5 pacotes pra fazer o
 // que cabe em 60 linhas, e dependência a menos é superfície de ataque a menos).
 
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { ehProducao } = require('../lib/config');
 
 // A política de conteúdo permite exatamente o que o HBN Hub usa hoje:
@@ -47,13 +50,33 @@ const FOTOS_MARKETPLACE = [
   'https://*.ltwebstatic.com',
 ];
 
+// Relatório de Vendas (05/10/2026): o relatório roda num iframe srcdoc, que
+// herda esta política — e o script dele é embutido no modelo HTML. Em vez de
+// 'unsafe-inline', libera SÓ aquele script, pela impressão digital (sha256)
+// calculada do próprio modelo ao subir o servidor: qualquer outro script
+// embutido continua bloqueado, e se o modelo mudar o hash acompanha sozinho.
+// Sem o arquivo (ou sem o <script> nele), nada é liberado — o relatório fica
+// em branco, mas a trava não afrouxa.
+const MODELO_RELATORIO_VENDAS = path.join(__dirname, '..', '..', '..', 'client', 'src', 'relatorio', 'relatorioVendas.html');
+function hashDoScriptDoRelatorio() {
+  try {
+    const html = fs.readFileSync(MODELO_RELATORIO_VENDAS, 'utf8');
+    const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+    if (scripts.length !== 1) return null;
+    return `'sha256-${crypto.createHash('sha256').update(scripts[0][1], 'utf8').digest('base64')}'`;
+  } catch {
+    return null;
+  }
+}
+const HASH_RELATORIO_VENDAS = hashDoScriptDoRelatorio();
+
 const CSP = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
   "frame-ancestors 'none'",
   "form-action 'self'",
-  "script-src 'self'",
+  `script-src 'self'${HASH_RELATORIO_VENDAS ? ` ${HASH_RELATORIO_VENDAS}` : ''}`,
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com data:",
   `img-src 'self' data: blob: ${FOTOS_MARKETPLACE.join(' ')}`,
@@ -129,4 +152,4 @@ function conferirOrigem(req, res, next) {
   return next();
 }
 
-module.exports = { cabecalhosSeguranca, forcarHttps, conferirOrigem, CSP };
+module.exports = { cabecalhosSeguranca, forcarHttps, conferirOrigem, CSP, HASH_RELATORIO_VENDAS };
