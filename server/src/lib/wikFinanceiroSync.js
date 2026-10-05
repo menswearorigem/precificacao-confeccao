@@ -44,6 +44,13 @@ const DETALHE_TTL_MS = 6 * 60 * 60 * 1000;
 // Teto de contas a pagar cujo detalhe é lido por ciclo. As que sobrarem entram
 // no ciclo seguinte — o mesmo desenho do GRADE_CAP da 0067.
 const DETALHE_CAP = Number(process.env.WIK_FIN_DETALHE_CAP || 120);
+// Teto de contas a pagar FORA da janela do ciclo (vencidas há mais de 180
+// dias e ainda em aberto no Hub) que são relidas por ciclo — ver
+// revisarPagarForaDaJanela. Mesmo custo do detalhe: 1 página por conta.
+const REVISAO_CAP = Number(process.env.WIK_FIN_REVISAO_CAP || 80);
+// Prefixo do `wik_ref` da baixa que nasce do STATUS da parcela no Wik (e não
+// de um lançamento do extrato). Ver acertarBaixaPeloStatus.
+const PREFIXO_BAIXA_STATUS = 'cps:';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // O MODELO DE EMPRESA (24/09/2026) — "sincroniza no horário e não puxa nada"
@@ -525,20 +532,92 @@ async function gravarTitulo(t) {
 
 // A baixa que já veio pronta do Wik. `wik_ref` é única, então o mesmo
 // pagamento nunca entra duas vezes, por mais ciclos que rodem.
-async function gravarBaixa({ tituloId, wikRef, data, valor, contaId, forma }) {
+async function gravarBaixa({ tituloId, wikRef, data, valor, contaId, forma, observacao = 'Baixa importada do Wik' }) {
   if (!(valor > 0) || !data) return false;
   const { rows } = await pool.query(
     `INSERT INTO fin_baixas (titulo_id, conta_id, data_baixa, principal, forma_pagamento, observacao, wik_ref)
-     VALUES ($1,$2,$3,$4,$5,'Baixa importada do Wik',$6)
+     VALUES ($1,$2,$3,$4,$5,$7,$6)
      ON CONFLICT (wik_ref) WHERE wik_ref IS NOT NULL
      DO UPDATE SET data_baixa = EXCLUDED.data_baixa, principal = EXCLUDED.principal,
-                   conta_id = EXCLUDED.conta_id, forma_pagamento = EXCLUDED.forma_pagamento
+                   conta_id = EXCLUDED.conta_id, forma_pagamento = EXCLUDED.forma_pagamento,
+                   observacao = EXCLUDED.observacao
      RETURNING id`,
-    [tituloId, contaId || null, data, valor, texto(forma, 40), wikRef]
+    [tituloId, contaId || null, data, valor, texto(forma, 40), wikRef, observacao]
   );
   if (!rows[0]) return false;
   await recalcularSituacao(pool, tituloId);
   return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BAIXA PELO STATUS DO WIK (05/10/2026) — "2.840 contas vencidas, R$ 4,2 mi"
+// ═══════════════════════════════════════════════════════════════════════════
+// Até aqui a baixa do contas a pagar só nascia de um lançamento do EXTRATO
+// ("Saida de conta a pagar numero: X parcela Y"). Quando esse lançamento não
+// casava — o extrato daquela data foi lido ANTES de o título existir no Hub
+// (carga histórica), a conta bancária do lançamento não está mapeada, o
+// pagamento saiu fora da janela de extrato lida, ou o Wik baixou sem gerar
+// extrato — o título ficava "aberto" no Hub para sempre, mesmo BAIXADO no Wik.
+// A tela inicial somava tudo isso como "contas vencidas".
+//
+// A regra agora: o STATUS da parcela no Wik manda. Parcela BAIXADA no Wik e
+// sem baixa suficiente no Hub ganha uma baixa "pelo status" (wik_ref `cps:`)
+// no valor que falta, SEM conta bancária (não aparece na conciliação nem no
+// saldo de conta nenhuma) e com a data = vencimento (o Wik não manda a data
+// da baixa da parcela; se o vencimento é futuro, hoje). Quando o lançamento
+// do extrato chega, ele SUBSTITUI a baixa pelo status — nunca as duas juntas.
+// Parcela que volta a EM ABERTO no Wik (estorno lá) perde a baixa pelo status.
+function parcelaQuitadaNoWik(p, situacaoConta) {
+  if (dataDe(p.DataBaixa)) return true;
+  const s = String(p.Situacao || '').trim();
+  // "Baixado Parcial" NÃO entra: não dá para saber quanto foi pago.
+  if (s) return /^(baixad[oa]|pag[oa]|liquidad[oa]|quitad[oa])$/i.test(s);
+  // Parcela sem situação: vale a da CONTA, mas só quitação total.
+  return /^baixad[oa]$/i.test(String(situacaoConta || '').trim());
+}
+function parcelaAbertaNoWik(p) {
+  return /^em aberto$/i.test(String(p.Situacao || '').trim());
+}
+const centavos = (v) => Math.round(Number(v) * 100) / 100;
+
+async function acertarBaixaPeloStatus({ tituloId, wikRef, quitada, aberta, valor, vencimento }, resumo) {
+  const { rows } = await pool.query(
+    `SELECT t.wik_travado, t.situacao,
+            COALESCE(SUM(b.principal) FILTER (
+              WHERE b.estornada_em IS NULL AND (b.wik_ref IS NULL OR b.wik_ref <> $2)), 0)::numeric AS outras,
+            COUNT(b.id) FILTER (WHERE b.wik_ref = $2)::int AS tem_status
+       FROM fin_titulos t
+       LEFT JOIN fin_baixas b ON b.titulo_id = t.id
+      WHERE t.id = $1
+      GROUP BY t.id`,
+    [tituloId, wikRef]
+  );
+  const t = rows[0];
+  if (!t || t.wik_travado || t.situacao === 'cancelado') return;
+
+  const desfazer = async () => {
+    await pool.query('DELETE FROM fin_baixas WHERE wik_ref = $1', [wikRef]);
+    await recalcularSituacao(pool, tituloId);
+  };
+
+  if (quitada) {
+    const falta = centavos(valor - Number(t.outras));
+    if (falta <= 0) {
+      // Outra baixa (extrato ou feita à mão) já cobre a parcela.
+      if (t.tem_status) await desfazer();
+      return;
+    }
+    const hoje = hojeIso();
+    const data = vencimento && vencimento <= hoje ? vencimento : hoje;
+    const ok = await gravarBaixa({
+      tituloId, wikRef, data, valor: falta, contaId: null, forma: null,
+      observacao: 'Baixado no Wik (pela situação da parcela). Data = vencimento: o Wik não informa a data do pagamento e não há lançamento no extrato.',
+    });
+    if (ok && !t.tem_status) resumo.pagar_baixas_status += 1;
+  } else if (aberta && t.tem_status) {
+    await desfazer();
+    resumo.pagar_baixas_status_desfeitas += 1;
+  }
 }
 
 // ── contas a PAGAR ─────────────────────────────────────────────────────────
@@ -664,8 +743,102 @@ async function importarContasPagar(sessao, fonte, janela, mapas, resumo) {
           forma: p.FormaPgto,
         });
         if (ok) resumo.pagar_baixas += 1;
+      } else if (!cancelada) {
+        await acertarBaixaPeloStatus({
+          tituloId,
+          wikRef: `${PREFIXO_BAIXA_STATUS}${fonte.wik_emp_id}:${ctaId}:${itemId}`,
+          quitada: parcelaQuitadaNoWik(p, c.Situacao),
+          aberta: parcelaAbertaNoWik(p),
+          valor,
+          vencimento: dataDe(p.DataVencimento),
+        }, resumo);
       }
     }
+  }
+}
+
+// ── contas a pagar FORA da janela ──────────────────────────────────────────
+// O dia a dia lê o grid de [hoje − 180 dias, hoje + 400]. Título que venceu
+// antes disso e continua aberto no Hub nunca mais era relido — se foi pago no
+// Wik depois, ficava aberto aqui para sempre. Esta passada relê o DETALHE
+// (parcelas com a situação) dessas contas direto pelo CtaId, sem grid,
+// REVISAO_CAP por ciclo, as mais antigas primeiro, e só acerta as baixas.
+async function revisarPagarForaDaJanela(sessao, fonte, janela, resumo) {
+  const { rows } = await pool.query(
+    `SELECT wik_id, COUNT(*) OVER ()::int AS total
+       FROM fin_titulos
+      WHERE wik_emp_id = $1 AND natureza = 'pagar' AND wik_id IS NOT NULL
+        AND situacao IN ('aberto', 'parcial') AND NOT wik_travado AND wik_duplicado_de_id IS NULL
+        AND NOT (data_vencimento BETWEEN $2::date AND $3::date)
+      GROUP BY wik_id
+     HAVING MAX(wik_sincronizado_em) IS NULL
+         OR MAX(wik_sincronizado_em) < now() - make_interval(secs => $4)
+      ORDER BY MAX(wik_sincronizado_em) NULLS FIRST, wik_id
+      LIMIT $5`,
+    [fonte.wik_emp_id, janela.de, janela.ate, DETALHE_TTL_MS / 1000, REVISAO_CAP]
+  );
+  if (!rows.length) return;
+  resumo.pagar_revisao_pendentes = Math.max(0, rows[0].total - rows.length);
+
+  for (const { wik_id: ctaId } of rows) {
+    let detalhe = null;
+    try {
+      detalhe = await wikWeb.contaPagarDetalhe(sessao, ctaId);
+    } catch (err) {
+      if (err.sessaoExpirada) throw err;
+      resumo.erros.push(`conta a pagar ${ctaId} (fora da janela): ${err.message}`);
+    }
+    const parcelas = ((detalhe && detalhe.parcelas) || []).filter((p) => Number(p.CtaiId) > 0);
+    for (const p of parcelas) {
+      const itemId = Number(p.CtaiId);
+      const { rows: t } = await pool.query(
+        `SELECT id FROM fin_titulos
+          WHERE wik_emp_id = $1 AND natureza = 'pagar' AND wik_id = $2 AND wik_item_id = $3
+            AND NOT wik_travado AND situacao <> 'cancelado'`,
+        [fonte.wik_emp_id, ctaId, itemId]
+      );
+      if (!t[0]) continue;
+      const tituloId = t[0].id;
+      if (/cancel/i.test(String(p.Situacao || ''))) {
+        const { rowCount } = await pool.query(
+          `UPDATE fin_titulos SET situacao = 'cancelado', atualizado_em = now()
+            WHERE id = $1 AND NOT wik_travado
+              AND NOT EXISTS (SELECT 1 FROM fin_baixas b WHERE b.titulo_id = $1 AND b.estornada_em IS NULL)`,
+          [tituloId]
+        );
+        resumo.pagar_cancelados_wik += rowCount;
+        continue;
+      }
+      const dataBaixa = dataDe(p.DataBaixa);
+      if (dataBaixa) {
+        const ok = await gravarBaixa({
+          tituloId,
+          wikRef: `cp:${fonte.wik_emp_id}:${ctaId}:${itemId}`,
+          data: dataBaixa,
+          valor: valorDe(p.Valor),
+          contaId: null,
+          forma: p.FormaPgto,
+        });
+        if (ok) resumo.pagar_baixas += 1;
+        continue;
+      }
+      await acertarBaixaPeloStatus({
+        tituloId,
+        wikRef: `${PREFIXO_BAIXA_STATUS}${fonte.wik_emp_id}:${ctaId}:${itemId}`,
+        quitada: parcelaQuitadaNoWik(p, null),
+        aberta: parcelaAbertaNoWik(p),
+        valor: valorDe(p.Valor),
+        vencimento: dataDe(p.DataVencimento),
+      }, resumo);
+    }
+    // Relida (mesmo sem mudança, ou se o Wik falhou): sai da frente da fila
+    // por DETALHE_TTL_MS, para a fila andar.
+    await pool.query(
+      `UPDATE fin_titulos SET wik_sincronizado_em = now()
+        WHERE wik_emp_id = $1 AND natureza = 'pagar' AND wik_id = $2 AND NOT wik_travado`,
+      [fonte.wik_emp_id, ctaId]
+    );
+    resumo.pagar_revisados_fora_janela += 1;
   }
 }
 
@@ -915,6 +1088,11 @@ async function baixasDoExtrato(fonte, itens, resumo) {
       });
       if (!ok) continue;
       resumo.pagar_baixas += 1;
+      // O lançamento do extrato SUBSTITUI a baixa pelo status (nunca as duas).
+      const { rowCount: trocadas } = await pool.query(
+        `DELETE FROM fin_baixas WHERE titulo_id = $1 AND wik_ref LIKE '${PREFIXO_BAIXA_STATUS}%'`, [t[0].id]
+      );
+      if (trocadas) await recalcularSituacao(pool, t[0].id);
       const { rows: b } = await pool.query('SELECT id FROM fin_baixas WHERE wik_ref = $1', [wikRef]);
       baixaId = b[0] ? b[0].id : null;
     } else {
@@ -1011,6 +1189,8 @@ function resumoVazio() {
     plano_contas: 0, centros_custo: 0, contas: 0,
     pagar_contas_vistas: 0, pagar_titulos: 0, pagar_baixas: 0, pagar_travados: 0,
     pagar_detalhes_pendentes: 0, pagar_sem_categoria: 0,
+    pagar_baixas_status: 0, pagar_baixas_status_desfeitas: 0,
+    pagar_revisados_fora_janela: 0, pagar_revisao_pendentes: 0, pagar_cancelados_wik: 0,
     receber_vistos: 0, receber_titulos: 0, receber_baixas: 0, receber_travados: 0,
     extrato_vistos: 0, extrato_linhas: 0, extrato_travados: 0, extrato_sem_conta: 0,
     extrato_removidas: 0, extrato_titulo_ainda_nao_lido: 0, pagar_invalidas: 0,
@@ -1148,6 +1328,7 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
       }
       const mapas = await carregarMapas(fonte, mapaEmpresas, empresas);
       await passo('contas a pagar', () => importarContasPagar(sessao, fonte, janela, mapas, resumo));
+      await passo('contas a pagar antigas em aberto', () => revisarPagarForaDaJanela(sessao, fonte, janela, resumo));
       await passo('contas a receber', () => importarContasReceber(sessao, fonte, janela, mapas, resumo));
       await passo('extrato bancário', () => importarExtrato(sessao, fonte, janela, mapas, resumo));
       await passo('conciliação com as baixas do Wik', () => conciliarExtratoComBaixasWik(resumo));
@@ -1260,5 +1441,5 @@ module.exports = {
   travarTitulo,
   FONTE_EMP_ID, EMPRESA_PADRAO_WIK, MARCA_A_CLASSIFICAR, empresaPadraoDe,
   // exportados para teste
-  valorDe, dataDe, calcularJanela, codigoPlano, degenerado,
+  valorDe, dataDe, calcularJanela, codigoPlano, degenerado, parcelaQuitadaNoWik,
 };
