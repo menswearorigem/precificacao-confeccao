@@ -32,6 +32,9 @@ const CONTAS_BANCARIAS = [
 let PAGAR = [];
 let DETALHES = {};
 let EXTRATO = [];
+// Contas ANTIGAS que o grid devolve quando a faixa de vencimento as cobre.
+let ANTIGAS = [];
+const leiturasGrid = [];
 const parcela = (id, venc, valor, situacao) => ({
   CtaiId: id, DataVencimento: ts(venc), Valor: valor, GrupoReceitaId: 0, Situacao: situacao, DataBaixa: 'null', DataEmissao: ts(venc),
 });
@@ -45,7 +48,11 @@ require.cache[path] = { id: path, filename: path, loaded: true, exports: {
   planoContas: async () => ([{ PcId: 11, PcConta: '3.1', PcDescricao: 'Despesas', PcTipo: 'Despesa', PcCategoria: 'Analítico', PcPai: 0 }]),
   centrosCusto: async () => ([]),
   contasBancarias: async () => CONTAS_BANCARIAS,
-  contasPagar: async () => PAGAR,
+  contasPagar: async (s, o) => {
+    leiturasGrid.push([o.de, o.ate]);
+    const daJanela = o.ate >= hoje ? PAGAR : [];
+    return [...daJanela, ...ANTIGAS.filter((a) => a.venc >= o.de && a.venc <= o.ate)];
+  },
   contaPagarDetalhe: async (s, id) => { chamadas.detalhe.push(Number(id)); return { ctaId: Number(id), observacao: null, rateioPlanoContas: [], rateioCentroCusto: [], contaBancariaId: 20, grupoDespId: null, ...DETALHES[id] }; },
   contasReceber: async () => ([]),
   extratoFinanceiro: async () => EXTRATO,
@@ -140,6 +147,7 @@ const vencidas = async () => (await q(
 
   secao('D. Estorno no Wik desfaz a baixa pelo status');
   DETALHES[7004] = { parcelas: [parcela(1, dia(-12), '250,00', 'EM ABERTO')] };
+  PAGAR[3] = { ...PAGAR[3], Situacao: 'EM ABERTO' };   // estorno no Wik reabre a conta inteira
   await reabrir(); await envelhecer();
   const rD = await fin.sincronizarFinanceiroAgora();
   ok('parcela voltou a EM ABERTO -> título aberto de novo, sem baixa', (await titulo(7004)).situacao === 'aberto' && (await baixas(7004)).length === 0);
@@ -179,6 +187,35 @@ const vencidas = async () => (await q(
   await reabrir(); await envelhecer();
   await fin.sincronizarFinanceiroAgora();
   ok('travado: nenhuma baixa pelo status', (await baixas(7002)).length === 0);
+
+  secao('H. Conta de 2022 BAIXADA no Wik sai pelo GRID, sem abrir conta por conta');
+  await pool.query(
+    `INSERT INTO fin_titulos (empresa_id, natureza, contraparte_nome, descricao, parcela, data_emissao, data_competencia,
+       data_vencimento, valor_bruto, situacao, origem_tipo, origem_id, wik_emp_id, wik_id, wik_item_id, wik_sincronizado_em)
+     VALUES (911,'pagar','FORN 2022','FORN 2022','1','2022-03-10','2022-03-10','2022-03-10',1200,'aberto','wik_conta_pagar',4001,192,4001,1, now()),
+            (911,'pagar','FORN 2022','FORN 2022','2','2022-03-10','2022-03-10','2022-04-10',1200,'aberto','wik_conta_pagar',4001,192,4001,2, now()),
+            (911,'pagar','FORN 2022 B','FORN 2022 B','1','2022-06-01','2022-06-01','2022-06-01',700,'aberto','wik_conta_pagar',4002,192,4002,1, now()),
+            (911,'pagar','FORN 2023','FORN 2023','1','2023-02-01','2023-02-01','2023-02-01',300,'aberto','wik_conta_pagar',4003,192,4003,1, now())`
+  );
+  ANTIGAS = [
+    { CtaId: 4001, Pessoa: 'FORN 2022', Situacao: 'BAIXADO', venc: '2022-03-10' },
+    { CtaId: 4002, Pessoa: 'FORN 2022 B', Situacao: 'EM ABERTO', venc: '2022-06-01' },
+    { CtaId: 4003, Pessoa: 'FORN 2023', Situacao: 'CANCELADO', venc: '2023-02-01' },
+  ];
+  // O detalhe devolveria um texto que a regra não conhece — o grid tem de bastar.
+  DETALHES[4001] = { parcelas: [parcela(1, '2022-03-10', '1.200,00', 'Quitação total'), parcela(2, '2022-04-10', '1.200,00', 'Quitação total')] };
+  chamadas.detalhe = [];
+  leiturasGrid.length = 0;
+  await reabrir();
+  const rH = await fin.sincronizarFinanceiroAgora();
+  ok('⚠️ as duas parcelas da conta BAIXADA de 2022 -> liquidadas',
+    (await titulo(4001, 1)).situacao === 'liquidado' && (await titulo(4001, 2)).situacao === 'liquidado',
+    `${(await titulo(4001, 1)).situacao}/${(await titulo(4001, 2)).situacao}`);
+  ok('…sem abrir o detalhe da conta (wik_sincronizado_em recente)', !chamadas.detalhe.includes(4001), JSON.stringify(chamadas.detalhe));
+  ok('EM ABERTO no Wik continua aberta', (await titulo(4002)).situacao === 'aberto');
+  ok('CANCELADO no Wik -> cancelada', (await titulo(4003)).situacao === 'cancelado', (await titulo(4003)).situacao);
+  ok('o grid antigo foi lido ano a ano a partir de 2022', leiturasGrid.some(([de]) => de === '2022-03-10'), JSON.stringify(leiturasGrid));
+  ok('o resumo separa o que está aberto também no Wik', rH.pagar_antigas_abertas_no_wik >= 1, rH.pagar_antigas_abertas_no_wik);
 
   console.log(`\n${falhas === 0 ? 'TUDO PASSOU' : `${falhas} FALHA(S)`}`);
   await pool.end();

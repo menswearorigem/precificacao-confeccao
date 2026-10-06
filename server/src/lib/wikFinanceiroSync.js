@@ -567,13 +567,17 @@ async function gravarBaixa({ tituloId, wikRef, data, valor, contaId, forma, obse
 // da baixa da parcela; se o vencimento é futuro, hoje). Quando o lançamento
 // do extrato chega, ele SUBSTITUI a baixa pelo status — nunca as duas juntas.
 // Parcela que volta a EM ABERTO no Wik (estorno lá) perde a baixa pelo status.
+// Conta inteira BAIXADA no grid do Wik ("BAIXADO", sem "parcial").
+function contaQuitadaNoWik(situacaoConta) {
+  return /^baixad[oa]$/i.test(String(situacaoConta || '').trim());
+}
 function parcelaQuitadaNoWik(p, situacaoConta) {
   if (dataDe(p.DataBaixa)) return true;
-  const s = String(p.Situacao || '').trim();
+  // A CONTA inteira baixada vale para todas as parcelas, seja qual for o texto
+  // que o detalhe põe na parcela (06/10/2026: não dá para depender dele).
+  if (contaQuitadaNoWik(situacaoConta)) return true;
   // "Baixado Parcial" NÃO entra: não dá para saber quanto foi pago.
-  if (s) return /^(baixad[oa]|pag[oa]|liquidad[oa]|quitad[oa])$/i.test(s);
-  // Parcela sem situação: vale a da CONTA, mas só quitação total.
-  return /^baixad[oa]$/i.test(String(situacaoConta || '').trim());
+  return /^(baixad[oa]|pag[oa]|liquidad[oa]|quitad[oa])$/i.test(String(p.Situacao || '').trim());
 }
 function parcelaAbertaNoWik(p) {
   return /^em aberto$/i.test(String(p.Situacao || '').trim());
@@ -753,6 +757,73 @@ async function importarContasPagar(sessao, fonte, janela, mapas, resumo) {
           vencimento: dataDe(p.DataVencimento),
         }, resumo);
       }
+    }
+  }
+}
+
+// ── contas a pagar ANTIGAS pelo GRID (06/10/2026) ──────────────────────────
+// "Ainda tem conta em aberto que já foi paga. Tem conta em aberto de 2022."
+// A releitura pelo detalhe (abaixo) anda 80 contas por ciclo de 30 min — para
+// milhares de contas antigas, leva um dia. O GRID do contas a pagar já traz a
+// situação da CONTA (EM ABERTO · BAIXADO · Baixado Parcial), mil linhas por
+// página. Então: lê o grid por vencimento desde o vencimento mais antigo em
+// aberto no Hub até o início da janela do ciclo, ano a ano, e toda conta que o
+// Wik diz BAIXADO tem as parcelas baixadas aqui ("pelo status"); CANCELADA é
+// cancelada. Conta que não volta no grid não é tocada (ausência não prova nada).
+async function revisarPagarAntigasPeloGrid(sessao, fonte, janela, resumo) {
+  const { rows: abertos } = await pool.query(
+    `SELECT id, wik_id, wik_item_id, valor_bruto::numeric AS valor,
+            to_char(data_vencimento, 'YYYY-MM-DD') AS venc
+       FROM fin_titulos
+      WHERE wik_emp_id = $1 AND natureza = 'pagar' AND wik_id IS NOT NULL
+        AND situacao IN ('aberto', 'parcial') AND NOT wik_travado AND wik_duplicado_de_id IS NULL
+        AND data_vencimento < $2::date`,
+    [fonte.wik_emp_id, janela.de]
+  );
+  if (!abertos.length) return;
+  const porConta = new Map();
+  for (const t of abertos) {
+    if (!porConta.has(Number(t.wik_id))) porConta.set(Number(t.wik_id), []);
+    porConta.get(Number(t.wik_id)).push(t);
+  }
+
+  // Fatias de um ano: o grid tem teto de 40 páginas de mil, e um ano cabe.
+  const maisAntigo = abertos.reduce((m, t) => (t.venc < m ? t.venc : m), abertos[0].venc);
+  const fimLeitura = somarDias(janela.de, -1);
+  const situacaoDa = new Map();
+  for (let de = maisAntigo; de <= fimLeitura; de = somarDias(de, 366)) {
+    const ate = somarDias(de, 365) < fimLeitura ? somarDias(de, 365) : fimLeitura;
+    const linhas = await lerComGuarda(`contas a pagar antigas (${de.slice(0, 4)})`, 'CtaId',
+      () => wikWeb.contasPagar(sessao, { de, ate, tipoData: 2 }), resumo);
+    resumo.pagar_antigas_lidas_grid += linhas.length;
+    for (const l of linhas) situacaoDa.set(Number(l.CtaId), String(l.Situacao || '').trim());
+  }
+
+  for (const [ctaId, titulos] of porConta) {
+    const sit = situacaoDa.get(ctaId);
+    if (sit === undefined) { resumo.pagar_antigas_fora_do_grid += titulos.length; continue; }
+    if (/cancel/i.test(sit)) {
+      for (const t of titulos) {
+        const { rowCount } = await pool.query(
+          `UPDATE fin_titulos SET situacao = 'cancelado', atualizado_em = now()
+            WHERE id = $1 AND NOT wik_travado
+              AND NOT EXISTS (SELECT 1 FROM fin_baixas b WHERE b.titulo_id = $1 AND b.estornada_em IS NULL)`,
+          [t.id]
+        );
+        resumo.pagar_cancelados_wik += rowCount;
+      }
+      continue;
+    }
+    if (!contaQuitadaNoWik(sit)) {
+      if (/^em aberto$/i.test(sit)) resumo.pagar_antigas_abertas_no_wik += titulos.length;
+      continue;   // EM ABERTO ou Baixado Parcial: o detalhe decide (abaixo)
+    }
+    for (const t of titulos) {
+      await acertarBaixaPeloStatus({
+        tituloId: t.id,
+        wikRef: `${PREFIXO_BAIXA_STATUS}${fonte.wik_emp_id}:${ctaId}:${t.wik_item_id}`,
+        quitada: true, aberta: false, valor: Number(t.valor), vencimento: t.venc,
+      }, resumo);
     }
   }
 }
@@ -1191,6 +1262,7 @@ function resumoVazio() {
     pagar_detalhes_pendentes: 0, pagar_sem_categoria: 0,
     pagar_baixas_status: 0, pagar_baixas_status_desfeitas: 0,
     pagar_revisados_fora_janela: 0, pagar_revisao_pendentes: 0, pagar_cancelados_wik: 0,
+    pagar_antigas_lidas_grid: 0, pagar_antigas_fora_do_grid: 0, pagar_antigas_abertas_no_wik: 0,
     receber_vistos: 0, receber_titulos: 0, receber_baixas: 0, receber_travados: 0,
     extrato_vistos: 0, extrato_linhas: 0, extrato_travados: 0, extrato_sem_conta: 0,
     extrato_removidas: 0, extrato_titulo_ainda_nao_lido: 0, pagar_invalidas: 0,
@@ -1328,6 +1400,7 @@ async function sincronizarFinanceiroAgora({ forcarCadastros = false } = {}) {
       }
       const mapas = await carregarMapas(fonte, mapaEmpresas, empresas);
       await passo('contas a pagar', () => importarContasPagar(sessao, fonte, janela, mapas, resumo));
+      await passo('contas a pagar antigas (grid)', () => revisarPagarAntigasPeloGrid(sessao, fonte, janela, resumo));
       await passo('contas a pagar antigas em aberto', () => revisarPagarForaDaJanela(sessao, fonte, janela, resumo));
       await passo('contas a receber', () => importarContasReceber(sessao, fonte, janela, mapas, resumo));
       await passo('extrato bancário', () => importarExtrato(sessao, fonte, janela, mapas, resumo));
