@@ -512,7 +512,11 @@ async function gravarTitulo(t) {
         valor_bruto      = EXCLUDED.valor_bruto,
         -- 'cancelado' aqui é estado do WIK; aberto/parcial/liquidado quem
         -- decide é recalcularSituacao a partir das baixas.
+        -- Cancelado PELO SYNC (cancelado_em nulo — o cancelamento feito no
+        -- Hub grava cancelado_em e trava o título) volta a aberto quando o
+        -- Wik deixa de dizer CANCELADO (07/10/2026: conta 44809).
         situacao         = CASE WHEN EXCLUDED.situacao = 'cancelado' THEN 'cancelado'
+                                WHEN fin_titulos.situacao = 'cancelado' AND fin_titulos.cancelado_em IS NULL THEN 'aberto'
                                 WHEN fin_titulos.situacao = 'cancelado' THEN 'cancelado'
                                 ELSE fin_titulos.situacao END,
         observacao       = EXCLUDED.observacao,
@@ -568,19 +572,43 @@ async function gravarBaixa({ tituloId, wikRef, data, valor, contaId, forma, obse
 // do extrato chega, ele SUBSTITUI a baixa pelo status — nunca as duas juntas.
 // Parcela que volta a EM ABERTO no Wik (estorno lá) perde a baixa pelo status.
 // Conta inteira BAIXADA no grid do Wik ("BAIXADO", sem "parcial").
+//
+// ⚠️ CONFERÊNCIA DE 07/10/2026 (conta a conta, Wik × Hub): o "BAIXADO" do GRID
+// é o cabeçalho da CONTA (CtaSituacao 2) e NÃO garante que cada parcela foi
+// paga. Em parcelamentos longos (Simples Nacional 140x, Secretaria da Economia,
+// TIM/OI/ENEL de R$ 0,01…) o cabeçalho diz BAIXADO e a tela da conta mostra
+// dezenas de parcelas "EM ABERTO". A regra antiga ("conta BAIXADA vale para
+// todas as parcelas") liquidou 383 parcelas que o Wik mostra em aberto.
+// O texto da parcela no detalhe é confiável — conferido na tela: "BAIXADO" e
+// "EM ABERTO". Ele manda; o cabeçalho da conta só decide quando a parcela vem
+// com um texto que a regra não conhece.
+const OBS_BAIXA_STATUS = 'Baixado no Wik (parcela BAIXADO no detalhe da conta). Data = vencimento: o Wik não '
+  + 'informa a data do pagamento e não há lançamento no extrato.';
+// Texto das baixas pelo status gravadas ANTES de 07/10/2026 — algumas vieram só
+// do cabeçalho da conta. Quem tem uma dessas é relido pelo detalhe uma vez
+// (revisarPagarForaDaJanela) e, se a parcela está EM ABERTO no Wik, reaberto.
+const OBS_BAIXA_STATUS_LEGADO = 'Baixado no Wik (pela situação da parcela). Data = vencimento: o Wik não informa a '
+  + 'data do pagamento e não há lançamento no extrato.';
 function contaQuitadaNoWik(situacaoConta) {
   return /^baixad[oa]$/i.test(String(situacaoConta || '').trim());
 }
-function parcelaQuitadaNoWik(p, situacaoConta) {
-  if (dataDe(p.DataBaixa)) return true;
-  // A CONTA inteira baixada vale para todas as parcelas, seja qual for o texto
-  // que o detalhe põe na parcela (06/10/2026: não dá para depender dele).
-  if (contaQuitadaNoWik(situacaoConta)) return true;
-  // "Baixado Parcial" NÃO entra: não dá para saber quanto foi pago.
-  return /^(baixad[oa]|pag[oa]|liquidad[oa]|quitad[oa])$/i.test(String(p.Situacao || '').trim());
+// Só "CANCELADO". "EM ABERTO COM CANCELAMENTO" é conta EM ABERTO (conferido em
+// 07/10/2026: conta 44809, 12 parcelas em aberto na tela, canceladas no Hub
+// porque a regra antiga era /cancel/).
+function contaCanceladaNoWik(situacao) {
+  return /^cancelad[oa]$/i.test(String(situacao || '').trim());
 }
 function parcelaAbertaNoWik(p) {
   return /^em aberto$/i.test(String(p.Situacao || '').trim());
+}
+function parcelaQuitadaNoWik(p, situacaoConta) {
+  if (dataDe(p.DataBaixa)) return true;
+  // "Baixado Parcial" NÃO entra: não dá para saber quanto foi pago.
+  if (/^(baixad[oa]|pag[oa]|liquidad[oa]|quitad[oa])$/i.test(String(p.Situacao || '').trim())) return true;
+  // A parcela diz EM ABERTO: está em aberto, diga o cabeçalho da conta o que disser.
+  if (parcelaAbertaNoWik(p)) return false;
+  // Texto que a regra não conhece (ou vazio): aí vale a conta inteira baixada.
+  return contaQuitadaNoWik(situacaoConta);
 }
 const centavos = (v) => Math.round(Number(v) * 100) / 100;
 
@@ -614,14 +642,41 @@ async function acertarBaixaPeloStatus({ tituloId, wikRef, quitada, aberta, valor
     const hoje = hojeIso();
     const data = vencimento && vencimento <= hoje ? vencimento : hoje;
     const ok = await gravarBaixa({
-      tituloId, wikRef, data, valor: falta, contaId: null, forma: null,
-      observacao: 'Baixado no Wik (pela situação da parcela). Data = vencimento: o Wik não informa a data do pagamento e não há lançamento no extrato.',
+      tituloId, wikRef, data, valor: falta, contaId: null, forma: null, observacao: OBS_BAIXA_STATUS,
     });
     if (ok && !t.tem_status) resumo.pagar_baixas_status += 1;
   } else if (aberta && t.tem_status) {
     await desfazer();
     resumo.pagar_baixas_status_desfeitas += 1;
   }
+}
+
+// Chegou um lançamento do EXTRATO para um título que tinha baixa pelo status.
+// Antes (até 07/10/2026) a baixa pelo status era APAGADA inteira — mas o
+// extrato muitas vezes paga MENOS que a parcela (desconto, arredondamento: a
+// parcela 8.648,24 do MALHAS WILSON saiu 8.347,26 no banco) e o Wik dá a
+// parcela por BAIXADA. Apagar deixava o título "parcial" para sempre no Hub
+// (8 títulos, R$ 303,42 na conferência), porque o ciclo seguinte recriava a
+// baixa pelo status e o extrato a apagava de novo. Agora a baixa pelo status
+// só ENCOLHE para o que o extrato não cobriu; some quando ele cobre tudo.
+async function encolherBaixaPeloStatus(tituloId) {
+  const { rows } = await pool.query(
+    `SELECT t.valor_bruto::numeric AS valor,
+            COALESCE(SUM(b.principal) FILTER (
+              WHERE b.estornada_em IS NULL AND (b.wik_ref IS NULL OR b.wik_ref NOT LIKE '${PREFIXO_BAIXA_STATUS}%')), 0)::numeric AS outras
+       FROM fin_titulos t LEFT JOIN fin_baixas b ON b.titulo_id = t.id
+      WHERE t.id = $1 GROUP BY t.id`,
+    [tituloId]
+  );
+  if (!rows[0]) return false;
+  const falta = centavos(Number(rows[0].valor) - Number(rows[0].outras));
+  const r = falta <= 0
+    ? await pool.query(`DELETE FROM fin_baixas WHERE titulo_id = $1 AND wik_ref LIKE '${PREFIXO_BAIXA_STATUS}%'`, [tituloId])
+    : await pool.query(
+      `UPDATE fin_baixas SET principal = $2
+        WHERE titulo_id = $1 AND wik_ref LIKE '${PREFIXO_BAIXA_STATUS}%' AND principal <> $2`, [tituloId, falta]);
+  if (r.rowCount) await recalcularSituacao(pool, tituloId);
+  return r.rowCount > 0;
 }
 
 // ── contas a PAGAR ─────────────────────────────────────────────────────────
@@ -682,7 +737,7 @@ async function importarContasPagar(sessao, fonte, janela, mapas, resumo) {
   for (const { c, detalhe } of lidos) {
     const ctaId = Number(c.CtaId);
     const parcelas = detalhe.parcelas || [];
-    const cancelada = /cancel/i.test(String(c.Situacao || ''));
+    const cancelada = contaCanceladaNoWik(c.Situacao);
     // REGRA 2: a competência é da CONTA e é a mesma para todas as parcelas.
     const competencia = dataDe(c.CtaDataCadastro) || dataDe((parcelas[0] || {}).DataEmissao) || janela.de;
     const fornecedorId = mapas.fornecedorPorWik.get(Number(c.CtaFornId)) || null;
@@ -761,24 +816,95 @@ async function importarContasPagar(sessao, fonte, janela, mapas, resumo) {
   }
 }
 
-// ── contas a pagar ANTIGAS pelo GRID (06/10/2026) ──────────────────────────
+// ── uma conta a pagar RELIDA PELO DETALHE ──────────────────────────────────
+// Lê as parcelas (ListaItens) de UMA conta e acerta cada título do Hub dela:
+// CANCELADO -> cancelado; DataBaixa -> baixa com data; senão a baixa "pelo
+// status" segue o texto da parcela (parcelaQuitadaNoWik). `situacaoConta` é o
+// cabeçalho do grid, quando se tem — só decide parcela com texto desconhecido.
+// No fim marca a conta como relida (wik_sincronizado_em), para a fila andar.
+async function acertarContaPeloDetalhe(sessao, fonte, ctaId, situacaoConta, resumo, rotulo) {
+  let detalhe = null;
+  try {
+    detalhe = await wikWeb.contaPagarDetalhe(sessao, ctaId);
+  } catch (err) {
+    if (err.sessaoExpirada) throw err;
+    resumo.erros.push(`conta a pagar ${ctaId} (${rotulo}): ${err.message}`);
+  }
+  const parcelas = ((detalhe && detalhe.parcelas) || []).filter((p) => Number(p.CtaiId) > 0);
+  for (const p of parcelas) {
+    const itemId = Number(p.CtaiId);
+    const { rows: t } = await pool.query(
+      `SELECT id FROM fin_titulos
+        WHERE wik_emp_id = $1 AND natureza = 'pagar' AND wik_id = $2 AND wik_item_id = $3
+          AND NOT wik_travado AND situacao <> 'cancelado'`,
+      [fonte.wik_emp_id, ctaId, itemId]
+    );
+    if (!t[0]) continue;
+    const tituloId = t[0].id;
+    if (contaCanceladaNoWik(p.Situacao)) {
+      const { rowCount } = await pool.query(
+        `UPDATE fin_titulos SET situacao = 'cancelado', atualizado_em = now()
+          WHERE id = $1 AND NOT wik_travado
+            AND NOT EXISTS (SELECT 1 FROM fin_baixas b WHERE b.titulo_id = $1 AND b.estornada_em IS NULL)`,
+        [tituloId]
+      );
+      resumo.pagar_cancelados_wik += rowCount;
+      continue;
+    }
+    const dataBaixa = dataDe(p.DataBaixa);
+    if (dataBaixa) {
+      const ok = await gravarBaixa({
+        tituloId,
+        wikRef: `cp:${fonte.wik_emp_id}:${ctaId}:${itemId}`,
+        data: dataBaixa,
+        valor: valorDe(p.Valor),
+        contaId: null,
+        forma: p.FormaPgto,
+      });
+      if (ok) resumo.pagar_baixas += 1;
+      continue;
+    }
+    await acertarBaixaPeloStatus({
+      tituloId,
+      wikRef: `${PREFIXO_BAIXA_STATUS}${fonte.wik_emp_id}:${ctaId}:${itemId}`,
+      quitada: parcelaQuitadaNoWik(p, situacaoConta),
+      aberta: parcelaAbertaNoWik(p),
+      valor: valorDe(p.Valor),
+      vencimento: dataDe(p.DataVencimento),
+    }, resumo);
+  }
+  // Relida (mesmo sem mudança, ou se o Wik falhou): sai da frente da fila
+  // por DETALHE_TTL_MS, para a fila andar.
+  await pool.query(
+    `UPDATE fin_titulos SET wik_sincronizado_em = now()
+      WHERE wik_emp_id = $1 AND natureza = 'pagar' AND wik_id = $2 AND NOT wik_travado`,
+    [fonte.wik_emp_id, ctaId]
+  );
+}
+
+// ── contas a pagar ANTIGAS pelo GRID (06/10/2026, revisto em 07/10/2026) ────
 // "Ainda tem conta em aberto que já foi paga. Tem conta em aberto de 2022."
-// A releitura pelo detalhe (abaixo) anda 80 contas por ciclo de 30 min — para
-// milhares de contas antigas, leva um dia. O GRID do contas a pagar já traz a
-// situação da CONTA (EM ABERTO · BAIXADO · Baixado Parcial), mil linhas por
-// página. Então: lê o grid por vencimento desde o vencimento mais antigo em
-// aberto no Hub até o início da janela do ciclo, ano a ano, e toda conta que o
-// Wik diz BAIXADO tem as parcelas baixadas aqui ("pelo status"); CANCELADA é
-// cancelada. Conta que não volta no grid não é tocada (ausência não prova nada).
+// O GRID do contas a pagar traz a situação da CONTA, mil linhas por página.
+// Lê o grid por vencimento desde o vencimento mais antigo em aberto no Hub até
+// o início da janela do ciclo, ano a ano:
+//   · CANCELADO (exato)  -> cancela aqui (se não tiver baixa);
+//   · EM ABERTO / parcial -> fica para a releitura pelo detalhe (abaixo);
+//   · BAIXADO            -> ⚠️ NÃO baixa direto. O cabeçalho BAIXADO não prova
+//     que cada parcela foi paga (conferência de 07/10/2026: 383 parcelas
+//     liquidadas no Hub e EM ABERTO na tela do Wik). Essas contas são lidas
+//     pelo detalhe AQUI, primeiro, até REVISAO_CAP por ciclo, e cada parcela
+//     segue o seu próprio texto.
+// Conta que não volta no grid não é tocada (ausência não prova nada).
 async function revisarPagarAntigasPeloGrid(sessao, fonte, janela, resumo) {
   const { rows: abertos } = await pool.query(
     `SELECT id, wik_id, wik_item_id, valor_bruto::numeric AS valor,
-            to_char(data_vencimento, 'YYYY-MM-DD') AS venc
+            to_char(data_vencimento, 'YYYY-MM-DD') AS venc,
+            (wik_sincronizado_em IS NULL OR wik_sincronizado_em < now() - make_interval(secs => $3)) AS velho
        FROM fin_titulos
       WHERE wik_emp_id = $1 AND natureza = 'pagar' AND wik_id IS NOT NULL
         AND situacao IN ('aberto', 'parcial') AND NOT wik_travado AND wik_duplicado_de_id IS NULL
         AND data_vencimento < $2::date`,
-    [fonte.wik_emp_id, janela.de]
+    [fonte.wik_emp_id, janela.de, DETALHE_TTL_MS / 1000]
   );
   if (!abertos.length) return;
   const porConta = new Map();
@@ -799,10 +925,11 @@ async function revisarPagarAntigasPeloGrid(sessao, fonte, janela, resumo) {
     for (const l of linhas) situacaoDa.set(Number(l.CtaId), String(l.Situacao || '').trim());
   }
 
+  const baixadasNoGrid = [];
   for (const [ctaId, titulos] of porConta) {
     const sit = situacaoDa.get(ctaId);
     if (sit === undefined) { resumo.pagar_antigas_fora_do_grid += titulos.length; continue; }
-    if (/cancel/i.test(sit)) {
+    if (contaCanceladaNoWik(sit)) {
       for (const t of titulos) {
         const { rowCount } = await pool.query(
           `UPDATE fin_titulos SET situacao = 'cancelado', atualizado_em = now()
@@ -818,13 +945,17 @@ async function revisarPagarAntigasPeloGrid(sessao, fonte, janela, resumo) {
       if (/^em aberto$/i.test(sit)) resumo.pagar_antigas_abertas_no_wik += titulos.length;
       continue;   // EM ABERTO ou Baixado Parcial: o detalhe decide (abaixo)
     }
-    for (const t of titulos) {
-      await acertarBaixaPeloStatus({
-        tituloId: t.id,
-        wikRef: `${PREFIXO_BAIXA_STATUS}${fonte.wik_emp_id}:${ctaId}:${t.wik_item_id}`,
-        quitada: true, aberta: false, valor: Number(t.valor), vencimento: t.venc,
-      }, resumo);
-    }
+    // Cabeçalho BAIXADO: o detalhe decide parcela a parcela. Só quem não foi
+    // relido nas últimas DETALHE_TTL_MS horas, para não reler a mesma conta
+    // a cada ciclo.
+    if (titulos.some((t) => t.velho)) baixadasNoGrid.push([ctaId, sit]);
+  }
+
+  const lote = baixadasNoGrid.slice(0, REVISAO_CAP);
+  resumo.pagar_antigas_baixadas_grid = baixadasNoGrid.length;
+  for (const [ctaId, sit] of lote) {
+    await acertarContaPeloDetalhe(sessao, fonte, ctaId, sit, resumo, 'antiga, BAIXADO no grid');
+    resumo.pagar_revisados_fora_janela += 1;
   }
 }
 
@@ -834,81 +965,37 @@ async function revisarPagarAntigasPeloGrid(sessao, fonte, janela, resumo) {
 // Wik depois, ficava aberto aqui para sempre. Esta passada relê o DETALHE
 // (parcelas com a situação) dessas contas direto pelo CtaId, sem grid,
 // REVISAO_CAP por ciclo, as mais antigas primeiro, e só acerta as baixas.
+//
+// REPARO (07/10/2026): entra também toda conta com um título que só está
+// liquidado por uma baixa pelo status do texto ANTIGO (OBS_BAIXA_STATUS_LEGADO)
+// — parte delas veio do cabeçalho BAIXADO da conta com a parcela EM ABERTO no
+// Wik. Relida, a baixa ou é confirmada (e ganha o texto novo, saindo do reparo)
+// ou é desfeita (parcela EM ABERTO no Wik -> título reaberto).
 async function revisarPagarForaDaJanela(sessao, fonte, janela, resumo) {
   const { rows } = await pool.query(
-    `SELECT wik_id, COUNT(*) OVER ()::int AS total
-       FROM fin_titulos
-      WHERE wik_emp_id = $1 AND natureza = 'pagar' AND wik_id IS NOT NULL
-        AND situacao IN ('aberto', 'parcial') AND NOT wik_travado AND wik_duplicado_de_id IS NULL
-        AND NOT (data_vencimento BETWEEN $2::date AND $3::date)
-      GROUP BY wik_id
-     HAVING MAX(wik_sincronizado_em) IS NULL
-         OR MAX(wik_sincronizado_em) < now() - make_interval(secs => $4)
-      ORDER BY MAX(wik_sincronizado_em) NULLS FIRST, wik_id
+    `SELECT t.wik_id, COUNT(*) OVER ()::int AS total
+       FROM fin_titulos t
+      WHERE t.wik_emp_id = $1 AND t.natureza = 'pagar' AND t.wik_id IS NOT NULL
+        AND NOT t.wik_travado AND t.wik_duplicado_de_id IS NULL
+        AND (
+          (t.situacao IN ('aberto', 'parcial') AND NOT (t.data_vencimento BETWEEN $2::date AND $3::date))
+          OR (t.situacao IN ('liquidado', 'parcial') AND EXISTS (
+                SELECT 1 FROM fin_baixas b
+                 WHERE b.titulo_id = t.id AND b.estornada_em IS NULL
+                   AND b.wik_ref LIKE '${PREFIXO_BAIXA_STATUS}%' AND b.observacao = $6))
+        )
+      GROUP BY t.wik_id
+     HAVING MAX(t.wik_sincronizado_em) IS NULL
+         OR MAX(t.wik_sincronizado_em) < now() - make_interval(secs => $4)
+      ORDER BY MAX(t.wik_sincronizado_em) NULLS FIRST, t.wik_id
       LIMIT $5`,
-    [fonte.wik_emp_id, janela.de, janela.ate, DETALHE_TTL_MS / 1000, REVISAO_CAP]
+    [fonte.wik_emp_id, janela.de, janela.ate, DETALHE_TTL_MS / 1000, REVISAO_CAP, OBS_BAIXA_STATUS_LEGADO]
   );
   if (!rows.length) return;
   resumo.pagar_revisao_pendentes = Math.max(0, rows[0].total - rows.length);
 
   for (const { wik_id: ctaId } of rows) {
-    let detalhe = null;
-    try {
-      detalhe = await wikWeb.contaPagarDetalhe(sessao, ctaId);
-    } catch (err) {
-      if (err.sessaoExpirada) throw err;
-      resumo.erros.push(`conta a pagar ${ctaId} (fora da janela): ${err.message}`);
-    }
-    const parcelas = ((detalhe && detalhe.parcelas) || []).filter((p) => Number(p.CtaiId) > 0);
-    for (const p of parcelas) {
-      const itemId = Number(p.CtaiId);
-      const { rows: t } = await pool.query(
-        `SELECT id FROM fin_titulos
-          WHERE wik_emp_id = $1 AND natureza = 'pagar' AND wik_id = $2 AND wik_item_id = $3
-            AND NOT wik_travado AND situacao <> 'cancelado'`,
-        [fonte.wik_emp_id, ctaId, itemId]
-      );
-      if (!t[0]) continue;
-      const tituloId = t[0].id;
-      if (/cancel/i.test(String(p.Situacao || ''))) {
-        const { rowCount } = await pool.query(
-          `UPDATE fin_titulos SET situacao = 'cancelado', atualizado_em = now()
-            WHERE id = $1 AND NOT wik_travado
-              AND NOT EXISTS (SELECT 1 FROM fin_baixas b WHERE b.titulo_id = $1 AND b.estornada_em IS NULL)`,
-          [tituloId]
-        );
-        resumo.pagar_cancelados_wik += rowCount;
-        continue;
-      }
-      const dataBaixa = dataDe(p.DataBaixa);
-      if (dataBaixa) {
-        const ok = await gravarBaixa({
-          tituloId,
-          wikRef: `cp:${fonte.wik_emp_id}:${ctaId}:${itemId}`,
-          data: dataBaixa,
-          valor: valorDe(p.Valor),
-          contaId: null,
-          forma: p.FormaPgto,
-        });
-        if (ok) resumo.pagar_baixas += 1;
-        continue;
-      }
-      await acertarBaixaPeloStatus({
-        tituloId,
-        wikRef: `${PREFIXO_BAIXA_STATUS}${fonte.wik_emp_id}:${ctaId}:${itemId}`,
-        quitada: parcelaQuitadaNoWik(p, null),
-        aberta: parcelaAbertaNoWik(p),
-        valor: valorDe(p.Valor),
-        vencimento: dataDe(p.DataVencimento),
-      }, resumo);
-    }
-    // Relida (mesmo sem mudança, ou se o Wik falhou): sai da frente da fila
-    // por DETALHE_TTL_MS, para a fila andar.
-    await pool.query(
-      `UPDATE fin_titulos SET wik_sincronizado_em = now()
-        WHERE wik_emp_id = $1 AND natureza = 'pagar' AND wik_id = $2 AND NOT wik_travado`,
-      [fonte.wik_emp_id, ctaId]
-    );
+    await acertarContaPeloDetalhe(sessao, fonte, ctaId, null, resumo, 'fora da janela');
     resumo.pagar_revisados_fora_janela += 1;
   }
 }
@@ -1159,11 +1246,9 @@ async function baixasDoExtrato(fonte, itens, resumo) {
       });
       if (!ok) continue;
       resumo.pagar_baixas += 1;
-      // O lançamento do extrato SUBSTITUI a baixa pelo status (nunca as duas).
-      const { rowCount: trocadas } = await pool.query(
-        `DELETE FROM fin_baixas WHERE titulo_id = $1 AND wik_ref LIKE '${PREFIXO_BAIXA_STATUS}%'`, [t[0].id]
-      );
-      if (trocadas) await recalcularSituacao(pool, t[0].id);
+      // O lançamento do extrato SUBSTITUI a baixa pelo status (nunca as duas
+      // somando mais que a parcela) — ver encolherBaixaPeloStatus.
+      await encolherBaixaPeloStatus(t[0].id);
       const { rows: b } = await pool.query('SELECT id FROM fin_baixas WHERE wik_ref = $1', [wikRef]);
       baixaId = b[0] ? b[0].id : null;
     } else {
@@ -1263,6 +1348,7 @@ function resumoVazio() {
     pagar_baixas_status: 0, pagar_baixas_status_desfeitas: 0,
     pagar_revisados_fora_janela: 0, pagar_revisao_pendentes: 0, pagar_cancelados_wik: 0,
     pagar_antigas_lidas_grid: 0, pagar_antigas_fora_do_grid: 0, pagar_antigas_abertas_no_wik: 0,
+    pagar_antigas_baixadas_grid: 0,
     receber_vistos: 0, receber_titulos: 0, receber_baixas: 0, receber_travados: 0,
     extrato_vistos: 0, extrato_linhas: 0, extrato_travados: 0, extrato_sem_conta: 0,
     extrato_removidas: 0, extrato_titulo_ainda_nao_lido: 0, pagar_invalidas: 0,
@@ -1514,5 +1600,5 @@ module.exports = {
   travarTitulo,
   FONTE_EMP_ID, EMPRESA_PADRAO_WIK, MARCA_A_CLASSIFICAR, empresaPadraoDe,
   // exportados para teste
-  valorDe, dataDe, calcularJanela, codigoPlano, degenerado, parcelaQuitadaNoWik,
+  valorDe, dataDe, calcularJanela, codigoPlano, degenerado, parcelaQuitadaNoWik, contaCanceladaNoWik,
 };

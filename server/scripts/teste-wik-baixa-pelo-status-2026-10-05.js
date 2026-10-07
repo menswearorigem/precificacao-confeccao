@@ -188,12 +188,12 @@ const vencidas = async () => (await q(
   await fin.sincronizarFinanceiroAgora();
   ok('travado: nenhuma baixa pelo status', (await baixas(7002)).length === 0);
 
-  secao('H. Conta de 2022 BAIXADA no Wik sai pelo GRID, sem abrir conta por conta');
+  secao('H. Conta de 2022 BAIXADA no grid: o detalhe decide (revisto em 07/10/2026)');
   await pool.query(
     `INSERT INTO fin_titulos (empresa_id, natureza, contraparte_nome, descricao, parcela, data_emissao, data_competencia,
        data_vencimento, valor_bruto, situacao, origem_tipo, origem_id, wik_emp_id, wik_id, wik_item_id, wik_sincronizado_em)
-     VALUES (911,'pagar','FORN 2022','FORN 2022','1','2022-03-10','2022-03-10','2022-03-10',1200,'aberto','wik_conta_pagar',4001,192,4001,1, now()),
-            (911,'pagar','FORN 2022','FORN 2022','2','2022-03-10','2022-03-10','2022-04-10',1200,'aberto','wik_conta_pagar',4001,192,4001,2, now()),
+     VALUES (911,'pagar','FORN 2022','FORN 2022','1','2022-03-10','2022-03-10','2022-03-10',1200,'aberto','wik_conta_pagar',4001,192,4001,1, now() - interval '7 hours'),
+            (911,'pagar','FORN 2022','FORN 2022','2','2022-03-10','2022-03-10','2022-04-10',1200,'aberto','wik_conta_pagar',4001,192,4001,2, now() - interval '7 hours'),
             (911,'pagar','FORN 2022 B','FORN 2022 B','1','2022-06-01','2022-06-01','2022-06-01',700,'aberto','wik_conta_pagar',4002,192,4002,1, now()),
             (911,'pagar','FORN 2023','FORN 2023','1','2023-02-01','2023-02-01','2023-02-01',300,'aberto','wik_conta_pagar',4003,192,4003,1, now())`
   );
@@ -202,7 +202,7 @@ const vencidas = async () => (await q(
     { CtaId: 4002, Pessoa: 'FORN 2022 B', Situacao: 'EM ABERTO', venc: '2022-06-01' },
     { CtaId: 4003, Pessoa: 'FORN 2023', Situacao: 'CANCELADO', venc: '2023-02-01' },
   ];
-  // O detalhe devolveria um texto que a regra não conhece — o grid tem de bastar.
+  // O detalhe traz um texto que a regra não conhece — aí vale o cabeçalho BAIXADO.
   DETALHES[4001] = { parcelas: [parcela(1, '2022-03-10', '1.200,00', 'Quitação total'), parcela(2, '2022-04-10', '1.200,00', 'Quitação total')] };
   chamadas.detalhe = [];
   leiturasGrid.length = 0;
@@ -211,7 +211,7 @@ const vencidas = async () => (await q(
   ok('⚠️ as duas parcelas da conta BAIXADA de 2022 -> liquidadas',
     (await titulo(4001, 1)).situacao === 'liquidado' && (await titulo(4001, 2)).situacao === 'liquidado',
     `${(await titulo(4001, 1)).situacao}/${(await titulo(4001, 2)).situacao}`);
-  ok('…sem abrir o detalhe da conta (wik_sincronizado_em recente)', !chamadas.detalhe.includes(4001), JSON.stringify(chamadas.detalhe));
+  ok('…lendo o detalhe da conta (o cabeçalho sozinho não basta desde 07/10/2026)', chamadas.detalhe.includes(4001), JSON.stringify(chamadas.detalhe));
   ok('EM ABERTO no Wik continua aberta', (await titulo(4002)).situacao === 'aberto');
   ok('CANCELADO no Wik -> cancelada', (await titulo(4003)).situacao === 'cancelado', (await titulo(4003)).situacao);
   ok('o grid antigo foi lido ano a ano a partir de 2022', leiturasGrid.some(([de]) => de === '2022-03-10'), JSON.stringify(leiturasGrid));
