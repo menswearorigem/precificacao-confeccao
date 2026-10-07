@@ -706,7 +706,17 @@ async function importarContasPagar(sessao, fonte, janela, mapas, resumo) {
   const fila = vencidas
     .sort((a, b) => (vistoEm.get(Number(a.CtaId)) ?? 0) - (vistoEm.get(Number(b.CtaId)) ?? 0))
     .slice(0, DETALHE_CAP);
-  resumo.pagar_detalhes_pendentes += Math.max(0, vencidas.length - fila.length);
+  // "Pendente" (o que SEGURA a carga histórica) é só conta NUNCA lida. Até
+  // 07/10/2026 contava também a conta só "velha" (lida há mais de
+  // DETALHE_TTL_MS): com ~2.000 contas na janela, 120 por ciclo e ciclo de
+  // 30 min, sempre sobravam centenas de velhas — "752 conta(s) desta fatia
+  // ainda estão sem as parcelas lidas" — e a carga NUNCA saía da primeira
+  // fatia. Releitura de conta já lida é manutenção, não carga.
+  const naFila = new Set(fila.map((c) => Number(c.CtaId)));
+  resumo.pagar_detalhes_pendentes += vencidas
+    .filter((c) => !naFila.has(Number(c.CtaId)) && !vistoEm.has(Number(c.CtaId))).length;
+  resumo.pagar_detalhes_atrasados = (resumo.pagar_detalhes_atrasados || 0)
+    + vencidas.filter((c) => !naFila.has(Number(c.CtaId)) && vistoEm.has(Number(c.CtaId))).length;
 
   // 1ª passada: lê os detalhes e APRENDE as empresas pelas baixas — assim o
   // título em aberto de um fornecedor que foi pago nesta mesma leva já cai no
