@@ -211,7 +211,10 @@ async function apiExterna(req, res, next) {
 
     const resto = req.url.slice(PREFIXO.length) || '/';
     const [caminhoResto] = resto.split('?');
-    const area = caminhoResto.split('/').filter(Boolean)[0] || '';
+    // Em minúsculas: o Express casa '/api/grupos' com '/api/GRUPOS' (rota não
+    // diferencia maiúscula), então a área bloqueada tem de ser comparada do
+    // mesmo jeito — senão /api/externa/v1/GRUPOS passava pela trava.
+    const area = (caminhoResto.split('/').filter(Boolean)[0] || '').toLowerCase();
 
     req.user = r.usuario;
     req.clienteApi = { nome: cliente.nome, somenteLeitura: cliente.somenteLeitura };

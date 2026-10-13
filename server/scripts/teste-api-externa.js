@@ -143,9 +143,15 @@ async function main() {
       (await painel('/api/externa/v1/status')).dados.site === 'painel');
 
     secao('6. Áreas que nunca abrem');
-    for (const area of ['usuarios', 'integracoes', 'auditoria', 'auth/me', 'wik', 'conteudo/v1/status']) {
+    for (const area of ['usuarios', 'integracoes', 'auditoria', 'auth/me', 'wik', 'conteudo/v1/status', 'grupos']) {
       ok(`/${area} fica fechado`, (await vendas(`/api/externa/v1/${area}`)).status === 403);
     }
+    // O Express não diferencia maiúscula na rota: a trava também não pode.
+    for (const area of ['GRUPOS', 'Grupos', 'AUTH/me', 'Auth/senha', 'Conteudo/v1/status', 'USUARIOS']) {
+      ok(`/${area} (maiúscula) fica fechado`, (await vendas(`/api/externa/v1/${area}`)).status === 403);
+    }
+    ok('POST em /Grupos (maiúscula) não cria grupo',
+      (await vendas('/api/externa/v1/Grupos', { metodo: 'POST', corpo: { nome: 'GRUPO PELO DESVIO' } })).status === 403);
     ok('versão errada da API → 404', (await vendas('/api/externa/v2/status')).status === 404);
 
     secao('7. CORS');
