@@ -141,6 +141,11 @@ function createApp() {
   // conferirOrigem e do requireAuth de propósito (ver wikImport.routes.js).
   app.use('/api/wik-import', require('./routes/wikImport.routes'));
 
+  // API de conteúdo (app Manu Conteúdo, 13/10/2026) — SOMENTE LEITURA, protegida
+  // por chave no cabeçalho x-api-key (HBN_CONTEUDO_API_KEY). Fica fora do
+  // requireAuth porque quem chama é outro programa, não o navegador.
+  app.use('/api/conteudo', require('./routes/conteudoApi.routes'));
+
   app.use(conferirOrigem);
   app.use(middlewareAuditoria);
 
