@@ -1,19 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { MessageCircleQuestion } from 'lucide-react';
 import ManuPainel from './ManuPainel';
 import { carregarBriefing } from '../lib/manu/analista';
+import { AvatarManu } from './ManuChat';
+import { usePersonaManu } from '../lib/manu/persona';
 
 const CHAVE_APRESENTADA = 'hbn_manu_apresentada';
 
-// Solta a arte da mascote em client/public/manu.png quando ela chegar (já
-// está — 240×253px, fundo próprio, sem transparência). Formato esperado:
-// imagem quadrada ou quase quadrada, ~12% de respiro interno em volta da
-// figura — o <img> usa object-fit: cover dentro de um círculo, então uma
-// imagem já enquadrada rente às bordas corta a mascote. Se o arquivo faltar
-// ou falhar ao carregar, cai pro ícone MessageCircleQuestion do
-// lucide-react sem quebrar nada — é o que o onError abaixo faz.
-const CAMINHO_MASCOTE = '/manu.png';
+// A foto vem do AvatarManu (ManuChat.jsx): roupa do módulo em
+// /manu/<slug>.png, cai para /manu.png e, se faltar, para o ícone.
 
 // Elementos fixos que já disputam o canto inferior da tela — a Manu não
 // pode cobrir nenhum dos dois (checagem obrigatória, ver relatório da
@@ -57,11 +52,11 @@ function useDesvioDeColisao() {
 
 export default function ManuBotao() {
   const [aberto, setAberto] = useState(false);
-  const [imagemFalhou, setImagemFalhou] = useState(false);
   const [balaoVisivel, setBalaoVisivel] = useState(false);
   const botaoRef = useRef(null);
   const desvio = useDesvioDeColisao();
   const location = useLocation();
+  const persona = usePersonaManu();
   // Na /ajuda a própria tela já é o chat da Manu — o botão do canto sobra.
   const naAjuda = location.pathname.startsWith('/ajuda');
 
@@ -141,28 +136,19 @@ export default function ManuBotao() {
       >
         {balaoVisivel && (
           <div className="manu-balao" role="status">
-            Oi! Sou a Manu. Qualquer dúvida do sistema, é só me perguntar.
+            Oi! Sou a {persona.nome}. Qualquer dúvida do sistema, é só me perguntar.
           </div>
         )}
         <button
           ref={botaoRef}
           type="button"
           className="manu-botao"
-          aria-label="Falar com a Manu"
-          title={pendencias > 0 ? `Falar com a Manu · ${pendencias} ${pendencias === 1 ? 'frente pede' : 'frentes pedem'} atenção hoje` : 'Falar com a Manu'}
+          aria-label={`Falar com a ${persona.nome}`}
+          title={pendencias > 0 ? `Falar com a ${persona.nome} · ${pendencias} ${pendencias === 1 ? 'frente pede' : 'frentes pedem'} atenção hoje` : `Falar com a ${persona.nome}`}
           onClick={abrirPainel}
         >
-          {imagemFalhou ? (
-            <MessageCircleQuestion size={26} />
-          ) : (
-            <img
-              src={CAMINHO_MASCOTE}
-              alt=""
-              className="manu-botao-img"
-              onError={() => setImagemFalhou(true)}
-            />
-          )}
-          <span className="manu-botao-rotulo">Falar com a Manu</span>
+          <AvatarManu tamanho={null} className="manu-botao-img" />
+          <span className="manu-botao-rotulo">Falar com a {persona.nome}</span>
           {pendencias > 0 && (
             <span className="manu-botao-contador" aria-label={`${pendencias} frentes pedem atenção hoje`}>{pendencias > 9 ? '9+' : pendencias}</span>
           )}

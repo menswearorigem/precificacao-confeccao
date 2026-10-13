@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, Maximize2, SquarePen } from 'lucide-react';
 import ManuChat, { AvatarManu } from './ManuChat';
+import { usePersonaManu } from '../lib/manu/persona';
 import { useConversa, novaConversa } from '../lib/manu/conversa';
 
 // As peças de resposta moram em ManuPecas.jsx; continuam exportadas daqui
@@ -12,6 +13,7 @@ export { RespostaVerbete, BriefingDoDia, renderizarResposta } from './ManuPecas'
 // à direita, do jeito dos assistentes de chat. A conversa é a mesma da
 // página /ajuda — "Abrir em tela cheia" leva a conversa junto.
 export default function ManuPainel({ onFechar }) {
+  const persona = usePersonaManu();
   const navigate = useNavigate();
   const painelRef = useRef(null);
   const { mensagens, ocupada } = useConversa();
@@ -39,14 +41,14 @@ export default function ManuPainel({ onFechar }) {
         className="manu-gaveta"
         role="dialog"
         aria-modal="true"
-        aria-label="Manu, assistente do HBN Hub"
+        aria-label={`${persona.nome}, assistente do HBN Hub`}
         ref={painelRef}
         onClick={(e) => e.stopPropagation()}
       >
         <header className="manu-gaveta-cab">
           <AvatarManu tamanho={36} className="manu-gaveta-av" />
           <div className="manu-gaveta-nome">
-            <strong>Manu</strong>
+            <strong>{persona.nome}</strong>
             <span><i className="manu-online" /> Assistente do HBN Hub</span>
           </div>
           <div className="manu-gaveta-acoes">

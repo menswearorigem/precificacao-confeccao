@@ -6,6 +6,7 @@ import { listarAjuda, buscarVerbetePorId } from '../lib/ajuda';
 import { carregarBriefing, EXEMPLOS_DE_PERGUNTA, horaDe } from '../lib/manu/analista';
 import { useConversa, enviarPergunta, abrirVerbete, pedirResumo } from '../lib/manu/conversa';
 import { renderizarResposta, BriefingDoDia } from './ManuPecas';
+import { usePersonaManu, PERSONA_PADRAO } from '../lib/manu/persona';
 import '../styles/manu-chat.css';
 
 // A Manu como chat (28/09/2026). Um componente só para as duas portas:
@@ -13,12 +14,18 @@ import '../styles/manu-chat.css';
 // gaveta do botão do canto. A conversa é a mesma nas duas (lib/manu/conversa).
 
 export function AvatarManu({ tamanho = 32, className = '' }) {
-  const [falhou, setFalhou] = useState(false);
+  // Foto da roupa do módulo → foto padrão → ícone. Só cosmético (persona.js).
+  const { foto } = usePersonaManu();
+  // Ordem de tentativa: roupa do módulo → foto padrão → ícone.
+  const fontes = foto === PERSONA_PADRAO.foto ? [foto] : [foto, PERSONA_PADRAO.foto];
+  const [falha, setFalha] = useState({ foto, n: 0 });
+  const n = falha.foto === foto ? falha.n : 0;
+  const src = fontes[n] || null;
   return (
-    <span className={`manu-av ${className}`} style={{ width: tamanho, height: tamanho }} aria-hidden="true">
-      {falhou
-        ? <MessageCircleQuestion size={Math.round(tamanho * 0.55)} />
-        : <img src="/manu.png" alt="" onError={() => setFalhou(true)} />}
+    <span className={`manu-av ${className}`} style={tamanho ? { width: tamanho, height: tamanho } : undefined} aria-hidden="true">
+      {!src
+        ? <MessageCircleQuestion size={tamanho ? Math.round(tamanho * 0.55) : 26} />
+        : <img key={src} src={src} alt="" onError={() => setFalha({ foto, n: n + 1 })} />}
     </span>
   );
 }
@@ -168,12 +175,13 @@ function textoParaCopiar(m) {
 }
 
 function MensagemManu({ m, onNavegar, onExemplo }) {
+  const persona = usePersonaManu();
   return (
     <div className="manu-msg manu-msg-dela">
       <AvatarManu tamanho={30} className="manu-msg-av" />
       <div className="manu-msg-corpo">
         <div className="manu-msg-cab">
-          <span className="manu-msg-nome">Manu</span>
+          <span className="manu-msg-nome">{persona.nome}</span>
           {!m.carregando && <span className="manu-msg-hora">{horaDe(m.quando)}</span>}
         </div>
         {m.carregando ? <Digitando /> : (
@@ -225,6 +233,7 @@ function BoasVindas({ user, variante, onExemplo }) {
   const urgentes = briefing?.totais?.urgentes || 0;
   const atencao = briefing?.totais?.atencao || 0;
   const nome = primeiroNome(user);
+  const persona = usePersonaManu();
 
   // Na gaveta, as dúvidas da tela em que a pessoa está. Na página /ajuda
   // não há "tela atual", então ficam só os exemplos de pergunta.
@@ -237,7 +246,7 @@ function BoasVindas({ user, variante, onExemplo }) {
     <div className="manu-inicio">
       <AvatarManu tamanho={variante === 'pagina' ? 84 : 64} className="manu-inicio-av" />
       <h2 className="manu-inicio-titulo">{saudacao()}{nome ? `, ${nome}` : ''}!</h2>
-      <p className="manu-inicio-sub">Sou a Manu. Pergunta dos números da empresa ou de como usar qualquer tela do HBN Hub.</p>
+      <p className="manu-inicio-sub">Sou a {persona.nome}. Pergunta dos números da empresa ou de como usar qualquer tela do HBN Hub.</p>
 
       <button type="button" className="manu-inicio-resumo" onClick={pedirResumo}>
         <span className="manu-inicio-resumo-icone"><Sparkles size={16} /></span>
@@ -280,6 +289,7 @@ export default function ManuChat({ variante = 'pagina', onNavegou, autoFocar = t
   const { user } = useAuth();
   const navigate = useNavigate();
   const { mensagens, ocupada } = useConversa();
+  const persona = usePersonaManu();
   const [texto, setTexto] = useState('');
   const campoRef = useRef(null);
   const rolagemRef = useRef(null);
@@ -352,8 +362,8 @@ export default function ManuChat({ variante = 'pagina', onNavegou, autoFocar = t
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
             onKeyDown={aoTeclar}
-            placeholder="Pergunte para a Manu…"
-            aria-label="Pergunte para a Manu"
+            placeholder={`Pergunte para a ${persona.nome}…`}
+            aria-label={`Pergunte para a ${persona.nome}`}
             maxLength={400}
           />
           <button type="submit" className="manu-enviar" disabled={!texto.trim() || ocupada} aria-label="Enviar pergunta" title="Enviar (Enter)">

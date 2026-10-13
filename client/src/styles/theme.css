@@ -4340,6 +4340,7 @@ table.ficha-doc-tabela {
 }
 .manu-botao:hover, .manu-botao:focus-visible { transform: scale(1.06); box-shadow: var(--shadow-lg), 0 0 0 4px rgba(181, 101, 29, 0.18); }
 .manu-botao-img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; object-position: center top; }
+.manu-botao .manu-av.manu-botao-img { box-shadow: none; background: transparent; color: inherit; }
 .manu-botao-rotulo {
   position: absolute;
   right: calc(100% + 10px);
