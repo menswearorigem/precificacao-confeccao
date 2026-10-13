@@ -127,6 +127,10 @@ const ISENTOS = ['/api/integracoes/mercado_livre/callback', '/api/integracoes/sh
 
 function conferirOrigem(req, res, next) {
   if (!METODOS_QUE_MUDAM.has(req.method)) return next();
+  // API externa: autenticada por chave no cabeçalho, não por cookie — não há
+  // o que um site forjar. A origem já foi conferida contra a lista do próprio
+  // site em middleware/apiExterna.js.
+  if (req.clienteApi) return next();
   if (ISENTOS.some((p) => req.path.startsWith(p))) return next();
 
   const host = req.get('host');

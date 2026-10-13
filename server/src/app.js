@@ -5,6 +5,7 @@ const { requireAuth, requireModulo, requireAdmin } = require('./middleware/auth'
 const { cabecalhosSeguranca, forcarHttps, conferirOrigem } = require('./middleware/seguranca');
 const { limitadorAutenticacao, limitadorApi } = require('./lib/rateLimit');
 const { middlewareAuditoria } = require('./lib/auditoria');
+const { apiExterna, naoEncontradaApiExterna } = require('./middleware/apiExterna');
 const authRoutes = require('./routes/auth.routes');
 const usuariosRoutes = require('./routes/usuarios.routes');
 const configuracoesRoutes = require('./routes/configuracoes.routes');
@@ -119,6 +120,13 @@ function createApp() {
     if (ROTAS_DE_SESSAO.has(req.path)) return next();
     return limitadorAutenticacao(req, res, next);
   });
+
+  // API externa (13/10/2026): outros sites da empresa, com chave. Precisa vir
+  // ANTES dos leitores de corpo e de todas as rotas: confere a chave, carrega
+  // o usuário vinculado e reescreve /api/externa/v1/x → /api/x, para que o
+  // resto da cadeia (limite de corpo, módulos, auditoria) trate igual a uma
+  // chamada da tela. Ver middleware/apiExterna.js.
+  app.use(apiExterna);
 
   // Corpo de requisição: 15MB valia pra TODAS as rotas, inclusive o login —
   // qualquer um podia empurrar 15MB de JSON sem estar logado. Agora o padrão
@@ -417,6 +425,8 @@ function createApp() {
   // Histórico de alteração por usuário e diagnóstico de e-mail — só admin.
   app.use('/api/auditoria', requireAuth, requireAdmin, auditoriaRoutes);
   app.use('/api/email', requireAuth, requireAdmin, emailRoutes);
+
+  app.use(naoEncontradaApiExterna);
 
   // Build do React em produção (um único serviço no Render).
   app.use(express.static(CLIENT_DIST));

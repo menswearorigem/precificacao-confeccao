@@ -149,8 +149,12 @@ const IGNORAR = [/^\/api\/auditoria/, /^\/api\/health/];
 
 function middlewareAuditoria(req, res, next) {
   if (!METODOS_QUE_MUDAM.has(req.method)) return next();
-  const caminho = (req.originalUrl || '').split('?')[0];
+  // Pela API externa, a entidade é tirada do caminho INTERNO (/api/produtos),
+  // e a descrição leva o nome do site — "quem mexeu" fica respondido mesmo
+  // quando foi um programa.
+  const caminho = req.caminhoInterno || (req.originalUrl || '').split('?')[0];
   if (IGNORAR.some((r) => r.test(caminho))) return next();
+  const marcaApi = req.clienteApi ? `[API · ${req.clienteApi.nome}] ` : '';
 
   const corpo = req.body && typeof req.body === 'object' ? limpar(req.body) : undefined;
 
@@ -165,7 +169,7 @@ function middlewareAuditoria(req, res, next) {
       entidade,
       entidadeId,
       sucesso: res.statusCode < 400,
-      descricao: `${req.method} ${caminho} → ${res.statusCode}`,
+      descricao: `${marcaApi}${req.method} ${caminho} → ${res.statusCode}`,
       depois: corpo,
     });
   });

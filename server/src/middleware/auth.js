@@ -38,6 +38,10 @@ function parseCookies(header) {
 // invalidada depois que o token foi emitido (troca de senha, redefinição,
 // "sair de todos os aparelhos").
 async function requireAuth(req, res, next) {
+  // API externa (13/10/2026): a requisição já chegou autenticada pela chave,
+  // com o usuário vinculado carregado e conferido em middleware/apiExterna.js
+  // (ativo, não-admin, módulos). Não há cookie para ler.
+  if (req.clienteApi && req.user) return next();
   try {
     const cookies = parseCookies(req.headers.cookie);
     const token = cookies[COOKIE_NAME];
@@ -89,13 +93,16 @@ async function requireAuth(req, res, next) {
 // de requireAuth (usa req.user).
 function requireModulo(chaveOuLista) {
   const chaves = Array.isArray(chaveOuLista) ? chaveOuLista : [chaveOuLista];
-  return (req, res, next) => {
+  const exigir = (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Não autenticado.' });
     if (req.user.role === 'admin') return next();
     const temAcesso = chaves.some((c) => req.user.modulos.includes(c));
     if (!temAcesso) return res.status(403).json({ error: 'Você não tem acesso a essa área.' });
     next();
   };
+  // Marca lida pelo catálogo da API externa (quais módulos abrem a área).
+  exigir.modulosExigidos = chaves;
+  return exigir;
 }
 
 function requireAdmin(req, res, next) {
@@ -103,5 +110,9 @@ function requireAdmin(req, res, next) {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Só administradores podem fazer isso.' });
   next();
 }
+
+// Marcas lidas pelo catálogo da API externa.
+requireAuth.exigeLogin = true;
+requireAdmin.somenteAdmin = true;
 
 module.exports = { requireAuth, requireModulo, requireAdmin, parseCookies, COOKIE_NAME, opcoesCookie };
