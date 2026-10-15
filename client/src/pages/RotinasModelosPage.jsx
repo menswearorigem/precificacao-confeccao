@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Pencil, Copy, Pause, Play, Archive, Zap, Clock, Users, Package, ShieldCheck, LayoutList, Sparkles } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
@@ -19,7 +19,9 @@ export default function RotinasModelosPage() {
   const aba = params.get('aba') || 'ativo';
   const [lista, setLista] = useState(null);
   const [erro, setErro] = useState('');
-  const [aviso, setAviso] = useState('');
+  const location = useLocation();
+  // Recado de quem acabou de salvar (o formulário volta para cá).
+  const [aviso, setAviso] = useState(location.state?.aviso || '');
 
   const carregar = useCallback(async () => {
     try { setLista(await api.get(`/rotinas/modelos?status=${aba}`)); setErro(''); } catch (e) { setErro(e.message); }
@@ -78,7 +80,7 @@ export default function RotinasModelosPage() {
               <div className="rt-linha-sub">
                 <span><Clock size={12} />{m.quando}{m.horaLimite ? ` · até ${m.horaLimite}` : ''}</span>
                 <span><Users size={12} />{m.compartilhada ? 'qualquer um: ' : ''}{m.responsaveis.join(', ')}</span>
-                {(m.nProdutos > 0 || m.automatica) && <span>{m.automatica ? <Sparkles size={12} /> : <Package size={12} />}{m.automatica ? 'lista automática' : `${m.nProdutos} produto${m.nProdutos > 1 ? 's' : ''}`}</span>}
+                {(m.nProdutos > 0 || m.automatica) && <span>{m.automatica ? <Sparkles size={12} /> : <Package size={12} />}{m.automatica ? 'lista automática' : `${m.nProdutos} ${m.nProdutos > 1 ? 'referências' : 'referência'}${m.nVariantesEscolhidas ? ` (${m.nVariantesEscolhidas} var.)` : ''}`}</span>}
                 <span>{m.nPassos ? `${m.nPassos} passo${m.nPassos > 1 ? 's' : ''}` : 'tarefa simples'}</span>
                 {m.conferir && <span><ShieldCheck size={12} />conferir depois</span>}
               </div>

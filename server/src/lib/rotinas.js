@@ -198,8 +198,10 @@ async function normalizarModelo(body, db = pool, { avulsa = false } = {}) {
   if (minutos != null && (!Number.isInteger(minutos) || minutos < 1 || minutos > 1440)) throw new ErroRotina('O tempo estimado vai de 1 a 1440 minutos.');
   const lembrete = body.lembreteMin === '' || body.lembreteMin == null ? null : Number(body.lembreteMin);
   if (lembrete != null && (!Number.isInteger(lembrete) || lembrete < 5 || lembrete > 1440)) throw new ErroRotina('O lembrete vai de 5 a 1440 minutos antes do prazo.');
-  const horaLimite = horaValida(body.horaLimite);
-  if (lembrete && !horaLimite) throw new ErroRotina('Para avisar antes do prazo, defina o horário limite.');
+  // Com vários horários no dia, cada tarefa vence no próprio horário — o
+  // "horário limite" único não vale (fica vazio para não confundir).
+  const horaLimite = recorrencia.horarios ? null : horaValida(body.horaLimite);
+  if (lembrete && !horaLimite && !recorrencia.horarios) throw new ErroRotina('Para avisar antes do prazo, defina o horário limite.');
 
   const conferirDepois = Boolean(body.conferirDepois);
   let conferenteId = conferirDepois && body.conferenteId ? Number(body.conferenteId) : null;
@@ -454,14 +456,31 @@ function casaFiltro(item, f) {
   return true;
 }
 
+// Ordem de gente para tamanho: P antes de M antes de G (a ordem alfabética
+// punha G, GG, M, P — e a contagem andava na contramão da prateleira).
+const ORDEM_TAMANHO = ['RN', 'PP', 'P', 'M', 'G', 'GG', 'XG', 'EG', 'XGG', 'EGG', 'G1', 'G2', 'G3', 'G4', 'G5', 'U', 'UN', 'UNICO', 'ÚNICO'];
+function pesoTamanho(t) {
+  const s = String(t || '').trim().toUpperCase();
+  const i = ORDEM_TAMANHO.indexOf(s);
+  if (i >= 0) return i;
+  const n = Number(s.replace(',', '.'));
+  if (Number.isFinite(n) && s !== '') return 100 + n; // numeração (36, 38…)
+  return 1000;
+}
+function compararVariante(a, b) {
+  const cor = String(a.cor || '').localeCompare(String(b.cor || ''), 'pt-BR', { sensitivity: 'base' });
+  if (cor) return cor;
+  return pesoTamanho(a.tamanho) - pesoTamanho(b.tamanho) || String(a.tamanho).localeCompare(String(b.tamanho), 'pt-BR');
+}
+
 async function variantesDe(produtoIds) {
   if (!produtoIds.length) return new Map();
-  const { rows } = await pool.query(
+  const { rows: brutas } = await pool.query(
     `SELECT id, produto_id, cor, tamanho, quantidade::float AS quantidade, localizacao, ean
-       FROM estoque_variantes WHERE produto_id = ANY($1) AND ativo
-      ORDER BY produto_id, cor, tamanho`,
+       FROM estoque_variantes WHERE produto_id = ANY($1) AND ativo`,
     [produtoIds]
   );
+  const rows = brutas.sort((a, b) => a.produto_id - b.produto_id || compararVariante(a, b));
   const mapa = new Map();
   for (const v of rows) {
     if (!mapa.has(v.produto_id)) mapa.set(v.produto_id, []);
@@ -529,7 +548,9 @@ async function resolverProdutos(modelo, linhasFixas) {
 function chavesDeProduto(produtos) {
   const out = [];
   for (const p of produtos || []) {
-    if (p.variantes?.length) for (const v of p.variantes) out.push({ chave: `v${v.id}`, produtoId: p.produtoId, varianteId: v.id, produto: p, variante: v });
+    // Ordena na leitura também: ocorrências geradas antes da correção de
+    // tamanho guardaram as variantes em ordem alfabética.
+    if (p.variantes?.length) for (const v of [...p.variantes].sort(compararVariante)) out.push({ chave: `v${v.id}`, produtoId: p.produtoId, varianteId: v.id, produto: p, variante: v });
     else out.push({ chave: `p${p.produtoId}`, produtoId: p.produtoId, varianteId: null, produto: p, variante: null });
   }
   return out;
@@ -553,6 +574,32 @@ function sqlPrazo(diaParam, horaParam) {
   return `((${diaParam}::date + COALESCE(${horaParam}::time, time '23:59')) AT TIME ZONE '${FUSO}')`;
 }
 
+// As "vagas" de um dia. A vaga é o que torna a geração idempotente
+// (restrição única modelo × dia × vaga):
+//   · cada um, um horário só  → vaga = id da pessoa      (como sempre foi)
+//   · qualquer um, um horário → vaga = 0                 (como sempre foi)
+//   · vários horários no dia  → cada horário é uma vaga: id×100 + nº do
+//     horário (cada um) ou só o nº do horário (qualquer um). Os números não
+//     colidem dentro do mesmo modelo, e as vagas antigas não mudam.
+// "Compartilhada" NÃO se deduz mais de vaga = 0: vem do modo gravado no
+// snapshot (modoAtribuicao).
+function vagasDoDia(linha, usuarioId = null) {
+  const cadaUm = linha.modo_atribuicao === 'cada_um';
+  let pessoas = cadaUm ? (linha.responsaveis || []) : [0];
+  if (usuarioId && cadaUm) pessoas = pessoas.filter((p) => p === usuarioId);
+  const horarios = linha.recorrencia?.horarios || null;
+  const out = [];
+  for (const p of pessoas) {
+    if (!horarios) out.push({ vaga: p, responsavelId: p || null, horario: null });
+    else horarios.forEach((h, i) => out.push({ vaga: cadaUm ? p * 100 + i + 1 : i + 1, responsavelId: p || null, horario: h }));
+  }
+  return out;
+}
+
+function ehCompartilhada(oc) {
+  return oc?.snapshot?.modoAtribuicao === 'qualquer_um' || (oc?.vaga === 0 && !oc?.snapshot?.modoAtribuicao);
+}
+
 // Gera as ocorrências de `dia`. Opções:
 //   usuarioId  — só as vagas desta pessoa (abertura do "Meu dia")
 //   modeloIds  — só estes modelos
@@ -567,24 +614,23 @@ async function gerarDia(dia, { usuarioId = null, modeloIds = null, forcar = fals
   let criadas = 0;
   for (const linha of modelos) {
     if (!forcar && !rec.ocorreEm(linha.recorrencia, dia)) continue;
-    const responsaveis = linha.responsaveis || [];
-    let vagas = linha.modo_atribuicao === 'cada_um' ? responsaveis : [0];
-    if (usuarioId && linha.modo_atribuicao === 'cada_um') vagas = vagas.filter((v) => v === usuarioId);
+    const vagas = vagasDoDia(linha, usuarioId);
     if (!vagas.length) continue;
     const { rows: existentes } = await pool.query('SELECT vaga FROM rotina_ocorrencias WHERE modelo_id = $1 AND data = $2', [linha.id, dia]);
-    const faltam = vagas.filter((v) => !existentes.some((e) => e.vaga === v));
+    const faltam = vagas.filter((v) => !existentes.some((e) => e.vaga === v.vaga));
     if (!faltam.length) continue;
 
     const modelo = await carregarModelo(linha.id);
     const { rows: fixas } = await pool.query('SELECT produto_id, variante_id FROM rotina_modelo_produtos WHERE modelo_id = $1', [linha.id]);
     const produtos = await resolverProdutos(modelo, fixas);
     const snapshot = snapshotDoModelo(modelo);
-    for (const vaga of faltam) {
+    for (const v of faltam) {
+      const snap = v.horario ? { ...snapshot, horaLimite: v.horario, horario: v.horario } : snapshot;
       const { rowCount } = await pool.query(
         `INSERT INTO rotina_ocorrencias (modelo_id, data, vaga, responsavel_id, prazo, snapshot, produtos_resolvidos, origem_ocorrencia_id)
          VALUES ($1, $2, $3, $4, ${sqlPrazo('$2', '$5')}, $6, $7, $8)
          ON CONFLICT (modelo_id, data, vaga) DO NOTHING`,
-        [linha.id, dia, vaga, vaga || null, modelo.horaLimite, JSON.stringify(snapshot), JSON.stringify(produtos), origemOcorrenciaId]
+        [linha.id, dia, v.vaga, v.responsavelId, v.horario || modelo.horaLimite, JSON.stringify(snap), JSON.stringify(produtos), origemOcorrenciaId]
       );
       criadas += rowCount;
     }
@@ -740,7 +786,7 @@ function podeExecutar(user, oc) {
   if (!user || !oc) return false;
   if (user.role === 'admin') return true;
   if (oc.responsavel_id === user.id) return true;
-  return oc.vaga === 0 && oc.responsavel_id == null && (oc.snapshot?.responsaveis || []).includes(user.id);
+  return ehCompartilhada(oc) && oc.responsavel_id == null && (oc.snapshot?.responsaveis || []).includes(user.id);
 }
 
 function situacao(oc, agora = new Date()) {
@@ -754,5 +800,5 @@ module.exports = {
   catalogo, previaFiltro, variantesDe, resolverProdutos, chavesDeProduto, curvasAbc, limparCacheCurva,
   snapshotDoModelo, gerarDia, jobGerarDoDia, sqlPrazo,
   respondida, avaliarResposta, faltasParaConcluir, progresso, fotosDe, podeExecutar, situacao,
-  marcaCanonica, casaFiltro, normalizarFiltroProdutos,
+  marcaCanonica, casaFiltro, normalizarFiltroProdutos, compararVariante, pesoTamanho, vagasDoDia, ehCompartilhada,
 };

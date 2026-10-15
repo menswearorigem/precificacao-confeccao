@@ -4,6 +4,7 @@ import {
   Camera, Check, CircleCheck, Clock, ExternalLink, Image as ImageIcon, Loader2, MapPin, Package, TriangleAlert, Undo2, X, Ban, ShieldCheck,
 } from 'lucide-react';
 import { api } from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 import { pedirMotivo } from './MotivoDialog';
 import Lightbox from './Lightbox';
 import {
@@ -20,6 +21,12 @@ import {
 // de concluir.
 
 function chaveDe(passoId, chave) { return `${passoId}|${chave || ''}`; }
+
+// Acima disto a lista de produtos começa recolhida e o passo por produto
+// ganha busca e "mostrar mais" — no uso real uma tarefa de chat veio com 901
+// variantes empilhadas ANTES dos passos (15/10/2026).
+const LIMITE_LISTA = 24;
+const LIMITE_REFS = 6;
 
 function Miniaturas({ ids, fotos, onAbrir, onTirar }) {
   return (
@@ -74,7 +81,7 @@ function Resposta({ passo, valor, sistema, podeResponder, onSalvar }) {
       return (
         <span className="rt-numero">
           <input
-            inputMode="decimal" disabled={dis} value={rascunho} placeholder="0"
+            inputMode="decimal" disabled={dis} value={rascunho} placeholder="—"
             onChange={(e) => setRascunho(e.target.value.replace(/[^\d,.-]/g, ''))}
             onBlur={() => { const n = rascunho === '' ? null : Number(rascunho.replace(',', '.')); if (n !== (valor?.numero ?? null) && (n === null || Number.isFinite(n))) onSalvar({ ...base, numero: n }); }}
             onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
@@ -114,6 +121,12 @@ export default function RotinaTarefa({ id, onMudou, naGaveta = false }) {
   const [naoFeita, setNaoFeita] = useState(null);
   const [acao, setAcao] = useState('');
   const [aviso, setAviso] = useState('');
+  const [verTodosProdutos, setVerTodosProdutos] = useState(false);
+  const [filtroAlvo, setFiltroAlvo] = useState('');
+  const [soPendentes, setSoPendentes] = useState(false);
+  const [limiteAlvos, setLimiteAlvos] = useState(LIMITE_LISTA);
+  const { user } = useAuth();
+  const souAdmin = user?.role === 'admin';
 
   const carregar = useCallback(async () => {
     try {
@@ -218,8 +231,21 @@ export default function RotinaTarefa({ id, onMudou, naGaveta = false }) {
   // Contagem às cegas: enquanto a tarefa está aberta, quem conta não vê o
   // saldo do sistema (senão a contagem vira cópia do número da tela). O
   // servidor compara sozinho; depois de entregue, o número aparece.
-  const cega = pode && t.passos.some((p) => p.faixa?.estoque);
+  // Administrador vê o saldo sempre (ele confere a contagem, não conta).
+  const cega = pode && !souAdmin && t.passos.some((p) => p.faixa?.estoque);
   const marcada = (passoId, chave) => mostrarFaltas && faltaDe.get(chaveDe(passoId, chave));
+  // Pendências que não são "responder": a foto pedida por um problema. O
+  // contador "3 de 3" dizia que estava tudo feito e o Concluir recusava —
+  // agora a faixa diz o que ainda falta (achado no uso real, 15/10/2026).
+  const fotosPendentes = faltas.filter((f) => /foto/.test(f.motivo)).length;
+  const muitos = alvos.length > LIMITE_LISTA;
+  const filtroNorm = filtroAlvo.trim().toLowerCase();
+  const alvosVisiveis = (passo) => {
+    let lista = alvos;
+    if (filtroNorm) lista = lista.filter((a) => `${a.produto.referencia} ${a.produto.descricao || ''} ${varianteTexto(a.variante)}`.toLowerCase().includes(filtroNorm));
+    if (soPendentes) lista = lista.filter((a) => !(respostas.get(chaveDe(passo.id, a.chave))?.valor && Object.keys(respostas.get(chaveDe(passo.id, a.chave)).valor).length));
+    return lista;
+  };
 
   function blocoFotoDoPasso(passo, chave, r) {
     const ids = r?.valor?.fotos || [];
@@ -237,6 +263,111 @@ export default function RotinaTarefa({ id, onMudou, naGaveta = false }) {
     );
   }
 
+  // Produto que nenhum passo usa é só consulta: a lista vai para DEPOIS dos
+  // passos e começa recolhida.
+  const produtosSoConsulta = !t.passos.some((p) => p.porProduto);
+  const produtosVisiveis = verTodosProdutos ? t.produtos : t.produtos.slice(0, LIMITE_REFS);
+  const produtosEscondidos = t.produtos.length - produtosVisiveis.length;
+
+  const blocoProdutos = (
+    <>
+      {t.produtos.length > 0 && (
+        <section className={`card rt-bloco${produtosSoConsulta ? ' rt-bloco-consulta' : ''}`}>
+          <h3 className="rt-h"><Package size={15} />{produtosSoConsulta ? 'Produtos de consulta' : 'Produtos'} <small>{t.produtos.length} {t.produtos.length === 1 ? 'referência' : 'referências'} · {alvos.length} {alvos.length === 1 ? 'variante' : 'variantes'}</small></h3>
+          {cega && <p className="rt-ajuda rt-ajuda-cega">Contagem às cegas: o saldo do sistema só aparece depois de entregar.</p>}
+          <div className="rt-produtos">
+            {produtosVisiveis.map((p) => (
+              <div key={p.produtoId} className="rt-produto">
+                <span className="rt-produto-foto">{fotoProdutoUrl(p) ? <img src={fotoProdutoUrl(p)} alt="" loading="lazy" onClick={() => setAberta({ url: fotoProdutoUrl(p) })} /> : <ImageIcon size={18} />}</span>
+                <span className="rt-produto-info">
+                  <b>{p.referencia}</b> <span className="ink-soft">{p.descricao}</span>
+                  <span className="rt-produto-vars">
+                    {(p.variantes || []).map((v) => (
+                      <span key={v.id} className="rt-var">{varianteTexto(v)}{!cega && <b>{numeroBr(v.quantidadeAgora ?? v.quantidade)}</b>}{v.localizacao && <small><MapPin size={10} />{v.localizacao}</small>}</span>
+                    ))}
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+          {produtosEscondidos > 0 && (
+            <button type="button" className="rt-mais" onClick={() => setVerTodosProdutos(true)}>Mostrar as outras {produtosEscondidos} referências</button>
+          )}
+          {verTodosProdutos && t.produtos.length > LIMITE_REFS && (
+            <button type="button" className="rt-mais" onClick={() => setVerTodosProdutos(false)}>Recolher</button>
+          )}
+        </section>
+      )}
+    </>
+  );
+
+  const blocoPassos = (
+    <>
+      {t.passos.length > 0 && (
+        <section className="card rt-bloco">
+          <h3 className="rt-h"><CircleCheck size={15} />Passos <small>{t.progresso.feitos} de {t.progresso.total} respondidos{fotosPendentes ? ` · falta${fotosPendentes > 1 ? 'm' : ''} ${fotosPendentes} foto${fotosPendentes > 1 ? 's' : ''}` : ''}</small></h3>
+          <div className="rt-prog rt-prog-grande"><i style={{ width: `${t.progresso.total ? Math.round((t.progresso.feitos / t.progresso.total) * 100) : 0}%` }} /></div>
+          <ol className="rt-passos">
+            {t.passos.map((passo) => (
+              <li key={passo.id} className="rt-passo">
+                <div className="rt-passo-cab">
+                  <span>{passo.texto}{passo.obrigatorio ? <em className="rt-obrig" title="Obrigatório">*</em> : <small className="ink-soft"> (opcional)</small>}</span>
+                  {passo.provaFoto === 'sempre' && <small className="rt-dica"><Camera size={11} />foto sempre</small>}
+                  {passo.provaFoto === 'problema' && <small className="rt-dica"><Camera size={11} />foto se der problema</small>}
+                  {passo.faixa?.estoque && <small className="rt-dica">confere com o estoque (±{passo.faixa.tolerancia})</small>}
+                  {passo.faixa && !passo.faixa.estoque && <small className="rt-dica">esperado {passo.faixa.min ?? '…'} a {passo.faixa.max ?? '…'}</small>}
+                </div>
+                {!passo.porProduto ? (() => {
+                  const r = respostas.get(chaveDe(passo.id, ''));
+                  const falta = marcada(passo.id, '');
+                  return (
+                    <div className={`rt-resp${r?.problema ? ' problema' : ''}${falta ? ' falta' : ''}`}>
+                      {passo.tipo !== 'foto' && <Resposta passo={passo} valor={r?.valor} podeResponder={pode} onSalvar={(v) => salvar(passo, '', v)} />}
+                      {blocoFotoDoPasso(passo, '', r)}
+                      {salvando[chaveDe(passo.id, '')] && <Loader2 size={13} className="girando ink-soft" />}
+                      {falta && <span className="rt-falta">{falta}</span>}
+                    </div>
+                  );
+                })() : (
+                  <div className="rt-tabela-prod">
+                    {muitos && (
+                      <div className="rt-filtro-prod">
+                        <input value={filtroAlvo} onChange={(e) => { setFiltroAlvo(e.target.value); setLimiteAlvos(LIMITE_LISTA); }} placeholder="Achar referência, cor ou tamanho" aria-label="Filtrar produtos" />
+                        <label className="rt-toggle"><input type="checkbox" checked={soPendentes} onChange={(e) => setSoPendentes(e.target.checked)} />Só o que falta</label>
+                      </div>
+                    )}
+                    {alvosVisiveis(passo).slice(0, muitos ? limiteAlvos : undefined).map((a) => {
+                      const r = respostas.get(chaveDe(passo.id, a.chave));
+                      const sistema = a.variante ? (a.variante.quantidadeAgora ?? a.variante.quantidade) : null;
+                      const falta = marcada(passo.id, a.chave);
+                      return (
+                        <div key={a.chave} className={`rt-resp rt-resp-prod${r?.problema ? ' problema' : ''}${falta ? ' falta' : ''}`}>
+                          <span className="rt-resp-rotulo"><b>{a.produto.referencia}</b> {a.variante ? varianteTexto(a.variante) : ''}{a.variante?.localizacao && <small><MapPin size={10} />{a.variante.localizacao}</small>}</span>
+                          <span className="rt-resp-campo">
+                            {passo.tipo !== 'foto' && <Resposta passo={passo} valor={r?.valor} sistema={cega ? null : (r?.valor?.sistema ?? sistema)} podeResponder={pode} onSalvar={(v) => salvar(passo, a.chave, v)} />}
+                            {blocoFotoDoPasso(passo, a.chave, r)}
+                            {salvando[chaveDe(passo.id, a.chave)] && <Loader2 size={13} className="girando ink-soft" />}
+                          </span>
+                          {!cega && r?.valor?.antes?.length > 0 && <span className="rt-recontagem">recontado — antes: {r.valor.antes.map((x) => numeroBr(x.numero)).join(' → ')} → agora {numeroBr(r.valor.numero)}</span>}
+                          {r?.problema && <span className="rt-txt-perigo rt-resp-aviso"><TriangleAlert size={12} />problema{passo.provaFoto === 'problema' && !(r.valor?.fotos?.length) ? ' — tire a foto' : ''}</span>}
+                          {falta && <span className="rt-falta">{falta}</span>}
+                        </div>
+                      );
+                    })}
+                    {muitos && alvosVisiveis(passo).length > limiteAlvos && (
+                      <button type="button" className="rt-mais" onClick={() => setLimiteAlvos((n) => n + LIMITE_LISTA * 2)}>Mostrar mais ({alvosVisiveis(passo).length - limiteAlvos} restantes)</button>
+                    )}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
+    </>
+  );
+
   return (
     <div className={`rt-tarefa${naGaveta ? ' na-gaveta' : ''}`}>
       {!naGaveta && (
@@ -247,7 +378,7 @@ export default function RotinaTarefa({ id, onMudou, naGaveta = false }) {
             {t.setor && <i className="rt-chip rt-chip-neutro">{NOME_SETOR[t.setor] || t.setor}</i>}
             {t.correcao && <i className="rt-chip rt-tom-atencao">Correção</i>}
           </div>
-          <h1>{t.titulo}</h1>
+          <h1>{t.titulo}{t.horario ? <span className="rt-horario"> · {t.horario}</span> : null}</h1>
           <p className="rt-tarefa-meta">
             <span><Clock size={13} />{prazoTexto(t, hoje)} · {diaCurto(t.data)}</span>
             {t.minutosEstimados && <span>~{t.minutosEstimados} min</span>}
@@ -279,79 +410,7 @@ export default function RotinaTarefa({ id, onMudou, naGaveta = false }) {
         )}
       </section>
 
-      {t.produtos.length > 0 && (
-        <section className="card rt-bloco">
-          <h3 className="rt-h"><Package size={15} />Produtos <small>{t.produtos.length} {t.produtos.length === 1 ? 'referência' : 'referências'} · {alvos.length} {alvos.length === 1 ? 'variante' : 'variantes'}</small></h3>
-          {cega && <p className="rt-ajuda rt-ajuda-cega">Contagem às cegas: o saldo do sistema só aparece depois de entregar.</p>}
-          <div className="rt-produtos">
-            {t.produtos.map((p) => (
-              <div key={p.produtoId} className="rt-produto">
-                <span className="rt-produto-foto">{fotoProdutoUrl(p) ? <img src={fotoProdutoUrl(p)} alt="" loading="lazy" onClick={() => setAberta({ url: fotoProdutoUrl(p) })} /> : <ImageIcon size={18} />}</span>
-                <span className="rt-produto-info">
-                  <b>{p.referencia}</b> <span className="ink-soft">{p.descricao}</span>
-                  <span className="rt-produto-vars">
-                    {(p.variantes || []).map((v) => (
-                      <span key={v.id} className="rt-var">{varianteTexto(v)}{!cega && <b>{numeroBr(v.quantidadeAgora ?? v.quantidade)}</b>}{v.localizacao && <small><MapPin size={10} />{v.localizacao}</small>}</span>
-                    ))}
-                  </span>
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {t.passos.length > 0 && (
-        <section className="card rt-bloco">
-          <h3 className="rt-h"><CircleCheck size={15} />Passos <small>{t.progresso.feitos} de {t.progresso.total} feitos</small></h3>
-          <div className="rt-prog rt-prog-grande"><i style={{ width: `${t.progresso.total ? Math.round((t.progresso.feitos / t.progresso.total) * 100) : 0}%` }} /></div>
-          <ol className="rt-passos">
-            {t.passos.map((passo) => (
-              <li key={passo.id} className="rt-passo">
-                <div className="rt-passo-cab">
-                  <span>{passo.texto}{passo.obrigatorio ? <em className="rt-obrig" title="Obrigatório">*</em> : <small className="ink-soft"> (opcional)</small>}</span>
-                  {passo.provaFoto === 'sempre' && <small className="rt-dica"><Camera size={11} />foto sempre</small>}
-                  {passo.provaFoto === 'problema' && <small className="rt-dica"><Camera size={11} />foto se der problema</small>}
-                  {passo.faixa?.estoque && <small className="rt-dica">confere com o estoque (±{passo.faixa.tolerancia})</small>}
-                  {passo.faixa && !passo.faixa.estoque && <small className="rt-dica">esperado {passo.faixa.min ?? '…'} a {passo.faixa.max ?? '…'}</small>}
-                </div>
-                {!passo.porProduto ? (() => {
-                  const r = respostas.get(chaveDe(passo.id, ''));
-                  const falta = marcada(passo.id, '');
-                  return (
-                    <div className={`rt-resp${r?.problema ? ' problema' : ''}${falta ? ' falta' : ''}`}>
-                      {passo.tipo !== 'foto' && <Resposta passo={passo} valor={r?.valor} podeResponder={pode} onSalvar={(v) => salvar(passo, '', v)} />}
-                      {blocoFotoDoPasso(passo, '', r)}
-                      {salvando[chaveDe(passo.id, '')] && <Loader2 size={13} className="girando ink-soft" />}
-                      {falta && <span className="rt-falta">{falta}</span>}
-                    </div>
-                  );
-                })() : (
-                  <div className="rt-tabela-prod">
-                    {alvos.map((a) => {
-                      const r = respostas.get(chaveDe(passo.id, a.chave));
-                      const sistema = a.variante ? (a.variante.quantidadeAgora ?? a.variante.quantidade) : null;
-                      const falta = marcada(passo.id, a.chave);
-                      return (
-                        <div key={a.chave} className={`rt-resp rt-resp-prod${r?.problema ? ' problema' : ''}${falta ? ' falta' : ''}`}>
-                          <span className="rt-resp-rotulo"><b>{a.produto.referencia}</b> {a.variante ? varianteTexto(a.variante) : ''}{a.variante?.localizacao && <small><MapPin size={10} />{a.variante.localizacao}</small>}</span>
-                          <span className="rt-resp-campo">
-                            {passo.tipo !== 'foto' && <Resposta passo={passo} valor={r?.valor} sistema={cega ? null : (r?.valor?.sistema ?? sistema)} podeResponder={pode} onSalvar={(v) => salvar(passo, a.chave, v)} />}
-                            {blocoFotoDoPasso(passo, a.chave, r)}
-                            {salvando[chaveDe(passo.id, a.chave)] && <Loader2 size={13} className="girando ink-soft" />}
-                          </span>
-                          {r?.problema && <span className="rt-txt-perigo rt-resp-aviso"><TriangleAlert size={12} />problema{passo.provaFoto === 'problema' && !(r.valor?.fotos?.length) ? ' — tire a foto' : ''}</span>}
-                          {falta && <span className="rt-falta">{falta}</span>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
+      {produtosSoConsulta ? <>{blocoPassos}{blocoProdutos}</> : <>{blocoProdutos}{blocoPassos}</>}
 
       {(pode || t.observacao) && (
         <section className="card rt-bloco">
@@ -366,7 +425,7 @@ export default function RotinaTarefa({ id, onMudou, naGaveta = false }) {
         <section className="card rt-bloco rt-encerrada">
           {t.status === 'nao_feita'
             ? <p><Ban size={15} /> <b>Não feita</b> — {t.motivoNaoFeita}{t.motivoTexto ? `: ${t.motivoTexto}` : ''}</p>
-            : <p><CircleCheck size={15} /> Concluída por <b>{t.concluidaPorNome || '—'}</b> {t.concluidaEm && <>em {diaCurto(new Date(t.concluidaEm).toISOString().slice(0, 10))} às {horaDe(t.concluidaEm)}</>} {t.noPrazo === false && <i className="rt-chip rt-tom-perigo">fora do prazo</i>}</p>}
+            : <p><CircleCheck size={15} /> Concluída por <b>{t.concluidaPorNome || '—'}</b>{t.responsavelNome && t.concluidaPorNome && t.responsavelNome !== t.concluidaPorNome && !t.compartilhada ? <> no lugar de <b>{t.responsavelNome}</b></> : null} {t.concluidaEm && <>em {diaCurto(new Date(t.concluidaEm).toISOString().slice(0, 10))} às {horaDe(t.concluidaEm)}</>} {t.noPrazo === false && <i className="rt-chip rt-tom-perigo">fora do prazo</i>}</p>}
           {t.conferidaPorNome && t.status === 'concluida' && <p><ShieldCheck size={15} /> Conferida por <b>{t.conferidaPorNome}</b></p>}
         </section>
       )}

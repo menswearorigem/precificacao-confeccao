@@ -120,7 +120,29 @@ function proximoDiaUtil(dia) {
 // ---------------------------------------------------------------------------
 // Validação (o que a tela manda vira SEMPRE o formato acima)
 // ---------------------------------------------------------------------------
+// Várias vezes no mesmo dia (15/10/2026, uso real: "responder o chat 4
+// vezes no dia"). `horarios` = ['09:00', '12:00', …] — cada um vira uma
+// tarefa própria, com o próprio prazo. Um horário só (ou nenhum) = o caso
+// comum, que usa o "horário limite" do modelo.
+function normalizarHorarios(lista) {
+  if (lista == null) return null;
+  if (!Array.isArray(lista)) throw erroRegra('Os horários do dia vieram num formato inválido.');
+  const ok = [...new Set(lista.map((h) => String(h || '').trim()).filter(Boolean))].map((h) => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(h);
+    if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) throw erroRegra(`O horário "${h}" está inválido — use 09:00.`);
+    return `${m[1].padStart(2, '0')}:${m[2]}`;
+  }).sort();
+  if (ok.length > 12) throw erroRegra('No máximo 12 vezes por dia.');
+  return ok.length >= 2 ? ok : null;
+}
+
 function normalizar(rec) {
+  const base = normalizarBase(rec);
+  const horarios = normalizarHorarios(rec.horarios);
+  return horarios ? { ...base, horarios } : base;
+}
+
+function normalizarBase(rec) {
   if (!rec || typeof rec !== 'object') throw erroRegra('Diga quando a tarefa acontece.');
   const tipo = rec.tipo;
   if (!TIPOS.includes(tipo)) throw erroRegra('Escolha quando a tarefa acontece.');
@@ -246,6 +268,11 @@ function dataCurta(dia) {
 // Frase de gente para a recorrência ("Seg, Qua e Sex", "Todo dia útil").
 function descrever(rec) {
   if (!rec) return '';
+  const base = descreverDia(rec);
+  return rec.horarios?.length ? `${base} · ${rec.horarios.length}× no dia (${rec.horarios.join(', ')})` : base;
+}
+
+function descreverDia(rec) {
   const lista = (dias) => {
     const nomes = dias.map((d) => NOMES_DIA[d].charAt(0).toUpperCase() + NOMES_DIA[d].slice(1));
     return nomes.length > 1 ? `${nomes.slice(0, -1).join(', ')} e ${nomes[nomes.length - 1]}` : nomes[0];
@@ -264,6 +291,6 @@ function descrever(rec) {
 }
 
 module.exports = {
-  TIPOS, normalizar, ocorreEm, proximas, descrever,
+  TIPOS, normalizar, normalizarHorarios, ocorreEm, proximas, descrever,
   feriado, ehDiaUtil, pascoa, diaDaSemana, somarDias, ehDataValida, FERIADOS_FIXOS,
 };

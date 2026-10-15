@@ -3,7 +3,12 @@
    branco em chip cheio, movimento discreto), paleta couro do sistema.
    Tudo escopado em .rotinas / .rt-* para não vazar para outras telas. */
 
-.rotinas {
+/* As cores ficam no :root (e não em .rotinas) porque a tarefa também abre
+   numa GAVETA, que é desenhada fora da página (portal no <body>). Com as
+   variáveis presas em .rotinas, na gaveta o botão de foto ficava sem fundo e
+   com texto branco — invisível — e a barra de progresso vazia (achado no uso
+   real, 15/10/2026). */
+:root {
   --rt-perigo: #c0392b;
   --rt-atencao: #b8730a;
   --rt-ok: #2e8b57;
@@ -12,12 +17,12 @@
   --rt-latao: #8a6a2f;
   --rt-neutro: #6f655a;
   --rt-mod: var(--mod-rotinas, #8e3b8a);
-  display: flex; flex-direction: column; gap: 14px; padding-bottom: 96px;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .rotinas { --rt-perigo: #d6493a; --rt-atencao: #c98516; --rt-ok: #39a46a; --rt-info: #3f82c6; --rt-roxo: #9258b8; --rt-neutro: #847a6e; }
+  :root:not([data-theme="light"]) { --rt-perigo: #d6493a; --rt-atencao: #c98516; --rt-ok: #39a46a; --rt-info: #3f82c6; --rt-roxo: #9258b8; --rt-neutro: #847a6e; }
 }
-:root[data-theme="dark"] .rotinas { --rt-perigo: #d6493a; --rt-atencao: #c98516; --rt-ok: #39a46a; --rt-info: #3f82c6; --rt-roxo: #9258b8; --rt-neutro: #847a6e; }
+:root[data-theme="dark"] { --rt-perigo: #d6493a; --rt-atencao: #c98516; --rt-ok: #39a46a; --rt-info: #3f82c6; --rt-roxo: #9258b8; --rt-neutro: #847a6e; }
+.rotinas { display: flex; flex-direction: column; gap: 14px; padding-bottom: 96px; }
 
 /* ---------- tons ---------- */
 .rt-tom-perigo { --rt-tom: var(--rt-perigo); }
@@ -196,7 +201,11 @@
 .rt-resp.falta { border-color: var(--rt-perigo); background: color-mix(in srgb, var(--rt-perigo) 9%, var(--surface)); animation: rt-treme .3s; }
 .rt-falta { flex-basis: 100%; font-size: 12px; font-weight: 700; color: var(--rt-perigo); }
 .rt-tabela-prod { display: flex; flex-direction: column; gap: 5px; }
-.rt-resp-prod { display: grid; grid-template-columns: minmax(130px, 1fr) auto; gap: 6px 10px; }
+.rt-resp-prod { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; }
+/* Na gaveta (520–720 px) a linha não cabe lado a lado: o botão de foto
+   saía para fora da tela. Empilha rótulo e campo. */
+.na-gaveta .rt-resp-prod { grid-template-columns: minmax(0, 1fr); }
+.na-gaveta .rt-resp-campo { justify-content: flex-start; }
 .rt-resp-rotulo { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; min-width: 0; }
 .rt-resp-rotulo small { display: inline-flex; align-items: center; gap: 2px; color: var(--ink-faint); font-size: 11.5px; }
 .rt-resp-campo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: flex-end; }
@@ -229,6 +238,22 @@
 .na-gaveta .rt-barra-acoes { bottom: 0; }
 .rt-gaveta-link { font-size: 12.5px; text-align: right; margin: 0; }
 .rt-gaveta-link a { color: var(--rt-mod); }
+
+/* lista grande: recolhida, com busca (uso real, 15/10/2026) */
+.rt-mais { align-self: flex-start; margin-top: 8px; border: 1px dashed var(--border); background: transparent; color: var(--rt-mod); font: 600 12.5px var(--font-body); padding: 6px 12px; border-radius: 99px; cursor: pointer; }
+.rt-mais:hover { border-color: var(--rt-mod); }
+.rt-filtro-prod { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+.rt-filtro-prod input:not([type="checkbox"]) { flex: 1; min-width: 180px; height: 36px; }
+.rt-recontagem { grid-column: 1 / -1; font-size: 11.5px; color: var(--rt-atencao); font-weight: 600; }
+.rt-horario { color: var(--rt-mod); }
+.rt-bloco-consulta { opacity: .92; }
+.rt-bloco-consulta .rt-h { color: var(--ink-soft); }
+.rt-voltar-linha { display: flex; gap: 18px; align-items: center; }
+.rt-aviso-hora { font-size: 12.5px; font-weight: 600; color: var(--rt-atencao); display: inline-flex; align-items: center; gap: 4px; }
+.rt-horarios { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rt-horarios .rt-hora-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 10px; border-radius: 99px; background: var(--rt-mod); color: #fff; font: 600 12.5px var(--font-body); }
+.rt-horarios .rt-hora-chip input { background: transparent; color: #fff; border: 0; box-shadow: none; width: 92px; height: 26px; padding: 0; font: inherit; color-scheme: dark; }
+.rt-horarios .rt-hora-chip button { width: 18px; height: 18px; border: 0; border-radius: 50%; background: rgba(255,255,255,.25); color: #fff; display: grid; place-items: center; padding: 0; cursor: pointer; }
 
 /* ---------- Equipe ---------- */
 .rt-pessoas { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -298,6 +323,7 @@ button.rt-taxa:hover { background: var(--row-hover-strong); }
 .rt-campo-linha > span { min-width: 0 !important; }
 .rt-campo-inline { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
 .rt-curto { width: 76px; }
+.rt-medio { width: 100px; }
 .rt-data { width: 160px; }
 .rt-hora { width: 120px; }
 .rt-ajuda { margin: 0; font-size: 12.5px; color: var(--ink-faint); display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
@@ -342,6 +368,11 @@ button.rt-taxa:hover { background: var(--row-hover-strong); }
 .rt-res-acoes .rt-chip-op { padding: 4px 10px; font-size: 12px; }
 .rt-res-vars { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 5px; padding: 2px 0 4px; }
 .rt-res-vars .rt-chip-op { padding: 4px 10px; font-size: 12px; }
+.rt-res-vars { flex-direction: column; gap: 4px; }
+.rt-cor-linha { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.rt-cor-nome { min-width: 120px; text-align: left; display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; font: 700 11.5px var(--font-body); letter-spacing: .03em; color: var(--ink-soft); cursor: pointer; padding: 4px 6px; border-radius: 6px; }
+.rt-cor-nome:hover { background: var(--surface-alt); color: var(--rt-mod); }
+.rt-cor-nome.ativo { color: var(--rt-mod); }
 .rt-escolhidos { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .rt-escolhidos h4 { margin: 0 6px 0 0; font-size: 12px; color: var(--ink-soft); }
 .rt-escolhido { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border-radius: 99px; background: var(--rt-mod); color: #fff; font-size: 12px; }

@@ -24,7 +24,7 @@ const VAZIO = {
   titulo: '', instrucaoHtml: '', motivo: '', setor: '', marcas: [], canais: [], anexos: { links: [], imagens: [] },
   modoProdutos: 'fixa', filtroProdutos: { marcas: [], canais: [], curvas: [], grupos: [], subgrupos: [] }, produtos: [],
   passos: [], responsaveis: [], modoAtribuicao: 'cada_um',
-  recorrencia: { tipo: 'dias_uteis', dias: [1, 2, 3, 4, 5], intervalo: 1, modo: 'dia', dia: 1, pularFeriados: true, inicio: '', fim: '', data: '' },
+  recorrencia: { tipo: 'dias_uteis', dias: [1, 2, 3, 4, 5], intervalo: 1, modo: 'dia', dia: 1, pularFeriados: true, inicio: '', fim: '', data: '', horarios: [] },
   horaLimite: '', minutosEstimados: '', prioridade: 'normal', conferirDepois: false, conferenteId: '',
   correcaoAutomatica: null, lembreteMin: '',
 };
@@ -43,6 +43,18 @@ function Chips({ opcoes, valor, onChange, multi = false, cor }) {
       ))}
     </span>
   );
+}
+
+// Variantes agrupadas por cor (sem diferenciar "PRETO" de "preto"), na
+// ordem que o servidor já manda (cor, depois tamanho P→GG).
+function porCor(vs) {
+  const m = new Map();
+  for (const v of vs) {
+    const k = String(v.cor || '').trim().toUpperCase();
+    if (!m.has(k)) m.set(k, []);
+    m.get(k).push(v);
+  }
+  return [...m.entries()];
 }
 
 function Bloco({ n, titulo, sub, children }) {
@@ -89,7 +101,7 @@ function EditorTexto({ valor, onChange }) {
 // ---------------------------------------------------------------------------
 // Bloco 2 — produtos
 // ---------------------------------------------------------------------------
-function SeletorProdutos({ form, set, catalogo }) {
+function SeletorProdutos({ form, set, catalogo, onPrevia }) {
   const [busca, setBusca] = useState('');
   const [f, setF] = useState({ marcas: [], canais: [], curvas: [], grupo: '' });
   const [abrirVar, setAbrirVar] = useState(null);
@@ -111,7 +123,7 @@ function SeletorProdutos({ form, set, catalogo }) {
   useEffect(() => {
     if (form.modoProdutos !== 'automatica') return undefined;
     const t = setTimeout(() => {
-      api.post('/rotinas/previa/produtos', { filtro: fp }).then(setPrevia).catch(() => setPrevia(null));
+      api.post('/rotinas/previa/produtos', { filtro: fp }).then((x) => { setPrevia(x); onPrevia?.(x); }).catch(() => setPrevia(null));
     }, 350);
     return () => clearTimeout(t);
   }, [form.modoProdutos, fp]);
@@ -131,6 +143,11 @@ function SeletorProdutos({ form, set, catalogo }) {
   function alternarVariante(item, v) {
     const sem = form.produtos.filter((p) => !(p.produtoId === item.id && (p.varianteId === v.id || p.varianteId == null)));
     set('produtos', escolhido(item.id, v.id) ? sem : [...sem, { produtoId: item.id, varianteId: v.id, referencia: item.referencia, descricao: item.descricao, cor: v.cor, tamanho: v.tamanho }]);
+  }
+  function alternarCor(item, vs, ligar) {
+    const ids = new Set(vs.map((v) => v.id));
+    const sem = form.produtos.filter((p) => !(p.produtoId === item.id && (p.varianteId == null || ids.has(p.varianteId))));
+    set('produtos', ligar ? [...sem, ...vs.map((v) => ({ produtoId: item.id, varianteId: v.id, referencia: item.referencia, descricao: item.descricao, cor: v.cor, tamanho: v.tamanho }))] : sem);
   }
   const porRef = useMemo(() => {
     const m = new Map();
@@ -199,11 +216,22 @@ function SeletorProdutos({ form, set, catalogo }) {
                 </span>
                 {abrirVar === i.id && (
                   <div className="rt-res-vars">
-                    {(variantes[i.id] || []).map((v) => (
-                      <button key={v.id} type="button" className={`rt-chip-op${escolhido(i.id, v.id) ? ' ativo' : ''}`} onClick={() => alternarVariante(i, v)}>
-                        {escolhido(i.id, v.id) && <Check size={12} />}{varianteTexto(v)} <small>{numeroBr(v.quantidade)}</small>
-                      </button>
-                    ))}
+                    {/* Uma linha por cor, tamanhos em ordem (P, M, G…) e o
+                        atalho "toda a cor" — escolher 46 variantes uma a uma
+                        não era prático (uso real, 15/10/2026). */}
+                    {porCor(variantes[i.id] || []).map(([cor, vs]) => {
+                      const todas = vs.every((v) => escolhido(i.id, v.id));
+                      return (
+                        <div key={cor} className="rt-cor-linha">
+                          <button type="button" className={`rt-cor-nome${todas ? ' ativo' : ''}`} onClick={() => alternarCor(i, vs, !todas)} title={todas ? 'Tirar a cor inteira' : 'Escolher a cor inteira'}>{todas && <Check size={12} />}{cor || 'Sem cor'}</button>
+                          {vs.map((v) => (
+                            <button key={v.id} type="button" className={`rt-chip-op${escolhido(i.id, v.id) ? ' ativo' : ''}`} onClick={() => alternarVariante(i, v)}>
+                              {escolhido(i.id, v.id) && <Check size={12} />}{v.tamanho || 'único'} <small>{numeroBr(v.quantidade)}</small>
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })}
                     {!variantes[i.id] && <Loader2 size={14} className="girando" />}
                   </div>
                 )}
@@ -240,7 +268,8 @@ function EditorPassos({ passos, onChange, temProdutos }) {
     n.splice(i + d, 0, x);
     onChange(n);
   };
-  const novo = () => onChange([...passos, { texto: '', tipo: 'feito', opcoes: [], unidade: '', porProduto: false, obrigatorio: true, provaFoto: 'nao', faixa: null }]);
+  const [criado, setCriado] = useState(null);
+  const novo = () => setCriado(passos.length) || onChange([...passos, { texto: '', tipo: 'feito', opcoes: [], unidade: '', porProduto: false, obrigatorio: true, provaFoto: 'nao', faixa: null }]);
   return (
     <div className="rt-passos-edit">
       {passos.length === 0 && <p className="rt-ajuda">Sem passos, a tarefa é simples: a pessoa só toca em <b>Concluir</b> (com observação opcional).</p>}
@@ -250,7 +279,7 @@ function EditorPassos({ passos, onChange, temProdutos }) {
           <div key={i} className="rt-passo-edit">
             <div className="rt-passo-edit-topo">
               <span className="rt-num rt-num-mini">{i + 1}</span>
-              <input value={p.texto} onChange={(e) => mudar(i, 'texto', e.target.value)} maxLength={300} placeholder="Ex.: Quantidade contada" aria-label={`Texto do passo ${i + 1}`} />
+              <input value={p.texto} onChange={(e) => mudar(i, 'texto', e.target.value)} maxLength={300} placeholder="Ex.: Quantidade contada" aria-label={`Texto do passo ${i + 1}`} autoFocus={criado === i} />
               <button type="button" className="btn-icone" disabled={i === 0} onClick={() => mover(i, -1)} aria-label="Subir"><ArrowUp size={14} /></button>
               <button type="button" className="btn-icone" disabled={i === passos.length - 1} onClick={() => mover(i, 1)} aria-label="Descer"><ArrowDown size={14} /></button>
               <button type="button" className="btn-icone" onClick={() => onChange(passos.filter((_, j) => j !== i))} aria-label="Apagar passo"><Trash2 size={14} /></button>
@@ -263,12 +292,19 @@ function EditorPassos({ passos, onChange, temProdutos }) {
             )}
             {p.tipo === 'numero' && (
               <div className="rt-campo rt-campo-linha">
-                <span>Unidade</span><input className="rt-curto" value={p.unidade || ''} onChange={(e) => mudar(i, 'unidade', e.target.value)} placeholder="peças" maxLength={20} />
+                <span>Unidade</span><input className="rt-curto" value={p.unidade || ''} onChange={(e) => mudar(i, 'unidade', e.target.value)} placeholder="ex.: peças" maxLength={20} />
                 <span>Esperado</span>
                 <Chips
-                  opcoes={[['', 'Qualquer'], ['faixa', 'Entre…'], ...(p.porProduto ? [['estoque', 'Igual ao estoque do sistema']] : [])]}
+                  opcoes={[['', 'Qualquer'], ['faixa', 'Entre…'], ...(temProdutos ? [['estoque', 'Igual ao estoque do sistema']] : [])]}
                   valor={!p.faixa ? '' : p.faixa.estoque ? 'estoque' : 'faixa'}
-                  onChange={(v) => mudar(i, 'faixa', v === '' ? null : v === 'estoque' ? { estoque: true, tolerancia: 0 } : { min: '', max: '' })}
+                  // "Igual ao estoque" só faz sentido produto a produto: escolher
+                  // já liga o "repete para cada produto" (antes a opção só
+                  // aparecia depois de marcar a caixa, mais abaixo).
+                  onChange={(v) => onChange(passos.map((x, j) => (j !== i ? x : {
+                    ...x,
+                    faixa: v === '' ? null : v === 'estoque' ? { estoque: true, tolerancia: 0 } : { min: '', max: '' },
+                    porProduto: v === 'estoque' ? true : x.porProduto,
+                  })))}
                 />
                 {p.faixa && !p.faixa.estoque && <><input className="rt-curto" inputMode="decimal" value={p.faixa.min ?? ''} onChange={(e) => mudar(i, 'faixa', { ...p.faixa, min: e.target.value })} placeholder="mín." /><input className="rt-curto" inputMode="decimal" value={p.faixa.max ?? ''} onChange={(e) => mudar(i, 'faixa', { ...p.faixa, max: e.target.value })} placeholder="máx." /></>}
                 {p.faixa?.estoque && <><span>tolerância ±</span><input className="rt-curto" inputMode="decimal" value={p.faixa.tolerancia} onChange={(e) => mudar(i, 'faixa', { estoque: true, tolerancia: e.target.value })} /></>}
@@ -312,6 +348,7 @@ export default function RotinaModeloFormPage() {
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState('');
   const [fotos, setFotos] = useState({});
+  const [previaLista, setPreviaLista] = useState(null);
   const [enviandoImg, setEnviandoImg] = useState(false);
   const inputImg = useRef(null);
   const set = (campo, v) => setForm((f) => ({ ...f, [campo]: v }));
@@ -349,6 +386,21 @@ export default function RotinaModeloFormPage() {
   }, [recJson]);
 
   const temProdutos = form.modoProdutos === 'automatica' || form.produtos.length > 0;
+  const variasVezes = !form.avulsa && (form.recorrencia.horarios || []).length > 0;
+  // Resumo honesto: referências e variantes (antes "3 produto(s)" contava
+  // cada variante como um produto).
+  const nRefs = new Set(form.produtos.map((x) => x.produtoId)).size;
+  const nVarsEscolhidas = form.produtos.filter((x) => x.varianteId).length;
+  const resumoProdutos = form.modoProdutos === 'automatica' ? 'lista automática'
+    : nRefs === 0 ? 'sem produtos'
+      : `${nRefs} ${nRefs === 1 ? 'referência' : 'referências'}${nVarsEscolhidas ? ` (${nVarsEscolhidas} ${nVarsEscolhidas === 1 ? 'variante' : 'variantes'})` : ''}`;
+  // Uso real (15/10/2026): uma rotina de chat usou a lista automática para
+  // dizer "em quais canais" e levou 901 variantes que nenhum passo usava.
+  const listaSemUso = form.modoProdutos === 'automatica' && !form.passos.some((x) => x.porProduto);
+  // Horário que já passou hoje: a tarefa nasce atrasada — melhor avisar.
+  const agoraHm = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
+  const ehHoje = form.avulsa || form.recorrencia.tipo === 'uma_vez' ? form.recorrencia.data === hojeIso() : true;
+  const horaJaPassou = !variasVezes && ehHoje && form.horaLimite && form.horaLimite < agoraHm;
   const admins = pessoas.filter((p) => p.admin);
   const semAcesso = pessoas.filter((p) => form.responsaveis.includes(p.id) && !p.temAcesso);
 
@@ -366,14 +418,22 @@ export default function RotinaModeloFormPage() {
     setErro('');
     const corpo = {
       ...form,
-      recorrencia: form.avulsa ? { tipo: 'uma_vez', data: form.recorrencia.data } : form.recorrencia,
+      recorrencia: form.avulsa ? { tipo: 'uma_vez', data: form.recorrencia.data } : { ...form.recorrencia, horarios: variasVezes ? form.recorrencia.horarios : undefined },
       passos: form.passos.map((p) => ({ ...p, opcoes: (p.opcoes || []).map((o) => o.trim()).filter(Boolean) })),
       conferenteId: form.conferenteId || null,
       criarAgora,
     };
+    if (listaSemUso && previaLista?.variantes > 50 && !(await confirmar(
+      `A lista automática vai anexar ${previaLista.variantes} variantes a cada tarefa, mas nenhum passo usa os produtos — eles aparecem só como consulta, no fim da tarefa. Se a ideia era só dizer o canal, use "Canal" no bloco 1 e deixe a lista fixa vazia. Salvar assim mesmo?`,
+      { titulo: 'Lista grande sem uso', confirmarTexto: 'Salvar assim mesmo', perigo: false }
+    ))) { setSalvando(''); return null; }
     try {
       const r = editando ? await api.put(`/rotinas/modelos/${id}`, corpo) : await api.post('/rotinas/modelos', corpo);
-      navigate(form.avulsa ? '/rotinas/equipe' : '/rotinas/modelos', { replace: true });
+      // Volta com um recado — antes salvava e a tela mudava sem dizer nada.
+      const aviso = r.geradas
+        ? `"${form.titulo}" salva — ${r.geradas === 1 ? 'a tarefa de hoje já está' : `${r.geradas} tarefas de hoje já estão`} no Meu dia de quem faz.`
+        : `"${form.titulo}" salva.${!form.avulsa ? ' A próxima tarefa nasce no próximo dia programado.' : ''}`;
+      navigate(form.avulsa ? '/rotinas/equipe' : '/rotinas/modelos', { replace: true, state: { aviso } });
       return r;
     } catch (e) {
       setErro(e.message);
@@ -456,7 +516,10 @@ export default function RotinaModeloFormPage() {
       </Bloco>
 
       <Bloco n={2} titulo="Produtos" sub="opcional">
-        <SeletorProdutos form={form} set={set} catalogo={catalogo} />
+        <SeletorProdutos form={form} set={set} catalogo={catalogo} onPrevia={setPreviaLista} />
+        {listaSemUso && (
+          <p className="rt-ajuda rt-txt-atencao"><TriangleAlert size={12} />Nenhum passo usa estes produtos: eles vão só como lista de consulta no fim da tarefa{previaLista?.variantes ? ` (hoje ${previaLista.variantes} variantes)` : ''}. Para dizer só o canal ou a marca, use o bloco 1.</p>
+        )}
       </Bloco>
 
       <Bloco n={3} titulo="Passos e o que registrar" sub={`${form.passos.length} ${form.passos.length === 1 ? 'passo' : 'passos'}`}>
@@ -512,9 +575,33 @@ export default function RotinaModeloFormPage() {
               : <span>…</span>}
         </div>
 
+        {!form.avulsa && (
+          <div className="rt-campo"><span>Vezes no dia</span>
+            <Chips
+              opcoes={[['um', 'Uma vez no dia'], ['varios', 'Várias vezes no dia']]}
+              valor={variasVezes ? 'varios' : 'um'}
+              onChange={(v) => setRec('horarios', v === 'varios' ? (form.horaLimite ? [form.horaLimite, ''] : ['09:00', '12:00', '15:00', '18:00']) : [])}
+            />
+          </div>
+        )}
+        {variasVezes && (
+          <div className="rt-campo rt-campo-topo"><span>Horários</span>
+            <div className="rt-horarios">
+              {form.recorrencia.horarios.map((h, i) => (
+                <span key={i} className="rt-hora-chip">
+                  <input type="time" value={h} onChange={(e) => setRec('horarios', form.recorrencia.horarios.map((x, j) => (j === i ? e.target.value : x)))} aria-label={`Horário ${i + 1}`} />
+                  <button type="button" onClick={() => setRec('horarios', form.recorrencia.horarios.filter((_, j) => j !== i))} aria-label="Tirar horário"><X size={11} /></button>
+                </span>
+              ))}
+              {form.recorrencia.horarios.length < 12 && <button type="button" className="btn-dashed sm" onClick={() => setRec('horarios', [...form.recorrencia.horarios, ''])}><Plus size={13} />Horário</button>}
+              <small className="ink-soft">Cada horário vira uma tarefa própria, com prazo naquele horário.</small>
+            </div>
+          </div>
+        )}
         <div className="rt-campo rt-campo-linha">
-          <span>Horário limite</span><input type="time" value={form.horaLimite} onChange={(e) => set('horaLimite', e.target.value)} className="rt-hora" />
-          <span>Tempo estimado</span><input type="number" min={1} max={1440} className="rt-curto" value={form.minutosEstimados} onChange={(e) => set('minutosEstimados', e.target.value)} placeholder="30" /> min
+          {!variasVezes && <><span>Horário limite</span><input type="time" value={form.horaLimite} onChange={(e) => set('horaLimite', e.target.value)} className="rt-hora" /></>}
+          {horaJaPassou && <span className="rt-aviso-hora"><TriangleAlert size={12} />Esse horário já passou hoje — a tarefa nasce atrasada.</span>}
+          <span>Tempo estimado</span><input type="number" min={1} max={1440} className="rt-curto rt-medio" value={form.minutosEstimados} onChange={(e) => set('minutosEstimados', e.target.value)} placeholder="ex.: 30" /> min
         </div>
         <div className="rt-campo"><span>Prioridade</span><Chips opcoes={PRIORIDADES} valor={form.prioridade} onChange={(v) => set('prioridade', v)} cor={(k) => `rt-pri-op-${k}`} /></div>
 
@@ -531,7 +618,7 @@ export default function RotinaModeloFormPage() {
               <Chips opcoes={pessoas.map((p) => [p.id, p.nome])} valor={form.correcaoAutomatica.responsavelId} onChange={(v) => set('correcaoAutomatica', { responsavelId: v })} />
             </div>
           )}
-          <label className="rt-toggle"><input type="checkbox" checked={form.lembreteMin !== '' && form.lembreteMin != null} onChange={(e) => set('lembreteMin', e.target.checked ? 30 : '')} disabled={!form.horaLimite} /><b>Avisar antes do prazo</b>{!form.horaLimite && <small className="ink-soft"> (defina o horário limite)</small>}</label>
+          <label className="rt-toggle"><input type="checkbox" checked={form.lembreteMin !== '' && form.lembreteMin != null} onChange={(e) => set('lembreteMin', e.target.checked ? 30 : '')} disabled={!form.horaLimite && !variasVezes} /><span><b>Avisar antes do prazo</b>{!form.horaLimite && !variasVezes && <small className="ink-soft"> (defina o horário limite)</small>}</span></label>
           {form.lembreteMin !== '' && form.lembreteMin != null && (
             <div className="rt-campo rt-sub-opcao"><span>Quanto antes</span><input type="number" min={5} max={1440} className="rt-curto" value={form.lembreteMin} onChange={(e) => set('lembreteMin', e.target.value)} /> min — aparece no sino e no Meu dia. O atraso avisa o administrador.</div>
           )}
@@ -540,7 +627,7 @@ export default function RotinaModeloFormPage() {
 
       <div className="rt-barra-acoes rt-barra-form">
         <span className="ink-soft rt-resumo-form">
-          <Package size={13} />{form.modoProdutos === 'automatica' ? 'lista automática' : `${form.produtos.length} produto(s)`} · {form.passos.length} passo(s) · {form.responsaveis.length} pessoa(s)
+          <Package size={13} />{resumoProdutos} · {form.passos.length} {form.passos.length === 1 ? 'passo' : 'passos'} · {form.responsaveis.length} {form.responsaveis.length === 1 ? 'pessoa' : 'pessoas'}
         </span>
         {!form.avulsa && <button type="button" className="btn-sec" onClick={() => salvar(true)} disabled={Boolean(salvando)}>{salvando === 'agora' ? <Loader2 size={15} className="girando" /> : <Zap size={15} />}Salvar e criar a de hoje agora</button>}
         <button type="button" className="btn btn-primary" onClick={() => salvar(false)} disabled={Boolean(salvando)}>{salvando === 'salvar' ? <Loader2 size={15} className="girando" /> : <Save size={15} />}Salvar</button>

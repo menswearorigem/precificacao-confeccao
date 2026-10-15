@@ -145,7 +145,7 @@ async function lerRotinas(user, hoje) {
     `SELECT o.id, o.prazo, o.status, o.snapshot->>'titulo' AS titulo, o.snapshot->>'horaLimite' AS hora,
             o.snapshot->>'prioridade' AS prioridade, to_char(o.data, 'YYYY-MM-DD') AS data
        FROM rotina_ocorrencias o
-      WHERE (o.responsavel_id = $1 OR (o.vaga = 0 AND o.responsavel_id IS NULL AND o.snapshot->'responsaveis' @> to_jsonb(ARRAY[$1::int])))
+      WHERE (o.responsavel_id = $1 OR (o.snapshot->>'modoAtribuicao' = 'qualquer_um' AND o.responsavel_id IS NULL AND o.snapshot->'responsaveis' @> to_jsonb(ARRAY[$1::int])))
         AND o.status IN ('pendente', 'em_andamento', 'devolvida')
       ORDER BY o.prazo LIMIT 60`,
     [user.id]

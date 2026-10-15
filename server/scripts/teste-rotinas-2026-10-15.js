@@ -373,6 +373,66 @@ async function main() {
     ok('Início da Nath mostra a correção atrasada ou de hoje', [...(ini.hojeComHora || []), ...(ini.hojeSemHora || []), ...(ini.ficouParaTras || [])].some((x) => /Corrigir/.test(x.titulo)), JSON.stringify(ini).slice(0, 400));
     const ml = (await admin('/api/rotinas/modelos')).dados.find((m) => m.id === idContagem);
     ok('lista de modelos traz "quando" e próximas datas', ml && ml.quando === 'Todo dia' && ml.proximas.length === 3);
+    ok('lista de modelos conta referências, não variantes', ml.nProdutos === 1);
+
+    // -------------------------------------------------------------------
+    secao('10. Achados do uso real (15/10/2026)');
+    // -------------------------------------------------------------------
+    // a) tamanhos na ordem da prateleira, não alfabética
+    const vG = await vari(p1.id, 'Azul', 'G', 1);
+    const vP = await vari(p1.id, 'Azul', 'P', 1);
+    const vGG = await vari(p1.id, 'Azul', 'GG', 1);
+    const vM = await vari(p1.id, 'Azul', 'M', 1);
+    const vs = (await admin(`/api/rotinas/catalogo/${p1.id}/variantes`)).dados.filter((v) => v.cor === 'Azul').map((v) => v.tamanho);
+    ok('variantes em ordem P, M, G, GG', vs.join(',') === 'P,M,G,GG', vs.join(','));
+    void vG; void vP; void vGG; void vM;
+
+    // b) várias vezes no dia: uma tarefa por horário, sem duplicar
+    r = await admin('/api/rotinas/modelos', { metodo: 'POST', corpo: {
+      titulo: 'Responder o chat', instrucaoHtml: 'Responder todos os chats.', setor: 'atendimento',
+      responsaveis: [uEri.id, uNath.id], modoAtribuicao: 'cada_um',
+      recorrencia: { tipo: 'dias_semana', dias: [1, 2, 3, 4, 5, 6, 7], pularFeriados: false, horarios: ['15:00', '09:00', '12:00', '18:00', ''] },
+      horaLimite: '10:00', criarAgora: true,
+    } });
+    ok('rotina 4× no dia criada e gerada (2 pessoas × 4 horários = 8)', r.status === 201 && r.dados.geradas === 8, JSON.stringify(r.dados));
+    const idChat = r.dados.id;
+    await rot.gerarDia(HOJE); await rot.gerarDia(HOJE);
+    const { rows: chat } = await pool.query("SELECT vaga, responsavel_id, snapshot->>'horario' AS h, to_char(prazo AT TIME ZONE 'America/Sao_Paulo', 'HH24:MI') AS prazo FROM rotina_ocorrencias WHERE modelo_id = $1 ORDER BY vaga", [idChat]);
+    ok('gerar de novo não duplica (continua 8)', chat.length === 8);
+    ok('cada horário vira o prazo da sua tarefa', chat.filter((x) => x.responsavel_id === uEri.id).map((x) => x.prazo).join(',') === '09:00,12:00,15:00,18:00', JSON.stringify(chat));
+    const mlChat = (await admin('/api/rotinas/modelos')).dados.find((m) => m.id === idChat);
+    ok('descrição diz "4× no dia"', /4× no dia/.test(mlChat.quando), mlChat.quando);
+    const mdEriChat = (await eri('/api/rotinas/meu-dia')).dados.abertas.filter((x) => x.modeloId === idChat);
+    ok('Meu dia da Erizânia: 4 tarefas do chat, cada uma com o horário', mdEriChat.length === 4 && mdEriChat.every((x) => x.horario), JSON.stringify(mdEriChat.map((x) => x.horario)));
+    r = await admin('/api/rotinas/previa/recorrencia', { metodo: 'POST', corpo: { recorrencia: { tipo: 'dias_uteis', horarios: ['25:00', '10:00'] } } });
+    ok('horário inválido é recusado com frase', r.status === 400 && /horário/.test(r.dados.error));
+
+    // qualquer um + várias vezes: cada horário é uma tarefa compartilhada
+    r = await admin('/api/rotinas/modelos', { metodo: 'POST', corpo: {
+      titulo: 'Chat compartilhado', instrucaoHtml: 'Quem estiver livre responde.', setor: 'atendimento',
+      responsaveis: [uEri.id, uNath.id], modoAtribuicao: 'qualquer_um',
+      recorrencia: { tipo: 'dias_semana', dias: [1, 2, 3, 4, 5, 6, 7], pularFeriados: false, horarios: ['10:00', '16:00'] }, criarAgora: true,
+    } });
+    ok('compartilhada 2× no dia = 2 tarefas', r.dados.geradas === 2);
+    const comp = (await nath('/api/rotinas/meu-dia')).dados.abertas.filter((x) => x.titulo === 'Chat compartilhado');
+    ok('as duas aparecem para a Nath como compartilhadas', comp.length === 2 && comp.every((x) => x.compartilhada));
+    const detComp = (await nath(`/api/rotinas/ocorrencias/${comp[0].id}`)).dados;
+    ok('a Nath consegue concluir a compartilhada de horário', (await nath(`/api/rotinas/ocorrencias/${detComp.id}/concluir`, { metodo: 'POST', corpo: {} })).status === 200);
+    ok('e ela some do Meu dia da Erizânia (ficou com a Nath)', !(await eri('/api/rotinas/meu-dia')).dados.abertas.some((x) => x.id === detComp.id));
+
+    // c) recontagem fica registrada
+    r = await admin('/api/rotinas/modelos', { metodo: 'POST', corpo: {
+      titulo: 'Recontagem', instrucaoHtml: 'Contar.', setor: 'estoque', produtos: [{ produtoId: p1.id, varianteId: v1M }],
+      passos: [{ texto: 'Quantidade', tipo: 'numero', porProduto: true, faixa: { estoque: true, tolerancia: 0 } }],
+      responsaveis: [uEri.id], recorrencia: { tipo: 'dias_semana', dias: [1, 2, 3, 4, 5, 6, 7], pularFeriados: false }, criarAgora: true,
+    } });
+    const ocRec = (await pool.query('SELECT id, snapshot FROM rotina_ocorrencias WHERE modelo_id = $1', [r.dados.id])).rows[0];
+    const pRec = ocRec.snapshot.passos[0].id;
+    await eri(`/api/rotinas/ocorrencias/${ocRec.id}/respostas`, { metodo: 'PUT', corpo: { passoId: pRec, chave: `v${v1M}`, valor: { numero: 2 } } });
+    r = await eri(`/api/rotinas/ocorrencias/${ocRec.id}/respostas`, { metodo: 'PUT', corpo: { passoId: pRec, chave: `v${v1M}`, valor: { numero: 6 } } });
+    ok('recontar guarda o número anterior (2 → 6)', r.dados.resposta.valor.antes?.[0]?.numero === 2 && r.dados.resposta.valor.antes[0].problema === true && r.dados.resposta.problema === false, JSON.stringify(r.dados.resposta));
+    r = await eri(`/api/rotinas/ocorrencias/${ocRec.id}/respostas`, { metodo: 'PUT', corpo: { passoId: pRec, chave: `v${v1M}`, valor: { numero: 6, nota: 'ok' } } });
+    ok('salvar o mesmo número de novo não apaga o rastro', r.dados.resposta.valor.antes?.length === 1);
   } finally {
     servidor.close();
     await pool.end();

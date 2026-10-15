@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Plus, RefreshCw, TriangleAlert, ShieldCheck, Clock, X, Camera, ListChecks, Zap } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
@@ -35,6 +35,8 @@ export default function RotinasEquipePage() {
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(false);
   const [aberta, setAberta] = useState(null);
+  const location = useLocation();
+  const [aviso, setAviso] = useState(location.state?.aviso || '');
 
   const mudar = (k, v) => setParams((p) => { const n = new URLSearchParams(p); if (v) n.set(k, v); else n.delete(k); return n; }, { replace: true });
 
@@ -78,6 +80,7 @@ export default function RotinasEquipePage() {
       </header>
 
       {erro && <div className="rt-aviso rt-tom-perigo">{erro}</div>}
+      {aviso && <div className="rt-aviso rt-tom-ok" onClick={() => setAviso('')}>{aviso}</div>}
 
       {dados && dados.pessoas.length > 0 && (
         <div className="rt-pessoas" role="group" aria-label="Filtrar por pessoa">
@@ -123,7 +126,7 @@ export default function RotinasEquipePage() {
                 const sit = situacaoDe(x);
                 return (
                   <tr key={x.id} className="linha-clicavel" onClick={() => setAberta(x)}>
-                    <td><b>{x.titulo}</b>{x.correcao && <i className="rt-chip rt-tom-atencao rt-chip-mini">Correção</i>}<div className="ink-soft rt-sub">{diaCurto(x.data)}{x.nVariantes ? ` · ${x.nVariantes} var.` : ''}{x.progresso.total ? ` · ${x.progresso.feitos}/${x.progresso.total}` : ''}</div></td>
+                    <td><b>{x.titulo}{x.horario ? ` · ${x.horario}` : ''}</b>{x.correcao && <i className="rt-chip rt-tom-atencao rt-chip-mini">Correção</i>}<div className="ink-soft rt-sub">{diaCurto(x.data)}{x.nVariantes ? ` · ${x.nVariantes} var.` : ''}{x.progresso.total ? ` · ${x.progresso.feitos}/${x.progresso.total}` : ''}</div></td>
                     <td>{x.responsavelNome || '—'}</td>
                     <td><span className="rt-prazo"><Clock size={12} />{prazoTexto(x, dados.hoje)}</span></td>
                     <td><i className={`rt-chip rt-tom-${sit.tom}`}>{sit.rotulo}</i></td>

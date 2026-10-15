@@ -17,7 +17,7 @@ export function LinhaTarefa({ item, hoje, mostrarPessoa = false, onClick }) {
       <span className="rt-linha-barra" />
       <span className="rt-linha-corpo">
         <span className="rt-linha-titulo">
-          <b>{item.titulo}</b>
+          <b>{item.titulo}{item.horario ? ` · ${item.horario}` : ''}</b>
           {(item.prioridade === 'alta' || item.prioridade === 'urgente') && <i className={`rt-chip rt-pri-${item.prioridade}`}>{NOME_PRIORIDADE[item.prioridade]}</i>}
           {item.correcao && <i className="rt-chip rt-tom-atencao">Correção</i>}
         </span>
@@ -115,7 +115,7 @@ export default function RotinasMeuDiaPage() {
 
       {ver === 'hoje' && dados?.feitas?.length > 0 && (
         <details className="rt-feitas">
-          <summary>Feitas hoje ({dados.feitas.length})</summary>
+          <summary>Encerradas hoje ({dados.feitas.length})</summary>
           <section className="rt-lista">
             {dados.feitas.map((it) => <LinhaTarefa key={it.id} item={it} hoje={dados.hoje} />)}
           </section>
@@ -129,7 +129,7 @@ export default function RotinasMeuDiaPage() {
             <div key={dia} className="rt-futuro-dia">
               <h3>{diaLongo(dia)}</h3>
               {itens.map((f) => (
-                <div key={`${f.modeloId}-${dia}`} className="rt-linha rt-linha-estatica">
+                <div key={`${f.modeloId}-${dia}-${f.horaLimite || ''}`} className="rt-linha rt-linha-estatica">
                   <span className="rt-linha-barra" />
                   <span className="rt-linha-corpo">
                     <span className="rt-linha-titulo"><b>{f.titulo}</b>{(f.prioridade === 'alta' || f.prioridade === 'urgente') && <i className={`rt-chip rt-pri-${f.prioridade}`}>{NOME_PRIORIDADE[f.prioridade]}</i>}</span>

@@ -11,8 +11,10 @@ export default function RotinaTarefaPage() {
   const { user } = useAuth();
   return (
     <div className="page rotinas rt-pagina-tarefa">
-      <Link to="/rotinas" className="rt-voltar"><ArrowLeft size={15} />Meu dia</Link>
-      {user?.role === 'admin' && <Link to="/rotinas/equipe" className="rt-voltar rt-voltar-2">Equipe</Link>}
+      <div className="rt-voltar-linha">
+        <Link to="/rotinas" className="rt-voltar"><ArrowLeft size={15} />Meu dia</Link>
+        {user?.role === 'admin' && <Link to="/rotinas/equipe" className="rt-voltar">Equipe</Link>}
+      </div>
       <RotinaTarefa key={id} id={id} />
     </div>
   );

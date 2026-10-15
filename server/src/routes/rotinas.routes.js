@@ -76,8 +76,9 @@ function resumo(oc, respostas, agora = new Date()) {
     status: oc.status,
     atrasada: r.situacao(oc, agora).atrasada,
     responsavelId: oc.responsavel_id,
-    responsavelNome: oc.responsavel_nome || (oc.vaga === 0 ? 'Qualquer um' : null),
-    compartilhada: oc.vaga === 0,
+    responsavelNome: oc.responsavel_nome || (r.ehCompartilhada(oc) ? 'Qualquer um' : null),
+    compartilhada: r.ehCompartilhada(oc),
+    horario: s.horario || null,
     nProdutos: (oc.produtos_resolvidos || []).length,
     nVariantes,
     progresso: prog,
@@ -121,7 +122,7 @@ async function detalhe(oc, user) {
   const atual = await estoqueAgora(chaves.filter((c) => c.varianteId).map((c) => c.varianteId));
   const produtos = (oc.produtos_resolvidos || []).map((p) => ({
     ...p,
-    variantes: (p.variantes || []).map((v) => ({ ...v, quantidadeAgora: atual.has(v.id) ? atual.get(v.id) : null })),
+    variantes: [...(p.variantes || [])].sort(r.compararVariante).map((v) => ({ ...v, quantidadeAgora: atual.has(v.id) ? atual.get(v.id) : null })),
   }));
   const idsFotos = [...new Set([...respostas.flatMap((x) => r.fotosDe(x.valor)), ...(s.anexos?.imagens || [])])];
   const { rows: fotos } = idsFotos.length
@@ -173,7 +174,7 @@ async function exigirOcorrencia(req, { paraAgir = false } = {}) {
 // Pega a tarefa compartilhada (o primeiro que mexe fica com ela) e marca o
 // começo. Idempotente.
 async function iniciar(oc, user) {
-  const pegar = oc.vaga === 0 && oc.responsavel_id == null && user.role !== 'admin' ? user.id : null;
+  const pegar = r.ehCompartilhada(oc) && oc.responsavel_id == null && user.role !== 'admin' ? user.id : null;
   const { rows } = await pool.query(
     `UPDATE rotina_ocorrencias
         SET status = CASE WHEN status = 'pendente' THEN 'em_andamento' ELSE status END,
@@ -191,7 +192,7 @@ async function iniciar(oc, user) {
 // MEU DIA
 // ---------------------------------------------------------------------------
 function condicaoMinha(param) {
-  return `(o.responsavel_id = $${param} OR (o.vaga = 0 AND o.responsavel_id IS NULL AND o.snapshot->'responsaveis' @> to_jsonb(ARRAY[$${param}::int])))`;
+  return `(o.responsavel_id = $${param} OR (o.snapshot->>'modoAtribuicao' = 'qualquer_um' AND o.responsavel_id IS NULL AND o.snapshot->'responsaveis' @> to_jsonb(ARRAY[$${param}::int])))`;
 }
 
 // Prévia de dias futuros (sem gerar nada): o que a recorrência promete.
@@ -205,10 +206,13 @@ async function previaFutura(usuarioId, de, ate) {
   for (const m of rows) {
     for (const dia of rec.proximas(m.recorrencia, de, 14)) {
       if (dia > ate) break;
-      itens.push({
-        modeloId: m.id, titulo: m.titulo, prioridade: m.prioridade, setor: m.setor, data: dia,
-        horaLimite: m.hora_limite ? String(m.hora_limite).slice(0, 5) : null, compartilhada: m.modo_atribuicao === 'qualquer_um',
-      });
+      const horas = m.recorrencia?.horarios || [m.hora_limite ? String(m.hora_limite).slice(0, 5) : null];
+      for (const h of horas) {
+        itens.push({
+          modeloId: m.id, titulo: m.titulo, prioridade: m.prioridade, setor: m.setor, data: dia,
+          horaLimite: h, compartilhada: m.modo_atribuicao === 'qualquer_um',
+        });
+      }
     }
   }
   return itens.sort((x, y) => x.data.localeCompare(y.data) || String(x.horaLimite || '99').localeCompare(String(y.horaLimite || '99')));
@@ -317,6 +321,22 @@ router.put('/ocorrencias/:id/respostas', a(async (req, res) => {
   let estoqueSistema = null;
   if (passo.faixa?.estoque && alvo?.varianteId) estoqueSistema = (await estoqueAgora([alvo.varianteId])).get(alvo.varianteId) ?? null;
   const { valor, problema } = r.avaliarResposta(passo, req.body.valor, { estoqueSistema });
+  // Recontagem fica registrada (uso real, 15/10/2026): com a contagem às
+  // cegas, quem conta vê o aviso de "problema" e podia digitar outro número
+  // até o aviso sumir, sem rastro. Agora o número anterior fica guardado e o
+  // administrador vê "contou 80 → recontou 87".
+  if (passo.tipo === 'numero') {
+    const { rows: [ant] } = await pool.query(
+      'SELECT valor, problema, respondido_em FROM rotina_respostas WHERE ocorrencia_id = $1 AND passo_id = $2 AND chave_produto = $3',
+      [oc.id, passo.id, chave]
+    );
+    const antes = Array.isArray(ant?.valor?.antes) ? ant.valor.antes : [];
+    if (typeof ant?.valor?.numero === 'number' && ant.valor.numero !== valor.numero) {
+      valor.antes = [...antes, { numero: ant.valor.numero, problema: ant.problema, em: ant.respondido_em }].slice(-5);
+    } else if (antes.length) {
+      valor.antes = antes;
+    }
+  }
 
   await iniciar(oc, req.user);
   const { rows: [resp] } = await pool.query(
@@ -577,7 +597,8 @@ router.get('/modelos', requireAdmin, a(async (req, res) => {
     `SELECT m.id, m.titulo, m.setor, m.prioridade, m.recorrencia, m.hora_limite, m.responsaveis, m.modo_atribuicao, m.status, m.avulsa,
             m.modo_produtos, m.conferir_depois, m.updated_at,
             (SELECT COUNT(*)::int FROM rotina_modelo_passos p WHERE p.modelo_id = m.id) AS n_passos,
-            (SELECT COUNT(*)::int FROM rotina_modelo_produtos p WHERE p.modelo_id = m.id) AS n_produtos,
+            (SELECT COUNT(DISTINCT p.produto_id)::int FROM rotina_modelo_produtos p WHERE p.modelo_id = m.id) AS n_produtos,
+            (SELECT COUNT(p.variante_id)::int FROM rotina_modelo_produtos p WHERE p.modelo_id = m.id) AS n_variantes_escolhidas,
             (SELECT COUNT(*)::int FROM rotina_ocorrencias o WHERE o.modelo_id = m.id AND o.data >= CURRENT_DATE - 30 AND (o.prazo < now() OR o.status NOT IN ('pendente', 'em_andamento', 'devolvida'))) AS total30,
             (SELECT COUNT(*)::int FROM rotina_ocorrencias o WHERE o.modelo_id = m.id AND o.data >= CURRENT_DATE - 30 AND o.concluida_em IS NOT NULL AND o.status IN ('concluida', 'aguardando_conferencia') AND o.concluida_em <= o.prazo) AS no_prazo30
        FROM rotina_modelos m WHERE ${where}
@@ -602,6 +623,7 @@ router.get('/modelos', requireAdmin, a(async (req, res) => {
     conferir: m.conferir_depois,
     nPassos: m.n_passos,
     nProdutos: m.n_produtos,
+    nVariantesEscolhidas: m.n_variantes_escolhidas,
     noPrazo30: m.total30 ? Math.round((m.no_prazo30 / m.total30) * 100) : null,
     total30: m.total30,
   })));
