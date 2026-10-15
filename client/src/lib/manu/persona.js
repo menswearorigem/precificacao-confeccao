@@ -26,6 +26,9 @@ const PERSONAS = {
   compras:       { papel: 'Compradora',    slug: 'compradora' },
   analises:      { papel: 'Estrategista',  slug: 'estrategista' },
   calendario:    { papel: 'Secretária',    slug: 'secretaria' },
+  // Rotinas (15/10/2026): mesma Secretária do Calendário — é ela que passa
+  // e cobra as tarefas do dia.
+  rotinas:       { papel: 'Secretária',    slug: 'secretaria' },
   configuracoes: { papel: 'Técnica',       slug: 'tecnica' },
   videos:        { papel: 'Influenciadora', slug: 'influenciadora' },
 };
