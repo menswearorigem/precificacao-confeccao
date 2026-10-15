@@ -13,6 +13,7 @@ const { sincronizarPosVendaTodasAtivas } = require('./lib/posVendaSync');
 const { jobBriefingDiario } = require('./lib/manuBriefing');
 const { sincronizarAnunciosAgendado } = require('./lib/anunciosSync');
 const { sincronizarSaudeContaTodasAtivas } = require('./lib/saudeContaSync');
+const { jobGerarDoDia: gerarRotinasDoDia } = require('./lib/rotinas');
 
 // ── AUTO-CURA de travas ÓRFÃS do Wik no boot ────────────────────────────────
 // `web_job_ativo` e `producao_job_ativo` são FLAGS no banco (não advisory
@@ -204,4 +205,14 @@ app.listen(PORT, () => {
     .catch((err) => console.error('[saude-conta]', err.message));
   setTimeout(lerSaude, 12 * 60 * 1000);
   setInterval(lerSaude, 6 * 60 * 60 * 1000);
+
+  // Rotinas (15/10/2026): as tarefas do dia nascem na primeira passada depois
+  // da virada (00h em Brasília). A cada 15 min — idempotente, as outras
+  // passadas não acham nada a fazer — e 90 s depois da subida, que cobre o
+  // servidor que dormiu à noite. O "Meu dia" também gera ao abrir.
+  const rotinas = () => gerarRotinasDoDia()
+    .then((r) => { if (r.criadas) console.log('[rotinas]', JSON.stringify(r)); })
+    .catch((err) => console.error('[rotinas]', err.message));
+  setTimeout(rotinas, 90 * 1000);
+  setInterval(rotinas, 15 * 60 * 1000);
 });

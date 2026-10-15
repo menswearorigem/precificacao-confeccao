@@ -20,7 +20,7 @@ const CHAVE_SIDEBAR_COLAPSADO = 'hbn_sidebar_colapsado';
 // Calendário, que já tem o próprio visual (CalendarioVivo).
 const MODULOS_VIVOS = new Set([
   'produto', 'estoque', 'producao', 'vendas', 'marketplace', 'financeiro',
-  'viagens', 'compras', 'analises', 'configuracoes',
+  'viagens', 'compras', 'analises', 'configuracoes', 'rotinas',
 ]);
 
 function semMovimento() {
@@ -204,7 +204,7 @@ export default function Shell({ children }) {
           >
             <Search size={17} />
           </button>
-          <SinoCalendario comCalendario={visibleModules.some((mod) => mod.key === 'calendario')} />
+          <SinoCalendario comCalendario={visibleModules.some((mod) => mod.key === 'calendario')} comRotinas={visibleModules.some((mod) => mod.key === 'rotinas')} />
           {densidadeCtx && (
             <button
               type="button"

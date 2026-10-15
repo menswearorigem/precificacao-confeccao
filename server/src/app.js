@@ -78,6 +78,9 @@ const emailRoutes = require('./routes/email.routes');
 const vendedoresRoutes = require('./routes/vendedores.routes');
 const tabelasPrecoRoutes = require('./routes/tabelasPreco.routes');
 const vendasRoutes = require('./routes/vendas.routes');
+// Rotinas (15/10/2026): tarefas escritas que os administradores passam para a
+// equipe. Módulo próprio `rotinas` (REGRA 4 autorizada pelo dono em 15/10).
+const rotinasRoutes = require('./routes/rotinas.routes');
 
 const CLIENT_DIST = path.join(__dirname, '..', '..', 'client', 'dist');
 
@@ -375,6 +378,11 @@ function createApp() {
   // pedido e o erro. Nenhuma permissão existente muda (REGRA 4).
   app.use('/api/saude-integracao', requireAuth, requireModulo('marketplace'), saudeIntegracaoRoutes);
   app.use('/api/calendario', requireAuth, requireModulo('calendario'), calendarioRoutes);
+  // Rotinas (15/10/2026). Módulo novo `rotinas`, autorizado pelo dono (REGRA 4)
+  // junto com as seis tabelas da migration 0102. Quem tem a chave executa as
+  // próprias tarefas; Equipe, Modelos e conferência exigem administrador
+  // (checado rota a rota em rotinas.routes.js).
+  app.use('/api/rotinas', requireAuth, requireModulo('rotinas'), rotinasRoutes);
 
   // Financeiro é o nono módulo, e é PROPOSITALMENTE separado de Marketplace:
   // quem cuida do caixa precisa ver a movimentação da conta, e não precisa

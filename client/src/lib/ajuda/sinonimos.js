@@ -52,6 +52,7 @@ const GRUPOS = [
   ['imposto', ['tributo', 'regime tributario']],
   ['alerta', ['aviso', 'notificacao', 'sinal']],
   ['calendario', ['agenda', 'evento']],
+  ['rotina', ['tarefa', 'checklist', 'afazer']],
   ['dashboard', ['painel', 'indicadores', 'numeros', 'resumo geral']],
 
   // ---------- Erros de digitação e abreviações ----------

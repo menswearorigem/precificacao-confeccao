@@ -7,7 +7,7 @@ import {
   LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer,
   Banknote, MapPin, Gauge, PackageCheck, FileSpreadsheet,
   Inbox, Radar, Megaphone, Scissors, PackageOpen, HeartPulse, Calculator,
-  BookUser, Send, Sparkles, MessageSquareWarning, BellRing } from 'lucide-react';
+  BookUser, Send, Sparkles, MessageSquareWarning, BellRing, ListChecks, UsersRound, LayoutList } from 'lucide-react';
 
 /* ---------------------------------------------------------------------------
  * NAVEGAÇÃO EM TRÊS NÍVEIS (14/09/2026)
@@ -368,6 +368,20 @@ export const MODULES = [
       { to: '/calendario/modelos', label: 'Modelos', icon: LayoutTemplate, adminOnly: true },
     ],
   },
+  // Rotinas (15/10/2026): tarefas escritas que os administradores passam para a
+  // equipe. Chave nova `rotinas` (REGRA 4 autorizada pelo dono em 15/10).
+  // "Meu dia" é de todo mundo que tem a chave; Equipe e Modelos, só admin.
+  {
+    key: 'rotinas',
+    label: 'Rotinas',
+    icon: ListChecks,
+    color: 'var(--mod-rotinas)',
+    entradas: [
+      { to: '/rotinas', label: 'Meu dia', icon: ListChecks },
+      { to: '/rotinas/equipe', label: 'Equipe', icon: UsersRound, adminOnly: true },
+      { to: '/rotinas/modelos', label: 'Modelos', icon: LayoutList, adminOnly: true },
+    ],
+  },
   {
     key: 'configuracoes',
     label: 'Configurações',
@@ -531,6 +545,9 @@ export function canAccessPath(user, pathname) {
   // que cada um vê lá dentro (inicio.routes.js), frente por frente.
   if (pathname === '/inicio') return true;
   if (user?.role === 'admin') return true;
+  // Equipe e Modelos das Rotinas são só de administrador, mas começam com
+  // /rotinas — sem isto o prefixo do "Meu dia" abriria as duas.
+  if (/^\/rotinas\/(equipe|modelos)(\/|$)/.test(pathname)) return false;
   const visible = getVisibleModules(user);
   return visible.some((mod) => mod.pages.some((p) => pathname === p.to || pathname.startsWith(`${p.to}/`)));
 }

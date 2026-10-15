@@ -24,6 +24,8 @@ import { verbetesCalendario } from './verbetes/calendario';
 // Telas novas de setembro (piso, planejamento, pós-venda, matéria-prima,
 // Full, contas bancárias) e "como faço" que faltavam — teste prático de 28/09/2026.
 import { verbetesSetembro } from './verbetes/setembro';
+// Rotinas (15/10/2026): criar, concluir e conferir uma tarefa.
+import { verbetesRotinas } from './verbetes/rotinas';
 
 const TODOS_OS_VERBETES = [
   ...verbetesGeral,
@@ -39,6 +41,7 @@ const TODOS_OS_VERBETES = [
   ...verbetesConfiguracoes,
   ...verbetesCalendario,
   ...verbetesSetembro,
+  ...verbetesRotinas,
 ];
 
 // "tambemPor" (lib/modules.js): o módulo Produção é visto tanto por quem

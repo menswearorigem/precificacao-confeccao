@@ -285,6 +285,28 @@ function blocoAgenda(d) {
   return out;
 }
 
+// --- Rotinas (15/10/2026): as tarefas que o administrador passou ----------
+function blocoRotinas(d) {
+  const out = vazio('rotinas');
+  if (!d) return out;
+  const { atrasadas = [], deHoje = [], equipe = null } = d;
+  if (equipe?.conferir) {
+    out.acoes.push({ chave: 'rotinas-conferir', rotulo: 'Rotinas para conferir', valor: inteiro(equipe.conferir), sub: 'aprovar ou devolver', rota: '/rotinas/equipe?painel=conferir', tom: 'atencao', modulo: 'rotinas', peso: 2 });
+  }
+  if (equipe?.atrasadas) {
+    out.frases.push({ texto: `${plural(equipe.atrasadas, 'rotina atrasada', 'rotinas atrasadas')} na equipe`, rota: '/rotinas/equipe?painel=atrasadas', tom: 'atencao' });
+    out.acoes.push({ chave: 'rotinas-equipe', rotulo: 'Equipe atrasada', valor: inteiro(equipe.atrasadas), sub: 'rotinas fora do horário', rota: '/rotinas/equipe?painel=atrasadas', tom: 'atencao', modulo: 'rotinas', peso: 3 });
+  }
+  if (atrasadas.length) {
+    out.frases.push({ texto: `${plural(atrasadas.length, 'rotina atrasada', 'rotinas atrasadas')}`, rota: '/rotinas', tom: 'urgente' });
+    out.acoes.push({ chave: 'rotinas', rotulo: 'Rotinas atrasadas', valor: inteiro(atrasadas.length), sub: 'passaram do horário', rota: '/rotinas', tom: 'urgente', modulo: 'rotinas', peso: 0 });
+    atrasadas.slice(0, 4).forEach((x) => out.atencao.push({ titulo: x.titulo, sub: x.status === 'devolvida' ? 'devolvida para refazer' : `venceu ${x.hora ? `às ${x.hora}` : dataBr(x.data)}`, rota: `/rotinas/tarefa/${x.id}`, tom: 'urgente', modulo: 'rotinas' }));
+  }
+  if (deHoje.length) out.frases.push({ texto: `${plural(deHoje.length, 'rotina', 'rotinas')} para hoje`, rota: '/rotinas', tom: 'info' });
+  deHoje.forEach((x) => out.hoje.push({ hora: x.hora || null, titulo: x.titulo, sub: `rotina${x.status === 'em_andamento' ? ' · em andamento' : ''}${x.status === 'devolvida' ? ' · devolvida' : ''}`, rota: `/rotinas/tarefa/${x.id}`, tom: x.prioridade === 'urgente' || x.prioridade === 'alta' ? 'atencao' : 'info', modulo: 'rotinas' }));
+  return out;
+}
+
 function vazio(setor) {
   return { setor, frases: [], acoes: [], hoje: [], atencao: [], proximos: [], ok: [], atalhos: [] };
 }
@@ -306,7 +328,8 @@ function montarInicio({ user, dados = {}, briefing = null, erros = {}, agora = n
   if (tem('estoque')) blocos.push(blocoEstoque(briefing));
   if (tem('compras')) blocos.push(blocoCompras(dados.compras, s.admin));
   if (tem('vendas')) blocos.push(blocoVendas(dados.vendas));
-  // Agenda por último: o urgente do SETOR vem antes do atraso da agenda.
+  // Rotinas e agenda por último: o urgente do SETOR vem antes.
+  blocos.push(blocoRotinas(dados.rotinas));
   blocos.push(blocoAgenda(dados.agenda));
 
   // Linha do topo: o urgente primeiro; "N tarefas para hoje" da agenda abre
@@ -369,5 +392,5 @@ function montarInicio({ user, dados = {}, briefing = null, erros = {}, agora = n
 
 module.exports = {
   SETORES, setoresDoUsuario, primeiroNome, saudacao, horaBrasilia, diaBrasilia, montarInicio,
-  blocos: { blocoExpedicao, blocoMarketplace, blocoProducao, blocoEstoque, blocoVendas, blocoFinanceiro, blocoCompras, blocoAgenda },
+  blocos: { blocoExpedicao, blocoMarketplace, blocoProducao, blocoEstoque, blocoVendas, blocoFinanceiro, blocoCompras, blocoAgenda, blocoRotinas },
 };

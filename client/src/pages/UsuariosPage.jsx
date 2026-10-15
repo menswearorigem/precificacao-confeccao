@@ -29,11 +29,14 @@ const MODULOS = [
   { key: 'compras', label: 'Compras' },
   { key: 'analises', label: 'Análises' },
   { key: 'calendario', label: 'Calendário' },
+  // Rotinas (15/10/2026): quem tem recebe tarefas no "Meu dia".
+  { key: 'rotinas', label: 'Rotinas' },
   { key: 'configuracoes', label: 'Configurações' },
 ];
 
 function emptyNovoUsuario() {
-  return { nome: '', email: '', senha: '', role: 'limitado', modulos: [], gruposIds: [] };
+  // Rotinas já vem marcado (15/10/2026): toda pessoa nova pode receber tarefa.
+  return { nome: '', email: '', senha: '', role: 'limitado', modulos: ['rotinas'], gruposIds: [] };
 }
 
 function normalizarTexto(v) {

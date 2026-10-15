@@ -38,6 +38,12 @@ const SaudeDadosPage = lazy(() => import('./pages/SaudeDadosPage'));
 const ProdutosMarketplacePage = lazy(() => import('./pages/ProdutosMarketplacePage'));
 const CalendarioPage = lazy(() => import('./pages/CalendarioPage'));
 const TemplatesCalendarioPage = lazy(() => import('./pages/TemplatesCalendarioPage'));
+// Rotinas (15/10/2026): tarefas escritas dos administradores para a equipe.
+const RotinasMeuDiaPage = lazy(() => import('./pages/RotinasMeuDiaPage'));
+const RotinaTarefaPage = lazy(() => import('./pages/RotinaTarefaPage'));
+const RotinasEquipePage = lazy(() => import('./pages/RotinasEquipePage'));
+const RotinasModelosPage = lazy(() => import('./pages/RotinasModelosPage'));
+const RotinaModeloFormPage = lazy(() => import('./pages/RotinaModeloFormPage'));
 const EventoImpressaoPage = lazy(() => import('./pages/EventoImpressaoPage'));
 const ProdutosListPage = lazy(() => import('./pages/ProdutosListPage'));
 const ProdutoFichaPage = lazy(() => import('./pages/ProdutoFichaPage'));
@@ -341,6 +347,14 @@ function AppRoutes() {
                   <Route path="/calendario" element={<CalendarioPage />} />
                   <Route path="/calendario/modelos" element={<TemplatesCalendarioPage />} />
                   <Route path="/calendario/eventos/:id/imprimir" element={<EventoImpressaoPage />} />
+                  {/* Rotinas (15/10/2026). Equipe e Modelos são só de administrador
+                      (canAccessPath barra o prefixo; o servidor devolve 403). */}
+                  <Route path="/rotinas" element={<RotinasMeuDiaPage />} />
+                  <Route path="/rotinas/tarefa/:id" element={<RotinaTarefaPage />} />
+                  <Route path="/rotinas/equipe" element={<RotinasEquipePage />} />
+                  <Route path="/rotinas/modelos" element={<RotinasModelosPage />} />
+                  <Route path="/rotinas/modelos/novo" element={<RotinaModeloFormPage />} />
+                  <Route path="/rotinas/modelos/:id" element={<RotinaModeloFormPage key="editar" />} />
                   {/* Central de ajuda da Manu: não pertence a nenhum módulo de
                       propósito — liberada pra qualquer usuário autenticado (ver
                       a exceção em lib/modules.js#canAccessPath). */}

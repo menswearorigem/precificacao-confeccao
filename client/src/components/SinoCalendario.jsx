@@ -15,23 +15,27 @@ const INTERVALO_ATUALIZACAO_MS = 5 * 60 * 1000;
 // existe — desde 21/09/2026 ele também carrega o resumo do dia da Manu
 // (as frentes urgentes e de atenção, cada uma abrindo a sua tela), e isso
 // qualquer usuário logado tem, filtrado pelos módulos dele.
-export default function SinoCalendario({ comCalendario = true }) {
+// `comRotinas` (15/10/2026): os avisos das Rotinas — lembrete antes do prazo,
+// tarefa atrasada e, para o administrador, o que espera conferência.
+export default function SinoCalendario({ comCalendario = true, comRotinas = false }) {
   const navigate = useNavigate();
   const [itens, setItens] = useState([]);
   const [aberto, setAberto] = useState(false);
   const [manu, setManu] = useState([]);
+  const [rotinas, setRotinas] = useState([]);
   const ref = useRef(null);
 
   useEffect(() => {
     function carregar() {
       if (comCalendario) api.get('/calendario/notificacoes').then((r) => setItens(r.itens)).catch(() => {});
+      if (comRotinas) api.get('/rotinas/avisos').then((r) => setRotinas(r.itens)).catch(() => {});
       carregarBriefing().then((b) => setManu((b?.secoes || []).filter((s) => s.nivel === 'urgente' || s.nivel === 'atencao'))).catch(() => {});
     }
     carregar();
     const t = setInterval(carregar, INTERVALO_ATUALIZACAO_MS);
     return () => clearInterval(t);
-  }, [comCalendario]);
-  const total = itens.length + manu.length;
+  }, [comCalendario, comRotinas]);
+  const total = itens.length + manu.length + rotinas.length;
 
   useEffect(() => {
     function aoClicarFora(e) {
@@ -80,6 +84,23 @@ export default function SinoCalendario({ comCalendario = true }) {
                 </button>
               ))}
             </div>
+          )}
+          {rotinas.length > 0 && (
+            <>
+              <div className="sino-painel-head">Rotinas</div>
+              <div className="sino-painel-lista">
+                {rotinas.map((s) => (
+                  <button key={s.chave} type="button" className={`sino-item sino-item-rico${s.nivel === 'urgente' ? ' urgente' : ''}`} onClick={() => { setAberto(false); navigate(s.rota); }}>
+                    <IconeModulo rota={s.rota} />
+                    <span className="sino-item-texto">
+                      <span className="sino-item-titulo">{s.titulo}</span>
+                      <span className="sino-item-resumo">{destacarNumeros(s.resumo)}</span>
+                    </span>
+                    <span className={`sino-item-nivel sino-nivel-${s.nivel}`}>{rotuloNivel(s.nivel)}</span>
+                  </button>
+                ))}
+              </div>
+            </>
           )}
           {comCalendario && <div className="sino-painel-head">Prazos do calendário</div>}
           {!comCalendario ? null : itens.length === 0 ? (

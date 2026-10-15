@@ -12,6 +12,7 @@ import { brl, pct, uid, numeroBr, brlOuTraco, pctOuTraco } from '../lib/format';
 import Lightbox from '../components/Lightbox';
 import HistoricoPrecoCard from '../components/HistoricoPrecoCard';
 import GradeProdutoCard from '../components/GradeProdutoCard';
+import RotinasDoProdutoCard from '../components/RotinasDoProdutoCard';
 import { CampoNome } from '../components/campos';
 
 const UNIDADES_FALLBACK = ['un', 'm', 'cm', 'kg', 'g', 'par', 'cj', 'rolo', 'pct'];
@@ -577,6 +578,9 @@ export default function ProdutoFichaPage() {
       {!isNew && <GradeProdutoCard produtoId={id} referencia={produto.referencia} />}
 
       <HistoricoPrecoCard produtoId={id} />
+
+      {/* Rotinas (15/10/2026): últimas contagens/conferências da referência. */}
+      {!isNew && <RotinasDoProdutoCard produtoId={id} />}
     </div>
   );
 }

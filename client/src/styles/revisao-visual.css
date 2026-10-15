@@ -64,6 +64,7 @@
   --mod-compras: #c0506a;
   --mod-analises: #5f7d3a;
   --mod-calendario: #a37400;
+  --mod-rotinas: #8e3b8a;
   --mod-configuracoes: #7a6553;
 }
 
@@ -107,6 +108,7 @@
     --mod-compras: #e07a8a;
     --mod-analises: #9bb57a;
     --mod-calendario: #f2c14e;
+    --mod-rotinas: #d07fcb;
     --mod-configuracoes: #b7a493;
     /* 4. Campo um pouco MAIS CLARO que o card (antes era mais escuro e
        parecia um buraco na tela). */
@@ -152,6 +154,7 @@
   --mod-compras: #e07a8a;
   --mod-analises: #9bb57a;
   --mod-calendario: #f2c14e;
+  --mod-rotinas: #d07fcb;
   --mod-configuracoes: #b7a493;
   --field-bg: #33261a;
 }

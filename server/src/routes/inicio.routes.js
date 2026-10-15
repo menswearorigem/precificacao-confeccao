@@ -136,6 +136,38 @@ async function lerVendas() {
   return { abertos: rows[0].abertos, valor: Number(rows[0].valor), antigos: rows[0].antigos };
 }
 
+// Rotinas (15/10/2026): as tarefas da pessoa (só quem tem o módulo). Gera as
+// do dia antes de contar — o Início costuma ser a primeira tela aberta.
+async function lerRotinas(user, hoje) {
+  const { gerarDia } = require('../lib/rotinas');
+  await gerarDia(hoje, { usuarioId: user.id });
+  const { rows } = await pool.query(
+    `SELECT o.id, o.prazo, o.status, o.snapshot->>'titulo' AS titulo, o.snapshot->>'horaLimite' AS hora,
+            o.snapshot->>'prioridade' AS prioridade, to_char(o.data, 'YYYY-MM-DD') AS data
+       FROM rotina_ocorrencias o
+      WHERE (o.responsavel_id = $1 OR (o.vaga = 0 AND o.responsavel_id IS NULL AND o.snapshot->'responsaveis' @> to_jsonb(ARRAY[$1::int])))
+        AND o.status IN ('pendente', 'em_andamento', 'devolvida')
+      ORDER BY o.prazo LIMIT 60`,
+    [user.id]
+  );
+  const agora = Date.now();
+  // Administrador: também o que a EQUIPE deixou pendente.
+  let equipe = null;
+  if (user.role === 'admin') {
+    const { rows: [c] } = await pool.query(
+      `SELECT COUNT(*) FILTER (WHERE status = 'aguardando_conferencia')::int AS conferir,
+              COUNT(*) FILTER (WHERE status IN ('pendente', 'em_andamento', 'devolvida') AND prazo < now())::int AS atrasadas
+         FROM rotina_ocorrencias`
+    );
+    equipe = c;
+  }
+  return {
+    atrasadas: rows.filter((x) => new Date(x.prazo).getTime() < agora),
+    deHoje: rows.filter((x) => x.data === hoje && new Date(x.prazo).getTime() >= agora),
+    equipe,
+  };
+}
+
 router.get('/', async (req, res, next) => {
   try {
     const user = req.user;
@@ -146,6 +178,7 @@ router.get('/', async (req, res, next) => {
     const tem = (k) => chaves.includes(k);
     const leitores = {
       agenda: () => lerAgenda(user),
+      ...(user.role === 'admin' || (user.modulos || []).includes('rotinas') ? { rotinas: () => lerRotinas(user, hoje) } : {}),
       ...(tem('expedicao') ? { expedicao: lerExpedicao } : {}),
       ...(tem('producao') ? { producao: () => lerProducao(hoje) } : {}),
       ...(tem('financeiro') ? { financeiro: () => lerFinanceiro(hoje) } : {}),

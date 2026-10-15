@@ -17,7 +17,7 @@ const router = express.Router();
 //
 // `producao` entrou em 08/09/2026, autorizado pelo dono: dá para deixar
 // alguém tocar ordem de produção e facção SEM abrir o saldo de estoque.
-const MODULOS_VALIDOS = new Set(['produto', 'estoque', 'producao', 'vendas', 'marketplace', 'viagens', 'compras', 'analises', 'configuracoes', 'calendario', 'financeiro']);
+const MODULOS_VALIDOS = new Set(['produto', 'estoque', 'producao', 'vendas', 'marketplace', 'viagens', 'compras', 'analises', 'configuracoes', 'calendario', 'financeiro', 'rotinas']);
 
 router.use(requireAdmin);
 
