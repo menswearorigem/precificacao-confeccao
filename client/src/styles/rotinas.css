@@ -244,6 +244,10 @@
 .rt-mais:hover { border-color: var(--rt-mod); }
 .rt-filtro-prod { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
 .rt-filtro-prod input:not([type="checkbox"]) { flex: 1; min-width: 180px; height: 36px; }
+/* Tarefa dividida: quem fez o passo. */
+.rt-quem { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 600; color: var(--rt-ok); padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--rt-ok) 12%, transparent); }
+.rt-quem.outro { color: var(--rt-mod); background: color-mix(in srgb, var(--rt-mod) 12%, transparent); }
+.rt-btn-tudo { white-space: nowrap; }
 .rt-recontagem { grid-column: 1 / -1; font-size: 11.5px; color: var(--rt-atencao); font-weight: 600; }
 .rt-horario { color: var(--rt-mod); }
 .rt-bloco-consulta { opacity: .92; }
@@ -430,6 +434,8 @@ button.rt-taxa:hover { background: var(--row-hover-strong); }
   .rt-barra-acoes .btn, .rt-barra-acoes .btn-sec { flex: 1 1 auto; justify-content: center; padding-inline: 10px; }
   .rt-barra-acoes .rt-btn-nao { flex: 0 0 auto; }
   .rt-barra-acoes .rt-btn-nao span { display: none; }
+  .rt-barra-acoes:has(.rt-btn-tudo) { flex-wrap: wrap; }
+  .rt-barra-acoes .rt-btn-tudo { flex: 1 0 100%; order: -1; }
   .rt-barra-form { flex-wrap: wrap; }
   .rt-resumo-form { flex-basis: 100%; }
   .rt-campo > span:first-child { min-width: 0; flex-basis: 100%; }

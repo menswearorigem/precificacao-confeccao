@@ -79,7 +79,7 @@ export default function RotinasModelosPage() {
               <Link to={`/rotinas/modelos/${m.id}`} className="rt-modelo-titulo">{m.titulo}</Link>
               <div className="rt-linha-sub">
                 <span><Clock size={12} />{m.quando}{m.horaLimite ? ` · até ${m.horaLimite}` : ''}</span>
-                <span><Users size={12} />{m.compartilhada ? 'qualquer um: ' : ''}{m.responsaveis.join(', ')}</span>
+                <span><Users size={12} />{m.dividida ? 'dividem: ' : m.compartilhada ? 'qualquer um: ' : ''}{m.responsaveis.join(', ')}</span>
                 {(m.nProdutos > 0 || m.automatica) && <span>{m.automatica ? <Sparkles size={12} /> : <Package size={12} />}{m.automatica ? 'lista automática' : `${m.nProdutos} ${m.nProdutos > 1 ? 'referências' : 'referência'}${m.nVariantesEscolhidas ? ` (${m.nVariantesEscolhidas} var.)` : ''}`}</span>}
                 <span>{m.nPassos ? `${m.nPassos} passo${m.nPassos > 1 ? 's' : ''}` : 'tarefa simples'}</span>
                 {m.conferir && <span><ShieldCheck size={12} />conferir depois</span>}

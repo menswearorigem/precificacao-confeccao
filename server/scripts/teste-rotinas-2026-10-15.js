@@ -433,6 +433,75 @@ async function main() {
     ok('recontar guarda o número anterior (2 → 6)', r.dados.resposta.valor.antes?.[0]?.numero === 2 && r.dados.resposta.valor.antes[0].problema === true && r.dados.resposta.problema === false, JSON.stringify(r.dados.resposta));
     r = await eri(`/api/rotinas/ocorrencias/${ocRec.id}/respostas`, { metodo: 'PUT', corpo: { passoId: pRec, chave: `v${v1M}`, valor: { numero: 6, nota: 'ok' } } });
     ok('salvar o mesmo número de novo não apaga o rastro', r.dados.resposta.valor.antes?.length === 1);
+
+    // -------------------------------------------------------------------
+    secao('11. Dividem os passos (chat por plataforma)');
+    // -------------------------------------------------------------------
+    r = await admin('/api/rotinas/modelos', { metodo: 'POST', corpo: {
+      titulo: 'Chat dividido', instrucaoHtml: 'Cada um responde uma plataforma.', setor: 'atendimento',
+      passos: [
+        { texto: 'Shopee', tipo: 'feito', obrigatorio: true },
+        { texto: 'Mercado Livre', tipo: 'feito', obrigatorio: true },
+        { texto: 'TikTok', tipo: 'feito', obrigatorio: true },
+        { texto: 'Clientes sem resposta', tipo: 'numero', obrigatorio: false },
+      ],
+      responsaveis: [uEri.id, uNath.id], modoAtribuicao: 'dividir',
+      recorrencia: { tipo: 'dias_semana', dias: [1, 2, 3, 4, 5, 6, 7], pularFeriados: false, horarios: ['09:00', '14:00'] }, criarAgora: true,
+    } });
+    ok('modo "dividir" é aceito e gera 1 tarefa por horário (2)', r.status === 201 && r.dados.geradas === 2, JSON.stringify(r.dados));
+    const idDiv = r.dados.id;
+    ok('lista de modelos marca como dividida', (await admin('/api/rotinas/modelos')).dados.find((m) => m.id === idDiv)?.dividida === true);
+    const divEri = (await eri('/api/rotinas/meu-dia')).dados.abertas.filter((x) => x.modeloId === idDiv);
+    const divNath = (await nath('/api/rotinas/meu-dia')).dados.abertas.filter((x) => x.modeloId === idDiv);
+    ok('as duas aparecem para as duas, como divididas', divEri.length === 2 && divNath.length === 2 && divEri.every((x) => x.dividida));
+    const ocDiv = divEri.sort((a, b) => a.horario.localeCompare(b.horario))[0].id;
+    const dDiv = (await eri(`/api/rotinas/ocorrencias/${ocDiv}`)).dados;
+    const [pShopee, pMl, pTik] = dDiv.passos.map((p) => p.id);
+    r = await eri(`/api/rotinas/ocorrencias/${ocDiv}/respostas`, { metodo: 'PUT', corpo: { passoId: pShopee, chave: '', valor: { feito: true } } });
+    ok('Erizânia marca Shopee', r.status === 200);
+    ok('responder não "pega" a tarefa (continua sem dono)', (await pool.query('SELECT responsavel_id FROM rotina_ocorrencias WHERE id = $1', [ocDiv])).rows[0].responsavel_id === null);
+    const vistaNath = (await nath(`/api/rotinas/ocorrencias/${ocDiv}`)).dados;
+    const shopeeNath = vistaNath.respostas.find((x) => x.passoId === pShopee);
+    ok('Nath vê Shopee feito pela Erizânia', vistaNath.podeResponder && shopeeNath?.valor?.feito && shopeeNath.respondidoPorNome === 'Erizania', JSON.stringify(shopeeNath));
+    r = await nath(`/api/rotinas/ocorrencias/${ocDiv}/respostas`, { metodo: 'PUT', corpo: { passoId: pShopee, chave: '', valor: { feito: false } } });
+    ok('Nath não desmarca o passo da Erizânia (409 com o nome)', r.status === 409 && /Erizania/.test(r.dados.error), JSON.stringify(r.dados));
+    ok('a própria Erizânia pode desmarcar e remarcar', (await eri(`/api/rotinas/ocorrencias/${ocDiv}/respostas`, { metodo: 'PUT', corpo: { passoId: pShopee, chave: '', valor: { feito: false } } })).status === 200
+      && (await eri(`/api/rotinas/ocorrencias/${ocDiv}/respostas`, { metodo: 'PUT', corpo: { passoId: pShopee, chave: '', valor: { feito: true } } })).status === 200);
+    ok('Nath marca Mercado Livre', (await nath(`/api/rotinas/ocorrencias/${ocDiv}/respostas`, { metodo: 'PUT', corpo: { passoId: pMl, chave: '', valor: { feito: true } } })).status === 200);
+    r = await nath(`/api/rotinas/ocorrencias/${ocDiv}/concluir`, { metodo: 'POST', corpo: {} });
+    ok('concluir com TikTok faltando é recusado e aponta o passo', r.status === 422 && r.dados.faltas.some((f) => f.passoId === pTik));
+    ok('administrador pode corrigir passo de outra pessoa', (await admin(`/api/rotinas/ocorrencias/${ocDiv}/respostas`, { metodo: 'PUT', corpo: { passoId: pMl, chave: '', valor: { feito: true } } })).status === 200);
+    ok('Erizânia marca TikTok e conclui', (await eri(`/api/rotinas/ocorrencias/${ocDiv}/respostas`, { metodo: 'PUT', corpo: { passoId: pTik, chave: '', valor: { feito: true } } })).status === 200
+      && (await eri(`/api/rotinas/ocorrencias/${ocDiv}/concluir`, { metodo: 'POST', corpo: {} })).status === 200);
+    ok('concluída some do Meu dia da Nath', !(await nath('/api/rotinas/meu-dia')).dados.abertas.some((x) => x.id === ocDiv));
+    const fimDiv = (await admin(`/api/rotinas/ocorrencias/${ocDiv}`)).dados;
+    ok('quem fez cada passo fica registrado', fimDiv.respostas.find((x) => x.passoId === pShopee).respondidoPorNome === 'Erizania' && fimDiv.concluidaPorNome === 'Erizania');
+
+    // "concluir tudo de uma vez" na segunda (14h)
+    const ocDiv2 = divEri.find((x) => x.id !== ocDiv).id;
+    await nath(`/api/rotinas/ocorrencias/${ocDiv2}/respostas`, { metodo: 'PUT', corpo: { passoId: pShopee, chave: '', valor: { feito: true } } });
+    r = await eri(`/api/rotinas/ocorrencias/${ocDiv2}/concluir`, { metodo: 'POST', corpo: { marcarRestantes: true } });
+    ok('"marcar o resto e concluir" conclui de uma vez', r.status === 200, JSON.stringify(r.dados));
+    const resp2 = (await pool.query('SELECT passo_id, respondido_por, valor FROM rotina_respostas WHERE ocorrencia_id = $1', [ocDiv2])).rows;
+    ok('o resto fica no nome de quem concluiu; o da Nath continua dela',
+      resp2.length === 3 && resp2.find((x) => x.passo_id === pShopee).respondido_por === uNath.id
+      && resp2.filter((x) => x.passo_id !== pShopee).every((x) => x.respondido_por === uEri.id && x.valor.feito), JSON.stringify(resp2));
+
+    // e também numa tarefa "cada um" comum
+    const ocSimples = (await pool.query('SELECT o.id FROM rotina_ocorrencias o WHERE o.modelo_id = $1 AND o.responsavel_id = $2 AND o.status IN (\'pendente\',\'em_andamento\') LIMIT 1', [idChat, uEri.id])).rows[0];
+    if (ocSimples) {
+      r = await eri(`/api/rotinas/ocorrencias/${ocSimples.id}/concluir`, { metodo: 'POST', corpo: { marcarRestantes: true } });
+      ok('"marcar o resto" funciona em tarefa sem passos (conclui normal)', r.status === 200);
+    }
+    // marcarRestantes não inventa número/foto
+    r = await admin('/api/rotinas/modelos', { metodo: 'POST', corpo: {
+      titulo: 'Conta obrigatória', instrucaoHtml: 'x', setor: 'estoque',
+      passos: [{ texto: 'Feito', tipo: 'feito', obrigatorio: true }, { texto: 'Quantos', tipo: 'numero', obrigatorio: true }],
+      responsaveis: [uEri.id], recorrencia: { tipo: 'dias_semana', dias: [1, 2, 3, 4, 5, 6, 7], pularFeriados: false }, criarAgora: true,
+    } });
+    const ocNum = (await pool.query('SELECT id FROM rotina_ocorrencias WHERE modelo_id = $1', [r.dados.id])).rows[0].id;
+    r = await eri(`/api/rotinas/ocorrencias/${ocNum}/concluir`, { metodo: 'POST', corpo: { marcarRestantes: true } });
+    ok('"marcar o resto" não responde número por ninguém (422 só com o número)', r.status === 422 && r.dados.faltas.length === 1, JSON.stringify(r.dados));
   } finally {
     servidor.close();
     await pool.end();

@@ -50,7 +50,10 @@ const JOINS_OC = `FROM rotina_ocorrencias o
 async function respostasDe(ids) {
   if (!ids.length) return new Map();
   const { rows } = await pool.query(
-    'SELECT id, ocorrencia_id, passo_id, chave_produto, produto_id, variante_id, valor, problema, respondido_por, respondido_em FROM rotina_respostas WHERE ocorrencia_id = ANY($1)',
+    `SELECT rr.id, rr.ocorrencia_id, rr.passo_id, rr.chave_produto, rr.produto_id, rr.variante_id, rr.valor, rr.problema,
+            rr.respondido_por, rr.respondido_em, u.nome AS respondido_por_nome
+       FROM rotina_respostas rr LEFT JOIN usuarios u ON u.id = rr.respondido_por
+      WHERE rr.ocorrencia_id = ANY($1)`,
     [ids]
   );
   const mapa = new Map(ids.map((id) => [id, []]));
@@ -76,7 +79,8 @@ function resumo(oc, respostas, agora = new Date()) {
     status: oc.status,
     atrasada: r.situacao(oc, agora).atrasada,
     responsavelId: oc.responsavel_id,
-    responsavelNome: oc.responsavel_nome || (r.ehCompartilhada(oc) ? 'Qualquer um' : null),
+    responsavelNome: oc.responsavel_nome || (r.ehDividida(oc) ? 'Equipe (dividida)' : r.ehCompartilhada(oc) ? 'Qualquer um' : null),
+    dividida: r.ehDividida(oc),
     compartilhada: r.ehCompartilhada(oc),
     horario: s.horario || null,
     nProdutos: (oc.produtos_resolvidos || []).length,
@@ -146,6 +150,7 @@ async function detalhe(oc, user) {
     produtos,
     respostas: respostas.map((x) => ({
       passoId: x.passo_id, chave: x.chave_produto, valor: x.valor, problema: x.problema, respondidoEm: x.respondido_em,
+      respondidoPor: x.respondido_por, respondidoPorNome: x.respondido_por_nome,
     })),
     fotos: Object.fromEntries(fotos.map((f) => [f.id, { hash: f.hash, largura: f.largura, altura: f.altura }])),
     observacao: oc.observacao,
@@ -174,7 +179,7 @@ async function exigirOcorrencia(req, { paraAgir = false } = {}) {
 // Pega a tarefa compartilhada (o primeiro que mexe fica com ela) e marca o
 // começo. Idempotente.
 async function iniciar(oc, user) {
-  const pegar = r.ehCompartilhada(oc) && oc.responsavel_id == null && user.role !== 'admin' ? user.id : null;
+  const pegar = r.ehCompartilhada(oc) && !r.ehDividida(oc) && oc.responsavel_id == null && user.role !== 'admin' ? user.id : null;
   const { rows } = await pool.query(
     `UPDATE rotina_ocorrencias
         SET status = CASE WHEN status = 'pendente' THEN 'em_andamento' ELSE status END,
@@ -192,7 +197,7 @@ async function iniciar(oc, user) {
 // MEU DIA
 // ---------------------------------------------------------------------------
 function condicaoMinha(param) {
-  return `(o.responsavel_id = $${param} OR (o.snapshot->>'modoAtribuicao' = 'qualquer_um' AND o.responsavel_id IS NULL AND o.snapshot->'responsaveis' @> to_jsonb(ARRAY[$${param}::int])))`;
+  return `(o.responsavel_id = $${param} OR (o.snapshot->>'modoAtribuicao' IN ('qualquer_um', 'dividir') AND o.responsavel_id IS NULL AND o.snapshot->'responsaveis' @> to_jsonb(ARRAY[$${param}::int])))`;
 }
 
 // Prévia de dias futuros (sem gerar nada): o que a recorrência promete.
@@ -210,7 +215,7 @@ async function previaFutura(usuarioId, de, ate) {
       for (const h of horas) {
         itens.push({
           modeloId: m.id, titulo: m.titulo, prioridade: m.prioridade, setor: m.setor, data: dia,
-          horaLimite: h, compartilhada: m.modo_atribuicao === 'qualquer_um',
+          horaLimite: h, compartilhada: m.modo_atribuicao !== 'cada_um', dividida: m.modo_atribuicao === 'dividir',
         });
       }
     }
@@ -338,6 +343,19 @@ router.put('/ocorrencias/:id/respostas', a(async (req, res) => {
     }
   }
 
+  // Tarefa dividida: o passo que outra pessoa já fez fica com ela. Sem isto,
+  // dois que abrissem a tarefa ao mesmo tempo podiam apagar o "feito" um do
+  // outro. Administrador pode corrigir.
+  if (r.ehDividida(oc) && !ehAdmin(req)) {
+    const { rows: [dono] } = await pool.query(
+      `SELECT rr.respondido_por, rr.valor, u.nome FROM rotina_respostas rr LEFT JOIN usuarios u ON u.id = rr.respondido_por
+        WHERE rr.ocorrencia_id = $1 AND rr.passo_id = $2 AND rr.chave_produto = $3`,
+      [oc.id, passo.id, chave]
+    );
+    if (dono && dono.respondido_por !== req.user.id && r.respondida(passo, dono.valor)) {
+      throw new r.ErroRotina(`Esse passo já foi feito por ${dono.nome || 'outra pessoa'}.`, 409);
+    }
+  }
   await iniciar(oc, req.user);
   const { rows: [resp] } = await pool.query(
     `INSERT INTO rotina_respostas (ocorrencia_id, passo_id, chave_produto, produto_id, variante_id, valor, problema, respondido_por, respondido_em)
@@ -414,9 +432,36 @@ async function criarCorrecao(oc, respostas, user) {
   return modeloId;
 }
 
+// Passos "Marcar feito" que ainda faltam — o "concluir tudo de uma vez".
+// Só os de marcar: número, foto, sim/não etc. continuam pedindo resposta.
+function feitosPendentes(oc, respostas) {
+  const mapa = new Map(respostas.map((x) => [`${x.passo_id}|${x.chave_produto}`, x]));
+  const chaves = r.chavesDeProduto(oc.produtos_resolvidos);
+  const out = [];
+  for (const passo of (oc.snapshot.passos || []).filter((p) => p.tipo === 'feito' && p.provaFoto !== 'sempre')) {
+    for (const a of passo.porProduto ? chaves : [{ chave: '', produtoId: null, varianteId: null }]) {
+      const x = mapa.get(`${passo.id}|${a.chave}`);
+      if (!x || !r.respondida(passo, x.valor)) out.push({ passo, ...a });
+    }
+  }
+  return out;
+}
+
 router.post('/ocorrencias/:id/concluir', a(async (req, res) => {
   const oc = await exigirOcorrencia(req, { paraAgir: true });
-  const respostas = (await respostasDe([oc.id])).get(oc.id);
+  let respostas = (await respostasDe([oc.id])).get(oc.id);
+  if (req.body.marcarRestantes) {
+    const pend = feitosPendentes(oc, respostas);
+    for (const p of pend) {
+      await pool.query(
+        `INSERT INTO rotina_respostas (ocorrencia_id, passo_id, chave_produto, produto_id, variante_id, valor, problema, respondido_por, respondido_em)
+         VALUES ($1, $2, $3, $4, $5, '{"feito":true}', FALSE, $6, now())
+         ON CONFLICT (ocorrencia_id, passo_id, chave_produto) DO UPDATE SET valor = '{"feito":true}', respondido_por = EXCLUDED.respondido_por, respondido_em = now()`,
+        [oc.id, p.passo.id, p.chave, p.produtoId, p.varianteId, req.user.id]
+      );
+    }
+    respostas = (await respostasDe([oc.id])).get(oc.id);
+  }
   const faltas = r.faltasParaConcluir(oc.snapshot, oc.produtos_resolvidos, respostas);
   if (faltas.length) {
     throw new r.ErroRotina(`Ainda falta${faltas.length > 1 ? 'm' : ''} ${faltas.length} ${faltas.length === 1 ? 'item' : 'itens'} para concluir.`, 422, { faltas });
@@ -616,7 +661,8 @@ router.get('/modelos', requireAdmin, a(async (req, res) => {
     horaLimite: m.hora_limite ? String(m.hora_limite).slice(0, 5) : null,
     proximas: m.status === 'ativo' ? rec.proximas(m.recorrencia, hoje, 3) : [],
     responsaveis: (m.responsaveis || []).map((id) => nome.get(id) || '—'),
-    compartilhada: m.modo_atribuicao === 'qualquer_um',
+    compartilhada: m.modo_atribuicao !== 'cada_um',
+    dividida: m.modo_atribuicao === 'dividir',
     status: m.status,
     avulsa: m.avulsa,
     automatica: m.modo_produtos === 'automatica',

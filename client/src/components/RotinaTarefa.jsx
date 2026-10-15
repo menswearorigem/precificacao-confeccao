@@ -139,6 +139,25 @@ export default function RotinaTarefa({ id, onMudou, naGaveta = false }) {
   }, [id]);
   useEffect(() => { carregar(); }, [carregar]);
 
+  // Tarefa dividida: o que os outros marcam aparece aqui sem recarregar.
+  // Atualiza só respostas/andamento — a observação que a pessoa está
+  // escrevendo não é tocada.
+  const dividida = Boolean(t?.dividida);
+  const aindaAberta = Boolean(t?.podeResponder);
+  useEffect(() => {
+    if (!dividida || !aindaAberta) return undefined;
+    const tick = async () => {
+      if (document.hidden) return;
+      try {
+        const d = await api.get(`/rotinas/ocorrencias/${id}`);
+        setT((x) => (x ? { ...x, respostas: d.respostas, progresso: d.progresso, status: d.status, podeResponder: d.podeResponder, concluidaEm: d.concluidaEm, concluidaPorNome: d.concluidaPorNome, fotos: { ...x.fotos, ...d.fotos } } : d));
+        setFaltas(d.faltas);
+      } catch { /* a próxima volta tenta de novo */ }
+    };
+    const timer = setInterval(tick, 20000);
+    return () => clearInterval(timer);
+  }, [dividida, aindaAberta, id]);
+
   const respostas = useMemo(() => new Map((t?.respostas || []).map((x) => [chaveDe(x.passoId, x.chave), x])), [t]);
   const faltaDe = useMemo(() => new Map(faltas.map((f) => [chaveDe(f.passoId, f.chave), f.motivo])), [faltas]);
   const alvos = useMemo(() => {
@@ -157,7 +176,7 @@ export default function RotinaTarefa({ id, onMudou, naGaveta = false }) {
       const r = await api.put(`/rotinas/ocorrencias/${id}/respostas`, { passoId: passo.id, chave, valor });
       setT((x) => {
         const lista = x.respostas.filter((y) => !(y.passoId === passo.id && (y.chave || '') === (r.resposta.chave || '')));
-        lista.push({ passoId: passo.id, chave: r.resposta.chave, valor: r.resposta.valor, problema: r.resposta.problema });
+        lista.push({ passoId: passo.id, chave: r.resposta.chave, valor: r.resposta.valor, problema: r.resposta.problema, respondidoPor: user?.id, respondidoPorNome: user?.nome, respondidoEm: new Date().toISOString() });
         return { ...x, respostas: lista, progresso: r.progresso, status: x.status === 'pendente' ? 'em_andamento' : x.status };
       });
       setFaltas(r.faltas);
@@ -183,10 +202,10 @@ export default function RotinaTarefa({ id, onMudou, naGaveta = false }) {
     }
   }
 
-  async function concluir() {
-    setAcao('concluir');
+  async function concluir(marcarRestantes = false) {
+    setAcao(marcarRestantes ? 'tudo' : 'concluir');
     try {
-      const r = await api.post(`/rotinas/ocorrencias/${id}/concluir`, { observacao });
+      const r = await api.post(`/rotinas/ocorrencias/${id}/concluir`, { observacao, marcarRestantes });
       setAviso(r.status === 'aguardando_conferencia' ? 'Entregue. Agora um administrador confere.' : 'Tarefa concluída.');
       await carregar();
       onMudou?.();
@@ -238,6 +257,19 @@ export default function RotinaTarefa({ id, onMudou, naGaveta = false }) {
   // contador "3 de 3" dizia que estava tudo feito e o Concluir recusava —
   // agora a faixa diz o que ainda falta (achado no uso real, 15/10/2026).
   const fotosPendentes = faltas.filter((f) => /foto/.test(f.motivo)).length;
+  // Dividida: quem fez cada passo. Passo feito por outra pessoa fica travado
+  // para quem não é administrador (o servidor recusa do mesmo jeito).
+  const temValor = (v) => Boolean(v && (v.feito || v.resposta || v.numero != null || (v.texto && v.texto.trim()) || v.opcao || v.fotos?.length));
+  const deOutro = (r) => t.dividida && r?.respondidoPor && r.respondidoPor !== user?.id && temValor(r.valor);
+  const podeNesse = (r) => pode && !(deOutro(r) && !souAdmin);
+  const quemFez = (r) => (t.dividida && temValor(r?.valor) && r?.respondidoPorNome
+    ? <span className={`rt-quem${deOutro(r) ? ' outro' : ''}`}>{deOutro(r) ? r.respondidoPorNome : 'você'}{r.respondidoEm ? ` · ${horaDe(r.respondidoEm)}` : ''}</span>
+    : null);
+  // "Concluir tudo de uma vez": os passos de marcar feito que faltam.
+  const marcaveisPendentes = t.passos.filter((p) => p.tipo === 'feito' && p.provaFoto !== 'sempre').reduce((n, p) => {
+    const chaves = p.porProduto ? alvos.map((a) => a.chave) : [''];
+    return n + chaves.filter((c) => !respostas.get(chaveDe(p.id, c))?.valor?.feito).length;
+  }, 0);
   const muitos = alvos.length > LIMITE_LISTA;
   const filtroNorm = filtroAlvo.trim().toLowerCase();
   const alvosVisiveis = (passo) => {
@@ -251,14 +283,14 @@ export default function RotinaTarefa({ id, onMudou, naGaveta = false }) {
     const ids = r?.valor?.fotos || [];
     const k = chaveDe(passo.id, chave);
     const precisa = passo.tipo === 'foto' || passo.provaFoto === 'sempre' || (passo.provaFoto === 'problema' && r?.problema);
-    if (!ids.length && !pode) return null;
+    if (!ids.length && !podeNesse(r)) return null;
     // Sem foto ainda: o botão só aparece quando a foto é pedida AGORA — no
     // "só se der problema", só depois que a resposta virou problema.
     if (!ids.length && !precisa) return null;
     return (
       <Miniaturas
         ids={ids} fotos={t.fotos} onAbrir={setAberta}
-        onTirar={pode && <BotaoFoto enviando={salvando[`f${k}`]} obrigatoria={precisa && !ids.length} rotulo={ids.length ? '+' : (passo.tipo === 'foto' ? 'Tirar foto' : 'Foto')} onArquivo={(f) => anexarFoto(passo, chave, f)} />}
+        onTirar={podeNesse(r) && <BotaoFoto enviando={salvando[`f${k}`]} obrigatoria={precisa && !ids.length} rotulo={ids.length ? '+' : (passo.tipo === 'foto' ? 'Tirar foto' : 'Foto')} onArquivo={(f) => anexarFoto(passo, chave, f)} />}
       />
     );
   }
@@ -305,6 +337,7 @@ export default function RotinaTarefa({ id, onMudou, naGaveta = false }) {
     <>
       {t.passos.length > 0 && (
         <section className="card rt-bloco">
+          {t.dividida && pode && <p className="rt-ajuda">Tarefa dividida: marque só o que você fez — os outros veem na hora quem fez cada passo.</p>}
           <h3 className="rt-h"><CircleCheck size={15} />Passos <small>{t.progresso.feitos} de {t.progresso.total} respondidos{fotosPendentes ? ` · falta${fotosPendentes > 1 ? 'm' : ''} ${fotosPendentes} foto${fotosPendentes > 1 ? 's' : ''}` : ''}</small></h3>
           <div className="rt-prog rt-prog-grande"><i style={{ width: `${t.progresso.total ? Math.round((t.progresso.feitos / t.progresso.total) * 100) : 0}%` }} /></div>
           <ol className="rt-passos">
@@ -322,8 +355,9 @@ export default function RotinaTarefa({ id, onMudou, naGaveta = false }) {
                   const falta = marcada(passo.id, '');
                   return (
                     <div className={`rt-resp${r?.problema ? ' problema' : ''}${falta ? ' falta' : ''}`}>
-                      {passo.tipo !== 'foto' && <Resposta passo={passo} valor={r?.valor} podeResponder={pode} onSalvar={(v) => salvar(passo, '', v)} />}
+                      {passo.tipo !== 'foto' && <Resposta passo={passo} valor={r?.valor} podeResponder={podeNesse(r)} onSalvar={(v) => salvar(passo, '', v)} />}
                       {blocoFotoDoPasso(passo, '', r)}
+                      {quemFez(r)}
                       {salvando[chaveDe(passo.id, '')] && <Loader2 size={13} className="girando ink-soft" />}
                       {falta && <span className="rt-falta">{falta}</span>}
                     </div>
@@ -344,8 +378,9 @@ export default function RotinaTarefa({ id, onMudou, naGaveta = false }) {
                         <div key={a.chave} className={`rt-resp rt-resp-prod${r?.problema ? ' problema' : ''}${falta ? ' falta' : ''}`}>
                           <span className="rt-resp-rotulo"><b>{a.produto.referencia}</b> {a.variante ? varianteTexto(a.variante) : ''}{a.variante?.localizacao && <small><MapPin size={10} />{a.variante.localizacao}</small>}</span>
                           <span className="rt-resp-campo">
-                            {passo.tipo !== 'foto' && <Resposta passo={passo} valor={r?.valor} sistema={cega ? null : (r?.valor?.sistema ?? sistema)} podeResponder={pode} onSalvar={(v) => salvar(passo, a.chave, v)} />}
+                            {passo.tipo !== 'foto' && <Resposta passo={passo} valor={r?.valor} sistema={cega ? null : (r?.valor?.sistema ?? sistema)} podeResponder={podeNesse(r)} onSalvar={(v) => salvar(passo, a.chave, v)} />}
                             {blocoFotoDoPasso(passo, a.chave, r)}
+                            {quemFez(r)}
                             {salvando[chaveDe(passo.id, a.chave)] && <Loader2 size={13} className="girando ink-soft" />}
                           </span>
                           {!cega && r?.valor?.antes?.length > 0 && <span className="rt-recontagem">recontado — antes: {r.valor.antes.map((x) => numeroBr(x.numero)).join(' → ')} → agora {numeroBr(r.valor.numero)}</span>}
@@ -451,7 +486,13 @@ export default function RotinaTarefa({ id, onMudou, naGaveta = false }) {
       {pode && !naoFeita && (
         <div className="rt-barra-acoes">
           <button type="button" className="btn-sec rt-btn-nao" onClick={() => setNaoFeita({ motivo: '', texto: '' })}><Ban size={15} /><span>Não consegui fazer</span></button>
-          <button type="button" className="btn btn-primary rt-concluir" onClick={concluir} disabled={acao === 'concluir'}>
+          {marcaveisPendentes > 0 && (
+            <button type="button" className="btn-sec rt-btn-tudo" onClick={() => concluir(true)} disabled={Boolean(acao)} title="Marca como feito o que falta e conclui">
+              {acao === 'tudo' ? <Loader2 size={15} className="girando" /> : <CircleCheck size={15} />}
+              <span>{t.progresso.feitos > 0 ? "Marcar o resto e concluir" : "Fiz tudo · concluir"}</span>
+            </button>
+          )}
+          <button type="button" className="btn btn-primary rt-concluir" onClick={() => concluir()} disabled={Boolean(acao)}>
             {acao === 'concluir' ? <Loader2 size={16} className="girando" /> : <Check size={16} />}
             {t.conferir ? 'Concluir e mandar conferir' : 'Concluir'}
           </button>

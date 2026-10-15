@@ -24,6 +24,7 @@ export function LinhaTarefa({ item, hoje, mostrarPessoa = false, onClick }) {
         <span className="rt-linha-sub">
           <span className="rt-prazo"><Clock size={12} />{prazoTexto(item, hoje)}</span>
           {mostrarPessoa && <span><Users size={12} />{item.responsavelNome || '—'}</span>}
+          {!mostrarPessoa && item.dividida && <span><Users size={12} />equipe divide</span>}
           {item.nVariantes > 0 && <span><Package size={12} />{item.nVariantes === 1 ? '1 variante' : `${item.nVariantes} variantes`}</span>}
           {item.progresso.total > 0 && aberta(item.status) && <span className="rt-prog"><i style={{ width: `${Math.round((item.progresso.feitos / item.progresso.total) * 100)}%` }} />{item.progresso.feitos} de {item.progresso.total}</span>}
           {item.pedeFoto && aberta(item.status) && <span title="Pede foto"><Camera size={12} /></span>}
@@ -133,7 +134,7 @@ export default function RotinasMeuDiaPage() {
                   <span className="rt-linha-barra" />
                   <span className="rt-linha-corpo">
                     <span className="rt-linha-titulo"><b>{f.titulo}</b>{(f.prioridade === 'alta' || f.prioridade === 'urgente') && <i className={`rt-chip rt-pri-${f.prioridade}`}>{NOME_PRIORIDADE[f.prioridade]}</i>}</span>
-                    <span className="rt-linha-sub"><span><Clock size={12} />{f.horaLimite ? `até ${f.horaLimite}` : 'até o fim do dia'}</span>{f.compartilhada && <span><Users size={12} />qualquer um da equipe</span>}</span>
+                    <span className="rt-linha-sub"><span><Clock size={12} />{f.horaLimite ? `até ${f.horaLimite}` : 'até o fim do dia'}</span>{f.compartilhada && <span><Users size={12} />{f.dividida ? 'equipe divide' : 'qualquer um da equipe'}</span>}</span>
                   </span>
                 </div>
               ))}

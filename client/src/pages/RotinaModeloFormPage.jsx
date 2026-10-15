@@ -535,7 +535,14 @@ export default function RotinaModeloFormPage() {
         </div>
         {form.responsaveis.length > 1 && (
           <div className="rt-campo"><span>Como dividir</span>
-            <Chips opcoes={[['cada_um', 'Cada um faz a sua'], ['qualquer_um', 'Qualquer um resolve']]} valor={form.modoAtribuicao} onChange={(v) => set('modoAtribuicao', v)} />
+            <div>
+              <Chips opcoes={[['cada_um', 'Cada um faz a sua'], ['qualquer_um', 'Qualquer um resolve'], ['dividir', 'Dividem os passos']]} valor={form.modoAtribuicao} onChange={(v) => set('modoAtribuicao', v)} />
+              <p className="rt-ajuda">
+                {form.modoAtribuicao === 'cada_um' && 'Cada pessoa recebe a sua própria tarefa.'}
+                {form.modoAtribuicao === 'qualquer_um' && 'Uma tarefa só: fica com quem começar, e ela faz tudo.'}
+                {form.modoAtribuicao === 'dividir' && 'Uma tarefa só para a equipe: cada um marca os passos que fez (ex.: um passo por plataforma do chat) e os outros veem quem fez. Qualquer um pode concluir — ou marcar o resto e concluir de uma vez.'}
+              </p>
+            </div>
           </div>
         )}
 

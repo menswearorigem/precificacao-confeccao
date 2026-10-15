@@ -230,7 +230,7 @@ async function normalizarModelo(body, db = pool, { avulsa = false } = {}) {
     produtos,
     passos,
     responsaveis,
-    modoAtribuicao: body.modoAtribuicao === 'qualquer_um' ? 'qualquer_um' : 'cada_um',
+    modoAtribuicao: ['qualquer_um', 'dividir'].includes(body.modoAtribuicao) ? body.modoAtribuicao : 'cada_um',
     recorrencia,
     horaLimite,
     minutosEstimados: minutos,
@@ -597,7 +597,13 @@ function vagasDoDia(linha, usuarioId = null) {
 }
 
 function ehCompartilhada(oc) {
-  return oc?.snapshot?.modoAtribuicao === 'qualquer_um' || (oc?.vaga === 0 && !oc?.snapshot?.modoAtribuicao);
+  return ['qualquer_um', 'dividir'].includes(oc?.snapshot?.modoAtribuicao) || (oc?.vaga === 0 && !oc?.snapshot?.modoAtribuicao);
+}
+
+// "Dividem os passos": a tarefa é de todos até alguém concluir — ninguém
+// fica com ela ao marcar um passo.
+function ehDividida(oc) {
+  return oc?.snapshot?.modoAtribuicao === 'dividir';
 }
 
 // Gera as ocorrências de `dia`. Opções:
@@ -786,7 +792,9 @@ function podeExecutar(user, oc) {
   if (!user || !oc) return false;
   if (user.role === 'admin') return true;
   if (oc.responsavel_id === user.id) return true;
-  return ehCompartilhada(oc) && oc.responsavel_id == null && (oc.snapshot?.responsaveis || []).includes(user.id);
+  const doGrupo = (oc.snapshot?.responsaveis || []).includes(user.id);
+  if (ehDividida(oc)) return doGrupo;
+  return ehCompartilhada(oc) && oc.responsavel_id == null && doGrupo;
 }
 
 function situacao(oc, agora = new Date()) {
@@ -800,5 +808,5 @@ module.exports = {
   catalogo, previaFiltro, variantesDe, resolverProdutos, chavesDeProduto, curvasAbc, limparCacheCurva,
   snapshotDoModelo, gerarDia, jobGerarDoDia, sqlPrazo,
   respondida, avaliarResposta, faltasParaConcluir, progresso, fotosDe, podeExecutar, situacao,
-  marcaCanonica, casaFiltro, normalizarFiltroProdutos, compararVariante, pesoTamanho, vagasDoDia, ehCompartilhada,
+  marcaCanonica, casaFiltro, normalizarFiltroProdutos, compararVariante, pesoTamanho, vagasDoDia, ehCompartilhada, ehDividida,
 };
