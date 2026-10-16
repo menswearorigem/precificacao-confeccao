@@ -335,7 +335,9 @@ async function montarPreviewEstoque(integracao, porEmpId) {
   const linhasBrutas = [];
   for (const empId of porEmpId.keys()) {
     const linhas = await wik.listarSaldoEstoque(tokenBox, empId, opcoesToken);
-    linhasBrutas.push(...linhas);
+    // Cada linha leva junto de qual empresa (loja) do Wik veio — é o que
+    // permite escolher, por REFERÊNCIA, a loja que fornece o saldo.
+    for (const linha of linhas) linhasBrutas.push({ ...linha, __empId: empId });
   }
 
   const { rows: produtosRows } = await pool.query('SELECT id, referencia FROM produtos');
@@ -346,7 +348,9 @@ async function montarPreviewEstoque(integracao, porEmpId) {
   );
   const varianteExistente = new Map(variantesRows.map((v) => [chaveVariante(v.referencia, v.cor, v.tamanho), v]));
 
-  const porChave = new Map();
+  // 1ª passada: lê cada linha e agrupa por referência → empresa. Ainda não
+  // decide nada; só junta o saldo legível de cada variante em cada loja.
+  const porReferencia = new Map(); // referencia → Map(empId → Map(chave → linha))
   const erros = [];
   // Grupo/subgrupo/marca de cada referência, como o Wik classifica
   // (05/10/2026) — é o que o Relatório de Vendas usa para montar os meses
@@ -377,16 +381,59 @@ async function montarPreviewEstoque(integracao, porEmpId) {
       erros.push({ motivo: `Referência "${referencia}" não está cadastrada em Produtos — cadastre-a antes de sincronizar.`, dados: { referencia, cor, tamanho } });
       continue;
     }
-    // BUG CORRIGIDO: isso sobrescrevia sem comparar, então quando o mesmo
-    // produto+cor+tamanho existia em mais de uma loja (empresa), só a
-    // última loja processada no loop "ganhava" — nunca o maior valor entre
-    // elas, como devia ser (pedido explícito do usuário, já que cada loja
-    // registra um saldo diferente hoje). Agora compara e fica com o maior.
     const chave = chaveVariante(referencia, cor, tamanho);
-    const atual = porChave.get(chave);
-    if (!atual || quantidade > atual.quantidade) {
-      porChave.set(chave, { referencia, descricao: linha.prod_descricao, cor, tamanho, quantidade });
+    if (!porReferencia.has(referencia)) porReferencia.set(referencia, new Map());
+    const porEmp = porReferencia.get(referencia);
+    if (!porEmp.has(linha.__empId)) porEmp.set(linha.__empId, new Map());
+    const variantes = porEmp.get(linha.__empId);
+    // A mesma variante repetida DENTRO da mesma loja (o Wik às vezes devolve
+    // a linha duas vezes) soma — é saldo da mesma loja, não de outra.
+    const ja = variantes.get(chave);
+    if (ja) ja.quantidade += quantidade;
+    else variantes.set(chave, { referencia, descricao: linha.prod_descricao, cor, tamanho, quantidade });
+  }
+
+  // 2ª passada — QUAL LOJA FORNECE O SALDO (16/10/2026, pedido do usuário).
+  // Antes era variante por variante: para cada cor+tamanho ficava o MAIOR
+  // saldo entre as lojas. Isso misturava lojas dentro da mesma referência
+  // (o P vinha da Origem, o M da Hoggar…) e a grade da tela não batia com a
+  // de nenhuma loja do Wik — e ainda inflava o total, porque somava o melhor
+  // de cada uma. Agora a decisão é pela REFERÊNCIA INTEIRA: soma o saldo de
+  // todas as variantes da referência em cada loja, escolhe a loja com o
+  // MAIOR TOTAL e usa a grade completa DELA. Empate: fica a loja com mais
+  // variantes com saldo; persistindo, a primeira na ordem de Listas > Marcas.
+  //
+  // Variante que existe no Hub e aparece em OUTRA loja, mas não na escolhida,
+  // vai a ZERO — na loja que fornece o saldo ela não tem peça. Variante que
+  // não aparece em loja nenhuma não é tocada (comportamento de sempre).
+  const porChave = new Map();
+  const lojaPorReferencia = new Map();
+  for (const [referencia, porEmp] of porReferencia.entries()) {
+    let escolhida = null;
+    for (const [empId, variantes] of porEmp.entries()) {
+      let total = 0;
+      let comSaldo = 0;
+      for (const v of variantes.values()) {
+        total += v.quantidade;
+        if (v.quantidade > 0) comSaldo += 1;
+      }
+      if (!escolhida || total > escolhida.total || (total === escolhida.total && comSaldo > escolhida.comSaldo)) {
+        escolhida = { empId, total, comSaldo, variantes };
+      }
     }
+    lojaPorReferencia.set(referencia, {
+      empId: escolhida.empId,
+      lojas: (porEmpId.get(escolhida.empId) || []).join(' / '),
+      total: escolhida.total,
+    });
+    // Toda variante vista em QUALQUER loja entra; a que a escolhida não tem
+    // entra com zero.
+    for (const variantes of porEmp.values()) {
+      for (const [chave, v] of variantes.entries()) {
+        if (!porChave.has(chave)) porChave.set(chave, { ...v, quantidade: 0 });
+      }
+    }
+    for (const [chave, v] of escolhida.variantes.entries()) porChave.set(chave, { ...v });
   }
 
   const criar = [];
@@ -405,7 +452,7 @@ async function montarPreviewEstoque(integracao, porEmpId) {
   }
 
   return {
-    criar, atualizar, erros, classificacao,
+    criar, atualizar, erros, classificacao, lojaPorReferencia,
     resumo: { totalLinhasWik: linhasBrutas.length, variantesCriar: criar.length, variantesAtualizar: atualizar.length, totalErros: erros.length },
   };
 }

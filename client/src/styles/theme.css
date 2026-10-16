@@ -12354,3 +12354,21 @@ table.data-table th, .mp-tab th, .mp-tecido-tab th, .tabela-promocao thead th, .
   .grafico-card .card-head-linha .mp-seg-cheio { width: 100%; }
   .grafico-card .card-head-linha .mp-seg-cheio button { flex: 1; }
 }
+
+/* ---------- Estoque › quando zerou / quando voltou (16/10/2026) ---------- */
+.sem-estoque-ref {
+  margin-top: 12px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+}
+.sem-estoque-topo { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.selo-cheio-perigo { background: #c0392b; border-color: #c0392b; color: #fff; }
+.selo-cheio-ok { background: #2e8b57; border-color: #2e8b57; color: #fff; }
+.sem-estoque-tabela { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: 12.5px; }
+.sem-estoque-tabela th { text-align: left; font-weight: 600; color: var(--ink-soft); padding: 4px 6px; border-bottom: 1px solid var(--border); }
+.sem-estoque-tabela td { padding: 4px 6px; border-bottom: 1px solid var(--border-soft); }
+.sem-estoque-tabela .num { text-align: right; }
+@media (max-width: 600px) {
+  .sem-estoque-tabela th:nth-child(4), .sem-estoque-tabela td:nth-child(4) { display: none; }
+}
+.ink-faint { color: var(--ink-faint); }

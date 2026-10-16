@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Search, Barcode, Upload, Pencil, Check, X, Tags, Printer, Wand2, Store, History } from 'lucide-react';
+import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Search, Barcode, Upload, Pencil, Check, X, Tags, Printer, Wand2, Store, History, PackageX, PackageCheck, ChevronDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { AvisoDeFalha, Field, Select, Checkbox, Toggle, Skeleton } from '../components/ui';
@@ -294,6 +294,9 @@ export default function EstoquePage() {
   const [somenteMarketplace, setSomenteMarketplace] = useState(false);
   // Variante cujo extrato de movimentos está aberto no painel lateral.
   const [extratoDe, setExtratoDe] = useState(null);
+  // Quando zerou / quando voltou (16/10/2026): da referência aberta.
+  const [rupturas, setRupturas] = useState(null);
+  const [erroRupturas, setErroRupturas] = useState('');
 
   const [erroReferencias, setErroReferencias] = useState('');
 
@@ -314,8 +317,17 @@ export default function EstoquePage() {
 
   useEffect(carregarReferencias, [carregarReferencias]);
 
+  function loadRupturas(id) {
+    setErroRupturas('');
+    if (!id) { setRupturas(null); return; }
+    api.get(`/estoque/rupturas?produto_id=${id}`)
+      .then((data) => setRupturas({ ...data, produtoId: String(id) }))
+      .catch((e) => { setRupturas(null); setErroRupturas(e.message); });
+  }
+
   function loadVariantes(id) {
     setSelecionadas(new Set());
+    loadRupturas(id);
     if (!id) { setVariantes([]); return; }
     api.get(`/estoque/variantes?produto_id=${id}`)
       .then(setVariantes)
@@ -481,6 +493,8 @@ export default function EstoquePage() {
 
         {produtoId && (
           <>
+            <AvisoDeFalha mensagem={erroRupturas} aoTentarDeNovo={() => loadRupturas(produtoId)} />
+            {rupturas && rupturas.produtoId === String(produtoId) && <SemEstoqueReferencia dados={rupturas.referencia} />}
             {selecionadas.size > 0 && (
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12, padding: '8px 12px', background: 'var(--surface-alt)', borderRadius: 8 }}>
                 <strong>{selecionadas.size} selecionada(s)</strong>
@@ -496,7 +510,7 @@ export default function EstoquePage() {
               <thead>
                 <tr>
                   <th><Checkbox checked={variantes.length > 0 && selecionadas.size === variantes.length} onChange={alternarSelecionarTodas} /></th>
-                  <th>Cor</th><th>Tamanho</th><th>EAN</th><th className="num">Qtd. atual</th><th>Movimentar</th><th>Ativa?</th><th /><th /></tr>
+                  <th>Cor</th><th>Tamanho</th><th>EAN</th><th className="num">Qtd. atual</th><th>Zerou / voltou</th><th>Movimentar</th><th>Ativa?</th><th /><th /></tr>
               </thead>
               <tbody>
                 {variantes.map((v) => (
@@ -508,6 +522,7 @@ export default function EstoquePage() {
                     <td className="num" style={{ fontWeight: 700, color: Number(v.quantidade) < 0 ? 'var(--danger)' : undefined }}>
                       {formatQtd(v.quantidade)}
                     </td>
+                    <td><ZerouVoltou dados={rupturas && rupturas.produtoId === String(produtoId) ? rupturas.variantes.find((r) => r.variante_id === v.id) : null} /></td>
                     <td><MovimentoInline variante={v} onFeito={() => loadVariantes(produtoId)} /></td>
                     <td>
                       <label className="toggle">
@@ -534,7 +549,7 @@ export default function EstoquePage() {
                   </tr>
                 ))}
                 {variantes.length === 0 && (
-                  <tr><td colSpan="9" style={{ color: 'var(--ink-soft)' }}>Nenhuma variante cadastrada ainda para esta referência.</td></tr>
+                  <tr><td colSpan="10" style={{ color: 'var(--ink-soft)' }}>Nenhuma variante cadastrada ainda para esta referência.</td></tr>
                 )}
               </tbody>
             </table>
@@ -549,6 +564,92 @@ export default function EstoquePage() {
 
       {extratoDe && <ExtratoVariante variante={extratoDe} onFechar={() => setExtratoDe(null)} />}
     </div>
+  );
+}
+
+// ---------- Quando zerou / quando voltou (16/10/2026) ----------
+// Vem de GET /estoque/rupturas, que refaz o histórico de movimentos do Hub
+// (o Wik só entrega o saldo de agora — não tem histórico pela API).
+
+function dataHora(d) {
+  return new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+function dataCurta(d) {
+  return new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+}
+function duracao(dias) {
+  if (dias < 1 / 24) return 'menos de 1 h';
+  if (dias < 1) return `${Math.round(dias * 24)} h`;
+  const n = Math.round(dias);
+  return `${n} ${n === 1 ? 'dia' : 'dias'}`;
+}
+
+function SemEstoqueReferencia({ dados }) {
+  const [aberto, setAberto] = useState(false);
+  if (!dados || !dados.tem_historico) {
+    return (
+      <div className="sem-estoque-ref">
+        <span className="ink-soft">Sem histórico de movimentos para saber quando esta referência zerou.</span>
+      </div>
+    );
+  }
+  const atual = dados.periodos[0];
+  const lista = aberto ? dados.periodos : dados.periodos.slice(0, 3);
+  return (
+    <div className="sem-estoque-ref">
+      <div className="sem-estoque-topo">
+        {dados.sem_estoque_agora ? (
+          <span className="selo selo-cheio-perigo"><PackageX size={12} /> Sem estoque desde {dataHora(atual.zerou_em)}{atual.inicio_conhecido ? '' : ' (ou antes)'} · {duracao(atual.dias)}</span>
+        ) : (
+          <span className="selo selo-cheio-ok"><PackageCheck size={12} /> Com estoque</span>
+        )}
+        <span className="ink-soft" style={{ fontSize: 12.5 }}>
+          {dados.vezes === 0
+            ? `A referência inteira não zerou desde ${dataCurta(dados.primeiro_registro)}.`
+            : `A referência inteira zerou ${plural(dados.vezes, 'vez', 'vezes')} desde ${dataCurta(dados.primeiro_registro)} · ${duracao(dados.dias_sem_estoque)} sem peça no total.`}
+        </span>
+      </div>
+      {dados.periodos.length > 0 && (
+        <table className="sem-estoque-tabela">
+          <thead><tr><th>Zerou</th><th>Voltou</th><th className="num">Ficou sem</th><th className="num">Voltou com</th></tr></thead>
+          <tbody>
+            {lista.map((p) => (
+              <tr key={String(p.zerou_em)}>
+                <td className="mono">{dataHora(p.zerou_em)}{p.inicio_conhecido ? '' : ' (ou antes)'}</td>
+                <td className="mono">{p.voltou_em ? dataHora(p.voltou_em) : <strong style={{ color: 'var(--danger)' }}>ainda sem estoque</strong>}</td>
+                <td className="num">{duracao(p.dias)}</td>
+                <td className="num">{p.voltou_em ? `${formatQtd(p.voltou_com)} pç` : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {dados.periodos.length > 3 && (
+        <button type="button" className="aviso-inline-toggle" onClick={() => setAberto((v) => !v)}>
+          <ChevronDown size={12} style={{ transform: aberto ? 'rotate(180deg)' : undefined }} />
+          {aberto ? 'Mostrar só as 3 últimas' : `Ver as ${dados.periodos.length} vezes`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ZerouVoltou({ dados }) {
+  if (!dados) return <span className="ink-faint">—</span>;
+  if (!dados.tem_historico) return <span className="ink-faint" title="Sem movimentos registrados">—</span>;
+  const p = dados.periodos[0];
+  if (!p) return <span className="ink-faint" title="Não zerou desde o primeiro registro">não zerou</span>;
+  const titulo = dados.periodos
+    .map((x) => `Zerou ${dataHora(x.zerou_em)} → ${x.voltou_em ? `voltou ${dataHora(x.voltou_em)}` : 'ainda sem estoque'} (${duracao(x.dias)})`)
+    .join('\n');
+  if (!p.voltou_em) {
+    return <span className="selo selo-cheio-perigo" title={titulo}>sem desde {dataCurta(p.zerou_em)}</span>;
+  }
+  return (
+    <span title={titulo} style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>
+      zerou {dataCurta(p.zerou_em)} · voltou {dataCurta(p.voltou_em)}
+      {dados.vezes > 1 && <span className="ink-faint"> · {dados.vezes}×</span>}
+    </span>
   );
 }
 

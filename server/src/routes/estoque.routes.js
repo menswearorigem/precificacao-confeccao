@@ -6,6 +6,7 @@ const { parseEstoqueImportFile, parseEanExternoCsv } = require('../lib/estoqueIm
 const { getCalcContext } = require('../lib/calcContext');
 const { registrarMovimento } = require('../lib/estoqueMovimento');
 const { resolverEan } = require('../lib/eanResolver');
+const { calcularRupturas } = require('../lib/estoqueRupturas');
 const {
   buscarIntegracao: buscarIntegracaoWik, sincronizarEstoqueSeNecessario, sincronizarReferenciasAgora, calcularStatusToken, corrigirJobsPresos,
 } = require('../lib/wikSync');
@@ -282,6 +283,38 @@ router.get('/movimentos', async (req, res, next) => {
       values
     );
     res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------- quando zerou / quando voltou (16/10/2026) ----------
+// Refaz a fila de estoque_movimentos da referência (ver lib/estoqueRupturas)
+// e devolve os períodos sem estoque da referência inteira e de cada variante.
+router.get('/rupturas', async (req, res, next) => {
+  try {
+    const produtoId = Number(req.query.produto_id);
+    if (!Number.isInteger(produtoId) || produtoId <= 0) {
+      return res.status(400).json({ error: 'Informe a referência (produto_id).' });
+    }
+    const { rows: variantes } = await pool.query(
+      'SELECT id, cor, tamanho, quantidade, ativo FROM estoque_variantes WHERE produto_id = $1',
+      [produtoId]
+    );
+    const { rows: movimentos } = await pool.query(
+      `SELECT m.id, m.variante_id, m.quantidade_resultante, m.criado_em
+         FROM estoque_movimentos m
+         JOIN estoque_variantes v ON v.id = m.variante_id
+        WHERE v.produto_id = $1`,
+      [produtoId]
+    );
+    const { referencia, porVariante } = calcularRupturas(movimentos, variantes);
+    res.json({
+      referencia,
+      variantes: variantes
+        .map((v) => ({ variante_id: v.id, cor: v.cor, tamanho: v.tamanho, quantidade: Number(v.quantidade), ativo: v.ativo, ...porVariante.get(v.id) }))
+        .sort((a, b) => String(a.cor).localeCompare(String(b.cor), 'pt-BR') || compararTamanhos(a.tamanho, b.tamanho)),
+    });
   } catch (err) {
     next(err);
   }
