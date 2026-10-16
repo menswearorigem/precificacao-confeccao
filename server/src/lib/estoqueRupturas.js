@@ -15,6 +15,10 @@
 //
 // "Sem estoque" = quantidade <= 0 (saldo negativo também é falta de peça).
 
+function zeroTardio(m) {
+  return /não veio no saldo do Wik/i.test(String(m.motivo || ''));
+}
+
 function semEstoque(q) {
   return Number(q) <= 0;
 }
@@ -50,7 +54,9 @@ function calcularRupturas(movimentos, variantes, agora = new Date()) {
       // Primeiro registro: se já nasceu zerada, conta como zerada desde ali.
       if (semEstoque(q)) estado.aberto = { zerou_em: quando, inicio_conhecido: false };
     } else if (!semEstoque(antes) && semEstoque(q)) {
-      estado.aberto = { zerou_em: quando, inicio_conhecido: true };
+      // Zerada porque a variante SUMIU do saldo do Wik (ver wikSync, 3ª
+      // passada): o Wik já estava em zero havia um tempo — a data é "ou antes".
+      estado.aberto = { zerou_em: quando, inicio_conhecido: !zeroTardio(m) };
     } else if (semEstoque(antes) && !semEstoque(q) && estado.aberto) {
       estado.periodos.push({ ...estado.aberto, voltou_em: quando, voltou_com: q });
       estado.aberto = null;
@@ -66,7 +72,7 @@ function calcularRupturas(movimentos, variantes, agora = new Date()) {
       ref.primeiroRegistro = quando;
       if (semEstoque(total)) ref.aberto = { zerou_em: quando, inicio_conhecido: false };
     } else if (!semEstoque(totalAntes) && semEstoque(total)) {
-      ref.aberto = { zerou_em: quando, inicio_conhecido: true };
+      ref.aberto = { zerou_em: quando, inicio_conhecido: !zeroTardio(m) };
     } else if (semEstoque(totalAntes) && !semEstoque(total) && ref.aberto) {
       ref.periodos.push({ ...ref.aberto, voltou_em: quando, voltou_com: total });
       ref.aberto = null;

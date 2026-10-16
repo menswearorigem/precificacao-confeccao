@@ -405,7 +405,7 @@ async function montarPreviewEstoque(integracao, porEmpId) {
   //
   // Variante que existe no Hub e aparece em OUTRA loja, mas não na escolhida,
   // vai a ZERO — na loja que fornece o saldo ela não tem peça. Variante que
-  // não aparece em loja nenhuma não é tocada (comportamento de sempre).
+  // não aparece em loja nenhuma é tratada na 3ª passada, abaixo.
   const porChave = new Map();
   const lojaPorReferencia = new Map();
   for (const [referencia, porEmp] of porReferencia.entries()) {
@@ -449,6 +449,52 @@ async function montarPreviewEstoque(integracao, porEmpId) {
     } else {
       criar.push({ referencia: linha.referencia, descricao: linha.descricao, cor: linha.cor, tamanho: linha.tamanho, quantidadeNova: linha.quantidade });
     }
+  }
+
+  // 3ª passada — VARIANTE QUE SUMIU DO WIK VAI A ZERO (16/10/2026).
+  //
+  // O saldo_estoque_get NÃO devolve variante com saldo zero: quando a última
+  // peça sai no Wik, a linha some da resposta. Como o Hub só mexia no que
+  // vinha na lista, a variante ficava para sempre com o último número que
+  // tinha visto (ex.: OG1605 — Wik Origem 232, Hub 246; as 14 a mais eram
+  // todas variantes zeradas no Wik paradas em 1 ou 2 no Hub). Agora:
+  //   a) referência que o Wik devolveu: variante do Hub que não veio → 0;
+  //   b) referência que sumiu inteira do Wik (acabou em todas as lojas): as
+  //      variantes dela também → 0, MAS só as que já vieram do Wik alguma vez
+  //      (produto cadastrado só no Hub nunca é tocado) e com uma trava: se
+  //      isso fosse zerar mais de 30% das referências com saldo de uma vez, é
+  //      sinal de resposta incompleta do Wik — não zera nada desse tipo e
+  //      avisa como erro.
+  const refsDoWik = new Set([...porReferencia.keys()].map((r) => normalizarComparacao(r)));
+  const { rows: comHistoricoWik } = await pool.query(
+    "SELECT DISTINCT variante_id FROM estoque_movimentos WHERE motivo ILIKE '%Wik%'"
+  );
+  const veioDoWik = new Set(comHistoricoWik.map((r) => r.variante_id));
+  const MOTIVO_SUMIU = 'Sincronização automática — Wik Sistemas (zerada: não veio no saldo do Wik)';
+  const zerarNaRef = [];
+  const zerarRefSumiu = [];
+  const refsComSaldoNoHub = new Set();
+  for (const v of variantesRows) {
+    if (!(Number(v.quantidade) > 0)) continue;
+    const refNorm = normalizarComparacao(v.referencia);
+    refsComSaldoNoHub.add(refNorm);
+    if (porChave.has(chaveVariante(v.referencia, v.cor, v.tamanho))) continue;
+    const item = {
+      referencia: v.referencia, descricao: null, cor: v.cor, tamanho: v.tamanho,
+      quantidadeAtual: Number(v.quantidade), quantidadeNova: 0, varianteId: v.id, motivo: MOTIVO_SUMIU,
+    };
+    if (refsDoWik.has(refNorm)) zerarNaRef.push(item);
+    else if (veioDoWik.has(v.id)) zerarRefSumiu.push(item);
+  }
+  atualizar.push(...zerarNaRef);
+  const refsSumidas = new Set(zerarRefSumiu.map((i) => normalizarComparacao(i.referencia)));
+  if (refsSumidas.size > 0 && refsSumidas.size > 0.3 * refsComSaldoNoHub.size) {
+    erros.push({
+      motivo: `${refsSumidas.size} referências com saldo no Hub não vieram no saldo do Wik — parece resposta incompleta, então nenhuma delas foi zerada neste ciclo.`,
+      dados: {},
+    });
+  } else {
+    atualizar.push(...zerarRefSumiu);
   }
 
   return {
@@ -557,7 +603,7 @@ async function aplicarSincronizacaoEstoque({ criar, atualizar }, motivo = MOTIVO
       if (!atualRows[0]) continue;
       const delta = alvo - Number(atualRows[0].quantidade);
       if (delta !== 0) {
-        await registrarMovimento(client, item.varianteId, 'importacao', delta, motivo);
+        await registrarMovimento(client, item.varianteId, 'importacao', delta, item.motivo || motivo);
       }
       atualizados += 1;
     }

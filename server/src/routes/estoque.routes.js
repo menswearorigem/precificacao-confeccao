@@ -302,7 +302,7 @@ router.get('/rupturas', async (req, res, next) => {
       [produtoId]
     );
     const { rows: movimentos } = await pool.query(
-      `SELECT m.id, m.variante_id, m.quantidade_resultante, m.criado_em
+      `SELECT m.id, m.variante_id, m.quantidade_resultante, m.criado_em, m.motivo
          FROM estoque_movimentos m
          JOIN estoque_variantes v ON v.id = m.variante_id
         WHERE v.produto_id = $1`,

@@ -74,6 +74,35 @@ async function main() {
   const { rows: tot } = await pool.query("SELECT SUM(v.quantidade) AS t FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id WHERE p.referencia = 'REF1'");
   igual(Number(tot[0].t), 15, 'total da REF1 na tela = 15 (o da Origem), não 22 misturado');
 
+  console.log('\nVariante zerada no Wik some da resposta — o Hub tem que zerar');
+  // Produto cadastrado só no Hub (sem nenhum movimento do Wik): nunca tocar.
+  const { rows: [p4] } = await pool.query("INSERT INTO produtos (referencia, descricao) VALUES ('REF4','REF4') RETURNING id");
+  await pool.query("INSERT INTO estoque_variantes (produto_id, cor, tamanho, quantidade) VALUES ($1,'ROSA','M',7)", [p4.id]);
+  // Ciclo seguinte: REF1 M acabou na Origem (linha SOME); REF3 acabou em todas
+  // as lojas (referência inteira some); REF2 igual.
+  saldo[202] = [linha('REF1', 'PRETO', 'P', 10), linha('REF2', 'AZUL', 'P', 3), linha('REF2', 'AZUL', 'M', 3)];
+  saldo[198] = [linha('REF1', 'PRETO', 'G', 4), linha('REF2', 'AZUL', 'P', 2), linha('REF2', 'AZUL', 'M', 2), linha('REF2', 'AZUL', 'G', 2)];
+  const p2 = await montarPreviewEstoque(integ[0], porEmpId);
+  const novo = (ref, tam) => p2.atualizar.find((i) => i.referencia === ref && i.tamanho === tam);
+  igual(novo('REF1', 'M')?.quantidadeNova, 0, 'REF1 M (sumiu da Origem) → 0');
+  ok(/não veio no saldo/.test(novo('REF1', 'M')?.motivo || ''), 'com motivo próprio no extrato');
+  igual(novo('REF3', 'P')?.quantidadeNova, 0, 'REF3 (sumiu de todas as lojas) → 0');
+  ok(!p2.atualizar.some((i) => i.referencia === 'REF4'), 'REF4 (só no Hub, nunca veio do Wik) não é tocada');
+  ok(!p2.atualizar.some((i) => i.referencia === 'REF2'), 'REF2 sem mudança, nada a fazer');
+  await aplicarSincronizacaoEstoque(p2);
+  const { rows: t2 } = await pool.query(
+    "SELECT p.referencia, SUM(v.quantidade)::int AS t FROM estoque_variantes v JOIN produtos p ON p.id = v.produto_id GROUP BY 1 ORDER BY 1"
+  );
+  igual(t2.map((r) => `${r.referencia}=${r.t}`).join(' '), 'REF1=10 REF2=6 REF3=0 REF4=7', 'totais depois do ciclo batem com o Wik');
+
+  console.log('\nTrava: resposta do Wik incompleta não zera o catálogo');
+  saldo[202] = [linha('REF1', 'PRETO', 'P', 10)];
+  saldo[198] = [];
+  await pool.query("UPDATE estoque_variantes SET quantidade = 5 WHERE produto_id = (SELECT id FROM produtos WHERE referencia='REF3')");
+  const p3 = await montarPreviewEstoque(integ[0], porEmpId);
+  ok(!p3.atualizar.some((i) => i.referencia === 'REF2' || i.referencia === 'REF3'), 'REF2 e REF3 sumiram juntas (2 de 3 refs com saldo) → não zera');
+  ok(p3.erros.some((e) => /resposta incompleta/.test(e.motivo)), 'e avisa como erro');
+
   console.log('\nQuando zerou / quando voltou');
   const t = (d) => new Date(`2026-10-${d}T12:00:00Z`);
   const variantes = [{ id: 1, quantidade: 4 }, { id: 2, quantidade: 0 }];
@@ -102,6 +131,12 @@ async function main() {
   const nasceu = calcularRupturas([{ id: 1, variante_id: 9, quantidade_resultante: 0, criado_em: t('02') }], [{ id: 9 }], t('05'));
   ok(nasceu.porVariante.get(9).sem_estoque_agora && !nasceu.porVariante.get(9).periodos[0].inicio_conhecido,
     'primeiro registro já zerado = "sem estoque desde 02 (ou antes)"');
+  const tardio = calcularRupturas([
+    { id: 1, variante_id: 1, quantidade_resultante: 2, criado_em: t('01') },
+    { id: 2, variante_id: 1, quantidade_resultante: 0, criado_em: t('05'), motivo: 'Sincronização automática — Wik Sistemas (zerada: não veio no saldo do Wik)' },
+  ], [{ id: 1 }], t('06'));
+  ok(!tardio.porVariante.get(1).periodos[0].inicio_conhecido && !tardio.referencia.periodos[0].inicio_conhecido,
+    'zerada por "não veio no saldo do Wik" = data "ou antes"');
   const semHist = calcularRupturas([], [{ id: 7 }]);
   ok(!semHist.porVariante.get(7).tem_historico && semHist.porVariante.get(7).vezes === 0, 'sem movimento = sem histórico, nunca inventa zero');
   const negativo = calcularRupturas([
