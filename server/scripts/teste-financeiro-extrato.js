@@ -76,17 +76,17 @@ function postar(porta, caminho, dados, cookie) {
 // saque, uma linha com descrição desconhecida (tem que virar "outros") e uma
 // linha quebrada (tem que ficar de fora, não virar zero).
 const CSV_ML = [
-  'DATE,SOURCE_ID,EXTERNAL_REFERENCE,RECORD_TYPE,DESCRIPTION,NET_CREDIT_AMOUNT,NET_DEBIT_AMOUNT,GROSS_AMOUNT,MP_FEE_AMOUNT,SHIPPING_FEE_AMOUNT,TAXES_AMOUNT,BALANCE_AMOUNT,SETTLEMENT_CURRENCY',
-  '2026-08-10T14:32:00.000-03:00,111111111,2000000111111111,release,payment,150.25,0.00,199.90,35.65,14.00,0.00,150.25,BRL',
-  '2026-08-11T09:00:00.000-03:00,222222222,,release,advertising,0.00,48.90,48.90,0.00,0.00,0.00,101.35,BRL',
-  '2026-08-11T10:15:00.000-03:00,333333333,2000000222222222,release,refund,0.00,89.90,89.90,0.00,0.00,0.00,11.45,BRL',
-  '2026-08-12T18:00:00.000-03:00,444444444,,release,payout,0.00,1000.00,1000.00,0.00,0.00,0.00,0.00,BRL',
-  '2026-08-12T19:00:00.000-03:00,555555555,,release,programa_fidelidade_x,12.00,0.00,12.00,0.00,0.00,0.00,12.00,BRL',
+  'DATE,SOURCE_ID,EXTERNAL_REFERENCE,RECORD_TYPE,DESCRIPTION,NET_CREDIT_AMOUNT,NET_DEBIT_AMOUNT,GROSS_AMOUNT,MP_FEE_AMOUNT,SHIPPING_FEE_AMOUNT,TAXES_AMOUNT,BALANCE_AMOUNT,SETTLEMENT_CURRENCY,BUSINESS_UNIT',
+  '2026-08-10T14:32:00.000-03:00,111111111,2000000111111111,release,payment,150.25,0.00,199.90,35.65,14.00,0.00,150.25,BRL,Mercado Libre',
+  '2026-08-11T09:00:00.000-03:00,222222222,,release,advertising,0.00,48.90,48.90,0.00,0.00,0.00,101.35,BRL,Mercado Libre',
+  '2026-08-11T10:15:00.000-03:00,333333333,2000000222222222,release,refund,0.00,89.90,89.90,0.00,0.00,0.00,11.45,BRL,Mercado Libre',
+  '2026-08-12T18:00:00.000-03:00,444444444,,release,payout,0.00,1000.00,1000.00,0.00,0.00,0.00,0.00,BRL,Mercado Libre',
+  '2026-08-12T19:00:00.000-03:00,555555555,,release,programa_fidelidade_x,12.00,0.00,12.00,0.00,0.00,0.00,12.00,BRL,Mercado Libre',
   // Linha quebrada de propósito: sem data e sem valor legível.
-  ',666666666,,release,payment,,,,,,,,BRL',
+  ',666666666,,release,payment,,,,,,,,BRL,Mercado Libre',
   // Venda das 22h no fuso de Brasília: em UTC já é dia 14, e tem que
   // continuar aparecendo como dia 13.
-  '2026-08-13T22:40:00.000-03:00,777777777,2000000333333333,release,payment,80.00,0.00,99.90,19.90,0.00,0.00,92.00,BRL',
+  '2026-08-13T22:40:00.000-03:00,777777777,2000000333333333,release,payment,80.00,0.00,99.90,19.90,0.00,0.00,92.00,BRL,Mercado Libre',
 ].join('\n');
 
 function transacoesShopeeCruas() {
@@ -168,7 +168,9 @@ async function main() {
 
   console.log('\n1. Relatório de Liberações do Mercado Pago (CSV -> lançamentos)');
   const ml = mercadoLivre.mapearRelatorioLiberacoes(CSV_ML);
-  const porId = Object.fromEntries(ml.lancamentos.map((l) => [l.idExterno, l]));
+  // Desde 20/10/2026 o idExterno é a linha inteira ("id|descrição|instante|…");
+  // o id do pagamento fica em `sourceId`.
+  const porId = Object.fromEntries(ml.lancamentos.map((l) => [l.sourceId, l]));
 
   conferir('6 linhas legíveis de 7', ml.lancamentos.length === 6, String(ml.lancamentos.length));
   conferir('a linha quebrada ficou de fora (não virou R$ 0,00)', ml.naoInterpretadas.length === 1, JSON.stringify(ml.naoInterpretadas));
@@ -217,10 +219,10 @@ async function main() {
   await vincularPedidos(ids.ml);
   await vincularPedidos(ids.shopee);
   const { rows: vinc } = await pool.query(
-    `SELECT l.lancamento_id_externo, l.pedido_id FROM fin_extrato_lancamentos l
-      WHERE l.lancamento_id_externo IN ('111111111','777777777','9001','222222222')`
+    `SELECT split_part(l.lancamento_id_externo, '|', 1) AS id, l.pedido_id FROM fin_extrato_lancamentos l
+      WHERE split_part(l.lancamento_id_externo, '|', 1) IN ('111111111','777777777','9001','222222222')`
   );
-  const vincPorId = Object.fromEntries(vinc.map((v) => [v.lancamento_id_externo, v.pedido_id]));
+  const vincPorId = Object.fromEntries(vinc.map((v) => [v.id, v.pedido_id]));
   conferir('vínculo por ID do pedido (Mercado Livre)', vincPorId['111111111'] != null);
   conferir('vínculo por ID do pagamento (Mercado Livre)', vincPorId['777777777'] != null);
   conferir('vínculo por order_sn (Shopee)', vincPorId['9001'] != null);

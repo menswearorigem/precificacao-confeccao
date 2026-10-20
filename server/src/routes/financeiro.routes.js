@@ -22,10 +22,19 @@ const {
   sincronizarExtratoSeNecessario,
   vincularPedidos,
   TIPOS_VALIDOS,
+  GRUPOS_TIPO,
   LABEL,
 } = require('../lib/financeiroExtrato');
+const { fechamentoMensal } = require('../lib/financeiroFechamento');
 
 const router = express.Router();
+
+// Plataformas cujo saque cai na conta do Mercado Pago da casa, e não direto
+// no banco (informado pelo dono em 20/10/2026 e conferido no relatório de
+// liberações: cada saque da Shopee Origem aparece, no mesmo valor, como Pix
+// recebido no Mercado Pago Origem). Decisão de negócio — se um dia a Shopee
+// passar a sacar direto para o banco, é só tirar daqui.
+const SAQUE_VAI_PARA_O_MERCADO_PAGO = ['shopee'];
 
 // Monta o WHERE compartilhado por todas as consultas de extrato. Filtro
 // desconhecido é ignorado em silêncio de propósito — nunca vira "sem
@@ -62,6 +71,35 @@ function filtrosExtrato(query, aliasTabela = 'l', { ignorarStatus = false } = {}
   }
   if (query.com_pedido === 'sim') conditions.push(`${t}.pedido_id IS NOT NULL`);
   if (query.com_pedido === 'nao') conditions.push(`${t}.pedido_id IS NULL`);
+
+  // 20/10/2026 — filtros pedidos pelo financeiro.
+  // `grupo`: marketplace | foraMarketplace | saque (ver GRUPOS_TIPO).
+  if (query.grupo) {
+    const tipos = String(query.grupo).split(',').flatMap((g) => GRUPOS_TIPO[g.trim()] || []);
+    if (tipos.length > 0) { conditions.push(`${t}.tipo = ANY($${i})`); values.push(tipos); i += 1; }
+  }
+  // `repasse`: todos os lançamentos de um repasse/saque específico.
+  if (query.repasse) {
+    conditions.push(`${t}.repasse_id_externo = $${i}`); values.push(String(query.repasse).trim()); i += 1;
+  }
+  // `busca`: número do pedido, id do pagamento, id do lançamento, id do
+  // repasse ou parte da descrição da plataforma.
+  if (query.busca && String(query.busca).trim()) {
+    const termo = `%${String(query.busca).trim()}%`;
+    conditions.push(`(${t}.lancamento_id_externo ILIKE $${i} OR ${t}.pedido_id_externo ILIKE $${i}
+      OR ${t}.repasse_id_externo ILIKE $${i} OR ${t}.descricao_externa ILIKE $${i}
+      OR EXISTS (SELECT 1 FROM pedidos_venda pb WHERE pb.id = ${t}.pedido_id AND pb.numero::text ILIKE $${i}))`);
+    values.push(termo); i += 1;
+  }
+  // `valor_min`/`valor_max`: em módulo (R$ 50 acha +50 e −50).
+  if (query.valor_min !== undefined && query.valor_min !== '' && Number.isFinite(Number(query.valor_min))) {
+    conditions.push(`ABS(${t}.valor) >= $${i}`); values.push(Number(query.valor_min)); i += 1;
+  }
+  if (query.valor_max !== undefined && query.valor_max !== '' && Number.isFinite(Number(query.valor_max))) {
+    conditions.push(`ABS(${t}.valor) <= $${i}`); values.push(Number(query.valor_max)); i += 1;
+  }
+  if (query.sentido === 'entrada') conditions.push(`${t}.valor > 0`);
+  if (query.sentido === 'saida') conditions.push(`${t}.valor < 0`);
 
   return { where: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '', values, proximoIndice: i };
 }
@@ -114,53 +152,28 @@ router.get('/extrato', async (req, res, next) => {
         resumo.values
       ),
       pool.query(
-        // Entradas e saídas separadas, e o saque separado das duas: com ele
-        // dentro, um mês em que entraram R$ 212 mil e foram sacados R$ 209 mil
-        // aparece como "R$ 2,5 mil liberados", que responde a pergunta errada.
-        // ⚠️ UM SAQUE, UM EVENTO. A Shopee reporta o MESMO saque em duas
-        // transações — `WITHDRAWAL_CREATED` e `WITHDRAWAL_COMPLETED` — com
-        // `transaction_id` diferentes e o mesmo `root_withdrawal_id`, que é o
-        // que vai para `repasse_id_externo`. O repasse já era deduplicado por
-        // ele; o lançamento do extrato, não.
+        // Totais por GRUPO (20/10/2026). Cada tipo pertence a um grupo só
+        // (GRUPOS_TIPO), então a soma dos grupos é o extrato inteiro.
         //
-        // Medido em 14/09/2026: um saque de R$ 70,90 aparecia como
-        // "Transferido para o banco R$ 70,90" MAIS "Transferência em andamento
-        // R$ 70,90" — R$ 141,80 de dinheiro que saiu uma vez só, enquanto a aba
-        // Repasses mostrava uma linha de R$ 70,90. Duas abas do mesmo módulo
-        // discordando por 2×.
-        //
-        // Aqui o saque é colapsado por `repasse_id_externo` e fica com o
-        // estado mais avançado que ele alcançou (liberado manda sobre
-        // pendente): o dinheiro saiu ou está saindo, nunca as duas coisas. O
-        // `FAILED`/`ROLLBACK` cai no mesmo balde e é o sincronizador que
-        // rebaixa o estado — as linhas continuam todas visíveis na lista
-        // detalhada, que é onde o histórico do saque tem que aparecer.
-        `WITH saque_colapsado AS (
-           SELECT COALESCE(l.repasse_id_externo, l.lancamento_id_externo) AS saque_id,
-                  bool_or(l.status = 'liberado') AS concluido,
-                  MAX(ABS(l.valor)) AS valor,
-                  COUNT(*) AS linhas
-             FROM fin_extrato_lancamentos l ${resumo.where}
-              ${resumo.where ? 'AND' : 'WHERE'} l.tipo = 'saque'
-            GROUP BY COALESCE(l.repasse_id_externo, l.lancamento_id_externo)
-         )
-         SELECT l.status, FALSE AS eh_saque,
+        // O saque é somado linha a linha, com sinal, como qualquer outra linha.
+        // A versão anterior "colapsava" o saque por repasse_id_externo e
+        // ficava com o MAIOR valor de cada grupo; como a Shopee manda
+        // root_withdrawal_id = 0 em todos os saques, todos os saques da loja
+        // viravam um grupo só e só o maior era contado. Na Shopee o
+        // WITHDRAWAL_COMPLETED vem com valor zero (conferido no saldo: a
+        // carteira fecha centavo a centavo com a soma simples), então a soma
+        // simples não conta saque duas vezes.
+        `SELECT l.status, l.marketplace,
+                CASE WHEN l.tipo = ANY($${resumo.values.length + 1}) THEN 'saque'
+                     WHEN l.tipo = ANY($${resumo.values.length + 2}) THEN 'foraMarketplace'
+                     ELSE 'marketplace' END AS grupo,
                 SUM(l.valor) FILTER (WHERE l.valor > 0) AS entradas,
                 SUM(l.valor) FILTER (WHERE l.valor < 0) AS saidas,
-                SUM(l.valor) AS total, COUNT(*) AS quantidade
+                SUM(l.valor) AS total, COUNT(*) AS quantidade,
+                COUNT(*) FILTER (WHERE l.valor < 0) AS quantidade_saidas
            FROM fin_extrato_lancamentos l ${resumo.where}
-            ${resumo.where ? 'AND' : 'WHERE'} l.tipo <> 'saque'
-          GROUP BY l.status
-         UNION ALL
-         SELECT CASE WHEN s.concluido THEN 'liberado' ELSE 'pendente' END AS status,
-                TRUE AS eh_saque,
-                0 AS entradas,
-                -SUM(s.valor) AS saidas,
-                -SUM(s.valor) AS total,
-                COUNT(*) AS quantidade
-           FROM saque_colapsado s
-          GROUP BY s.concluido`,
-        resumo.values
+          GROUP BY 1, 2, 3`,
+        [...resumo.values, GRUPOS_TIPO.saque, GRUPOS_TIPO.foraMarketplace]
       ),
       pool.query(
         `SELECT l.id, l.marketplace, l.lancamento_id_externo, l.tipo, l.descricao_externa,
@@ -188,21 +201,36 @@ router.get('/extrato', async (req, res, next) => {
       ),
     ]);
 
-    // Quatro números diferentes, e cada um responde a uma pergunta:
-    //   liberado          — quanto o marketplace de fato creditou (venda menos
-    //                       Ads, taxa, devolução). É a resposta ao "quanto
-    //                       eles me pagaram". SEM o saque.
-    //   transferidoBanco  — quanto saiu da plataforma pra conta da empresa.
-    //   pendente          — o que a plataforma já reconhece e ainda não soltou.
+    // Cada número responde a UMA pergunta (20/10/2026):
+    //   liberado            — o que o MARKETPLACE creditou menos o que debitou
+    //                         (venda − devolução − taxa − Ads ± reserva). Sem
+    //                         saque e sem dinheiro que não é da plataforma.
+    //   outrasEntradas/Saidas — dinheiro que passou pela conta do Mercado Pago
+    //                         mas não é do Mercado Livre: saque da Shopee
+    //                         recebido via Pix, maquininha, link, Pix enviado.
+    //                         Antes ele era somado como "venda do Mercado
+    //                         Livre" — e o saque da Shopee era contado duas vezes.
+    //   transferidoBanco    — saques concluídos para a conta da empresa.
+    //   pendente            — o que a plataforma já calculou e não soltou.
     const somar = (filtro, campo) => totais.rows
       .filter(filtro)
       .reduce((s, r) => s + Number(r[campo] || 0), 0);
+    const arred = (n) => Math.round(n * 100) / 100;
 
-    const liberadoSemSaque = (r) => r.status === 'liberado' && !r.eh_saque;
-    const totalLiberado = somar(liberadoSemSaque, 'total');
-    const totalPendente = somar((r) => r.status === 'pendente' && !r.eh_saque, 'total');
-    const transferidoBanco = Math.abs(somar((r) => r.status === 'liberado' && r.eh_saque, 'total'));
-    const transferenciaEmAndamento = Math.abs(somar((r) => r.status === 'pendente' && r.eh_saque, 'total'));
+    const mkLiberado = (r) => r.status === 'liberado' && r.grupo === 'marketplace';
+    const foraLiberado = (r) => r.status === 'liberado' && r.grupo === 'foraMarketplace';
+    const totalLiberado = arred(somar(mkLiberado, 'total'));
+    const totalPendente = arred(somar((r) => r.status === 'pendente' && r.grupo !== 'saque', 'total'));
+    // O saque da Shopee NÃO vai para o banco: a casa saca a Shopee para a
+    // conta do Mercado Pago da mesma empresa (Shopee Origem → Mercado Pago
+    // Origem, Shopee Hoggar → Mercado Pago Hoggar), e de lá o dinheiro sai
+    // para o banco junto com o do Mercado Livre. Somar os dois como
+    // "transferido para o banco" contaria o mesmo real duas vezes. Ver
+    // SAQUE_VAI_PARA_O_MERCADO_PAGO.
+    const vaiProBanco = (r) => !SAQUE_VAI_PARA_O_MERCADO_PAGO.includes(r.marketplace);
+    const transferidoBanco = arred(Math.abs(somar((r) => r.status === 'liberado' && r.grupo === 'saque' && vaiProBanco(r), 'total')));
+    const enviadoMercadoPago = arred(Math.abs(somar((r) => r.status === 'liberado' && r.grupo === 'saque' && !vaiProBanco(r), 'total')));
+    const transferenciaEmAndamento = arred(Math.abs(somar((r) => r.status === 'pendente' && r.grupo === 'saque', 'total')));
 
     res.json({
       resumoPorData: porData.rows,
@@ -214,13 +242,18 @@ router.get('/extrato', async (req, res, next) => {
       totais: {
         liberado: totalLiberado,
         pendente: totalPendente,
-        entradas: somar(liberadoSemSaque, 'entradas'),
-        saidas: somar(liberadoSemSaque, 'saidas'),
+        entradas: arred(somar(mkLiberado, 'entradas')),
+        saidas: arred(somar(mkLiberado, 'saidas')),
+        outrasEntradas: arred(somar(foraLiberado, 'entradas')),
+        outrasSaidas: arred(somar(foraLiberado, 'saidas')),
         transferidoBanco,
+        enviadoMercadoPago,
         transferenciaEmAndamento,
-        quantidadeLiberada: somar(liberadoSemSaque, 'quantidade'),
+        quantidadeSaques: somar((r) => r.grupo === 'saque', 'quantidade_saidas'),
+        quantidadeLiberada: somar(mkLiberado, 'quantidade'),
         quantidadePendente: somar((r) => r.status === 'pendente', 'quantidade'),
       },
+      grupos: GRUPOS_TIPO,
       avisos: avisos.rows,
       rotulos: LABEL,
     });
@@ -245,6 +278,18 @@ router.get('/repasses', async (req, res, next) => {
     if (condMktR) { conditions.push(condMktR); i = values.length + 1; }
     const condLojaR = condMulti('r.origem_integracao_id', req.query.origem_integracao_id, values, 'int');
     if (condLojaR) { conditions.push(condLojaR); i = values.length + 1; }
+    if (['pago', 'processando', 'previsto'].includes(req.query.status)) {
+      conditions.push(`r.status = $${i}`); values.push(req.query.status); i += 1;
+    }
+    if (req.query.busca && String(req.query.busca).trim()) {
+      conditions.push(`r.repasse_id_externo ILIKE $${i}`); values.push(`%${String(req.query.busca).trim()}%`); i += 1;
+    }
+    if (req.query.valor_min !== undefined && req.query.valor_min !== '' && Number.isFinite(Number(req.query.valor_min))) {
+      conditions.push(`ABS(r.valor_liquido) >= $${i}`); values.push(Number(req.query.valor_min)); i += 1;
+    }
+    if (req.query.valor_max !== undefined && req.query.valor_max !== '' && Number.isFinite(Number(req.query.valor_max))) {
+      conditions.push(`ABS(r.valor_liquido) <= $${i}`); values.push(Number(req.query.valor_max)); i += 1;
+    }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const { rows } = await pool.query(
@@ -301,15 +346,18 @@ router.get('/conciliacao', async (req, res, next) => {
       // ele apareceria como uma diferença gigante que não significa nada.
       // Vai numa coluna própria, pra continuar visível.
       `SELECT data_liberacao AS data, marketplace,
-              SUM(valor) FILTER (WHERE status = 'liberado' AND tipo <> 'saque') AS total_liberado,
+              SUM(valor) FILTER (WHERE status = 'liberado' AND tipo <> ALL($${vals.length + 1})) AS total_liberado,
               SUM(valor) FILTER (WHERE status = 'liberado' AND tipo = 'repasse_venda') AS repasse_venda,
-              SUM(valor) FILTER (WHERE status = 'liberado' AND tipo NOT IN ('repasse_venda', 'saque')) AS outros_lancamentos,
+              SUM(valor) FILTER (WHERE status = 'liberado' AND tipo <> 'repasse_venda' AND tipo <> ALL($${vals.length + 1})) AS outros_lancamentos,
               SUM(valor) FILTER (WHERE status = 'liberado' AND tipo = 'saque') AS saque,
               COUNT(*) AS quantidade
          FROM fin_extrato_lancamentos
          ${whereExtrato}
         GROUP BY data_liberacao, marketplace`,
-      vals
+      // Saque e dinheiro que não é da plataforma ficam fora da comparação com
+      // os pedidos (20/10/2026): o saque da Shopee que cai no Mercado Pago
+      // aparecia aqui como "diferença sem explicação" do Mercado Livre.
+      [...vals, [...GRUPOS_TIPO.saque, ...GRUPOS_TIPO.foraMarketplace]]
     );
 
     // Lado B: os pedidos. Só entram os que já estão marcados como liberados
@@ -418,6 +466,29 @@ router.get('/conciliacao', async (req, res, next) => {
       diasSemPedidos: linhas.filter((l) => l.pedidosTotal === null).length,
       diasDivergentes: linhas.filter((l) => l.confere === false).length,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/financeiro/fechamento — o mês fecha ou não fecha (20/10/2026)
+// ---------------------------------------------------------------------------
+// Por loja e por mês: saldo inicial, o que entrou e saiu (marketplace, fora
+// do marketplace, saque), saldo final e a DIFERENÇA. Diferença zero quer
+// dizer que nenhuma linha está faltando nem sobrando. É esta rota que a tela
+// usa para dizer se o número do mês é confiável. Ver lib/financeiroFechamento.js.
+router.get('/fechamento', async (req, res, next) => {
+  try {
+    const hoje = new Date();
+    const fim = /^\d{4}-\d{2}-\d{2}$/.test(req.query.data_fim || '') ? req.query.data_fim
+      : new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().slice(0, 10);
+    const inicio = /^\d{4}-\d{2}-\d{2}$/.test(req.query.data_inicio || '') ? req.query.data_inicio
+      : new Date(hoje.getFullYear(), hoje.getMonth() - 5, 1).toISOString().slice(0, 10);
+    const ids = String(req.query.origem_integracao_id || '')
+      .split(',').map((x) => Number(x)).filter((x) => Number.isInteger(x) && x > 0);
+    const lojas = await fechamentoMensal({ inicio, fim, integracaoIds: ids });
+    res.json({ inicio, fim, lojas, grupos: GRUPOS_TIPO, rotulos: LABEL });
   } catch (err) {
     next(err);
   }

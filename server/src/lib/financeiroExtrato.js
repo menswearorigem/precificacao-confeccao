@@ -71,7 +71,28 @@ const TIMEOUT_RELATORIO_ML_MS = 90 * 60 * 1000;
 
 const TIPOS_VALIDOS = new Set([
   'repasse_venda', 'devolucao', 'ads', 'taxa', 'ajuste', 'antecipacao', 'saque', 'outros',
+  // 20/10/2026 — a conta do Mercado Pago é o "banco" da casa, e o extrato dela
+  // traz dinheiro que NÃO é do Mercado Livre. Cada um em seu tipo, para nunca
+  // mais entrar no "Liberado pelo marketplace":
+  'reserva',                // dinheiro bloqueado/desbloqueado pela plataforma
+  'venda_direta',           // maquininha (Point) e link de pagamento
+  'transferencia_entrada',  // Pix recebido — inclui o saque da Shopee
+  'transferencia_saida',    // Pix enviado, conta paga com o saldo
+  'emprestimo',             // parcela de empréstimo do Mercado Pago
+  'rendimento',             // rendimento do saldo
 ]);
+
+// Os três grupos que a tela e o fechamento usam. Um tipo está em UM grupo só,
+// e é isso que garante que a soma dos grupos é o extrato inteiro — nada
+// contado duas vezes, nada esquecido.
+//   marketplace — o que a plataforma creditou/debitou pela operação de venda
+//   foraMarketplace — dinheiro que passou pela conta mas não é da plataforma
+//   saque — dinheiro saindo para o banco
+const GRUPOS_TIPO = {
+  marketplace: ['repasse_venda', 'devolucao', 'ads', 'taxa', 'ajuste', 'antecipacao', 'reserva', 'outros'],
+  foraMarketplace: ['venda_direta', 'transferencia_entrada', 'transferencia_saida', 'emprestimo', 'rendimento'],
+  saque: ['saque'],
+};
 
 // ---------------------------------------------------------------------------
 // Datas
@@ -386,7 +407,9 @@ async function vincularPedidos(integracaoId) {
         AND l.pedido_id IS NULL
         AND l.marketplace = 'mercado_livre'
         AND p.pagamento_id_marketplace IS NOT NULL
-        AND l.lancamento_id_externo = ANY(
+        -- desde 20/10/2026 o id da linha é "SOURCE_ID|descrição|instante|…";
+        -- o id do pagamento é o primeiro pedaço.
+        AND split_part(l.lancamento_id_externo, '|', 1) = ANY(
               regexp_split_to_array(replace(p.pagamento_id_marketplace, ' ', ''), ',')
             )`,
     [integracaoId]
@@ -427,14 +450,17 @@ async function sincronizarExtratoMercadoLivre(integracao, { inicio, fim }) {
     }
 
     const csv = await mercadoLivre.baixarRelatorioLiberacoes({ accessToken, arquivo: alvo.arquivo });
-    const { lancamentos, naoInterpretadas, totalLinhas } = mercadoLivre.mapearRelatorioLiberacoes(csv);
+    const { lancamentos, naoInterpretadas, totalLinhas, semColunaUnidade } = mercadoLivre.mapearRelatorioLiberacoes(csv);
     const gravados = await gravarLancamentos(integracao.id, 'mercado_livre', lancamentos);
 
     // Toda linha de saída de dinheiro pro banco também vira um repasse, que
     // é o nível que o financeiro compara com o extrato bancário.
-    for (const l of lancamentos.filter((x) => x.tipo === 'saque')) {
+    // A chave do repasse continua sendo o SOURCE_ID do saque (é o mesmo id
+    // que o Hub já gravava antes de 20/10/2026) — título do financeiro
+    // criado a partir de um repasse continua apontando para a mesma linha.
+    for (const l of lancamentos.filter((x) => x.tipo === 'saque' && x.valor < 0)) {
       await gravarRepasse(integracao.id, 'mercado_livre', {
-        idExterno: l.idExterno,
+        idExterno: l.sourceId || l.idExterno,
         dataLiberacao: l.dataLiberacao,
         dataEvento: l.dataEvento,
         valorLiquido: Math.abs(l.valor),
@@ -460,9 +486,14 @@ async function sincronizarExtratoMercadoLivre(integracao, { inicio, fim }) {
       relatorio_ate: null,
       ...cursoresApos(estado, janelaDoRelatorio),
       ultimo_erro: null,
-      ultimo_aviso: naoInterpretadas.length > 0
-        ? `${naoInterpretadas.length} de ${totalLinhas} linha(s) do relatório de liberações não puderam ser interpretadas (data ou valor ilegível) e ficaram FORA do extrato. Primeira delas, linha ${naoInterpretadas[0].linha}: ${naoInterpretadas[0].conteudo}`
-        : null,
+      ultimo_aviso: [
+        naoInterpretadas.length > 0
+          ? `${naoInterpretadas.length} de ${totalLinhas} linha(s) do relatório de liberações não puderam ser interpretadas (data ou valor ilegível) e ficaram FORA do extrato. Primeira delas, linha ${naoInterpretadas[0].linha}: ${naoInterpretadas[0].conteudo}`
+          : null,
+        semColunaUnidade
+          ? 'O relatório de liberações desta conta está sem a coluna "Unidade de negócio" (BUSINESS_UNIT). Sem ela não dá para separar o Pix recebido (ex.: saque da Shopee) da venda do Mercado Livre. Inclua a coluna em Mercado Pago › Relatórios › Liberações › Configurar.'
+          : null,
+      ].filter(Boolean).join(' ') || null,
     });
     return {
       fase: 'baixado', gravados, naoInterpretadas: naoInterpretadas.length, totalLinhas,
@@ -522,12 +553,16 @@ async function sincronizarExtratoShopee(integracao, { inicio, fim }, estado) {
 
   const gravados = await gravarLancamentos(integracao.id, 'shopee', lancamentos);
 
-  // Saque concluído = uma transferência pro banco. É o que o financeiro
-  // procura no extrato bancário.
-  for (const l of lancamentos.filter((x) => x.tipo === 'saque')) {
-    const concluido = String(l.detalhe?.transactionType || '').toUpperCase().includes('COMPLETED');
+  // Cada saque é UMA transferência pro banco. Na Shopee ela vem em duas
+  // transações: WITHDRAWAL_CREATED (com o valor — é ela que tira o dinheiro
+  // do saldo) e WITHDRAWAL_COMPLETED (valor zero, só avisa que caiu). O
+  // repasse nasce da primeira, pelo id dela; a segunda não vira repasse.
+  // FAILED/ROLLBACK devolvem o dinheiro ao saldo e entram no extrato como
+  // crédito — o saldo continua fechando.
+  for (const l of lancamentos.filter((x) => x.tipo === 'saque' && x.valor < 0)) {
+    const concluido = l.status === 'liberado';
     await gravarRepasse(integracao.id, 'shopee', {
-      idExterno: l.repasseIdExterno || l.idExterno,
+      idExterno: l.idExterno,
       dataLiberacao: l.dataLiberacao,
       dataEvento: l.dataEvento,
       valorLiquido: Math.abs(l.valor),
@@ -585,6 +620,31 @@ async function sincronizarExtratoTikTok(integracao, { inicio, fim }, estado) {
       statementId: statement.id,
     });
     descartadas += fora.length;
+
+    // O statement é a palavra final da TikTok sobre quanto entrou (ou saiu)
+    // naquele repasse. As linhas detalhadas que a API devolve NÃO cobrem tudo:
+    // statement de débito (Ads do GMV Max, ajuste, taxa cobrada à parte) vem
+    // com o valor e sem linha nenhuma. Conferido em 20/10/2026: 543 de 749
+    // statements não fechavam com a soma das linhas, e todo débito sumia do
+    // extrato. A diferença entra numa linha própria, marcada, para que a soma
+    // do extrato seja sempre igual à soma dos statements.
+    const somaLinhas = lancamentos.reduce((s, l) => s + Number(l.valor || 0), 0);
+    const diferenca = statement.valorLiquido === null ? 0
+      : Math.round((statement.valorLiquido - somaLinhas) * 100) / 100;
+    if (Math.abs(diferenca) >= 0.01) {
+      lancamentos.push({
+        idExterno: `${statement.id}:sem-detalhe`,
+        tipo: 'outros',
+        descricaoExterna: diferenca < 0
+          ? 'Débito do repasse sem detalhe na API da TikTok (Ads, taxa ou ajuste)'
+          : 'Crédito do repasse sem detalhe na API da TikTok',
+        valor: diferenca,
+        moeda: statement.moeda,
+        pedidoIdExterno: null,
+        repasseIdExterno: String(statement.id),
+        detalhe: { origem: 'statement_diferenca', valorStatement: statement.valorLiquido, somaLinhas },
+      });
+    }
 
     gravados += await gravarLancamentos(integracao.id, 'tiktok_shop', lancamentos.map((l) => ({
       ...l,
@@ -739,6 +799,7 @@ module.exports = {
   diaBrasilia,
   LABEL,
   TIPOS_VALIDOS,
+  GRUPOS_TIPO,
   JANELA_RELEITURA_DIAS,
   JANELA_MAXIMA_DIAS,
   HISTORICO_ALVO_DIAS,

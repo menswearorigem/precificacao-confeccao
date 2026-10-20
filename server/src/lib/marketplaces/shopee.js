@@ -48,10 +48,23 @@ function erroComStatus(mensagem, status, codigo) {
 // Lê a resposta como texto primeiro (nunca direto res.json()): quando a
 // Shopee devolve HTML de erro de gateway, res.json() estoura um
 // "Unexpected token <" que não diz nada sobre o que aconteceu de verdade.
+// Inteiros de 16 dígitos ou mais viram TEXTO antes do JSON.parse (20/10/2026).
+//
+// O `transaction_id` da carteira da Shopee tem 18 dígitos e o JavaScript só
+// representa inteiro exato até 9.007.199.254.740.991 (16 dígitos). Passando
+// disso, o número é ARREDONDADO: todo id gravado no Hub terminava em "0"
+// (conferido: 13.035 de 13.035 na loja SH origem). Dois lançamentos com id
+// parecido podiam virar o mesmo id e um deles sumia em silêncio. Valor em
+// dinheiro nunca tem 16 dígitos inteiros, então só ids são afetados — e quem
+// faz Number() em cima deles continua funcionando.
+function parseJsonSemPerderDigitos(texto) {
+  return JSON.parse(texto.replace(/([:\[,]\s*)(-?\d{16,})(?=\s*[,}\]])/g, '$1"$2"'));
+}
+
 async function lerRespostaJson(res, path) {
   const texto = await res.text();
   try {
-    return JSON.parse(texto);
+    return parseJsonSemPerderDigitos(texto);
   } catch {
     throw erroComStatus(
       `Resposta inesperada da Shopee em ${path} (${res.status}): ${texto.slice(0, 300)}`,
@@ -1015,7 +1028,13 @@ function mapearTransacaoCarteira(t) {
     valor,
     moeda: t.currency || 'BRL',
     pedidoIdExterno: t.order_sn || null,
-    repasseIdExterno: t.root_withdrawal_id != null ? String(t.root_withdrawal_id) : null,
+    // A Shopee devolve root_withdrawal_id = 0 em quase tudo (inclusive no
+    // próprio saque). Gravado como "0", TODOS os saques da loja viravam um
+    // repasse só — a aba Repasses mostrava uma linha por loja e o total
+    // "transferido para o banco" ficava só com o maior saque. Zero = sem
+    // repasse; o saque usa o próprio id (ver financeiroExtrato.js).
+    repasseIdExterno: t.root_withdrawal_id != null && String(t.root_withdrawal_id) !== '0'
+      ? String(t.root_withdrawal_id) : null,
     // A Shopee marca a transação como COMPLETED quando o dinheiro já é da
     // loja. Qualquer outro status é dinheiro ainda em trânsito e não pode
     // ser somado junto com o liberado.

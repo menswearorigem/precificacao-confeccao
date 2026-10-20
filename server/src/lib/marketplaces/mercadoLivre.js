@@ -755,9 +755,12 @@ async function solicitarRelatorioLiberacoes({ accessToken, inicio, fim }) {
   const res = await fetch(`${MP_API_BASE}${RELEASE_REPORT_PATH}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    // Fuso de Brasília: com "Z" a janela andava 3 horas e o fim do dia
+    // (21h–23h59) ficava para o relatório seguinte.
+    // Mantém o formato UTC com "Z" que a API documenta, só deslocado 3h.
     body: JSON.stringify({
-      begin_date: `${inicio}T00:00:00Z`,
-      end_date: `${fim}T23:59:59Z`,
+      begin_date: new Date(`${inicio}T00:00:00-03:00`).toISOString().replace('.000Z', 'Z'),
+      end_date: new Date(`${fim}T23:59:59-03:00`).toISOString().replace('.000Z', 'Z'),
     }),
   });
   const data = await lerRespostaJson(res, RELEASE_REPORT_PATH);
@@ -854,43 +857,60 @@ function valorDaColuna(linha, cabecalhos, aliases) {
   return undefined;
 }
 
-// Mapa "DESCRIPTION do Mercado Pago" -> tipo normalizado do nosso extrato.
-// O que não estiver aqui NÃO é chutado dentro do tipo mais parecido: vira
-// "outros", preservando a descrição original na tela.
-const TIPO_POR_DESCRICAO_ML = {
-  payment: 'repasse_venda',
-  credit_payment: 'repasse_venda',
-  settlement: 'repasse_venda',
-  refund: 'devolucao',
-  partial_refund: 'devolucao',
-  reserve_for_dispute: 'devolucao',
-  dispute: 'devolucao',
-  chargeback: 'devolucao',
-  reserve_for_chargeback: 'devolucao',
-  released_from_dispute: 'ajuste',
-  adjustment: 'ajuste',
-  reserve_for_debt_payment: 'ajuste',
-  tax: 'taxa',
-  fee: 'taxa',
-  mediation: 'taxa',
-  shipping: 'taxa',
-  advance_money: 'antecipacao',
-  discount_advance: 'antecipacao',
-  payout: 'saque',
-  withdrawal: 'saque',
-  transfer: 'saque',
-  money_transfer: 'saque',
-  advertising: 'ads',
-  ads: 'ads',
-};
+// Classificação de cada linha do Relatório de Liberações (refeita em
+// 20/10/2026, conferida linha a linha contra o CSV do painel do Mercado Pago).
+//
+// O QUE ESTAVA ERRADO ANTES
+// 1. Toda "payment" virava venda do Mercado Livre. Mas a conta do Mercado
+//    Pago é o "banco" da casa: o saque da Shopee cai nela como um Pix
+//    recebido (DESCRIPTION = payment, sem BUSINESS_UNIT), e a venda da
+//    maquininha e do link de pagamento também (BUSINESS_UNIT = Mercado Pago).
+//    Medido de 04/09 a 20/10/2026 na conta Origem: de R$ 256 mil em
+//    "payment", só R$ 96 mil eram venda do Mercado Livre — R$ 124 mil eram
+//    saques da Shopee (que a Shopee já tinha contado) e R$ 41 mil eram
+//    venda de maquininha/link.
+// 2. "mediation" (reclamação aberta pelo comprador, dinheiro tirado da conta)
+//    estava como taxa.
+// 3. "reserve_for_*" (dinheiro bloqueado e depois desbloqueado) caía em
+//    "outros" ou em devolução. São pares que se anulam com o tempo; vão para
+//    um tipo próprio, "reserva", para a tela mostrar quanto está retido.
+//
+// A regra é pela DESCRIPTION e, quando ela é "payment", pela BUSINESS_UNIT.
+// O que não for reconhecido NÃO é chutado: vira "outros" com o rótulo
+// original preservado (REGRA 2).
+function tipoNormalizadoML(descricao, { unidade = '', credito = 0, debito = 0, semColunaUnidade = false } = {}) {
+  const chave = String(descricao || '').trim().toLowerCase().replace(/-/g, '_');
+  const bu = String(unidade || '').trim().toLowerCase();
+  // Relatório configurado sem a coluna BUSINESS_UNIT: não há como separar o
+  // Pix recebido da venda. Fica o comportamento antigo (venda) e a
+  // sincronização avisa na tela para incluir a coluna no Mercado Pago.
+  if (semColunaUnidade && (chave === 'payment' || chave === 'settlement')) return 'repasse_venda';
+  const daMaquininhaOuLink = bu === 'mercado pago';
+  const semUnidade = bu === '';
 
-function tipoNormalizadoML(descricao, recordType) {
-  const chave = String(descricao || recordType || '').trim().toLowerCase();
-  if (TIPO_POR_DESCRICAO_ML[chave]) return TIPO_POR_DESCRICAO_ML[chave];
-  // Alguns rótulos chegam compostos ("payment_reserve", "refund_shipping").
-  for (const [prefixo, tipo] of Object.entries(TIPO_POR_DESCRICAO_ML)) {
-    if (chave.startsWith(prefixo)) return tipo;
+  if (chave === 'payout' || chave === 'withdrawal') return 'saque';
+  if (chave.startsWith('reserve_for_')) return 'reserva';
+
+  if (chave === 'payment' || chave === 'settlement') {
+    if (bu === 'mercado libre' || bu === 'mercado livre') return 'repasse_venda';
+    if (daMaquininhaOuLink) return 'venda_direta';
+    // Sem unidade de negócio = dinheiro que não veio de venda: Pix recebido
+    // (saque da Shopee, transferência entre contas) ou dinheiro que saiu da
+    // conta (pagamento de conta, Pix enviado).
+    if (semUnidade) return credito > 0 && debito === 0 ? 'transferencia_entrada' : 'transferencia_saida';
+    return 'outros';
   }
+
+  if (['refund', 'partial_refund', 'chargeback', 'dispute', 'mediation', 'mediation_cancel',
+    'chargeback_cancel', 'dispute_cancel'].includes(chave)) {
+    return daMaquininhaOuLink ? 'venda_direta' : 'devolucao';
+  }
+  if (chave === 'fee_release_in_advance' || chave === 'advance_money' || chave === 'discount_advance') return 'antecipacao';
+  if (chave === 'credit_payment') return 'emprestimo';
+  if (chave.startsWith('asset_management')) return 'rendimento';
+  if (chave.startsWith('shipping') || chave.startsWith('fee') || chave.startsWith('tax')) return 'taxa';
+  if (chave.includes('advertis') || chave === 'ads') return 'ads';
+  if (chave === 'adjustment' || chave === 'released_from_dispute') return 'ajuste';
   return 'outros';
 }
 
@@ -924,53 +944,92 @@ function datasDoRelatorio(valor) {
 // lista `naoInterpretadas`, que a sincronização registra como ressalva. Uma
 // linha de extrato que virou R$ 0,00 é pior que uma linha ausente, porque
 // ninguém percebe.
+// Identidade de UMA linha do relatório (20/10/2026).
+//
+// O defeito que inflava o "Liberado": a chave antiga era só o SOURCE_ID, e o
+// banco grava (conexão + id + tipo) como único. Mas o MESMO pagamento aparece
+// em VÁRIAS linhas do relatório — o bloqueio e o desbloqueio de uma reserva,
+// a mediação aberta e a cancelada, o pagamento e o débito dele. Com a chave
+// antiga a segunda linha SOBRESCREVIA a primeira: sobrava só o desbloqueio
+// (crédito) e o bloqueio (débito) sumia. Na conta Origem, em setembro, eram
+// 66 linhas de "reserve_for_payout" no relatório e 37 no Hub — cada saque
+// aparecia como R$ X de dinheiro novo entrando.
+//
+// Agora a chave é a linha inteira: id + descrição + instante + crédito +
+// débito. Duas leituras do mesmo período (relatórios que se sobrepõem) geram
+// exatamente a mesma chave e não duplicam; duas linhas diferentes nunca
+// colidem. Linhas IDÊNTICAS no mesmo relatório (raro, mas existe: dois
+// bloqueios iguais no mesmo segundo) recebem um contador "#2", "#3".
+function chaveDaLinhaML({ sourceId, descricao, instante, credito, debito }) {
+  return [sourceId || 'sem-id', descricao || 'sem-descricao', instante || 'sem-data',
+    (credito || 0).toFixed(2), (debito || 0).toFixed(2)].join('|').slice(0, 150);
+}
+
 function mapearRelatorioLiberacoes(csv) {
   const linhas = String(csv || '').split(/\r?\n/).filter((l) => l.trim() !== '');
-  if (linhas.length < 2) return { lancamentos: [], naoInterpretadas: [], totalLinhas: 0 };
+  if (linhas.length < 2) return { lancamentos: [], naoInterpretadas: [], totalLinhas: 0, saldoInicial: null };
 
   const separador = detectarSeparador(linhas[0]);
   const cabecalhos = partirLinhaCsv(linhas[0], separador).map((h) => h.replace(/^﻿/, '').toUpperCase());
 
   const lancamentos = [];
   const naoInterpretadas = [];
+  const repetidas = new Map();
+  let saldoInicial = null;
+  const semColunaUnidade = !cabecalhos.includes('BUSINESS_UNIT');
 
   for (let i = 1; i < linhas.length; i += 1) {
     const campos = partirLinhaCsv(linhas[i], separador);
-    // "Total"/rodapé do relatório: menos campos que o cabeçalho.
     if (campos.length < 2) continue;
 
     const bruta = valorDaColuna(campos, cabecalhos, ['DATE', 'SETTLEMENT_DATE', 'RELEASE_DATE', 'DATE_RELEASED', 'MONEY_RELEASE_DATE']);
-    const { dataLiberacao, dataEvento } = datasDoRelatorio(bruta);
+    const descricao = valorDaColuna(campos, cabecalhos, ['DESCRIPTION', 'TRANSACTION_TYPE', 'DETAIL']) || null;
+    const sourceId = valorDaColuna(campos, cabecalhos, ['SOURCE_ID', 'PAYMENT_ID', 'ID']) || null;
+    const recordType = valorDaColuna(campos, cabecalhos, ['RECORD_TYPE']) || null;
+
+    // Rodapé de totais: não tem data, nem id, nem descrição. Não é movimento
+    // (antes ele aparecia na tela como "1 linha ilegível ficou de fora").
+    if (!bruta && !sourceId && !descricao) continue;
 
     const credito = numeroDoRelatorio(valorDaColuna(campos, cabecalhos, ['NET_CREDIT_AMOUNT', 'CREDIT_AMOUNT']));
     const debito = numeroDoRelatorio(valorDaColuna(campos, cabecalhos, ['NET_DEBIT_AMOUNT', 'DEBIT_AMOUNT']));
+    const saldo = numeroDoRelatorio(valorDaColuna(campos, cabecalhos, ['BALANCE_AMOUNT']));
+
+    // Saldo inicial do período: primeira linha, com data e sem id/descrição
+    // (ou RECORD_TYPE = initial_available_balance). Não é dinheiro novo — é
+    // o que já estava na conta. Guardado à parte, nunca somado.
+    if ((!sourceId && !descricao) || String(recordType || '').toLowerCase() === 'initial_available_balance') {
+      saldoInicial = saldo ?? ((credito || 0) - (debito || 0));
+      continue;
+    }
+
+    const { dataLiberacao, dataEvento } = datasDoRelatorio(bruta);
     const unico = numeroDoRelatorio(valorDaColuna(campos, cabecalhos, ['SETTLEMENT_NET_AMOUNT', 'NET_AMOUNT', 'AMOUNT', 'TRANSACTION_AMOUNT']));
 
     let valor = null;
-    if (credito !== null || debito !== null) valor = (credito || 0) - (debito || 0);
+    // Os dois campos chegam sem sinal; débito é sempre o que SAIU.
+    if (credito !== null || debito !== null) valor = Math.abs(credito || 0) - Math.abs(debito || 0);
     else if (unico !== null) valor = unico;
 
     if (!dataLiberacao || valor === null) {
       naoInterpretadas.push({ linha: i + 1, conteudo: linhas[i].slice(0, 300) });
       continue;
     }
+    valor = Math.round(valor * 100) / 100;
 
-    const descricao = valorDaColuna(campos, cabecalhos, ['DESCRIPTION', 'TRANSACTION_TYPE', 'DETAIL']) || null;
-    const recordType = valorDaColuna(campos, cabecalhos, ['RECORD_TYPE']) || null;
-    const sourceId = valorDaColuna(campos, cabecalhos, ['SOURCE_ID', 'PAYMENT_ID', 'ID']) || null;
+    const unidade = valorDaColuna(campos, cabecalhos, ['BUSINESS_UNIT']) || '';
+    const subUnidade = (valorDaColuna(campos, cabecalhos, ['SUB_UNIT']) || '').trim();
     const pedidoExterno = valorDaColuna(campos, cabecalhos, ['ORDER_ID', 'EXTERNAL_REFERENCE']) || null;
-    const saldo = numeroDoRelatorio(valorDaColuna(campos, cabecalhos, ['BALANCE_AMOUNT']));
 
-    // Sem SOURCE_ID (acontece em linhas de ajuste), a chave usa data +
-    // descrição + posição na linha — estável entre releituras do MESMO
-    // relatório, que é o que importa pro ON CONFLICT.
-    const idExterno = sourceId
-      ? `${sourceId}`
-      : `linha:${dataLiberacao}:${(descricao || 'sem-descricao').slice(0, 40)}:${i}`;
+    let idExterno = chaveDaLinhaML({ sourceId, descricao, instante: bruta, credito: Math.abs(credito || 0), debito: Math.abs(debito || 0) });
+    const vezes = (repetidas.get(idExterno) || 0) + 1;
+    repetidas.set(idExterno, vezes);
+    if (vezes > 1) idExterno = `${idExterno}#${vezes}`;
 
     lancamentos.push({
       idExterno,
-      tipo: tipoNormalizadoML(descricao, recordType),
+      sourceId,
+      tipo: tipoNormalizadoML(descricao, { unidade, credito: Math.abs(credito || 0), debito: Math.abs(debito || 0), semColunaUnidade }),
       descricaoExterna: descricao || recordType || null,
       dataLiberacao,
       dataEvento,
@@ -981,6 +1040,13 @@ function mapearRelatorioLiberacoes(csv) {
       status: 'liberado',
       detalhe: {
         recordType,
+        sourceId,
+        unidade: unidade || null,
+        subUnidade: subUnidade || null,
+        meioPagamento: valorDaColuna(campos, cabecalhos, ['PAYMENT_METHOD']) || null,
+        // Ordem da linha no relatório: desempata linhas do mesmo segundo na
+        // conferência de saldo (o relatório já sai em ordem cronológica).
+        linha: i,
         saldoApos: saldo,
         taxaMp: numeroDoRelatorio(valorDaColuna(campos, cabecalhos, ['MP_FEE_AMOUNT'])),
         taxaFrete: numeroDoRelatorio(valorDaColuna(campos, cabecalhos, ['SHIPPING_FEE_AMOUNT'])),
@@ -991,7 +1057,7 @@ function mapearRelatorioLiberacoes(csv) {
     });
   }
 
-  return { lancamentos, naoInterpretadas, totalLinhas: linhas.length - 1 };
+  return { lancamentos, naoInterpretadas, totalLinhas: linhas.length - 1, saldoInicial, semColunaUnidade };
 }
 
 // ===========================================================================
