@@ -50,9 +50,20 @@ const TIPOS = [
   { chave: 'taxa', rotulo: 'Taxas e multas' },
   { chave: 'antecipacao', rotulo: 'Antecipação' },
   { chave: 'ajuste', rotulo: 'Ajustes' },
+  { chave: 'reserva', rotulo: 'Dinheiro retido (reserva)' },
   { chave: 'saque', rotulo: 'Saque para o banco' },
   { chave: 'outros', rotulo: 'Outros' },
+  // 20/10/2026 — dinheiro que passa pela conta do Mercado Pago mas NÃO é do
+  // Mercado Livre. Fica fora do "Liberado pelo marketplace" e dos gráficos.
+  { chave: 'transferencia_entrada', rotulo: 'Pix recebido (ex.: saque da Shopee)' },
+  { chave: 'transferencia_saida', rotulo: 'Pix enviado / conta paga' },
+  { chave: 'venda_direta', rotulo: 'Maquininha e link de pagamento' },
+  { chave: 'emprestimo', rotulo: 'Empréstimo' },
+  { chave: 'rendimento', rotulo: 'Rendimento' },
 ];
+// Tipos que não são dinheiro do marketplace (o servidor manda a lista em
+// `grupos.foraMarketplace`; esta é a reserva se a resposta vier sem ela).
+const FORA_MARKETPLACE_PADRAO = ['venda_direta', 'transferencia_entrada', 'transferencia_saida', 'emprestimo', 'rendimento'];
 const TIPO_LABEL = Object.fromEntries(TIPOS.map((t) => [t.chave, t.rotulo]));
 
 const STATUS_LABEL = { liberado: 'Liberado', pendente: 'Pendente' };
@@ -427,8 +438,12 @@ function AbaMovimentacao({ dados, podeAbrirPedido, contexto }) {
     const plataformas = new Set();
     const totais = {};
     const contagem = {};
+    const fora = new Set(dados?.grupos?.foraMarketplace || FORA_MARKETPLACE_PADRAO);
     for (const r of (dados?.resumoPorData || [])) {
       if (r.status !== 'liberado') continue;
+      // Pix recebido, maquininha etc. não são liberação do marketplace —
+      // somados aqui, o saque da Shopee aparecia de novo como Mercado Livre.
+      if (fora.has(r.tipo)) continue;
       const data = dataIso(r.data_liberacao);
       const valor = Number(r.total || 0);
       const linha = porDia.get(data) || { data, total: 0, saque: 0 };
@@ -483,7 +498,10 @@ function AbaMovimentacao({ dados, podeAbrirPedido, contexto }) {
   // numa casa que saca quase tudo, a diferença é a ordem de grandeza do mês.
   // O gráfico ao lado já o excluía; agora a tabela lê igual e o saque aparece
   // numa linha declarada FORA do total, em vez de sumir.
-  const porTipoDestino = useMemo(() => porTipo.filter((t) => t.tipo !== 'saque'), [porTipo]);
+  const porTipoDestino = useMemo(() => {
+    const fora = new Set(dados?.grupos?.foraMarketplace || FORA_MARKETPLACE_PADRAO);
+    return porTipo.filter((t) => t.tipo !== 'saque' && !fora.has(t.tipo));
+  }, [porTipo, dados]);
   const linhaSaque = useMemo(() => porTipo.find((t) => t.tipo === 'saque') || null, [porTipo]);
 
   // Barras com sinal: o que entrou sobe, o que saiu desce. É a leitura que um
@@ -553,7 +571,7 @@ function AbaMovimentacao({ dados, podeAbrirPedido, contexto }) {
           Icone={Banknote}
           rotulo="Liberado pelo marketplace"
           valor={brl(dados.totais.liberado)}
-          explicacao="O que a plataforma de fato creditou: venda menos publicidade, taxa e devolução. O saque para o banco não entra aqui."
+          explicacao={`O que a plataforma de fato creditou: venda menos publicidade, taxa e devolução. Não entram o saque nem o dinheiro que não é do marketplace (Pix recebido, maquininha): ${brl(Number(dados.totais.outrasEntradas || 0) + Number(dados.totais.outrasSaidas || 0))} no período.`}
         />
         <IndicadorDestaque
           Icone={ArrowDownCircle}
@@ -583,7 +601,7 @@ function AbaMovimentacao({ dados, podeAbrirPedido, contexto }) {
           Icone={Landmark}
           rotulo="Transferido para o banco"
           valor={brl(dados.totais.transferidoBanco)}
-          explicacao={`Saques concluídos no período — o mesmo dinheiro saindo da plataforma para a conta da empresa. Em andamento: ${brl(dados.totais.transferenciaEmAndamento)}.`}
+          explicacao={`Saques do Mercado Pago e da TikTok para a conta da empresa. O saque da Shopee vai para o Mercado Pago (${brl(dados.totais.enviadoMercadoPago || 0)}) e por isso não soma aqui — senão contaria duas vezes. Em andamento: ${brl(dados.totais.transferenciaEmAndamento)}.`}
         />
       </div>
 
