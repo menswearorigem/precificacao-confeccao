@@ -82,7 +82,11 @@ function resumo(oc, respostas, agora = new Date()) {
     responsavelNome: oc.responsavel_nome || (r.ehDividida(oc) ? 'Equipe (dividida)' : r.ehCompartilhada(oc) ? 'Qualquer um' : null),
     dividida: r.ehDividida(oc),
     compartilhada: r.ehCompartilhada(oc),
+    // Quem pode pegar a tarefa compartilhada (filtro por pessoa na Equipe).
+    grupo: r.ehCompartilhada(oc) ? (s.responsaveis || []) : [],
     horario: s.horario || null,
+    nPassos: (s.passos || []).length,
+    minutosEstimados: s.minutosEstimados || null,
     nProdutos: (oc.produtos_resolvidos || []).length,
     nVariantes,
     progresso: prog,
@@ -91,6 +95,7 @@ function resumo(oc, respostas, agora = new Date()) {
     fotos: respostas.reduce((n, x) => n + r.fotosDe(x.valor).length, 0),
     conferir: Boolean(s.conferirDepois),
     concluidaEm: oc.concluida_em,
+    concluidaPorNome: oc.concluida_por_nome || null,
     noPrazo: oc.concluida_em ? new Date(oc.concluida_em) <= new Date(oc.prazo) : null,
     comentarioConferencia: oc.comentario_conferencia,
     motivoNaoFeita: oc.motivo_nao_feita ? (r.MOTIVOS_NAO_FEITA[oc.motivo_nao_feita] || oc.motivo_nao_feita) : null,
@@ -215,7 +220,8 @@ async function previaFutura(usuarioId, de, ate) {
       for (const h of horas) {
         itens.push({
           modeloId: m.id, titulo: m.titulo, prioridade: m.prioridade, setor: m.setor, data: dia,
-          horaLimite: h, compartilhada: m.modo_atribuicao !== 'cada_um', dividida: m.modo_atribuicao === 'dividir',
+          horaLimite: h, compartilhada: ['qualquer_um', 'dividir'].includes(m.modo_atribuicao), dividida: m.modo_atribuicao === 'dividir',
+          tipo: m.modo_atribuicao === 'evento' ? 'evento' : 'tarefa',
         });
       }
     }
@@ -241,10 +247,22 @@ router.get('/meu-dia', a(async (req, res) => {
   const itens = rows.map((oc) => resumo(oc, respostas.get(oc.id), agora));
   const abertas = ordenarLista(itens.filter((x) => r.ABERTOS.includes(x.status)));
   const feitas = itens.filter((x) => !r.ABERTOS.includes(x.status)).sort((x, y) => new Date(y.concluidaEm || 0) - new Date(x.concluidaEm || 0));
+  // Os horários de hoje de uma tarefa compartilhada que OUTRA pessoa pegou:
+  // só para o cartão mostrar "feito pela Clara" no lugar certo da fila.
+  const { rows: outros } = await pool.query(
+    `SELECT ${COLUNAS_OC} ${JOINS_OC}
+      WHERE o.data = $2::date AND o.responsavel_id IS NOT NULL AND o.responsavel_id <> $1
+        AND o.snapshot->>'modoAtribuicao' = 'qualquer_um' AND o.snapshot ? 'horario'
+        AND o.snapshot->'responsaveis' @> to_jsonb(ARRAY[$1::int])
+      LIMIT 100`,
+    [req.user.id, hoje]
+  );
+  const daEquipe = outros.map((oc) => ({ ...resumo(oc, [], agora), deOutro: true }));
   const lembretes = abertas.filter((x) => !x.atrasada && x.lembreteMin
     && new Date(x.prazo).getTime() - agora.getTime() <= x.lembreteMin * 60000)
     .map((x) => ({ id: x.id, titulo: x.titulo, minutos: Math.max(0, Math.round((new Date(x.prazo) - agora) / 60000)) }));
 
+  const eventos = await r.eventosDoDia(hoje, { usuarioId: req.user.id });
   let futuro = [];
   if (req.query.ver === 'amanha' || req.query.ver === 'semana') {
     const de = rec.somarDias(hoje, 1);
@@ -259,6 +277,8 @@ router.get('/meu-dia', a(async (req, res) => {
     },
     abertas,
     feitas,
+    daEquipe,
+    eventos,
     lembretes,
     futuro,
   });
@@ -638,6 +658,8 @@ router.get('/modelos', requireAdmin, a(async (req, res) => {
   if (filtro === 'pausado') where = "m.status = 'pausado' AND NOT m.avulsa";
   if (filtro === 'arquivado') where = "m.status = 'arquivado'";
   if (filtro === 'avulsas') where = "m.avulsa AND m.status <> 'arquivado'";
+  // Tudo de uma vez: a tela filtra e conta as abas sem ir ao servidor.
+  if (filtro === 'todos') where = 'TRUE';
   const { rows } = await pool.query(
     `SELECT m.id, m.titulo, m.setor, m.prioridade, m.recorrencia, m.hora_limite, m.responsaveis, m.modo_atribuicao, m.status, m.avulsa,
             m.modo_produtos, m.conferir_depois, m.updated_at,
@@ -661,7 +683,13 @@ router.get('/modelos', requireAdmin, a(async (req, res) => {
     horaLimite: m.hora_limite ? String(m.hora_limite).slice(0, 5) : null,
     proximas: m.status === 'ativo' ? rec.proximas(m.recorrencia, hoje, 3) : [],
     responsaveis: (m.responsaveis || []).map((id) => nome.get(id) || '—'),
-    compartilhada: m.modo_atribuicao !== 'cada_um',
+    responsaveisIds: m.responsaveis || [],
+    pessoas: (m.responsaveis || []).map((id) => ({ id, nome: nome.get(id) || '—' })),
+    horarios: m.recorrencia?.horarios || (m.hora_limite ? [String(m.hora_limite).slice(0, 5)] : []),
+    variasVezes: Boolean(m.recorrencia?.horarios),
+    tipo: m.modo_atribuicao === 'evento' ? 'evento' : 'tarefa',
+    modoAtribuicao: m.modo_atribuicao,
+    compartilhada: ['qualquer_um', 'dividir'].includes(m.modo_atribuicao),
     dividida: m.modo_atribuicao === 'dividir',
     status: m.status,
     avulsa: m.avulsa,
@@ -720,6 +748,8 @@ router.post('/modelos/:id/status', requireAdmin, a(async (req, res) => {
 }));
 
 router.post('/modelos/:id/gerar-agora', requireAdmin, a(async (req, res) => {
+  const { rows: [m] } = await pool.query('SELECT modo_atribuicao FROM rotina_modelos WHERE id = $1', [Number(req.params.id)]);
+  if (m?.modo_atribuicao === 'evento') throw new r.ErroRotina('Evento não vira tarefa: ele já aparece sozinho no dia programado.');
   const { criadas } = await r.gerarDia(hojeEmBrasilia(), { modeloIds: [Number(req.params.id)], forcar: true });
   res.json({ criadas });
 }));
@@ -769,9 +799,19 @@ router.get('/equipe', requireAdmin, a(async (req, res) => {
     }
   }
   const pct = (n, d) => (d ? Math.round((n / d) * 100) : null);
+  // Todas as pessoas que têm rotina ativa — para o filtro mostrar também
+  // quem ainda não tem nada hoje.
+  const { rows: equipe } = await pool.query(
+    `SELECT DISTINCT u.id, u.nome FROM rotina_modelos m
+       JOIN LATERAL jsonb_array_elements_text(m.responsaveis) AS x(id) ON TRUE
+       JOIN usuarios u ON u.id = x.id::int
+      WHERE m.status = 'ativo' AND u.ativo ORDER BY u.nome`
+  );
   res.json({
     hoje,
     periodo: dias,
+    equipe: equipe.map((x) => ({ id: x.id, nome: x.nome })),
+    eventos: await r.eventosDoDia(hoje),
     paineis: {
       atrasadas: itens.filter((x) => x.atrasada).length,
       conferir: itens.filter((x) => x.status === 'aguardando_conferencia').length,

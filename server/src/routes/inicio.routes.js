@@ -161,7 +161,10 @@ async function lerRotinas(user, hoje) {
     );
     equipe = c;
   }
+  const { eventosDoDia } = require('../lib/rotinas');
+  const eventos = await eventosDoDia(hoje, { usuarioId: user.id });
   return {
+    eventos,
     atrasadas: rows.filter((x) => new Date(x.prazo).getTime() < agora),
     deHoje: rows.filter((x) => x.data === hoje && new Date(x.prazo).getTime() >= agora),
     equipe,

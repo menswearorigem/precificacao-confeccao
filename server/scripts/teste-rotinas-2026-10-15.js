@@ -419,6 +419,9 @@ async function main() {
     const detComp = (await nath(`/api/rotinas/ocorrencias/${comp[0].id}`)).dados;
     ok('a Nath consegue concluir a compartilhada de horário', (await nath(`/api/rotinas/ocorrencias/${detComp.id}/concluir`, { metodo: 'POST', corpo: {} })).status === 200);
     ok('e ela some do Meu dia da Erizânia (ficou com a Nath)', !(await eri('/api/rotinas/meu-dia')).dados.abertas.some((x) => x.id === detComp.id));
+    const mdEriComp = (await eri('/api/rotinas/meu-dia')).dados;
+    ok('...mas volta em "daEquipe" para o cartão mostrar "feito pela Nath"', mdEriComp.daEquipe.some((x) => x.id === detComp.id && x.deOutro && x.responsavelNome === 'Nath'), JSON.stringify(mdEriComp.daEquipe));
+    ok('e não conta nos números da Erizânia', !mdEriComp.feitas.some((x) => x.id === detComp.id));
 
     // c) recontagem fica registrada
     r = await admin('/api/rotinas/modelos', { metodo: 'POST', corpo: {
@@ -502,6 +505,43 @@ async function main() {
     const ocNum = (await pool.query('SELECT id FROM rotina_ocorrencias WHERE modelo_id = $1', [r.dados.id])).rows[0].id;
     r = await eri(`/api/rotinas/ocorrencias/${ocNum}/concluir`, { metodo: 'POST', corpo: { marcarRestantes: true } });
     ok('"marcar o resto" não responde número por ninguém (422 só com o número)', r.status === 422 && r.dados.faltas.length === 1, JSON.stringify(r.dados));
+
+    // -------------------------------------------------------------------
+    secao('12. Evento sem baixa e telas repaginadas (21/10/2026)');
+    // -------------------------------------------------------------------
+    r = await admin('/api/rotinas/modelos', { metodo: 'POST', corpo: {
+      tipo: 'evento', titulo: 'Treinamento do time', instrucaoHtml: '', setor: 'marketplace',
+      responsaveis: [uEri.id, uNath.id], recorrencia: { tipo: 'dias_semana', dias: [1, 2, 3, 4, 5, 6, 7], pularFeriados: false },
+      horaLimite: '00:01', passos: [{ texto: 'não deve ficar', tipo: 'feito' }], conferirDepois: true, lembreteMin: 30,
+    } });
+    ok('evento salva sem instrução e sem passos', r.status === 201, JSON.stringify(r.dados));
+    const idEv = r.dados.id;
+    const mEv = (await pool.query('SELECT modo_atribuicao, conferir_depois, lembrete_min FROM rotina_modelos WHERE id = $1', [idEv])).rows[0];
+    ok('evento gravado como modo "evento", sem conferência nem lembrete', mEv.modo_atribuicao === 'evento' && !mEv.conferir_depois && mEv.lembrete_min == null);
+    ok('evento não guarda passos', (await pool.query('SELECT COUNT(*)::int n FROM rotina_modelo_passos WHERE modelo_id = $1', [idEv])).rows[0].n === 0);
+    await rot.gerarDia(HOJE);
+    ok('evento NÃO vira tarefa (nenhuma ocorrência)', (await pool.query('SELECT COUNT(*)::int n FROM rotina_ocorrencias WHERE modelo_id = $1', [idEv])).rows[0].n === 0);
+    const mdEv = (await eri('/api/rotinas/meu-dia')).dados;
+    ok('Meu dia traz o evento de hoje, com o horário', mdEv.eventos.some((e) => e.modeloId === idEv && e.horario === '00:01'), JSON.stringify(mdEv.eventos));
+    ok('evento que já começou não conta como atrasado', mdEv.abertas.every((x) => x.modeloId !== idEv) && mdEv.contadores.atrasadas === mdEv.abertas.filter((x) => x.atrasada).length);
+    ok('quem não está no evento não vê', !(await semModulo('/api/rotinas/meu-dia')).dados?.eventos);
+    r = await admin(`/api/rotinas/modelos/${idEv}/gerar-agora`, { metodo: 'POST' });
+    ok('"criar a de hoje agora" em evento é recusado com frase', r.status === 400 && /Evento/.test(r.dados.error));
+    const eqEv = (await admin('/api/rotinas/equipe')).dados;
+    ok('Equipe traz os eventos de hoje e a lista da equipe', eqEv.eventos.some((e) => e.modeloId === idEv) && eqEv.equipe.some((p) => p.id === uEri.id));
+    ok('Equipe: tarefa compartilhada diz o grupo (filtro por pessoa)', eqEv.itens.filter((x) => x.compartilhada).every((x) => Array.isArray(x.grupo) && x.grupo.length > 0));
+    ok('Equipe: linha traz nº de passos', eqEv.itens.every((x) => typeof x.nPassos === 'number'));
+    const todos = (await admin('/api/rotinas/modelos?status=todos')).dados;
+    const linhaEv = todos.find((m) => m.id === idEv);
+    ok('Modelos "todos" traz tipo, pessoas e horários', linhaEv?.tipo === 'evento' && linhaEv.pessoas.length === 2 && linhaEv.horarios[0] === '00:01' && todos.some((m) => m.status !== 'ativo'));
+    const linhaChat = todos.find((m) => m.id === idChat);
+    ok('rotina de 4 horários lista os 4 horários', linhaChat.horarios.join(',') === '09:00,12:00,15:00,18:00' && linhaChat.variasVezes);
+    const ini2 = (await eri('/api/inicio')).dados;
+    ok('Início mostra o evento como "não precisa dar baixa"', JSON.stringify(ini2).includes('Treinamento do time'), JSON.stringify(ini2).slice(0, 300));
+    const sem = (await eri('/api/rotinas/meu-dia?ver=semana')).dados.futuro;
+    ok('semana marca o evento como evento', sem.some((f) => f.modeloId === idEv && f.tipo === 'evento'));
+    r = await admin(`/api/rotinas/modelos/${idEv}/duplicar`, { metodo: 'POST' });
+    ok('duplicar evento continua evento', r.status === 201 && (await pool.query('SELECT modo_atribuicao FROM rotina_modelos WHERE id = $1', [r.dados.id])).rows[0].modo_atribuicao === 'evento');
   } finally {
     servidor.close();
     await pool.end();

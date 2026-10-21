@@ -1,59 +1,37 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Camera, ChevronRight, CircleCheck, Clock, Package, RefreshCw, TriangleAlert, Undo2, BellRing, Users } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { CircleCheck, Clock, RefreshCw, BellRing, Users, CalendarClock, ChevronDown } from 'lucide-react';
 import { api } from '../api/client';
 import { NumeroAnimado } from '../components/ui';
-import { NOME_PRIORIDADE, diaLongo, prazoTexto, situacaoDe, horaDe, diaCurto } from '../lib/rotinas';
+import { CartaoRotina, CartaoEvento, Vazio } from '../components/RotinaCartoes';
+import { NOME_PRIORIDADE, diaLongo, horaDe, diaCurto, agruparPorRotina, situacaoDoGrupo } from '../lib/rotinas';
 import '../styles/rotinas.css';
 
-// Rotinas › Meu dia (15/10/2026) — o que a pessoa logada tem para fazer.
-// Pensada para o celular: três contadores, lista compacta (atrasadas →
-// prazo → prioridade), um toque abre a tarefa.
+// Rotinas › Meu dia — refeita em 21/10/2026 a pedido do dono: cartões em vez
+// de lista. Cada cartão traz tudo resumido; a rotina de vários horários fica
+// num cartão só, com os horários (feito / agora / atrasado / depois) em fila.
+// Eventos (treinamento, reunião) aparecem em cima: sem baixa e sem atraso.
 
-export function LinhaTarefa({ item, hoje, mostrarPessoa = false, onClick }) {
-  const sit = situacaoDe(item);
-  const corpo = (
-    <>
-      <span className="rt-linha-barra" />
-      <span className="rt-linha-corpo">
-        <span className="rt-linha-titulo">
-          <b>{item.titulo}{item.horario ? ` · ${item.horario}` : ''}</b>
-          {(item.prioridade === 'alta' || item.prioridade === 'urgente') && <i className={`rt-chip rt-pri-${item.prioridade}`}>{NOME_PRIORIDADE[item.prioridade]}</i>}
-          {item.correcao && <i className="rt-chip rt-tom-atencao">Correção</i>}
-        </span>
-        <span className="rt-linha-sub">
-          <span className="rt-prazo"><Clock size={12} />{prazoTexto(item, hoje)}</span>
-          {mostrarPessoa && <span><Users size={12} />{item.responsavelNome || '—'}</span>}
-          {!mostrarPessoa && item.dividida && <span><Users size={12} />equipe divide</span>}
-          {item.nVariantes > 0 && <span><Package size={12} />{item.nVariantes === 1 ? '1 variante' : `${item.nVariantes} variantes`}</span>}
-          {item.progresso.total > 0 && aberta(item.status) && <span className="rt-prog"><i style={{ width: `${Math.round((item.progresso.feitos / item.progresso.total) * 100)}%` }} />{item.progresso.feitos} de {item.progresso.total}</span>}
-          {item.pedeFoto && aberta(item.status) && <span title="Pede foto"><Camera size={12} /></span>}
-          {item.problemas > 0 && <span className="rt-txt-perigo"><TriangleAlert size={12} />{item.problemas} problema{item.problemas > 1 ? 's' : ''}</span>}
-        </span>
-        {item.status === 'devolvida' && item.comentarioConferencia && (
-          <span className="rt-linha-devolvida"><Undo2 size={12} />{item.comentarioConferencia}</span>
-        )}
-      </span>
-      <i className={`rt-chip rt-tom-${sit.tom}`}>{sit.rotulo}</i>
-      <ChevronRight size={16} className="rt-linha-seta" />
-    </>
-  );
-  const classe = `rt-linha rt-tom-borda-${sit.tom}`;
-  if (onClick) return <button type="button" className={classe} onClick={onClick}>{corpo}</button>;
-  return <Link to={`/rotinas/tarefa/${item.id}`} className={classe}>{corpo}</Link>;
-}
-const aberta = (status) => status === 'pendente' || status === 'em_andamento' || status === 'devolvida';
+const precisaAtencao = (g) => {
+  const s = situacaoDoGrupo(g).tom;
+  return s === 'perigo' || s === 'atencao';
+};
+const encerrado = (g) => ['ok', 'roxo', 'neutro'].includes(situacaoDoGrupo(g).tom);
 
 export default function RotinasMeuDiaPage() {
   const [ver, setVer] = useState('hoje');
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(false);
+  const [agora, setAgora] = useState(() => new Date());
+  const [verFeitas, setVerFeitas] = useState(false);
+  const navigate = useNavigate();
 
   const carregar = useCallback(async () => {
     setCarregando(true);
     try {
       setDados(await api.get(`/rotinas/meu-dia${ver !== 'hoje' ? `?ver=${ver}` : ''}`));
+      setAgora(new Date());
       setErro('');
     } catch (e) { setErro(e.message); } finally { setCarregando(false); }
   }, [ver]);
@@ -64,9 +42,36 @@ export default function RotinasMeuDiaPage() {
     return () => clearInterval(t);
   }, [carregar]);
 
+  // Horários que outra pessoa pegou entram só no cartão de uma rotina que a
+  // pessoa também tem hoje — nunca viram cartão sozinhos.
+  const grupos = useMemo(() => {
+    const meus = [...(dados?.abertas || []), ...(dados?.feitas || [])];
+    const modelos = new Set(meus.map((x) => x.modeloId));
+    return agruparPorRotina([...meus, ...(dados?.daEquipe || []).filter((x) => modelos.has(x.modeloId))]);
+  }, [dados]);
+  const atencao = grupos.filter(precisaAtencao);
+  const paraHoje = grupos.filter((g) => !precisaAtencao(g) && !encerrado(g));
+  const feitas = grupos.filter((g) => !precisaAtencao(g) && encerrado(g));
+  const abrir = (item) => navigate(`/rotinas/tarefa/${item.id}`);
   const c = dados?.contadores;
-  const porDia = {};
-  for (const f of dados?.futuro || []) (porDia[f.data] ||= []).push(f);
+
+  // Semana/amanhã: agrupa por dia e, dentro do dia, por rotina (horários juntos).
+  const futuro = useMemo(() => {
+    const dias = new Map();
+    for (const f of dados?.futuro || []) {
+      if (!dias.has(f.data)) dias.set(f.data, new Map());
+      const m = dias.get(f.data);
+      if (!m.has(f.modeloId)) m.set(f.modeloId, { ...f, horas: [] });
+      if (f.horaLimite) m.get(f.modeloId).horas.push(f.horaLimite);
+    }
+    return [...dias.entries()].map(([dia, m]) => [dia, [...m.values()]]);
+  }, [dados]);
+
+  const grade = (lista) => (
+    <div className="rt-cartoes">
+      {lista.map((g) => <CartaoRotina key={g.chave} grupo={g} hoje={dados.hoje} onAbrir={abrir} />)}
+    </div>
+  );
 
   return (
     <div className="page-wide rotinas">
@@ -77,7 +82,7 @@ export default function RotinasMeuDiaPage() {
         </div>
         <div className="rt-topo-acoes">
           <div className="segmentado" role="tablist" aria-label="Ver">
-            {[['hoje', 'Hoje'], ['amanha', 'Ver amanhã'], ['semana', 'Ver semana']].map(([k, l]) => (
+            {[['hoje', 'Hoje'], ['amanha', 'Amanhã'], ['semana', 'Semana']].map(([k, l]) => (
               <button key={k} type="button" className={ver === k ? 'ativo' : ''} onClick={() => setVer(k)}>{l}</button>
             ))}
           </div>
@@ -89,7 +94,7 @@ export default function RotinasMeuDiaPage() {
 
       {erro && <div className="rt-aviso rt-tom-perigo">{erro}</div>}
 
-      {dados?.lembretes?.length > 0 && (
+      {ver === 'hoje' && dados?.lembretes?.length > 0 && (
         <div className="rt-aviso rt-tom-atencao" role="status">
           <BellRing size={16} />
           <span>
@@ -100,44 +105,74 @@ export default function RotinasMeuDiaPage() {
         </div>
       )}
 
-      <div className="rt-contadores">
-        <div className="rt-contador rt-tom-perigo"><small>Atrasadas</small><b><NumeroAnimado valor={c?.atrasadas ?? 0} /></b></div>
-        <div className="rt-contador rt-tom-info"><small>Para hoje</small><b><NumeroAnimado valor={c?.paraHoje ?? 0} /></b></div>
-        <div className="rt-contador rt-tom-ok"><small>Feitas</small><b><NumeroAnimado valor={c?.feitas ?? 0} /></b></div>
-      </div>
+      {ver === 'hoje' && (
+        <div className="rt-resumo-dia">
+          <span className="rt-resumo-n rt-tom-perigo"><b><NumeroAnimado valor={c?.atrasadas ?? 0} /></b> atrasada{c?.atrasadas === 1 ? '' : 's'}</span>
+          <span className="rt-resumo-n rt-tom-info"><b><NumeroAnimado valor={c?.paraHoje ?? 0} /></b> para fazer</span>
+          <span className="rt-resumo-n rt-tom-ok"><b><NumeroAnimado valor={c?.feitas ?? 0} /></b> feita{c?.feitas === 1 ? '' : 's'} hoje</span>
+        </div>
+      )}
 
-      {ver === 'hoje' && dados && (
-        <section className="rt-lista">
-          {dados.abertas.length === 0 ? (
-            <div className="rt-vazio"><CircleCheck size={22} /><b>Nada pendente.</b><span>Quando um administrador passar uma tarefa, ela aparece aqui.</span></div>
-          ) : dados.abertas.map((it) => <LinhaTarefa key={it.id} item={it} hoje={dados.hoje} />)}
+      {ver === 'hoje' && dados?.eventos?.length > 0 && (
+        <section className="rt-secao">
+          <h2 className="rt-secao-h"><CalendarClock size={15} />Eventos de hoje <small>só para saber — ninguém atrasa</small></h2>
+          <div className="rt-eventos">
+            {dados.eventos.map((ev, i) => <CartaoEvento key={`${ev.modeloId}-${ev.horario || i}`} ev={ev} agora={agora} />)}
+          </div>
         </section>
       )}
 
-      {ver === 'hoje' && dados?.feitas?.length > 0 && (
-        <details className="rt-feitas">
-          <summary>Encerradas hoje ({dados.feitas.length})</summary>
-          <section className="rt-lista">
-            {dados.feitas.map((it) => <LinhaTarefa key={it.id} item={it} hoje={dados.hoje} />)}
+      {ver === 'hoje' && dados && (
+        <>
+          {atencao.length > 0 && (
+            <section className="rt-secao">
+              <h2 className="rt-secao-h rt-txt-perigo">Precisa de atenção <small>{atencao.length}</small></h2>
+              {grade(atencao)}
+            </section>
+          )}
+          <section className="rt-secao">
+            <h2 className="rt-secao-h">Para hoje <small>{paraHoje.length}</small></h2>
+            {paraHoje.length ? grade(paraHoje) : (
+              <Vazio titulo={atencao.length ? 'O resto do dia está em dia.' : 'Nada pendente.'} texto="Quando um administrador passar uma tarefa, ela aparece aqui." />
+            )}
           </section>
-        </details>
+          {feitas.length > 0 && (
+            <section className="rt-secao">
+              <button type="button" className="rt-secao-h rt-secao-toggle" onClick={() => setVerFeitas((x) => !x)} aria-expanded={verFeitas}>
+                <CircleCheck size={15} />Feitas hoje <small>{feitas.length}</small><ChevronDown size={15} className={verFeitas ? 'virado' : ''} />
+              </button>
+              {verFeitas && grade(feitas)}
+            </section>
+          )}
+        </>
       )}
 
       {ver !== 'hoje' && dados && (
         <section className="rt-futuro">
-          {Object.keys(porDia).length === 0 && <div className="rt-vazio"><Clock size={22} /><b>Nada programado.</b></div>}
-          {Object.entries(porDia).map(([dia, itens]) => (
+          {futuro.length === 0 && <Vazio icone={Clock} titulo="Nada programado." />}
+          {futuro.map(([dia, itens]) => (
             <div key={dia} className="rt-futuro-dia">
               <h3>{diaLongo(dia)}</h3>
-              {itens.map((f) => (
-                <div key={`${f.modeloId}-${dia}-${f.horaLimite || ''}`} className="rt-linha rt-linha-estatica">
-                  <span className="rt-linha-barra" />
-                  <span className="rt-linha-corpo">
-                    <span className="rt-linha-titulo"><b>{f.titulo}</b>{(f.prioridade === 'alta' || f.prioridade === 'urgente') && <i className={`rt-chip rt-pri-${f.prioridade}`}>{NOME_PRIORIDADE[f.prioridade]}</i>}</span>
-                    <span className="rt-linha-sub"><span><Clock size={12} />{f.horaLimite ? `até ${f.horaLimite}` : 'até o fim do dia'}</span>{f.compartilhada && <span><Users size={12} />{f.dividida ? 'equipe divide' : 'qualquer um da equipe'}</span>}</span>
-                  </span>
-                </div>
-              ))}
+              <div className="rt-cartoes rt-cartoes-mini">
+                {itens.map((f) => (
+                  <article key={f.modeloId} className={`rt-cartao rt-cartao-estatico ${f.tipo === 'evento' ? 'rt-faixa-info' : 'rt-faixa-neutro'}`}>
+                    <header className="rt-cartao-topo">
+                      <span className="rt-cartao-tags">
+                        {f.tipo === 'evento' && <i className="rt-tag"><CalendarClock size={11} />evento</i>}
+                        {(f.prioridade === 'alta' || f.prioridade === 'urgente') && <i className={`rt-chip rt-pri-${f.prioridade}`}>{NOME_PRIORIDADE[f.prioridade]}</i>}
+                        {f.dividida && <i className="rt-tag"><Users size={11} />equipe divide</i>}
+                        {!f.dividida && f.compartilhada && <i className="rt-tag"><Users size={11} />qualquer um</i>}
+                      </span>
+                    </header>
+                    <h3 className="rt-cartao-titulo">{f.titulo}</h3>
+                    {f.horas.length > 1 ? (
+                      <div className="rt-horas">{f.horas.map((h) => <span key={h} className="rt-hora-slot depois"><b>{h}</b></span>)}</div>
+                    ) : (
+                      <p className="rt-cartao-info"><span><Clock size={12} />{f.horas[0] ? `${f.tipo === 'evento' ? 'às' : 'até'} ${f.horas[0]}` : 'até o fim do dia'}</span></p>
+                    )}
+                  </article>
+                ))}
+              </div>
             </div>
           ))}
         </section>
@@ -145,10 +180,11 @@ export default function RotinasMeuDiaPage() {
 
       <details className="rt-como">
         <summary>Como funciona</summary>
-        <p>As tarefas aparecem aqui no dia em que foram programadas pelo administrador. Toque numa tarefa para ler o que fazer, ver os produtos e responder cada passo — cada resposta é salva na hora, dá para sair e voltar.</p>
-        <p><b>Atrasada</b> é a que passou do horário limite: ela continua aqui até ser concluída ou marcada como "não consegui fazer". Se a tarefa pede conferência, depois de concluir ela vai para o administrador; se ele <b>devolver</b>, ela volta para cá com o comentário.</p>
-        <p>Tarefa de <b>qualquer um da equipe</b> fica com quem responder primeiro.</p>
-        {dados && <p className="ink-soft">Atualizado às {horaDe(new Date())} · {diaCurto(dados.hoje)}</p>}
+        <p>Cada cartão é uma tarefa do dia. Toque nele para ler o que fazer, ver os produtos e responder os passos — cada resposta é salva na hora, dá para sair e voltar.</p>
+        <p>Tarefa com <b>vários horários</b> (ex.: chat às 9h, 12h, 15h e 18h) fica num cartão só: os horários feitos ficam verdes, o próximo fica destacado e o que passou do horário fica vermelho. Toque no horário para abrir.</p>
+        <p><b>Atrasada</b> é a que passou do horário limite: continua aqui até ser concluída ou marcada como "não consegui fazer". Se o administrador <b>devolver</b>, ela volta com o comentário.</p>
+        <p><b>Eventos</b> (treinamento, reunião) só avisam o horário: não precisa dar baixa e ninguém fica atrasado.</p>
+        {dados && <p className="ink-soft">Atualizado às {horaDe(agora)} · {diaCurto(dados.hoje)}</p>}
       </details>
     </div>
   );

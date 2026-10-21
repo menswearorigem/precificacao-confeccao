@@ -289,7 +289,7 @@ function blocoAgenda(d) {
 function blocoRotinas(d) {
   const out = vazio('rotinas');
   if (!d) return out;
-  const { atrasadas = [], deHoje = [], equipe = null } = d;
+  const { atrasadas = [], deHoje = [], equipe = null, eventos = [] } = d;
   if (equipe?.conferir) {
     out.acoes.push({ chave: 'rotinas-conferir', rotulo: 'Rotinas para conferir', valor: inteiro(equipe.conferir), sub: 'aprovar ou devolver', rota: '/rotinas/equipe?painel=conferir', tom: 'atencao', modulo: 'rotinas', peso: 2 });
   }
@@ -303,6 +303,8 @@ function blocoRotinas(d) {
     atrasadas.slice(0, 4).forEach((x) => out.atencao.push({ titulo: x.titulo, sub: x.status === 'devolvida' ? 'devolvida para refazer' : `venceu ${x.hora ? `às ${x.hora}` : dataBr(x.data)}`, rota: `/rotinas/tarefa/${x.id}`, tom: 'urgente', modulo: 'rotinas' }));
   }
   if (deHoje.length) out.frases.push({ texto: `${plural(deHoje.length, 'rotina', 'rotinas')} para hoje`, rota: '/rotinas', tom: 'info' });
+  // Evento: só aparece no dia, sem baixa e sem atraso.
+  eventos.forEach((x) => out.hoje.push({ hora: x.horario || null, titulo: x.titulo, sub: 'evento · não precisa dar baixa', rota: '/rotinas', tom: 'info', modulo: 'rotinas' }));
   deHoje.forEach((x) => out.hoje.push({ hora: x.hora || null, titulo: x.titulo, sub: `rotina${x.status === 'em_andamento' ? ' · em andamento' : ''}${x.status === 'devolvida' ? ' · devolvida' : ''}`, rota: `/rotinas/tarefa/${x.id}`, tom: x.prioridade === 'urgente' || x.prioridade === 'alta' ? 'atencao' : 'info', modulo: 'rotinas' }));
   return out;
 }

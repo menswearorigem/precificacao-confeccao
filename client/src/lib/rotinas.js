@@ -134,3 +134,83 @@ export async function enviarFoto(arquivo, ocorrenciaId) {
   if (!res.ok) throw new Error(dados.error || `Não deu para enviar a foto (${res.status}).`);
   return dados;
 }
+
+// ---------------------------------------------------------------------------
+// Cartões (21/10/2026): a tarefa de vários horários vira UM cartão com os
+// horários dentro. Chave: rotina + dia (+ id, quando é tarefa de um horário só).
+// ---------------------------------------------------------------------------
+export const aberta = (status) => status === 'pendente' || status === 'em_andamento' || status === 'devolvida';
+export const terminada = (status) => status === 'concluida' || status === 'aguardando_conferencia';
+
+export function agruparPorRotina(itens) {
+  const grupos = new Map();
+  for (const x of itens) {
+    // Compartilhada: os horários ficam juntos mesmo depois que cada um foi
+    // pego por uma pessoa diferente.
+    const chave = x.horario ? `${x.modeloId}|${x.data}|${x.compartilhada ? 'eq' : x.responsavelId}` : `t${x.id}`;
+    if (!grupos.has(chave)) grupos.set(chave, { chave, modeloId: x.modeloId, data: x.data, titulo: x.titulo, itens: [] });
+    grupos.get(chave).itens.push(x);
+  }
+  for (const g of grupos.values()) g.itens.sort((a, b) => String(a.horario || '').localeCompare(String(b.horario || '')) || a.id - b.id);
+  return [...grupos.values()];
+}
+
+// O horário que a pessoa deve abrir agora: o atrasado mais antigo; senão o
+// próximo aberto; senão o último.
+export function proximoDoGrupo(g) {
+  const meus = g.itens.filter((x) => !x.deOutro);
+  return meus.find((x) => x.atrasada) || meus.find((x) => aberta(x.status)) || meus[meus.length - 1] || g.itens[0];
+}
+
+// Pior situação do grupo — dá a cor da faixa do cartão.
+export function situacaoDoGrupo(gTodo) {
+  const g = { itens: gTodo.itens.filter((x) => !x.deOutro) };
+  if (!g.itens.length) return { rotulo: 'Com a equipe', tom: 'neutro' };
+  if (g.itens.some((x) => x.atrasada)) return { rotulo: 'Atrasada', tom: 'perigo' };
+  if (g.itens.some((x) => x.status === 'devolvida')) return { rotulo: 'Devolvida', tom: 'atencao' };
+  if (g.itens.some((x) => x.status === 'em_andamento')) return { rotulo: 'Fazendo', tom: 'latao' };
+  if (g.itens.some((x) => x.status === 'pendente')) return { rotulo: 'Para fazer', tom: 'info' };
+  if (g.itens.some((x) => x.status === 'aguardando_conferencia')) return { rotulo: 'Conferir', tom: 'roxo' };
+  if (g.itens.every((x) => x.status === 'nao_feita')) return { rotulo: 'Não feita', tom: 'neutro' };
+  return { rotulo: 'Feita', tom: 'ok' };
+}
+
+// Estado de UM horário dentro do cartão.
+export function estadoDoHorario(x, proximoId) {
+  if (x.deOutro) {
+    const nome = String(x.responsavelNome || 'outra pessoa').split(' ')[0];
+    return terminada(x.status) ? { classe: 'feito outro', rotulo: nome } : { classe: 'outro', rotulo: `com ${nome}` };
+  }
+  if (x.atrasada) return { classe: 'atrasado', rotulo: 'atrasado' };
+  if (x.status === 'concluida') return { classe: 'feito', rotulo: 'feito' };
+  if (x.status === 'aguardando_conferencia') return { classe: 'conferir', rotulo: 'entregue' };
+  if (x.status === 'nao_feita') return { classe: 'nao', rotulo: 'não feito' };
+  if (x.status === 'devolvida') return { classe: 'devolvido', rotulo: 'devolvido' };
+  if (x.id === proximoId) return { classe: 'agora', rotulo: x.status === 'em_andamento' ? 'fazendo' : 'agora' };
+  return { classe: 'depois', rotulo: 'depois' };
+}
+
+export const MODO_TEXTO = {
+  cada_um: 'cada um faz a sua', qualquer_um: 'qualquer um resolve', dividir: 'dividem os passos', evento: 'todos veem',
+};
+
+// Iniciais e cor estável por pessoa (avatar sem foto).
+export function iniciais(nome) {
+  const p = String(nome || '?').trim().split(/\s+/);
+  return ((p[0]?.[0] || '?') + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase();
+}
+const CORES_PESSOA = ['#8a5a2b', '#2e7d6b', '#7b4fa0', '#b5532e', '#3f6fb0', '#6b7d2e', '#a03f6b', '#4f6b7d'];
+export function corPessoa(id) { return CORES_PESSOA[Math.abs(Number(id) || 0) % CORES_PESSOA.length]; }
+
+// Evento: "começa às 15:00" / "começou às 15:00" — nunca "atrasado".
+export function estadoEvento(ev, agora = new Date()) {
+  if (!ev.horario) return { rotulo: 'hoje', tom: 'info' };
+  const hm = new Intl.DateTimeFormat('pt-BR', { timeZone: FUSO, hour: '2-digit', minute: '2-digit', hour12: false }).format(agora);
+  const min = (s) => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
+  const falta = min(ev.horario) - min(hm);
+  if (falta > 60) return { rotulo: `começa às ${ev.horario}`, tom: 'info' };
+  if (falta > 0) return { rotulo: `começa em ${falta} min`, tom: 'atencao' };
+  const dur = ev.minutos || 60;
+  if (-falta < dur) return { rotulo: 'acontecendo agora', tom: 'ok' };
+  return { rotulo: `foi às ${ev.horario}`, tom: 'neutro' };
+}

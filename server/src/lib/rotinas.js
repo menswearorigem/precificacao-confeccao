@@ -151,10 +151,13 @@ function horaValida(h) {
 }
 
 async function normalizarModelo(body, db = pool, { avulsa = false } = {}) {
+  // Evento (21/10/2026): tem hora de começo, todo mundo escolhido vê, ninguém
+  // conclui e ninguém atrasa. Gravado como modo_atribuicao = 'evento'.
+  const evento = body.tipo === 'evento' || body.modoAtribuicao === 'evento';
   const titulo = textoLimpo(body.titulo, 120);
-  if (!titulo) throw new ErroRotina('Dê um título para a tarefa.');
+  if (!titulo) throw new ErroRotina(evento ? 'Dê um nome para o evento.' : 'Dê um título para a tarefa.');
   const instrucaoHtml = sanitizarInstrucao(body.instrucaoHtml);
-  if (!htmlTemTexto(instrucaoHtml)) throw new ErroRotina('Escreva o que precisa ser feito.');
+  if (!evento && !htmlTemTexto(instrucaoHtml)) throw new ErroRotina('Escreva o que precisa ser feito.');
   if (instrucaoHtml.length > 20000) throw new ErroRotina('A instrução ficou longa demais (máx. ~20 mil caracteres).');
   const setor = SETORES[body.setor] ? body.setor : null;
   if (!setor) throw new ErroRotina('Escolha o setor da tarefa.');
@@ -165,18 +168,18 @@ async function normalizarModelo(body, db = pool, { avulsa = false } = {}) {
   const imagens = idsInteiros(body.anexos?.imagens);
   if (imagens.length > 3) throw new ErroRotina('No máximo 3 imagens de referência.');
 
-  const modoProdutos = body.modoProdutos === 'automatica' ? 'automatica' : 'fixa';
+  const modoProdutos = !evento && body.modoProdutos === 'automatica' ? 'automatica' : 'fixa';
   const filtro = modoProdutos === 'automatica' ? normalizarFiltroProdutos(body.filtroProdutos) : null;
   if (filtro && !filtro.marcas.length && !filtro.canais.length && !filtro.curvas.length && !filtro.grupos.length && !filtro.subgrupos.length) {
     throw new ErroRotina('A lista automática precisa de pelo menos um filtro (marca, canal, curva ou grupo).');
   }
-  const produtos = modoProdutos === 'fixa'
+  const produtos = modoProdutos === 'fixa' && !evento
     ? (Array.isArray(body.produtos) ? body.produtos : []).slice(0, 500).map((p) => ({
       produtoId: Number(p.produtoId), varianteId: p.varianteId ? Number(p.varianteId) : null,
     })).filter((p) => Number.isInteger(p.produtoId) && p.produtoId > 0)
     : [];
 
-  const passos = normalizarPassos(body.passos);
+  const passos = evento ? [] : normalizarPassos(body.passos);
   const temProdutos = modoProdutos === 'automatica' || produtos.length > 0;
   if (!temProdutos && passos.some((p) => p.porProduto)) {
     throw new ErroRotina('Há passo marcado "por produto", mas a tarefa não tem produtos. Escolha os produtos ou desmarque.');
@@ -186,7 +189,7 @@ async function normalizarModelo(body, db = pool, { avulsa = false } = {}) {
   }
 
   const responsaveis = idsInteiros(body.responsaveis);
-  if (!responsaveis.length) throw new ErroRotina('Escolha quem faz a tarefa.');
+  if (!responsaveis.length) throw new ErroRotina(evento ? 'Escolha quem vê o evento.' : 'Escolha quem faz a tarefa.');
   const { rows: pessoas } = await db.query('SELECT id, role, ativo FROM usuarios WHERE id = ANY($1)', [responsaveis]);
   if (pessoas.length !== responsaveis.length || pessoas.some((p) => !p.ativo)) throw new ErroRotina('Algum responsável não existe mais ou está desativado.');
 
@@ -196,21 +199,21 @@ async function normalizarModelo(body, db = pool, { avulsa = false } = {}) {
 
   const minutos = body.minutosEstimados === '' || body.minutosEstimados == null ? null : Number(body.minutosEstimados);
   if (minutos != null && (!Number.isInteger(minutos) || minutos < 1 || minutos > 1440)) throw new ErroRotina('O tempo estimado vai de 1 a 1440 minutos.');
-  const lembrete = body.lembreteMin === '' || body.lembreteMin == null ? null : Number(body.lembreteMin);
+  const lembrete = evento || body.lembreteMin === '' || body.lembreteMin == null ? null : Number(body.lembreteMin);
   if (lembrete != null && (!Number.isInteger(lembrete) || lembrete < 5 || lembrete > 1440)) throw new ErroRotina('O lembrete vai de 5 a 1440 minutos antes do prazo.');
   // Com vários horários no dia, cada tarefa vence no próprio horário — o
   // "horário limite" único não vale (fica vazio para não confundir).
   const horaLimite = recorrencia.horarios ? null : horaValida(body.horaLimite);
   if (lembrete && !horaLimite && !recorrencia.horarios) throw new ErroRotina('Para avisar antes do prazo, defina o horário limite.');
 
-  const conferirDepois = Boolean(body.conferirDepois);
+  const conferirDepois = !evento && Boolean(body.conferirDepois);
   let conferenteId = conferirDepois && body.conferenteId ? Number(body.conferenteId) : null;
   if (conferenteId) {
     const { rows } = await db.query("SELECT 1 FROM usuarios WHERE id = $1 AND role = 'admin' AND ativo", [conferenteId]);
     if (!rows.length) throw new ErroRotina('Quem confere precisa ser um administrador ativo.');
   }
   let correcao = null;
-  if (body.correcaoAutomatica?.responsavelId) {
+  if (!evento && body.correcaoAutomatica?.responsavelId) {
     const id = Number(body.correcaoAutomatica.responsavelId);
     const { rows } = await db.query('SELECT 1 FROM usuarios WHERE id = $1 AND ativo', [id]);
     if (!rows.length) throw new ErroRotina('Quem corrige o problema não existe mais ou está desativado.');
@@ -230,7 +233,8 @@ async function normalizarModelo(body, db = pool, { avulsa = false } = {}) {
     produtos,
     passos,
     responsaveis,
-    modoAtribuicao: ['qualquer_um', 'dividir'].includes(body.modoAtribuicao) ? body.modoAtribuicao : 'cada_um',
+    modoAtribuicao: evento ? 'evento' : ['qualquer_um', 'dividir'].includes(body.modoAtribuicao) ? body.modoAtribuicao : 'cada_um',
+    tipo: evento ? 'evento' : 'tarefa',
     recorrencia,
     horaLimite,
     minutosEstimados: minutos,
@@ -328,6 +332,7 @@ function linhaParaModelo(r, passos = [], produtos = []) {
     passos,
     responsaveis: r.responsaveis,
     modoAtribuicao: r.modo_atribuicao,
+    tipo: r.modo_atribuicao === 'evento' ? 'evento' : 'tarefa',
     recorrencia: r.recorrencia,
     horaLimite: r.hora_limite ? String(r.hora_limite).slice(0, 5) : null,
     minutosEstimados: r.minutos_estimados,
@@ -613,7 +618,8 @@ function ehDividida(oc) {
 //   origemOcorrenciaId — liga a ocorrência à que a originou (correção)
 async function gerarDia(dia, { usuarioId = null, modeloIds = null, forcar = false, origemOcorrenciaId = null } = {}) {
   const valores = [];
-  let where = "m.status = 'ativo'";
+  // Evento não vira tarefa: não tem baixa nem atraso (ver eventosDoDia).
+  let where = "m.status = 'ativo' AND m.modo_atribuicao <> 'evento'";
   if (modeloIds) { valores.push(modeloIds); where += ` AND m.id = ANY($${valores.length})`; }
   if (usuarioId) { valores.push(JSON.stringify([usuarioId])); where += ` AND m.responsaveis @> $${valores.length}::jsonb`; }
   const { rows: modelos } = await pool.query(`SELECT * FROM rotina_modelos m WHERE ${where}`, valores);
@@ -642,6 +648,33 @@ async function gerarDia(dia, { usuarioId = null, modeloIds = null, forcar = fals
     }
   }
   return { dia, criadas };
+}
+
+// Eventos do dia (21/10/2026): lidos direto do modelo, sem ocorrência — por
+// isso nunca atrasam, nunca pedem conferência e não pesam na taxa no prazo.
+// usuarioId = só os que a pessoa vê; sem ele, todos (administrador).
+async function eventosDoDia(dia, { usuarioId = null } = {}) {
+  const valores = [];
+  let where = "m.status = 'ativo' AND m.modo_atribuicao = 'evento'";
+  if (usuarioId) { valores.push(JSON.stringify([usuarioId])); where += ` AND m.responsaveis @> $${valores.length}::jsonb`; }
+  const { rows } = await pool.query(
+    `SELECT m.id, m.titulo, m.instrucao_html, m.motivo, m.setor, m.prioridade, m.recorrencia, m.hora_limite, m.responsaveis, m.minutos_estimados
+       FROM rotina_modelos m WHERE ${where}`,
+    valores
+  );
+  const out = [];
+  for (const m of rows) {
+    if (!rec.ocorreEm(m.recorrencia, dia)) continue;
+    const horarios = m.recorrencia?.horarios || [m.hora_limite ? String(m.hora_limite).slice(0, 5) : null];
+    for (const h of horarios) {
+      out.push({
+        modeloId: m.id, tipo: 'evento', titulo: m.titulo, data: dia, horario: h, setor: m.setor, prioridade: m.prioridade,
+        instrucaoHtml: htmlTemTexto(m.instrucao_html) ? m.instrucao_html : null, motivo: m.motivo,
+        minutos: m.minutos_estimados, responsaveis: m.responsaveis || [],
+      });
+    }
+  }
+  return out.sort((x, y) => String(x.horario || '99').localeCompare(String(y.horario || '99')) || x.titulo.localeCompare(y.titulo, 'pt-BR'));
 }
 
 // Job: uma passada a cada 15 min; a primeira depois da virada do dia gera
@@ -803,6 +836,7 @@ function situacao(oc, agora = new Date()) {
 }
 
 module.exports = {
+  eventosDoDia,
   SETORES, MARCAS, CANAIS, TIPOS_PASSO, PROVAS, PRIORIDADES, PESO_PRIORIDADE, ABERTOS, MOTIVOS_NAO_FEITA,
   ErroRotina, sanitizarInstrucao, escaparHtml, normalizarModelo, salvarModelo, carregarModelo, linhaParaPasso,
   catalogo, previaFiltro, variantesDe, resolverProdutos, chavesDeProduto, curvasAbc, limparCacheCurva,

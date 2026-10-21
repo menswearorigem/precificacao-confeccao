@@ -68,7 +68,7 @@ function Bloco({ n, titulo, sub, children }) {
 
 // Editor de texto simples: negrito, itálico, listas e link. O HTML é
 // sanitizado de novo no servidor — aqui só se escreve.
-function EditorTexto({ valor, onChange }) {
+function EditorTexto({ valor, onChange, placeholder }) {
   const ref = useRef(null);
   useEffect(() => {
     if (ref.current && ref.current.innerHTML !== valor) ref.current.innerHTML = valor || '';
@@ -90,7 +90,7 @@ function EditorTexto({ valor, onChange }) {
       </div>
       <div
         ref={ref} className="rt-editor-area" contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true"
-        data-placeholder="Explique o passo a passo como se a pessoa nunca tivesse feito. Ex.: Contar fisicamente cada variante abaixo e lançar a quantidade. Se divergir mais de 2 peças do sistema, fotografar a prateleira."
+        data-placeholder={placeholder || 'Explique o passo a passo como se a pessoa nunca tivesse feito. Ex.: Contar fisicamente cada variante abaixo e lançar a quantidade. Se divergir mais de 2 peças do sistema, fotografar a prateleira.'}
         onInput={(e) => onChange(e.currentTarget.innerHTML)}
         onPaste={(e) => { e.preventDefault(); document.execCommand('insertText', false, e.clipboardData.getData('text/plain')); }}
       />
@@ -339,7 +339,11 @@ export default function RotinaModeloFormPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const editando = Boolean(id);
-  const [form, setForm] = useState(() => ({ ...VAZIO, avulsa: params.get('avulsa') === '1', recorrencia: { ...VAZIO.recorrencia, data: hojeIso() } }));
+  const [form, setForm] = useState(() => ({
+    ...VAZIO, avulsa: params.get('avulsa') === '1', tipo: params.get('evento') === '1' ? 'evento' : 'tarefa',
+    recorrencia: { ...VAZIO.recorrencia, data: hojeIso(), ...(params.get('evento') === '1' ? { tipo: 'uma_vez' } : {}) },
+  }));
+  const evento = form.tipo === 'evento';
   const [carregado, setCarregado] = useState(!editando);
   const [status, setStatus] = useState('ativo');
   const [pessoas, setPessoas] = useState([]);
@@ -433,7 +437,7 @@ export default function RotinaModeloFormPage() {
       const aviso = r.geradas
         ? `"${form.titulo}" salva — ${r.geradas === 1 ? 'a tarefa de hoje já está' : `${r.geradas} tarefas de hoje já estão`} no Meu dia de quem faz.`
         : `"${form.titulo}" salva.${!form.avulsa ? ' A próxima tarefa nasce no próximo dia programado.' : ''}`;
-      navigate(form.avulsa ? '/rotinas/equipe' : '/rotinas/modelos', { replace: true, state: { aviso } });
+      navigate(form.avulsa ? '/rotinas/equipe' : '/rotinas/modelos', { replace: true, state: { aviso: evento ? `Evento "${form.titulo}" salvo — aparece no Meu dia de quem vê, no dia programado.` : aviso } });
       return r;
     } catch (e) {
       setErro(e.message);
@@ -459,8 +463,8 @@ export default function RotinaModeloFormPage() {
       <Link to={form.avulsa ? '/rotinas/equipe' : '/rotinas/modelos'} className="rt-voltar"><ArrowLeft size={15} />{form.avulsa ? 'Equipe' : 'Modelos'}</Link>
       <header className="rt-topo">
         <div>
-          <h1>{form.avulsa ? (editando ? 'Tarefa avulsa' : 'Nova tarefa avulsa') : (editando ? 'Editar rotina' : 'Nova rotina')}</h1>
-          <p className="ink-soft">{editando ? 'Mudanças valem para as próximas tarefas — as que já nasceram ficam como estavam.' : 'Quatro blocos. Só título, instrução, setor e quem faz são obrigatórios.'}</p>
+          <h1>{evento ? (editando ? 'Editar evento' : 'Novo evento') : form.avulsa ? (editando ? 'Tarefa avulsa' : 'Nova tarefa avulsa') : (editando ? 'Editar rotina' : 'Nova rotina')}</h1>
+          <p className="ink-soft">{evento ? 'Tem hora para começar, mas não tem baixa: ninguém fica atrasado.' : editando ? 'Mudanças valem para as próximas tarefas — as que já nasceram ficam como estavam.' : 'Quatro blocos. Só título, instrução, setor e quem faz são obrigatórios.'}</p>
         </div>
         {editando && (
           <div className="rt-topo-acoes">
@@ -474,22 +478,33 @@ export default function RotinaModeloFormPage() {
       {status !== 'ativo' && <div className="rt-aviso rt-tom-atencao"><Pause size={15} />Esta rotina está {status === 'pausado' ? 'pausada' : 'arquivada'} — não gera tarefas.</div>}
       {erro && <div className="rt-aviso rt-tom-perigo"><TriangleAlert size={16} />{erro}</div>}
 
-      <Bloco n={1} titulo="O que fazer">
+      {!editando && !form.avulsa && (
+        <div className="rt-tipo-escolha" role="radiogroup" aria-label="Tipo">
+          <button type="button" role="radio" aria-checked={!evento} className={!evento ? 'ativo' : ''} onClick={() => set('tipo', 'tarefa')}>
+            <b>Tarefa</b><small>Alguém faz e dá baixa. Tem prazo e pode atrasar.</small>
+          </button>
+          <button type="button" role="radio" aria-checked={evento} className={evento ? 'ativo' : ''} onClick={() => set('tipo', 'evento')}>
+            <b>Evento</b><small>Treinamento, reunião… Todos veem o horário; ninguém dá baixa nem atrasa.</small>
+          </button>
+        </div>
+      )}
+
+      <Bloco n={1} titulo={evento ? 'O evento' : 'O que fazer'}>
         <label className="field">
           <span className="field-label">Título <small className="ink-soft">{form.titulo.length}/120</small></span>
-          <input value={form.titulo} maxLength={120} onChange={(e) => set('titulo', e.target.value)} placeholder="Contagem cíclica — curva A" />
+          <input value={form.titulo} maxLength={120} onChange={(e) => set('titulo', e.target.value)} placeholder={evento ? 'Treinamento do time' : 'Contagem cíclica — curva A'} />
         </label>
         <div className="field">
-          <span className="field-label">Instrução escrita</span>
-          <EditorTexto valor={form.instrucaoHtml} onChange={(v) => set('instrucaoHtml', v)} />
+          <span className="field-label">{evento ? <>Descrição <small className="ink-soft">(opcional — onde é, o que levar, link da chamada)</small></> : 'Instrução escrita'}</span>
+          <EditorTexto valor={form.instrucaoHtml} onChange={(v) => set('instrucaoHtml', v)} placeholder={evento ? 'Ex.: Sala de reunião. Levar o celular carregado. Link da chamada: …' : undefined} />
         </div>
-        <label className="field">
+        {!evento && <label className="field">
           <span className="field-label">Por que essa tarefa existe <small className="ink-soft">(opcional — aparece em cinza para quem faz)</small></span>
           <input value={form.motivo} maxLength={200} onChange={(e) => set('motivo', e.target.value)} placeholder="O saldo do sistema desvia da prateleira toda semana." />
-        </label>
+        </label>}
         <div className="rt-campo"><span>Setor</span><Chips opcoes={SETORES} valor={form.setor} onChange={(v) => set('setor', v)} /></div>
-        <div className="rt-campo"><span>Marca</span><Chips multi opcoes={MARCAS.map((m) => [m, m])} valor={form.marcas} onChange={(v) => set('marcas', v)} /></div>
-        <div className="rt-campo"><span>Canal</span><Chips multi opcoes={CANAIS} valor={form.canais} onChange={(v) => set('canais', v)} /></div>
+        {!evento && <><div className="rt-campo"><span>Marca</span><Chips multi opcoes={MARCAS.map((m) => [m, m])} valor={form.marcas} onChange={(v) => set('marcas', v)} /></div>
+        <div className="rt-campo"><span>Canal</span><Chips multi opcoes={CANAIS} valor={form.canais} onChange={(v) => set('canais', v)} /></div></>}
         <div className="rt-campo rt-campo-topo">
           <span>Links e imagens de apoio</span>
           <div className="rt-anexos-edit">
@@ -515,6 +530,7 @@ export default function RotinaModeloFormPage() {
         </div>
       </Bloco>
 
+      {!evento && <>
       <Bloco n={2} titulo="Produtos" sub="opcional">
         <SeletorProdutos form={form} set={set} catalogo={catalogo} onPrevia={setPreviaLista} />
         {listaSemUso && (
@@ -525,15 +541,21 @@ export default function RotinaModeloFormPage() {
       <Bloco n={3} titulo="Passos e o que registrar" sub={`${form.passos.length} ${form.passos.length === 1 ? 'passo' : 'passos'}`}>
         <EditorPassos passos={form.passos} onChange={(v) => set('passos', v)} temProdutos={temProdutos} />
       </Bloco>
+      </>}
 
-      <Bloco n={4} titulo="Quem, quando e prioridade">
-        <div className="rt-campo rt-campo-topo"><span>Quem faz</span>
+      <Bloco n={evento ? 2 : 4} titulo={evento ? 'Quem vê e quando' : 'Quem, quando e prioridade'}>
+        <div className="rt-campo rt-campo-topo"><span>{evento ? 'Quem vê' : 'Quem faz'}</span>
           <div>
             <Chips multi opcoes={pessoas.map((p) => [p.id, p.nome])} valor={form.responsaveis} onChange={(v) => set('responsaveis', v)} />
+            {pessoas.length > 1 && (
+              <button type="button" className="btn-dashed sm rt-todos" onClick={() => set('responsaveis', form.responsaveis.length === pessoas.length ? [] : pessoas.map((p) => p.id))}>
+                {form.responsaveis.length === pessoas.length ? 'Tirar todos' : 'Marcar todos'}
+              </button>
+            )}
             {semAcesso.length > 0 && <p className="rt-ajuda rt-txt-atencao"><TriangleAlert size={12} />{semAcesso.map((p) => p.nome).join(', ')} não {semAcesso.length > 1 ? 'têm' : 'tem'} o módulo Rotinas — libere em Configurações › Acessos para {semAcesso.length > 1 ? 'verem' : 'ver'} a tarefa.</p>}
           </div>
         </div>
-        {form.responsaveis.length > 1 && (
+        {!evento && form.responsaveis.length > 1 && (
           <div className="rt-campo"><span>Como dividir</span>
             <div>
               <Chips opcoes={[['cada_um', 'Cada um faz a sua'], ['qualquer_um', 'Qualquer um resolve'], ['dividir', 'Dividem os passos']]} valor={form.modoAtribuicao} onChange={(v) => set('modoAtribuicao', v)} />
@@ -601,18 +623,18 @@ export default function RotinaModeloFormPage() {
                 </span>
               ))}
               {form.recorrencia.horarios.length < 12 && <button type="button" className="btn-dashed sm" onClick={() => setRec('horarios', [...form.recorrencia.horarios, ''])}><Plus size={13} />Horário</button>}
-              <small className="ink-soft">Cada horário vira uma tarefa própria, com prazo naquele horário.</small>
+              <small className="ink-soft">{evento ? 'O evento aparece em cada horário.' : 'Cada horário vira uma tarefa própria, com prazo naquele horário.'}</small>
             </div>
           </div>
         )}
         <div className="rt-campo rt-campo-linha">
-          {!variasVezes && <><span>Horário limite</span><input type="time" value={form.horaLimite} onChange={(e) => set('horaLimite', e.target.value)} className="rt-hora" /></>}
-          {horaJaPassou && <span className="rt-aviso-hora"><TriangleAlert size={12} />Esse horário já passou hoje — a tarefa nasce atrasada.</span>}
-          <span>Tempo estimado</span><input type="number" min={1} max={1440} className="rt-curto rt-medio" value={form.minutosEstimados} onChange={(e) => set('minutosEstimados', e.target.value)} placeholder="ex.: 30" /> min
+          {!variasVezes && <><span>{evento ? 'Começa às' : 'Horário limite'}</span><input type="time" value={form.horaLimite} onChange={(e) => set('horaLimite', e.target.value)} className="rt-hora" /></>}
+          {horaJaPassou && !evento && <span className="rt-aviso-hora"><TriangleAlert size={12} />Esse horário já passou hoje — a tarefa nasce atrasada.</span>}
+          <span>{evento ? 'Duração' : 'Tempo estimado'}</span><input type="number" min={1} max={1440} className="rt-curto rt-medio" value={form.minutosEstimados} onChange={(e) => set('minutosEstimados', e.target.value)} placeholder="ex.: 30" /> min
         </div>
-        <div className="rt-campo"><span>Prioridade</span><Chips opcoes={PRIORIDADES} valor={form.prioridade} onChange={(v) => set('prioridade', v)} cor={(k) => `rt-pri-op-${k}`} /></div>
+        {!evento && <div className="rt-campo"><span>Prioridade</span><Chips opcoes={PRIORIDADES} valor={form.prioridade} onChange={(v) => set('prioridade', v)} cor={(k) => `rt-pri-op-${k}`} /></div>}
 
-        <div className="rt-opcoes-finais">
+        {!evento && <div className="rt-opcoes-finais">
           <label className="rt-toggle"><input type="checkbox" checked={form.conferirDepois} onChange={(e) => set('conferirDepois', e.target.checked)} /><span><b>Conferir depois</b> — ao concluir, vai para um administrador aprovar ou devolver</span></label>
           {form.conferirDepois && admins.length > 1 && (
             <div className="rt-campo rt-sub-opcao"><span>Quem confere</span>
@@ -629,15 +651,16 @@ export default function RotinaModeloFormPage() {
           {form.lembreteMin !== '' && form.lembreteMin != null && (
             <div className="rt-campo rt-sub-opcao"><span>Quanto antes</span><input type="number" min={5} max={1440} className="rt-curto" value={form.lembreteMin} onChange={(e) => set('lembreteMin', e.target.value)} /> min — aparece no sino e no Meu dia. O atraso avisa o administrador.</div>
           )}
-        </div>
+        </div>}
       </Bloco>
 
       <div className="rt-barra-acoes rt-barra-form">
         <span className="ink-soft rt-resumo-form">
-          <Package size={13} />{resumoProdutos} · {form.passos.length} {form.passos.length === 1 ? 'passo' : 'passos'} · {form.responsaveis.length} {form.responsaveis.length === 1 ? 'pessoa' : 'pessoas'}
+          {evento ? <>Evento · {form.responsaveis.length} {form.responsaveis.length === 1 ? 'pessoa vê' : 'pessoas veem'}{form.horaLimite && !variasVezes ? ` · às ${form.horaLimite}` : ''}</>
+            : <><Package size={13} />{resumoProdutos} · {form.passos.length} {form.passos.length === 1 ? 'passo' : 'passos'} · {form.responsaveis.length} {form.responsaveis.length === 1 ? 'pessoa' : 'pessoas'}</>}
         </span>
-        {!form.avulsa && <button type="button" className="btn-sec" onClick={() => salvar(true)} disabled={Boolean(salvando)}>{salvando === 'agora' ? <Loader2 size={15} className="girando" /> : <Zap size={15} />}Salvar e criar a de hoje agora</button>}
-        <button type="button" className="btn btn-primary" onClick={() => salvar(false)} disabled={Boolean(salvando)}>{salvando === 'salvar' ? <Loader2 size={15} className="girando" /> : <Save size={15} />}Salvar</button>
+        {!form.avulsa && !evento && <button type="button" className="btn-sec" onClick={() => salvar(true)} disabled={Boolean(salvando)}>{salvando === 'agora' ? <Loader2 size={15} className="girando" /> : <Zap size={15} />}Salvar e criar a de hoje agora</button>}
+        <button type="button" className="btn btn-primary" onClick={() => salvar(false)} disabled={Boolean(salvando)}>{salvando === 'salvar' ? <Loader2 size={15} className="girando" /> : <Save size={15} />}{evento ? 'Salvar evento' : 'Salvar'}</button>
       </div>
     </div>
   );
