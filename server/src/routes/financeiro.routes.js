@@ -26,6 +26,7 @@ const {
   LABEL,
 } = require('../lib/financeiroExtrato');
 const { fechamentoMensal } = require('../lib/financeiroFechamento');
+const { idsDaBusca } = require('../lib/financeiroBusca');
 
 const router = express.Router();
 
@@ -82,14 +83,11 @@ function filtrosExtrato(query, aliasTabela = 'l', { ignorarStatus = false } = {}
   if (query.repasse) {
     conditions.push(`${t}.repasse_id_externo = $${i}`); values.push(String(query.repasse).trim()); i += 1;
   }
-  // `busca`: número do pedido, id do pagamento, id do lançamento, id do
-  // repasse ou parte da descrição da plataforma.
-  if (query.busca && String(query.busca).trim()) {
-    const termo = `%${String(query.busca).trim()}%`;
-    conditions.push(`(${t}.lancamento_id_externo ILIKE $${i} OR ${t}.pedido_id_externo ILIKE $${i}
-      OR ${t}.repasse_id_externo ILIKE $${i} OR ${t}.descricao_externa ILIKE $${i}
-      OR EXISTS (SELECT 1 FROM pedidos_venda pb WHERE pb.id = ${t}.pedido_id AND pb.numero::text ILIKE $${i}))`);
-    values.push(termo); i += 1;
+  // `busca` (21/10/2026): livre e com vários pedaços — cliente, pedido,
+  // repasse, cidade, estado, referência, valor… Resolvida antes, uma vez só,
+  // por prepararBusca (ver lib/financeiroBusca.js); aqui chega a lista de ids.
+  if (Array.isArray(query._idsBusca)) {
+    conditions.push(`${t}.id = ANY($${i}::int[])`); values.push(query._idsBusca); i += 1;
   }
   // `valor_min`/`valor_max`: em módulo (R$ 50 acha +50 e −50).
   if (query.valor_min !== undefined && query.valor_min !== '' && Number.isFinite(Number(query.valor_min))) {
@@ -104,6 +102,17 @@ function filtrosExtrato(query, aliasTabela = 'l', { ignorarStatus = false } = {}
   return { where: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '', values, proximoIndice: i };
 }
 
+// Resolve a busca livre uma vez por requisição e guarda os ids em
+// `req.query._idsBusca` (lista vazia = nada casou; a tela mostra vazio).
+async function prepararBusca(req) {
+  const termo = String(req.query.busca || '').trim().slice(0, 200);
+  if (!termo) return;
+  const integracoes = String(req.query.origem_integracao_id || '')
+    .split(',').map((x) => Number(x)).filter((x) => Number.isInteger(x) && x > 0);
+  const ids = await idsDaBusca(pool, termo, { inicio: req.query.data_inicio, fim: req.query.data_fim, integracoes });
+  req.query._idsBusca = ids || undefined;
+}
+
 // ---------------------------------------------------------------------------
 // GET /api/financeiro/extrato
 // ---------------------------------------------------------------------------
@@ -115,6 +124,7 @@ function filtrosExtrato(query, aliasTabela = 'l', { ignorarStatus = false } = {}
 //   · totais             — liberado e pendente SEPARADOS, nunca somados
 router.get('/extrato', async (req, res, next) => {
   try {
+    await prepararBusca(req);
     // Gatilho oportunista: o serviço do Render dorme sem tráfego, então
     // abrir a tela também dispara a atualização (com cooldown próprio).
     sincronizarExtratoSeNecessario();
@@ -279,6 +289,7 @@ const ORDEM_LANCAMENTOS = {
 };
 router.get('/lancamentos', async (req, res, next) => {
   try {
+    await prepararBusca(req);
     const { where, values } = filtrosExtrato(req.query);
     const porPagina = Math.min(Math.max(parseInt(req.query.por_pagina, 10) || 50, 10), 500);
     const pagina = Math.max(parseInt(req.query.pagina, 10) || 1, 1);
@@ -293,9 +304,11 @@ router.get('/lancamentos', async (req, res, next) => {
                 l.detalhe->>'transactionType' AS tipo_original,
                 l.detalhe->>'sourceId' AS id_pagamento,
                 l.detalhe->>'meioPagamento' AS meio_pagamento,
-                p.numero AS pedido_numero, im.nome AS loja_nome
+                p.numero AS pedido_numero, im.nome AS loja_nome,
+                COALESCE(cl.nome, p.wik_cliente_nome) AS cliente_nome, cl.cidade AS cliente_cidade, cl.uf AS cliente_uf
            FROM fin_extrato_lancamentos l
            LEFT JOIN pedidos_venda p ON p.id = l.pedido_id
+           LEFT JOIN clientes cl ON cl.id = p.cliente_id
            LEFT JOIN integracoes_marketplace im ON im.id = l.origem_integracao_id
            ${where}
           ORDER BY ${coluna} ${direcao} NULLS LAST, l.id ${direcao}
@@ -344,8 +357,24 @@ router.get('/repasses', async (req, res, next) => {
     if (['pago', 'processando', 'previsto'].includes(req.query.status)) {
       conditions.push(`r.status = $${i}`); values.push(req.query.status); i += 1;
     }
+    // Busca no repasse: o próprio id e a loja, ou QUALQUER lançamento dele
+    // que case com a busca livre (cliente, pedido, cidade… de um pedido que
+    // foi pago naquele repasse).
     if (req.query.busca && String(req.query.busca).trim()) {
-      conditions.push(`r.repasse_id_externo ILIKE $${i}`); values.push(`%${String(req.query.busca).trim()}%`); i += 1;
+      await prepararBusca(req);
+      const termo = String(req.query.busca).trim().slice(0, 200);
+      values.push(`%${termo}%`);
+      const pTermo = `$${values.length}`;
+      values.push(req.query._idsBusca || []);
+      const pIds = `$${values.length}`;
+      conditions.push(`(r.repasse_id_externo ILIKE ${pTermo}
+        OR EXISTS (SELECT 1 FROM integracoes_marketplace ib WHERE ib.id = r.origem_integracao_id AND ib.nome ILIKE ${pTermo})
+        OR EXISTS (SELECT 1 FROM fin_extrato_lancamentos lb
+                    WHERE lb.id = ANY(${pIds}::int[])
+                      AND lb.origem_integracao_id = r.origem_integracao_id
+                      AND (lb.repasse_id_externo = r.repasse_id_externo
+                           OR split_part(lb.lancamento_id_externo, '|', 1) = r.repasse_id_externo)))`);
+      i = values.length + 1;
     }
     if (req.query.valor_min !== undefined && req.query.valor_min !== '' && Number.isFinite(Number(req.query.valor_min))) {
       conditions.push(`ABS(r.valor_liquido) >= $${i}`); values.push(Number(req.query.valor_min)); i += 1;

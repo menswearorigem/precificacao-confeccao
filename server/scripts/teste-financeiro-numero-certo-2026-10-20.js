@@ -88,6 +88,8 @@ const CSV_SOBREPOSTO = [
 
 async function limpar() {
   await pool.query('TRUNCATE fin_extrato_lancamentos, fin_repasses, fin_extrato_sync RESTART IDENTITY CASCADE');
+  await pool.query("DELETE FROM pedidos_venda WHERE origem_integracao_id IN (SELECT id FROM integracoes_marketplace WHERE nome LIKE 'NC %')");
+  await pool.query("DELETE FROM clientes WHERE nome = 'Maria Aparecida Souza'");
   await pool.query("DELETE FROM integracoes_marketplace WHERE nome LIKE 'NC %'");
 }
 
@@ -219,6 +221,39 @@ async function main() {
   const pg2 = JSON.parse((await chamar(porta, '/api/financeiro/lancamentos?data_inicio=2026-09-01&data_fim=2026-09-30&busca=5002&ordem=valor&direcao=asc&por_pagina=10', { cookie })).corpo);
   conferir('lista: busca + ordenação por valor', pg2.total === 3 && Number(pg2.lancamentos[0].valor) <= Number(pg2.lancamentos[2].valor), JSON.stringify(pg2.lancamentos?.map((l) => l.valor)));
   conferir('lista: devolve o id do pagamento separado', pg2.lancamentos[0].id_pagamento === '5002', pg2.lancamentos[0]?.id_pagamento);
+
+  // Busca livre (21/10/2026): cliente, estado por extenso, referência, valor.
+  const { rows: [cli] } = await pool.query(
+    `INSERT INTO clientes (nome, cidade, uf) VALUES ('Maria Aparecida Souza', 'Campo Grande', 'MS') RETURNING id`);
+  const { rows: [ped] } = await pool.query(
+    `INSERT INTO pedidos_venda (data_pedido, operacao, canal_venda, situacao, total_liquido, origem_marketplace,
+       origem_pedido_id, origem_integracao_id, pagamento_id_marketplace, cliente_id)
+     VALUES ('2026-09-02', 'Venda', 'Mercado Livre', 'faturado', 250, 'mercado_livre', 'ML-NC-1', $1, '5001', $2) RETURNING id, numero`,
+    [idML, cli.id]);
+  await pool.query(`INSERT INTO pedido_itens (pedido_id, referencia, sku_externo, descricao, quantidade) VALUES ($1, 'OG1620', 'OG1620-PRETO-M', 'Camisa', 1)`, [ped.id]);
+  const { vincularPedidos } = require('../src/lib/financeiroExtrato');
+  await vincularPedidos(idML);
+  const buscar = async (q) => JSON.parse((await chamar(porta, `/api/financeiro/lancamentos?data_inicio=2026-09-01&data_fim=2026-09-30&busca=${encodeURIComponent(q)}`, { cookie })).corpo);
+  let b = await buscar('maria mato grosso do sul og1620');
+  conferir('busca "maria mato grosso do sul og1620" acha a venda dela', b.total === 1 && b.lancamentos[0].id_pagamento === '5001', `${b.total}`);
+  b = await buscar('MARIA são paulo');
+  conferir('estado errado não acha nada (todos os pedaços precisam casar)', b.total === 0, `${b.total}`);
+  b = await buscar('ms og1620');
+  conferir('sigla do estado sozinha também serve', b.total === 1, `${b.total}`);
+  b = await buscar('campo grande');
+  conferir('busca pela cidade', b.total === 1, `${b.total}`);
+  b = await buscar(`#${ped.numero}`);
+  conferir('busca pelo número do pedido no Hub', b.total >= 1, `${b.total}`);
+  b = await buscar('R$ 200,00');
+  conferir('busca pelo valor', b.total === 1 && Number(b.lancamentos[0].valor) === 200, `${b.total}`);
+  b = await buscar('devolução');
+  conferir('busca por palavra de tipo (devolução)', b.total === 1 && b.lancamentos[0].tipo === 'devolucao', `${b.total}`);
+  b = await buscar('NC MELI saque');
+  conferir('busca pela loja + tipo', b.total === 1 && b.lancamentos[0].tipo === 'saque', `${b.total}`);
+  const rb = JSON.parse((await chamar(porta, '/api/financeiro/repasses?data_inicio=2026-09-01&data_fim=2026-09-30&busca=NC%20Shopee', { cookie })).corpo);
+  conferir('repasses: busca pelo nome da loja', rb.repasses.length === 2, String(rb.repasses?.length));
+  const exb = JSON.parse((await chamar(porta, '/api/financeiro/extrato?data_inicio=2026-09-01&data_fim=2026-09-30&busca=og1620', { cookie })).corpo);
+  conferir('a busca também filtra os totais do topo', perto(exb.totais.liberado, 200), String(exb.totais?.liberado));
 
   servidor.close();
   await limpar();
