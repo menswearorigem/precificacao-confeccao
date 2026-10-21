@@ -1036,7 +1036,10 @@ function mapearRelatorioLiberacoes(csv) {
       valor,
       moeda: valorDaColuna(campos, cabecalhos, ['SETTLEMENT_CURRENCY', 'TRANSACTION_CURRENCY', 'CURRENCY']) || 'BRL',
       pedidoIdExterno: pedidoExterno,
-      repasseIdExterno: null,
+      // O saque (e a reserva que o Mercado Pago faz para ele) ficam ligados
+      // ao repasse pelo id do saque — é o que a aba Repasses usa para abrir
+      // "os lançamentos deste repasse".
+      repasseIdExterno: ['payout', 'reserve_for_payout'].includes(String(descricao || '').toLowerCase()) ? sourceId : null,
       status: 'liberado',
       detalhe: {
         recordType,

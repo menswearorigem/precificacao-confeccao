@@ -1,0 +1,21 @@
+/* Repasses de marketplace (21/10/2026) — só o que as peças da casa não
+   cobrem. Todo o resto é o mesmo visual de Títulos e Resultado. */
+
+/* Indicador que abre a lista com os lançamentos dele. */
+.indicador-clicavel { display: flex; cursor: pointer; border-radius: var(--radius); outline: none; }
+.indicador-clicavel > .indicador { flex: 1; transition: transform 0.2s var(--vivo-mola, var(--ease)), box-shadow 0.2s var(--ease); }
+.indicador-clicavel:hover > .indicador { transform: translateY(-2px); box-shadow: var(--vivo-sombra, var(--card-shadow)); }
+.indicador-clicavel:focus-visible > .indicador { box-shadow: 0 0 0 3px var(--accent-softer); }
+
+/* Segunda linha das células (hora, plataforma, identificador). */
+.fr-pagina .fr-sub { font-size: 11px; color: var(--ink-faint); margin-top: 2px; font-weight: 400; }
+.fr-pagina .fr-sub-ink { font-size: 11.5px; color: var(--ink-soft); }
+.fr-pagina table.data-table th.num, .fr-pagina table.data-table td.num { text-align: right; }
+
+/* Nota de conferência quando algum mês não fecha. */
+.fr-pagina .nota-precisao.fr-nota-ruim { border-color: var(--danger-ring); background: var(--danger-bg); color: var(--danger); }
+
+.fr-input-valor { width: 120px; }
+.fr-ancora { scroll-margin-top: 90px; }
+
+.fr-pagina .recharts-wrapper:focus, .fr-pagina .recharts-surface:focus, .fr-pagina .recharts-wrapper *:focus { outline: none; }

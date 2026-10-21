@@ -257,6 +257,10 @@ async function buscarDetalhesPedidos(credenciais, orderSns) {
 const CAMPOS_ENVIO_PEDIDO = [
   'order_status', 'pay_time', 'pickup_done_time', 'shipping_carrier',
   'package_list', 'fulfillment_flag', 'days_to_ship', 'checkout_shipping_carrier',
+  // 21/10/2026: cidade/estado do destinatário. Fica guardado no bruto do
+  // envio (pedido_envio.bruto) e é o que deixa a busca do Financeiro achar
+  // pedido por "cidade" e "estado".
+  'recipient_address',
 ].join(',');
 
 async function buscarEnviosPedidos(credenciais, orderSns) {
