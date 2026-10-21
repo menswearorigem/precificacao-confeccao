@@ -263,6 +263,69 @@ router.get('/extrato', async (req, res, next) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/financeiro/lancamentos — a lista, paginada no servidor (21/10/2026)
+// ---------------------------------------------------------------------------
+// A lista do /extrato para em 5.000 linhas, e um mês das cinco lojas passa
+// disso (o Mercado Pago tem várias linhas por venda). Aqui a lista vem em
+// páginas, com TODOS os filtros (busca por pedido/id/repasse, tipo, grupo,
+// sentido, valor, situação, vínculo) e com a soma do que foi filtrado — para
+// a pessoa ver "quanto dá" o recorte sem somar na mão.
+const ORDEM_LANCAMENTOS = {
+  data: 'l.data_evento',
+  valor: 'l.valor',
+  tipo: 'l.tipo',
+  loja: 'im.nome',
+  plataforma: 'l.marketplace',
+};
+router.get('/lancamentos', async (req, res, next) => {
+  try {
+    const { where, values } = filtrosExtrato(req.query);
+    const porPagina = Math.min(Math.max(parseInt(req.query.por_pagina, 10) || 50, 10), 500);
+    const pagina = Math.max(parseInt(req.query.pagina, 10) || 1, 1);
+    const coluna = ORDEM_LANCAMENTOS[req.query.ordem] || 'l.data_evento';
+    const direcao = req.query.direcao === 'asc' ? 'ASC' : 'DESC';
+
+    const [lista, soma] = await Promise.all([
+      pool.query(
+        `SELECT l.id, l.marketplace, l.origem_integracao_id, l.lancamento_id_externo, l.tipo, l.descricao_externa,
+                l.data_liberacao, l.data_evento, l.valor, l.status,
+                l.pedido_id, l.pedido_id_externo, l.repasse_id_externo,
+                l.detalhe->>'transactionType' AS tipo_original,
+                l.detalhe->>'sourceId' AS id_pagamento,
+                l.detalhe->>'meioPagamento' AS meio_pagamento,
+                p.numero AS pedido_numero, im.nome AS loja_nome
+           FROM fin_extrato_lancamentos l
+           LEFT JOIN pedidos_venda p ON p.id = l.pedido_id
+           LEFT JOIN integracoes_marketplace im ON im.id = l.origem_integracao_id
+           ${where}
+          ORDER BY ${coluna} ${direcao} NULLS LAST, l.id ${direcao}
+          LIMIT ${porPagina} OFFSET ${(pagina - 1) * porPagina}`,
+        values
+      ),
+      pool.query(
+        `SELECT COUNT(*)::int AS quantidade,
+                COALESCE(SUM(l.valor) FILTER (WHERE l.valor > 0), 0) AS entradas,
+                COALESCE(SUM(l.valor) FILTER (WHERE l.valor < 0), 0) AS saidas,
+                COALESCE(SUM(l.valor), 0) AS total
+           FROM fin_extrato_lancamentos l ${where}`,
+        values
+      ),
+    ]);
+    const s = soma.rows[0];
+    res.json({
+      lancamentos: lista.rows,
+      pagina,
+      porPagina,
+      total: s.quantidade,
+      paginas: Math.max(1, Math.ceil(s.quantidade / porPagina)),
+      soma: { entradas: Number(s.entradas), saidas: Number(s.saidas), total: Number(s.total) },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/financeiro/repasses
 // ---------------------------------------------------------------------------
 // Nível "linha do extrato bancário": cada repasse é uma transferência que a

@@ -212,6 +212,14 @@ async function main() {
   const fr = await chamar(porta, '/api/financeiro/fechamento?data_inicio=2026-09-01&data_fim=2026-09-30', { cookie });
   conferir('GET /fechamento responde', fr.status === 200 && JSON.parse(fr.corpo).lojas.length >= 3, fr.corpo.slice(0, 200));
 
+  // Lista paginada no servidor (21/10/2026).
+  const pg1 = JSON.parse((await chamar(porta, '/api/financeiro/lancamentos?data_inicio=2026-09-01&data_fim=2026-09-30&marketplace=mercado_livre&por_pagina=10&pagina=1', { cookie })).corpo);
+  conferir('lista paginada: total de linhas do filtro', pg1.total === 10 && pg1.lancamentos.length === 10, `${pg1.total}/${pg1.lancamentos?.length}`);
+  conferir('lista paginada: soma do filtro = soma das linhas', perto(pg1.soma.total, -10), String(pg1.soma?.total));
+  const pg2 = JSON.parse((await chamar(porta, '/api/financeiro/lancamentos?data_inicio=2026-09-01&data_fim=2026-09-30&busca=5002&ordem=valor&direcao=asc&por_pagina=10', { cookie })).corpo);
+  conferir('lista: busca + ordenação por valor', pg2.total === 3 && Number(pg2.lancamentos[0].valor) <= Number(pg2.lancamentos[2].valor), JSON.stringify(pg2.lancamentos?.map((l) => l.valor)));
+  conferir('lista: devolve o id do pagamento separado', pg2.lancamentos[0].id_pagamento === '5002', pg2.lancamentos[0]?.id_pagamento);
+
   servidor.close();
   await limpar();
   await pool.end();

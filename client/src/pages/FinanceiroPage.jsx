@@ -1,1188 +1,1391 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  RefreshCw, Printer, Link2, AlertTriangle, History, Info, Banknote, ArrowDownCircle,
-  ArrowUpCircle, Hourglass, Landmark, ScrollText, CheckCircle2, ScanSearch,
+  RefreshCw, Printer, History, AlertTriangle, CheckCircle2, XCircle, CircleDashed, Search, X,
+  ArrowRight, Landmark, Wallet, Hourglass, ChevronDown, ChevronUp, Link2, ArrowDownLeft, ArrowUpRight,
+  Equal, Minus, Plus, ExternalLink, HelpCircle,
 } from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine, Cell,
+} from 'recharts';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
-import { brl, dataBr, formatQtd, numeroBr, plural } from '../lib/format';
-import {
-  Select, MultiSelect, Checkbox, ThOrdenavel, Paginacao, BotaoExportar, BotaoRelatorio,
-  IndicadorDestaque, EstadoVazio,
-} from '../components/ui';
+import { brl, dataBr, plural } from '../lib/format';
+import { Paginacao, BotaoRelatorio, EstadoVazio, ChipsFiltros } from '../components/ui';
 import { PeriodoFiltro } from '../components/PeriodoFiltro';
 import { PRESETS_PERIODO } from '../lib/periodos';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
 import DataTable from '../components/DataTable';
-import { useTabela } from '../lib/useTabela';
-import {
-  CartaoGrafico, GraficoEvolucao, GraficoColunas, GraficoLinha, BarraRanking,
-  useRefGrafico, capturarGraficos,
-} from '../components/graficos';
-import { usePaletaGrafico, corPorIndice } from '../lib/coresGrafico';
+import { useRefGrafico, capturarGraficos, moedaCompacta } from '../components/graficos';
+import { usePaletaGrafico } from '../lib/coresGrafico';
+import { exportarCsv, exportarXlsx } from '../lib/exportar';
 import { definicaoMovimentacao, definicaoRepasses, definicaoConferencia } from '../lib/relatorioFinanceiro';
 import ErroIntegracao from '../components/ErroIntegracao';
+import {
+  PLATAFORMAS, TIPOS, TIPO, GRUPOS, rotuloTipo, descricaoHumana, idCurto, DESTINO_SAQUE, mesCurto,
+} from '../lib/financeiroRepasses';
+import '../styles/financeiro-repasses.css';
 
-// Tela do módulo Financeiro. Três abas, mesma fonte de dado (o extrato lido
-// da própria plataforma), três perguntas diferentes:
+// "Repasses de marketplace" — refeita em 21/10/2026.
 //
-//   Movimentação — quanto entrou e saiu, por data e plataforma. É a resposta
-//                  direta ao "quanto o marketplace liberou na conta".
-//   Repasses     — cada transferência que a plataforma mandou pro banco.
-//                  É o nível que casa 1 pra 1 com o extrato bancário.
-//   Conferência  — extrato x soma dos pedidos, pra achar o que não bate.
+// O que o dono pediu, e onde cada pedido foi parar:
+//   · "quem não é do financeiro tem que entender de cara" → todo número tem
+//     nome de gente e a conta aparece montada (vendas − devoluções − taxas =
+//     liberado), em vez de cinco cartões soltos;
+//   · "tem que bater certo" → selo de conferência por loja e mês (saldo inicial
+//     + movimento = saldo final, ver server/src/lib/financeiroFechamento.js);
+//   · "difícil de ver dia a dia" → gráfico de colunas por plataforma em que
+//     CLICAR NUM DIA filtra a lista lá embaixo;
+//   · "não tem como filtrar os lançamentos" → busca por pedido / id / repasse,
+//     tipo, entrou ou saiu, situação, vínculo com pedido, faixa de valor, dia
+//     — tudo no servidor, paginado, com a soma do que foi filtrado;
+//   · "repasse da Shopee não entra" → entra (correção do back-end), e cada
+//     repasse diz PARA ONDE o dinheiro foi;
+//   · "a conferência confunde nas cores" → número em cor neutra; cor só no
+//     selo de situação (bate / não bate / falta um lado).
 //
-// Nada aqui recalcula preço, margem ou imposto — a tela só lê o que a API
-// devolve (REGRA 1).
-//
-// Redesenho: cada número de destaque agora vem com a frase que explica o que
-// ele é, e cada gráfico com a frase que explica o que ele mostra. A regra que
-// guiou tudo: quem abre esta tela pela primeira vez tem que entender o que
-// está vendo sem perguntar a ninguém.
+// A tela só lê o que a API devolve — nenhum cálculo de preço, margem ou
+// imposto aqui (REGRA 1).
 
-// Chave de tipo -> rótulo em português. A ordem é a ordem em que os chips de
-// filtro aparecem: primeiro o que é dinheiro de venda, depois o que sai.
-const TIPOS = [
-  { chave: 'repasse_venda', rotulo: 'Repasse de venda' },
-  { chave: 'devolucao', rotulo: 'Devolução / estorno' },
-  { chave: 'ads', rotulo: 'Publicidade (Ads)' },
-  { chave: 'taxa', rotulo: 'Taxas e multas' },
-  { chave: 'antecipacao', rotulo: 'Antecipação' },
-  { chave: 'ajuste', rotulo: 'Ajustes' },
-  { chave: 'reserva', rotulo: 'Dinheiro retido (reserva)' },
-  { chave: 'saque', rotulo: 'Saque para o banco' },
-  { chave: 'outros', rotulo: 'Outros' },
-  // 20/10/2026 — dinheiro que passa pela conta do Mercado Pago mas NÃO é do
-  // Mercado Livre. Fica fora do "Liberado pelo marketplace" e dos gráficos.
-  { chave: 'transferencia_entrada', rotulo: 'Pix recebido (ex.: saque da Shopee)' },
-  { chave: 'transferencia_saida', rotulo: 'Pix enviado / conta paga' },
-  { chave: 'venda_direta', rotulo: 'Maquininha e link de pagamento' },
-  { chave: 'emprestimo', rotulo: 'Empréstimo' },
-  { chave: 'rendimento', rotulo: 'Rendimento' },
-];
-// Tipos que não são dinheiro do marketplace (o servidor manda a lista em
-// `grupos.foraMarketplace`; esta é a reserva se a resposta vier sem ela).
-const FORA_MARKETPLACE_PADRAO = ['venda_direta', 'transferencia_entrada', 'transferencia_saida', 'emprestimo', 'rendimento'];
-const TIPO_LABEL = Object.fromEntries(TIPOS.map((t) => [t.chave, t.rotulo]));
-
-const STATUS_LABEL = { liberado: 'Liberado', pendente: 'Pendente' };
-
-const rotuloTipo = (t) => TIPO_LABEL[t] || t;
 const rotuloPlataforma = (m) => PLATAFORMA_LABEL[m] || m;
-const rotuloStatus = (s) => STATUS_LABEL[s] || s;
+const rotuloStatus = (s) => (s === 'pendente' ? 'Pendente' : 'Liberado');
 
-// Período padrão da tela: mês passado inteiro. O financeiro trabalha por
-// fechamento de mês, não pelo dia de hoje — abrir em "hoje" mostraria uma
-// tela quase sempre vazia (repasse não cai todo dia).
 function periodoPadrao() {
   return PRESETS_PERIODO.find((p) => p.chave === 'mesPassado').calcular();
 }
+const dataIso = (v) => (v ? String(v).slice(0, 10) : '');
+const n = (v) => Number(v) || 0;
 
-function dataIso(valor) {
-  if (!valor) return '';
-  return String(valor).slice(0, 10);
+function horaBr(v) {
+  if (!v) return '';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 }
 
-// Valor com sinal explícito e cor: entrada em verde, saída em vermelho.
-// Sem o sinal, uma coluna de débitos e créditos misturados é ilegível.
-function ValorAssinado({ valor, forte }) {
-  const n = Number(valor) || 0;
-  const cor = n > 0 ? 'var(--success)' : n < 0 ? 'var(--danger)' : undefined;
+function tempoDesde(v) {
+  if (!v) return 'nunca';
+  const min = Math.round((Date.now() - new Date(v).getTime()) / 60000);
+  if (min < 1) return 'agora';
+  if (min < 60) return `há ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `há ${h} h`;
+  return `há ${Math.round(h / 24)} dia(s)`;
+}
+
+// Valor com sinal. A cor só aparece quando `colorir` — na conferência os
+// números ficam neutros (era o que confundia).
+function Valor({ valor, forte, colorir = true, semSinal }) {
+  const v = n(valor);
+  const classe = 'mono fr-valor' + (colorir ? (v > 0 ? ' fr-pos' : v < 0 ? ' fr-neg' : '') : '') + (forte ? ' fr-forte' : '');
+  return <span className={classe}>{!semSinal && v > 0 ? '+' : ''}{brl(v)}</span>;
+}
+
+function ChipPlataforma({ marketplace, children }) {
+  return <span className={`fr-chip-plat fr-plat-${marketplace}`}>{children || rotuloPlataforma(marketplace)}</span>;
+}
+
+function SeloTipo({ tipo }) {
+  const t = TIPO[tipo];
+  return <span className={`fr-selo-tipo fr-tom-${t?.tom || 'neutro'}`}>{t?.curto || tipo}</span>;
+}
+
+// Explicação longa fica atrás de um "como funciona" — a dobra é do número.
+function ComoFunciona({ titulo = 'Como este número é calculado', children }) {
+  const [aberto, setAberto] = useState(false);
   return (
-    <span className="mono" style={{ color: cor, fontWeight: forte ? 700 : undefined }}>
-      {n > 0 ? '+' : ''}{brl(n)}
-    </span>
+    <div className="fr-como">
+      <button type="button" className="fr-como-botao" onClick={() => setAberto((v) => !v)} aria-expanded={aberto}>
+        <HelpCircle size={14} /> {titulo} {aberto ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+      </button>
+      {aberto && <div className="fr-como-texto">{children}</div>}
+    </div>
   );
 }
+
+// Grupo de chips de escolha única ("Tudo · Entrou · Saiu").
+function ChipsEscolha({ valor, onChange, opcoes, rotulo }) {
+  return (
+    <div className="fr-escolha" role="radiogroup" aria-label={rotulo}>
+      {rotulo && <span className="fr-escolha-rotulo">{rotulo}</span>}
+      {opcoes.map((o) => (
+        <button
+          key={o.valor}
+          type="button"
+          role="radio"
+          aria-checked={valor === o.valor}
+          className={'fr-chip' + (valor === o.valor ? ' ativo' : '')}
+          onClick={() => onChange(o.valor)}
+        >
+          {o.rotulo}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ===========================================================================
+// Página
+// ===========================================================================
 
 export default function FinanceiroPage({ aba = 'movimentacao' }) {
   const { user } = useAuth();
-  // A ficha do pedido mora no módulo Vendas/Marketplace. Quem só tem o
-  // módulo Financeiro seria redirecionado ao clicar (canAccessPath barra a
-  // rota) — então pra essa pessoa o número do pedido aparece como texto, não
-  // como link quebrado.
   const podeAbrirPedido = user?.role === 'admin'
     || (user?.modulos || []).some((m) => m === 'vendas' || m === 'marketplace');
+  const [searchParams] = useSearchParams();
 
-  const [{ inicio: dataInicio, fim: dataFim }, setPeriodo] = useState(periodoPadrao());
-  // Várias plataformas / várias lojas de uma vez (10/09/2026), como no
-  // UpSeller — ver MultiSelect em components/ui.jsx.
-  const [marketplaces, setMarketplaces] = useState([]);
+  const [{ inicio, fim }, setPeriodo] = useState(() => {
+    const de = searchParams.get('de');
+    const ate = searchParams.get('ate');
+    return de && ate ? { inicio: de, fim: ate } : periodoPadrao();
+  });
+  const [plataformas, setPlataformas] = useState([]);
   const [lojaIds, setLojaIds] = useState([]);
-  const [tiposMarcados, setTiposMarcados] = useState(() => new Set(TIPOS.map((t) => t.chave)));
-  const [statusFiltro, setStatusFiltro] = useState('liberado');
-  const [comPedido, setComPedido] = useState('');
-
   const [conexoes, setConexoes] = useState([]);
-  const [dados, setDados] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [erro, setErro] = useState('');
   const [sincronizando, setSincronizando] = useState(false);
   const [aviso, setAviso] = useState('');
+  const [erro, setErro] = useState('');
+  const [versao, setVersao] = useState(0);
 
-  useEffect(() => {
-    api.get('/financeiro/status')
-      .then((d) => setConexoes(d.conexoes || []))
-      .catch(() => {});
-  }, []);
+  const carregarConexoes = () => api.get('/financeiro/status').then((d) => setConexoes(d.conexoes || [])).catch(() => {});
+  useEffect(() => { carregarConexoes(); }, []);
 
-  const lojasDisponiveis = useMemo(() => (
-    conexoes.filter((c) => c.autorizada && (marketplaces.length === 0 || marketplaces.includes(c.marketplace)))
-  ), [conexoes, marketplaces]);
+  const lojas = conexoes.filter((c) => c.autorizada && c.ativo);
+  const lojasVisiveis = lojas.filter((c) => plataformas.length === 0 || plataformas.includes(c.marketplace));
 
-  const opcoesPlataformas = useMemo(
-    () => Object.entries(PLATAFORMA_LABEL).map(([chave, rotulo]) => ({ valor: chave, rotulo })),
-    []
-  );
-  const opcoesLojas = useMemo(
-    () => lojasDisponiveis.map((c) => ({ valor: String(c.id), rotulo: c.nome || PLATAFORMA_LABEL[c.marketplace] })),
-    [lojasDisponiveis]
-  );
-
-  // Tirar uma plataforma solta as lojas dela, senão sobra um filtro de loja
-  // que não casa com nada e a tela volta vazia sem explicar.
-  function mudarPlataformas(valores) {
-    setMarketplaces(valores);
-    if (valores.length === 0) return;
-    setLojaIds((atuais) => atuais.filter((id) => {
-      const loja = conexoes.find((c) => String(c.id) === String(id));
-      return loja && valores.includes(loja.marketplace);
-    }));
+  function alternar(lista, setLista, valor) {
+    setLista(lista.includes(valor) ? lista.filter((v) => v !== valor) : [...lista, valor]);
   }
-
-  function alternarTipo(chave) {
-    setTiposMarcados((antes) => {
-      const proximo = new Set(antes);
-      if (proximo.has(chave)) proximo.delete(chave);
-      else proximo.add(chave);
-      return proximo;
-    });
-  }
-
-  const params = useMemo(() => {
-    const p = new URLSearchParams();
-    if (dataInicio) p.set('data_inicio', dataInicio);
-    if (dataFim) p.set('data_fim', dataFim);
-    if (marketplaces.length) p.set('marketplace', marketplaces.join(','));
-    if (lojaIds.length) p.set('origem_integracao_id', lojaIds.join(','));
-    // Todos marcados = sem filtro de tipo (evita mandar uma lista enorme na
-    // URL só pra dizer "tudo").
-    if (tiposMarcados.size > 0 && tiposMarcados.size < TIPOS.length) {
-      p.set('tipo', [...tiposMarcados].join(','));
+  function alternarPlataforma(m) {
+    const proximas = plataformas.includes(m) ? plataformas.filter((v) => v !== m) : [...plataformas, m];
+    setPlataformas(proximas);
+    if (proximas.length) {
+      setLojaIds((ids) => ids.filter((id) => proximas.includes(conexoes.find((c) => c.id === id)?.marketplace)));
     }
-    if (statusFiltro) p.set('status', statusFiltro);
-    if (comPedido) p.set('com_pedido', comPedido);
+  }
+
+  // Filtro-base: período, plataforma, loja. Cada aba acrescenta os seus.
+  const base = useMemo(() => {
+    const p = new URLSearchParams();
+    if (inicio) p.set('data_inicio', inicio);
+    if (fim) p.set('data_fim', fim);
+    if (plataformas.length) p.set('marketplace', plataformas.join(','));
+    if (lojaIds.length) p.set('origem_integracao_id', lojaIds.join(','));
     return p.toString();
-  }, [dataInicio, dataFim, marketplaces, lojaIds, tiposMarcados, statusFiltro, comPedido]);
+  }, [inicio, fim, plataformas, lojaIds]);
 
-  useEffect(() => {
-    // Nenhum tipo marcado: a lista está vazia por escolha da pessoa, não por
-    // falta de dado — não faz sentido chamar a API.
-    if (tiposMarcados.size === 0) { setDados(null); return; }
-    const rota = aba === 'repasses' ? 'repasses' : aba === 'conferencia' ? 'conciliacao' : 'extrato';
-    setLoading(true);
-    setErro('');
-    api.get(`/financeiro/${rota}?${params}`)
-      .then(setDados)
-      .catch((err) => setErro(err.message))
-      .finally(() => setLoading(false));
-  }, [aba, params, tiposMarcados.size]);
-
-  // `periodo: true` relê exatamente o intervalo que está no filtro — usado
-  // no fechamento de mês e quando o financeiro quer conferir um período
-  // antigo sem esperar o histórico chegar sozinho.
-  async function sincronizarAgora({ periodo = false } = {}) {
+  async function puxar({ periodo = false } = {}) {
     setSincronizando(true);
     setAviso('');
     setErro('');
     try {
-      const corpo = periodo ? { desde: dataInicio, ate: dataFim } : {};
-      const r = await api.post('/financeiro/sincronizar', corpo);
+      const r = await api.post('/financeiro/sincronizar', periodo ? { desde: inicio, ate: fim } : {});
       const partes = (r.resultados || []).map((res) => {
-        const conexao = conexoes.find((c) => c.id === res.integracaoId);
-        const nome = conexao ? (conexao.nome || PLATAFORMA_LABEL[conexao.marketplace]) : `Conexão ${res.integracaoId}`;
-        if (res.erro) return `${nome}: ${res.erro}`;
-        if (res.pulado) return `${nome}: já sincronizado há pouco`;
-        if (res.fase === 'solicitado') return `${nome}: relatório de liberações pedido ao Mercado Pago — ele fica pronto em alguns minutos e será baixado no próximo ciclo`;
-        if (res.fase === 'aguardando') return `${nome}: aguardando o Mercado Pago liberar o relatório`;
-        const historico = res.faseJanela === 'historico' ? ' (lendo o histórico mais antigo)' : '';
-        const cortada = res.janelaEncurtada ? ' — o período pedido foi maior do que a plataforma entrega de uma vez, o resto vem nos próximos ciclos' : '';
-        return `${nome}: ${res.gravados || 0} lançamento(s) atualizados${historico}${cortada}`;
+        const c = conexoes.find((x) => x.id === res.integracaoId);
+        const nome = c?.nome || `Loja ${res.integracaoId}`;
+        if (res.erro) return `${nome}: não consegui ler (${res.erro})`;
+        if (res.pulado) return `${nome}: lido há pouco`;
+        if (res.fase === 'solicitado') return `${nome}: relatório pedido ao Mercado Pago, chega em alguns minutos`;
+        if (res.fase === 'aguardando') return `${nome}: esperando o Mercado Pago terminar o relatório`;
+        return `${nome}: ${res.gravados || 0} linha(s) lidas`;
       });
-      setAviso(partes.join(' · ') || 'Nenhuma conexão ativa para sincronizar.');
-      const rota = aba === 'repasses' ? 'repasses' : aba === 'conferencia' ? 'conciliacao' : 'extrato';
-      setDados(await api.get(`/financeiro/${rota}?${params}`));
-      setConexoes((await api.get('/financeiro/status')).conexoes || []);
-    } catch (err) {
-      setErro(err.message);
+      setAviso(partes.join(' · ') || 'Nenhuma loja conectada.');
+      await carregarConexoes();
+      setVersao((v) => v + 1);
+    } catch (e) {
+      setErro(e.message);
     } finally {
       setSincronizando(false);
     }
   }
 
-  const conexoesAutorizadas = conexoes.filter((c) => c.autorizada && c.ativo);
-  const semExtrato = conexoesAutorizadas.length > 0
-    && conexoesAutorizadas.every((c) => Number(c.lancamentos || 0) === 0);
-
-  // Os filtros escritos por extenso — viajam no cabeçalho de todo relatório
-  // exportado, pra ninguém receber um PDF e não saber de que recorte ele é.
   const filtrosTexto = [
-    marketplaces.length
-      ? `Plataforma${marketplaces.length > 1 ? 's' : ''}: ${marketplaces.map(rotuloPlataforma).join(', ')}`
-      : 'Todas as plataformas',
-    lojaIds.length
-      ? `Loja${lojaIds.length > 1 ? 's' : ''}: ${lojaIds.map((id) => conexoes.find((c) => String(c.id) === String(id))?.nome || id).join(', ')}`
-      : null,
-    tiposMarcados.size < TIPOS.length ? `Tipos: ${[...tiposMarcados].map(rotuloTipo).join(', ')}` : null,
-    aba === 'movimentacao' && statusFiltro ? `Lista: ${statusFiltro === 'liberado' ? 'só o já liberado' : 'só o pendente'}` : null,
-    aba === 'movimentacao' && comPedido ? `Vínculo: ${comPedido === 'sim' ? 'só com pedido' : 'só sem pedido'}` : null,
+    plataformas.length ? `Plataformas: ${plataformas.map(rotuloPlataforma).join(', ')}` : 'Todas as plataformas',
+    lojaIds.length ? `Lojas: ${lojaIds.map((id) => conexoes.find((c) => c.id === id)?.nome || id).join(', ')}` : null,
   ].filter(Boolean);
-
-  const contexto = { periodo: { inicio: dataInicio, fim: dataFim }, filtros: filtrosTexto };
+  const contexto = { periodo: { inicio, fim }, filtros: filtrosTexto };
 
   return (
-    <div className="page-wide">
+    <div className="page-wide fr-pagina">
       <div className="no-print">
-        {/* 25/09/2026 (revisão visual): o título era só "Financeiro" e a
-            fileira Movimentação/Repasses/Conferência repetia as sub-abas que o
-            menu do módulo já mostra logo acima. Fica o nome do assunto e uma
-            linha de descrição; a troca de aba é só pelo menu. */}
         <h1>Repasses de marketplace</h1>
         <p className="page-sub">
-          Quanto cada plataforma liberou (e descontou) na conta, por data, lido do extrato da própria plataforma.
+          {aba === 'movimentacao' && 'Quanto cada plataforma pagou e descontou, dia a dia — lido do extrato da própria plataforma.'}
+          {aba === 'repasses' && 'Cada vez que o dinheiro saiu de uma plataforma, e para onde ele foi.'}
+          {aba === 'conferencia' && 'A prova de que o número está certo: o saldo de cada loja fecha no centavo, mês a mês.'}
         </p>
 
-        <div className="filtros-barra">
-          <PeriodoFiltro inicio={dataInicio} fim={dataFim} onChange={({ inicio, fim }) => setPeriodo({ inicio, fim })} />
-          <MultiSelect
-            valor={marketplaces}
-            onChange={mudarPlataformas}
-            opcoes={opcoesPlataformas}
-            rotuloTudo="Todas as plataformas"
-            rotuloVazio="Todas as plataformas"
-            larguraMinima={180}
-          />
-          <MultiSelect
-            valor={lojaIds}
-            onChange={setLojaIds}
-            opcoes={opcoesLojas}
-            rotuloTudo="Todas as lojas"
-            rotuloVazio="Todas as lojas"
-            larguraMinima={180}
-          />
-          {aba === 'movimentacao' && (
-            <>
-              {/* Vale para a LISTA de lançamentos. Os totais e resumos acima
-                  sempre mostram liberado e pendente separados, independente
-                  do que estiver escolhido aqui. */}
-              <Select value={statusFiltro} onChange={(e) => setStatusFiltro(e.target.value)} style={{ maxWidth: 200 }}>
-                <option value="liberado">Lista: só o já liberado</option>
-                <option value="pendente">Lista: só o pendente</option>
-                <option value="">Lista: liberado + pendente</option>
-              </Select>
-              <Select value={comPedido} onChange={(e) => setComPedido(e.target.value)} style={{ maxWidth: 190 }}>
-                <option value="">Com e sem pedido</option>
-                <option value="sim">Só com pedido vinculado</option>
-                <option value="nao">Só sem pedido vinculado</option>
-              </Select>
-            </>
-          )}
-          <div className="filtros-barra-acoes">
-            {loading && <span className="page-sub" style={{ margin: 0 }}>Atualizando…</span>}
-            <button className="btn btn-ghost" onClick={() => sincronizarAgora()} disabled={sincronizando}>
-              <RefreshCw size={14} /> {sincronizando ? 'Puxando extrato…' : 'Puxar extrato agora'}
-            </button>
-            <button
-              className="btn btn-ghost"
-              onClick={() => sincronizarAgora({ periodo: true })}
-              disabled={sincronizando || !dataInicio || !dataFim}
-              title="Relê exatamente o período escolhido no filtro, sem esperar o histórico chegar sozinho"
-            >
-              <History size={14} /> Reler este período
-            </button>
-            <button className="btn btn-ghost" onClick={() => window.print()} title="Abre a impressão do navegador — de lá dá para salvar em PDF">
-              <Printer size={14} /> Imprimir
-            </button>
-          </div>
-        </div>
-
-        {aba === 'movimentacao' && (
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div className="card-head">O que aparece na tela</div>
-            <p className="grafico-explicacao">
-              Desmarque um tipo para tirá-lo dos números e dos gráficos. É assim que se responde, por
-              exemplo, “quanto sobrou sem contar a publicidade”.
-            </p>
-            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-              {TIPOS.map((t) => (
-                <label key={t.chave} className="toggle">
-                  <Checkbox checked={tiposMarcados.has(t.chave)} onChange={() => alternarTipo(t.chave)} />
-                  {t.rotulo}
-                </label>
+        <div className="fr-filtros card">
+          <div className="fr-filtros-linha">
+            <PeriodoFiltro inicio={inicio} fim={fim} onChange={({ inicio: i, fim: f }) => setPeriodo({ inicio: i, fim: f })} />
+            <div className="fr-chips-grupo" aria-label="Plataformas">
+              {PLATAFORMAS.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={`fr-chip fr-chip-plataforma fr-plat-${m}` + (plataformas.includes(m) ? ' ativo' : '')}
+                  onClick={() => alternarPlataforma(m)}
+                  aria-pressed={plataformas.includes(m)}
+                >
+                  {rotuloPlataforma(m)}
+                </button>
               ))}
             </div>
-            {tiposMarcados.size === 0 && (
-              <p className="page-sub" style={{ marginBottom: 0 }}>Marque pelo menos um tipo para ver os lançamentos.</p>
-            )}
+            <div className="fr-acoes">
+              <button className="btn btn-ghost" onClick={() => puxar()} disabled={sincronizando} title="Busca agora o que as plataformas liberaram de novo">
+                <RefreshCw size={14} className={sincronizando ? 'girando' : ''} /> {sincronizando ? 'Puxando…' : 'Puxar extrato agora'}
+              </button>
+              <button className="btn btn-ghost" onClick={() => puxar({ periodo: true })} disabled={sincronizando} title="Lê de novo exatamente o período escolhido">
+                <History size={14} /> Reler o período
+              </button>
+              <button className="btn btn-ghost" onClick={() => window.print()} title="Imprimir ou salvar em PDF">
+                <Printer size={14} />
+              </button>
+            </div>
           </div>
-        )}
+          {lojasVisiveis.length > 1 && (
+            <div className="fr-filtros-linha fr-lojas">
+              <span className="fr-escolha-rotulo">Lojas</span>
+              <button type="button" className={'fr-chip' + (lojaIds.length === 0 ? ' ativo' : '')} onClick={() => setLojaIds([])}>Todas</button>
+              {lojasVisiveis.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={`fr-chip fr-chip-loja fr-plat-${c.marketplace}` + (lojaIds.includes(c.id) ? ' ativo' : '')}
+                  onClick={() => alternar(lojaIds, setLojaIds, c.id)}
+                  aria-pressed={lojaIds.includes(c.id)}
+                >
+                  <span className="fr-bolinha" />{c.nome}
+                </button>
+              ))}
+            </div>
+          )}
+          <LeituraDasLojas conexoes={lojas} />
+        </div>
 
         {erro && <div className="aviso-compacto tone-prejuizo">{erro}</div>}
         {aviso && <div className="aviso-compacto tone-saudavel">{aviso}</div>}
-        {semExtrato && (
-          <div className="aviso-compacto tone-atencao">
-            Nenhum extrato foi lido ainda. Clique em <strong>Puxar extrato agora</strong> — no Mercado Livre o
-            relatório de liberações é gerado pelo Mercado Pago e leva alguns minutos, então a primeira carga
-            costuma precisar de duas passadas.
-          </div>
-        )}
-        <AvisosDasConexoes conexoes={conexoes} />
+        <AvisosDasConexoes conexoes={lojas} />
       </div>
 
-      {aba === 'movimentacao' && <AbaMovimentacao dados={dados} podeAbrirPedido={podeAbrirPedido} contexto={contexto} />}
-      {aba === 'repasses' && <AbaRepasses dados={dados} contexto={contexto} />}
-      {aba === 'conferencia' && <AbaConferencia dados={dados} contexto={contexto} />}
+      {aba === 'movimentacao' && (
+        <AbaMovimentacao
+          base={base}
+          versao={versao}
+          podeAbrirPedido={podeAbrirPedido}
+          contexto={contexto}
+          buscaInicial={searchParams.get('busca') || ''}
+        />
+      )}
+      {aba === 'repasses' && <AbaRepasses base={base} versao={versao} contexto={contexto} periodo={{ inicio, fim }} />}
+      {aba === 'conferencia' && <AbaConferencia base={base} versao={versao} contexto={contexto} />}
     </div>
   );
 }
 
-// Ressalva de leitura: linha que a plataforma devolveu e não deu pra
-// interpretar. Fica no topo, e não escondida num log — é dinheiro que existe
-// e ficou de fora do relatório (REGRA 2).
+// Uma linha por loja: quando foi lida e se está tudo bem. Responde "esse
+// número está atualizado?" antes de a pessoa precisar perguntar.
+function LeituraDasLojas({ conexoes }) {
+  if (!conexoes.length) return null;
+  const estadoDe = (c) => (c.ultimo_erro ? 'erro' : c.status === 'rodando' || c.relatorio_pendente ? 'lendo' : Number(c.lancamentos) === 0 ? 'vazio' : 'ok');
+  const fora = conexoes.filter((c) => estadoDe(c) !== 'ok');
+  const maisAntiga = conexoes
+    .filter((c) => estadoDe(c) === 'ok' && c.ultima_sincronizacao)
+    .reduce((m, c) => (!m || c.ultima_sincronizacao < m ? c.ultima_sincronizacao : m), null);
+  const texto = { erro: 'falhou na última leitura', lendo: 'lendo agora', vazio: 'ainda sem extrato' };
+  return (
+    <div className="fr-leitura">
+      {fora.length < conexoes.length && (
+        <span className="fr-leitura-item fr-leitura-ok">
+          <span className="fr-leitura-ponto" />
+          {fora.length === 0 ? 'Todas as lojas' : `${conexoes.length - fora.length} de ${conexoes.length} lojas`} atualizadas {tempoDesde(maisAntiga)}
+        </span>
+      )}
+      {fora.map((c) => (
+        <span key={c.id} className={`fr-leitura-item fr-leitura-${estadoDe(c)}`}>
+          <span className="fr-leitura-ponto" />
+          <strong>{c.nome}</strong> {c.relatorio_pendente ? 'esperando o Mercado Pago' : texto[estadoDe(c)]}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function AvisosDasConexoes({ conexoes }) {
-  const comAviso = conexoes.filter((c) => c.ultimo_aviso);
-  const comErro = conexoes.filter((c) => c.ultimo_erro);
-  if (comAviso.length === 0 && comErro.length === 0) return null;
-  return (
-    <>
-      {comAviso.map((c) => (
-        <div key={`aviso-${c.id}`} className="aviso-compacto tone-atencao">
-          <AlertTriangle size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
-          <strong>{c.nome || PLATAFORMA_LABEL[c.marketplace]}:</strong> <AvisoResumido texto={c.ultimo_aviso} />
-        </div>
-      ))}
-      {comErro.map((c) => (
-        <div key={`erro-${c.id}`} className="aviso-compacto tone-prejuizo">
-          <strong>{c.nome || PLATAFORMA_LABEL[c.marketplace]}:</strong> a última leitura do extrato falhou. <ErroIntegracao erro={c.ultimo_erro} sistema="a plataforma" />
-        </div>
-      ))}
-    </>
-  );
+  const com = conexoes.filter((c) => c.ultimo_aviso || c.ultimo_erro);
+  if (!com.length) return null;
+  return com.map((c) => (
+    <div key={c.id} className={'aviso-compacto ' + (c.ultimo_erro ? 'tone-prejuizo' : 'tone-atencao')}>
+      <AlertTriangle size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
+      <strong>{c.nome}:</strong>{' '}
+      {c.ultimo_erro
+        ? <>a última leitura falhou. <ErroIntegracao erro={c.ultimo_erro} sistema="a plataforma" /></>
+        : c.ultimo_aviso}
+    </div>
+  ));
 }
 
-// O aviso do servidor termina com o trecho cru da primeira linha que não deu
-// para ler ("Primeira delas, linha 7105: ;;0,00;0,00;67321.46;…"). Isso serve
-// para diagnóstico, não para a tela: fica o resumo e o trecho vai para
-// "Ver detalhes" (revisão visual 25/09/2026).
-function AvisoResumido({ texto }) {
-  const [aberto, setAberto] = useState(false);
-  const corte = String(texto || '').search(/\s*Primeira delas,/);
-  if (corte < 0) return <>{texto}</>;
-  const resumo = texto.slice(0, corte).replace(/\.?$/, '.');
-  const detalhe = texto.slice(corte).trim();
-  return (
-    <>
-      {resumo}{' '}
-      <button type="button" className="botao-link" onClick={() => setAberto((v) => !v)}>{aberto ? 'Esconder detalhes' : 'Ver detalhes'}</button>
-      {aberto && <code className="aviso-detalhe-tecnico">{detalhe}</code>}
-    </>
-  );
+function useDados(rota, params, versao) {
+  const [dados, setDados] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState('');
+  useEffect(() => {
+    let vivo = true;
+    setCarregando(true);
+    setErro('');
+    api.get(`/financeiro/${rota}?${params}`)
+      .then((d) => { if (vivo) setDados(d); })
+      .catch((e) => { if (vivo) setErro(e.message); })
+      .finally(() => { if (vivo) setCarregando(false); });
+    return () => { vivo = false; };
+  }, [rota, params, versao]);
+  return { dados, carregando, erro };
 }
 
-// ---------------------------------------------------------------------------
-// Aba: Movimentação
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// Aba Movimentação
+// ===========================================================================
 
-const COLUNAS_LANCAMENTO = {
-  data: (l) => dataIso(l.data_liberacao),
-  plataforma: (l) => PLATAFORMA_LABEL[l.marketplace] || l.marketplace,
-  loja: (l) => l.loja_nome || '',
-  tipo: (l) => TIPO_LABEL[l.tipo] || l.tipo,
-  descricao: (l) => l.descricao_externa || '',
-  pedido: (l) => Number(l.pedido_numero) || 0,
-  valor: (l) => Number(l.valor) || 0,
-  status: (l) => l.status,
-};
-
-const EXPORTACAO_LANCAMENTO = [
-  { rotulo: 'Data', valor: (l) => dataBr(dataIso(l.data_liberacao)) },
-  { rotulo: 'Plataforma', valor: (l) => PLATAFORMA_LABEL[l.marketplace] || l.marketplace },
-  { rotulo: 'Loja', valor: (l) => l.loja_nome || '' },
-  { rotulo: 'Tipo', valor: (l) => TIPO_LABEL[l.tipo] || l.tipo },
-  { rotulo: 'Descrição', valor: (l) => l.descricao_externa || '' },
-  { rotulo: 'Pedido', valor: (l) => (l.pedido_numero ? `#${l.pedido_numero}` : '') },
-  { rotulo: 'ID na plataforma', valor: (l) => l.lancamento_id_externo },
-  { rotulo: 'Valor', valor: (l) => brl(l.valor) },
-  { rotulo: 'Situação', valor: (l) => STATUS_LABEL[l.status] || l.status },
-];
-
-function AbaMovimentacao({ dados, podeAbrirPedido, contexto }) {
-  const paleta = usePaletaGrafico();
-  const lancamentos = dados?.lancamentos || [];
-  const tabela = useTabela(lancamentos, { colunas: COLUNAS_LANCAMENTO, colunaPadrao: 'data', direcaoPadrao: 'desc', prefixo: 'lanc' });
-
+function AbaMovimentacao({ base, versao, podeAbrirPedido, contexto, buscaInicial }) {
+  const { dados, carregando, erro } = useDados('extrato', `${base}&status=liberado`, versao);
+  const fech = useDados('fechamento', base, versao);
   const refDias = useRefGrafico();
-  const refTipos = useRefGrafico();
+  const refLista = useRef(null);
 
-  // Resumo por data: uma linha por dia, uma coluna por plataforma. É a
-  // pergunta original do financeiro — "quanto foi liberado por data e
-  // plataforma" — respondida do jeito mais direto possível.
-  //
-  // O SAQUE fica fora desta tabela. Ele não é dinheiro que o marketplace
-  // deixou de pagar: é o mesmo dinheiro saindo da plataforma pra conta da
-  // empresa. Somado aqui, um dia de saque grande vira um vermelho enorme que
-  // não significa nada. Ele tem coluna própria, à direita.
-  const { dias, plataformasNaTela, totalPorPlataforma, porPlataforma } = useMemo(() => {
-    const porDia = new Map();
-    const plataformas = new Set();
-    const totais = {};
-    const contagem = {};
-    const fora = new Set(dados?.grupos?.foraMarketplace || FORA_MARKETPLACE_PADRAO);
-    for (const r of (dados?.resumoPorData || [])) {
+  // Filtro da LISTA — os blocos de cima mandam nele (clicar num dia, num
+  // tipo ou num cartão do caminho do dinheiro).
+  const [filtroLista, setFiltroLista] = useState(() => ({ ...FILTRO_LISTA_VAZIO, busca: buscaInicial }));
+  function filtrarLista(parcial) {
+    setFiltroLista((f) => ({ ...FILTRO_LISTA_VAZIO, ...parcial, busca: parcial.busca ?? '' }));
+    setTimeout(() => refLista.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  }
+
+  // Soma por tipo (só liberado) — base do "caminho do dinheiro".
+  const porTipo = useMemo(() => {
+    const m = {};
+    for (const r of dados?.resumoPorTipo || []) {
       if (r.status !== 'liberado') continue;
-      // Pix recebido, maquininha etc. não são liberação do marketplace —
-      // somados aqui, o saque da Shopee aparecia de novo como Mercado Livre.
-      if (fora.has(r.tipo)) continue;
-      const data = dataIso(r.data_liberacao);
-      const valor = Number(r.total || 0);
-      const linha = porDia.get(data) || { data, total: 0, saque: 0 };
-      if (r.tipo === 'saque') {
-        linha.saque += valor;
-      } else {
-        plataformas.add(r.marketplace);
-        linha[r.marketplace] = (linha[r.marketplace] || 0) + valor;
-        linha.total += valor;
-        totais[r.marketplace] = (totais[r.marketplace] || 0) + valor;
-        contagem[r.marketplace] = (contagem[r.marketplace] || 0) + Number(r.quantidade || 0);
-      }
-      porDia.set(data, linha);
+      if (!m[r.tipo]) m[r.tipo] = { tipo: r.tipo, total: 0, quantidade: 0 };
+      m[r.tipo].total += n(r.total);
+      m[r.tipo].quantidade += n(r.quantidade);
     }
-    const lista = [...plataformas];
+    return m;
+  }, [dados]);
+  const soma = (tipos) => tipos.reduce((s, t) => s + (porTipo[t]?.total || 0), 0);
+
+  // Dias × plataforma, só dinheiro do marketplace (sem saque e sem Pix).
+  const { dias, plataformasNaTela, totalPorPlataforma, porPlataforma } = useMemo(() => {
+    const mapa = new Map();
+    const plats = new Set();
+    const totais = {};
+    const qtd = {};
+    for (const r of dados?.resumoPorData || []) {
+      if (r.status !== 'liberado') continue;
+      const grupo = TIPO[r.tipo]?.grupo || 'marketplace';
+      const data = dataIso(r.data_liberacao);
+      const linha = mapa.get(data) || { data, total: 0, saque: 0, entrou: 0, saiu: 0 };
+      if (grupo === 'saque') linha.saque += n(r.total);
+      else if (grupo === 'marketplace') {
+        plats.add(r.marketplace);
+        linha[r.marketplace] = (linha[r.marketplace] || 0) + n(r.total);
+        linha.total += n(r.total);
+        if (n(r.total) > 0) linha.entrou += n(r.total); else linha.saiu += n(r.total);
+        totais[r.marketplace] = (totais[r.marketplace] || 0) + n(r.total);
+        qtd[r.marketplace] = (qtd[r.marketplace] || 0) + n(r.quantidade);
+      }
+      mapa.set(data, linha);
+    }
+    const lista = PLATAFORMAS.filter((p) => plats.has(p));
     return {
-      dias: [...porDia.values()].sort((a, b) => (a.data < b.data ? 1 : -1)),
+      dias: [...mapa.values()].sort((a, b) => (a.data < b.data ? 1 : -1)),
       plataformasNaTela: lista,
       totalPorPlataforma: totais,
-      porPlataforma: lista
-        .map((m) => ({ marketplace: m, total: totais[m] || 0, quantidade: contagem[m] || 0 }))
-        .sort((a, b) => b.total - a.total),
+      porPlataforma: lista.map((m) => ({ marketplace: m, total: totais[m] || 0, quantidade: qtd[m] || 0 })).sort((a, b) => b.total - a.total),
     };
   }, [dados]);
 
-  const houveSaque = dias.some((d) => d.saque !== 0);
-  const totalSaque = dias.reduce((s, d) => s + d.saque, 0);
-
-  const porTipo = useMemo(() => {
-    const mapa = new Map();
-    for (const r of (dados?.resumoPorTipo || [])) {
-      // Só o liberado: "para onde o dinheiro foi" é sobre dinheiro que já se
-      // moveu. O pendente aparece no indicador próprio, em cima.
-      if (r.status !== 'liberado') continue;
-      const atual = mapa.get(r.tipo) || { tipo: r.tipo, total: 0, quantidade: 0 };
-      atual.total += Number(r.total || 0);
-      atual.quantidade += Number(r.quantidade || 0);
-      mapa.set(r.tipo, atual);
-    }
-    return [...mapa.values()].sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
-  }, [dados]);
-
-  // Gráficos precisam do eixo em ordem crescente; a tabela mostra do mais
-  // recente pro mais antigo. São duas leituras da mesma lista, não dois dados.
-  const diasCrescente = useMemo(() => (
-    [...dias].reverse().map((d) => ({ ...d, rotulo: dataBr(d.data) }))
-  ), [dias]);
-
-  // O SAQUE não é destino de dinheiro: é o mesmo dinheiro mudando de bolso
-  // (marketplace -> banco da casa). Somar a coluna "Total" com ele dentro dava
-  // `liberado − saque`, e não os R$ do cartão "Liberado pelo marketplace" —
-  // numa casa que saca quase tudo, a diferença é a ordem de grandeza do mês.
-  // O gráfico ao lado já o excluía; agora a tabela lê igual e o saque aparece
-  // numa linha declarada FORA do total, em vez de sumir.
-  const porTipoDestino = useMemo(() => {
-    const fora = new Set(dados?.grupos?.foraMarketplace || FORA_MARKETPLACE_PADRAO);
-    return porTipo.filter((t) => t.tipo !== 'saque' && !fora.has(t.tipo));
-  }, [porTipo, dados]);
-  const linhaSaque = useMemo(() => porTipo.find((t) => t.tipo === 'saque') || null, [porTipo]);
-
-  // Barras com sinal: o que entrou sobe, o que saiu desce. É a leitura que um
-  // leigo faz sem precisar de legenda.
-  const barrasTipo = useMemo(() => (
-    porTipoDestino
-      .map((t) => ({
-        rotulo: rotuloTipo(t.tipo),
-        total: t.total,
-        cor: t.total >= 0 ? paleta.positivo : paleta.negativo,
-      }))
-  ), [porTipoDestino, paleta]);
-
   async function montarRelatorio(tipo) {
     if (!dados) return null;
-    const graficos = await capturarGraficos([
-      { titulo: 'Quanto entrou na conta, dia a dia', ref: refDias },
-      { titulo: 'Para onde o dinheiro foi', ref: refTipos },
-    ]);
+    const graficos = await capturarGraficos([{ titulo: 'Liberado dia a dia', ref: refDias }]);
+    const lista = Object.values(porTipo).sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
+    let dadosRel = dados;
+    if (tipo === 'completo') {
+      // O relatório completo leva a lista inteira, não só a página da tela.
+      const todos = await buscarTodosLancamentos(`${base}&status=liberado`);
+      dadosRel = { ...dados, lancamentos: todos };
+    }
     return definicaoMovimentacao({
-      tipo,
-      dados,
-      dias,
-      plataformasNaTela,
-      totalPorPlataforma,
-      porTipo,
-      porPlataforma,
-      rotuloTipo,
-      rotuloPlataforma,
-      rotuloStatus,
-      periodo: contexto.periodo,
-      filtros: contexto.filtros,
-      graficos,
+      tipo, dados: dadosRel, dias, plataformasNaTela, totalPorPlataforma, porTipo: lista, porPlataforma,
+      rotuloTipo, rotuloPlataforma, rotuloStatus, periodo: contexto.periodo, filtros: contexto.filtros, graficos,
     });
   }
 
-  if (!dados) return null;
-  if (lancamentos.length === 0 && dias.length === 0) {
-    return (
-      <div className="card">
-        <EstadoVazio
-          titulo="Nenhum lançamento no período"
-          descricao="Ou o extrato desse período ainda não foi lido, ou não houve movimentação. Use 'Puxar extrato agora' para atualizar."
-        />
-      </div>
-    );
-  }
+  if (erro) return <div className="aviso-compacto tone-prejuizo">{erro}</div>;
+  if (!dados) return <div className="card fr-carregando">{carregando ? 'Carregando…' : ''}</div>;
+
+  const t = dados.totais;
+  const vazio = dias.length === 0 && n(t.transferidoBanco) === 0 && n(t.enviadoMercadoPago) === 0;
 
   return (
     <>
       <div className="acoes-relatorio no-print">
         <div className="acoes-relatorio-texto">
-          <strong>Relatório deste período</strong>
-          <span>Resumo para mandar, ou completo para conferir — em PDF ou Excel.</span>
+          <strong>Relatório do período</strong>
+          <span>Resumo para mandar ou completo para conferir, em PDF ou Excel.</span>
         </div>
         <BotaoRelatorio
           montar={montarRelatorio}
           rotulo="Gerar relatório"
-          descricaoResumo="Os indicadores, os dois gráficos e as quebras por data, tipo e plataforma."
-          descricaoCompleto="O resumo mais o extrato linha a linha, com o identificador de cada lançamento na plataforma."
+          descricaoResumo="A conta do período, o gráfico dia a dia e o total por plataforma e por tipo."
+          descricaoCompleto="Tudo do resumo e mais cada lançamento, um por linha."
         />
       </div>
 
-      <div className="indicadores-faixa">
-        <IndicadorDestaque
-          destaque
-          Icone={Banknote}
-          rotulo="Liberado pelo marketplace"
-          valor={brl(dados.totais.liberado)}
-          explicacao={`O que a plataforma de fato creditou: venda menos publicidade, taxa e devolução. Não entram o saque nem o dinheiro que não é do marketplace (Pix recebido, maquininha): ${brl(Number(dados.totais.outrasEntradas || 0) + Number(dados.totais.outrasSaidas || 0))} no período.`}
-        />
-        <IndicadorDestaque
-          Icone={ArrowDownCircle}
-          tom="positivo"
-          rotulo="Entradas"
-          valor={brl(dados.totais.entradas)}
-          explicacao="Tudo que entrou no período, antes de qualquer desconto."
-        />
-        <IndicadorDestaque
-          Icone={ArrowUpCircle}
-          tom="negativo"
-          rotulo="Saídas"
-          valor={brl(dados.totais.saidas)}
-          explicacao="Publicidade, taxas, multas e devoluções descontadas pela plataforma."
-        />
-        <IndicadorDestaque
-          Icone={Hourglass}
-          tom={Number(dados.totais.pendente) !== 0 ? 'atencao' : undefined}
-          rotulo="Ainda pendente"
-          valor={brl(dados.totais.pendente)}
-          explicacao={`${plural(dados.totais.quantidadePendente, 'lançamento')} que a plataforma já reconhece e ainda não soltou. Nunca é somado ao liberado.`}
-        />
-        {/* Concluído e em andamento no mesmo cartão: são as duas metades da
-            mesma pergunta ("o dinheiro já saiu da plataforma?"), e separados
-            sobrava um sexto cartão órfão numa segunda linha. */}
-        <IndicadorDestaque
-          Icone={Landmark}
-          rotulo="Transferido para o banco"
-          valor={brl(dados.totais.transferidoBanco)}
-          explicacao={`Saques do Mercado Pago e da TikTok para a conta da empresa. O saque da Shopee vai para o Mercado Pago (${brl(dados.totais.enviadoMercadoPago || 0)}) e por isso não soma aqui — senão contaria duas vezes. Em andamento: ${brl(dados.totais.transferenciaEmAndamento)}.`}
-        />
-      </div>
-
-      <div className="nota-precisao">
-        <Info size={14} />
-        <span>
-          Estes números vêm do <strong>extrato da própria plataforma</strong>, não da soma dos pedidos — por
-          isso incluem o que não pertence a venda nenhuma. O <strong>liberado</strong> e o{' '}
-          <strong>pendente</strong> são somados separados de propósito: pendente ainda não é movimentação
-          bancária.
-        </span>
-      </div>
-
-      <CartaoGrafico
-        titulo="Quanto entrou na conta, dia a dia"
-        explicacao="Cada faixa é uma plataforma; a altura total é o liberado do dia. Dias sem movimentação não aparecem no eixo. O saque para o banco fica de fora — ele não é dinheiro a mais nem a menos."
-        refGrafico={refDias}
-        altura={280}
-        vazio={diasCrescente.length === 0 ? 'Nenhum dia com movimentação no período.' : null}
-        rodape={`${plural(diasCrescente.length, 'dia')} com movimentação · total liberado ${brl(dados.totais.liberado)}`}
-        legenda={plataformasNaTela.map((m, i) => ({
-          rotulo: rotuloPlataforma(m),
-          valor: brl(totalPorPlataforma[m] || 0),
-          cor: corPorIndice(paleta, i),
-        }))}
-      >
-        <GraficoEvolucao
-          dados={diasCrescente}
-          series={plataformasNaTela.map((m) => ({ chave: m, nome: rotuloPlataforma(m) }))}
-          altura={280}
-          empilhado
-        />
-      </CartaoGrafico>
-
-      <div className="coluna-larga">
-        <CartaoGrafico
-          titulo="Para onde o dinheiro foi"
-          explicacao="Barra para cima é dinheiro que entrou; para baixo, dinheiro que a plataforma descontou. O saque para o banco não aparece aqui — ele tem indicador próprio lá em cima."
-          refGrafico={refTipos}
-          altura={270}
-          vazio={barrasTipo.length === 0 ? 'Nada no período.' : null}
-        >
-          <GraficoColunas dados={barrasTipo} series={[{ chave: 'total', nome: 'Total' }]} altura={270} comZero />
-        </CartaoGrafico>
-
+      {vazio ? (
         <div className="card">
-          <div className="card-head">Quanto cada plataforma liberou</div>
-          <p className="grafico-explicacao">
-            No período e com os filtros atuais. A porcentagem é o peso de cada plataforma no total liberado.
-          </p>
-          <BarraRanking
-            itens={porPlataforma.map((p) => ({
-              rotulo: rotuloPlataforma(p.marketplace),
-              detalhe: `${plural(p.quantidade, 'lançamento')}`,
-              valor: p.total,
-            }))}
-            vazio="Nenhuma plataforma com movimentação no período."
+          <EstadoVazio
+            titulo="Nada liberado neste período"
+            descricao="Ou o extrato ainda está sendo lido (veja acima quando cada loja foi atualizada), ou não houve movimento. Tente outro período ou clique em “Puxar extrato agora”."
           />
         </div>
-      </div>
+      ) : (
+        <>
+          <CaminhoDoDinheiro t={t} soma={soma} porTipo={porTipo} aoFiltrar={filtrarLista} />
+          <SeloConferencia lojas={fech.dados?.lojas} carregando={fech.carregando} />
+          <DiaADia
+            dias={dias}
+            plataformas={plataformasNaTela}
+            totalPorPlataforma={totalPorPlataforma}
+            refGrafico={refDias}
+            diaSelecionado={filtroLista.dia}
+            aoEscolherDia={(dia) => filtrarLista({ dia, grupo: 'marketplace' })}
+          />
+          <ParaOndeFoi porTipo={porTipo} aoEscolher={(tipo) => filtrarLista({ tipos: [tipo] })} />
+        </>
+      )}
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-head">Liberado por data e plataforma</div>
-        <p className="page-sub" style={{ marginTop: 0 }}>
-          <strong>Liberado pelo marketplace</strong> é venda menos publicidade, taxa e devolução — o que a
-          plataforma de fato creditou. O <strong>saque</strong> aparece em coluna separada porque não é
-          dinheiro que eles deixaram de pagar: é o mesmo dinheiro saindo da plataforma para a conta da
-          empresa.{' '}
-          O pendente ({brl(dados.totais.pendente)}, {plural(dados.totais.quantidadePendente, 'lançamento')}) fica de
-          fora desta tabela de propósito: ainda não é movimentação bancária.
-        </p>
-        <DataTable>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th style={{ width: 110 }}>Data</th>
-                {plataformasNaTela.map((m) => <th key={m}>{PLATAFORMA_LABEL[m] || m}</th>)}
-                <th>Liberado no dia</th>
-                {houveSaque && <th>Saque p/ o banco</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {dias.map((d) => (
-                <tr key={d.data}>
-                  <td className="mono">{dataBr(d.data)}</td>
-                  {plataformasNaTela.map((m) => (
-                    <td key={m} className="mono">{d[m] === undefined ? '—' : <ValorAssinado valor={d[m]} />}</td>
-                  ))}
-                  <td className="mono"><ValorAssinado valor={d.total} forte /></td>
-                  {houveSaque && (
-                    <td className="mono">{d.saque === 0 ? '—' : <ValorAssinado valor={d.saque} />}</td>
-                  )}
-                </tr>
-              ))}
-              {dias.length > 0 && (
-                <tr className="linha-total">
-                  <td><strong>Total</strong></td>
-                  {plataformasNaTela.map((m) => (
-                    <td key={m} className="mono"><ValorAssinado valor={totalPorPlataforma[m] || 0} forte /></td>
-                  ))}
-                  <td className="mono"><ValorAssinado valor={dados.totais.liberado} forte /></td>
-                  {houveSaque && <td className="mono"><ValorAssinado valor={totalSaque} forte /></td>}
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </DataTable>
-      </div>
-
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-head">Para onde o dinheiro foi, em número</div>
-        <DataTable>
-          <table className="data-table">
-            <thead>
-              <tr><th>Tipo</th><th>Lançamentos</th><th>Total</th><th>Peso no período</th></tr>
-            </thead>
-            <tbody>
-              {porTipoDestino.map((t) => {
-                const base = porTipoDestino.reduce((s, x) => s + Math.abs(x.total), 0);
-                return (
-                  <tr key={t.tipo}>
-                    <td>{TIPO_LABEL[t.tipo] || t.tipo}</td>
-                    <td className="mono">{t.quantidade.toLocaleString('pt-BR')}</td>
-                    <td className="mono"><ValorAssinado valor={t.total} /></td>
-                    {/* Peso pelo VALOR ABSOLUTO: com sinal, entrada e saída se
-                        anulariam e a soma da coluna não daria 100%. */}
-                    <td className="mono">{base ? `${numeroBr((Math.abs(t.total) / base) * 100, 1)}%` : '—'}</td>
-                  </tr>
-                );
-              })}
-              {porTipoDestino.length === 0 && <tr><td colSpan="4">Nada no período.</td></tr>}
-              {linhaSaque && (
-                <tr className="linha-total">
-                  <td>{TIPO_LABEL[linhaSaque.tipo] || linhaSaque.tipo} <span className="page-sub">(fora do total)</span></td>
-                  <td className="mono">{linhaSaque.quantidade.toLocaleString('pt-BR')}</td>
-                  <td className="mono"><ValorAssinado valor={linhaSaque.total} /></td>
-                  <td className="mono">—</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </DataTable>
-        <div className="grafico-rodape">
-          “Peso no período” usa o valor sem o sinal — senão entrada e saída se anulariam e a coluna não
-          somaria 100%. O <strong>saque para o banco</strong> aparece à parte e não entra na conta: ele
-          não é destino do dinheiro, é o mesmo dinheiro saindo do marketplace para a conta da casa —
-          somá-lo aqui faria a coluna dar “liberado menos saque” em vez do liberado do período.
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-head-linha">
-          <div className="card-head">Lançamentos</div>
-          <BotaoExportar nomeBase="extrato-marketplace" colunas={EXPORTACAO_LANCAMENTO} itens={tabela.itensOrdenados} disabled={tabela.totalItens === 0} />
-        </div>
-        {dados.listaTruncada && (
-          <div className="aviso-compacto tone-atencao">
-            A lista detalhada foi cortada em 5.000 lançamentos. Os totais e os resumos acima consideram o
-            período inteiro — só esta tabela está incompleta. Estreite o período ou o filtro para ver todos.
-          </div>
-        )}
-        <p className="page-sub" style={{ marginTop: 0 }}>{tabela.totalItens.toLocaleString('pt-BR')} lançamento(s)</p>
-        <Paginacao {...tabela} posicao="topo" />
-        <DataTable>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <ThOrdenavel coluna="data" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor} style={{ width: 100 }}>Data</ThOrdenavel>
-                <ThOrdenavel coluna="plataforma" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Plataforma</ThOrdenavel>
-                <ThOrdenavel coluna="loja" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Loja</ThOrdenavel>
-                <ThOrdenavel coluna="tipo" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Tipo</ThOrdenavel>
-                <ThOrdenavel coluna="descricao" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Descrição</ThOrdenavel>
-                <ThOrdenavel coluna="pedido" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor} style={{ width: 90 }}>Pedido</ThOrdenavel>
-                <ThOrdenavel coluna="valor" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Valor</ThOrdenavel>
-                <ThOrdenavel coluna="status" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor} style={{ width: 100 }}>Situação</ThOrdenavel>
-              </tr>
-            </thead>
-            <tbody>
-              {tabela.itensPagina.map((l) => (
-                <tr key={l.id}>
-                  <td className="mono">{dataBr(dataIso(l.data_liberacao))}</td>
-                  <td>{PLATAFORMA_LABEL[l.marketplace] || l.marketplace}</td>
-                  <td>{l.loja_nome || '—'}</td>
-                  <td>{TIPO_LABEL[l.tipo] || l.tipo}</td>
-                  <td title={l.lancamento_id_externo}>{l.descricao_externa || '—'}</td>
-                  <td className="mono">
-                    {l.pedido_numero ? (
-                      podeAbrirPedido
-                        ? <Link to={`/pedidos/${l.pedido_id}`} title="Abrir o pedido">#{l.pedido_numero}</Link>
-                        : <span>#{l.pedido_numero}</span>
-                    ) : l.pedido_id_externo ? (
-                      <span title={`Pedido ${l.pedido_id_externo} ainda não importado aqui`} className="stamp sm tone-neutro">
-                        <Link2 size={11} /> externo
-                      </span>
-                    ) : '—'}
-                  </td>
-                  <td className="mono"><ValorAssinado valor={l.valor} /></td>
-                  <td>
-                    <span className={'stamp sm ' + (l.status === 'liberado' ? 'tone-saudavel' : 'tone-atencao')}>
-                      {STATUS_LABEL[l.status] || l.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {tabela.totalItens === 0 && <tr><td colSpan="8">Nenhum lançamento com esses filtros.</td></tr>}
-            </tbody>
-          </table>
-        </DataTable>
-        <Paginacao {...tabela} />
+      <div ref={refLista}>
+        <ListaLancamentos base={base} versao={versao} filtro={filtroLista} setFiltro={setFiltroLista} podeAbrirPedido={podeAbrirPedido} />
       </div>
     </>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Aba: Repasses
-// ---------------------------------------------------------------------------
+async function buscarTodosLancamentos(params) {
+  const todos = [];
+  for (let pagina = 1; pagina <= 40; pagina += 1) {
+    const r = await api.get(`/financeiro/lancamentos?${params}&por_pagina=500&pagina=${pagina}&ordem=data&direcao=asc`);
+    todos.push(...(r.lancamentos || []));
+    if (pagina >= r.paginas) break;
+  }
+  return todos;
+}
 
-const COLUNAS_REPASSE = {
-  data: (r) => dataIso(r.data_liberacao),
-  plataforma: (r) => PLATAFORMA_LABEL[r.marketplace] || r.marketplace,
-  loja: (r) => r.loja_nome || '',
-  valor: (r) => Number(r.valor_liquido) || 0,
-  status: (r) => r.status,
-};
-
-const EXPORTACAO_REPASSE = [
-  { rotulo: 'Data', valor: (r) => dataBr(dataIso(r.data_liberacao)) },
-  { rotulo: 'Plataforma', valor: (r) => PLATAFORMA_LABEL[r.marketplace] || r.marketplace },
-  { rotulo: 'Loja', valor: (r) => r.loja_nome || '' },
-  { rotulo: 'Identificador', valor: (r) => r.repasse_id_externo },
-  { rotulo: 'Valor', valor: (r) => brl(r.valor_liquido) },
-  { rotulo: 'Situação', valor: (r) => r.status },
+// ---------------------------------------------------------------------------
+// O caminho do dinheiro: a conta montada, da venda até o liberado.
+// ---------------------------------------------------------------------------
+const PASSOS = [
+  { chave: 'vendas', rotulo: 'Vendas liberadas', tipos: ['repasse_venda'], sinal: 'mais', frase: 'O que as vendas renderam depois da comissão da plataforma.' },
+  { chave: 'devolucoes', rotulo: 'Devoluções e reclamações', tipos: ['devolucao'], sinal: 'menos', frase: 'Dinheiro devolvido ao comprador ou tirado por reclamação.' },
+  { chave: 'custos', rotulo: 'Taxas, Ads e ajustes', tipos: ['taxa', 'ads', 'antecipacao', 'ajuste', 'outros'], sinal: 'menos', frase: 'Cobranças da plataforma fora da comissão: frete, antecipação, publicidade.' },
+  { chave: 'retido', rotulo: 'Dinheiro retido', tipos: ['reserva'], sinal: 'maismenos', frase: 'A plataforma segura até resolver uma reclamação ou dívida. Volta depois.' },
 ];
 
-function AbaRepasses({ dados, contexto }) {
+function CaminhoDoDinheiro({ t, soma, porTipo, aoFiltrar }) {
+  const qtd = (tipos) => tipos.reduce((s, x) => s + (porTipo[x]?.quantidade || 0), 0);
+  const foraTotal = n(t.outrasEntradas) + n(t.outrasSaidas);
+  return (
+    <section className="fr-caminho card" aria-label="A conta do período">
+      <div className="card-head">A conta do período</div>
+      <div className="fr-caminho-trilha">
+        {PASSOS.map((p, i) => {
+          const valor = soma(p.tipos);
+          return (
+            <div key={p.chave} className="fr-caminho-passo-envolto">
+              {i > 0 && (
+                <span className="fr-caminho-op" aria-hidden="true">
+                  {valor < 0 ? <Minus size={16} /> : <Plus size={16} />}
+                </span>
+              )}
+              <button
+                type="button"
+                className={`fr-caminho-passo fr-passo-${p.chave}`}
+                onClick={() => aoFiltrar({ tipos: p.tipos })}
+                title="Ver estes lançamentos na lista"
+                style={{ animationDelay: `${i * 70}ms` }}
+              >
+                <span className="fr-caminho-rotulo">{p.rotulo}</span>
+                <span className="fr-caminho-valor mono">{brl(i === 0 ? valor : Math.abs(valor))}</span>
+                <span className="fr-caminho-frase">{p.frase}</span>
+                <span className="fr-caminho-qtd">{plural(qtd(p.tipos), 'lançamento')} <ArrowRight size={12} /></span>
+              </button>
+            </div>
+          );
+        })}
+        <span className="fr-caminho-op fr-caminho-igual" aria-hidden="true"><Equal size={18} /></span>
+        <div className="fr-caminho-resultado" style={{ animationDelay: '320ms' }}>
+          <span className="fr-caminho-rotulo">Liberado pelo marketplace</span>
+          <span className="fr-caminho-valor mono">{brl(t.liberado)}</span>
+          <span className="fr-caminho-frase">O que de fato ficou disponível para sacar. Não conta saque nem dinheiro de fora.</span>
+        </div>
+      </div>
+
+      <div className="fr-caminho-depois">
+        <div className="fr-depois-item">
+          <Landmark size={18} />
+          <div>
+            <span className="fr-depois-rotulo">Foi para o banco</span>
+            <span className="mono fr-depois-valor">{brl(t.transferidoBanco)}</span>
+            <span className="fr-depois-frase">Saques do Mercado Pago{n(t.transferenciaEmAndamento) ? ` · ${brl(t.transferenciaEmAndamento)} ainda a caminho` : ''}</span>
+          </div>
+        </div>
+        <div className="fr-depois-item">
+          <Wallet size={18} />
+          <div>
+            <span className="fr-depois-rotulo">Shopee → Mercado Pago</span>
+            <span className="mono fr-depois-valor">{brl(t.enviadoMercadoPago)}</span>
+            <span className="fr-depois-frase">Saques da Shopee. Caem no Mercado Pago e saem para o banco junto com o resto</span>
+          </div>
+        </div>
+        <button type="button" className="fr-depois-item fr-depois-clicavel" onClick={() => aoFiltrar({ grupo: 'fora' })}>
+          <ArrowDownLeft size={18} />
+          <div>
+            <span className="fr-depois-rotulo">Passou pela conta, não é marketplace</span>
+            <span className="mono fr-depois-valor">{brl(foraTotal)}</span>
+            <span className="fr-depois-frase">Pix recebido (o saque da Shopee chegando), maquininha, contas pagas. Fica fora do liberado</span>
+          </div>
+        </button>
+        <div className="fr-depois-item">
+          <Hourglass size={18} />
+          <div>
+            <span className="fr-depois-rotulo">Ainda vai liberar</span>
+            <span className="mono fr-depois-valor">{brl(t.pendente)}</span>
+            <span className="fr-depois-frase">A plataforma já calculou e ainda não soltou</span>
+          </div>
+        </div>
+      </div>
+
+      <ComoFunciona>
+        <p>
+          A conta usa só o <strong>extrato da plataforma</strong> (não a soma dos pedidos). Cada linha do extrato
+          entra uma única vez — pelo identificador da própria plataforma — e é classificada em um destes grupos:
+        </p>
+        <ul>
+          <li><strong>Dinheiro do marketplace</strong>: vendas, devoluções, taxas, Ads, antecipação e dinheiro retido. É o que forma o “Liberado”.</li>
+          <li><strong>Saque</strong>: o dinheiro saindo da plataforma. Não é ganho nem perda — é o mesmo dinheiro mudando de lugar.</li>
+          <li><strong>Não é do marketplace</strong>: a conta do Mercado Pago também recebe o Pix do saque da Shopee e a venda da maquininha. Antes isso era somado como venda do Mercado Livre e o dinheiro da Shopee aparecia duas vezes.</li>
+        </ul>
+        <p>Clique em qualquer cartão para ver na lista os lançamentos que formam aquele número.</p>
+      </ComoFunciona>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Selo: o mês fechou?
+// ---------------------------------------------------------------------------
+function SeloConferencia({ lojas, carregando }) {
+  if (!lojas) return carregando ? <div className="fr-selo-faixa fr-selo-carregando">Conferindo o saldo de cada loja…</div> : null;
+  const itens = lojas.flatMap((l) => l.meses.filter((m) => m.linhas > 0).map((m) => ({ ...m, loja: l.loja, marketplace: l.marketplace, id: `${l.integracaoId}-${m.mes}` })));
+  if (!itens.length) return null;
+  const ruins = itens.filter((i) => i.fechado === false);
+  return (
+    <div className={'fr-selo-faixa' + (ruins.length ? ' fr-selo-com-problema' : ' fr-selo-tudo-ok')}>
+      <span className="fr-selo-titulo">
+        {ruins.length
+          ? <><XCircle size={16} /> {plural(ruins.length, 'loja/mês', 'lojas/meses')} não {ruins.length === 1 ? 'fecha' : 'fecham'} — veja a aba Conferência</>
+          : <><CheckCircle2 size={16} /> Número conferido: o saldo de cada loja fecha no centavo</>}
+      </span>
+      <span className="fr-selo-lista">
+        {itens.map((i) => (
+          <span
+            key={i.id}
+            className={'fr-selo ' + (i.fechado === true ? 'ok' : i.fechado === false ? 'ruim' : 'neutro')}
+            title={i.fechado === false ? `Diferença de ${brl(i.diferenca)}` : i.conferencia === 'repasses' ? 'Conferido contra os repasses da TikTok' : 'Saldo inicial + movimento = saldo final'}
+          >
+            {i.fechado === true ? <CheckCircle2 size={12} /> : i.fechado === false ? <XCircle size={12} /> : <CircleDashed size={12} />}
+            {i.loja} · {mesCurto(i.mes)}
+          </span>
+        ))}
+      </span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Dia a dia: clicar num dia filtra a lista.
+// ---------------------------------------------------------------------------
+const COR_PLAT_VAR = { mercado_livre: '--fr-meli', shopee: '--fr-shopee', tiktok_shop: '--fr-tiktok' };
+
+function lerCor(nome, reserva) {
+  if (typeof window === 'undefined') return reserva;
+  const v = getComputedStyle(document.documentElement).getPropertyValue(nome).trim();
+  return v || reserva;
+}
+
+function DiaADia({ dias, plataformas, totalPorPlataforma, refGrafico, diaSelecionado, aoEscolherDia }) {
   const paleta = usePaletaGrafico();
-  const repasses = dados?.repasses || [];
-  const tabela = useTabela(repasses, { colunas: COLUNAS_REPASSE, colunaPadrao: 'data', direcaoPadrao: 'desc', prefixo: 'rep' });
-  const refDias = useRefGrafico();
+  const [modo, setModo] = useState('plataforma');
+  const [verTabela, setVerTabela] = useState(false);
+  const cores = {
+    mercado_livre: lerCor(COR_PLAT_VAR.mercado_livre, '#d8b23a'),
+    shopee: lerCor(COR_PLAT_VAR.shopee, '#e2622a'),
+    tiktok_shop: lerCor(COR_PLAT_VAR.tiktok_shop, '#3a3a3a'),
+    entrou: paleta.positivo || '#2e8b57',
+    saiu: paleta.negativo || '#c0392b',
+  };
+  const crescente = [...dias].reverse().map((d) => ({ ...d, rotulo: dataBr(d.data).slice(0, 5) }));
+  const series = modo === 'plataforma'
+    ? plataformas.map((m) => ({ chave: m, nome: rotuloPlataforma(m), cor: cores[m] }))
+    : [{ chave: 'entrou', nome: 'Entrou', cor: cores.entrou }, { chave: 'saiu', nome: 'Saiu', cor: cores.saiu }];
+  const tick = { fontSize: 11.5, fill: paleta.rotulo };
+  const melhor = dias.reduce((m, d) => (d.total > (m?.total ?? -Infinity) ? d : m), null);
+  const media = dias.length ? dias.reduce((s, d) => s + d.total, 0) / dias.length : 0;
 
-  const totalPago = repasses.filter((r) => r.status === 'pago').reduce((s, r) => s + (Number(r.valor_liquido) || 0), 0);
-  const totalAndamento = repasses.filter((r) => r.status !== 'pago').reduce((s, r) => s + (Number(r.valor_liquido) || 0), 0);
-
-  const porPlataforma = useMemo(() => {
-    const mapa = new Map();
-    for (const r of repasses) {
-      const atual = mapa.get(r.marketplace) || { marketplace: r.marketplace, quantidade: 0, pago: 0, andamento: 0 };
-      atual.quantidade += 1;
-      const v = Number(r.valor_liquido) || 0;
-      if (r.status === 'pago') atual.pago += v; else atual.andamento += v;
-      mapa.set(r.marketplace, atual);
-    }
-    return [...mapa.values()].sort((a, b) => (b.pago + b.andamento) - (a.pago + a.andamento));
-  }, [repasses]);
-
-  // Um ponto por dia com repasse, na ordem cronológica.
-  const porDia = useMemo(() => {
-    const mapa = new Map();
-    for (const r of repasses) {
-      const dia = dataIso(r.data_liberacao);
-      if (!dia) continue;
-      const atual = mapa.get(dia) || { data: dia, pago: 0, andamento: 0 };
-      const v = Number(r.valor_liquido) || 0;
-      if (r.status === 'pago') atual.pago += v; else atual.andamento += v;
-      mapa.set(dia, atual);
-    }
-    return [...mapa.values()]
-      .sort((a, b) => (a.data < b.data ? -1 : 1))
-      .map((d) => ({ ...d, rotulo: dataBr(d.data) }));
-  }, [repasses]);
-
-  async function montarRelatorio(tipo) {
-    if (!dados) return null;
-    const graficos = await capturarGraficos([{ titulo: 'Repasses por data', ref: refDias }]);
-    return definicaoRepasses({
-      tipo, repasses, totalPago, totalAndamento, porPlataforma, rotuloPlataforma,
-      periodo: contexto.periodo, filtros: contexto.filtros, graficos,
-    });
+  function Dica({ active, payload, label }) {
+    if (!active || !payload?.length) return null;
+    const d = payload[0].payload;
+    return (
+      <div className="grafico-tooltip">
+        <div className="grafico-tooltip-titulo">{dataBr(d.data)} · clique para ver os lançamentos</div>
+        {series.map((s) => (
+          <div className="grafico-tooltip-linha" key={s.chave}>
+            <span className="grafico-tooltip-bolinha" style={{ background: s.cor }} />
+            <span className="grafico-tooltip-nome">{s.nome}</span>
+            <span className="mono grafico-tooltip-valor">{brl(d[s.chave] || 0)}</span>
+          </div>
+        ))}
+        <div className="grafico-tooltip-linha"><span className="grafico-tooltip-nome"><strong>Liberado no dia</strong></span><span className="mono grafico-tooltip-valor"><strong>{brl(d.total)}</strong></span></div>
+      </div>
+    );
   }
 
-  if (!dados) return null;
+  return (
+    <section className="card fr-dias">
+      <div className="card-head-linha">
+        <div className="card-head">Dia a dia</div>
+        <ChipsEscolha
+          valor={modo}
+          onChange={setModo}
+          opcoes={[{ valor: 'plataforma', rotulo: 'Por plataforma' }, { valor: 'fluxo', rotulo: 'Entrou × saiu' }]}
+        />
+      </div>
+      <div className="fr-dias-resumo">
+        <span>Média por dia <strong className="mono">{brl(media)}</strong></span>
+        {melhor && <span>Melhor dia <strong className="mono">{dataBr(melhor.data)} · {brl(melhor.total)}</strong></span>}
+        <span className="fr-dica-clique">Clique numa coluna para ver os lançamentos daquele dia</span>
+      </div>
+      <div ref={refGrafico}>
+        <div className="fr-dias-grafico">
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart
+              data={crescente}
+              margin={{ top: 12, right: 8, left: 0, bottom: 0 }}
+              barCategoryGap="18%"
+              onClick={(e) => { const d = e?.activePayload?.[0]?.payload; if (d) aoEscolherDia(d.data); }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke={paleta.grade} vertical={false} />
+              <XAxis dataKey="rotulo" tick={tick} axisLine={{ stroke: paleta.eixo }} tickLine={false} interval="preserveStartEnd" minTickGap={8} />
+              <YAxis tick={tick} tickFormatter={moedaCompacta} width={78} axisLine={false} tickLine={false} />
+              <Tooltip content={<Dica />} cursor={{ fill: paleta.grade, fillOpacity: 0.5 }} />
+              {modo === 'fluxo' && <ReferenceLine y={0} stroke={paleta.eixo} />}
+              {series.map((s, i) => (
+                <Bar
+                  key={s.chave}
+                  dataKey={s.chave}
+                  name={s.nome}
+                  stackId={modo === 'plataforma' ? 'p' : undefined}
+                  fill={s.cor}
+                  radius={modo === 'plataforma' ? (i === series.length - 1 ? [4, 4, 0, 0] : 0) : [4, 4, 4, 4]}
+                  maxBarSize={38}
+                  animationDuration={600}
+                  onClick={(d) => { const dia = d?.payload?.data || d?.data; if (dia) aoEscolherDia(dia); }}
+                  cursor="pointer"
+                >
+                  {crescente.map((d) => (
+                    <Cell key={d.data} fillOpacity={diaSelecionado && diaSelecionado !== d.data ? 0.3 : 1} />
+                  ))}
+                </Bar>
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <ul className="grafico-legenda grafico-legenda-inline">
+          {series.map((s) => (
+            <li key={s.chave}>
+              <span className="grafico-legenda-cor" style={{ background: s.cor }} />
+              <span className="grafico-legenda-nome">{s.nome}</span>
+              {modo === 'plataforma' && <span className="mono grafico-legenda-valor">{brl(totalPorPlataforma[s.chave] || 0)}</span>}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <button type="button" className="fr-como-botao" onClick={() => setVerTabela((v) => !v)}>
+        {verTabela ? <ChevronUp size={14} /> : <ChevronDown size={14} />} {verTabela ? 'Esconder' : 'Ver'} a tabela dia a dia
+      </button>
+      {verTabela && (
+        <DataTable>
+          <table className="data-table fr-tabela">
+            <thead>
+              <tr>
+                <th>Dia</th>
+                {plataformas.map((m) => <th key={m} className="num">{rotuloPlataforma(m)}</th>)}
+                <th className="num">Liberado no dia</th>
+                <th className="num">Saque</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dias.map((d) => (
+                <tr key={d.data} className={'fr-linha-clicavel' + (diaSelecionado === d.data ? ' fr-linha-ativa' : '')} onClick={() => aoEscolherDia(d.data)}>
+                  <td className="mono">{dataBr(d.data)}</td>
+                  {plataformas.map((m) => <td key={m} className="num">{d[m] === undefined ? '—' : <Valor valor={d[m]} colorir={false} semSinal />}</td>)}
+                  <td className="num"><Valor valor={d.total} forte colorir={false} semSinal /></td>
+                  <td className="num fr-apagado">{d.saque ? brl(d.saque) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </DataTable>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Para onde o dinheiro foi: duas colunas, entrou e saiu.
+// ---------------------------------------------------------------------------
+function ParaOndeFoi({ porTipo, aoEscolher }) {
+  const itens = Object.values(porTipo).filter((x) => TIPO[x.tipo]?.grupo === 'marketplace' && Math.abs(x.total) >= 0.01);
+  const entrou = itens.filter((x) => x.total > 0).sort((a, b) => b.total - a.total);
+  const saiu = itens.filter((x) => x.total < 0).sort((a, b) => a.total - b.total);
+  // Cada coluna na própria escala: na mesma régua, a venda (centenas de
+  // milhares) achatava todas as saídas em um tracinho.
+  const Coluna = ({ titulo, lista, Icone, classe, maior = Math.max(1, ...lista.map((x) => Math.abs(x.total))) }) => (
+    <div className={`fr-onde-coluna ${classe}`}>
+      <div className="fr-onde-titulo"><Icone size={15} /> {titulo} <span className="mono">{brl(lista.reduce((s, x) => s + x.total, 0))}</span></div>
+      {lista.length === 0 && <p className="fr-apagado">Nada no período.</p>}
+      {lista.map((x, i) => (
+        <button key={x.tipo} type="button" className="fr-onde-item" onClick={() => aoEscolher(x.tipo)} title="Ver estes lançamentos">
+          <span className="fr-onde-nome">{rotuloTipo(x.tipo)}<small>{plural(x.quantidade, 'lançamento')}</small></span>
+          <span className="fr-onde-barra"><span style={{ width: `${Math.max(3, (Math.abs(x.total) / maior) * 100)}%`, animationDelay: `${i * 60}ms` }} /></span>
+          <span className="mono fr-onde-valor">{brl(Math.abs(x.total))}</span>
+        </button>
+      ))}
+    </div>
+  );
+  return (
+    <section className="card fr-onde">
+      <div className="card-head">Para onde o dinheiro foi</div>
+      <div className="fr-onde-grade">
+        <Coluna titulo="Entrou" lista={entrou} Icone={ArrowDownLeft} classe="fr-onde-entrou" />
+        <Coluna titulo="Saiu" lista={saiu} Icone={ArrowUpRight} classe="fr-onde-saiu" />
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Lista de lançamentos: todos os filtros, paginada no servidor.
+// ---------------------------------------------------------------------------
+const FILTRO_LISTA_VAZIO = {
+  busca: '', tipos: [], grupo: '', sentido: '', status: 'liberado', comPedido: '', valorMin: '', valorMax: '', dia: '',
+};
+const COLUNAS_EXPORTACAO = [
+  { rotulo: 'Data', valor: (l) => dataBr(dataIso(l.data_liberacao)) },
+  { rotulo: 'Hora', valor: (l) => horaBr(l.data_evento) },
+  { rotulo: 'Plataforma', valor: (l) => rotuloPlataforma(l.marketplace) },
+  { rotulo: 'Loja', valor: (l) => l.loja_nome || '' },
+  { rotulo: 'Tipo', valor: (l) => rotuloTipo(l.tipo) },
+  { rotulo: 'O que foi', valor: (l) => descricaoHumana(l) },
+  { rotulo: 'Pedido', valor: (l) => (l.pedido_numero ? `#${l.pedido_numero}` : l.pedido_id_externo || '') },
+  { rotulo: 'Id na plataforma', valor: (l) => idCurto(l) },
+  { rotulo: 'Repasse', valor: (l) => l.repasse_id_externo || '' },
+  { rotulo: 'Valor', valor: (l) => n(l.valor) },
+  { rotulo: 'Situação', valor: (l) => rotuloStatus(l.status) },
+];
+
+function ListaLancamentos({ base, versao, filtro, setFiltro, podeAbrirPedido }) {
+  const [textoBusca, setTextoBusca] = useState(filtro.busca);
+  const [pagina, setPagina] = useState(1);
+  const [porPagina, setPorPagina] = useState(50);
+  const [ordem, setOrdem] = useState({ coluna: 'data', direcao: 'desc' });
+  const [maisFiltros, setMaisFiltros] = useState(false);
+  const [exportando, setExportando] = useState(false);
+
+  useEffect(() => { setTextoBusca(filtro.busca); }, [filtro.busca]);
+  useEffect(() => { setPagina(1); }, [filtro, base, porPagina]);
+
+  const params = useMemo(() => {
+    const p = new URLSearchParams(base);
+    if (filtro.dia) { p.set('data_inicio', filtro.dia); p.set('data_fim', filtro.dia); }
+    if (filtro.busca) p.set('busca', filtro.busca);
+    if (filtro.tipos.length) p.set('tipo', filtro.tipos.join(','));
+    if (filtro.grupo) p.set('grupo', filtro.grupo === 'fora' ? 'foraMarketplace' : filtro.grupo);
+    if (filtro.sentido) p.set('sentido', filtro.sentido);
+    if (filtro.status) p.set('status', filtro.status);
+    if (filtro.comPedido) p.set('com_pedido', filtro.comPedido);
+    if (filtro.valorMin !== '') p.set('valor_min', filtro.valorMin);
+    if (filtro.valorMax !== '') p.set('valor_max', filtro.valorMax);
+    return p.toString();
+  }, [base, filtro]);
+
+  const { dados, carregando, erro } = useDados('lancamentos', `${params}&pagina=${pagina}&por_pagina=${porPagina}&ordem=${ordem.coluna}&direcao=${ordem.direcao}`, versao);
+
+  const muda = (parcial) => setFiltro((f) => ({ ...f, ...parcial }));
+  function alternarTipo(chave) {
+    muda({ tipos: filtro.tipos.includes(chave) ? filtro.tipos.filter((x) => x !== chave) : [...filtro.tipos, chave], grupo: '' });
+  }
+  function ordenar(coluna) {
+    setOrdem((o) => ({ coluna, direcao: o.coluna === coluna && o.direcao === 'desc' ? 'asc' : 'desc' }));
+  }
+
+  const chips = [
+    filtro.dia && { chave: 'dia', rotulo: 'Dia', valor: dataBr(filtro.dia), onRemover: () => muda({ dia: '' }) },
+    filtro.busca && { chave: 'busca', rotulo: 'Busca', valor: filtro.busca, onRemover: () => muda({ busca: '' }) },
+    filtro.tipos.length > 0 && { chave: 'tipos', rotulo: 'Tipo', valor: filtro.tipos.map(rotuloTipo).join(', '), onRemover: () => muda({ tipos: [] }) },
+    filtro.grupo && { chave: 'grupo', rotulo: 'Grupo', valor: GRUPOS.find((g) => g.chave === filtro.grupo)?.rotulo, onRemover: () => muda({ grupo: '' }) },
+    filtro.sentido && { chave: 'sentido', rotulo: 'Sentido', valor: filtro.sentido === 'entrada' ? 'Só o que entrou' : 'Só o que saiu', onRemover: () => muda({ sentido: '' }) },
+    filtro.status !== 'liberado' && { chave: 'status', rotulo: 'Situação', valor: filtro.status === 'pendente' ? 'Só pendente' : 'Liberado e pendente', onRemover: () => muda({ status: 'liberado' }) },
+    filtro.comPedido && { chave: 'pedido', rotulo: 'Pedido', valor: filtro.comPedido === 'sim' ? 'Com pedido' : 'Sem pedido', onRemover: () => muda({ comPedido: '' }) },
+    (filtro.valorMin !== '' || filtro.valorMax !== '') && { chave: 'valor', rotulo: 'Valor', valor: `${filtro.valorMin !== '' ? `de ${brl(filtro.valorMin)}` : ''} ${filtro.valorMax !== '' ? `até ${brl(filtro.valorMax)}` : ''}`.trim(), onRemover: () => muda({ valorMin: '', valorMax: '' }) },
+  ].filter(Boolean);
+
+  async function exportar(formato) {
+    setExportando(true);
+    try {
+      const todos = await buscarTodosLancamentos(params);
+      (formato === 'csv' ? exportarCsv : exportarXlsx)('lancamentos-marketplace', COLUNAS_EXPORTACAO, todos);
+    } finally {
+      setExportando(false);
+    }
+  }
+
+  const lista = dados?.lancamentos || [];
+  const Th = ({ coluna, children, className }) => (
+    <th className={'fr-th-ordena ' + (className || '')} onClick={() => ordenar(coluna)} aria-sort={ordem.coluna === coluna ? (ordem.direcao === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      {children}{ordem.coluna === coluna && (ordem.direcao === 'asc' ? ' ↑' : ' ↓')}
+    </th>
+  );
+
+  return (
+    <section className="card fr-lista">
+      <div className="card-head-linha">
+        <div className="card-head">Lançamentos</div>
+        <div className="fr-acoes">
+          <button type="button" className="btn btn-ghost" disabled={exportando || !dados?.total} onClick={() => exportar('xlsx')}>{exportando ? 'Exportando…' : 'Excel'}</button>
+          <button type="button" className="btn btn-ghost" disabled={exportando || !dados?.total} onClick={() => exportar('csv')}>CSV</button>
+        </div>
+      </div>
+
+      <form className="fr-busca" onSubmit={(e) => { e.preventDefault(); muda({ busca: textoBusca.trim() }); }} role="search">
+        <Search size={16} />
+        <input
+          value={textoBusca}
+          onChange={(e) => setTextoBusca(e.target.value)}
+          placeholder="Nº do pedido, id do pagamento, id do repasse ou parte da descrição…"
+          aria-label="Buscar lançamento"
+        />
+        {textoBusca && <button type="button" className="fr-busca-limpar" onClick={() => { setTextoBusca(''); muda({ busca: '' }); }} aria-label="Limpar"><X size={14} /></button>}
+        <button type="submit" className="btn btn-primary">Buscar</button>
+      </form>
+
+      <div className="fr-tipos">
+        {GRUPOS.map((g) => (
+          <div key={g.chave} className="fr-tipos-grupo">
+            <button
+              type="button"
+              className={'fr-tipos-grupo-nome' + (filtro.grupo === g.chave ? ' ativo' : '')}
+              onClick={() => muda({ grupo: filtro.grupo === g.chave ? '' : g.chave, tipos: [] })}
+              title="Filtrar pelo grupo inteiro"
+            >
+              {g.rotulo}
+            </button>
+            {TIPOS.filter((t) => t.grupo === g.chave).map((t) => (
+              <button
+                key={t.chave}
+                type="button"
+                className={`fr-chip fr-chip-tipo fr-tom-${t.tom}` + (filtro.tipos.includes(t.chave) ? ' ativo' : '')}
+                onClick={() => alternarTipo(t.chave)}
+                aria-pressed={filtro.tipos.includes(t.chave)}
+              >
+                {t.curto}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      <div className="fr-filtros-linha fr-filtros-secundarios">
+        <ChipsEscolha rotulo="Mostrar" valor={filtro.sentido} onChange={(v) => muda({ sentido: v })} opcoes={[{ valor: '', rotulo: 'Tudo' }, { valor: 'entrada', rotulo: 'Só entrou' }, { valor: 'saida', rotulo: 'Só saiu' }]} />
+        <button type="button" className="fr-como-botao" onClick={() => setMaisFiltros((v) => !v)}>
+          {maisFiltros ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Mais filtros
+        </button>
+      </div>
+      {maisFiltros && (
+        <div className="fr-filtros-linha fr-filtros-secundarios fr-mais-filtros">
+          <ChipsEscolha rotulo="Situação" valor={filtro.status} onChange={(v) => muda({ status: v })} opcoes={[{ valor: 'liberado', rotulo: 'Liberado' }, { valor: 'pendente', rotulo: 'Pendente' }, { valor: '', rotulo: 'Os dois' }]} />
+          <ChipsEscolha rotulo="Pedido" valor={filtro.comPedido} onChange={(v) => muda({ comPedido: v })} opcoes={[{ valor: '', rotulo: 'Todos' }, { valor: 'sim', rotulo: 'Com pedido' }, { valor: 'nao', rotulo: 'Sem pedido' }]} />
+          <div className="fr-escolha">
+            <span className="fr-escolha-rotulo">Valor</span>
+            <input className="fr-input-valor" inputMode="decimal" placeholder="de R$" value={filtro.valorMin} onChange={(e) => muda({ valorMin: e.target.value.replace(',', '.') })} />
+            <input className="fr-input-valor" inputMode="decimal" placeholder="até R$" value={filtro.valorMax} onChange={(e) => muda({ valorMax: e.target.value.replace(',', '.') })} />
+          </div>
+        </div>
+      )}
+
+      <ChipsFiltros itens={chips} onLimparTudo={chips.length > 1 ? () => setFiltro({ ...FILTRO_LISTA_VAZIO }) : undefined} />
+
+      {dados && (
+        <div className="fr-lista-soma">
+          <span><strong>{dados.total.toLocaleString('pt-BR')}</strong> lançamento(s)</span>
+          <span>Entrou <Valor valor={dados.soma.entradas} /></span>
+          <span>Saiu <Valor valor={dados.soma.saidas} /></span>
+          <span>Soma do que está na lista <Valor valor={dados.soma.total} forte /></span>
+          {carregando && <span className="fr-apagado">atualizando…</span>}
+        </div>
+      )}
+      {erro && <div className="aviso-compacto tone-prejuizo">{erro}</div>}
+
+      <Paginacao
+        pagina={pagina}
+        totalPaginas={dados?.paginas || 1}
+        tamanho={porPagina}
+        tamanhos={[25, 50, 100, 250]}
+        totalItens={dados?.total || 0}
+        inicio={(pagina - 1) * porPagina}
+        fim={Math.min(pagina * porPagina, dados?.total || 0)}
+        setPagina={setPagina}
+        setTamanho={setPorPagina}
+        posicao="topo"
+      />
+      <DataTable>
+        <table className="data-table fr-tabela">
+          <thead>
+            <tr>
+              <Th coluna="data">Quando</Th>
+              <Th coluna="loja">Loja</Th>
+              <Th coluna="tipo">O que foi</Th>
+              <th>Pedido</th>
+              <th>Repasse</th>
+              <Th coluna="valor" className="num">Valor</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {lista.map((l) => (
+              <tr key={l.id} className={l.status === 'pendente' ? 'fr-linha-pendente' : ''}>
+                <td className="mono fr-quando">{dataBr(dataIso(l.data_liberacao))}<small>{horaBr(l.data_evento)}</small></td>
+                <td><ChipPlataforma marketplace={l.marketplace}>{l.loja_nome || rotuloPlataforma(l.marketplace)}</ChipPlataforma></td>
+                <td>
+                  <div className="fr-oque">
+                    <SeloTipo tipo={l.tipo} />
+                    <span>{descricaoHumana(l)}</span>
+                    {l.status === 'pendente' && <span className="fr-selo-tipo fr-tom-pendente">Pendente</span>}
+                  </div>
+                  <small className="fr-id" title="Identificador na plataforma — dá para buscar por ele">{idCurto(l)}</small>
+                </td>
+                <td className="mono">
+                  {l.pedido_numero ? (
+                    podeAbrirPedido ? <Link to={`/pedidos/${l.pedido_id}`}>#{l.pedido_numero}</Link> : `#${l.pedido_numero}`
+                  ) : l.pedido_id_externo ? (
+                    <button type="button" className="fr-link" onClick={() => muda({ busca: l.pedido_id_externo })} title="Pedido ainda não importado no Hub — clique para ver tudo dele">
+                      <Link2 size={11} /> {String(l.pedido_id_externo).slice(-8)}
+                    </button>
+                  ) : <span className="fr-apagado">—</span>}
+                </td>
+                <td className="mono">
+                  {l.repasse_id_externo ? (
+                    <button type="button" className="fr-link" onClick={() => muda({ busca: l.repasse_id_externo })} title="Ver todos os lançamentos deste repasse">
+                      {String(l.repasse_id_externo).slice(-8)}
+                    </button>
+                  ) : <span className="fr-apagado">—</span>}
+                </td>
+                <td className="num"><Valor valor={l.valor} forte /></td>
+              </tr>
+            ))}
+            {dados && lista.length === 0 && (
+              <tr><td colSpan="6" className="fr-vazio-linha">Nenhum lançamento com esses filtros.{chips.length ? ' Tire um filtro acima.' : ''}</td></tr>
+            )}
+          </tbody>
+        </table>
+      </DataTable>
+      <Paginacao
+        pagina={pagina}
+        totalPaginas={dados?.paginas || 1}
+        tamanho={porPagina}
+        tamanhos={[25, 50, 100, 250]}
+        totalItens={dados?.total || 0}
+        inicio={(pagina - 1) * porPagina}
+        fim={Math.min(pagina * porPagina, dados?.total || 0)}
+        setPagina={setPagina}
+        setTamanho={setPorPagina}
+      />
+    </section>
+  );
+}
+
+// ===========================================================================
+// Aba Repasses
+// ===========================================================================
+
+function AbaRepasses({ base, versao, contexto, periodo }) {
+  const navigate = useNavigate();
+  const [busca, setBusca] = useState('');
+  const [texto, setTexto] = useState('');
+  const [status, setStatus] = useState('');
+  const [pagina, setPagina] = useState(1);
+  const [porPagina, setPorPagina] = useState(50);
+  const refDias = useRefGrafico();
+  const paleta = usePaletaGrafico();
+
+  const params = useMemo(() => {
+    const p = new URLSearchParams(base);
+    if (busca) p.set('busca', busca);
+    if (status) p.set('status', status);
+    return p.toString();
+  }, [base, busca, status]);
+  useEffect(() => { setPagina(1); }, [params, porPagina]);
+  const { dados, carregando, erro } = useDados('repasses', params, versao);
+  const repasses = dados?.repasses || [];
+
+  // Um cartão por destino — é a pergunta "para onde foi o dinheiro?".
+  const destinos = useMemo(() => {
+    const m = {};
+    for (const r of repasses) {
+      const k = r.marketplace;
+      if (!m[k]) m[k] = { marketplace: k, pago: 0, andamento: 0, qtd: 0, lojas: new Set() };
+      const v = Math.abs(n(r.valor_liquido));
+      const sinal = n(r.valor_liquido) < 0 ? -1 : 1;
+      if (r.status === 'pago') m[k].pago += v * sinal; else m[k].andamento += v * sinal;
+      m[k].qtd += 1;
+      m[k].lojas.add(r.loja_nome);
+    }
+    return PLATAFORMAS.filter((p) => m[p]).map((p) => m[p]);
+  }, [repasses]);
+
+  const porDia = useMemo(() => {
+    const m = new Map();
+    for (const r of repasses) {
+      const d = dataIso(r.data_liberacao);
+      if (!d) continue;
+      const linha = m.get(d) || { data: d, rotulo: dataBr(d).slice(0, 5) };
+      linha[r.marketplace] = (linha[r.marketplace] || 0) + n(r.valor_liquido);
+      m.set(d, linha);
+    }
+    return [...m.values()].sort((a, b) => (a.data < b.data ? -1 : 1));
+  }, [repasses]);
+
+  const totalPago = repasses.filter((r) => r.status === 'pago').reduce((s, r) => s + n(r.valor_liquido), 0);
+  const totalAndamento = repasses.filter((r) => r.status !== 'pago').reduce((s, r) => s + n(r.valor_liquido), 0);
+  const porPlataforma = destinos.map((d) => ({ marketplace: d.marketplace, quantidade: d.qtd, pago: d.pago, andamento: d.andamento }));
+
+  async function montarRelatorio(tipo) {
+    const graficos = await capturarGraficos([{ titulo: 'Repasses por dia', ref: refDias }]);
+    return definicaoRepasses({ tipo, repasses, totalPago, totalAndamento, porPlataforma, rotuloPlataforma, periodo: contexto.periodo, filtros: contexto.filtros, graficos });
+  }
+
+  function verLancamentos(r) {
+    const q = new URLSearchParams({ busca: r.repasse_id_externo, de: periodo.inicio, ate: periodo.fim });
+    navigate(`/financeiro/movimentacao?${q.toString()}`);
+  }
+
+  const cores = {
+    mercado_livre: lerCor('--fr-meli', '#d8b23a'),
+    shopee: lerCor('--fr-shopee', '#e2622a'),
+    tiktok_shop: lerCor('--fr-tiktok', '#3a3a3a'),
+  };
+  const plats = PLATAFORMAS.filter((p) => porDia.some((d) => d[p]));
+  const inicio = (pagina - 1) * porPagina;
+  const paginaAtual = repasses.slice(inicio, inicio + porPagina);
+  const explicacaoDestino = {
+    mercado_livre: 'Saques do Mercado Pago para a conta da empresa. É o que aparece no extrato do banco.',
+    shopee: 'Saques da Shopee. Caem no Mercado Pago da mesma empresa, não direto no banco.',
+    tiktok_shop: 'Repasses da TikTok para a carteira da loja na própria TikTok.',
+  };
+
+  if (erro) return <div className="aviso-compacto tone-prejuizo">{erro}</div>;
 
   return (
     <>
       <div className="acoes-relatorio no-print">
         <div className="acoes-relatorio-texto">
           <strong>Relatório de repasses</strong>
-          <span>O que a plataforma transferiu no período, pronto para conferir com o extrato do banco.</span>
+          <span>Cada saque do período, pronto para bater com o extrato do banco.</span>
         </div>
-        <BotaoRelatorio
-          montar={montarRelatorio}
-          disabled={repasses.length === 0}
-          rotulo="Gerar relatório"
-          descricaoResumo="Os indicadores, o gráfico por data e o total por plataforma."
-          descricaoCompleto="O resumo mais todos os repasses, um por linha, com o identificador de cada um."
-        />
+        <BotaoRelatorio montar={montarRelatorio} disabled={!repasses.length} rotulo="Gerar relatório" descricaoResumo="Os totais por destino e o gráfico." descricaoCompleto="Tudo do resumo e cada repasse, um por linha." />
       </div>
 
-      <div className="indicadores-faixa">
-        <IndicadorDestaque
-          destaque
-          Icone={CheckCircle2}
-          rotulo="Repasses já pagos no período"
-          valor={brl(totalPago)}
-          explicacao="Dinheiro que a plataforma já transferiu para a conta da empresa. É o valor que deve aparecer no extrato do banco."
-        />
-        <IndicadorDestaque
-          Icone={Hourglass}
-          tom={totalAndamento !== 0 ? 'atencao' : undefined}
-          rotulo="Em processamento ou previstos"
-          valor={brl(totalAndamento)}
-          explicacao="Repasse anunciado pela plataforma que ainda não caiu. Somado separado de propósito — ainda não é dinheiro na conta."
-        />
-        <IndicadorDestaque
-          Icone={ScrollText}
-          rotulo="Transferências no período"
-          valor={formatQtd(repasses.length)}
-          explicacao="Cada transferência é uma linha que deve casar com um crédito no extrato bancário."
-        />
+      <div className="fr-destinos">
+        {destinos.length === 0 && <div className="card fr-carregando">{carregando ? 'Carregando…' : 'Nenhum repasse neste período.'}</div>}
+        {destinos.map((d, i) => (
+          <div key={d.marketplace} className={`card fr-destino fr-plat-${d.marketplace}`} style={{ animationDelay: `${i * 70}ms` }}>
+            <div className="fr-destino-rota">
+              <ChipPlataforma marketplace={d.marketplace} />
+              <ArrowRight size={16} />
+              <strong>{DESTINO_SAQUE[d.marketplace]}</strong>
+            </div>
+            <span className="mono fr-destino-valor">{brl(d.pago)}</span>
+            <span className="fr-destino-frase">{explicacaoDestino[d.marketplace]}</span>
+            <span className="fr-destino-rodape">
+              {plural(d.qtd, 'repasse')} · {[...d.lojas].join(', ')}
+              {d.andamento ? <> · <strong>{brl(d.andamento)}</strong> ainda a caminho</> : null}
+            </span>
+          </div>
+        ))}
       </div>
 
-      <CartaoGrafico
-        titulo="Repasses por data"
-        explicacao="Cada barra é um dia em que a plataforma mandou dinheiro. A parte mais clara é o que ainda está em processamento e não caiu na conta."
-        refGrafico={refDias}
-        altura={260}
-        vazio={porDia.length === 0 ? 'Nenhum repasse no período.' : null}
-        legenda={[
-          { rotulo: 'Já pago', valor: brl(totalPago), cor: corPorIndice(paleta, 0) },
-          { rotulo: 'Em processamento', valor: brl(totalAndamento), cor: corPorIndice(paleta, 1) },
-        ]}
-      >
-        <GraficoColunas
-          dados={porDia}
-          series={[{ chave: 'pago', nome: 'Já pago' }, { chave: 'andamento', nome: 'Em processamento' }]}
-          altura={260}
-          empilhado
-        />
-      </CartaoGrafico>
-
-      {porPlataforma.length > 0 && (
-        <div className="card">
-          <div className="card-head">Quanto cada plataforma repassou</div>
-          <p className="grafico-explicacao">Somando só o que já foi pago — o que está em processamento fica fora.</p>
-          <BarraRanking
-            itens={porPlataforma.map((p) => ({
-              rotulo: rotuloPlataforma(p.marketplace),
-              detalhe: `${formatQtd(p.quantidade)} transferência(s)${p.andamento ? ` · ${brl(p.andamento)} em processamento` : ''}`,
-              valor: p.pago,
-            }))}
-          />
-        </div>
+      {porDia.length > 0 && (
+        <section className="card">
+          <div className="card-head">Repasses por dia</div>
+          <div ref={refDias}>
+            <div className="fr-dias-grafico" style={{ height: 240 }}>
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={porDia} margin={{ top: 12, right: 8, left: 0, bottom: 0 }} barCategoryGap="18%">
+                  <CartesianGrid strokeDasharray="3 3" stroke={paleta.grade} vertical={false} />
+                  <XAxis dataKey="rotulo" tick={{ fontSize: 11.5, fill: paleta.rotulo }} axisLine={{ stroke: paleta.eixo }} tickLine={false} interval="preserveStartEnd" minTickGap={8} />
+                  <YAxis tick={{ fontSize: 11.5, fill: paleta.rotulo }} tickFormatter={moedaCompacta} width={78} axisLine={false} tickLine={false} />
+                  <Tooltip formatter={(v, nome) => [brl(v), nome]} labelFormatter={(r, p) => (p?.[0]?.payload?.data ? dataBr(p[0].payload.data) : r)} />
+                  {plats.map((p, i) => (
+                    <Bar key={p} dataKey={p} name={rotuloPlataforma(p)} stackId="r" fill={cores[p]} radius={i === plats.length - 1 ? [4, 4, 0, 0] : 0} maxBarSize={38} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <ul className="grafico-legenda grafico-legenda-inline">
+              {plats.map((p) => (
+                <li key={p}><span className="grafico-legenda-cor" style={{ background: cores[p] }} /><span className="grafico-legenda-nome">{rotuloPlataforma(p)} → {DESTINO_SAQUE[p]}</span></li>
+              ))}
+            </ul>
+          </div>
+        </section>
       )}
 
-      <div className="card" style={{ marginTop: 16 }}>
+      <section className="card fr-lista">
         <div className="card-head-linha">
-          <div className="card-head">Repasses</div>
-          <BotaoExportar nomeBase="repasses-marketplace" colunas={EXPORTACAO_REPASSE} itens={tabela.itensOrdenados} disabled={tabela.totalItens === 0} />
+          <div className="card-head">Cada repasse</div>
+          <div className="fr-acoes">
+            <button type="button" className="btn btn-ghost" disabled={!repasses.length} onClick={() => exportarXlsx('repasses-marketplace', COLUNAS_REPASSE, repasses)}>Excel</button>
+            <button type="button" className="btn btn-ghost" disabled={!repasses.length} onClick={() => exportarCsv('repasses-marketplace', COLUNAS_REPASSE, repasses)}>CSV</button>
+          </div>
         </div>
-        <p className="page-sub" style={{ marginTop: 0 }}>
-          Cada linha é uma transferência da plataforma para a conta da empresa — é o nível que casa com o
-          extrato bancário. Repasse em processamento ainda não caiu, e por isso é somado separado.
-        </p>
-        <Paginacao {...tabela} posicao="topo" />
+        <form className="fr-busca" onSubmit={(e) => { e.preventDefault(); setBusca(texto.trim()); }} role="search">
+          <Search size={16} />
+          <input value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Id do repasse ou do saque…" aria-label="Buscar repasse" />
+          {texto && <button type="button" className="fr-busca-limpar" onClick={() => { setTexto(''); setBusca(''); }} aria-label="Limpar"><X size={14} /></button>}
+          <button type="submit" className="btn btn-primary">Buscar</button>
+        </form>
+        <div className="fr-filtros-linha fr-filtros-secundarios">
+          <ChipsEscolha rotulo="Situação" valor={status} onChange={setStatus} opcoes={[{ valor: '', rotulo: 'Todos' }, { valor: 'pago', rotulo: 'Concluído' }, { valor: 'processando', rotulo: 'A caminho' }]} />
+        </div>
+        <Paginacao pagina={pagina} totalPaginas={Math.max(1, Math.ceil(repasses.length / porPagina))} tamanho={porPagina} tamanhos={[25, 50, 100, 250]} totalItens={repasses.length} inicio={inicio} fim={Math.min(inicio + porPagina, repasses.length)} setPagina={setPagina} setTamanho={setPorPagina} posicao="topo" />
         <DataTable>
-          <table className="data-table">
+          <table className="data-table fr-tabela">
             <thead>
-              <tr>
-                <ThOrdenavel coluna="data" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor} style={{ width: 110 }}>Data</ThOrdenavel>
-                <ThOrdenavel coluna="plataforma" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Plataforma</ThOrdenavel>
-                <ThOrdenavel coluna="loja" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Loja</ThOrdenavel>
-                <th>Identificador</th>
-                <th style={{ width: 110 }}>Lançamentos</th>
-                <ThOrdenavel coluna="valor" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Valor</ThOrdenavel>
-                <ThOrdenavel coluna="status" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor} style={{ width: 120 }}>Situação</ThOrdenavel>
-              </tr>
+              <tr><th>Dia</th><th>De</th><th>Para</th><th>Identificador</th><th className="num">Valor</th><th>Situação</th><th /></tr>
             </thead>
             <tbody>
-              {tabela.itensPagina.map((r) => (
+              {paginaAtual.map((r) => (
                 <tr key={r.id}>
                   <td className="mono">{r.data_liberacao ? dataBr(dataIso(r.data_liberacao)) : '—'}</td>
-                  <td>{PLATAFORMA_LABEL[r.marketplace] || r.marketplace}</td>
-                  <td>{r.loja_nome || '—'}</td>
-                  <td className="mono" style={{ fontSize: 11.5 }}>{r.repasse_id_externo}</td>
-                  <td className="mono">{Number(r.lancamentos_vinculados || 0).toLocaleString('pt-BR')}</td>
-                  <td className="mono">{r.valor_liquido == null ? '—' : brl(r.valor_liquido)}</td>
+                  <td><ChipPlataforma marketplace={r.marketplace}>{r.loja_nome || rotuloPlataforma(r.marketplace)}</ChipPlataforma></td>
+                  <td>{DESTINO_SAQUE[r.marketplace]}</td>
+                  <td className="mono fr-id">{r.repasse_id_externo}</td>
+                  <td className="num"><Valor valor={r.valor_liquido} forte colorir={false} semSinal /></td>
                   <td>
-                    <span className={'stamp sm ' + (r.status === 'pago' ? 'tone-saudavel' : 'tone-atencao')}>
-                      {r.status === 'pago' ? 'Pago' : r.status === 'processando' ? 'Processando' : 'Previsto'}
+                    <span className={'fr-situacao ' + (r.status === 'pago' ? 'ok' : 'andamento')}>
+                      {r.status === 'pago' ? 'Concluído' : r.status === 'processando' ? 'A caminho' : 'Previsto'}
                     </span>
                   </td>
+                  <td><button type="button" className="fr-link" onClick={() => verLancamentos(r)}>Ver lançamentos <ExternalLink size={11} /></button></td>
                 </tr>
               ))}
-              {tabela.totalItens === 0 && <tr><td colSpan="7">Nenhum repasse no período.</td></tr>}
+              {repasses.length === 0 && <tr><td colSpan="7" className="fr-vazio-linha">{carregando ? 'Carregando…' : 'Nenhum repasse com esses filtros.'}</td></tr>}
             </tbody>
           </table>
         </DataTable>
-        <Paginacao {...tabela} />
-      </div>
+      </section>
     </>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Aba: Conferência
-// ---------------------------------------------------------------------------
-
-const COLUNAS_CONFERENCIA = {
-  data: (l) => l.data,
-  plataforma: (l) => PLATAFORMA_LABEL[l.marketplace] || l.marketplace,
-  extrato: (l) => (l.extratoTotal === null ? -Infinity : l.extratoTotal),
-  pedidos: (l) => (l.pedidosTotal === null ? -Infinity : l.pedidosTotal),
-  diferenca: (l) => (l.diferencaNaoExplicada === null ? -Infinity : Math.abs(l.diferencaNaoExplicada)),
-};
-
-const EXPORTACAO_CONFERENCIA = [
-  { rotulo: 'Data', valor: (l) => dataBr(l.data) },
-  { rotulo: 'Plataforma', valor: (l) => PLATAFORMA_LABEL[l.marketplace] || l.marketplace },
-  { rotulo: 'Extrato (total liberado)', valor: (l) => (l.extratoTotal === null ? '—' : brl(l.extratoTotal)) },
-  { rotulo: 'Extrato — repasse de venda', valor: (l) => (l.extratoRepasseVenda === null ? '—' : brl(l.extratoRepasseVenda)) },
-  { rotulo: 'Extrato — outros lançamentos', valor: (l) => (l.extratoOutros === null ? '—' : brl(l.extratoOutros)) },
-  { rotulo: 'Saque para o banco', valor: (l) => brl(l.extratoSaque || 0) },
-  { rotulo: 'Soma dos pedidos', valor: (l) => (l.pedidosTotal === null ? '—' : brl(l.pedidosTotal)) },
-  { rotulo: 'Diferença não explicada', valor: (l) => (l.diferencaNaoExplicada === null ? '—' : brl(l.diferencaNaoExplicada)) },
+const COLUNAS_REPASSE = [
+  { rotulo: 'Dia', valor: (r) => dataBr(dataIso(r.data_liberacao)) },
+  { rotulo: 'Plataforma', valor: (r) => rotuloPlataforma(r.marketplace) },
+  { rotulo: 'Loja', valor: (r) => r.loja_nome || '' },
+  { rotulo: 'Para', valor: (r) => DESTINO_SAQUE[r.marketplace] },
+  { rotulo: 'Identificador', valor: (r) => r.repasse_id_externo },
+  { rotulo: 'Valor', valor: (r) => n(r.valor_liquido) },
+  { rotulo: 'Situação', valor: (r) => (r.status === 'pago' ? 'Concluído' : 'A caminho') },
 ];
 
-function AbaConferencia({ dados, contexto }) {
-  const paleta = usePaletaGrafico();
-  const linhas = dados?.linhas || [];
-  const tabela = useTabela(linhas, { colunas: COLUNAS_CONFERENCIA, colunaPadrao: 'data', direcaoPadrao: 'desc', prefixo: 'conf' });
-  const refComparacao = useRefGrafico();
+// ===========================================================================
+// Aba Conferência
+// ===========================================================================
 
-  // Só os dias em que dá pra comparar entram no gráfico: dia com um lado
-  // faltando viraria uma queda a zero que não aconteceu (REGRA 2).
-  const comparacao = useMemo(() => (
-    linhas
-      .filter((l) => l.extratoTotal !== null && l.pedidosTotal !== null)
-      .sort((a, b) => (a.data < b.data ? -1 : 1))
-      .map((l) => ({
-        rotulo: dataBr(l.data),
-        extrato: l.extratoTotal,
-        pedidos: l.pedidosTotal,
-      }))
-  ), [linhas]);
+function AbaConferencia({ base, versao, contexto }) {
+  const fech = useDados('fechamento', base, versao);
+  const conc = useDados('conciliacao', base, versao);
+  const [abertos, setAbertos] = useState({});
+  const [soDivergentes, setSoDivergentes] = useState(true);
 
-  const comparaveis = linhas.filter((l) => l.confere !== null).length;
+  const lojas = fech.dados?.lojas || [];
+  const linhas = conc.dados?.linhas || [];
+  const linhasVisiveis = soDivergentes ? linhas.filter((l) => l.confere === false) : linhas;
 
   async function montarRelatorio(tipo) {
-    if (!dados) return null;
-    const graficos = await capturarGraficos([{ titulo: 'Extrato x soma dos pedidos', ref: refComparacao }]);
-    return definicaoConferencia({
-      tipo, dados, linhas, rotuloPlataforma,
-      periodo: contexto.periodo, filtros: contexto.filtros, graficos,
-    });
+    if (!conc.dados) return null;
+    return definicaoConferencia({ tipo, dados: conc.dados, linhas, rotuloPlataforma, periodo: contexto.periodo, filtros: contexto.filtros, graficos: [] });
   }
-
-  if (!dados) return null;
 
   return (
     <>
       <div className="acoes-relatorio no-print">
         <div className="acoes-relatorio-texto">
           <strong>Relatório de conferência</strong>
-          <span>Leve só os dias que não fecharam, ou a conferência inteira do período.</span>
+          <span>O extrato comparado com a soma dos pedidos, dia a dia.</span>
         </div>
-        <BotaoRelatorio
-          montar={montarRelatorio}
-          disabled={linhas.length === 0}
-          rotulo="Gerar relatório"
-          descricaoResumo="Os indicadores, o gráfico de comparação e só os dias que não fecharam."
-          descricaoCompleto="O resumo mais todos os dias comparados, inclusive os que bateram."
-        />
+        <BotaoRelatorio montar={montarRelatorio} disabled={!linhas.length} rotulo="Gerar relatório" descricaoResumo="Só os dias que não bateram." descricaoCompleto="Todos os dias comparados." />
       </div>
 
-      <div className="indicadores-faixa">
-        <IndicadorDestaque
-          destaque
-          Icone={ScanSearch}
-          tom={dados.diasDivergentes > 0 ? 'negativo' : 'positivo'}
-          rotulo="Dias com diferença sem explicação"
-          valor={formatQtd(dados.diasDivergentes)}
-          explicacao="Dias em que sobrou diferença mesmo depois de descontar publicidade, taxa, multa e estorno. São estes que merecem ser investigados."
-        />
-        <IndicadorDestaque
-          Icone={CheckCircle2}
-          rotulo="Dias conferidos"
-          valor={formatQtd(comparaveis)}
-          explicacao="Dias em que existem os dois lados — extrato lido e pedidos liberados — e por isso dá para comparar."
-        />
-        <IndicadorDestaque
-          Icone={AlertTriangle}
-          rotulo="Só com um dos lados"
-          valor={formatQtd(dados.diasSemExtrato + dados.diasSemPedidos)}
-          explicacao="Ou o extrato do dia ainda não foi lido, ou não houve pedido liberado. Não é divergência: é falta de um dos lados."
-        />
-      </div>
-
-      <div className="nota-precisao">
-        <Info size={14} />
-        <span>
-          Esta aba compara <strong>duas leituras independentes do mesmo dia</strong>: o extrato da plataforma
-          e a soma do valor recebido dos pedidos liberados naquele dia. A diferença entre elas normalmente{' '}
-          <em>não</em> é erro — é exatamente o que o extrato tem e a venda não: publicidade, multa, ajuste,
-          estorno. Por isso a coluna que importa é a última.
-        </span>
-      </div>
-
-      <CartaoGrafico
-        titulo="Extrato x soma dos pedidos"
-        explicacao="As duas linhas deveriam andar juntas. Quando o extrato fica acima, quase sempre é dinheiro que entrou sem ser venda; quando fica abaixo, é desconto da plataforma. Só aparecem os dias em que existem os dois lados."
-        refGrafico={refComparacao}
-        altura={280}
-        vazio={comparacao.length === 0 ? 'Nenhum dia do período tem os dois lados para comparar.' : null}
-        rodape={`${plural(comparacao.length, 'dia')} com os dois lados disponíveis.`}
-        legenda={[
-          { rotulo: 'Extrato da plataforma', cor: corPorIndice(paleta, 0) },
-          { rotulo: 'Soma dos pedidos', cor: corPorIndice(paleta, 1) },
-        ]}
-      >
-        <GraficoLinha
-          dados={comparacao}
-          series={[
-            { chave: 'extrato', nome: 'Extrato da plataforma' },
-            { chave: 'pedidos', nome: 'Soma dos pedidos', tracejada: true },
-          ]}
-          altura={280}
-        />
-      </CartaoGrafico>
-
-      <div className="card">
-        <div className="card-head-linha">
-          <div className="card-head">Extrato x pedidos, por dia</div>
-          <BotaoExportar nomeBase="conferencia-financeira" colunas={EXPORTACAO_CONFERENCIA} itens={tabela.itensOrdenados} disabled={tabela.totalItens === 0} />
-        </div>
-        <p className="grafico-explicacao">
-          O <strong>saque para o banco</strong> fica fora da comparação (é o mesmo dinheiro mudando de conta,
-          não um pagamento a mais ou a menos), mas continua visível na coluna própria.
+      <section className="card fr-fechamento">
+        <div className="card-head">1. O saldo de cada loja fecha?</div>
+        <p className="fr-texto-curto">
+          Para cada loja e mês: <strong>saldo no começo + tudo que entrou − tudo que saiu = saldo no fim</strong>.
+          Se faltar ou sobrar uma única linha, o mês aparece como <em>não fecha</em>, com a diferença em reais.
         </p>
-        <Paginacao {...tabela} posicao="topo" />
+        {fech.erro && <div className="aviso-compacto tone-prejuizo">{fech.erro}</div>}
+        {!fech.dados && <div className="fr-carregando">Conferindo…</div>}
+        <div className="fr-fech-lojas">
+          {lojas.map((l) => {
+            const meses = l.meses.filter((m) => m.linhas > 0 || m.quantidadeRepasses);
+            const ruins = meses.filter((m) => m.fechado === false).length;
+            const aberto = abertos[l.integracaoId];
+            return (
+              <div key={l.integracaoId} className={'fr-fech-loja' + (ruins ? ' ruim' : '')}>
+                <button type="button" className="fr-fech-cabeca" onClick={() => setAbertos((a) => ({ ...a, [l.integracaoId]: !a[l.integracaoId] }))} aria-expanded={!!aberto}>
+                  <ChipPlataforma marketplace={l.marketplace}>{l.loja}</ChipPlataforma>
+                  <span className="fr-fech-meses">
+                    {meses.length === 0 && <span className="fr-apagado">sem extrato no período</span>}
+                    {meses.map((m) => (
+                      <span key={m.mes} className={'fr-selo ' + (m.fechado === true ? 'ok' : m.fechado === false ? 'ruim' : 'neutro')}>
+                        {m.fechado === true ? <CheckCircle2 size={12} /> : m.fechado === false ? <XCircle size={12} /> : <CircleDashed size={12} />}
+                        {mesCurto(m.mes)}{m.fechado === false ? ` · ${brl(m.diferenca)}` : ''}
+                      </span>
+                    ))}
+                  </span>
+                  <span className="fr-fech-como">{l.marketplace === 'tiktok_shop' ? 'conferido pelos repasses' : 'conferido pelo saldo'}</span>
+                  {aberto ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </button>
+                {aberto && meses.length > 0 && (
+                  <DataTable>
+                    <table className="data-table fr-tabela fr-tabela-neutra">
+                      <thead>
+                        <tr>
+                          <th>Mês</th>
+                          {l.marketplace !== 'tiktok_shop' && <th className="num">Saldo no começo</th>}
+                          <th className="num">Liberado (marketplace)</th>
+                          <th className="num">Fora do marketplace</th>
+                          <th className="num">Saques</th>
+                          {l.marketplace !== 'tiktok_shop' ? <th className="num">Saldo no fim</th> : <th className="num">Soma dos repasses</th>}
+                          <th>Situação</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {meses.map((m) => (
+                          <tr key={m.mes}>
+                            <td>{mesCurto(m.mes)}</td>
+                            {l.marketplace !== 'tiktok_shop' && <td className="num mono">{m.saldoInicial === null ? '—' : brl(m.saldoInicial)}</td>}
+                            <td className="num mono">{brl(m.marketplace.total)}</td>
+                            <td className="num mono">{brl(m.foraMarketplace.total)}</td>
+                            <td className="num mono">{brl(m.saque.total)}</td>
+                            <td className="num mono">{l.marketplace !== 'tiktok_shop' ? (m.saldoFinal === null ? '—' : brl(m.saldoFinal)) : brl(m.somaRepasses)}</td>
+                            <td>
+                              <span className={'fr-situacao ' + (m.fechado === true ? 'ok' : m.fechado === false ? 'ruim' : 'neutro')}>
+                                {m.fechado === true ? 'Fecha no centavo' : m.fechado === false ? `Diferença ${brl(m.diferenca)}` : 'Sem dado suficiente'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </DataTable>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <ComoFunciona titulo="O que fazer se um mês não fechar">
+          <ol>
+            <li>Clique em <strong>Reler o período</strong> lá em cima com o mês escolhido — quase sempre é uma leitura que ficou pela metade.</li>
+            <li>Se continuar, a diferença em reais diz o tamanho do problema: uma linha que faltou ou sobrou. Busque na aba Movimentação por um lançamento desse valor.</li>
+            <li>A TikTok não informa saldo; ali a conferência é: a soma das linhas de cada repasse tem que dar o valor que a TikTok diz que pagou.</li>
+          </ol>
+        </ComoFunciona>
+      </section>
+
+      <section className="card fr-conciliacao">
+        <div className="card-head-linha">
+          <div className="card-head">2. O extrato bate com os pedidos?</div>
+          <ChipsEscolha valor={soDivergentes ? 'sim' : 'nao'} onChange={(v) => setSoDivergentes(v === 'sim')} opcoes={[{ valor: 'sim', rotulo: 'Só o que não bate' }, { valor: 'nao', rotulo: 'Todos os dias' }]} />
+        </div>
+        <p className="fr-texto-curto">
+          Para cada dia: a venda liberada no extrato comparada com a soma do valor recebido dos pedidos.
+          Taxas, Ads e devoluções já estão descontadas dos dois lados — o que sobra na última coluna é o que merece olhar.
+        </p>
+        {conc.dados && (
+          <div className="fr-conc-resumo">
+            {(() => {
+              const bate = linhas.filter((l) => l.confere === true).length;
+              const umLado = conc.dados.diasSemExtrato + conc.dados.diasSemPedidos;
+              return (
+                <>
+                  {bate > 0 && <span className="fr-situacao ok">{plural(bate, 'dia bate', 'dias batem')}</span>}
+                  <span className={'fr-situacao ' + (conc.dados.diasDivergentes ? 'ruim' : 'ok')}>
+                    {conc.dados.diasDivergentes ? plural(conc.dados.diasDivergentes, 'dia não bate', 'dias não batem') : 'Nenhum dia com diferença'}
+                  </span>
+                  {umLado > 0 && (
+                    <span className="fr-situacao neutro" title="Ou o extrato daquele dia não foi lido, ou não houve pedido com repasse liberado. Não é diferença.">
+                      {plural(umLado, 'dia com um lado só', 'dias com um lado só')}
+                    </span>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        )}
         <DataTable>
-          <table className="data-table">
+          <table className="data-table fr-tabela fr-tabela-neutra">
             <thead>
               <tr>
-                <ThOrdenavel coluna="data" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor} style={{ width: 110 }}>Data</ThOrdenavel>
-                <ThOrdenavel coluna="plataforma" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Plataforma</ThOrdenavel>
-                <ThOrdenavel coluna="extrato" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Extrato</ThOrdenavel>
-                <th>Repasse de venda</th>
-                <th>Outros lançamentos</th>
-                <th>Saque p/ o banco</th>
-                <ThOrdenavel coluna="pedidos" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Soma dos pedidos</ThOrdenavel>
-                <ThOrdenavel coluna="diferenca" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Sobra sem explicação</ThOrdenavel>
+                <th>Dia</th><th>Plataforma</th>
+                <th className="num">Venda no extrato</th>
+                <th className="num">Pedidos (valor recebido)</th>
+                <th className="num">Taxas, Ads e devoluções</th>
+                <th>Resultado</th>
               </tr>
             </thead>
             <tbody>
-              {tabela.itensPagina.map((l) => (
+              {linhasVisiveis.map((l) => (
                 <tr key={`${l.data}-${l.marketplace}`}>
                   <td className="mono">{dataBr(l.data)}</td>
-                  <td>{PLATAFORMA_LABEL[l.marketplace] || l.marketplace}</td>
-                  <td className="mono">{l.extratoTotal === null ? <span title="Extrato desse dia ainda não foi lido">— não lido</span> : brl(l.extratoTotal)}</td>
-                  <td className="mono">{l.extratoRepasseVenda === null ? '—' : brl(l.extratoRepasseVenda)}</td>
-                  <td className="mono">{l.extratoOutros === null ? '—' : <ValorAssinado valor={l.extratoOutros} />}</td>
-                  <td className="mono">{!l.extratoSaque ? '—' : <ValorAssinado valor={l.extratoSaque} />}</td>
-                  <td className="mono">{l.pedidosTotal === null ? <span title="Nenhum pedido com repasse liberado nesse dia">— sem pedido</span> : brl(l.pedidosTotal)}</td>
-                  <td className="mono">
-                    {l.diferencaNaoExplicada === null ? (
-                      <span className="stamp sm tone-neutro">não dá pra comparar</span>
-                    ) : l.confere ? (
-                      <span className="stamp sm tone-saudavel">bate</span>
-                    ) : (
-                      <ValorAssinado valor={l.diferencaNaoExplicada} forte />
-                    )}
+                  <td><ChipPlataforma marketplace={l.marketplace} /></td>
+                  <td className="num mono">{l.extratoRepasseVenda === null ? '—' : brl(l.extratoRepasseVenda)}</td>
+                  <td className="num mono">{l.pedidosTotal === null ? '—' : brl(l.pedidosTotal)}</td>
+                  <td className="num mono">{l.extratoOutros === null ? '—' : brl(l.extratoOutros)}</td>
+                  <td>
+                    {l.diferencaNaoExplicada === null
+                      ? <span className="fr-situacao neutro">{l.extratoTotal === null ? 'Extrato não lido' : 'Sem pedido no dia'}</span>
+                      : l.confere
+                        ? <span className="fr-situacao ok">Bate</span>
+                        : <span className="fr-situacao ruim">Sobra {brl(l.diferencaNaoExplicada)}</span>}
                   </td>
                 </tr>
               ))}
-              {tabela.totalItens === 0 && <tr><td colSpan="8">Nada para conferir no período.</td></tr>}
+              {linhasVisiveis.length === 0 && (
+                <tr><td colSpan="6" className="fr-vazio-linha">{conc.carregando ? 'Carregando…' : soDivergentes ? 'Nenhum dia com diferença no período. 🎉' : 'Nada para comparar no período.'}</td></tr>
+              )}
             </tbody>
           </table>
         </DataTable>
-        <Paginacao {...tabela} />
-      </div>
+      </section>
     </>
   );
 }

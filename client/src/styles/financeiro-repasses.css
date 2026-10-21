@@ -1,0 +1,312 @@
+/* =====================================================================
+   REPASSES DE MARKETPLACE — 21/10/2026
+   Movimentação, Repasses e Conferência. Linguagem "viva" do módulo
+   (cards que surgem, chips de cor cheia com texto branco, movimento curto).
+   Cor de status só em selo; número em cor neutra onde a cor confundia.
+   ===================================================================== */
+:root {
+  --fr-meli: #c49a06;
+  --fr-shopee: #e4502c;
+  --fr-tiktok: #2e2e36;
+  --fr-entrada: var(--success, #1f7a47);
+  --fr-saida: var(--danger, #a3271c);
+  --fr-retido: #a37400;
+  --fr-fora: #2f7fc1;
+  --fr-saque: #6f655a;
+}
+:root[data-theme="dark"] { --fr-meli: #d4ab1c; --fr-shopee: #ec6a46; --fr-tiktok: #7a7a88; --fr-retido: #d0a12a; --fr-fora: #5a9ad6; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --fr-meli: #d4ab1c; --fr-shopee: #ec6a46; --fr-tiktok: #7a7a88; --fr-retido: #d0a12a; --fr-fora: #5a9ad6; }
+}
+
+.fr-plat-mercado_livre { --fr-plat: var(--fr-meli); }
+.fr-plat-shopee { --fr-plat: var(--fr-shopee); }
+.fr-plat-tiktok_shop { --fr-plat: var(--fr-tiktok); }
+
+@keyframes fr-surge { from { opacity: 0; transform: translateY(8px); } }
+@keyframes fr-barra { from { transform: scaleX(0); } }
+@keyframes fr-pulso { 50% { opacity: 0.35; } }
+
+.fr-pagina .mono { font-variant-numeric: tabular-nums; }
+.fr-apagado { color: var(--ink-faint); }
+.fr-texto-curto { margin: 0 0 14px; color: var(--ink-soft); max-width: 90ch; font-size: 13.5px; }
+.fr-carregando { padding: 28px; text-align: center; color: var(--ink-faint); }
+.fr-acoes { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-left: auto; }
+
+/* ---------- valores ---------- */
+.fr-valor { white-space: nowrap; }
+.fr-pos { color: var(--fr-entrada); }
+.fr-neg { color: var(--fr-saida); }
+.fr-forte { font-weight: 700; }
+
+/* ---------- chips ---------- */
+.fr-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 999px;
+  border: 1.5px solid var(--border); background: var(--surface);
+  color: var(--ink-soft); font-size: 12.5px; font-weight: 600; cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s, transform .2s var(--vivo-mola, ease);
+}
+.fr-chip:hover { border-color: var(--ink-faint); color: var(--ink); }
+.fr-chip:active { transform: scale(.96); }
+.fr-chip.ativo { background: var(--terracotta); border-color: var(--terracotta); color: #fff; }
+.fr-chip-plataforma.ativo, .fr-chip-loja.ativo { background: var(--fr-plat); border-color: var(--fr-plat); color: #fff; }
+.fr-chip-plataforma:not(.ativo) { border-color: color-mix(in srgb, var(--fr-plat) 45%, var(--border)); }
+.fr-bolinha { width: 8px; height: 8px; border-radius: 50%; background: var(--fr-plat); }
+.fr-chip-loja.ativo .fr-bolinha { background: #fff; }
+.fr-chip-tipo.ativo.fr-tom-entrada { background: var(--fr-entrada); border-color: var(--fr-entrada); }
+.fr-chip-tipo.ativo.fr-tom-saida { background: var(--fr-saida); border-color: var(--fr-saida); }
+.fr-chip-tipo.ativo.fr-tom-retido { background: var(--fr-retido); border-color: var(--fr-retido); }
+.fr-chip-tipo.ativo.fr-tom-fora { background: var(--fr-fora); border-color: var(--fr-fora); }
+.fr-chip-tipo.ativo.fr-tom-saque, .fr-chip-tipo.ativo.fr-tom-neutro { background: var(--fr-saque); border-color: var(--fr-saque); }
+
+.fr-chip-plat {
+  display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px;
+  background: var(--fr-plat); color: #fff; font-size: 11.5px; font-weight: 700; white-space: nowrap;
+}
+.fr-selo-tipo {
+  display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700;
+  color: #fff; background: var(--fr-saque); white-space: nowrap;
+}
+.fr-tom-entrada { --fr-tom: var(--fr-entrada); }
+.fr-tom-saida { --fr-tom: var(--fr-saida); }
+.fr-tom-retido { --fr-tom: var(--fr-retido); }
+.fr-tom-fora { --fr-tom: var(--fr-fora); }
+.fr-tom-saque, .fr-tom-neutro { --fr-tom: var(--fr-saque); }
+.fr-tom-pendente { --fr-tom: var(--warning-ring, #d4a017); }
+.fr-selo-tipo[class*="fr-tom-"] { background: var(--fr-tom); }
+
+.fr-escolha { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.fr-escolha-rotulo { font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-faint); font-weight: 700; margin-right: 2px; }
+
+/* ---------- topo: filtros ---------- */
+.fr-filtros { padding: 14px 16px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 10px; }
+.fr-filtros-linha { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.fr-chips-grupo { display: flex; gap: 6px; flex-wrap: wrap; }
+.fr-lojas { padding-top: 10px; border-top: 1px dashed var(--border); }
+.fr-leitura { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink-soft); }
+.fr-leitura-item { display: inline-flex; align-items: center; gap: 6px; }
+.fr-leitura-item strong { color: var(--ink); font-weight: 600; }
+.fr-leitura-ponto { width: 8px; height: 8px; border-radius: 50%; background: var(--success-ring, #2e8b57); }
+.fr-leitura-lendo .fr-leitura-ponto { background: var(--fr-fora); animation: fr-pulso 1.2s infinite; }
+.fr-leitura-vazio .fr-leitura-ponto { background: var(--ink-faint); }
+.fr-leitura-erro .fr-leitura-ponto { background: var(--danger-ring, #c0392b); }
+
+/* ---------- como funciona ---------- */
+.fr-como { margin-top: 12px; }
+.fr-como-botao {
+  display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 4px 0;
+  color: var(--ink-soft); font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.fr-como-botao:hover { color: var(--terracotta); }
+.fr-como-texto {
+  margin-top: 8px; padding: 12px 14px; border-radius: 10px; background: var(--surface-alt);
+  font-size: 13px; color: var(--ink-soft); animation: fr-surge .25s ease backwards;
+}
+.fr-como-texto p, .fr-como-texto ul, .fr-como-texto ol { margin: 0 0 8px; }
+.fr-como-texto li { margin-bottom: 4px; }
+
+/* ---------- a conta do período ---------- */
+.fr-caminho { padding: 18px; }
+.fr-caminho-trilha {
+  display: flex; align-items: stretch; gap: 8px; margin-top: 12px; flex-wrap: wrap;
+}
+.fr-caminho-passo-envolto { display: flex; align-items: stretch; gap: 8px; flex: 1 1 180px; min-width: 0; }
+.fr-caminho-op {
+  align-self: center; display: inline-grid; place-items: center; width: 28px; height: 28px; flex: none;
+  border-radius: 50%; background: var(--surface-alt); color: var(--ink-soft);
+}
+.fr-caminho-igual { background: var(--terracotta); color: #fff; }
+.fr-caminho-passo, .fr-caminho-resultado {
+  flex: 1; min-width: 0; text-align: left; display: flex; flex-direction: column; gap: 4px;
+  padding: 14px; border-radius: 14px; border: 1.5px solid var(--border); background: var(--surface);
+  animation: fr-surge .45s ease backwards;
+}
+.fr-caminho-passo { cursor: pointer; border-top: 4px solid var(--fr-tom-passo, var(--border)); transition: transform .2s var(--vivo-mola, ease), box-shadow .2s; }
+.fr-caminho-passo:hover { transform: translateY(-2px); box-shadow: var(--vivo-sombra); }
+.fr-passo-vendas { --fr-tom-passo: var(--fr-entrada); }
+.fr-passo-devolucoes, .fr-passo-custos { --fr-tom-passo: var(--fr-saida); }
+.fr-passo-retido { --fr-tom-passo: var(--fr-retido); }
+.fr-caminho-rotulo { font-size: 12px; font-weight: 700; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; }
+.fr-caminho-valor { font-size: clamp(18px, 1.6vw, 22px); font-weight: 800; color: var(--ink); }
+.fr-caminho-frase { font-size: 12px; color: var(--ink-faint); line-height: 1.35; }
+.fr-caminho-qtd { margin-top: auto; padding-top: 6px; font-size: 11.5px; color: var(--terracotta); font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+.fr-caminho-resultado {
+  flex: 1.3 1 220px; background: linear-gradient(140deg, var(--terracotta), color-mix(in srgb, var(--terracotta) 70%, #000));
+  border-color: transparent; color: #fff; box-shadow: 0 8px 22px color-mix(in srgb, var(--terracotta) 35%, transparent);
+}
+.fr-caminho-resultado .fr-caminho-rotulo, .fr-caminho-resultado .fr-caminho-frase { color: rgba(255,255,255,.85); }
+.fr-caminho-resultado .fr-caminho-valor { color: #fff; font-size: clamp(22px, 2vw, 28px); }
+
+.fr-caminho-depois {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px;
+  margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border);
+}
+.fr-depois-item {
+  display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px;
+  background: var(--surface-alt); color: var(--ink-soft); text-align: left; border: 0;
+}
+.fr-depois-item > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fr-depois-clicavel { cursor: pointer; transition: background .15s; }
+.fr-depois-clicavel:hover { background: color-mix(in srgb, var(--fr-fora) 12%, var(--surface-alt)); }
+.fr-depois-rotulo { font-size: 12px; font-weight: 700; color: var(--ink-soft); }
+.fr-depois-valor { font-size: 17px; font-weight: 800; color: var(--ink); }
+.fr-depois-frase { font-size: 11.5px; color: var(--ink-faint); line-height: 1.3; }
+
+/* ---------- selo de conferência ---------- */
+.fr-selo-faixa {
+  display: flex; gap: 10px 16px; align-items: center; flex-wrap: wrap;
+  padding: 10px 14px; border-radius: 12px; margin: 0 0 16px;
+  background: var(--surface); border: 1.5px solid var(--border); animation: fr-surge .4s ease backwards;
+}
+.fr-selo-tudo-ok { border-color: color-mix(in srgb, var(--success-ring, #2e8b57) 55%, var(--border)); }
+.fr-selo-com-problema { border-color: var(--danger-ring, #c0392b); }
+.fr-selo-carregando { color: var(--ink-faint); font-size: 13px; }
+.fr-selo-titulo { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13.5px; }
+.fr-selo-tudo-ok .fr-selo-titulo { color: var(--success); }
+.fr-selo-com-problema .fr-selo-titulo { color: var(--danger); }
+.fr-selo-lista { display: flex; gap: 6px; flex-wrap: wrap; }
+.fr-selo {
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 700; color: #fff; background: var(--fr-saque);
+}
+.fr-selo.ok { background: var(--success-ring, #2e8b57); }
+.fr-selo.ruim { background: var(--danger-ring, #c0392b); }
+
+/* ---------- dia a dia ---------- */
+.fr-dias-resumo { display: flex; gap: 8px 22px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-soft); margin: 4px 0 8px; }
+.fr-dias-resumo strong { color: var(--ink); }
+.fr-dica-clique { margin-left: auto; color: var(--ink-faint); font-style: italic; }
+.fr-dias-grafico { height: 280px; }
+.fr-tabela .num { text-align: right; }
+.fr-linha-clicavel { cursor: pointer; }
+.fr-linha-clicavel:hover td { background: var(--vivo-hover, var(--surface-alt)); }
+.fr-linha-ativa td { background: color-mix(in srgb, var(--terracotta) 12%, var(--surface)) !important; }
+
+/* ---------- para onde foi ---------- */
+.fr-onde-grade { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 10px; }
+.fr-onde-titulo {
+  display: flex; align-items: center; gap: 6px; font-weight: 800; font-size: 13px; margin-bottom: 8px;
+  padding-bottom: 6px; border-bottom: 2px solid var(--fr-cor);
+}
+.fr-onde-titulo .mono { margin-left: auto; }
+.fr-onde-entrou { --fr-cor: var(--fr-entrada); }
+.fr-onde-saiu { --fr-cor: var(--fr-saida); }
+.fr-onde-item {
+  display: grid; grid-template-columns: minmax(120px, 1.1fr) 1.4fr auto; gap: 10px; align-items: center;
+  width: 100%; padding: 7px 6px; border: 0; background: none; border-radius: 8px; cursor: pointer; text-align: left;
+}
+.fr-onde-item:hover { background: var(--vivo-hover, var(--surface-alt)); }
+.fr-onde-nome { font-size: 13px; color: var(--ink); display: flex; flex-direction: column; }
+.fr-onde-nome small { color: var(--ink-faint); font-size: 11px; }
+.fr-onde-barra { height: 10px; border-radius: 6px; background: var(--surface-alt); overflow: hidden; }
+.fr-onde-barra > span { display: block; height: 100%; border-radius: 6px; background: var(--fr-cor); transform-origin: left; animation: fr-barra .6s ease backwards; }
+.fr-onde-valor { font-weight: 700; font-size: 13px; }
+
+/* ---------- lista ---------- */
+.fr-busca {
+  display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; margin: 6px 0 12px;
+  border: 1.5px solid var(--border); border-radius: 12px; background: var(--surface);
+}
+.fr-busca:focus-within { border-color: var(--terracotta); box-shadow: 0 0 0 3px var(--accent-softer, rgba(181,101,29,.15)); }
+.fr-busca > svg { color: var(--ink-faint); flex: none; }
+.fr-busca input { flex: 1; min-width: 0; border: 0; background: none; outline: none; font-size: 14px; color: var(--ink); }
+.fr-busca-limpar { background: none; border: 0; color: var(--ink-faint); cursor: pointer; padding: 4px; }
+.fr-tipos { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.fr-tipos-grupo { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.fr-tipos-grupo-nome {
+  min-width: 170px; text-align: left; background: none; border: 0; padding: 4px 0; cursor: pointer;
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-faint); font-weight: 700;
+}
+.fr-tipos-grupo-nome:hover, .fr-tipos-grupo-nome.ativo { color: var(--terracotta); }
+.fr-filtros-secundarios { margin-bottom: 8px; }
+.fr-mais-filtros { padding: 10px 12px; border-radius: 10px; background: var(--surface-alt); gap: 16px; }
+.fr-input-valor {
+  width: 96px; padding: 6px 10px; border-radius: 999px; border: 1.5px solid var(--border);
+  background: var(--surface); color: var(--ink); font-size: 12.5px;
+}
+.fr-lista-soma {
+  display: flex; gap: 8px 22px; flex-wrap: wrap; align-items: center; padding: 10px 12px; margin: 6px 0 4px;
+  border-radius: 10px; background: var(--surface-alt); font-size: 13px; color: var(--ink-soft);
+}
+.fr-th-ordena { cursor: pointer; user-select: none; }
+.fr-th-ordena:hover { color: var(--terracotta); }
+/* Data em cor neutra: no módulo vivo a 1ª coluna sai na cor do módulo (verde
+   no Financeiro), e verde aqui parecia "dinheiro que entrou". */
+.modulo-vivo .fr-pagina table.data-table tr > td.mono:first-of-type,
+.fr-pagina .fr-tabela td.mono, .fr-pagina .fr-tabela td.fr-quando { color: var(--ink); }
+.fr-quando small { display: block; color: var(--ink-faint); font-size: 11px; }
+.fr-oque { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.fr-id { display: block; color: var(--ink-faint); font-size: 11px; margin-top: 2px; word-break: break-all; }
+.fr-link {
+  display: inline-flex; align-items: center; gap: 3px; background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--terracotta); font: inherit; font-size: 12.5px; text-decoration: underline; text-underline-offset: 2px;
+}
+.fr-linha-pendente td { background: color-mix(in srgb, var(--warning-ring, #d4a017) 7%, var(--surface)); }
+.fr-vazio-linha { text-align: center; padding: 26px !important; color: var(--ink-faint); }
+
+/* ---------- repasses ---------- */
+.fr-destinos { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.fr-destino { display: flex; flex-direction: column; gap: 6px; padding: 16px; border-top: 4px solid var(--fr-plat); margin: 0; }
+.fr-destino-rota { display: flex; align-items: center; gap: 8px; color: var(--ink-soft); }
+.fr-destino-rota strong { color: var(--ink); }
+.fr-destino-valor { font-size: 24px; font-weight: 800; color: var(--ink); }
+.fr-destino-frase { font-size: 12.5px; color: var(--ink-soft); }
+.fr-destino-rodape { margin-top: auto; font-size: 11.5px; color: var(--ink-faint); }
+
+.fr-situacao {
+  display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700; color: #fff;
+  background: var(--fr-saque); white-space: nowrap;
+}
+.fr-situacao.ok { background: var(--success-ring, #2e8b57); }
+.fr-situacao.ruim { background: var(--danger-ring, #c0392b); }
+.fr-situacao.andamento { background: var(--fr-fora); }
+
+/* ---------- conferência ---------- */
+.fr-tabela-neutra td.mono, .fr-tabela-neutra td .mono { color: var(--ink); }
+.fr-fech-lojas { display: flex; flex-direction: column; gap: 8px; }
+.fr-fech-loja { border: 1.5px solid var(--border); border-radius: 12px; overflow: hidden; }
+.fr-fech-loja.ruim { border-color: var(--danger-ring, #c0392b); }
+.fr-fech-cabeca {
+  width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: var(--surface);
+  border: 0; cursor: pointer; text-align: left; color: var(--ink-soft);
+}
+.fr-fech-cabeca:hover { background: var(--vivo-hover, var(--surface-alt)); }
+.fr-fech-meses { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+.fr-fech-como { font-size: 11.5px; color: var(--ink-faint); white-space: nowrap; }
+.fr-fech-loja .data-table-wrapper, .fr-fech-loja > div:not(.fr-fech-cabeca) { border-top: 1px solid var(--border); }
+.fr-conc-resumo { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+
+/* ---------- celular ---------- */
+@media (max-width: 760px) {
+  .fr-caminho-trilha { flex-direction: column; }
+  .fr-caminho-passo-envolto { flex-direction: column; flex-basis: auto; }
+  .fr-caminho-op { align-self: center; }
+  .fr-caminho-resultado, .fr-caminho-passo { flex: none; }
+  .fr-onde-grade { grid-template-columns: 1fr; }
+  .fr-tipos-grupo-nome { min-width: 100%; }
+  .fr-dica-clique { margin-left: 0; }
+  .fr-acoes { margin-left: 0; }
+  .fr-fech-cabeca { flex-wrap: wrap; }
+  .fr-onde-item { grid-template-columns: 1fr auto; }
+  .fr-onde-barra { grid-column: 1 / -1; order: 3; }
+}
+
+@media print {
+  .fr-filtros, .fr-como, .fr-busca, .fr-tipos, .fr-filtros-secundarios { display: none !important; }
+  .fr-caminho-resultado { color: #000; background: none; border: 2px solid #000; }
+  .fr-caminho-resultado * { color: #000 !important; }
+}
+
+.fr-pagina .recharts-wrapper:focus, .fr-pagina .recharts-surface:focus, .fr-pagina .recharts-wrapper *:focus { outline: none; }
+
+/* Selos e chips de cor cheia: no escuro o verde/vermelho de TEXTO fica claro
+   demais para levar letra branca em cima — o fundo usa a versão saturada. */
+:root[data-theme="dark"] .fr-tom-entrada, :root[data-theme="dark"] .fr-onde-entrou { --fr-tom: #2e8b57; }
+:root[data-theme="dark"] .fr-tom-saida { --fr-tom: #c0392b; }
+:root[data-theme="dark"] .fr-chip-tipo.ativo.fr-tom-entrada { background: #2e8b57; border-color: #2e8b57; }
+:root[data-theme="dark"] .fr-chip-tipo.ativo.fr-tom-saida { background: #c0392b; border-color: #c0392b; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .fr-tom-entrada { --fr-tom: #2e8b57; }
+  :root:not([data-theme="light"]) .fr-tom-saida { --fr-tom: #c0392b; }
+}
