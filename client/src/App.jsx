@@ -43,6 +43,7 @@ const RotinasMeuDiaPage = lazy(() => import('./pages/RotinasMeuDiaPage'));
 const RotinaTarefaPage = lazy(() => import('./pages/RotinaTarefaPage'));
 const RotinasEquipePage = lazy(() => import('./pages/RotinasEquipePage'));
 const RotinasModelosPage = lazy(() => import('./pages/RotinasModelosPage'));
+const RotinaPapelPage = lazy(() => import('./pages/RotinaPapelPage'));
 const RotinaModeloFormPage = lazy(() => import('./pages/RotinaModeloFormPage'));
 const EventoImpressaoPage = lazy(() => import('./pages/EventoImpressaoPage'));
 const ProdutosListPage = lazy(() => import('./pages/ProdutosListPage'));
@@ -353,6 +354,7 @@ function AppRoutes() {
                   <Route path="/rotinas/tarefa/:id" element={<RotinaTarefaPage />} />
                   <Route path="/rotinas/equipe" element={<RotinasEquipePage />} />
                   <Route path="/rotinas/modelos" element={<RotinasModelosPage />} />
+                  <Route path="/rotinas/papel" element={<RotinaPapelPage />} />
                   <Route path="/rotinas/modelos/novo" element={<RotinaModeloFormPage />} />
                   <Route path="/rotinas/modelos/:id" element={<RotinaModeloFormPage key="editar" />} />
                   {/* Central de ajuda da Manu: não pertence a nenhum módulo de

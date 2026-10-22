@@ -1,0 +1,171 @@
+/* Rotinas — folha de papel (21/10/2026). Pensada para caneta: tinta escura
+   sobre papel branco, uma cor só (o vinho das Rotinas) e só em detalhe,
+   quadradinhos de 4,5 mm para riscar, linhas pontilhadas para escrever.
+   Medidas em mm porque o destino é A4. */
+.fl-pagina {
+  --tinta: #1d1915; --tinta-2: #4a423a; --tinta-3: #8a8178; --regua: #cfc6ba; --acento: #8e3b8a;
+  --serifa: 'Fraunces', Georgia, 'Times New Roman', serif; --sem: 'Inter', Arial, Helvetica, sans-serif;
+  padding: 16px 16px 60px; background: #e9e3da; min-height: 100%;
+}
+.fl-controles { max-width: 980px; margin: 0 auto 18px; display: flex; flex-direction: column; gap: 10px; }
+.fl-controles-linha h1 { margin: 0 0 4px; font-family: var(--font-display); font-size: 26px; }
+.fl-controles-linha p { margin: 0; color: var(--ink-soft); font-size: 13.5px; max-width: 760px; }
+.fl-controles-campos { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; padding: 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); }
+.fl-controles-campos label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; color: var(--ink-soft); }
+.fl-controles-campos select { min-width: 180px; }
+.fl-controles-campos label.fl-check { flex-direction: row; align-items: center; gap: 6px; font-weight: 600; color: var(--ink); padding-bottom: 8px; }
+.fl-controles-campos .btn { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.fl-escolha { display: inline-flex; border: 1px solid var(--border); border-radius: 11px; overflow: hidden; }
+.fl-escolha button { display: inline-flex; align-items: center; gap: 6px; padding: 9px 13px; border: 0; background: var(--surface); cursor: pointer; font: 700 13px var(--font-body); color: var(--ink-soft); }
+.fl-escolha button + button { border-left: 1px solid var(--border); }
+.fl-escolha button.ativo { background: var(--rt-mod, #8e3b8a); color: #fff; }
+.fl-rodape-tela { max-width: 980px; margin: 14px auto 0; display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-soft); }
+
+/* ---------- a folha ---------- */
+.fl-folhas { display: flex; flex-direction: column; align-items: center; gap: 22px; }
+.fl-folha {
+  position: relative; box-sizing: border-box; background: #fff; color: var(--tinta);
+  font-family: var(--sem); font-size: 9.5pt; line-height: 1.35;
+  box-shadow: 0 2px 4px rgb(0 0 0 / 8%), 0 12px 40px rgb(0 0 0 / 14%);
+  display: flex; flex-direction: column; gap: 4mm; overflow: hidden;
+}
+.fl-retrato { width: 210mm; min-height: 297mm; padding: 13mm 14mm 11mm; }
+.fl-paisagem { width: 297mm; min-height: 210mm; padding: 11mm 13mm 9mm; }
+
+.fl-cab { display: flex; justify-content: space-between; align-items: flex-end; gap: 8mm; padding-bottom: 3mm; border-bottom: 1.4pt solid var(--tinta); }
+.fl-cab-quem small, .fl-rot, .fl-eventos-rot {
+  font-family: var(--sem); font-size: 7.5pt; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--tinta-3);
+}
+.fl-cab-quem h1 { margin: .5mm 0 2mm; font-family: var(--serifa); font-weight: 600; font-size: 30pt; line-height: 1; letter-spacing: -.01em; color: var(--tinta); }
+.fl-escrever { display: flex; gap: 8mm; font-size: 9pt; color: var(--tinta-2); }
+.fl-escrever span { display: inline-flex; align-items: baseline; gap: 2mm; }
+.fl-cab-dia { display: flex; flex-direction: column; align-items: flex-end; line-height: 1; }
+.fl-cab-dia b { font-family: var(--serifa); font-size: 46pt; font-weight: 500; color: var(--acento); }
+.fl-cab-dia span { font-family: var(--serifa); font-style: italic; font-size: 14pt; margin-top: 1mm; }
+.fl-cab-dia small { font-size: 8pt; letter-spacing: .18em; text-transform: uppercase; color: var(--tinta-3); margin-top: 1.2mm; }
+.fl-cab-periodo { display: flex; flex-direction: column; align-items: flex-end; gap: 1.5mm; }
+.fl-cab-periodo b { font-family: var(--serifa); font-size: 20pt; font-weight: 500; color: var(--acento); }
+.fl-cab-periodo small { font-family: var(--serifa); font-style: italic; color: var(--tinta-2); font-size: 10pt; }
+.fl-feriado { margin: 0; font-family: var(--serifa); font-style: italic; color: var(--acento); }
+
+/* elementos de caneta */
+.fl-caixa { display: inline-block; flex: none; width: 4.2mm; height: 4.2mm; border: .9pt solid var(--tinta); border-radius: .6mm; background: #fff; vertical-align: -.8mm; }
+.fl-caixa.grande { width: 5.6mm; height: 5.6mm; border-width: 1.2pt; border-radius: .9mm; }
+.fl-bolinha { display: inline-flex; align-items: center; gap: 1.2mm; margin-right: 3mm; font-size: 8.5pt; color: var(--tinta-2); white-space: nowrap; }
+.fl-bolinha i { width: 3.4mm; height: 3.4mm; border: .9pt solid var(--tinta); border-radius: 50%; flex: none; }
+.fl-linha { display: inline-block; position: relative; width: 22mm; height: 4mm; border-bottom: .8pt dotted var(--tinta-2); vertical-align: -1mm; }
+.fl-linha.larga { width: 100%; min-width: 50mm; }
+.fl-linha small { position: absolute; left: 0; bottom: -3mm; font-size: 6.5pt; color: var(--tinta-3); }
+.fl-un { font-size: 8pt; color: var(--tinta-3); margin-left: 1mm; }
+
+/* eventos */
+.fl-eventos { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2mm 6mm; padding: 2.5mm 3.5mm; border: .8pt dashed var(--tinta-3); border-radius: 2mm; }
+.fl-evento { font-size: 9.5pt; color: var(--tinta-2); }
+.fl-evento b { color: var(--tinta); font-weight: 600; }
+
+/* tarefas */
+.fl-tarefas { display: flex; flex-direction: column; }
+.fl-tarefa { display: grid; grid-template-columns: 17mm 1fr; gap: 3mm; padding: 3.2mm 0 3.6mm; border-bottom: .6pt solid var(--regua); break-inside: avoid; page-break-inside: avoid; }
+.fl-hora { display: flex; flex-direction: column; align-items: flex-end; padding-top: .4mm; border-right: 1.2pt solid var(--acento); padding-right: 3mm; line-height: 1.05; }
+.fl-hora small { font-size: 7pt; color: var(--tinta-3); text-transform: uppercase; letter-spacing: .08em; }
+.fl-hora b { font-family: var(--serifa); font-size: 14pt; font-weight: 600; font-variant-numeric: tabular-nums; }
+.fl-hora b.fl-dia-todo { font-size: 10.5pt; font-style: italic; font-weight: 500; }
+.fl-tarefa-corpo { display: flex; flex-direction: column; gap: 1.8mm; min-width: 0; }
+.fl-tarefa-cab { display: flex; align-items: flex-start; gap: 2.5mm; }
+.fl-tarefa-tit { display: flex; flex-direction: column; gap: .6mm; flex: 1; min-width: 0; }
+.fl-tarefa-tit b { font-family: var(--serifa); font-size: 12.5pt; font-weight: 600; line-height: 1.2; }
+.fl-tarefa-tit small { font-size: 7.8pt; color: var(--tinta-3); }
+.fl-feito-as { flex: none; display: inline-flex; align-items: baseline; gap: 1.5mm; font-size: 8pt; color: var(--tinta-3); padding-top: 1mm; }
+.fl-feito-as .fl-linha { width: 14mm; }
+.fl-instrucao { margin: 0; font-size: 8.6pt; color: var(--tinta-2); white-space: pre-line; padding-left: 8mm; }
+.fl-passos { list-style: none; margin: .5mm 0 0; padding: 0 0 0 8mm; display: flex; flex-direction: column; gap: 1.6mm; }
+.fl-passo { display: flex; align-items: center; gap: 2.2mm; font-size: 9.2pt; }
+.fl-passo-n { display: inline-grid; place-items: center; width: 4.2mm; height: 4.2mm; flex: none; font-size: 7pt; font-weight: 700; color: var(--tinta-3); }
+.fl-passo-txt { flex: 0 1 auto; }
+.fl-passo-txt em { color: var(--tinta-3); font-size: 8pt; }
+.fl-passo.com-resp .fl-passo-txt { flex: 1 1 auto; }
+.fl-resp { display: inline-flex; align-items: center; flex-wrap: wrap; margin-left: auto; padding-left: 3mm; }
+.fl-resp-larga { flex: 1 1 45%; }
+.fl-foto { gap: 1.5mm; font-size: 7.8pt; color: var(--tinta-3); font-style: italic; }
+.fl-nota { margin: 0; padding-left: 8mm; font-size: 8.3pt; font-style: italic; color: var(--tinta-3); }
+.fl-nada { margin: 6mm 0; font-family: var(--serifa); font-style: italic; color: var(--tinta-3); text-align: center; }
+
+/* tabelas (produtos e grade de horários) */
+.fl-produtos, .fl-grade { border-collapse: collapse; margin-left: 8mm; width: calc(100% - 8mm); font-size: 8.4pt; }
+.fl-produtos th, .fl-grade th { font-size: 7.2pt; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--tinta-3); text-align: left; padding: 1mm 1.5mm; border-bottom: .9pt solid var(--tinta); }
+.fl-produtos td, .fl-grade td { padding: 1.3mm 1.5mm; border-bottom: .5pt solid var(--regua); }
+.fl-produtos .fl-celula { width: 20mm; border-left: .5pt solid var(--regua); }
+.fl-grade th:not(:first-child) { text-align: center; font-family: var(--serifa); font-size: 10pt; text-transform: none; letter-spacing: 0; color: var(--tinta); font-weight: 600; }
+.fl-grade td.fl-celula, .fl-grade-hora td:not(:first-child) { text-align: center; border-left: .5pt solid var(--regua); width: 17mm; }
+.fl-grade-passo { font-size: 8.8pt; }
+.fl-grade-hora td { border-bottom: 0; }
+.fl-grade-hora .fl-grade-passo { font-size: 7.5pt; color: var(--tinta-3); text-transform: uppercase; letter-spacing: .06em; }
+.fl-hora-escrever { color: var(--regua); font-size: 9pt; letter-spacing: .05em; }
+.fl-mini-op { font-size: 7pt; color: var(--tinta-3); letter-spacing: .05em; }
+
+/* rodapé com espaço para escrever */
+.fl-rodape { display: grid; grid-template-columns: 1.4fr 1fr; gap: 6mm; margin-top: auto; padding-top: 3mm; break-inside: avoid; }
+.fl-anotar, .fl-quadro { display: flex; flex-direction: column; gap: 1.5mm; }
+.fl-lateral { display: flex; flex-direction: column; gap: 4mm; }
+.fl-pautado { height: 36mm; background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 6.6mm, var(--regua) 6.6mm, var(--regua) 7mm); }
+.fl-pautado.curto { height: 21mm; }
+.fl-assinar { display: flex; flex-direction: column; gap: 4mm; }
+.fl-pe { display: flex; justify-content: space-between; padding-top: 2mm; border-top: .5pt solid var(--regua); font-size: 7pt; color: var(--tinta-3); letter-spacing: .06em; }
+
+/* folha da semana */
+.fl-semana { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.fl-semana th { padding: 1.5mm 1mm 2mm; border-bottom: 1.2pt solid var(--tinta); text-align: center; vertical-align: bottom; }
+.fl-semana th b { display: block; font-family: var(--serifa); font-size: 12pt; font-weight: 600; }
+.fl-semana th small { font-size: 7.5pt; color: var(--tinta-3); }
+.fl-semana th.feriado b { color: var(--acento); }
+.fl-semana th.fl-semana-tarefa { text-align: left; font-size: 7.5pt; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--tinta-3); width: 70mm; }
+.fl-semana td { padding: 2mm 1mm; border-bottom: .5pt solid var(--regua); border-left: .5pt solid var(--regua); text-align: center; vertical-align: middle; }
+.fl-semana td.fl-semana-tarefa { text-align: left; border-left: 0; padding-right: 3mm; }
+.fl-semana td.fl-semana-tarefa b { display: block; font-family: var(--serifa); font-size: 10pt; font-weight: 600; line-height: 1.2; }
+.fl-semana td.fl-semana-tarefa small { font-size: 7.5pt; color: var(--tinta-3); }
+.fl-semana td.nao { background: repeating-linear-gradient(135deg, #fff 0, #fff 2.2mm, #efebe5 2.2mm, #efebe5 2.6mm); }
+.fl-semana tr.evento td.fl-semana-tarefa b { font-style: italic; font-weight: 500; }
+.fl-semana tr { break-inside: avoid; }
+.fl-caixas { display: inline-flex; flex-wrap: wrap; justify-content: center; gap: 1.2mm 1.6mm; }
+.fl-caixa-h { display: inline-flex; flex-direction: column; align-items: center; gap: .3mm; }
+.fl-caixa-h small { font-size: 6pt; color: var(--tinta-3); font-variant-numeric: tabular-nums; }
+.fl-evento-marca { font-size: 11pt; color: var(--tinta-3); }
+.fl-rodape-semana { grid-template-columns: 1fr 1fr; }
+
+/* ---------- impressão ---------- */
+@media print {
+  /* A folha de A4 cai na regra de celular (≤ 860px) e a gaveta de módulos,
+     que lá fica fixa na tela, aparecia por cima da 2ª folha. Aqui, com
+     "html body" (mais forte que a regra do celular), some toda a moldura. */
+  html body .shell-header, html body .shell-sidebar, html body .shell-submenu, html body .shell-subsubmenu,
+  html body .barra-inferior, html body .gaveta-ferramentas, html body .manu-botao-wrap, html body .manu-gaveta,
+  html body .manu-gaveta-fundo, html body .no-print { display: none !important; }
+  html, html body, html body #root, html body .shell, html body .shell-body, html body .shell-content, html body .shell-main {
+    height: auto !important; min-height: 0 !important; overflow: visible !important; padding: 0 !important; margin: 0 !important; background: #fff !important;
+  }
+  html body .fl-pagina { padding: 0 !important; background: #fff !important; }
+  html body .fl-folhas { gap: 0 !important; display: block !important; }
+  html body .fl-folha { box-shadow: none !important; margin: 0 !important; page-break-after: always; break-after: page; }
+  html body .fl-folha:last-child { page-break-after: auto; break-after: auto; }
+  html body .fl-retrato { width: 210mm !important; min-height: 296mm !important; }
+  html body .fl-paisagem { width: 297mm !important; min-height: 209mm !important; }
+  html body .fl-pagina * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html body .fl-folha .fl-cab-quem h1, html body .fl-folha .fl-tarefa-tit b, html body .fl-folha .fl-cab-dia b { font-family: 'Fraunces', Georgia, serif !important; }
+}
+@media screen and (max-width: 860px) {
+  /* No celular a folha encolhe para caber — o PDF sai no tamanho certo. */
+  .fl-folhas { zoom: .46; }
+  .fl-controles-campos .btn { margin-left: 0; width: 100%; justify-content: center; }
+}
+/* Prefixo fl- (folha): "pp-" já é do Piso de Preço e as regras dele
+   (".pp-passo > *") vazavam para cá — o quadradinho ficava gigante. */
+.fl-folha .fl-caixa, .fl-folha .fl-passo-n, .fl-folha .fl-bolinha i { padding: 0 !important; margin: 0; box-sizing: border-box; min-width: 0; }
+.fl-folha .fl-passo { padding: 0 !important; margin: 0 !important; }
+.fl-semana .fl-caixas { flex-wrap: nowrap; gap: .9mm; }
+.fl-semana .fl-caixa-h small { font-size: 5.6pt; letter-spacing: -.01em; }
+.fl-semana .fl-caixa { width: 3.8mm; height: 3.8mm; }
+.fl-semana td { padding: 1.6mm .6mm; }
+.fl-produtos th:not(:first-child) { width: 26mm; text-align: center; }
+.fl-produtos td.fl-celula { text-align: center; }
+.fl-controles-campos label.fl-check { white-space: nowrap; }
+.fl-controles-campos label.fl-check input { width: 16px; height: 16px; margin: 0; flex: none; }

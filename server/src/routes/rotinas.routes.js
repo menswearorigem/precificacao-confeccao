@@ -284,6 +284,73 @@ router.get('/meu-dia', a(async (req, res) => {
   });
 }));
 
+// ---------------------------------------------------------------------------
+// FOLHA DE PAPEL (21/10/2026) — a rotina de UMA pessoa, dia a dia, para
+// imprimir e fazer com caneta. Lê os MODELOS (o que está programado), não as
+// tarefas já geradas: serve para a semana que vem também. Quem não é
+// administrador só imprime a própria.
+// ---------------------------------------------------------------------------
+function htmlParaTexto(html) {
+  return String(html || '')
+    .replace(/<li[^>]*>/gi, '\n• ').replace(/<\/(p|div|li|ul|ol)>/gi, '\n').replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+    .replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
+}
+
+router.get('/papel', a(async (req, res) => {
+  const pessoaId = ehAdmin(req) && req.query.pessoa ? Number(req.query.pessoa) : req.user.id;
+  const { rows: [pessoa] } = await pool.query('SELECT id, nome FROM usuarios WHERE id = $1', [pessoaId]);
+  if (!pessoa) throw new r.ErroRotina('Pessoa não encontrada.', 404);
+  const hoje = hojeEmBrasilia();
+  const de = rec.ehDataValida(req.query.de) ? req.query.de : hoje;
+  const nDias = Math.min(Math.max(Number(req.query.dias) || 1, 1), 7);
+  const { rows: modelos } = await pool.query(
+    `SELECT id FROM rotina_modelos WHERE status = 'ativo' AND responsaveis @> to_jsonb(ARRAY[$1::int]) ORDER BY titulo`,
+    [pessoaId]
+  );
+  const completos = [];
+  for (const { id } of modelos) {
+    const m = await r.carregarModelo(id);
+    // Referência inteira vira uma linha por variante (cor/tamanho) — é assim
+    // que se conta na prateleira.
+    let fixas = m.modoProdutos === 'fixa' ? m.produtos : [];
+    const inteiras = fixas.filter((p) => !p.varianteId).map((p) => p.produtoId);
+    if (inteiras.length && m.passos.some((p) => p.porProduto)) {
+      const vs = await r.variantesDe(inteiras);
+      fixas = fixas.flatMap((p) => (p.varianteId || !(vs.get(p.produtoId) || []).length ? [p]
+        : vs.get(p.produtoId).map((v) => ({ ...p, cor: v.cor, tamanho: v.tamanho }))));
+    }
+    completos.push({
+      modeloId: m.id,
+      titulo: m.titulo,
+      tipo: m.tipo,
+      setor: m.setor,
+      prioridade: m.prioridade,
+      modo: m.modoAtribuicao,
+      recorrencia: m.recorrencia,
+      horarios: m.recorrencia?.horarios || (m.horaLimite ? [m.horaLimite] : []),
+      instrucao: htmlParaTexto(m.instrucaoHtml),
+      motivo: m.motivo,
+      minutos: m.minutosEstimados,
+      conferir: m.conferirDepois,
+      passos: m.passos.map((p) => ({ texto: p.texto, tipo: p.tipo, unidade: p.unidade, opcoes: p.opcoes, porProduto: p.porProduto, obrigatorio: p.obrigatorio, provaFoto: p.provaFoto })),
+      // Lista de produtos só vai para o papel quando é curta.
+      produtos: fixas.length <= 40 ? fixas.map((p) => ({ referencia: p.referencia, descricao: p.descricao, cor: p.cor, tamanho: p.tamanho })) : [],
+      produtosResumo: m.modoProdutos === 'automatica' ? 'lista automática — veja no Hub' : fixas.length > 40 ? `${fixas.length} itens — veja a lista no Hub` : null,
+      quando: rec.descrever(m.recorrencia),
+    });
+  }
+  const dias = [];
+  for (let i = 0; i < nDias; i += 1) {
+    const dia = rec.somarDias(de, i);
+    const itens = completos.filter((m) => rec.ocorreEm(m.recorrencia, dia)).map(({ recorrencia, ...m }) => m)
+      .sort((x, y) => String(x.horarios[0] || '99').localeCompare(String(y.horarios[0] || '99')) || x.titulo.localeCompare(y.titulo, 'pt-BR'));
+    dias.push({ data: dia, feriado: rec.feriado(dia) || null, itens });
+  }
+  res.json({ pessoa, de, dias });
+}));
+
 // Avisos para o sino (a cada 5 min): lembretes e atrasos da pessoa; para o
 // administrador, também o que espera conferência e o atraso da equipe.
 router.get('/avisos', a(async (req, res) => {

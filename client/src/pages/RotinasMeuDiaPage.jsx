@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CircleCheck, Clock, RefreshCw, BellRing, Users, CalendarClock, ChevronDown } from 'lucide-react';
+import { CircleCheck, Clock, RefreshCw, BellRing, Users, CalendarClock, ChevronDown, Printer } from 'lucide-react';
 import { api } from '../api/client';
 import { NumeroAnimado } from '../components/ui';
 import { CartaoRotina, CartaoEvento, Vazio } from '../components/RotinaCartoes';
@@ -86,6 +86,7 @@ export default function RotinasMeuDiaPage() {
               <button key={k} type="button" className={ver === k ? 'ativo' : ''} onClick={() => setVer(k)}>{l}</button>
             ))}
           </div>
+          <Link to="/rotinas/papel" className="btn-icone" title="Imprimir minha rotina (PDF)" aria-label="Imprimir minha rotina"><Printer size={15} /></Link>
           <button type="button" className="btn-icone" onClick={carregar} title="Atualizar" aria-label="Atualizar">
             <RefreshCw size={15} className={carregando ? 'girando' : ''} />
           </button>

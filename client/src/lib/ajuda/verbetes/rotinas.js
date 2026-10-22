@@ -30,9 +30,11 @@ export const verbetesRotinas = [
       'treinamento do time',
       'reuniao que ninguem precisa concluir',
       'ver as rotinas de uma pessoa',
+      'como escolher os horarios',
+      'tarefa de 3 em 3 horas',
     ],
     resposta:
-      'Em **Rotinas › Modelos**, toque em **Nova rotina** (só administrador). O formulário tem quatro blocos:\n\n1. **O que fazer** — título, a instrução escrita (com negrito, listas e link), o porquê da tarefa, o setor, marca/canal e links ou imagens de apoio.\n2. **Produtos** (opcional) — **Lista fixa** (busca por referência, nome ou SKU; escolha a referência inteira ou só algumas variantes) ou **Lista automática** (um filtro como "Origem + curva A", que pega os produtos certos no dia em que cada tarefa nasce — a tela mostra quanto dá hoje).\n3. **Passos** — cada passo tem um tipo de resposta (marcar feito, sim/não, OK/problema, número, texto, escolha, foto), pode **repetir para cada produto**, ser obrigatório e pedir **foto de prova**: nunca, sempre ou **só se der problema**. Em número dá para definir a faixa esperada ou comparar com o **estoque do sistema** com tolerância.\n4. **Quem, quando e prioridade** — as pessoas e **como dividir**: **cada um faz a sua** (uma tarefa por pessoa), **qualquer um resolve** (fica com quem começar) ou **dividem os passos** (uma tarefa só; cada um marca o passo que fez — ex.: um passo por plataforma do chat — e os outros veem quem fez), quando repete (dia útil, dias da semana, a cada N semanas, mensal, uma vez), **várias vezes no dia** (ex.: chat às 9h, 12h, 15h e 18h — cada horário vira uma tarefa), horário limite, prioridade, **conferir depois**, a **correção automática** quando der problema e o aviso antes do prazo.\n\n**Evento** (botão **Novo evento**): para treinamento, reunião e o que tem hora para começar mas não tem baixa. Quem você escolher vê no Meu dia, ninguém conclui e ninguém fica atrasado se começar mais tarde.\n\nEm **Modelos**, toque numa pessoa (em cima) para ver só as rotinas dela; a busca acha por título, setor ou nome. Cada rotina mostra **Quando**, **Quem faz** e **O quê**; **Editar** e o menu **⋯** (duplicar, criar a de hoje, pausar, arquivar) ficam no pé do cartão.\n\nAntes de salvar, confira as **próximas datas** que aparecem embaixo de "Quando". **Salvar e criar a de hoje agora** já põe a tarefa no Meu dia. Para uma tarefa de um dia só, use **Tarefa avulsa** (na Equipe ou nos Modelos). Editar uma rotina muda só as próximas tarefas.',
+      'Em **Rotinas › Modelos**, toque em **Nova rotina** (só administrador). São etapas curtas, uma por vez, com a prévia do cartão do lado:\n\n1. **O que é** — tarefa ou **evento** (treinamento, reunião: todos veem a hora, ninguém dá baixa nem atrasa), o nome, como fazer e o setor. "Mais detalhes" guarda o porquê, marca, canal, links e imagens.\n2. **Passo a passo** — escreva o passo e aperte **Enter** (ou cole uma lista, um por linha). Cada passo nasce "Marcar feito"; o botão do lado troca para número, sim/não, foto… e o botão de ajustes liga foto de prova e "para cada produto". Os produtos ficam em **Produtos**, embaixo.\n3. **Quem faz** — toque nas pessoas; com mais de uma, escolha se cada um faz a sua, qualquer um resolve ou dividem os passos.\n4. **Quando** — a frequência em cartões (todo dia útil, todo dia, alguns dias, semana sim/não, mês, só uma vez) e os **horários na régua**: toque no horário para pôr ou tirar. Um horário é o prazo; vários viram uma tarefa por horário; nenhum = até o fim do dia. **A cada tantas horas…** monta a lista sozinho (ex.: de 3 em 3 horas, das 9h às 18h).\n5. **Revisar** — tudo em frases, com **mudar** em cada linha, e os ajustes (prioridade, conferir depois, correção, aviso antes do prazo, tempo estimado). **Salvar e já pôr no dia de hoje** cria a de hoje na hora.\n\nEditando, toque em qualquer etapa no alto e salve de onde estiver. Para uma tarefa de um dia só, use **Tarefa avulsa**.',
     relacionados: ['rotinas-como-concluir', 'rotinas-como-conferir'],
   },
   {
@@ -81,5 +83,23 @@ export const verbetesRotinas = [
     resposta:
       'Em **Rotinas › Equipe** (só administrador), escolha **Todos** ou uma pessoa em cima e use as quatro abas:\n\n- **Conferir** — o que a equipe entregou. **Aprovar** direto quando não teve problema, ou **Abrir** para ver as respostas e fotos e **Devolver** com um comentário (a pessoa vê no Meu dia dela).\n- **Atrasadas** — o que passou do horário, com há quanto tempo venceu.\n- **Hoje** — um quadro por pessoa com as rotinas do dia; as compartilhadas ficam no bloco **Equipe**, com os horários juntos e o nome de quem fez.\n- **Desempenho** — % feito no prazo por pessoa e por rotina (7 dias, 30 dias ou hoje) e o histórico.\n\nO sino também avisa quando há tarefa esperando conferência ou atrasada.',
     relacionados: ['rotinas-como-criar', 'rotinas-como-concluir'],
+  },
+  {
+    id: 'rotinas-folha-papel',
+    modulo: 'rotinas',
+    tela: 'Rotinas — Folha para imprimir',
+    titulo: 'Imprimir a rotina em papel (PDF)',
+    rota: '/rotinas/papel',
+    perguntas: [
+      'imprimir rotina',
+      'rotina em pdf',
+      'folha da rotina',
+      'rotina no papel',
+      'checklist para imprimir',
+      'exportar rotina',
+    ],
+    resposta:
+      'Em **Rotinas › Modelos** toque em **Imprimir** (ou, escolhendo uma pessoa, em **Folha para imprimir**); no **Meu dia**, o ícone de impressora imprime a sua. A folha é feita para caneta: quadradinho para riscar, bolinha para marcar sim/não, linha para escrever número e "feito às __:__".\n\n- **Folha do dia** (A4 em pé): o dia da pessoa por horário, com os passos; tarefa de vários horários vira uma grade passos × horários; embaixo, anotações, "deu algum problema?" e "conferido por". Marque **Uma folha para cada dia da semana** para imprimir a semana toda.\n- **Folha da semana** (A4 deitada): uma grade com as rotinas nas linhas e os dias nas colunas, para ticar.\n\nToque em **Salvar em PDF** e escolha **"Salvar como PDF"** na janela que abrir. Quem não é administrador imprime só a própria folha.',
+    relacionados: ['rotinas-como-concluir', 'rotinas-como-criar'],
   },
 ];

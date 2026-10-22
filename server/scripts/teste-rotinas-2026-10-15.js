@@ -542,6 +542,19 @@ async function main() {
     ok('semana marca o evento como evento', sem.some((f) => f.modeloId === idEv && f.tipo === 'evento'));
     r = await admin(`/api/rotinas/modelos/${idEv}/duplicar`, { metodo: 'POST' });
     ok('duplicar evento continua evento', r.status === 201 && (await pool.query('SELECT modo_atribuicao FROM rotina_modelos WHERE id = $1', [r.dados.id])).rows[0].modo_atribuicao === 'evento');
+
+    // -------------------------------------------------------------------
+    secao('13. Folha de papel (21/10/2026)');
+    // -------------------------------------------------------------------
+    let pp = await admin(`/api/rotinas/papel?pessoa=${uEri.id}&de=${HOJE}&dias=7`);
+    ok('papel: 7 dias da Erizânia', pp.status === 200 && pp.dados.dias.length === 7 && pp.dados.pessoa.nome === 'Erizania', JSON.stringify(pp.dados).slice(0, 200));
+    const hojePapel = pp.dados.dias[0].itens;
+    ok('papel traz o chat com os 4 horários e os passos', hojePapel.some((t) => t.titulo === 'Responder o chat' && t.horarios.length === 4));
+    ok('papel traz o evento como evento', hojePapel.some((t) => t.titulo === 'Treinamento do time' && t.tipo === 'evento'));
+    ok('papel: instrução vira texto sem HTML', hojePapel.every((t) => !/<[a-z]/i.test(t.instrucao)));
+    pp = await nath(`/api/rotinas/papel?pessoa=${uEri.id}`);
+    ok('quem não é admin só imprime a própria folha', pp.status === 200 && pp.dados.pessoa.nome === 'Nath' && pp.dados.dias.length === 1);
+    ok('sem o módulo: 403 na folha', (await semModulo('/api/rotinas/papel')).status === 403);
   } finally {
     servidor.close();
     await pool.end();

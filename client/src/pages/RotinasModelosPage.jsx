@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import {
   Plus, Pencil, Copy, Pause, Play, Archive, Zap, Clock, Users, Package, ShieldCheck, LayoutList, Sparkles, Search, MoreHorizontal,
   CalendarClock, ListChecks, X, Check, BarChart3,
+  Printer,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
@@ -127,6 +128,7 @@ export default function RotinasModelosPage() {
           <p className="ink-soft">As rotinas e eventos da equipe. Editar muda só as próximas tarefas.</p>
         </div>
         <div className="rt-topo-acoes">
+          <Link to="/rotinas/papel" className="btn-sec" title="Folha em PDF para imprimir"><Printer size={15} />Imprimir</Link>
           <Link to="/rotinas/modelos/novo?evento=1" className="btn-sec"><CalendarClock size={15} />Novo evento</Link>
           <Link to="/rotinas/modelos/novo?avulsa=1" className="btn-sec"><Zap size={15} />Tarefa avulsa</Link>
           <Link to="/rotinas/modelos/novo" className="btn btn-primary"><Plus size={15} />Nova rotina</Link>
@@ -169,6 +171,7 @@ export default function RotinasModelosPage() {
             <b>{nomePessoa}</b>
             <small>{resumoDaPessoa(ativasDaPessoa)}</small>
           </span>
+          <Link to={`/rotinas/papel?pessoa=${pessoa}`} className="btn-sec"><Printer size={14} />Folha para imprimir</Link>
           <Link to={`/rotinas/equipe?pessoa=${pessoa}&aba=hoje`} className="btn-sec">Ver o dia na Equipe</Link>
         </div>
       )}
