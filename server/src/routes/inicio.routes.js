@@ -147,6 +147,8 @@ async function lerRotinas(user, hoje) {
        FROM rotina_ocorrencias o
       WHERE (o.responsavel_id = $1 OR (o.snapshot->>'modoAtribuicao' IN ('qualquer_um', 'dividir') AND o.responsavel_id IS NULL AND o.snapshot->'responsaveis' @> to_jsonb(ARRAY[$1::int])))
         AND o.status IN ('pendente', 'em_andamento', 'devolvida')
+        AND o.motivo_nao_feita IS DISTINCT FROM 'excluida'
+        AND EXISTS (SELECT 1 FROM rotina_modelos mv WHERE mv.id = o.modelo_id AND mv.status = 'ativo')
       ORDER BY o.prazo LIMIT 60`,
     [user.id]
   );
@@ -157,7 +159,9 @@ async function lerRotinas(user, hoje) {
     const { rows: [c] } = await pool.query(
       `SELECT COUNT(*) FILTER (WHERE status = 'aguardando_conferencia')::int AS conferir,
               COUNT(*) FILTER (WHERE status IN ('pendente', 'em_andamento', 'devolvida') AND prazo < now())::int AS atrasadas
-         FROM rotina_ocorrencias`
+         FROM rotina_ocorrencias o
+        WHERE o.motivo_nao_feita IS DISTINCT FROM 'excluida'
+          AND (o.status NOT IN ('pendente', 'em_andamento', 'devolvida') OR EXISTS (SELECT 1 FROM rotina_modelos mv WHERE mv.id = o.modelo_id AND mv.status = 'ativo'))`
     );
     equipe = c;
   }

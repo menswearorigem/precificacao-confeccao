@@ -1050,3 +1050,20 @@ button.rt-taxa:hover { background: var(--row-hover-strong); }
   .rf-barra { flex-wrap: wrap; }
 }
 .rt-resumo-pessoa .btn-sec { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Excluir (22/10/2026) */
+.rt-menu-sep { height: 1px; margin: 4px 6px; background: var(--border); }
+.rt-menu-lista button.perigo { color: var(--rt-perigo); }
+.rt-menu-lista button.perigo:hover { background: color-mix(in srgb, var(--rt-perigo) 10%, var(--surface)); }
+.rt-btn-perigo { color: var(--rt-perigo) !important; }
+.rt-btn-perigo:hover { border-color: var(--rt-perigo) !important; }
+.rt-excluir-linha { display: flex; justify-content: flex-end; }
+.rt-btn-perigo-txt {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 9px; border: 1px dashed color-mix(in srgb, var(--rt-perigo) 45%, var(--border));
+  background: none; color: var(--rt-perigo); cursor: pointer; font: 600 12.5px var(--font-body);
+}
+.rt-btn-perigo-txt:hover:not(:disabled) { background: color-mix(in srgb, var(--rt-perigo) 8%, var(--surface)); }
+/* O menu ⋯ ficava por baixo do cartão seguinte (cada cartão anima e vira
+   uma camada própria): o cartão com o menu aberto sobe por cima. */
+.rt-mod { position: relative; }
+.rt-mod:has(.rt-menu-lista) { z-index: 30; }

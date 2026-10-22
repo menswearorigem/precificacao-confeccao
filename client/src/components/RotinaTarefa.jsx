@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Camera, Check, CircleCheck, Clock, ExternalLink, Image as ImageIcon, Loader2, MapPin, Package, TriangleAlert, Undo2, X, Ban, ShieldCheck,
+  Camera, Check, CircleCheck, Clock, ExternalLink, Image as ImageIcon, Loader2, MapPin, Package, TriangleAlert, Undo2, X, Ban, ShieldCheck, Trash2,
 } from 'lucide-react';
+import { excluirTarefa } from '../lib/rotinasAcoes';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { pedirMotivo } from './MotivoDialog';
@@ -110,7 +111,7 @@ function Resposta({ passo, valor, sistema, podeResponder, onSalvar }) {
   }
 }
 
-export default function RotinaTarefa({ id, onMudou, naGaveta = false }) {
+export default function RotinaTarefa({ id, onMudou, onExcluida, naGaveta = false }) {
   const [t, setT] = useState(null);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState({});
@@ -503,6 +504,18 @@ export default function RotinaTarefa({ id, onMudou, naGaveta = false }) {
         <div className="rt-barra-acoes">
           <button type="button" className="btn btn-danger" onClick={() => conferir(false)} disabled={Boolean(acao)}><Undo2 size={15} />Devolver</button>
           <button type="button" className="btn btn-primary" onClick={() => conferir(true)} disabled={Boolean(acao)}><ShieldCheck size={15} />Aprovar</button>
+        </div>
+      )}
+
+      {/* Excluir (22/10/2026): só administrador; a rotina continua. */}
+      {souAdmin && (
+        <div className="rt-excluir-linha">
+          <button type="button" className="rt-btn-perigo-txt" disabled={Boolean(acao)} onClick={async () => {
+            try {
+              setAcao('excluir');
+              if (await excluirTarefa(t)) { onMudou?.(); onExcluida?.(); }
+            } catch (e) { setErro(e.message); } finally { setAcao(''); }
+          }}><Trash2 size={14} />Excluir esta tarefa</button>
         </div>
       )}
 

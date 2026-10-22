@@ -555,6 +555,63 @@ async function main() {
     pp = await nath(`/api/rotinas/papel?pessoa=${uEri.id}`);
     ok('quem não é admin só imprime a própria folha', pp.status === 200 && pp.dados.pessoa.nome === 'Nath' && pp.dados.dias.length === 1);
     ok('sem o módulo: 403 na folha', (await semModulo('/api/rotinas/papel')).status === 403);
+
+    // -------------------------------------------------------------------
+    secao('14. Pausar tira da tela; excluir tarefa e rotina (22/10/2026)');
+    // -------------------------------------------------------------------
+    r = await admin('/api/rotinas/modelos', { metodo: 'POST', corpo: {
+      titulo: 'Para pausar', instrucaoHtml: 'x', setor: 'atendimento', responsaveis: [uEri.id, uNath.id],
+      recorrencia: { tipo: 'dias_semana', dias: [1, 2, 3, 4, 5, 6, 7], pularFeriados: false, horarios: ['09:00', '15:00'] }, criarAgora: true,
+    } });
+    const idPausa = r.dados.id;
+    let ocsPausa = (await pool.query('SELECT id, responsavel_id FROM rotina_ocorrencias WHERE modelo_id = $1 ORDER BY id', [idPausa])).rows;
+    ok('4 tarefas nasceram (2 pessoas × 2 horários)', ocsPausa.length === 4);
+    const feitaAntes = ocsPausa.find((x) => x.responsavel_id === uEri.id).id;
+    await eri(`/api/rotinas/ocorrencias/${feitaAntes}/concluir`, { metodo: 'POST', corpo: {} });
+    r = await admin(`/api/rotinas/modelos/${idPausa}/status`, { metodo: 'POST', corpo: { status: 'pausado' } });
+    ok('pausar diz quantas abertas saíram (3)', r.status === 200 && r.dados.removidas === 3, JSON.stringify(r.dados));
+    const mdPausa = (await nath('/api/rotinas/meu-dia')).dados;
+    ok('pausada some do Meu dia da equipe', !mdPausa.abertas.some((x) => x.modeloId === idPausa));
+    ok('a que já foi feita continua no histórico da Equipe', (await admin('/api/rotinas/equipe')).dados.itens.some((x) => x.id === feitaAntes));
+    await rot.gerarDia(HOJE);
+    ok('pausada não volta a gerar', (await pool.query("SELECT COUNT(*)::int n FROM rotina_ocorrencias WHERE modelo_id = $1 AND status = 'pendente'", [idPausa])).rows[0].n === 0);
+    await admin(`/api/rotinas/modelos/${idPausa}/status`, { metodo: 'POST', corpo: { status: 'ativo' } });
+    ok('ativando de novo, a de hoje volta no Meu dia', (await nath('/api/rotinas/meu-dia')).dados.abertas.filter((x) => x.modeloId === idPausa).length === 2);
+    // defesa: uma aberta de rotina parada (ex.: criada por fora) não aparece nem abre para a equipe
+    await pool.query("UPDATE rotina_modelos SET status = 'pausado' WHERE id = $1", [idPausa]);
+    const abertaPausada = (await pool.query("SELECT id FROM rotina_ocorrencias WHERE modelo_id = $1 AND responsavel_id = $2 AND status = 'pendente' LIMIT 1", [idPausa, uNath.id])).rows[0].id;
+    ok('aberta de rotina pausada não aparece no Meu dia', !(await nath('/api/rotinas/meu-dia')).dados.abertas.some((x) => x.id === abertaPausada));
+    ok('e não abre para a equipe (410 com frase)', (await nath(`/api/rotinas/ocorrencias/${abertaPausada}`)).status === 410);
+    await pool.query("UPDATE rotina_modelos SET status = 'ativo' WHERE id = $1", [idPausa]);
+
+    // excluir UMA tarefa de hoje
+    const ocExcluir = (await pool.query("SELECT id FROM rotina_ocorrencias WHERE modelo_id = $1 AND responsavel_id = $2 AND status = 'pendente' ORDER BY id LIMIT 1", [idPausa, uNath.id])).rows[0].id;
+    ok('funcionário não exclui tarefa (403)', (await nath(`/api/rotinas/ocorrencias/${ocExcluir}`, { metodo: 'DELETE' })).status === 403);
+    r = await admin(`/api/rotinas/ocorrencias/${ocExcluir}`, { metodo: 'DELETE' });
+    ok('administrador exclui a tarefa de hoje', r.status === 200);
+    ok('ela some do Meu dia e da Equipe', !(await nath('/api/rotinas/meu-dia')).dados.abertas.some((x) => x.id === ocExcluir)
+      && !(await admin('/api/rotinas/equipe')).dados.itens.some((x) => x.id === ocExcluir));
+    ok('abrir a excluída dá 404 com frase', (await nath(`/api/rotinas/ocorrencias/${ocExcluir}`)).status === 404);
+    const antesGerar = (await pool.query('SELECT COUNT(*)::int n FROM rotina_ocorrencias WHERE modelo_id = $1', [idPausa])).rows[0].n;
+    await rot.gerarDia(HOJE);
+    ok('a geração do dia NÃO recria a excluída', (await pool.query('SELECT COUNT(*)::int n FROM rotina_ocorrencias WHERE modelo_id = $1', [idPausa])).rows[0].n === antesGerar
+      && !(await nath('/api/rotinas/meu-dia')).dados.abertas.some((x) => x.modeloId === idPausa && x.horario === '09:00'));
+    // excluir tarefa de dia passado: sai do banco
+    const { rows: [velha] } = await pool.query("UPDATE rotina_ocorrencias SET data = data - 3 WHERE id = $1 RETURNING id", [feitaAntes]);
+    await admin(`/api/rotinas/ocorrencias/${velha.id}`, { metodo: 'DELETE' });
+    ok('tarefa de dia passado sai do banco', (await pool.query('SELECT 1 FROM rotina_ocorrencias WHERE id = $1', [velha.id])).rows.length === 0);
+
+    // excluir a rotina inteira
+    r = await admin(`/api/rotinas/modelos/${idPausa}/impacto`);
+    ok('impacto diz quantas abertas', r.status === 200 && r.dados.abertas >= 1, JSON.stringify(r.dados));
+    ok('funcionário não exclui rotina (403)', (await nath(`/api/rotinas/modelos/${idPausa}`, { metodo: 'DELETE' })).status === 403);
+    r = await admin(`/api/rotinas/modelos/${idPausa}`, { metodo: 'DELETE' });
+    ok('administrador exclui a rotina de vez', r.status === 200 && r.dados.titulo === 'Para pausar');
+    ok('some de Modelos, do Meu dia e do banco (com as tarefas)',
+      !(await admin('/api/rotinas/modelos?status=todos')).dados.some((m) => m.id === idPausa)
+      && !(await eri('/api/rotinas/meu-dia')).dados.abertas.some((x) => x.modeloId === idPausa)
+      && (await pool.query('SELECT COUNT(*)::int n FROM rotina_ocorrencias WHERE modelo_id = $1', [idPausa])).rows[0].n === 0);
+    ok('abrir a rotina excluída dá 404', (await admin(`/api/rotinas/modelos/${idPausa}`)).status === 404);
   } finally {
     servidor.close();
     await pool.end();

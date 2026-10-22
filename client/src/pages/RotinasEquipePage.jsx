@@ -336,7 +336,7 @@ export default function RotinasEquipePage() {
       )}
 
       <Gaveta aberta={Boolean(aberta)} onFechar={() => setAberta(null)} titulo={aberta ? `${aberta.titulo}${aberta.horario ? ` · ${aberta.horario}` : ''}` : ''} subtitulo={aberta ? `${aberta.responsavelNome || '—'} · ${diaCurto(aberta.data)}` : ''} larga>
-        {aberta && <RotinaTarefa key={aberta.id} id={aberta.id} naGaveta onMudou={carregar} />}
+        {aberta && <RotinaTarefa key={aberta.id} id={aberta.id} naGaveta onMudou={carregar} onExcluida={() => { setAberta(null); setAviso('Tarefa excluída.'); }} />}
       </Gaveta>
     </div>
   );

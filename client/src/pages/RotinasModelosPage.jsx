@@ -4,10 +4,11 @@ import {
   Plus, Pencil, Copy, Pause, Play, Archive, Zap, Clock, Users, Package, ShieldCheck, LayoutList, Sparkles, Search, MoreHorizontal,
   CalendarClock, ListChecks, X, Check, BarChart3,
   Printer,
+  Trash2,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
-import { confirmar } from '../components/ConfirmDialog';
+import { mudarStatusModelo, excluirModelo } from '../lib/rotinasAcoes';
 import { Avatar, Vazio } from '../components/RotinaCartoes';
 import { NOME_PRIORIDADE, NOME_SETOR, MODO_TEXTO, diaCurto } from '../lib/rotinas';
 import '../styles/rotinas.css';
@@ -58,6 +59,8 @@ function MenuAcoes({ m, onAcao }) {
           {m.tipo !== 'evento' && item('equipe', BarChart3, 'Ver na Equipe')}
           {m.status === 'ativo' ? item('pausado', Pause, 'Pausar') : item('ativo', Play, 'Ativar')}
           {m.status !== 'arquivado' && item('arquivado', Archive, 'Arquivar')}
+          <span className="rt-menu-sep" />
+          <button type="button" role="menuitem" className="perigo" onClick={() => { setAberto(false); onAcao('excluir', m); }}><Trash2 size={14} />Excluir de vez</button>
         </span>
       )}
     </span>
@@ -108,9 +111,9 @@ export default function RotinasModelosPage() {
         setAviso(r.criadas ? `"${m.titulo}": ${r.criadas === 1 ? 'tarefa de hoje criada' : `${r.criadas} tarefas de hoje criadas`}.` : `"${m.titulo}" já tinha a tarefa de hoje.`);
         return;
       }
-      if (k === 'arquivado' && !(await confirmar(`Arquivar "${m.titulo}"? Ela para de gerar tarefas. O histórico continua na Equipe.`, { titulo: 'Arquivar', confirmarTexto: 'Arquivar' }))) return;
-      await api.post(`/rotinas/modelos/${m.id}/status`, { status: k });
-      setAviso(`"${m.titulo}" ${k === 'ativo' ? 'ativada' : k === 'pausado' ? 'pausada' : 'arquivada'}.`);
+      const frase = k === 'excluir' ? await excluirModelo(m.id, m.titulo) : await mudarStatusModelo(m.id, m.titulo, k);
+      if (!frase) return;
+      setAviso(frase);
       carregar();
     } catch (e) { setErro(e.message); }
   }

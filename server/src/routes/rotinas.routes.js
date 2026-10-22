@@ -47,6 +47,14 @@ const JOINS_OC = `FROM rotina_ocorrencias o
   LEFT JOIN usuarios uc ON uc.id = o.concluida_por
   LEFT JOIN usuarios uf ON uf.id = o.conferida_por`;
 
+// O que a equipe vê (22/10/2026): nunca a tarefa excluída, e nunca a tarefa
+// ainda aberta de uma rotina pausada/arquivada (pausar tem que tirar da tela
+// de todo mundo — antes a tarefa já gerada continuava lá). O que já foi feito
+// continua no histórico.
+const VISIVEL = `o.motivo_nao_feita IS DISTINCT FROM 'excluida'
+  AND (o.status NOT IN ('pendente', 'em_andamento', 'devolvida')
+       OR EXISTS (SELECT 1 FROM rotina_modelos mv WHERE mv.id = o.modelo_id AND mv.status = 'ativo'))`;
+
 async function respostasDe(ids) {
   if (!ids.length) return new Map();
   const { rows } = await pool.query(
@@ -173,8 +181,11 @@ async function detalhe(oc, user) {
 
 async function exigirOcorrencia(req, { paraAgir = false } = {}) {
   const oc = await carregarOcorrencia(Number(req.params.id));
-  if (!oc) throw new r.ErroRotina('Tarefa não encontrada.', 404);
+  if (!oc || oc.motivo_nao_feita === 'excluida') throw new r.ErroRotina('Essa tarefa não existe mais (foi excluída).', 404);
   if (!ehAdmin(req) && !r.podeExecutar(req.user, oc)) throw new r.ErroRotina('Essa tarefa não é sua.', 403);
+  if (!ehAdmin(req) && r.ABERTOS.includes(oc.status) && oc.modelo_status !== 'ativo') {
+    throw new r.ErroRotina('Essa rotina foi pausada pelo administrador — a tarefa saiu da sua lista.', 410);
+  }
   if (paraAgir && !r.ABERTOS.includes(oc.status)) {
     throw new r.ErroRotina(oc.status === 'aguardando_conferencia' ? 'Essa tarefa já foi entregue e está aguardando conferência.' : 'Essa tarefa já foi encerrada.', 409);
   }
@@ -234,7 +245,7 @@ router.get('/meu-dia', a(async (req, res) => {
   await r.gerarDia(hoje, { usuarioId: req.user.id });
   const { rows } = await pool.query(
     `SELECT ${COLUNAS_OC} ${JOINS_OC}
-      WHERE ${condicaoMinha(1)}
+      WHERE ${condicaoMinha(1)} AND ${VISIVEL}
         AND (o.data = $2::date
              OR o.status IN ('pendente', 'em_andamento', 'devolvida')
              OR (o.concluida_em AT TIME ZONE 'America/Sao_Paulo')::date = $2::date)
@@ -253,7 +264,7 @@ router.get('/meu-dia', a(async (req, res) => {
     `SELECT ${COLUNAS_OC} ${JOINS_OC}
       WHERE o.data = $2::date AND o.responsavel_id IS NOT NULL AND o.responsavel_id <> $1
         AND o.snapshot->>'modoAtribuicao' = 'qualquer_um' AND o.snapshot ? 'horario'
-        AND o.snapshot->'responsaveis' @> to_jsonb(ARRAY[$1::int])
+        AND o.snapshot->'responsaveis' @> to_jsonb(ARRAY[$1::int]) AND ${VISIVEL}
       LIMIT 100`,
     [req.user.id, hoje]
   );
@@ -359,7 +370,7 @@ router.get('/avisos', a(async (req, res) => {
   const { rows } = await pool.query(
     `SELECT o.id, o.prazo, o.snapshot->>'titulo' AS titulo, (o.snapshot->>'lembreteMin')::int AS lembrete
        FROM rotina_ocorrencias o
-      WHERE ${condicaoMinha(1)} AND o.status IN ('pendente', 'em_andamento', 'devolvida')
+      WHERE ${condicaoMinha(1)} AND o.status IN ('pendente', 'em_andamento', 'devolvida') AND ${VISIVEL}
       ORDER BY o.prazo LIMIT 50`,
     [req.user.id]
   );
@@ -377,7 +388,7 @@ router.get('/avisos', a(async (req, res) => {
     const { rows: [c] } = await pool.query(
       `SELECT COUNT(*) FILTER (WHERE status = 'aguardando_conferencia')::int AS conferir,
               COUNT(*) FILTER (WHERE status IN ('pendente', 'em_andamento', 'devolvida') AND prazo < now())::int AS atrasadas
-         FROM rotina_ocorrencias`
+         FROM rotina_ocorrencias o WHERE ${VISIVEL}`
     );
     if (c.conferir) itens.push({ chave: 'rotinas-conferir', nivel: 'atencao', titulo: `${c.conferir} ${c.conferir === 1 ? 'tarefa aguardando' : 'tarefas aguardando'} conferência`, resumo: 'aprovar ou devolver', rota: '/rotinas/equipe?painel=conferir' });
     if (c.atrasadas) itens.push({ chave: 'rotinas-equipe-atrasadas', nivel: 'urgente', titulo: `Equipe: ${c.atrasadas} ${c.atrasadas === 1 ? 'tarefa atrasada' : 'tarefas atrasadas'}`, resumo: 'passaram do horário limite', rota: '/rotinas/equipe?painel=atrasadas' });
@@ -587,6 +598,28 @@ router.post('/ocorrencias/:id/nao-feita', a(async (req, res) => {
   res.json({ status: 'nao_feita' });
 }));
 
+// Excluir UMA tarefa (22/10/2026), só administrador. A de dia passado (ou de
+// rotina parada) sai do banco. A de HOJE de rotina ativa vira uma marca
+// invisível — se fosse apagada, a geração do dia (a cada 15 min) criaria
+// outra igual na mesma hora. Respostas e fotos dela vão embora nos dois casos.
+router.delete('/ocorrencias/:id', requireAdmin, a(async (req, res) => {
+  const oc = await carregarOcorrencia(Number(req.params.id));
+  if (!oc || oc.motivo_nao_feita === 'excluida') throw new r.ErroRotina('Essa tarefa não existe mais.', 404);
+  const hoje = hojeEmBrasilia();
+  if (oc.data < hoje || oc.modelo_status !== 'ativo') {
+    await pool.query('DELETE FROM rotina_ocorrencias WHERE id = $1', [oc.id]);
+  } else {
+    await pool.query('DELETE FROM rotina_respostas WHERE ocorrencia_id = $1', [oc.id]);
+    await pool.query('DELETE FROM rotina_fotos WHERE ocorrencia_id = $1', [oc.id]);
+    await pool.query(
+      `UPDATE rotina_ocorrencias SET status = 'nao_feita', motivo_nao_feita = 'excluida', motivo_texto = NULL,
+              concluida_em = now(), concluida_por = $2, updated_at = now() WHERE id = $1`,
+      [oc.id, req.user.id]
+    );
+  }
+  res.json({ excluida: true });
+}));
+
 // ---------------------------------------------------------------------------
 // Conferência (administrador)
 // ---------------------------------------------------------------------------
@@ -733,7 +766,7 @@ router.get('/modelos', requireAdmin, a(async (req, res) => {
             (SELECT COUNT(*)::int FROM rotina_modelo_passos p WHERE p.modelo_id = m.id) AS n_passos,
             (SELECT COUNT(DISTINCT p.produto_id)::int FROM rotina_modelo_produtos p WHERE p.modelo_id = m.id) AS n_produtos,
             (SELECT COUNT(p.variante_id)::int FROM rotina_modelo_produtos p WHERE p.modelo_id = m.id) AS n_variantes_escolhidas,
-            (SELECT COUNT(*)::int FROM rotina_ocorrencias o WHERE o.modelo_id = m.id AND o.data >= CURRENT_DATE - 30 AND (o.prazo < now() OR o.status NOT IN ('pendente', 'em_andamento', 'devolvida'))) AS total30,
+            (SELECT COUNT(*)::int FROM rotina_ocorrencias o WHERE o.modelo_id = m.id AND o.motivo_nao_feita IS DISTINCT FROM 'excluida' AND o.data >= CURRENT_DATE - 30 AND (o.prazo < now() OR o.status NOT IN ('pendente', 'em_andamento', 'devolvida'))) AS total30,
             (SELECT COUNT(*)::int FROM rotina_ocorrencias o WHERE o.modelo_id = m.id AND o.data >= CURRENT_DATE - 30 AND o.concluida_em IS NOT NULL AND o.status IN ('concluida', 'aguardando_conferencia') AND o.concluida_em <= o.prazo) AS no_prazo30
        FROM rotina_modelos m WHERE ${where}
       ORDER BY m.updated_at DESC LIMIT 300`
@@ -809,9 +842,42 @@ router.post('/modelos/:id/duplicar', requireAdmin, a(async (req, res) => {
 router.post('/modelos/:id/status', requireAdmin, a(async (req, res) => {
   const status = ['ativo', 'pausado', 'arquivado'].includes(req.body.status) ? req.body.status : null;
   if (!status) throw new r.ErroRotina('Situação inválida.');
-  const { rowCount } = await pool.query('UPDATE rotina_modelos SET status = $2, atualizado_por = $3, updated_at = now() WHERE id = $1', [Number(req.params.id), status, req.user.id]);
+  const id = Number(req.params.id);
+  const { rowCount } = await pool.query('UPDATE rotina_modelos SET status = $2, atualizado_por = $3, updated_at = now() WHERE id = $1', [id, status, req.user.id]);
   if (!rowCount) throw new r.ErroRotina('Rotina não encontrada.', 404);
-  res.json({ status });
+  // Pausar/arquivar tira da tela da equipe AGORA as tarefas que ainda não
+  // foram feitas (uso real, 22/10/2026: pausava e a tarefa continuava no Meu
+  // dia de todo mundo). O que já foi entregue fica no histórico. Ao ativar de
+  // novo, a de hoje nasce de novo, limpa — sem ressuscitar atraso antigo.
+  let removidas = 0;
+  if (status !== 'ativo') {
+    ({ rowCount: removidas } = await pool.query(
+      "DELETE FROM rotina_ocorrencias WHERE modelo_id = $1 AND status IN ('pendente', 'em_andamento', 'devolvida')", [id]
+    ));
+  }
+  res.json({ status, removidas });
+}));
+
+// Quanto some se excluir (para a pergunta de confirmação dizer).
+router.get('/modelos/:id/impacto', requireAdmin, a(async (req, res) => {
+  const { rows: [x] } = await pool.query(
+    `SELECT m.titulo,
+            COUNT(o.id) FILTER (WHERE o.status IN ('pendente', 'em_andamento', 'devolvida'))::int AS abertas,
+            COUNT(o.id) FILTER (WHERE o.status NOT IN ('pendente', 'em_andamento', 'devolvida') AND o.motivo_nao_feita IS DISTINCT FROM 'excluida')::int AS historico
+       FROM rotina_modelos m LEFT JOIN rotina_ocorrencias o ON o.modelo_id = m.id
+      WHERE m.id = $1 GROUP BY m.id`,
+    [Number(req.params.id)]
+  );
+  if (!x) throw new r.ErroRotina('Rotina não encontrada.', 404);
+  res.json(x);
+}));
+
+// Excluir a rotina de vez (22/10/2026): some de todas as telas, com as
+// tarefas, respostas e fotos dela (ON DELETE CASCADE nas tabelas filhas).
+router.delete('/modelos/:id', requireAdmin, a(async (req, res) => {
+  const { rows } = await pool.query('DELETE FROM rotina_modelos WHERE id = $1 RETURNING titulo', [Number(req.params.id)]);
+  if (!rows.length) throw new r.ErroRotina('Rotina não encontrada.', 404);
+  res.json({ excluida: true, titulo: rows[0].titulo });
 }));
 
 router.post('/modelos/:id/gerar-agora', requireAdmin, a(async (req, res) => {
@@ -835,7 +901,7 @@ router.get('/equipe', requireAdmin, a(async (req, res) => {
   const { rows } = await pool.query(
     `SELECT ${COLUNAS_OC} ${JOINS_OC}
       WHERE ((o.data BETWEEN $1::date AND $2::date) OR o.status IN ('pendente', 'em_andamento', 'devolvida', 'aguardando_conferencia'))
-        AND o.data <= $2::date ${filtro}
+        AND o.data <= $2::date AND ${VISIVEL} ${filtro}
       ORDER BY o.data DESC, o.prazo
       LIMIT 600`,
     valores

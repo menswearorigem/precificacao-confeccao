@@ -11,6 +11,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { confirmar } from '../components/ConfirmDialog';
 import { DateInput } from '../components/ui';
 import { Avatar } from '../components/RotinaCartoes';
+import { mudarStatusModelo, excluirModelo } from '../lib/rotinasAcoes';
 import { Frequencia, Horarios, ordenarHorarios, textoHorarios } from '../components/RotinaHorarios';
 import {
   SETORES, NOME_SETOR, MARCAS, CANAIS, PRIORIDADES, NOME_PRIORIDADE, MODO_TEXTO, varianteTexto, numeroBr, fotoUrl,
@@ -604,9 +605,18 @@ export default function RotinaModeloFormPage() {
     return null;
   }
 
+  const [aviso, setAviso] = useState('');
   async function mudarStatus(novo) {
-    if (novo === 'arquivado' && !(await confirmar('Arquivar? Para de aparecer para a equipe.', { titulo: 'Arquivar', confirmarTexto: 'Arquivar' }))) return;
-    try { await api.post(`/rotinas/modelos/${id}/status`, { status: novo }); setStatus(novo); } catch (e) { setErro(e.message); }
+    try {
+      const frase = await mudarStatusModelo(id, form.titulo, novo);
+      if (frase) { setStatus(novo); setAviso(frase); }
+    } catch (e) { setErro(e.message); }
+  }
+  async function excluir() {
+    try {
+      const frase = await excluirModelo(id, form.titulo);
+      if (frase) navigate(form.avulsa ? '/rotinas/equipe' : '/rotinas/modelos', { replace: true, state: { aviso: frase } });
+    } catch (e) { setErro(e.message); }
   }
   async function duplicar() {
     try { const r = await api.post(`/rotinas/modelos/${id}/duplicar`, {}); navigate(`/rotinas/modelos/${r.id}`); } catch (e) { setErro(e.message); }
@@ -633,6 +643,7 @@ export default function RotinaModeloFormPage() {
             {status === 'ativo' ? <button type="button" className="btn-sec" onClick={() => mudarStatus('pausado')}><Pause size={14} />Pausar</button>
               : <button type="button" className="btn-sec" onClick={() => mudarStatus('ativo')}><Play size={14} />Ativar</button>}
             {status !== 'arquivado' && <button type="button" className="btn-sec" onClick={() => mudarStatus('arquivado')}><Archive size={14} />Arquivar</button>}
+            <button type="button" className="btn-sec rt-btn-perigo" onClick={excluir}><Trash2 size={14} />Excluir</button>
           </div>
         )}
       </header>
@@ -651,6 +662,7 @@ export default function RotinaModeloFormPage() {
 
       {status !== 'ativo' && <div className="rt-aviso rt-tom-atencao"><Pause size={15} />Está {status === 'pausado' ? 'pausada' : 'arquivada'} — não aparece para a equipe.</div>}
       {erro && <div className="rt-aviso rt-tom-perigo"><TriangleAlert size={16} />{erro}</div>}
+      {aviso && <div className="rt-aviso rt-tom-ok"><Check size={16} />{aviso}</div>}
 
       <div className="rf-corpo">
         <section className="rf-painel" key={chave}>
