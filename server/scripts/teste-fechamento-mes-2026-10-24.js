@@ -286,12 +286,25 @@ async function main() {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buffer);
   const abas = wb.worksheets.map((w) => w.name);
-  conferir('abas da planilha', ['SALDOS', 'DR', 'GRÁFICOS', 'VENDAS', 'CUSTO FIXO', 'ORÇAMENTO', 'PLANEJADO x REALIZADO', 'FLUXO DE CAIXA'].every((a) => abas.includes(a)), abas.join(', '));
+  conferir('abas da planilha', ['RESUMO', 'SALDOS', 'DR', 'GRÁFICOS', 'VENDAS', 'CUSTO FIXO', 'ORÇAMENTO', 'PLANEJADO x REALIZADO', 'FLUXO DE CAIXA'].every((a) => abas.includes(a)), abas.join(', '));
   conferir('nome do arquivo', nome === 'RESULTADO_FINANCEIRO_MATRIZ_2024_06.xlsx', nome);
   const dr = wb.getWorksheet('DR');
   let receitaCel = null;
   dr.eachRow((row) => { if (row.getCell(1).value === 'RECEITA OPERACIONAL') receitaCel = row.getCell(2).value; });
   conferir('DR com fórmula de soma no grupo', receitaCel && typeof receitaCel === 'object' && /SUM/.test(receitaCel.formula), JSON.stringify(receitaCel));
+  const graf = wb.getWorksheet('GRÁFICOS');
+  let refDr = null;
+  graf.eachRow((row) => row.eachCell((c) => { if (c.value && c.value.formula && /DR'?!/.test(c.value.formula)) refDr = refDr || c.value.formula; }));
+  conferir("GRÁFICOS aponta para a DR entre aspas ('DR'!) — sem aspas o Excel dá #NAME?", refDr && refDr.startsWith("'DR'!"), String(refDr));
+  conferir('RESUMO é a primeira aba', wb.worksheets[0].name === 'RESUMO', wb.worksheets[0].name);
+  const pr = wb.getWorksheet('PLANEJADO x REALIZADO');
+  conferir('PLANEJADO x REALIZADO cabe na tela (até 18 colunas)', pr.columnCount <= 18, String(pr.columnCount));
+  const JSZip = require('jszip');
+  const zipX = await JSZip.loadAsync(buffer);
+  const charts = Object.keys(zipX.files).filter((n) => /^xl\/charts\/chart\d+\.xml$/.test(n));
+  conferir('gráficos nativos do Excel no arquivo (GRÁFICOS + RESUMO)', charts.length >= 3, String(charts.length));
+  const tiposX = await zipX.file('[Content_Types].xml').async('string');
+  conferir('gráficos registrados no arquivo', charts.every((c) => tiposX.includes(`/${c}`)));
   const fluxo = wb.getWorksheet('FLUXO DE CAIXA');
   conferir('FLUXO DE CAIXA traz jan–jun (uma linha por lançamento)', fluxo.rowCount - 1 >= fixture.lancamentos.filter((l) => l.mes >= '2024-01').length, String(fluxo.rowCount));
 
