@@ -102,6 +102,31 @@ function resolverProdutoPeloSku(indice, anuncio) {
   return { produtoId: null, origem: null };
 }
 
+// Mercado Livre: o SKU mora na VARIAÇÃO, e a API de itens costuma devolver o
+// anúncio e as variações com o SKU em branco — quem traz o SKU de cada variação
+// é o PEDIDO ("OG1340-Bege-G", "Kit-5-OG1620-Preto-...-GG"). Então, quando nem
+// o anúncio nem as variações dizem a referência, olhamos o SKU de cada variação
+// que já foi vendida naquele anúncio, loja a loja. Só vincula quando TODOS os
+// SKUs que casam com o cadastro apontam para o MESMO produto; dois produtos
+// diferentes = ambíguo = fica sem vínculo (REGRA 2). Nunca por título.
+async function resolverProdutoPelosPedidos(db, integracao, anuncio, indice) {
+  const { rows } = await db.query(
+    `SELECT DISTINCT pi.sku_externo
+       FROM pedido_itens pi
+       JOIN pedidos_venda pv ON pv.id = pi.pedido_id
+      WHERE pv.origem_integracao_id = $1
+        AND pi.anuncio_id_marketplace = $2
+        AND pi.sku_externo IS NOT NULL AND pi.sku_externo <> ''`,
+    [integracao.id, anuncio.anuncioIdExterno]
+  );
+  const produtos = new Set();
+  for (const { sku_externo: sku } of rows) {
+    const achado = resolverProdutoPeloSku(indice, { skuExterno: sku });
+    if (achado.produtoId) produtos.add(achado.produtoId);
+  }
+  return produtos.size === 1 ? [...produtos][0] : null;
+}
+
 // ---------------------------------------------------------------------------
 // Leitura por plataforma
 // ---------------------------------------------------------------------------
@@ -205,6 +230,13 @@ async function gravarAnuncio(client, integracao, anuncio, indiceReferencias) {
     const resolvido = resolverProdutoPeloSku(indiceReferencias, anuncio);
     produtoId = resolvido.produtoId;
     vinculoOrigem = resolvido.origem;
+    if (!produtoId) {
+      const pelosPedidos = await resolverProdutoPelosPedidos(client, integracao, anuncio, indiceReferencias);
+      if (pelosPedidos) {
+        produtoId = pelosPedidos;
+        vinculoOrigem = 'pedidos';
+      }
+    }
   }
 
   const valores = {
@@ -544,6 +576,7 @@ module.exports = {
   _gravarCampanhas: gravarCampanhas,
   _cruzouZero: cruzouZero,
   resolverProdutoPeloSku,
+  resolverProdutoPelosPedidos,
   montarIndiceReferencias,
   mudou,
   CAMPOS_HISTORICO,

@@ -119,11 +119,11 @@ const ANUNCIOS = [
   { id: 27, produto_id: 1, marketplace: 'mercado_livre', origem_integracao_id: 3, anuncio_id_externo: 'A27', sku_externo: 'OG1620-PRETO-M', titulo: 'Camisa Gola Polo Masculina', preco: 55.5, unidades_vendidas: 0, pedidos_no_periodo: 0, valor_recebido_unitario: 44.4 },
   // Vendeu no Mercado Livre mas o SKU do anúncio não bate com o cadastro (sem produto_id):
   // o produto vem dos pedidos e a loja leva o preço, com nota.
-  { id: 28, produto_id: null, produto_id_pedidos: 1, marketplace: 'mercado_livre', origem_integracao_id: 5, anuncio_id_externo: 'A28', sku_externo: 'sku-digitado-errado', titulo: 'Camisa Gola Polo Masculina', preco: 62.9, unidades_vendidas: 3, pedidos_no_periodo: 3 },
+  { id: 28, produto_id: null, produto_id_pedidos: 1, sku_pedidos: 'OG1620-Preto-M', marketplace: 'mercado_livre', origem_integracao_id: 5, anuncio_id_externo: 'A28', sku_externo: null, titulo: 'Camisa Gola Polo Masculina', preco: 62.9, unidades_vendidas: 3, pedidos_no_periodo: 3 },
   // Vendeu, sem vínculo e sem produto nos pedidos: vai para a aba FORA DA PLANILHA.
   { id: 29, produto_id: null, marketplace: 'mercado_livre', origem_integracao_id: 3, anuncio_id_externo: 'A29', sku_externo: 'SEM-VINCULO', titulo: 'Anúncio órfão', preco: 77.7, unidades_vendidas: 2, pedidos_no_periodo: 2 },
   // Kit SEM SKU no Mercado Livre: o título diz "Kit 3" e os pedidos dizem o produto.
-  { id: 30, produto_id: null, produto_id_pedidos: 1, marketplace: 'mercado_livre', origem_integracao_id: 5, anuncio_id_externo: 'A30', sku_externo: null, titulo: 'Kit 3 Camisa Gola Polo Premium Masculina', preco: 149.9, unidades_vendidas: 1, pedidos_no_periodo: 1 },
+  { id: 30, produto_id: null, produto_id_pedidos: 1, sku_pedidos: 'Kit-3-OG1620-Verde-Bege-Marrom-G', marketplace: 'mercado_livre', origem_integracao_id: 5, anuncio_id_externo: 'A30', sku_externo: null, titulo: 'Camisa Gola Polo Premium Masculina', preco: 149.9, unidades_vendidas: 1, pedidos_no_periodo: 1 },
   // NÃO vendeu — precisa ficar de fora da planilha.
   { id: 25, produto_id: 6, marketplace: 'shopee', origem_integracao_id: 1, anuncio_id_externo: 'A25', sku_externo: '36144-PRETO-M', titulo: 'Jaqueta', preco: 199.9, unidades_vendidas: 0, pedidos_no_periodo: 0 },
 ];
@@ -466,7 +466,7 @@ teste('anúncio sem vínculo no cadastro entra pelo produto dos pedidos, com not
   const linhaMLHoggar = b.primeira + 3; // MERCADO LIVRE → HOGGAR
   assert.strictEqual(ws.getCell(`I${linhaMLHoggar}`).value, 'HOGGAR');
   assert.strictEqual(ws.getCell(`L${linhaMLHoggar}`).value, 62.9);
-  assert.match(String(ws.getCell(`J${linhaMLHoggar}`).note), /identificado pelos PEDIDOS/);
+  assert.match(String(ws.getCell(`J${linhaMLHoggar}`).note), /VENDIDAS nos pedidos/);
 });
 
 teste('o que vendeu e não coube na planilha vai para a aba FORA DA PLANILHA, com o motivo', async () => {
@@ -479,7 +479,7 @@ teste('o que vendeu e não coube na planilha vai para a aba FORA DA PLANILHA, co
   assert.strictEqual(aba.getCell('C3').value, null, 'só o órfão entra na aba');
 });
 
-teste('kit sem SKU é lido pelo título: vai para o bloco de kit, não para a linha da unidade', () => {
+teste('kit sem SKU no anúncio: o SKU das variações vendidas (pedidos) manda para o bloco de kit', () => {
   const uni = acharBloco(ws, 'OG1620', 'unitario');
   const linhaMLHoggarUni = uni.primeira + 3;
   assert.notStrictEqual(ws.getCell(`L${linhaMLHoggarUni}`).value, 149.9, 'o preço do kit não pode ocupar a linha da unidade');

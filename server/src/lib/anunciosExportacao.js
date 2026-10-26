@@ -362,7 +362,8 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
             ads.custo_30d, ads.receita_30d,
             ml.valor_recebido_unitario,
             COALESCE(v.unidades, 0) AS unidades_vendidas,
-            COALESCE(v.pedidos, 0) AS pedidos_no_periodo
+            COALESCE(v.pedidos, 0) AS pedidos_no_periodo,
+            po.produto_id_pedidos, po.sku_pedidos
        FROM anuncios_marketplace a
        JOIN integracoes_marketplace im ON im.id = a.origem_integracao_id
        LEFT JOIN empresas e ON e.id = im.empresa_id
@@ -376,12 +377,7 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
        ) ads ON TRUE
        LEFT JOIN LATERAL (
          SELECT SUM(pi.quantidade) AS unidades,
-                COUNT(DISTINCT pv.id) AS pedidos,
-                -- Produto que o IMPORTADOR DE PEDIDOS reconheceu nas vendas deste
-                -- anúncio. Só é usado quando o anúncio está sem vínculo com o
-                -- cadastro (vínculo pelos pedidos, logo abaixo da consulta).
-                MODE() WITHIN GROUP (ORDER BY pi.produto_id)
-                  FILTER (WHERE pi.produto_id IS NOT NULL) AS produto_id_pedidos
+                COUNT(DISTINCT pv.id) AS pedidos
            FROM pedido_itens pi
            JOIN pedidos_venda pv ON pv.id = pi.pedido_id
           WHERE pi.anuncio_id_marketplace = a.anuncio_id_externo
@@ -389,6 +385,21 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
             AND pv.situacao <> 'cancelado' AND pv.cancelado_em IS NULL
             AND pv.data_pedido >= CURRENT_DATE - $${posVendidos}::int
        ) v ON TRUE
+       LEFT JOIN LATERAL (
+         -- O que os PEDIDOS dizem deste anúncio, em TODO o histórico (não só na
+         -- janela). No Mercado Livre o SKU mora na variação e o anúncio vem sem
+         -- SKU: quem traz o SKU de cada variação, e o produto que o importador
+         -- reconheceu, é o pedido. Usado só quando o anúncio está sem vínculo
+         -- (ver o bloco "vínculo pelos pedidos" logo abaixo da consulta).
+         SELECT MODE() WITHIN GROUP (ORDER BY pi.produto_id)
+                  FILTER (WHERE pi.produto_id IS NOT NULL) AS produto_id_pedidos,
+                MODE() WITHIN GROUP (ORDER BY pi.sku_externo)
+                  FILTER (WHERE pi.sku_externo IS NOT NULL AND pi.sku_externo <> '') AS sku_pedidos
+           FROM pedido_itens pi
+           JOIN pedidos_venda pv ON pv.id = pi.pedido_id
+          WHERE pi.anuncio_id_marketplace = a.anuncio_id_externo
+            AND pv.origem_integracao_id = a.origem_integracao_id
+       ) po ON TRUE
        LEFT JOIN LATERAL (
          -- Valor REALMENTE repassado por unidade no pedido conciliado mais
          -- recente daquele anúncio. É dado observado (veio do repasse da
@@ -427,6 +438,9 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
   // Sem nem isso, o anúncio vai para a aba "FORA DA PLANILHA" com o motivo.
   const foraDaPlanilha = [];
   for (const a of anuncios) {
+    // Anúncio sem SKU (Mercado Livre): o SKU das vendas diz se é kit
+    // ("Kit-5-OG1620-...") e de que quantidade, melhor do que ler o título.
+    if (!String(a.sku_externo || '').trim() && a.sku_pedidos) a.sku_externo = a.sku_pedidos;
     if (a.produto_id) continue;
     if (a.produto_id_pedidos) {
       a.produto_id = a.produto_id_pedidos;
@@ -719,9 +733,9 @@ function notaDaCelula(celula) {
       + `A linha mostra o que mais vendeu no período. Os outros: ${lista}.`);
   }
   if (celula.anuncio?.vinculoPelosPedidos) {
-    partes.push('Este anúncio não está vinculado ao cadastro pelo SKU. O produto foi '
-      + 'identificado pelos PEDIDOS vendidos neste anúncio. Vincule o anúncio na aba '
-      + 'Anúncios para a ligação ficar fixa.');
+    partes.push('Este anúncio (Mercado Livre) não traz SKU no anúncio nem nas variações. O '
+      + 'produto foi identificado pelo SKU das variações VENDIDAS nos pedidos. Atualize '
+      + 'as lojas em Anúncios para o vínculo ficar gravado.');
   }
   const vendidos = Number(celula.anuncio?.unidades_vendidas);
   if (Number.isFinite(vendidos) && vendidos > 0) {
