@@ -139,19 +139,102 @@ async function carregarOrcamento() {
   return mapa;
 }
 
-// Conta do fechamento de cada conta do plano: a ligação manual primeiro, o
-// nome igual depois. Conta-pai (sintética) e transferência ficam de fora.
+// Contas do Wik com nome diferente do da planilha, mas que são a mesma conta
+// (lista conferida no plano real do Wik em 26/10/2026).
+const APELIDOS = {
+  'juros renegociacao': 'Juros de Empréstimos',
+  'despesas com cartao': 'Taxas de Recebimento de Cartão / Pic Pay',
+  'antecipacao de cartoes': 'Taxas de Recebimento de Cartão / Pic Pay',
+  'renegociacao de cheques devolvidos': 'Inadimplência / Ch dvlvd',
+  'pagto cheques devolvidos': 'Inadimplência / Ch dvlvd',
+  'cheque devolvido': 'Inadimplência / Ch dvlvd',
+  'desconto cheques': 'Juros Desconto de Cheques',
+  'prorrogacao de cheques': 'Juros Desconto de Cheques',
+  'devolucao de vales e adiantamentos': 'Recebimento de Adiantamento Colaboradores',
+  'vales e adiantamentos': 'Adiantamento a Colaboradores',
+  'golas ribanas e insumos em gerais': 'Aviamentos e Acessórios',
+  'receita de emprestimos': 'Entrada de Empréstimos',
+  'venda imobilizado': 'Venda de Móveis, Máquinas e Equipamentos',
+  'darf': 'Fgts / Inss / Irrf / Irpf/darf',
+  'gasto com reforma': 'Melhorias / Reformas e Construção',
+  'reforma loja': 'Melhorias / Reformas e Construção',
+};
+
+// Grupo da planilha a partir do grupo do Wik (o pai da conta). O Wik prefixa
+// com CF (custo fixo), DV (despesa variável) e EX (extra) — o prefixo sai.
+function grupoDoPaiWik(nomePai, natureza) {
+  const n = normalizeHeader(nomePai).replace(/^(cf|dv|ex)\s+/, '');
+  if (!n) return null;
+  if (n.includes('custo de producao')) return 'CUSTO DE PRODUÇÃO';
+  if (n.includes('administrativ')) return 'DESPESAS ADMINISTRATIVAS';
+  if (n.includes('pessoal')) return 'DESPESA COM PESSOAL';
+  if (n.includes('venda')) return 'DESPESAS COM VENDAS';
+  if (n.includes('financeir')) return natureza === 'receita' ? 'RECEITA NÃO-OPERACIONAL' : 'DESPESAS FINANCEIRAS';
+  if (n.includes('entrada de ativos')) return 'ENTRADA DE ATIVOS';
+  if (n.includes('entrada operacional')) return 'RECEITA OPERACIONAL';
+  if (n.includes('entrada extra')) return 'RECEITA NÃO-OPERACIONAL';
+  if (n.includes('saida extra') || n.includes('investiment') || n.includes('retirad')) return 'INVESTIMENTOS E RETIRADAS';
+  if (n.includes('transitorio')) return natureza === 'receita' ? 'TRANSITÓRIO ENTRADA' : 'TRANSITÓRIO SAÍDA';
+  return null;
+}
+
+function nomeBonito(nome) {
+  const t = String(nome || '').trim();
+  if (t && t === t.toUpperCase()) return t.charAt(0) + t.slice(1).toLowerCase();
+  return t;
+}
+
+// Conta do fechamento de cada conta do plano, nesta ordem:
+//   1. a ligação manual (fin_plano.fech_conta_id);
+//   2. o mesmo nome (sem acento, sem caixa);
+//   3. um apelido conhecido (ex.: "DESCONTO CHEQUES" = Juros Desconto de Cheques);
+//   4. o começo do nome igual ("JUROS DESCONTO DE CHEQUES/BOLETOS");
+//   5. conta do Wik que não existe na planilha, mas cujo GRUPO no Wik diz onde
+//      ela mora: a conta é criada no grupo certo, com o nome do Wik. Assim a
+//      despesa nunca some e nunca cai em grupo errado.
+// O que sobrar (conta sem grupo no Wik e sem apelido) vai para "A classificar".
 async function mapaPlano(contas) {
-  const { rows } = await pool.query('SELECT id, nome, natureza, fech_conta_id FROM fin_plano');
+  const { rows } = await pool.query('SELECT id, nome, natureza, analitica, pai_id, fech_conta_id FROM fin_plano');
+  const porId = new Map(rows.map((p) => [p.id, p]));
+  const lista = [...contas.porNome.entries()];
+  const criar = [];
   const mapa = new Map();
   for (const p of rows) {
     if (p.natureza === 'transferencia') { mapa.set(p.id, { transferencia: true }); continue; }
-    const conta = (p.fech_conta_id && contas.porId.get(p.fech_conta_id))
-      || contas.porNome.get(normalizeHeader(p.nome))
-      || null;
-    mapa.set(p.id, { conta, nome: p.nome });
+    const n = normalizeHeader(p.nome);
+    let conta = (p.fech_conta_id && contas.porId.get(p.fech_conta_id)) || contas.porNome.get(n) || null;
+    if (!conta && APELIDOS[n]) conta = contas.porNome.get(normalizeHeader(APELIDOS[n])) || null;
+    if (!conta && n.length >= 10) {
+      const candidatos = lista.filter(([k]) => k.length >= 10 && (n.startsWith(`${k} `) || k.startsWith(`${n} `)));
+      if (candidatos.length === 1) conta = candidatos[0][1];
+    }
+    if (!conta && p.analitica !== false) {
+      let pai = p.pai_id ? porId.get(p.pai_id) : null;
+      let grupo = null;
+      for (let i = 0; pai && i < 6 && !grupo; i += 1) {
+        grupo = grupoDoPaiWik(pai.nome, p.natureza);
+        pai = pai.pai_id ? porId.get(pai.pai_id) : null;
+      }
+      if (grupo) criar.push({ plano: p, grupo });
+    }
+    mapa.set(p.id, { conta, nome: p.nome, natureza: p.natureza });
   }
-  return mapa;
+  return { mapa, criar };
+}
+
+async function criarContasDoWik(criar) {
+  for (const { plano, grupo } of criar) {
+    const ordemGrupo = GRUPOS.findIndex((g) => g.nome === grupo) + 1;
+    const entrada = ['RECEITA OPERACIONAL', 'RECEITA NÃO-OPERACIONAL', 'ENTRADA DE ATIVOS', 'TRANSITÓRIO ENTRADA'].includes(grupo);
+    const { rows } = await pool.query(
+      `INSERT INTO fin_fech_contas (nome, grupo, grupo_ordem, ordem, entrada)
+       VALUES ($1, $2, $3, 500 + $4, $5)
+       ON CONFLICT (nome) DO UPDATE SET nome = EXCLUDED.nome
+       RETURNING id`,
+      [nomeBonito(plano.nome).slice(0, 120), grupo, ordemGrupo, plano.id % 400, entrada]
+    );
+    await pool.query('UPDATE fin_plano SET fech_conta_id = $2 WHERE id = $1 AND fech_conta_id IS NULL', [plano.id, rows[0].id]);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -185,12 +268,12 @@ async function baixasAgrupadas(de, ate) {
        SELECT titulo_id, plano_id, valor FROM fin_titulo_rateios
         WHERE titulo_id IN (SELECT DISTINCT titulo_id FROM b)
      )
-     SELECT b.mes, b.unidade, COALESCE(r.plano_id, b.plano_id) AS plano_id, COALESCE(b.ja_no_extrato, FALSE) AS ja_no_extrato,
+     SELECT b.mes, b.unidade, COALESCE(r.plano_id, b.plano_id) AS plano_id, COALESCE(b.ja_no_extrato, FALSE) AS ja_no_extrato, b.natureza,
             SUM(CASE WHEN b.natureza = 'receber' THEN 1 ELSE -1 END
                 * b.pago * COALESCE(r.valor / NULLIF(b.valor_bruto, 0), 1)) AS valor,
             COUNT(*) AS qtd
        FROM b LEFT JOIN r ON r.titulo_id = b.titulo_id
-      GROUP BY 1, 2, 3, 4`,
+      GROUP BY 1, 2, 3, 4, 5`,
     [primeiroDia(de), ultimoDia(ate)]
   );
   return rows;
@@ -225,10 +308,12 @@ async function movimentos(de, ate, ctx) {
       foraDoResultado.push({ mes: r.mes, tipo: 'wik_no_extrato', valor, entradas: valor, saidas: 0, qtd: Number(r.qtd) });
       continue;
     }
-    const conta = info?.conta || null;
+    // Recebimento sem conta do plano: no Wik, a conta a receber de cliente não
+    // leva plano de contas — é venda. Pagamento sem conta continua a classificar.
+    const conta = info?.conta || (!r.plano_id && r.natureza === 'receber' ? contas.porNome.get('vendas') : null) || null;
     const base = {
       mes: r.mes, contaId: conta?.id || null, origem: 'lancamento', qtd: Number(r.qtd),
-      classificar: conta ? null : (info?.nome || 'Sem conta do plano'),
+      classificar: conta ? null : (info?.nome || 'Pagamentos sem conta do plano'),
       planoId: conta ? null : (r.plano_id || null),
     };
     const fatia = r.unidade === 'matriz' && conta ? fatias.get(conta.id) : null;
@@ -534,8 +619,14 @@ async function conferenciaExtrato(mes) {
 // ---------------------------------------------------------------------------
 
 async function contexto() {
-  const contas = await carregarContas();
-  const [fatias, orcamento, plano] = await Promise.all([carregarFatias(), carregarOrcamento(), mapaPlano(contas)]);
+  let contas = await carregarContas();
+  let { mapa: plano, criar } = await mapaPlano(contas);
+  if (criar.length) {
+    await criarContasDoWik(criar);
+    contas = await carregarContas();
+    ({ mapa: plano } = await mapaPlano(contas));
+  }
+  const [fatias, orcamento] = await Promise.all([carregarFatias(), carregarOrcamento()]);
   return { contas, fatias, orcamento, plano };
 }
 
@@ -690,7 +781,120 @@ async function fechamentoDoMes({ unidade, mes, comVendas = true }) {
     resposta.mudouDepoisDeFechar = Math.abs(Number(foto.resultado) - totais.resultado) >= CENTAVO
       ? arred(totais.resultado - Number(foto.resultado)) : null;
   }
+  resposta.analise = montarAnalise(resposta);
   return resposta;
+}
+
+// ---------------------------------------------------------------------------
+// Leitura pronta do mês (26/10/2026) — o dono achou a DR "muito confusa de
+// interpretar". Aqui o número já sai com a frase: a escada do resultado, o
+// peso de cada grupo em cada R$ 100 que entrou (contra o ideal) e os pontos
+// de atenção em ordem de impacto em reais. A tela só desenha.
+// ---------------------------------------------------------------------------
+
+const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const pts = (v) => `${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} pts`;
+
+function montarAnalise(f) {
+  const r = f.resumo;
+  const g = (nome) => f.dr.find((x) => x.nome === nome) || { valor: 0, media: 0, ideal: null, itens: [] };
+  const somaGrupos = (nomes) => nomes.reduce((s, n) => s + g(n).valor, 0);
+  const aClassificar = f.aClassificar.reduce((s, c) => s + c.valor, 0);
+
+  const escada = [
+    { chave: 'receita', rotulo: 'Entrou da operação (vendas e recebimentos)', valor: r.receita, tipo: 'entrada' },
+    { chave: 'pessoal', rotulo: 'Pessoal', valor: g('DESPESA COM PESSOAL').valor, tipo: 'saida' },
+    { chave: 'adm', rotulo: 'Administrativas', valor: g('DESPESAS ADMINISTRATIVAS').valor, tipo: 'saida' },
+    { chave: 'producao', rotulo: 'Produção', valor: g('CUSTO DE PRODUÇÃO').valor, tipo: 'saida' },
+    { chave: 'vendas', rotulo: 'Vendas (taxas, comissão, frete, marketing)', valor: g('DESPESAS COM VENDAS').valor, tipo: 'saida' },
+    { chave: 'lucroOp', rotulo: 'Sobrou da operação', valor: r.lucroOperacional, tipo: 'total' },
+    { chave: 'financeiro', rotulo: 'Juros e tarifas', valor: g('DESPESAS FINANCEIRAS').valor, tipo: 'saida' },
+    { chave: 'investimentos', rotulo: 'Investimentos, empréstimos pagos e retiradas', valor: g('INVESTIMENTOS E RETIRADAS').valor, tipo: 'saida' },
+    { chave: 'outrasEntradas', rotulo: 'Outras entradas (empréstimos recebidos, aplicações, venda de ativo)', valor: somaGrupos(['RECEITA NÃO-OPERACIONAL', 'ENTRADA DE ATIVOS']), tipo: 'entrada' },
+    { chave: 'adiantamentos', rotulo: 'Adiantamentos dados e devolvidos', valor: somaGrupos(['TRANSITÓRIO ENTRADA', 'TRANSITÓRIO SAÍDA']), tipo: 'neutro' },
+    { chave: 'classificar', rotulo: 'A classificar', valor: aClassificar, tipo: 'alerta' },
+    { chave: 'resultado', rotulo: 'Resultado do caixa no mês', valor: r.resultado, tipo: 'total' },
+  ].filter((l) => l.tipo === 'total' || l.chave === 'receita' || Math.abs(l.valor) >= CENTAVO)
+    .map((l) => ({ ...l, valor: arred(l.valor), porCem: r.receita > CENTAVO ? (l.valor / r.receita) * 100 : null }));
+
+  const por100 = ['DESPESA COM PESSOAL', 'DESPESAS ADMINISTRATIVAS', 'CUSTO DE PRODUÇÃO', 'DESPESAS COM VENDAS', 'DESPESAS FINANCEIRAS']
+    .map((nome) => {
+      const x = g(nome);
+      return {
+        grupo: nome,
+        rotulo: { 'DESPESA COM PESSOAL': 'Pessoal', 'DESPESAS ADMINISTRATIVAS': 'Administrativas', 'CUSTO DE PRODUÇÃO': 'Produção', 'DESPESAS COM VENDAS': 'Vendas', 'DESPESAS FINANCEIRAS': 'Juros e tarifas' }[nome],
+        real: r.receita > CENTAVO ? (-x.valor / r.receita) * 100 : null,
+        ideal: x.ideal === null || x.ideal === undefined ? null : -x.ideal,
+        media: x.pctMedia === null || x.pctMedia === undefined ? null : -x.pctMedia,
+        valor: arred(x.valor),
+      };
+    })
+    .filter((x) => Math.abs(x.valor) >= CENTAVO || x.ideal);
+
+  // Pontos de atenção, cada um com o tamanho em reais para ordenar.
+  const atencao = [];
+  if (r.saldoInicial === null && f.unidade !== 'consolidado') {
+    atencao.push({ tom: 'atencao', impacto: Infinity, texto: 'Falta informar o saldo de abertura — sem ele não há saldo final para levar ao mês seguinte.', acao: 'saldo' });
+  }
+  if (f.aClassificar.length) {
+    atencao.push({ tom: 'atencao', impacto: Math.abs(aClassificar) + 1e9,
+      texto: `${brl(aClassificar)} em ${f.aClassificar.length} conta(s) ainda sem lugar no plano — ligue cada uma a uma conta para o resultado ficar certo.`, acao: 'classificar' });
+  }
+  if (r.receita > CENTAVO && r.mediaReceita > CENTAVO && r.receita < r.mediaReceita * 0.85) {
+    atencao.push({ tom: 'ruim', impacto: r.mediaReceita - r.receita,
+      texto: `Entrou ${brl(r.receita)}, ${Math.round((1 - r.receita / r.mediaReceita) * 100)}% abaixo da média dos últimos meses (${brl(r.mediaReceita)}).` });
+  }
+  if (r.receita > CENTAVO) {
+    for (const grupo of f.dr) {
+      if (grupo.nome.startsWith('RECEITA') || grupo.nome.startsWith('ENTRADA') || grupo.nome === 'TRANSITÓRIO ENTRADA') continue;
+      for (const i of grupo.itens) {
+        if (i.valor >= 0) continue;
+        if (i.ideal !== null && i.pct !== null && i.pct < i.ideal - 0.05) {
+          const excesso = ((i.ideal - i.pct) / 100) * r.receita;
+          if (excesso >= 100) {
+            atencao.push({ tom: 'ruim', impacto: excesso, conta: i.nome,
+              texto: `${i.nome}: gastou ${brl(-i.valor)} (${pts(-i.pct).replace(' pts', '%')} do que entrou). O ideal é ${pts(-i.ideal).replace(' pts', '%')} — ${brl(excesso)} acima.` });
+          }
+        } else if (i.media < 0 && i.valor < i.media * 1.3 && i.media - i.valor >= 1000) {
+          atencao.push({ tom: 'atencao', impacto: i.media - i.valor, conta: i.nome,
+            texto: `${i.nome}: ${brl(-i.valor)} no mês, bem acima da média de ${brl(-i.media)}.` });
+        }
+      }
+    }
+  }
+  if (Array.isArray(f.extrato)) {
+    for (const l of f.extrato) {
+      if (l.fechado === false) {
+        atencao.push({ tom: 'ruim', impacto: Math.abs(l.diferenca) + 1e8, texto: `O extrato da ${l.loja} não fecha no centavo: diferença de ${brl(l.diferenca)}. Algum lançamento da plataforma faltou ou entrou duas vezes.` });
+      }
+    }
+  }
+  const bons = [];
+  if (r.receita > CENTAVO) {
+    for (const x of por100) {
+      if (x.ideal !== null && x.real !== null && x.real < x.ideal - 0.5) {
+        bons.push(`${x.rotulo}: ${pts(x.real).replace(' pts', '%')} do que entrou, abaixo do ideal de ${pts(x.ideal).replace(' pts', '%')}.`);
+      }
+    }
+  }
+
+  let frase;
+  if (!r.temDado) frase = 'Nenhum lançamento neste mês.';
+  else if (r.receita <= CENTAVO) frase = `Não entrou receita da operação neste mês; o caixa ${r.resultado >= 0 ? 'fechou positivo' : 'fechou negativo'} em ${brl(r.resultado)}.`;
+  else {
+    const margem = (r.lucroOperacional / r.receita) * 100;
+    frase = `Entrou ${brl(r.receita)} da operação. Depois de pessoal, administrativas, produção e vendas, `
+      + (r.lucroOperacional >= 0 ? `sobraram ${brl(r.lucroOperacional)} — ${Math.round(margem)} de cada R$ 100.` : `faltaram ${brl(-r.lucroOperacional)}.`)
+      + ` Com juros, investimentos, retiradas e o resto, o caixa do mês ${r.resultado >= 0 ? 'fechou positivo' : 'fechou negativo'} em ${brl(r.resultado)}.`;
+  }
+
+  return {
+    frase,
+    escada,
+    por100,
+    atencao: atencao.sort((a, b) => b.impacto - a.impacto).slice(0, 8).map(({ impacto, ...x }) => x),
+    bons: bons.slice(0, 4),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -770,7 +974,7 @@ async function lancamentosDoMes({ unidade, mes, de, ate }) {
   const ctx = await contexto();
   const { rows } = await pool.query(
     `SELECT b.id AS baixa_id, t.id AS titulo_id, b.data_baixa::text AS data,
-            COALESCE(c.unidade, t.unidade) AS unidade, t.plano_id,
+            COALESCE(c.unidade, t.unidade) AS unidade, t.plano_id, t.natureza,
             COALESCE(t.contraparte_nome, f.nome, cl.nome, '') AS pessoa,
             COALESCE(t.descricao, '') AS descricao,
             CASE WHEN t.natureza = 'receber' THEN 1 ELSE -1 END * (b.principal + b.juros + b.multa - b.desconto) AS valor,
@@ -791,7 +995,7 @@ async function lancamentosDoMes({ unidade, mes, de, ate }) {
   for (const r of rows) {
     const info = r.plano_id ? ctx.plano.get(r.plano_id) : null;
     if (info?.transferencia || r.ja_no_extrato) continue;
-    const conta = info?.conta || null;
+    const conta = info?.conta || (!r.plano_id && r.natureza === 'receber' ? ctx.contas.porNome.get('vendas') : null) || null;
     const valor = Number(r.valor);
     const base = {
       tipo: 'lancamento', baixaId: r.baixa_id, tituloId: r.titulo_id, data: r.data, pessoa: r.pessoa,

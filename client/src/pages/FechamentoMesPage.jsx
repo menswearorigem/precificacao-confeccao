@@ -1,14 +1,14 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  CalendarCheck, ChevronLeft, ChevronRight, ChevronDown, Plus, Lock, Unlock, Settings2, TrendingUp,
-  TrendingDown, Scale, Wallet, Percent, Trash2, AlertTriangle, CheckCircle2, Info, History, ShoppingBag,
+  ChevronLeft, ChevronRight, ChevronDown, Plus, Lock, Unlock, Settings2, Scale, Wallet, Trash2,
+  AlertTriangle, CheckCircle2, Info, History, ShoppingBag, Sparkles, ListTree, ReceiptText,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, formatQtd, numeroBr } from '../lib/format';
 import DataTable from '../components/DataTable';
 import Gaveta from '../components/Gaveta';
 import {
-  Field, Select, NumInput, DateInput, IndicadorDestaque, EstadoVazio, FileTypeIcon, CampoBusca, Paginacao, ThOrdenavel,
+  Field, Select, NumInput, DateInput, EstadoVazio, FileTypeIcon, CampoBusca, Paginacao, ThOrdenavel,
 } from '../components/ui';
 import { useTabela } from '../lib/useTabela';
 import { CartaoGrafico, GraficoColunas, GraficoRosca, useRefGrafico } from '../components/graficos';
@@ -59,16 +59,17 @@ function gravarPreferencia(chave, valor) {
   try { window.localStorage.setItem(chave, valor); } catch { /* sem armazenamento: só não lembra */ }
 }
 
-// Tom da diferença contra o ideal: gastar MAIS que o ideal é ruim; receber
-// mais é bom. Despesa vem negativa, então "dif" negativa = gastou mais.
-function tomDif(dif, receita) {
-  if (dif === null || dif === undefined) return '';
-  if (Math.abs(dif) < 0.05) return '';
-  return (receita ? dif > 0 : dif > 0) ? 'fm-bom' : 'fm-ruim';
-}
+const ABAS = [
+  { chave: 'resumo', rotulo: 'Resumo do mês', Icone: Sparkles },
+  { chave: 'contas', rotulo: 'Conta por conta', Icone: ListTree },
+  { chave: 'lancamentos', rotulo: 'Lançamentos', Icone: ReceiptText },
+  { chave: 'caixa', rotulo: 'Caixa e saldos', Icone: Wallet },
+  { chave: 'historico', rotulo: 'Histórico', Icone: History },
+];
 
 export default function FechamentoMesPage() {
   const [unidade, setUnidadeEstado] = useState(() => lerPreferencia('fm-unidade', 'marketplace'));
+  const [aba, setAbaEstado] = useState(() => lerPreferencia('fm-aba', 'resumo'));
   const [mes, setMes] = useState(mesAtual());
   const [dados, setDados] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -78,14 +79,16 @@ export default function FechamentoMesPage() {
   const [lancamentos, setLancamentos] = useState([]);
   const [buscaLanc, setBuscaLanc] = useState('');
   const [historico, setHistorico] = useState(null);
-  const [abertos, setAbertos] = useState(() => new Set(['RECEITA OPERACIONAL']));
+  const [abertos, setAbertos] = useState(() => new Set());
   const [gavetaLancar, setGavetaLancar] = useState(false);
   const [gavetaConfig, setGavetaConfig] = useState(false);
+  const [exportando, setExportando] = useState(false);
   const [recarregar, setRecarregar] = useState(0);
   const refSerie = useRefGrafico();
   const refRosca = useRefGrafico();
 
   const setUnidade = (u) => { setUnidadeEstado(u); gravarPreferencia('fm-unidade', u); };
+  const setAba = (a) => { setAbaEstado(a); gravarPreferencia('fm-aba', a); };
   const atualizar = useCallback(() => setRecarregar((n) => n + 1), []);
 
   useEffect(() => { api.get(`${BASE}/cadastro`).then(setCadastro).catch(() => setCadastro(null)); }, [recarregar]);
@@ -111,6 +114,7 @@ export default function FechamentoMesPage() {
   }, [unidade, recarregar]);
 
   const r = dados?.resumo;
+  const an = dados?.analise;
   const consolidado = unidade === 'consolidado';
   const fechado = Boolean(dados?.fechado);
 
@@ -152,18 +156,16 @@ export default function FechamentoMesPage() {
   const fecharMes = () => acao(() => api.post(`${BASE}/mes/fechar`, { unidade, mes }), `Mês de ${rotuloMes(mes)} fechado. O saldo final já é a abertura do mês seguinte.`);
   const reabrirMes = () => acao(() => api.post(`${BASE}/mes/reabrir`, { unidade, mes }), 'Mês reaberto para ajustes.');
   const apagarLanc = (l) => acao(() => api.del(`${BASE}/lancamento/${l.tituloId}`), 'Lançamento apagado.');
+  const ligarPlano = (planoId, contaId) => acao(() => api.put(`${BASE}/plano/${planoId}/conta`, { conta_id: contaId }), 'Conta ligada. Daqui para frente ela cai no lugar certo sozinha.');
 
-  const exportarHref = `/api${BASE}/exportar.xlsx?unidade=${unidade}&mes=${mes}`;
+  const nomeUnidade = UNIDADES.find((u) => u.chave === unidade)?.rotulo;
 
   return (
     <div className="page-wide fm-pagina">
       <div className="pagina-topo no-print">
         <div>
           <h2>Fechamento do Mês</h2>
-          <p className="page-sub">
-            O resultado do mês conta a conta, no formato da planilha do financeiro: quanto entrou, o peso de cada gasto sobre a
-            receita, a média e o ideal — e o saldo que passa para o mês seguinte. Pela <strong>data do pagamento</strong>.
-          </p>
+          <p className="page-sub">O resultado do mês em linguagem simples: quanto entrou, para onde foi e quanto sobrou — pela data do pagamento.</p>
         </div>
       </div>
 
@@ -188,7 +190,7 @@ export default function FechamentoMesPage() {
         <div className="filtros-barra-acoes">
           {loading && <span className="page-sub" style={{ margin: 0 }}>Atualizando…</span>}
           <button type="button" className="btn btn-ghost" onClick={() => setGavetaConfig(true)}><Settings2 size={14} /> Fatias e metas</button>
-          <a className="btn btn-ghost" href={exportarHref}><FileTypeIcon extensao="xlsx" size={18} /> Excel</a>
+          <button type="button" className="btn btn-ghost" onClick={() => setExportando(true)}><FileTypeIcon extensao="xlsx" size={18} /> Baixar Excel</button>
           {!consolidado && (fechado
             ? <button type="button" className="btn btn-ghost" onClick={reabrirMes}><Unlock size={14} /> Reabrir mês</button>
             : <button type="button" className="btn btn-ghost" onClick={fecharMes}><Lock size={14} /> Fechar mês</button>)}
@@ -206,249 +208,440 @@ export default function FechamentoMesPage() {
       {dados?.mudouDepoisDeFechar !== null && dados?.mudouDepoisDeFechar !== undefined && (
         <div className="aviso-compacto tone-atencao">
           <AlertTriangle size={13} style={{ verticalAlign: -2, marginRight: 6 }} />
-          Este mês foi fechado com resultado de <strong>{brl(dados.foto.resultado)}</strong>, mas os lançamentos de hoje somam{' '}
-          <strong>{brl(num(dados.foto.resultado) + num(dados.mudouDepoisDeFechar))}</strong> — alguém mexeu em lançamento de mês
-          fechado (diferença de {brl(dados.mudouDepoisDeFechar)}). O saldo levado adiante continua o da foto do fechamento.
+          Este mês foi fechado com resultado de <strong>{brl(dados.foto.resultado)}</strong>, mas hoje os lançamentos somam{' '}
+          <strong>{brl(num(dados.foto.resultado) + num(dados.mudouDepoisDeFechar))}</strong>: alguém mexeu num lançamento de mês fechado.
         </div>
       )}
 
-      {r && (
-        <div className="indicadores-faixa fm-indicadores">
-          <IndicadorDestaque destaque Icone={TrendingUp} rotulo="Receita operacional"
-            valor={r.temDado ? brl(r.receita) : '—'}
-            variacao={r.mediaReceita ? `média ${brl(r.mediaReceita)} · ${r.mesesNaMedia} ${r.mesesNaMedia === 1 ? 'mês' : 'meses'}` : undefined}
-            explicacao={unidade === 'marketplace'
-              ? 'O que as plataformas liberaram de venda no mês, menos as devoluções.'
-              : 'Vendas e recebimentos operacionais que entraram no caixa no mês.'} />
-          <IndicadorDestaque Icone={TrendingDown} rotulo="Saiu no mês" valor={r.temDado ? brl(r.saidas) : '—'}
-            explicacao="Tudo que saiu do caixa no mês, de todas as contas (inclui investimentos, retiradas e adiantamentos)." />
-          <IndicadorDestaque Icone={Scale} rotulo="Lucro operacional"
-            tom={r.lucroOperacional > 0 ? 'positivo' : r.lucroOperacional < 0 ? 'negativo' : undefined}
-            valor={r.temDado ? brl(r.lucroOperacional) : '—'}
-            variacao={r.margemOperacional !== null ? `${pctTxt(r.margemOperacional)} da receita` : undefined}
-            explicacao="Receita operacional menos pessoal, administrativas, produção e vendas. Calculado sozinho — não precisa montar à mão." />
-          <IndicadorDestaque Icone={Wallet} rotulo="Resultado do caixa"
-            tom={r.resultado > 0 ? 'positivo' : r.resultado < 0 ? 'negativo' : undefined}
-            valor={r.temDado ? brl(r.resultado) : '—'}
-            explicacao="O Total geral da DR: tudo que entrou menos tudo que saiu no mês." />
-          <IndicadorDestaque Icone={CalendarCheck} rotulo="Saldo do mês"
-            valor={r.saldoFinal === null ? '—' : brl(r.saldoFinal)}
-            variacao={r.saldoInicial === null ? 'falta o saldo de abertura' : `abriu com ${brl(r.saldoInicial)}`}
-            explicacao="Saldo de abertura + resultado do caixa. Vira a abertura do mês seguinte." />
-          <IndicadorDestaque Icone={Percent} rotulo="Custo fixo"
-            tom={r.custoFixoPct !== null && r.custoFixoIdeal !== null ? (r.custoFixoPct > r.custoFixoIdeal ? 'negativo' : 'positivo') : undefined}
-            valor={pctTxt(r.custoFixoPct, 2)}
-            variacao={r.custoFixoIdeal !== null ? `ideal ${pctTxt(r.custoFixoIdeal, 2)} · média ${pctTxt(r.custoFixoMedio, 2)}` : `média ${pctTxt(r.custoFixoMedio, 2)}`}
-            explicacao="(Pessoal + administrativas) ÷ receita operacional — a aba CUSTO FIXO da planilha." />
-        </div>
-      )}
+      <nav className="fm-abas no-print" aria-label="Partes do fechamento">
+        {ABAS.map((a) => (
+          <button key={a.chave} type="button" className={aba === a.chave ? 'ativa' : undefined} onClick={() => setAba(a.chave)}>
+            <a.Icone size={15} /> {a.rotulo}
+            {a.chave === 'contas' && dados?.aClassificar?.length > 0 && <span className="fm-aba-alerta">{dados.aClassificar.length}</span>}
+          </button>
+        ))}
+      </nav>
 
-      {dados && r?.saldoInicial === null && !consolidado && !fechado && (
-        <SaldoAbertura unidade={unidade} mes={mes} registro={dados.mesRegistro} onSalvo={() => acao(async () => {}, 'Saldo de abertura gravado.')} onErro={setErro} />
-      )}
-      {dados && r?.saldoInicial === null && consolidado && (
-        <div className="aviso-compacto tone-atencao">
-          <Info size={13} style={{ verticalAlign: -2, marginRight: 6 }} />
-          O saldo do Consolidado aparece quando as duas unidades tiverem o saldo de abertura informado.
-        </div>
-      )}
+      {!dados && loading && <div className="card"><p className="page-sub" style={{ margin: 0 }}>Montando o fechamento de {rotuloMes(mes)}…</p></div>}
 
-      {dados?.aClassificar?.length > 0 && (
-        <AClassificar itens={dados.aClassificar} cadastro={cadastro} onLigar={(planoId, contaId) => acao(() => api.put(`${BASE}/plano/${planoId}/conta`, { conta_id: contaId }), 'Conta ligada. Daqui para frente ela cai no lugar certo sozinha.')} />
-      )}
-
-      <div className="fm-graficos">
-        <CartaoGrafico titulo="Últimos 12 meses" refGrafico={refSerie} altura={250}
-          explicacao="Receita operacional e resultado do caixa de cada mês. Mês marcado com · não tem nenhum lançamento — não é zero, é sem dado."
-          vazio={serieGrafico.every((s) => !s.receita && !s.resultado) ? 'Nenhum movimento nos últimos 12 meses.' : null}
-          legenda={[{ rotulo: 'Receita operacional', cor: 'var(--success)' }, { rotulo: 'Resultado do caixa', cor: 'var(--brass)' }]}>
-          <GraficoColunas dados={serieGrafico} comZero altura={250} intervaloX="preserveStartEnd"
-            series={[{ chave: 'receita', nome: 'Receita operacional', cor: 'var(--success)' }, { chave: 'resultado', nome: 'Resultado do caixa', cor: 'var(--brass)' }]} />
-        </CartaoGrafico>
-        <CartaoGrafico titulo="Para onde o dinheiro foi" refGrafico={refRosca} altura={250}
-          explicacao="As saídas do mês por grupo da planilha."
-          vazio={composicao.length === 0 ? 'Nenhuma saída neste mês.' : null}>
-          <GraficoRosca dados={composicao} altura={250} totalRotulo="Saídas" />
-        </CartaoGrafico>
-      </div>
-
-      {dados && (
-        <div className="card">
-          <div className="card-head-linha">
-            <div className="card-head">Demonstração do resultado · {rotuloMes(mes)}</div>
-            <button type="button" className="btn btn-ghost sm" onClick={() => setAbertos(todosAbertos ? new Set() : new Set(dados.dr.map((g) => g.nome)))}>
-              {todosAbertos ? 'Recolher contas' : 'Abrir todas as contas'}
-            </button>
+      {/* ============================ RESUMO ============================ */}
+      {dados && aba === 'resumo' && (
+        <>
+          <div className={`fm-frase ${r.resultado >= 0 ? 'pos' : 'neg'}`}>
+            <span className="fm-frase-rotulo">{nomeUnidade} · {rotuloMes(mes)}</span>
+            <p>{an.frase}</p>
           </div>
-          <p className="page-sub" style={{ marginTop: 0 }}>
-            Clique no grupo para ver as contas. % é sobre a receita operacional do mês; a média é dos últimos {r?.mesesNaMedia || 0}{' '}
-            {r?.mesesNaMedia === 1 ? 'mês' : 'meses'} com movimento; o ideal vem do orçamento.
-            {r?.mesesNaMedia > 0 && r?.mesesNaMedia < 12 && ' Menos de 12 meses de histórico: a média ainda é curta.'}
-          </p>
-          {dados.dr.length === 0 ? (
-            <EstadoVazio Icone={Scale} titulo="Nenhum lançamento neste mês"
-              descricao={unidade === 'marketplace'
-                ? 'Lance as contas do marketplace no botão Lançar. A venda liberada pelas plataformas entra sozinha quando o extrato estiver sincronizado.'
-                : 'Os lançamentos da Matriz vêm do Wik. Se o mês deveria ter movimento, confira a sincronização do financeiro do Wik.'} />
-          ) : (
-            <DataTable>
-              <table className="data-table fm-dr">
-                <thead>
-                  <tr>
-                    <th>Conta</th>
-                    <th className="num">Valor</th>
-                    <th className="num">%</th>
-                    <th className="num">Média</th>
-                    <th className="num">% média</th>
-                    <th className="num">Ideal</th>
-                    <th className="num">Dif.</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dados.dr.map((g) => {
-                    const aberto = abertos.has(g.nome);
-                    const receita = g.nome.startsWith('RECEITA') || g.nome.startsWith('ENTRADA') || g.nome === 'TRANSITÓRIO ENTRADA';
-                    return (
-                      <Fragment key={g.nome}>
-                        <tr className={`linha-total fm-grupo${g.operacional ? '' : ' fm-grupo-nao-op'}`} onClick={() => alternarGrupo(g.nome)}>
-                          <td>
-                            <span className="fm-grupo-nome">
-                              <ChevronDown size={14} className={aberto ? 'fm-seta aberta' : 'fm-seta'} />
-                              <strong>{g.nome}</strong>
-                              <small>{g.itens.length} {g.itens.length === 1 ? 'conta' : 'contas'}</small>
-                            </span>
-                          </td>
-                          <td className={`mono num ${g.valor < 0 ? 'fm-neg' : ''}`}>{brl(g.valor)}</td>
-                          <td className="mono num">{pctTxt(g.pct, 2)}</td>
-                          <td className="mono num fm-suave">{brl(g.media)}</td>
-                          <td className="mono num fm-suave">{pctTxt(g.pctMedia, 2)}</td>
-                          <td className="mono num fm-suave">{pctTxt(g.ideal, 2)}</td>
-                          <td className={`mono num ${tomDif(g.dif, receita)}`}>{g.dif === null ? '—' : `${g.dif > 0 ? '+' : ''}${numeroBr(g.dif, 2)}`}</td>
-                        </tr>
-                        {aberto && g.itens.map((i) => (
-                          <tr key={i.contaId} className="fm-conta">
-                            <td>{i.nome}</td>
-                            <td className={`mono num ${i.valor < 0 ? 'fm-neg' : ''}`}>{Math.abs(i.valor) < 0.005 ? '—' : brl(i.valor)}</td>
-                            <td className="mono num">{Math.abs(i.valor) < 0.005 ? '—' : pctTxt(i.pct, 2)}</td>
-                            <td className="mono num fm-suave">{Math.abs(i.media) < 0.005 ? '—' : brl(i.media)}</td>
-                            <td className="mono num fm-suave">{Math.abs(i.media) < 0.005 ? '—' : pctTxt(i.pctMedia, 2)}</td>
-                            <td className="mono num fm-suave">{pctTxt(i.ideal, 2)}</td>
-                            <td className={`mono num ${tomDif(i.dif, receita)}`}>{i.dif === null ? '—' : `${i.dif > 0 ? '+' : ''}${numeroBr(i.dif, 2)}`}</td>
-                          </tr>
-                        ))}
-                      </Fragment>
-                    );
-                  })}
-                  {dados.aClassificar.length > 0 && (
-                    <tr className="linha-total fm-grupo-alerta">
-                      <td><strong>A CLASSIFICAR</strong></td>
-                      <td className="mono num">{brl(dados.aClassificar.reduce((s, c) => s + c.valor, 0))}</td>
-                      <td colSpan={5} className="fm-suave">contas que ainda não têm lugar no plano — veja o aviso acima</td>
+
+          <div className="fm-kpis">
+            <Kpi rotulo="Entrou da operação" valor={r.receita} tom="pos"
+              rodape={r.mediaReceita ? `média dos meses: ${brl(r.mediaReceita)}` : null} />
+            <Kpi rotulo="Gastos da operação" valor={r.lucroOperacional - r.receita} tom="neg"
+              rodape="pessoal, administrativas, produção e vendas" />
+            <Kpi rotulo="Sobrou da operação" valor={r.lucroOperacional} tom={r.lucroOperacional >= 0 ? 'pos' : 'neg'} destaque
+              rodape={r.receita > 0 ? `R$ ${numeroBr(Math.max(-999, r.lucroOperacional / r.receita * 100), 2)} de cada R$ 100 que entrou` : 'sem receita no mês'} />
+            <Kpi rotulo="Caixa do mês" valor={r.resultado} tom={r.resultado >= 0 ? 'pos' : 'neg'}
+              rodape={r.saldoFinal === null ? 'saldo: falta a abertura' : `saldo final ${brl(r.saldoFinal)}`} />
+          </div>
+
+          <div className="fm-duas">
+            <div className="card">
+              <div className="card-head">Como o mês fechou</div>
+              <p className="page-sub" style={{ marginTop: 0 }}>Do que entrou até o que sobrou no caixa, passo a passo.</p>
+              <Escada linhas={an.escada} />
+            </div>
+            <div className="card">
+              <div className="card-head">O que olhar primeiro</div>
+              {an.atencao.length === 0 && an.bons.length === 0 && <p className="page-sub">Nada fora do normal neste mês.</p>}
+              <ul className="fm-atencao">
+                {an.atencao.map((a, i) => (
+                  <li key={i} className={a.tom}>
+                    <AlertTriangle size={15} />
+                    <span>{a.texto}</span>
+                    {a.acao === 'classificar' && <button type="button" className="btn btn-ghost sm" onClick={() => setAba('contas')}>Classificar</button>}
+                    {a.acao === 'saldo' && <button type="button" className="btn btn-ghost sm" onClick={() => setAba('caixa')}>Informar</button>}
+                  </li>
+                ))}
+                {an.bons.map((b, i) => (
+                  <li key={`b${i}`} className="bom"><CheckCircle2 size={15} /><span>{b}</span></li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-head">De cada R$ 100 que entrou, quanto foi para cada lado</div>
+            <p className="page-sub" style={{ marginTop: 0 }}>
+              A barra é o gasto do mês. O traço preto é o <strong>ideal</strong> (orçamento) e o traço cinza é a <strong>média</strong> dos últimos meses.
+              Barra vermelha = passou do ideal.
+            </p>
+            <Por100 linhas={an.por100} />
+          </div>
+
+          <div className="fm-duas">
+            {unidade !== 'matriz' || dados.vendas ? <Vendas vendas={dados.vendas} unidade={unidade} /> : null}
+            <CartaoGrafico titulo="Últimos 12 meses" refGrafico={refSerie} altura={230}
+              explicacao="O que entrou da operação e como o caixa fechou em cada mês. Mês com · não teve lançamento (sem dado, não zero)."
+              vazio={serieGrafico.every((s) => !s.receita && !s.resultado) ? 'Nenhum movimento nos últimos 12 meses.' : null}
+              legenda={[{ rotulo: 'Entrou da operação', cor: 'var(--success)' }, { rotulo: 'Caixa do mês', cor: 'var(--brass)' }]}>
+              <GraficoColunas dados={serieGrafico} comZero altura={230} intervaloX="preserveStartEnd"
+                series={[{ chave: 'receita', nome: 'Entrou da operação', cor: 'var(--success)' }, { chave: 'resultado', nome: 'Caixa do mês', cor: 'var(--brass)' }]} />
+            </CartaoGrafico>
+          </div>
+        </>
+      )}
+
+      {/* ============================ CONTAS ============================ */}
+      {dados && aba === 'contas' && (
+        <>
+          {dados.aClassificar.length > 0 && <AClassificar itens={dados.aClassificar} cadastro={cadastro} onLigar={ligarPlano} />}
+          <div className="card">
+            <div className="card-head-linha">
+              <div className="card-head">Conta por conta · {rotuloMes(mes)}</div>
+              <button type="button" className="btn btn-ghost sm" onClick={() => setAbertos(todosAbertos ? new Set() : new Set(dados.dr.map((g) => g.nome)))}>
+                {todosAbertos ? 'Fechar todos os grupos' : 'Abrir todos os grupos'}
+              </button>
+            </div>
+            <p className="page-sub" style={{ marginTop: 0 }}>
+              Clique num grupo para ver as contas dele. "De cada R$ 100" compara com o que entrou da operação no mês.
+            </p>
+            {dados.dr.length === 0 ? (
+              <EstadoVazio Icone={Scale} titulo="Nenhum lançamento neste mês"
+                descricao={unidade === 'marketplace'
+                  ? 'Lance as contas do marketplace no botão Lançar. A venda liberada pelas plataformas entra sozinha pelo extrato.'
+                  : 'Os lançamentos da Matriz vêm do Wik. Se o mês deveria ter movimento, confira a sincronização do financeiro do Wik.'} />
+            ) : (
+              <DataTable>
+                <table className="data-table fm-dr">
+                  <thead>
+                    <tr>
+                      <th>Conta</th>
+                      <th className="num">No mês</th>
+                      <th className="num">De cada R$ 100</th>
+                      <th className="num">Ideal</th>
+                      <th>Contra o ideal</th>
+                      <th className="num">Média do mês</th>
                     </tr>
-                  )}
-                  <tr className="linha-total fm-total">
-                    <td><strong>= LUCRO OPERACIONAL</strong></td>
-                    <td className="mono num">{brl(r.lucroOperacional)}</td>
-                    <td className="mono num">{pctTxt(r.margemOperacional, 2)}</td>
-                    <td colSpan={4} className="fm-suave">receita − pessoal − administrativas − produção − vendas</td>
-                  </tr>
-                  <tr className="linha-total fm-total">
-                    <td><strong>= TOTAL GERAL (resultado do caixa)</strong></td>
-                    <td className="mono num">{brl(r.resultado)}</td>
-                    <td className="mono num">{pctTxt(r.receita > 0 ? (r.resultado / r.receita) * 100 : null, 2)}</td>
-                    <td className="mono num fm-suave">{brl(r.mediaResultado)}</td>
-                    <td colSpan={3} />
-                  </tr>
-                </tbody>
-              </table>
-            </DataTable>
-          )}
-        </div>
+                  </thead>
+                  <tbody>
+                    {dados.dr.map((g) => {
+                      const aberto = abertos.has(g.nome);
+                      const entrada = g.nome.startsWith('RECEITA') || g.nome.startsWith('ENTRADA') || g.nome === 'TRANSITÓRIO ENTRADA';
+                      return (
+                        <Fragment key={g.nome}>
+                          <tr className={`linha-total fm-grupo${g.operacional ? '' : ' fm-grupo-nao-op'}`} onClick={() => alternarGrupo(g.nome)}>
+                            <td>
+                              <span className="fm-grupo-nome">
+                                <ChevronDown size={14} className={aberto ? 'fm-seta aberta' : 'fm-seta'} />
+                                <strong>{nomeGrupo(g.nome)}</strong>
+                                <small>{g.itens.length} {g.itens.length === 1 ? 'conta' : 'contas'}</small>
+                              </span>
+                            </td>
+                            <td className={`mono num ${g.valor < 0 ? 'fm-neg' : ''}`}>{brl(g.valor)}</td>
+                            <td className="mono num">{por100Txt(g.pct)}</td>
+                            <td className="mono num fm-suave">{por100Txt(g.ideal)}</td>
+                            <td><ContraIdeal dif={g.dif} entrada={entrada} receita={r.receita} /></td>
+                            <td className="mono num fm-suave">{brl(g.media)}</td>
+                          </tr>
+                          {aberto && g.itens.map((i) => (
+                            <tr key={i.contaId} className="fm-conta">
+                              <td>{i.nome}</td>
+                              <td className={`mono num ${i.valor < 0 ? 'fm-neg' : ''}`}>{Math.abs(i.valor) < 0.005 ? '—' : brl(i.valor)}</td>
+                              <td className="mono num">{Math.abs(i.valor) < 0.005 ? '—' : por100Txt(i.pct)}</td>
+                              <td className="mono num fm-suave">{por100Txt(i.ideal)}</td>
+                              <td><ContraIdeal dif={i.dif} entrada={entrada} receita={r.receita} /></td>
+                              <td className="mono num fm-suave">{Math.abs(i.media) < 0.005 ? '—' : brl(i.media)}</td>
+                            </tr>
+                          ))}
+                        </Fragment>
+                      );
+                    })}
+                    {dados.aClassificar.length > 0 && (
+                      <tr className="linha-total fm-grupo-alerta">
+                        <td><strong>A classificar</strong></td>
+                        <td className="mono num">{brl(dados.aClassificar.reduce((s, c) => s + c.valor, 0))}</td>
+                        <td colSpan={4} className="fm-suave">ligue cada uma a uma conta no quadro acima</td>
+                      </tr>
+                    )}
+                    <tr className="linha-total fm-total">
+                      <td><strong>Sobrou da operação</strong></td>
+                      <td className="mono num">{brl(r.lucroOperacional)}</td>
+                      <td className="mono num">{por100Txt(r.margemOperacional, true)}</td>
+                      <td colSpan={3} className="fm-suave">o que entrou menos pessoal, administrativas, produção e vendas</td>
+                    </tr>
+                    <tr className="linha-total fm-total">
+                      <td><strong>Caixa do mês (tudo junto)</strong></td>
+                      <td className="mono num">{brl(r.resultado)}</td>
+                      <td className="mono num">{por100Txt(r.receita > 0 ? (r.resultado / r.receita) * 100 : null, true)}</td>
+                      <td colSpan={2} />
+                      <td className="mono num fm-suave">{brl(r.mediaResultado)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </DataTable>
+            )}
+            {r?.mesesNaMedia > 0 && r?.mesesNaMedia < 12 && <p className="page-sub">A média usa só {r.mesesNaMedia} meses — ainda há pouco histórico.</p>}
+          </div>
+        </>
       )}
 
-      {dados && (
-        <div className="fm-duas">
-          <Vendas vendas={dados.vendas} unidade={unidade} />
-          <Posicao dados={dados} unidade={unidade} mes={mes} fechado={fechado} onSalvar={(posicao) => acao(() => api.put(`${BASE}/mes`, {
-            unidade, mes, posicao,
-            saldo_inicial: dados.mesRegistro?.saldoInicialInformado ?? null,
-            observacao: dados.mesRegistro?.observacao ?? null,
-          }), 'Posição do fim do mês gravada.')} />
-        </div>
-      )}
-
-      {dados && unidade !== 'matriz' && (dados.extrato || dados.foraDoResultado?.length > 0) && (
-        <Conferencia extrato={dados.extrato} fora={dados.foraDoResultado} />
-      )}
-
-      {historico && <Historico historico={historico} mesAtivo={mes} onEscolher={setMes} />}
-
-      {dados && (
+      {/* ========================== LANÇAMENTOS ========================== */}
+      {dados && aba === 'lancamentos' && (
         <div className="card">
           <div className="card-head-linha">
             <div className="card-head">Lançamentos do mês · {lancamentos.length}</div>
             <div className="fm-busca"><CampoBusca valor={buscaLanc} onChange={setBuscaLanc} placeholder="Buscar pessoa, conta, valor, data…" /></div>
           </div>
           <p className="page-sub" style={{ marginTop: 0 }}>
-            A aba FLUXO DE CAIXA: cada pagamento e recebimento do mês na conta do plano.
+            Cada pagamento e recebimento do mês e a conta em que caiu.
             {unidade !== 'matriz' && ' No Marketplace entram também o extrato das plataformas e as fatias assumidas da Matriz.'}
           </p>
           {lancFiltrados.length === 0 ? (
             <p className="page-sub">{lancamentos.length === 0 ? 'Nenhum lançamento neste mês.' : 'Nada encontrado com essa busca.'}</p>
           ) : (
             <>
-            <Paginacao {...tabela} posicao="topo" />
-            <DataTable>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <ThOrdenavel coluna="data" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor} style={{ width: 110 }}>Data</ThOrdenavel>
-                    <ThOrdenavel coluna="pessoa" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Pessoa</ThOrdenavel>
-                    <ThOrdenavel coluna="conta" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Conta</ThOrdenavel>
-                    <th>Origem</th>
-                    <ThOrdenavel coluna="valor" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor} className="num">Valor</ThOrdenavel>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {tabela.itensPagina.map((l, idx) => (
-                    <tr key={`${l.tipo}-${l.baixaId || l.extratoId}-${l.unidade}-${idx}`}>
-                      <td className="mono">{dataBr(l.data)}</td>
-                      <td>
-                        <span className="cel-dupla">
-                          <strong>{l.pessoa || '—'}</strong>
-                          {l.descricao && l.descricao !== l.conta && <small>{l.descricao}</small>}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="cel-dupla">
-                          {l.conta ? <span>{l.conta}</span> : <span className="fm-ruim">A classificar · {l.planoNome || 'sem conta'}</span>}
-                          {l.grupo && <small>{l.grupo.toLowerCase()}</small>}
-                        </span>
-                      </td>
-                      <td><OrigemSelo l={l} consolidado={consolidado} /></td>
-                      <td className={`mono num ${l.valor < 0 ? 'fm-neg' : 'fm-pos'}`}>{brl(l.valor)}</td>
-                      <td>
-                        {l.rapido && l.tipo !== 'fatia' && !fechado && (
-                          <button type="button" className="icon-btn" title="Apagar lançamento" aria-label="Apagar lançamento" onClick={() => apagarLanc(l)}><Trash2 size={14} /></button>
-                        )}
-                      </td>
+              <Paginacao {...tabela} posicao="topo" />
+              <DataTable>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <ThOrdenavel coluna="data" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor} style={{ width: 110 }}>Data</ThOrdenavel>
+                      <ThOrdenavel coluna="pessoa" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Pessoa</ThOrdenavel>
+                      <ThOrdenavel coluna="conta" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor}>Conta</ThOrdenavel>
+                      <th>Origem</th>
+                      <ThOrdenavel coluna="valor" atual={tabela.coluna} direcao={tabela.direcao} onClick={tabela.ordenarPor} className="num">Valor</ThOrdenavel>
+                      <th />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </DataTable>
-            <Paginacao {...tabela} />
+                  </thead>
+                  <tbody>
+                    {tabela.itensPagina.map((l, idx) => (
+                      <tr key={`${l.tipo}-${l.baixaId || l.extratoId}-${l.unidade}-${idx}`}>
+                        <td className="mono">{dataBr(l.data)}</td>
+                        <td>
+                          <span className="cel-dupla">
+                            <strong>{l.pessoa || '—'}</strong>
+                            {l.descricao && l.descricao !== l.conta && <small>{l.descricao}</small>}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="cel-dupla">
+                            {l.conta ? <span>{l.conta}</span> : <span className="fm-ruim">A classificar · {l.planoNome || 'sem conta'}</span>}
+                            {l.grupo && <small>{nomeGrupo(l.grupo).toLowerCase()}</small>}
+                          </span>
+                        </td>
+                        <td><OrigemSelo l={l} consolidado={consolidado} /></td>
+                        <td className={`mono num ${l.valor < 0 ? 'fm-neg' : 'fm-pos'}`}>{brl(l.valor)}</td>
+                        <td>
+                          {l.rapido && l.tipo !== 'fatia' && !fechado && (
+                            <button type="button" className="icon-btn" title="Apagar lançamento" aria-label="Apagar lançamento" onClick={() => apagarLanc(l)}><Trash2 size={14} /></button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </DataTable>
+              <Paginacao {...tabela} />
             </>
           )}
         </div>
       )}
 
+      {/* ========================= CAIXA E SALDOS ========================= */}
+      {dados && aba === 'caixa' && (
+        <>
+          {r.saldoInicial === null && !consolidado && !fechado && (
+            <SaldoAbertura unidade={unidade} mes={mes} registro={dados.mesRegistro} onSalvo={() => acao(async () => {}, 'Saldo de abertura gravado.')} onErro={setErro} />
+          )}
+          {r.saldoInicial === null && consolidado && (
+            <div className="aviso-compacto tone-atencao">
+              <Info size={13} style={{ verticalAlign: -2, marginRight: 6 }} />
+              O saldo do Consolidado aparece quando as duas unidades tiverem o saldo de abertura informado.
+            </div>
+          )}
+          <div className="fm-kpis fm-kpis-3">
+            <Kpi rotulo="Abriu o mês com" valor={r.saldoInicial} />
+            <Kpi rotulo="Caixa do mês" valor={r.resultado} tom={r.resultado >= 0 ? 'pos' : 'neg'} />
+            <Kpi rotulo="Fecha o mês com" valor={r.saldoFinal} destaque rodape="vira a abertura do mês seguinte" />
+          </div>
+          <div className="fm-duas">
+            <Posicao dados={dados} unidade={unidade} mes={mes} fechado={fechado} onSalvar={(posicao) => acao(() => api.put(`${BASE}/mes`, {
+              unidade, mes, posicao,
+              saldo_inicial: dados.mesRegistro?.saldoInicialInformado ?? null,
+              observacao: dados.mesRegistro?.observacao ?? null,
+            }), 'Posição do fim do mês gravada.')} />
+            <CartaoGrafico titulo="Para onde o dinheiro foi" refGrafico={refRosca} altura={240}
+              explicacao="As saídas do mês por grupo."
+              vazio={composicao.length === 0 ? 'Nenhuma saída neste mês.' : null}>
+              <GraficoRosca dados={composicao} altura={240} totalRotulo="Saídas" />
+            </CartaoGrafico>
+          </div>
+          {unidade !== 'matriz' && (dados.extrato || dados.foraDoResultado?.length > 0) && (
+            <Conferencia extrato={dados.extrato} fora={dados.foraDoResultado} />
+          )}
+        </>
+      )}
+
+      {/* =========================== HISTÓRICO =========================== */}
+      {aba === 'historico' && historico && <Historico historico={historico} mesAtivo={mes} onEscolher={(m) => { setMes(m); setAba('resumo'); }} />}
+
       <GavetaLancar aberta={gavetaLancar} onFechar={() => setGavetaLancar(false)} unidade={consolidado ? 'marketplace' : unidade}
         mes={mes} cadastro={cadastro} onLancado={(t) => { setAviso(t); atualizar(); }} />
       <GavetaConfig aberta={gavetaConfig} onFechar={() => setGavetaConfig(false)} cadastro={cadastro}
         onSalvo={(t) => { setAviso(t); atualizar(); }} />
+      <DialogoExportar aberto={exportando} onFechar={() => setExportando(false)} unidade={unidade} mes={mes} nomeUnidade={nomeUnidade} />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Peças do Resumo
+// ---------------------------------------------------------------------------
+
+const NOME_GRUPO = {
+  'RECEITA OPERACIONAL': 'Entrou da operação',
+  'DESPESA COM PESSOAL': 'Pessoal',
+  'DESPESAS ADMINISTRATIVAS': 'Administrativas',
+  'CUSTO DE PRODUÇÃO': 'Produção',
+  'DESPESAS COM VENDAS': 'Vendas',
+  'INVESTIMENTOS E RETIRADAS': 'Investimentos e retiradas',
+  'RECEITA NÃO-OPERACIONAL': 'Outras entradas',
+  'ENTRADA DE ATIVOS': 'Venda de bens e aportes',
+  'DESPESAS FINANCEIRAS': 'Juros e tarifas',
+  'TRANSITÓRIO ENTRADA': 'Adiantamentos devolvidos',
+  'TRANSITÓRIO SAÍDA': 'Adiantamentos dados',
+};
+function nomeGrupo(g) { return NOME_GRUPO[g] || g; }
+function por100Txt(v, comSinal = false) {
+  if (v === null || v === undefined || !Number.isFinite(Number(v))) return '—';
+  const n = Number(v);
+  return `${comSinal && n < 0 ? '−' : ''}R$ ${numeroBr(Math.abs(n), 2)}`;
+}
+
+function Kpi({ rotulo, valor, rodape, tom, destaque }) {
+  return (
+    <div className={`fm-kpi${destaque ? ' destaque' : ''}${tom ? ` ${tom}` : ''}`}>
+      <span className="fm-kpi-rotulo">{rotulo}</span>
+      <strong className="mono">{valor === null || valor === undefined ? '—' : brl(valor)}</strong>
+      {rodape && <small>{rodape}</small>}
+    </div>
+  );
+}
+
+function Escada({ linhas }) {
+  const maior = Math.max(1, ...linhas.map((l) => Math.abs(l.valor)));
+  return (
+    <div className="fm-escada">
+      {linhas.map((l) => (
+        <div key={l.chave} className={`fm-degrau ${l.tipo}`}>
+          <span className="fm-degrau-rotulo">{l.tipo === 'saida' ? '− ' : l.tipo === 'total' ? '= ' : l.chave === 'receita' ? '' : l.valor >= 0 ? '+ ' : '− '}{l.rotulo}</span>
+          <span className="fm-degrau-barra"><i style={{ width: `${Math.max(1.5, (Math.abs(l.valor) / maior) * 100)}%` }} className={l.valor < 0 ? 'neg' : 'pos'} /></span>
+          <span className={`mono fm-degrau-valor ${l.valor < 0 ? 'fm-neg' : ''}`}>{brl(l.valor)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Por100({ linhas }) {
+  const maior = Math.max(10, ...linhas.flatMap((l) => [l.real || 0, l.ideal || 0, l.media || 0]));
+  if (!linhas.length) return <p className="page-sub">Sem receita da operação no mês — não há como dividir por R$ 100.</p>;
+  return (
+    <div className="fm-por100">
+      {linhas.map((l) => {
+        const acima = l.ideal !== null && l.real !== null && l.real > l.ideal + 0.05;
+        return (
+          <div key={l.grupo} className="fm-por100-linha">
+            <span className="fm-por100-rotulo">{l.rotulo}</span>
+            <span className="fm-por100-trilho">
+              <i className={acima ? 'acima' : 'ok'} style={{ width: `${Math.min(100, ((l.real || 0) / maior) * 100)}%` }} />
+              {l.media !== null && <b className="media" style={{ left: `${Math.min(100, (l.media / maior) * 100)}%` }} title={`média R$ ${numeroBr(l.media, 2)}`} />}
+              {l.ideal !== null && <b className="ideal" style={{ left: `${Math.min(100, (l.ideal / maior) * 100)}%` }} title={`ideal R$ ${numeroBr(l.ideal, 2)}`} />}
+            </span>
+            <span className="fm-por100-valor">
+              <strong className="mono">{l.real === null ? '—' : `R$ ${numeroBr(l.real, 2)}`}</strong>
+              <small>{l.ideal === null ? 'sem ideal' : `ideal R$ ${numeroBr(l.ideal, 2)}`}</small>
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ContraIdeal({ dif, entrada, receita }) {
+  if (dif === null || dif === undefined) return <span className="fm-suave">—</span>;
+  if (Math.abs(dif) < 0.05) return <span className="stamp sm tone-neutro">no ideal</span>;
+  // Despesa vem negativa: dif < 0 = gastou MAIS que o ideal.
+  const ruim = entrada ? dif < 0 : dif < 0;
+  const reais = receita > 0 ? Math.abs(dif / 100) * receita : null;
+  const texto = entrada
+    ? (dif > 0 ? 'acima da meta' : 'abaixo da meta')
+    : (dif < 0 ? 'gastou a mais' : 'economizou');
+  return <span className={`stamp sm ${ruim ? 'tone-prejuizo' : 'tone-saudavel'}`}>{texto}{reais !== null ? ` ${brl(reais)}` : ''}</span>;
+}
+
+// ---------------------------------------------------------------------------
+// Baixar Excel — só com a senha do próprio perfil
+// ---------------------------------------------------------------------------
+
+function DialogoExportar({ aberto, onFechar, unidade, mes, nomeUnidade }) {
+  const [senha, setSenha] = useState('');
+  const [erro, setErro] = useState('');
+  const [baixando, setBaixando] = useState(false);
+  useEffect(() => { if (aberto) { setSenha(''); setErro(''); setBaixando(false); } }, [aberto]);
+
+  async function baixar(e) {
+    e?.preventDefault();
+    if (!senha) return;
+    setErro('');
+    setBaixando(true);
+    try {
+      const res = await fetch(`/api${BASE}/exportar`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unidade, mes, senha }),
+      });
+      if (!res.ok) {
+        const corpo = await res.json().catch(() => null);
+        throw new Error(corpo?.error || `Não consegui gerar a planilha (erro ${res.status}).`);
+      }
+      const blob = await res.blob();
+      const nome = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') || '')?.[1] || `RESULTADO_FINANCEIRO_${mes}.xlsx`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = nome;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      onFechar();
+    } catch (err) {
+      setErro(err.message);
+      setSenha('');
+    } finally { setBaixando(false); }
+  }
+
+  return (
+    <Gaveta aberta={aberto} onFechar={baixando ? undefined : onFechar} Icone={Lock} titulo="Baixar a planilha"
+      subtitulo={`${nomeUnidade} · ${rotuloMes(mes)}. Por segurança, confirme a senha do seu perfil.`}
+      rodape={(
+        <>
+          <button type="button" className="btn btn-ghost" onClick={onFechar} disabled={baixando}>Cancelar</button>
+          <button type="submit" form="fm-form-exportar" className="btn btn-primary" disabled={!senha || baixando}>
+            {baixando ? 'Gerando a planilha…' : 'Confirmar e baixar'}
+          </button>
+        </>
+      )}>
+      <form id="fm-form-exportar" className="fm-form" onSubmit={baixar}>
+        <p className="page-sub" style={{ margin: 0 }}>
+          A planilha tem os dados financeiros da empresa. Cada download fica registrado no histórico com o seu nome.
+        </p>
+        <Field label="Sua senha">
+          <input className="input" type="password" autoComplete="current-password" autoFocus value={senha}
+            onChange={(e) => setSenha(e.target.value)} disabled={baixando} />
+        </Field>
+        {erro && <div className="aviso-compacto tone-prejuizo">{erro}</div>}
+        {baixando && <p className="page-sub" style={{ margin: 0 }}>Montando as abas — pode levar até um minuto.</p>}
+      </form>
+    </Gaveta>
   );
 }
 

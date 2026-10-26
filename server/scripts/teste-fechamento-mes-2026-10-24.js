@@ -124,6 +124,9 @@ async function main() {
     esperado['RECEITA OPERACIONAL'] + esperado['DESPESA COM PESSOAL'] + esperado['DESPESAS ADMINISTRATIVAS'] + esperado['CUSTO DE PRODUÇÃO'] + esperado['DESPESAS COM VENDAS'] + esperado['Taxas Site / Market Place']),
   String(jun.resumo.lucroOperacional));
   conferir('sem saldo de abertura, o saldo é desconhecido (não zero)', jun.resumo.saldoInicial === null);
+  conferir('leitura pronta: frase do mês', /Entrou R\$\s?672\.882,77/.test(jun.analise.frase), jun.analise.frase);
+  conferir('escada termina no resultado do caixa', jun.analise.escada.at(-1).chave === 'resultado' && perto(jun.analise.escada.at(-1).valor, -39996.51));
+  conferir('pontos de atenção apontam conta acima do ideal (Facção: 17% contra 10,4%)', jun.analise.atencao.some((a) => a.conta === 'Facção'), JSON.stringify(jun.analise.atencao.map((a) => a.texto)));
 
   console.log('\n2. Saldo levado de um mês para o outro');
   await f.salvarMes({ unidade: 'matriz', mes: '2024-01', saldo_inicial: 100000 });
@@ -190,6 +193,39 @@ async function main() {
   conferir('...e não da Matriz', perto(mMp.resumo.resultado, mJun.resumo.resultado), String(mMp.resumo.resultado));
   await pool.query('DELETE FROM fin_titulos WHERE wik_id IN (990001, 990002)');
   await pool.query('DELETE FROM fin_contas WHERE id = $1', [mp.id]);
+
+  console.log('\n4c. Plano real do Wik (nomes diferentes da planilha)');
+  {
+    const ins = async (codigo, nome, natureza, paiId = null, analitica = true) => (await pool.query(
+      `INSERT INTO fin_plano (codigo, nome, natureza, analitica, pai_id, wik_emp_id) VALUES ($1, $2, $3, $4, $5, 192) RETURNING id`,
+      [codigo, nome, natureza, analitica, paiId])).rows[0].id;
+    const raiz = await ins('W192.T.R2', 'SAÍDA', 'despesa', null, false);
+    const adm = await ins('W192.T.R2.02', 'CF - DESPESAS ADMINISTRATIVAS', 'despesa', raiz, false);
+    const ids = {
+      boletos: await ins('W192.T.X1', 'JUROS DESCONTO DE CHEQUES/BOLETOS', 'despesa'),
+      desconto: await ins('W192.T.X2', 'DESCONTO CHEQUES', 'despesa'),
+      seguro: await ins('W192.T.X3', 'SEGURO PREDIAL', 'despesa', adm),
+    };
+    let wid = 995000;
+    const pagar = async (planoId, valor) => {
+      wid += 1;
+      const { rows: [t] } = await pool.query(
+        `INSERT INTO fin_titulos (empresa_id, natureza, descricao, plano_id, data_emissao, data_competencia, data_vencimento, valor_bruto, situacao, wik_emp_id, wik_id)
+         VALUES ($1, $2, 'x', $3, '2024-07-10', '2024-07-10', '2024-07-10', $4, 'liquidado', 192, $5) RETURNING id`,
+        [empresaId, planoId ? 'pagar' : 'receber', planoId, valor, wid]);
+      await pool.query('INSERT INTO fin_baixas (titulo_id, data_baixa, principal) VALUES ($1, $2, $3)', [t.id, '2024-07-10', valor]);
+    };
+    await pagar(ids.boletos, 100); await pagar(ids.desconto, 50); await pagar(ids.seguro, 70); await pagar(null, 1000);
+    const jul = await f.fechamentoDoMes({ unidade: 'matriz', mes: '2024-07', comVendas: false });
+    const item = (grupo, nome) => grupo && jul.dr.find((g) => g.nome === grupo)?.itens.find((i) => i.nome === nome);
+    conferir('"JUROS DESCONTO DE CHEQUES/BOLETOS" e "DESCONTO CHEQUES" caem em Juros Desconto de Cheques',
+      perto(item('DESPESAS FINANCEIRAS', 'Juros Desconto de Cheques')?.valor, -150), JSON.stringify(jul.dr.find((g) => g.nome === 'DESPESAS FINANCEIRAS')));
+    conferir('conta do Wik que não existe na planilha entra no grupo do Wik (Seguro predial em Administrativas)',
+      perto(item('DESPESAS ADMINISTRATIVAS', 'Seguro predial')?.valor, -70), JSON.stringify(jul.dr.find((g) => g.nome === 'DESPESAS ADMINISTRATIVAS')));
+    conferir('recebimento do Wik sem conta do plano é venda', perto(item('RECEITA OPERACIONAL', 'Vendas')?.valor, 1000), JSON.stringify(jul.dr[0]));
+    conferir('nada a classificar', jul.aClassificar.length === 0, JSON.stringify(jul.aClassificar));
+    await pool.query('DELETE FROM fin_titulos WHERE wik_id > 995000 AND wik_id < 996000');
+  }
 
   console.log('\n5. Lançamento rápido, trava de mês fechado');
   const { rows: [energia] } = await pool.query("SELECT id FROM fin_fech_contas WHERE nome = 'Energia Elétrica'");
@@ -278,8 +314,18 @@ async function main() {
   conferir('POST lançamento 201', r3.status === 201, r3.corpo.toString());
   const r4 = await chamar(porta, '/api/financeiro-fechamento?unidade=xyz&mes=2024-06', { cookie });
   conferir('unidade inválida = 400 com mensagem', r4.status === 400, r4.corpo.toString());
-  const r5 = await chamar(porta, '/api/financeiro-fechamento/exportar.xlsx?unidade=marketplace&mes=2024-06', { cookie });
-  conferir('exportar.xlsx devolve arquivo', r5.status === 200 && r5.corpo.length > 5000 && /spreadsheetml/.test(r5.headers['content-type']), `${r5.status} ${r5.corpo.length}`);
+  const r5a = await chamar(porta, '/api/financeiro-fechamento/exportar', { metodo: 'POST', cookie, dados: { unidade: 'marketplace', mes: '2024-06', senha: 'errada' } });
+  conferir('Excel com senha errada = 401, sem arquivo', r5a.status === 401 && !/spreadsheetml/.test(r5a.headers['content-type'] || ''), `${r5a.status}`);
+  const r5b = await chamar(porta, '/api/financeiro-fechamento/exportar', { metodo: 'POST', cookie, dados: { unidade: 'marketplace', mes: '2024-06' } });
+  conferir('Excel sem senha = 400', r5b.status === 400, `${r5b.status}`);
+  const r5 = await chamar(porta, '/api/financeiro-fechamento/exportar', { metodo: 'POST', cookie, dados: { unidade: 'consolidado', mes: '2024-06', senha: cred.senha } });
+  conferir('Excel com a senha certa devolve o arquivo', r5.status === 200 && r5.corpo.length > 5000 && /spreadsheetml/.test(r5.headers['content-type']), `${r5.status} ${r5.corpo.length}`);
+  const r5c = await chamar(porta, '/api/financeiro-fechamento/exportar.xlsx?unidade=marketplace&mes=2024-06', { cookie });
+  conferir('o download antigo sem senha não existe mais', !/spreadsheetml/.test(r5c.headers['content-type'] || ''), `${r5c.status}`);
+  const { rows: aud } = await pool.query("SELECT sucesso FROM auditoria WHERE entidade = 'fechamento_mes' ORDER BY id");
+  conferir('auditoria registra a senha errada e o download', aud.some((a) => a.sucesso === false) && aud.some((a) => a.sucesso === true), JSON.stringify(aud));
+  const { rows: vaz } = await pool.query("SELECT COUNT(*)::int AS n FROM auditoria WHERE dados_depois::text LIKE '%teste do fechamento 123%'");
+  conferir('a senha não fica gravada no histórico', vaz[0].n === 0);
   servidor.close();
 
   await limpar();

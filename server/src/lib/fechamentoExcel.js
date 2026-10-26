@@ -15,7 +15,9 @@
 //     servidor não desenha gráfico nativo do Excel.
 
 const ExcelJS = require('exceljs');
+const pool = require('../db/pool');
 const f = require('./fechamentoMes');
+const { condOperacaoVenda } = require('./operacaoVenda');
 
 const NOME_UNIDADE = { matriz: 'Matriz', marketplace: 'Marketplace', consolidado: 'Consolidado (Matriz + Marketplace)' };
 const MESES = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
@@ -230,7 +232,7 @@ function abaVendas(wb, unidade, ano, vendasMeses) {
     const ok = v.dados && !v.dados.erro && v.dados.pedidos > 0;
     row.values = [rotuloMes(v.mes), ok ? v.dados.faturamento : null, ok ? v.dados.pedidos : null, ok ? v.dados.pecas : null,
       { formula: `IF(D${r}>0,B${r}/D${r},"")` }, { formula: `IF(C${r}>0,B${r}/C${r},"")` }, { formula: `IF(C${r}>0,D${r}/C${r},"")` },
-      ok ? v.dados.lucro : null, { formula: `IF(B${r}>0,H${r}/B${r}*100,"")` }];
+      ok && v.dados.lucro !== undefined ? v.dados.lucro : null, { formula: `IF(AND(B${r}>0,H${r}<>""),H${r}/B${r}*100,"")` }];
     [2, 5, 6, 8].forEach((c) => { row.getCell(c).numFmt = MOEDA; });
     row.getCell(7).numFmt = '0.0'; row.getCell(9).numFmt = PCT;
     r += 1;
@@ -248,7 +250,7 @@ function abaVendas(wb, unidade, ano, vendasMeses) {
     { formula: `E${r}` }, { formula: `F${r}` }, { formula: `G${r}` }, { formula: `H${r}/${n}` }, { formula: `I${r}` }];
   linhaGrupo(med);
   [tot, med].forEach((row) => { [2, 5, 6, 8].forEach((c) => { row.getCell(c).numFmt = MOEDA; }); row.getCell(7).numFmt = '0.0'; row.getCell(9).numFmt = PCT; [3, 4].forEach((c) => { row.getCell(c).numFmt = '#,##0'; }); });
-  ws.getCell(`A${r + 3}`).value = 'Mês sem venda fica em branco e não entra na média.';
+  ws.getCell(`A${r + 3}`).value = 'Mês sem venda fica em branco e não entra na média. O lucro (motor da Lucratividade) vem só no mês do fechamento — nos outros meses, abra o mês na tela.';
   ws.getCell(`A${r + 3}`).font = { italic: true, size: 9, color: { argb: COR.cinza } };
 }
 
@@ -408,13 +410,55 @@ function abaFluxo(wb, unidade, lancamentos) {
   ws.autoFilter = { from: 'A1', to: `J${Math.max(1, r - 1)}` };
 }
 
+// Vendas do ano por mês, numa consulta só (26/10/2026). A versão anterior
+// rodava o motor inteiro da Lucratividade uma vez por mês — no Marketplace
+// real (milhares de pedidos com Ads) isso estourava a memória do servidor e a
+// planilha nunca chegava. Aqui: faturamento, pedidos e peças direto da tabela;
+// o lucro do motor só para o mês do fechamento.
+async function vendasDoAno(unidade, ano, ateMes) {
+  const filtro = unidade === 'marketplace' ? 'AND pv.origem_marketplace IS NOT NULL'
+    : unidade === 'matriz' ? 'AND pv.origem_marketplace IS NULL' : '';
+  const { rows } = await pool.query(
+    `SELECT to_char(pv.data_pedido, 'YYYY-MM') AS mes, SUM(pv.total_liquido) AS faturamento,
+            COUNT(*) AS pedidos, SUM(pv.quantidade_pecas) AS pecas
+       FROM pedidos_venda pv
+      WHERE pv.data_pedido BETWEEN $1 AND $2 AND pv.situacao <> 'cancelado' AND ${condOperacaoVenda('pv')} ${filtro}
+      GROUP BY 1`,
+    [`${ano}-01-01`, f.ultimoDia(ateMes)]
+  );
+  return new Map(rows.map((x) => [x.mes, { faturamento: Number(x.faturamento), pedidos: Number(x.pedidos), pecas: Number(x.pecas) }]));
+}
+
+// O extrato da plataforma tem uma linha por pedido — dezenas de milhares no
+// ano. Na aba FLUXO DE CAIXA ele entra somado por dia, loja e conta.
+function agruparExtrato(lancamentos) {
+  const saida = [];
+  const grupos = new Map();
+  for (const l of lancamentos) {
+    if (l.tipo !== 'extrato') { saida.push(l); continue; }
+    const k = `${l.data}|${l.pessoa}|${l.conta}`;
+    const g = grupos.get(k) || { ...l, valor: 0, qtd: 0 };
+    g.valor += l.valor; g.qtd += 1;
+    grupos.set(k, g);
+  }
+  for (const g of grupos.values()) {
+    saida.push({ ...g, valor: Math.round(g.valor * 100) / 100, descricao: `${g.qtd} lançamento(s) do extrato` });
+  }
+  return saida.sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
+}
+
 async function exportarFechamentoExcel({ unidade, mes }) {
-  const fech = await f.fechamentoDoMes({ unidade, mes, comVendas: false });
+  const fech = await f.fechamentoDoMes({ unidade, mes, comVendas: true });
   const ano = mes.slice(0, 4);
   const serie = await f.serieAnual({ unidade, ano, ateMes: mes });
-  const vendasMeses = [];
-  for (const m of serie.meses) vendasMeses.push({ mes: m.mes, dados: await f.vendasDoMes(unidade, m.mes) });
-  const lancamentos = await f.lancamentosDoMes({ unidade, de: `${ano}-01`, ate: mes, mes });
+  const vendasAno = await vendasDoAno(unidade, ano, mes);
+  const vendasMeses = serie.meses.map((m) => {
+    const v = vendasAno.get(m.mes);
+    const dados = v ? { ...v } : null;
+    if (dados && m.mes === mes && fech.vendas && !fech.vendas.erro) dados.lucro = fech.vendas.lucro;
+    return { mes: m.mes, dados };
+  });
+  const lancamentos = agruparExtrato(await f.lancamentosDoMes({ unidade, de: `${ano}-01`, ate: mes, mes }));
 
   const wb = new ExcelJS.Workbook();
   wb.creator = 'HBN Hub';

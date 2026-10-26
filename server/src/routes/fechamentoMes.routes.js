@@ -6,7 +6,11 @@
 
 const express = require('express');
 const f = require('../lib/fechamentoMes');
+const pool = require('../db/pool');
 const { exportarFechamentoExcel } = require('../lib/fechamentoExcel');
+const { verificarSenha } = require('../lib/senha');
+const { verificarBloqueio, registrarFalha, registrarSucesso } = require('../lib/loginRateLimit');
+const { registrar } = require('../lib/auditoria');
 
 const router = express.Router();
 
@@ -79,13 +83,34 @@ router.put('/conta-bancaria/:id/unidade', async (req, res, next) => {
   try { await f.definirUnidadeContaBancaria(Number(req.params.id), req.body?.unidade || null); res.json({ ok: true }); } catch (err) { responderErro(res, next, err); }
 });
 
-router.get('/exportar.xlsx', async (req, res, next) => {
+// Baixar a planilha exige confirmar a senha do próprio perfil (26/10/2026,
+// pedido do dono: "dificulta o vazamento dos dados da empresa"). POST, para a
+// senha não ir na URL nem no histórico do navegador; a auditoria já esconde o
+// campo `senha`. Cinco senhas erradas bloqueiam a exportação por 15 minutos.
+router.post('/exportar', async (req, res, next) => {
   try {
-    const unidade = req.query.unidade || 'marketplace';
-    const mes = req.query.mes || mesAtual();
+    const usuario = req.user;
+    const chave = `exportar-fechamento:${usuario?.id}`;
+    const bloqueio = verificarBloqueio(chave);
+    if (bloqueio.bloqueado) {
+      return res.status(429).json({ error: `Muitas senhas erradas. Tente de novo em ${bloqueio.minutosRestantes} minuto(s).` });
+    }
+    const senha = String(req.body?.senha || '');
+    if (!senha) return res.status(400).json({ error: 'Digite a sua senha para baixar a planilha.' });
+    const { rows } = await pool.query('SELECT senha_hash FROM usuarios WHERE id = $1 AND ativo', [usuario?.id]);
+    if (!rows.length || !(await verificarSenha(senha, rows[0].senha_hash))) {
+      registrarFalha(chave);
+      await registrar(req, { acao: 'exportou', entidade: 'fechamento_mes', descricao: 'Senha errada ao baixar a planilha do Fechamento do Mês.', sucesso: false });
+      return res.status(401).json({ error: 'Senha incorreta.' });
+    }
+    registrarSucesso(chave);
+    const unidade = req.body?.unidade || 'marketplace';
+    const mes = req.body?.mes || mesAtual();
     const { buffer, nome } = await exportarFechamentoExcel({ unidade, mes });
+    await registrar(req, { acao: 'exportou', entidade: 'fechamento_mes', descricao: `Baixou a planilha ${nome}.`, sucesso: true });
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${nome}"`);
+    res.setHeader('Cache-Control', 'no-store');
     res.send(Buffer.from(buffer));
   } catch (err) { responderErro(res, next, err); }
 });
