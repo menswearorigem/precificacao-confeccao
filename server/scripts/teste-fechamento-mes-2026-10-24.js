@@ -305,6 +305,21 @@ async function main() {
   conferir('gráficos nativos do Excel no arquivo (GRÁFICOS + RESUMO)', charts.length >= 3, String(charts.length));
   const tiposX = await zipX.file('[Content_Types].xml').async('string');
   conferir('gráficos registrados no arquivo', charts.every((c) => tiposX.includes(`/${c}`)));
+  // O Excel recusa o arquivo inteiro se <sheetPr> vier fora de ordem
+  // (bug do ExcelJS com página ajustada + grupos). Ordem do padrão:
+  // tabColor, outlinePr, pageSetUpPr.
+  let ordemOk = true;
+  for (const nomeArq of Object.keys(zipX.files).filter((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n))) {
+    const x = await zipX.file(nomeArq).async('string');
+    const sp = /<sheetPr\b[^>]*>([\s\S]*?)<\/sheetPr>/.exec(x);
+    if (!sp) continue;
+    const ordem = [...sp[1].matchAll(/<(tabColor|outlinePr|pageSetUpPr)\b/g)].map((m) => ['tabColor', 'outlinePr', 'pageSetUpPr'].indexOf(m[1]));
+    if (ordem.some((v, i) => i > 0 && v < ordem[i - 1])) ordemOk = false;
+    const nivel = Math.max(0, ...[...x.matchAll(/<row\b[^>]*\boutlineLevel="(\d+)"/g)].map((m) => Number(m[1])));
+    const decl = Number(/outlineLevelRow="(\d+)"/.exec(x)?.[1] || 0);
+    if (nivel !== decl) ordemOk = false;
+  }
+  conferir('estrutura das abas no padrão do Excel (sheetPr e níveis de grupo)', ordemOk);
   const fluxo = wb.getWorksheet('FLUXO DE CAIXA');
   conferir('FLUXO DE CAIXA traz jan–jun (uma linha por lançamento)', fluxo.rowCount - 1 >= fixture.lancamentos.filter((l) => l.mes >= '2024-01').length, String(fluxo.rowCount));
 

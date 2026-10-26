@@ -126,16 +126,45 @@ async function mapaAbas(zip) {
   return mapa;
 }
 
+// Conserta o que o ExcelJS escreve fora do padrão e faz o Excel recusar o
+// arquivo ("O arquivo está corrompido e não pode ser aberto", 26/10/2026):
+//   1. <sheetPr>: com página ajustada + grupos (+/−), o ExcelJS põe
+//      <pageSetUpPr> antes de <outlinePr>. O padrão exige tabColor, outlinePr,
+//      pageSetUpPr — nessa ordem. Era isso que impedia o Excel de abrir.
+//   2. Linhas com nível de grupo e outlineLevelRow="0" no cabeçalho da aba.
+//   3. Regra "contém o texto" sem os atributos operator/text.
+function consertarAba(xml) {
+  xml = xml.replace(/<sheetPr\b([^>]*)>([\s\S]*?)<\/sheetPr>/, (tudo, attrs, dentro) => {
+    const pegar = (tag) => {
+      const m = new RegExp(`<${tag}\\b[^>]*?(?:\\/>|>[\\s\\S]*?<\\/${tag}>)`).exec(dentro);
+      return m ? m[0] : '';
+    };
+    const ordem = ['tabColor', 'outlinePr', 'pageSetUpPr'];
+    const conhecidos = ordem.map(pegar);
+    let resto = dentro;
+    conhecidos.forEach((t) => { if (t) resto = resto.replace(t, ''); });
+    return `<sheetPr${attrs}>${conhecidos.join('')}${resto}</sheetPr>`;
+  });
+  let nivel = 0;
+  for (const m of xml.matchAll(/<row\b[^>]*\boutlineLevel="(\d+)"/g)) nivel = Math.max(nivel, Number(m[1]));
+  if (nivel > 0) xml = xml.replace(/(<sheetFormatPr\b[^>]*\boutlineLevelRow=")\d+"/, `$1${nivel}"`);
+  xml = xml.replace(/<cfRule type="containsText"((?:(?!operator=)[^>])*)><formula>NOT\(ISERROR\(SEARCH\(&quot;([^&]*)&quot;/g,
+    (tudo, attrs, texto) => `<cfRule type="containsText" operator="containsText" text="${texto}"${attrs}><formula>NOT(ISERROR(SEARCH(&quot;${texto}&quot;`);
+  return xml;
+}
+
 function proximoRid(rels) {
   let n = 0;
   for (const m of rels.matchAll(/Id="rId(\d+)"/g)) n = Math.max(n, Number(m[1]));
   return `rId${n + 1}`;
 }
 
-async function inserirGraficos(buffer, graficos) {
-  if (!graficos || !graficos.length) return buffer;
+async function inserirGraficos(buffer, graficos = []) {
   const zip = await JSZip.loadAsync(buffer);
   const abas = await mapaAbas(zip);
+  for (const caminho of Object.values(abas)) {
+    zip.file(caminho, consertarAba(await zip.file(caminho).async('string')));
+  }
   let tipos = await zip.file('[Content_Types].xml').async('string');
   const porAba = new Map();
   for (const g of graficos) {
@@ -185,4 +214,4 @@ async function inserirGraficos(buffer, graficos) {
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
 
-module.exports = { inserirGraficos, graficoXml };
+module.exports = { inserirGraficos, graficoXml, consertarAba };
