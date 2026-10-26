@@ -376,7 +376,12 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
        ) ads ON TRUE
        LEFT JOIN LATERAL (
          SELECT SUM(pi.quantidade) AS unidades,
-                COUNT(DISTINCT pv.id) AS pedidos
+                COUNT(DISTINCT pv.id) AS pedidos,
+                -- Produto que o IMPORTADOR DE PEDIDOS reconheceu nas vendas deste
+                -- anúncio. Só é usado quando o anúncio está sem vínculo com o
+                -- cadastro (vínculo pelos pedidos, logo abaixo da consulta).
+                MODE() WITHIN GROUP (ORDER BY pi.produto_id)
+                  FILTER (WHERE pi.produto_id IS NOT NULL) AS produto_id_pedidos
            FROM pedido_itens pi
            JOIN pedidos_venda pv ON pv.id = pi.pedido_id
           WHERE pi.anuncio_id_marketplace = a.anuncio_id_externo
@@ -414,17 +419,47 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
     [...vals, janelaAdsDias, vendidosEmDias > 0 ? vendidosEmDias : 36500]
   );
 
+  // Anúncio que VENDEU mas está sem vínculo com o cadastro (SKU da loja que não
+  // bate exato com a referência) sumia da planilha sem aviso: o agrupamento é
+  // por produto. É o caso típico do Mercado Livre, onde o SKU digitado no
+  // anúncio varia. O vínculo passa a vir dos PEDIDOS — o importador já
+  // reconheceu o produto nas vendas desse mesmo anúncio — e a célula leva nota.
+  // Sem nem isso, o anúncio vai para a aba "FORA DA PLANILHA" com o motivo.
+  const foraDaPlanilha = [];
+  for (const a of anuncios) {
+    if (a.produto_id) continue;
+    if (a.produto_id_pedidos) {
+      a.produto_id = a.produto_id_pedidos;
+      a.vinculoPelosPedidos = true;
+    } else if (Number(a.unidades_vendidas) > 0) {
+      foraDaPlanilha.push({ anuncio: a, motivo: 'Vendeu, mas o anúncio não está vinculado a nenhum produto do cadastro (SKU não bate) e os pedidos também não identificaram o produto.' });
+    }
+  }
+
   // O corte de "vendeu nos últimos N dias". Com `vendidosEmDias = 0` a planilha
   // volta a trazer todo o catálogo filtrado — é o que a tela usava antes,
   // mantido como escape.
-  const anunciosNaJanela = vendidosEmDias > 0
-    ? anuncios.filter((a) => Number(a.unidades_vendidas) > 0)
-    : anuncios;
+  //
+  // O corte decide QUAIS BLOCOS existem (produto × unitário/kit com pelo menos
+  // um anúncio que vendeu), e não quais lojas ficam preenchidas dentro dele.
+  // Antes o corte era aplicado anúncio a anúncio: o produto aparecia, mas as
+  // lojas onde o anúncio está ativo e simplesmente não vendeu em 30 dias saíam
+  // com PROD., (+30%) e CLIE. PG em branco — o "sem preço" que o dono reclamou
+  // em 26/10/2026. Agora o anúncio ativo leva o preço que está no ar, e a nota
+  // da célula diz que não vendeu na janela (REGRA 2: dado real, avisado).
+  let anunciosNaJanela = anuncios;
+  if (vendidosEmDias > 0) {
+    const chaveDoBloco = (a) => `${a.produto_id}|${quantidadeDoKit(a) == null ? 'U' : 'K'}`;
+    const blocosQueVenderam = new Set(
+      anuncios.filter((a) => Number(a.unidades_vendidas) > 0).map(chaveDoBloco)
+    );
+    anunciosNaJanela = anuncios.filter((a) => blocosQueVenderam.has(chaveDoBloco(a)));
+  }
 
   const idsProduto = [...new Set(anunciosNaJanela.map((a) => a.produto_id).filter(Boolean))];
   if (idsProduto.length === 0) {
     return {
-      lojas, anuncios: anunciosNaJanela, produtos: [],
+      lojas, anuncios: anunciosNaJanela, produtos: [], foraDaPlanilha,
       calculoPorProduto: new Map(), fotos: new Map(), coresPorProduto: new Map(),
     };
   }
@@ -488,7 +523,15 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
   );
   const fotos = new Map(fotosRows.map((f) => [f.produto_id, f]));
 
-  return { lojas, anuncios: anunciosNaJanela, produtos, calculoPorProduto, fotos, coresPorProduto };
+  // Produto vinculado que não existe mais no cadastro também não pode sumir calado.
+  const idsConhecidos = new Set(produtos.map((p) => p.id));
+  for (const a of anunciosNaJanela) {
+    if (a.produto_id && !idsConhecidos.has(a.produto_id) && Number(a.unidades_vendidas) > 0) {
+      foraDaPlanilha.push({ anuncio: a, motivo: 'Vendeu, mas o produto vinculado não foi encontrado no cadastro.' });
+    }
+  }
+
+  return { lojas, anuncios: anunciosNaJanela, produtos, foraDaPlanilha, calculoPorProduto, fotos, coresPorProduto };
 }
 
 // ---------------------------------------------------------------------------
@@ -577,7 +620,16 @@ function escolherPrincipal(candidatos) {
 
 function quantidadeDoKit(anuncio) {
   const kit = partirSkuKit(anuncio.sku_externo || '');
-  return kit ? kit.quantidade : null;
+  if (kit) return kit.quantidade;
+  // Anúncio SEM SKU (comum no Mercado Livre) não diz que é kit pelo SKU: sem
+  // isso o "Kit 5 Camisa Polo" cairia na linha da peça unitária, com o preço
+  // do kit no lugar do preço da unidade. Só lê o título quando o SKU está
+  // vazio; SKU preenchido que não é de kit continua valendo como unitário.
+  if (!String(anuncio.sku_externo || '').trim()) {
+    const m = /\bkit\s+(?:de\s+)?(\d{1,2})\b/i.exec(String(anuncio.titulo || ''));
+    if (m && Number(m[1]) > 1) return Number(m[1]);
+  }
+  return null;
 }
 
 // Monta o mapa `plataforma|marca` → { anuncio, alternativos } de um conjunto de
@@ -666,10 +718,18 @@ function notaDaCelula(celula) {
     partes.push(`Esta loja tem ${celula.alternativos.length + 1} anúncios deste produto. `
       + `A linha mostra o que mais vendeu no período. Os outros: ${lista}.`);
   }
+  if (celula.anuncio?.vinculoPelosPedidos) {
+    partes.push('Este anúncio não está vinculado ao cadastro pelo SKU. O produto foi '
+      + 'identificado pelos PEDIDOS vendidos neste anúncio. Vincule o anúncio na aba '
+      + 'Anúncios para a ligação ficar fixa.');
+  }
   const vendidos = Number(celula.anuncio?.unidades_vendidas);
   if (Number.isFinite(vendidos) && vendidos > 0) {
     partes.push(`Vendeu ${Math.round(vendidos)} unidade(s) em `
       + `${Number(celula.anuncio.pedidos_no_periodo) || 0} pedido(s) no período.`);
+  } else if (celula.anuncio) {
+    partes.push('Anúncio ativo que NÃO vendeu no período. O preço é o que está no ar na '
+      + 'plataforma agora; as colunas de ADS e de valor recebido seguem a mesma regra das demais.');
   }
   return partes.length ? partes.join('\n\n') : null;
 }
@@ -1010,7 +1070,23 @@ async function montarPlanilhaAnuncios({
   ws.getColumn('V').width = LARGURA_ADS_CARACTERES;
   ws.properties.defaultRowHeight = alturaEmPontos(ALTURA_LINHA_PX);
 
+  // Aba de conferência: tudo que vendeu e NÃO coube na Planilha1, com o motivo.
+  // Fica depois da Planilha1 e só existe quando há o que explicar.
+  const escreverForaDaPlanilha = () => {
+    if (!dados.foraDaPlanilha || dados.foraDaPlanilha.length === 0) return;
+    const aba = livro.addWorksheet('FORA DA PLANILHA');
+    const cab = ['PLATAFORMA', 'LOJA', 'ANÚNCIO', 'SKU', 'TÍTULO', 'PREÇO', 'VENDIDOS', 'MOTIVO'];
+    cab.forEach((t, i) => { aba.getCell(`${String.fromCharCode(65 + i)}1`).value = t; });
+    dados.foraDaPlanilha.forEach(({ anuncio: a, motivo }, n) => {
+      const l = n + 2;
+      const linha = [a.marketplace, a.loja_nome || '', a.anuncio_id_externo, a.sku_externo || '',
+        a.titulo || '', a.preco != null ? Number(a.preco) : null, Math.round(Number(a.unidades_vendidas) || 0), motivo];
+      linha.forEach((v, i) => { aba.getCell(`${String.fromCharCode(65 + i)}${l}`).value = v; });
+    });
+  };
+
   if (dados.produtos.length === 0) {
+    escreverForaDaPlanilha();
     ws.getCell('B2').value = vendidosEmDias > 0
       ? `Nenhum anúncio vendeu nos últimos ${vendidosEmDias} dias dentro do filtro escolhido.`
       : 'Nenhum anúncio vinculado a produto do cadastro no filtro escolhido.';
@@ -1073,6 +1149,7 @@ async function montarPlanilhaAnuncios({
     numero += 1;
   }
 
+  escreverForaDaPlanilha();
   return livro;
 }
 
