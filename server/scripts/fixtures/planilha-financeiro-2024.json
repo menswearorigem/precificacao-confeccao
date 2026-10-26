@@ -1,0 +1,2589 @@
+{
+"origem": "RESULTADO_FINANCEIRO_2024.xlsx, aba FLUXO DE CAIXA (somada por mês, conta e sinal) e aba DR de 06/2024",
+"lancamentos": [
+{
+"mes": "2024-01",
+"plano": "Acabamento Externo",
+"valor": -367.2
+},
+{
+"mes": "2024-01",
+"plano": "Acertos e Recisões",
+"valor": -8477.03
+},
+{
+"mes": "2024-01",
+"plano": "Adiantamento a Colaboradores",
+"valor": -10165.0
+},
+{
+"mes": "2024-01",
+"plano": "Adiantamento a Fornecedores",
+"valor": -2700.0
+},
+{
+"mes": "2024-01",
+"plano": "Ajuda de Custo",
+"valor": -2250.0
+},
+{
+"mes": "2024-01",
+"plano": "Aluguéis e Condomínios",
+"valor": -8900.0
+},
+{
+"mes": "2024-01",
+"plano": "Amortização de Emprestimos",
+"valor": -6367.35
+},
+{
+"mes": "2024-01",
+"plano": "Aviamentos e Acessórios",
+"valor": -25257.03
+},
+{
+"mes": "2024-01",
+"plano": "Bonificação",
+"valor": -1000.0
+},
+{
+"mes": "2024-01",
+"plano": "Bordado Industrial",
+"valor": -10295.09
+},
+{
+"mes": "2024-01",
+"plano": "Combustíveis",
+"valor": -1840.82
+},
+{
+"mes": "2024-01",
+"plano": "Comissão de Assessores",
+"valor": -12398.18
+},
+{
+"mes": "2024-01",
+"plano": "Comissão de Vendedores",
+"valor": -4511.6
+},
+{
+"mes": "2024-01",
+"plano": "Compra de Computadores e Eletrônicos",
+"valor": -566.67
+},
+{
+"mes": "2024-01",
+"plano": "Compra de Máquinas e Equipamentos",
+"valor": -560.0
+},
+{
+"mes": "2024-01",
+"plano": "Compra de Móveis e Utensilios",
+"valor": -1286.99
+},
+{
+"mes": "2024-01",
+"plano": "Compra de Veículos",
+"valor": -1450.04
+},
+{
+"mes": "2024-01",
+"plano": "Consulta de Crédito Cliente",
+"valor": -228.0
+},
+{
+"mes": "2024-01",
+"plano": "Consórcio",
+"valor": -6917.74
+},
+{
+"mes": "2024-01",
+"plano": "Coquetéis, festas  e outros eventos",
+"valor": -3447.82
+},
+{
+"mes": "2024-01",
+"plano": "Embalagens",
+"valor": -18.0
+},
+{
+"mes": "2024-01",
+"plano": "Empréstimos de Terceiros",
+"valor": -138448.42
+},
+{
+"mes": "2024-01",
+"plano": "Energia Elétrica",
+"valor": -3005.98
+},
+{
+"mes": "2024-01",
+"plano": "Entrada de Empréstimos",
+"valor": 276262.03
+},
+{
+"mes": "2024-01",
+"plano": "Etiquetas",
+"valor": -1650.0
+},
+{
+"mes": "2024-01",
+"plano": "Exame Adminissional/Demissional",
+"valor": -30.0
+},
+{
+"mes": "2024-01",
+"plano": "Facção",
+"valor": -52919.06
+},
+{
+"mes": "2024-01",
+"plano": "Fgts / Inss / Irrf / Irpf/darf",
+"valor": -17110.2
+},
+{
+"mes": "2024-01",
+"plano": "Frete Venda",
+"valor": -121.76
+},
+{
+"mes": "2024-01",
+"plano": "Frete e Transporte de Mercadorias",
+"valor": -954.92
+},
+{
+"mes": "2024-01",
+"plano": "Férias",
+"valor": -1263.14
+},
+{
+"mes": "2024-01",
+"plano": "Honorários Contábeis e Consultoria",
+"valor": -4414.6
+},
+{
+"mes": "2024-01",
+"plano": "Hora Extra",
+"valor": -1514.67
+},
+{
+"mes": "2024-01",
+"plano": "Inadimplência / Ch dvlvd",
+"valor": -37947.21
+},
+{
+"mes": "2024-01",
+"plano": "Juros Cheque Especial",
+"valor": -2257.05
+},
+{
+"mes": "2024-01",
+"plano": "Juros Desconto de Cheques",
+"valor": -11747.45
+},
+{
+"mes": "2024-01",
+"plano": "Juros de Empréstimos",
+"valor": -7444.22
+},
+{
+"mes": "2024-01",
+"plano": "Lanches / Refeições",
+"valor": -1421.89
+},
+{
+"mes": "2024-01",
+"plano": "Lavanderia",
+"valor": -4529.15
+},
+{
+"mes": "2024-01",
+"plano": "Manutenção de Imóveis",
+"valor": -148.0
+},
+{
+"mes": "2024-01",
+"plano": "Manutenção de Moveis e Utensílios",
+"valor": -313.7
+},
+{
+"mes": "2024-01",
+"plano": "Manutenção de Máquinas e Peças",
+"valor": -130.0
+},
+{
+"mes": "2024-01",
+"plano": "Manutenção de Veiculos e Estacionamento",
+"valor": -5263.03
+},
+{
+"mes": "2024-01",
+"plano": "Marketing",
+"valor": -3784.19
+},
+{
+"mes": "2024-01",
+"plano": "Material de Copa e Cozinha",
+"valor": -448.96
+},
+{
+"mes": "2024-01",
+"plano": "Material de Escritório",
+"valor": -495.55
+},
+{
+"mes": "2024-01",
+"plano": "Material de Limpeza e Higiene",
+"valor": -329.05
+},
+{
+"mes": "2024-01",
+"plano": "Multas e Juros Recebidos",
+"valor": 378.7
+},
+{
+"mes": "2024-01",
+"plano": "Multas e Juros por Atraso",
+"valor": -5022.63
+},
+{
+"mes": "2024-01",
+"plano": "Outras taxas e Tributos",
+"valor": -705.71
+},
+{
+"mes": "2024-01",
+"plano": "Outros Insumos",
+"valor": -194.0
+},
+{
+"mes": "2024-01",
+"plano": "Pro Labore Sócios Erisvânia",
+"valor": -11249.58
+},
+{
+"mes": "2024-01",
+"plano": "Pro Labore Sócios Jean",
+"valor": -50392.09
+},
+{
+"mes": "2024-01",
+"plano": "Produção Externa",
+"valor": -1122.0
+},
+{
+"mes": "2024-01",
+"plano": "Recebimento de Adiantamento Colaboradores",
+"valor": 14123.43
+},
+{
+"mes": "2024-01",
+"plano": "Recebimento de Inadimplência",
+"valor": 35557.53
+},
+{
+"mes": "2024-01",
+"plano": "Recebimento de adiantamento Fornecedores",
+"valor": 4685.0
+},
+{
+"mes": "2024-01",
+"plano": "Receita com Aplicações",
+"valor": 2.44
+},
+{
+"mes": "2024-01",
+"plano": "Recuperação de despesas",
+"valor": 2347.76
+},
+{
+"mes": "2024-01",
+"plano": "Reembolso Frete Venda",
+"valor": 222.61
+},
+{
+"mes": "2024-01",
+"plano": "Reembolsos Diversos",
+"valor": -3090.0
+},
+{
+"mes": "2024-01",
+"plano": "Sacolas / Caixas / Fardos",
+"valor": -2547.72
+},
+{
+"mes": "2024-01",
+"plano": "Salarios e Ordenados",
+"valor": -42641.07
+},
+{
+"mes": "2024-01",
+"plano": "Segurança e Monitoramento",
+"valor": -50.0
+},
+{
+"mes": "2024-01",
+"plano": "Seguro de Vida",
+"valor": -755.1
+},
+{
+"mes": "2024-01",
+"plano": "Serviços de Terceiros",
+"valor": -10.0
+},
+{
+"mes": "2024-01",
+"plano": "Simples Nacional",
+"valor": -8361.79
+},
+{
+"mes": "2024-01",
+"plano": "Taxas Bancárias",
+"valor": -1085.64
+},
+{
+"mes": "2024-01",
+"plano": "Taxas Boletos Bancários",
+"valor": -116.75
+},
+{
+"mes": "2024-01",
+"plano": "Taxas de Recebimento de Cartão / Pic Pay",
+"valor": -3917.46
+},
+{
+"mes": "2024-01",
+"plano": "Taxi e Moto-taxi",
+"valor": -87.35
+},
+{
+"mes": "2024-01",
+"plano": "Tecidos",
+"valor": -110684.43
+},
+{
+"mes": "2024-01",
+"plano": "Telefonia Fixa e Internet",
+"valor": -534.67
+},
+{
+"mes": "2024-01",
+"plano": "Telefonia Móvel",
+"valor": -275.99
+},
+{
+"mes": "2024-01",
+"plano": "Treinamento / Cursos",
+"valor": -3099.7
+},
+{
+"mes": "2024-01",
+"plano": "Vale Alimentação",
+"valor": -100.0
+},
+{
+"mes": "2024-01",
+"plano": "Vale Transporte",
+"valor": -1731.8
+},
+{
+"mes": "2024-01",
+"plano": "Vendas",
+"valor": 288055.35
+},
+{
+"mes": "2024-01",
+"plano": "Web Site / Sistema ERP / Software",
+"valor": -254.99
+},
+{
+"mes": "2024-02",
+"plano": "Acertos e Recisões",
+"valor": -20367.69
+},
+{
+"mes": "2024-02",
+"plano": "Adiantamento a Colaboradores",
+"valor": -14613.67
+},
+{
+"mes": "2024-02",
+"plano": "Adiantamento a Fornecedores",
+"valor": -12799.99
+},
+{
+"mes": "2024-02",
+"plano": "Aluguéis e Condomínios",
+"valor": -41570.49
+},
+{
+"mes": "2024-02",
+"plano": "Amortização de Emprestimos",
+"valor": -11367.35
+},
+{
+"mes": "2024-02",
+"plano": "Aporte de Sócios Jean",
+"valor": 2059.0
+},
+{
+"mes": "2024-02",
+"plano": "Aviamentos e Acessórios",
+"valor": -8695.46
+},
+{
+"mes": "2024-02",
+"plano": "Bordado Industrial",
+"valor": -4985.41
+},
+{
+"mes": "2024-02",
+"plano": "Combustíveis",
+"valor": -1800.15
+},
+{
+"mes": "2024-02",
+"plano": "Comissão de Assessores",
+"valor": -9666.37
+},
+{
+"mes": "2024-02",
+"plano": "Compra de Computadores e Eletrônicos",
+"valor": -650.67
+},
+{
+"mes": "2024-02",
+"plano": "Compra de Máquinas e Equipamentos",
+"valor": -785.0
+},
+{
+"mes": "2024-02",
+"plano": "Compra de Móveis e Utensilios",
+"valor": -2400.9
+},
+{
+"mes": "2024-02",
+"plano": "Compra de Veículos",
+"valor": -6648.25
+},
+{
+"mes": "2024-02",
+"plano": "Consulta de Crédito Cliente",
+"valor": -434.91
+},
+{
+"mes": "2024-02",
+"plano": "Consórcio",
+"valor": -6517.74
+},
+{
+"mes": "2024-02",
+"plano": "Coquetéis, festas  e outros eventos",
+"valor": -19.9
+},
+{
+"mes": "2024-02",
+"plano": "Criação de Modelos",
+"valor": -36.0
+},
+{
+"mes": "2024-02",
+"plano": "Despesas com Documentos e Xerox",
+"valor": -29.45
+},
+{
+"mes": "2024-02",
+"plano": "Embalagens",
+"valor": -49.0
+},
+{
+"mes": "2024-02",
+"plano": "Empréstimos de Terceiros",
+"valor": -110538.69
+},
+{
+"mes": "2024-02",
+"plano": "Energia Elétrica",
+"valor": -1683.01
+},
+{
+"mes": "2024-02",
+"plano": "Entrada de Empréstimos",
+"valor": 113554.41
+},
+{
+"mes": "2024-02",
+"plano": "Etiquetas",
+"valor": -40.0
+},
+{
+"mes": "2024-02",
+"plano": "Facção",
+"valor": -38139.23
+},
+{
+"mes": "2024-02",
+"plano": "Fgts / Inss / Irrf / Irpf/darf",
+"valor": -7911.59
+},
+{
+"mes": "2024-02",
+"plano": "Frete e Transporte de Mercadorias",
+"valor": -2717.33
+},
+{
+"mes": "2024-02",
+"plano": "Férias",
+"valor": -157.4
+},
+{
+"mes": "2024-02",
+"plano": "Honorários Contábeis e Consultoria",
+"valor": -8681.59
+},
+{
+"mes": "2024-02",
+"plano": "Inadimplência / Ch dvlvd",
+"valor": -35033.13
+},
+{
+"mes": "2024-02",
+"plano": "Juros Cheque Especial",
+"valor": -2233.91
+},
+{
+"mes": "2024-02",
+"plano": "Juros Desconto de Cheques",
+"valor": -14044.39
+},
+{
+"mes": "2024-02",
+"plano": "Juros de Empréstimos",
+"valor": -8839.35
+},
+{
+"mes": "2024-02",
+"plano": "Lanches / Refeições",
+"valor": -1874.96
+},
+{
+"mes": "2024-02",
+"plano": "Lavanderia",
+"valor": -4581.5
+},
+{
+"mes": "2024-02",
+"plano": "Manutenção de Moveis e Utensílios",
+"valor": -504.9
+},
+{
+"mes": "2024-02",
+"plano": "Manutenção de Máquinas e Peças",
+"valor": -628.0
+},
+{
+"mes": "2024-02",
+"plano": "Manutenção de Veiculos e Estacionamento",
+"valor": -3133.02
+},
+{
+"mes": "2024-02",
+"plano": "Marketing",
+"valor": -8966.39
+},
+{
+"mes": "2024-02",
+"plano": "Material de Copa e Cozinha",
+"valor": -936.9
+},
+{
+"mes": "2024-02",
+"plano": "Material de Escritório",
+"valor": -319.3
+},
+{
+"mes": "2024-02",
+"plano": "Material de Limpeza e Higiene",
+"valor": -57.5
+},
+{
+"mes": "2024-02",
+"plano": "Multas e Juros por Atraso",
+"valor": -9889.55
+},
+{
+"mes": "2024-02",
+"plano": "Outras Entradas",
+"valor": 10.0
+},
+{
+"mes": "2024-02",
+"plano": "Outras taxas e Tributos",
+"valor": -299.42
+},
+{
+"mes": "2024-02",
+"plano": "Outros Insumos",
+"valor": -270.0
+},
+{
+"mes": "2024-02",
+"plano": "Pro Labore Sócios Erisvânia",
+"valor": -5310.97
+},
+{
+"mes": "2024-02",
+"plano": "Pro Labore Sócios Jean",
+"valor": -29395.67
+},
+{
+"mes": "2024-02",
+"plano": "Pro Labore Sócios Manuelly",
+"valor": -1283.1
+},
+{
+"mes": "2024-02",
+"plano": "Produção Externa",
+"valor": -2349.43
+},
+{
+"mes": "2024-02",
+"plano": "Recebimento de Adiantamento Colaboradores",
+"valor": 8165.34
+},
+{
+"mes": "2024-02",
+"plano": "Recebimento de Inadimplência",
+"valor": 41375.51
+},
+{
+"mes": "2024-02",
+"plano": "Recebimento de adiantamento Fornecedores",
+"valor": 9846.46
+},
+{
+"mes": "2024-02",
+"plano": "Receita com Aplicações",
+"valor": 0.05
+},
+{
+"mes": "2024-02",
+"plano": "Reembolso Frete Venda",
+"valor": 545.84
+},
+{
+"mes": "2024-02",
+"plano": "Resgate de Títulos / Aplicações",
+"valor": 700.0
+},
+{
+"mes": "2024-02",
+"plano": "Sacolas / Caixas / Fardos",
+"valor": -5125.45
+},
+{
+"mes": "2024-02",
+"plano": "Salarios e Ordenados",
+"valor": -41371.09
+},
+{
+"mes": "2024-02",
+"plano": "Segurança e Monitoramento",
+"valor": -50.0
+},
+{
+"mes": "2024-02",
+"plano": "Simples Nacional",
+"valor": -361.68
+},
+{
+"mes": "2024-02",
+"plano": "Taxas Bancárias",
+"valor": -4358.42
+},
+{
+"mes": "2024-02",
+"plano": "Taxas Boletos Bancários",
+"valor": -39.25
+},
+{
+"mes": "2024-02",
+"plano": "Taxas Site / Market Place",
+"valor": -14.98
+},
+{
+"mes": "2024-02",
+"plano": "Taxas de Recebimento de Cartão / Pic Pay",
+"valor": -1251.03
+},
+{
+"mes": "2024-02",
+"plano": "Tecidos",
+"valor": -111342.54
+},
+{
+"mes": "2024-02",
+"plano": "Telefonia Fixa e Internet",
+"valor": -539.75
+},
+{
+"mes": "2024-02",
+"plano": "Telefonia Móvel",
+"valor": -105.49
+},
+{
+"mes": "2024-02",
+"plano": "Treinamento / Cursos",
+"valor": -2199.7
+},
+{
+"mes": "2024-02",
+"plano": "Vale Transporte",
+"valor": -2093.23
+},
+{
+"mes": "2024-02",
+"plano": "Venda de Móveis, Máquinas e Equipamentos",
+"valor": 450.0
+},
+{
+"mes": "2024-02",
+"plano": "Vendas",
+"valor": 411017.97
+},
+{
+"mes": "2024-02",
+"plano": "Viagens e Estadias",
+"valor": -2337.44
+},
+{
+"mes": "2024-02",
+"plano": "Web Site / Sistema ERP / Software",
+"valor": -3286.0
+},
+{
+"mes": "2024-02",
+"plano": "Água e Esgoto",
+"valor": -777.38
+},
+{
+"mes": "2024-03",
+"plano": "Acabamento Externo",
+"valor": -2815.61
+},
+{
+"mes": "2024-03",
+"plano": "Acertos e Recisões",
+"valor": -950.0
+},
+{
+"mes": "2024-03",
+"plano": "Adiantamento a Colaboradores",
+"valor": -10589.99
+},
+{
+"mes": "2024-03",
+"plano": "Ajuda de Custo",
+"valor": -3401.29
+},
+{
+"mes": "2024-03",
+"plano": "Aluguéis e Condomínios",
+"valor": -29637.07
+},
+{
+"mes": "2024-03",
+"plano": "Amortização de Emprestimos",
+"valor": -9038.74
+},
+{
+"mes": "2024-03",
+"plano": "Aviamentos e Acessórios",
+"valor": -6638.5
+},
+{
+"mes": "2024-03",
+"plano": "Bonificação",
+"valor": -999.85
+},
+{
+"mes": "2024-03",
+"plano": "Bordado Industrial",
+"valor": -11925.17
+},
+{
+"mes": "2024-03",
+"plano": "Cartuchos e Tonners",
+"valor": -370.0
+},
+{
+"mes": "2024-03",
+"plano": "Combustíveis",
+"valor": -2265.9
+},
+{
+"mes": "2024-03",
+"plano": "Comissão de Assessores",
+"valor": -7825.37
+},
+{
+"mes": "2024-03",
+"plano": "Comissão de Vendedores",
+"valor": -1594.12
+},
+{
+"mes": "2024-03",
+"plano": "Compra de Computadores e Eletrônicos",
+"valor": -620.63
+},
+{
+"mes": "2024-03",
+"plano": "Compra de Veículos",
+"valor": -1505.12
+},
+{
+"mes": "2024-03",
+"plano": "Consulta de Crédito Cliente",
+"valor": -230.49
+},
+{
+"mes": "2024-03",
+"plano": "Consórcio",
+"valor": -6645.38
+},
+{
+"mes": "2024-03",
+"plano": "Coquetéis, festas  e outros eventos",
+"valor": -1204.42
+},
+{
+"mes": "2024-03",
+"plano": "Criação de Modelos",
+"valor": -11.0
+},
+{
+"mes": "2024-03",
+"plano": "Embalagens",
+"valor": -4733.95
+},
+{
+"mes": "2024-03",
+"plano": "Empréstimos de Terceiros",
+"valor": -77971.51
+},
+{
+"mes": "2024-03",
+"plano": "Energia Elétrica",
+"valor": -1881.7
+},
+{
+"mes": "2024-03",
+"plano": "Entrada de Empréstimos",
+"valor": 83274.51
+},
+{
+"mes": "2024-03",
+"plano": "Etiquetas",
+"valor": -335.0
+},
+{
+"mes": "2024-03",
+"plano": "Facção",
+"valor": -42788.19
+},
+{
+"mes": "2024-03",
+"plano": "Fgts / Inss / Irrf / Irpf/darf",
+"valor": -5235.91
+},
+{
+"mes": "2024-03",
+"plano": "Frete Venda",
+"valor": -218.74
+},
+{
+"mes": "2024-03",
+"plano": "Frete e Transporte de Mercadorias",
+"valor": -1953.59
+},
+{
+"mes": "2024-03",
+"plano": "Férias",
+"valor": -2734.74
+},
+{
+"mes": "2024-03",
+"plano": "Honorários Contábeis e Consultoria",
+"valor": -6112.0
+},
+{
+"mes": "2024-03",
+"plano": "Hora Extra",
+"valor": -604.61
+},
+{
+"mes": "2024-03",
+"plano": "Inadimplência / Ch dvlvd",
+"valor": -54136.54
+},
+{
+"mes": "2024-03",
+"plano": "Juros Cheque Especial",
+"valor": -1674.74
+},
+{
+"mes": "2024-03",
+"plano": "Juros Desconto de Cheques",
+"valor": -18940.26
+},
+{
+"mes": "2024-03",
+"plano": "Lanches / Refeições",
+"valor": -2884.16
+},
+{
+"mes": "2024-03",
+"plano": "Lavanderia",
+"valor": -9230.83
+},
+{
+"mes": "2024-03",
+"plano": "Manutenção de Moveis e Utensílios",
+"valor": -30.0
+},
+{
+"mes": "2024-03",
+"plano": "Manutenção de Máquinas e Peças",
+"valor": -1185.5
+},
+{
+"mes": "2024-03",
+"plano": "Manutenção de Veiculos e Estacionamento",
+"valor": -1305.5
+},
+{
+"mes": "2024-03",
+"plano": "Marketing",
+"valor": -6169.02
+},
+{
+"mes": "2024-03",
+"plano": "Material de Copa e Cozinha",
+"valor": -257.5
+},
+{
+"mes": "2024-03",
+"plano": "Material de Escritório",
+"valor": -1477.85
+},
+{
+"mes": "2024-03",
+"plano": "Material de Limpeza e Higiene",
+"valor": -414.15
+},
+{
+"mes": "2024-03",
+"plano": "Multas e Juros Recebidos",
+"valor": 31.78
+},
+{
+"mes": "2024-03",
+"plano": "Multas e Juros por Atraso",
+"valor": -7956.04
+},
+{
+"mes": "2024-03",
+"plano": "Outras Entradas",
+"valor": 0.46
+},
+{
+"mes": "2024-03",
+"plano": "Outras taxas e Tributos",
+"valor": -958.99
+},
+{
+"mes": "2024-03",
+"plano": "Outros Insumos",
+"valor": -311.3
+},
+{
+"mes": "2024-03",
+"plano": "Pro Labore Sócios Erisvânia",
+"valor": -9408.98
+},
+{
+"mes": "2024-03",
+"plano": "Pro Labore Sócios Jean",
+"valor": -52274.74
+},
+{
+"mes": "2024-03",
+"plano": "Pro Labore Sócios Manuelly",
+"valor": -1283.08
+},
+{
+"mes": "2024-03",
+"plano": "Produção Externa",
+"valor": -3819.26
+},
+{
+"mes": "2024-03",
+"plano": "Recebimento de Adiantamento Colaboradores",
+"valor": 11096.41
+},
+{
+"mes": "2024-03",
+"plano": "Recebimento de Inadimplência",
+"valor": 51062.38
+},
+{
+"mes": "2024-03",
+"plano": "Recebimento de adiantamento Fornecedores",
+"valor": 196.23
+},
+{
+"mes": "2024-03",
+"plano": "Receita com Aplicações",
+"valor": 0.34
+},
+{
+"mes": "2024-03",
+"plano": "Recuperação de despesas",
+"valor": 2015.0
+},
+{
+"mes": "2024-03",
+"plano": "Reembolso Frete Venda",
+"valor": 313.6
+},
+{
+"mes": "2024-03",
+"plano": "Reembolsos Diversos",
+"valor": -890.6
+},
+{
+"mes": "2024-03",
+"plano": "Resgate de Títulos / Aplicações",
+"valor": 80000.01
+},
+{
+"mes": "2024-03",
+"plano": "Salarios e Ordenados",
+"valor": -38541.75
+},
+{
+"mes": "2024-03",
+"plano": "Segurança e Monitoramento",
+"valor": -50.0
+},
+{
+"mes": "2024-03",
+"plano": "Serviços de Terceiros",
+"valor": -915.96
+},
+{
+"mes": "2024-03",
+"plano": "Taxas Bancárias",
+"valor": -1951.36
+},
+{
+"mes": "2024-03",
+"plano": "Taxas Boletos Bancários",
+"valor": -82.75
+},
+{
+"mes": "2024-03",
+"plano": "Taxas Site / Market Place",
+"valor": -359.6
+},
+{
+"mes": "2024-03",
+"plano": "Taxas de Recebimento de Cartão / Pic Pay",
+"valor": -1079.32
+},
+{
+"mes": "2024-03",
+"plano": "Tecidos",
+"valor": -143127.64
+},
+{
+"mes": "2024-03",
+"plano": "Telefonia Fixa e Internet",
+"valor": -359.8
+},
+{
+"mes": "2024-03",
+"plano": "Telefonia Móvel",
+"valor": -335.99
+},
+{
+"mes": "2024-03",
+"plano": "Treinamento / Cursos",
+"valor": -2199.7
+},
+{
+"mes": "2024-03",
+"plano": "Vale Transporte",
+"valor": -3006.01
+},
+{
+"mes": "2024-03",
+"plano": "Vendas",
+"valor": 389610.86
+},
+{
+"mes": "2024-03",
+"plano": "Web Site / Sistema ERP / Software",
+"valor": -1797.99
+},
+{
+"mes": "2024-04",
+"plano": "Acabamento Externo",
+"valor": -952.2
+},
+{
+"mes": "2024-04",
+"plano": "Acertos e Recisões",
+"valor": -3116.42
+},
+{
+"mes": "2024-04",
+"plano": "Adiantamento a Colaboradores",
+"valor": -23600.0
+},
+{
+"mes": "2024-04",
+"plano": "Adiantamento a Fornecedores",
+"valor": -9100.0
+},
+{
+"mes": "2024-04",
+"plano": "Ajuda de Custo",
+"valor": -4000.0
+},
+{
+"mes": "2024-04",
+"plano": "Aluguéis e Condomínios",
+"valor": -28782.22
+},
+{
+"mes": "2024-04",
+"plano": "Amortização de Emprestimos",
+"valor": -4538.74
+},
+{
+"mes": "2024-04",
+"plano": "Aplicações Financeiras",
+"valor": -12321.4
+},
+{
+"mes": "2024-04",
+"plano": "Aviamentos e Acessórios",
+"valor": -20790.95
+},
+{
+"mes": "2024-04",
+"plano": "Bordado Industrial",
+"valor": -4111.49
+},
+{
+"mes": "2024-04",
+"plano": "Combustíveis",
+"valor": -1661.3
+},
+{
+"mes": "2024-04",
+"plano": "Comissão de Assessores",
+"valor": -9265.91
+},
+{
+"mes": "2024-04",
+"plano": "Compra de Computadores e Eletrônicos",
+"valor": -2952.63
+},
+{
+"mes": "2024-04",
+"plano": "Compra de Máquinas e Equipamentos",
+"valor": -1630.0
+},
+{
+"mes": "2024-04",
+"plano": "Compra de Veículos",
+"valor": -6470.89
+},
+{
+"mes": "2024-04",
+"plano": "Consulta de Crédito Cliente",
+"valor": -461.86
+},
+{
+"mes": "2024-04",
+"plano": "Consórcio",
+"valor": -6697.46
+},
+{
+"mes": "2024-04",
+"plano": "Coquetéis, festas  e outros eventos",
+"valor": -155.0
+},
+{
+"mes": "2024-04",
+"plano": "Despesa com Sindicatos",
+"valor": -163.36
+},
+{
+"mes": "2024-04",
+"plano": "Despesa não Identificada",
+"valor": -106.0
+},
+{
+"mes": "2024-04",
+"plano": "Despesas com Cartorio",
+"valor": -25.23
+},
+{
+"mes": "2024-04",
+"plano": "Embalagens",
+"valor": -527.74
+},
+{
+"mes": "2024-04",
+"plano": "Empréstimos de Terceiros",
+"valor": -103068.62
+},
+{
+"mes": "2024-04",
+"plano": "Energia Elétrica",
+"valor": -1543.06
+},
+{
+"mes": "2024-04",
+"plano": "Entrada de Empréstimos",
+"valor": 47999.96
+},
+{
+"mes": "2024-04",
+"plano": "Etiquetas",
+"valor": -1920.0
+},
+{
+"mes": "2024-04",
+"plano": "Facção",
+"valor": -67038.41
+},
+{
+"mes": "2024-04",
+"plano": "Fgts / Inss / Irrf / Irpf/darf",
+"valor": -21847.24
+},
+{
+"mes": "2024-04",
+"plano": "Frete Venda",
+"valor": -233.05
+},
+{
+"mes": "2024-04",
+"plano": "Frete e Transporte de Mercadorias",
+"valor": -3519.19
+},
+{
+"mes": "2024-04",
+"plano": "Honorários Contábeis e Consultoria",
+"valor": -6142.5
+},
+{
+"mes": "2024-04",
+"plano": "Inadimplência / Ch dvlvd",
+"valor": -35906.87
+},
+{
+"mes": "2024-04",
+"plano": "Juros Cheque Especial",
+"valor": -2053.24
+},
+{
+"mes": "2024-04",
+"plano": "Juros Desconto de Cheques",
+"valor": -46073.53
+},
+{
+"mes": "2024-04",
+"plano": "Juros de Empréstimos",
+"valor": -3503.87
+},
+{
+"mes": "2024-04",
+"plano": "Lanches / Refeições",
+"valor": -1950.22
+},
+{
+"mes": "2024-04",
+"plano": "Lavanderia",
+"valor": -4268.12
+},
+{
+"mes": "2024-04",
+"plano": "Manutenção de Imóveis",
+"valor": -147.64
+},
+{
+"mes": "2024-04",
+"plano": "Manutenção de Moveis e Utensílios",
+"valor": -19.6
+},
+{
+"mes": "2024-04",
+"plano": "Manutenção de Máquinas e Peças",
+"valor": -1419.2
+},
+{
+"mes": "2024-04",
+"plano": "Manutenção de Veiculos e Estacionamento",
+"valor": -2841.06
+},
+{
+"mes": "2024-04",
+"plano": "Marketing",
+"valor": -6365.0
+},
+{
+"mes": "2024-04",
+"plano": "Material de Copa e Cozinha",
+"valor": -555.83
+},
+{
+"mes": "2024-04",
+"plano": "Material de Limpeza e Higiene",
+"valor": -612.19
+},
+{
+"mes": "2024-04",
+"plano": "Melhorias / Reformas e Construção",
+"valor": -5553.25
+},
+{
+"mes": "2024-04",
+"plano": "Multas e Juros Recebidos",
+"valor": 209.17
+},
+{
+"mes": "2024-04",
+"plano": "Multas e Juros por Atraso",
+"valor": -6822.8
+},
+{
+"mes": "2024-04",
+"plano": "Outras Entradas",
+"valor": 1360.0
+},
+{
+"mes": "2024-04",
+"plano": "Outras taxas e Tributos",
+"valor": -45.38
+},
+{
+"mes": "2024-04",
+"plano": "Outros Insumos",
+"valor": -265.91
+},
+{
+"mes": "2024-04",
+"plano": "Pro Labore Sócios Erisvânia",
+"valor": -10100.0
+},
+{
+"mes": "2024-04",
+"plano": "Pro Labore Sócios Jean",
+"valor": -19697.86
+},
+{
+"mes": "2024-04",
+"plano": "Produção Externa",
+"valor": -6211.47
+},
+{
+"mes": "2024-04",
+"plano": "Recebimento de Adiantamento Colaboradores",
+"valor": 7832.0
+},
+{
+"mes": "2024-04",
+"plano": "Recebimento de Inadimplência",
+"valor": 28455.6
+},
+{
+"mes": "2024-04",
+"plano": "Recebimento de adiantamento Fornecedores",
+"valor": 6995.92
+},
+{
+"mes": "2024-04",
+"plano": "Receita com Aplicações",
+"valor": 0.14
+},
+{
+"mes": "2024-04",
+"plano": "Recuperação de despesas",
+"valor": 2503.38
+},
+{
+"mes": "2024-04",
+"plano": "Reembolso Frete Venda",
+"valor": 709.4
+},
+{
+"mes": "2024-04",
+"plano": "Salarios e Ordenados",
+"valor": -55789.58
+},
+{
+"mes": "2024-04",
+"plano": "Segurança e Monitoramento",
+"valor": -50.0
+},
+{
+"mes": "2024-04",
+"plano": "Serviços de Terceiros",
+"valor": -300.0
+},
+{
+"mes": "2024-04",
+"plano": "Simples Nacional",
+"valor": -472.06
+},
+{
+"mes": "2024-04",
+"plano": "Taxas Bancárias",
+"valor": -1196.34
+},
+{
+"mes": "2024-04",
+"plano": "Taxas Boletos Bancários",
+"valor": -288.0
+},
+{
+"mes": "2024-04",
+"plano": "Taxas Site / Market Place",
+"valor": -1822.76
+},
+{
+"mes": "2024-04",
+"plano": "Taxas de Recebimento de Cartão / Pic Pay",
+"valor": -3705.5
+},
+{
+"mes": "2024-04",
+"plano": "Tecidos",
+"valor": -173186.84
+},
+{
+"mes": "2024-04",
+"plano": "Telefonia Fixa e Internet",
+"valor": -360.7
+},
+{
+"mes": "2024-04",
+"plano": "Telefonia Móvel",
+"valor": -103.59
+},
+{
+"mes": "2024-04",
+"plano": "Travete",
+"valor": -558.55
+},
+{
+"mes": "2024-04",
+"plano": "Treinamento / Cursos",
+"valor": -2199.7
+},
+{
+"mes": "2024-04",
+"plano": "Vale Transporte",
+"valor": -2642.0
+},
+{
+"mes": "2024-04",
+"plano": "Vendas",
+"valor": 651805.75
+},
+{
+"mes": "2024-04",
+"plano": "Web Site / Sistema ERP / Software",
+"valor": -1642.99
+},
+{
+"mes": "2024-04",
+"plano": "Água e Esgoto",
+"valor": -502.27
+},
+{
+"mes": "2024-05",
+"plano": "Acabamento Externo",
+"valor": -3258.5
+},
+{
+"mes": "2024-05",
+"plano": "Acertos e Recisões",
+"valor": -2774.25
+},
+{
+"mes": "2024-05",
+"plano": "Adiantamento a Colaboradores",
+"valor": -14590.0
+},
+{
+"mes": "2024-05",
+"plano": "Adiantamento a Fornecedores",
+"valor": -6275.0
+},
+{
+"mes": "2024-05",
+"plano": "Ajuda de Custo",
+"valor": -3500.0
+},
+{
+"mes": "2024-05",
+"plano": "Aluguéis e Condomínios",
+"valor": -27985.67
+},
+{
+"mes": "2024-05",
+"plano": "Aplicações Financeiras",
+"valor": -9665.25
+},
+{
+"mes": "2024-05",
+"plano": "Aviamentos e Acessórios",
+"valor": -29411.68
+},
+{
+"mes": "2024-05",
+"plano": "Bordado Industrial",
+"valor": -12631.42
+},
+{
+"mes": "2024-05",
+"plano": "Combustíveis",
+"valor": -2279.92
+},
+{
+"mes": "2024-05",
+"plano": "Comissão de Assessores",
+"valor": -8860.84
+},
+{
+"mes": "2024-05",
+"plano": "Comissão de Vendedores",
+"valor": -1360.27
+},
+{
+"mes": "2024-05",
+"plano": "Compra de Computadores e Eletrônicos",
+"valor": -2947.47
+},
+{
+"mes": "2024-05",
+"plano": "Compra de Veículos",
+"valor": -3321.22
+},
+{
+"mes": "2024-05",
+"plano": "Consulta de Crédito Cliente",
+"valor": -1186.11
+},
+{
+"mes": "2024-05",
+"plano": "Consórcio",
+"valor": -7480.48
+},
+{
+"mes": "2024-05",
+"plano": "Despesa não Identificada",
+"valor": -400.0
+},
+{
+"mes": "2024-05",
+"plano": "Embalagens",
+"valor": -5489.0
+},
+{
+"mes": "2024-05",
+"plano": "Empréstimos de Terceiros",
+"valor": -96462.85
+},
+{
+"mes": "2024-05",
+"plano": "Energia Elétrica",
+"valor": -3416.58
+},
+{
+"mes": "2024-05",
+"plano": "Entrada de Empréstimos",
+"valor": 81656.12
+},
+{
+"mes": "2024-05",
+"plano": "Etiquetas",
+"valor": -4272.09
+},
+{
+"mes": "2024-05",
+"plano": "Facção",
+"valor": -100062.73
+},
+{
+"mes": "2024-05",
+"plano": "Fgts / Inss / Irrf / Irpf/darf",
+"valor": -3958.52
+},
+{
+"mes": "2024-05",
+"plano": "Frete Venda",
+"valor": -380.75
+},
+{
+"mes": "2024-05",
+"plano": "Frete e Transporte de Mercadorias",
+"valor": -6637.1
+},
+{
+"mes": "2024-05",
+"plano": "Honorários Contábeis e Consultoria",
+"valor": -5522.24
+},
+{
+"mes": "2024-05",
+"plano": "Hora Extra",
+"valor": -126.72
+},
+{
+"mes": "2024-05",
+"plano": "Inadimplência / Ch dvlvd",
+"valor": -17159.69
+},
+{
+"mes": "2024-05",
+"plano": "Juros Cheque Especial",
+"valor": -2076.53
+},
+{
+"mes": "2024-05",
+"plano": "Juros Desconto de Cheques",
+"valor": -28509.69
+},
+{
+"mes": "2024-05",
+"plano": "Juros de Empréstimos",
+"valor": -16602.77
+},
+{
+"mes": "2024-05",
+"plano": "Lanches / Refeições",
+"valor": -2760.18
+},
+{
+"mes": "2024-05",
+"plano": "Lavanderia",
+"valor": -6088.15
+},
+{
+"mes": "2024-05",
+"plano": "Manutenção de Imóveis",
+"valor": -29.0
+},
+{
+"mes": "2024-05",
+"plano": "Manutenção de Moveis e Utensílios",
+"valor": -102.0
+},
+{
+"mes": "2024-05",
+"plano": "Manutenção de Máquinas e Peças",
+"valor": -1475.0
+},
+{
+"mes": "2024-05",
+"plano": "Manutenção de Veiculos e Estacionamento",
+"valor": -2170.03
+},
+{
+"mes": "2024-05",
+"plano": "Marketing",
+"valor": -14357.62
+},
+{
+"mes": "2024-05",
+"plano": "Material de Copa e Cozinha",
+"valor": -10.0
+},
+{
+"mes": "2024-05",
+"plano": "Material de Escritório",
+"valor": -957.0
+},
+{
+"mes": "2024-05",
+"plano": "Material de Limpeza e Higiene",
+"valor": -325.15
+},
+{
+"mes": "2024-05",
+"plano": "Melhorias / Reformas e Construção",
+"valor": -16869.65
+},
+{
+"mes": "2024-05",
+"plano": "Multas e Juros por Atraso",
+"valor": -3512.08
+},
+{
+"mes": "2024-05",
+"plano": "Outras taxas e Tributos",
+"valor": -295.97
+},
+{
+"mes": "2024-05",
+"plano": "Outros Insumos",
+"valor": -197.2
+},
+{
+"mes": "2024-05",
+"plano": "Pro Labore Sócios Erisvânia",
+"valor": -11025.88
+},
+{
+"mes": "2024-05",
+"plano": "Pro Labore Sócios Jean",
+"valor": -23029.18
+},
+{
+"mes": "2024-05",
+"plano": "Produção Externa",
+"valor": -7566.51
+},
+{
+"mes": "2024-05",
+"plano": "Recebimento de Adiantamento Colaboradores",
+"valor": 9887.46
+},
+{
+"mes": "2024-05",
+"plano": "Recebimento de Inadimplência",
+"valor": 5232.57
+},
+{
+"mes": "2024-05",
+"plano": "Recebimento de adiantamento Fornecedores",
+"valor": 9367.5
+},
+{
+"mes": "2024-05",
+"plano": "Reembolso Frete Venda",
+"valor": 647.3
+},
+{
+"mes": "2024-05",
+"plano": "Salarios e Ordenados",
+"valor": -53846.68
+},
+{
+"mes": "2024-05",
+"plano": "Segurança e Monitoramento",
+"valor": -703.56
+},
+{
+"mes": "2024-05",
+"plano": "Simples Nacional",
+"valor": -17213.48
+},
+{
+"mes": "2024-05",
+"plano": "Taxas Bancárias",
+"valor": -2632.46
+},
+{
+"mes": "2024-05",
+"plano": "Taxas Boletos Bancários",
+"valor": -460.15
+},
+{
+"mes": "2024-05",
+"plano": "Taxas Site / Market Place",
+"valor": -3134.32
+},
+{
+"mes": "2024-05",
+"plano": "Taxas de Recebimento de Cartão / Pic Pay",
+"valor": -680.4
+},
+{
+"mes": "2024-05",
+"plano": "Tecidos",
+"valor": -209516.06
+},
+{
+"mes": "2024-05",
+"plano": "Telefonia Fixa e Internet",
+"valor": -468.78
+},
+{
+"mes": "2024-05",
+"plano": "Telefonia Móvel",
+"valor": -395.74
+},
+{
+"mes": "2024-05",
+"plano": "Travete",
+"valor": -1375.6
+},
+{
+"mes": "2024-05",
+"plano": "Treinamento / Cursos",
+"valor": -1599.7
+},
+{
+"mes": "2024-05",
+"plano": "Vale Transporte",
+"valor": -3217.89
+},
+{
+"mes": "2024-05",
+"plano": "Vendas",
+"valor": 694053.72
+},
+{
+"mes": "2024-05",
+"plano": "Viagens e Estadias",
+"valor": -1530.74
+},
+{
+"mes": "2024-05",
+"plano": "Web Site / Sistema ERP / Software",
+"valor": -1377.99
+},
+{
+"mes": "2024-05",
+"plano": "Água e Esgoto",
+"valor": -1236.27
+},
+{
+"mes": "2024-06",
+"plano": "Acabamento Externo",
+"valor": -5798.9
+},
+{
+"mes": "2024-06",
+"plano": "Acertos e Recisões",
+"valor": -18268.97
+},
+{
+"mes": "2024-06",
+"plano": "Adiantamento a Colaboradores",
+"valor": -9240.0
+},
+{
+"mes": "2024-06",
+"plano": "Adiantamento a Fornecedores",
+"valor": -321.0
+},
+{
+"mes": "2024-06",
+"plano": "Ajuda de Custo",
+"valor": -4099.99
+},
+{
+"mes": "2024-06",
+"plano": "Aluguéis e Condomínios",
+"valor": -21608.0
+},
+{
+"mes": "2024-06",
+"plano": "Amortização de Emprestimos",
+"valor": -1828.61
+},
+{
+"mes": "2024-06",
+"plano": "Aplicações Financeiras",
+"valor": -3846.0
+},
+{
+"mes": "2024-06",
+"plano": "Aviamentos e Acessórios",
+"valor": -25522.6
+},
+{
+"mes": "2024-06",
+"plano": "Bonificação",
+"valor": -259.9
+},
+{
+"mes": "2024-06",
+"plano": "Bordado Industrial",
+"valor": -14359.78
+},
+{
+"mes": "2024-06",
+"plano": "Combustíveis",
+"valor": -1465.7
+},
+{
+"mes": "2024-06",
+"plano": "Comissão Produtividade",
+"valor": -286.0
+},
+{
+"mes": "2024-06",
+"plano": "Comissão de Assessores",
+"valor": -10885.85
+},
+{
+"mes": "2024-06",
+"plano": "Comissão de Vendedores",
+"valor": -884.5
+},
+{
+"mes": "2024-06",
+"plano": "Compra de Computadores e Eletrônicos",
+"valor": -2631.5
+},
+{
+"mes": "2024-06",
+"plano": "Compra de Móveis e Utensilios",
+"valor": -548.99
+},
+{
+"mes": "2024-06",
+"plano": "Compra de Veículos",
+"valor": -3309.76
+},
+{
+"mes": "2024-06",
+"plano": "Consulta de Crédito Cliente",
+"valor": -1240.9
+},
+{
+"mes": "2024-06",
+"plano": "Consórcio",
+"valor": -7491.05
+},
+{
+"mes": "2024-06",
+"plano": "Coquetéis, festas  e outros eventos",
+"valor": -388.62
+},
+{
+"mes": "2024-06",
+"plano": "Despesas com Documentos e Xerox",
+"valor": -8.42
+},
+{
+"mes": "2024-06",
+"plano": "Embalagens",
+"valor": -4736.92
+},
+{
+"mes": "2024-06",
+"plano": "Empréstimos de Terceiros",
+"valor": -67938.55
+},
+{
+"mes": "2024-06",
+"plano": "Energia Elétrica",
+"valor": -2549.72
+},
+{
+"mes": "2024-06",
+"plano": "Entrada de Empréstimos",
+"valor": 29382.01
+},
+{
+"mes": "2024-06",
+"plano": "Etiquetas",
+"valor": -7823.72
+},
+{
+"mes": "2024-06",
+"plano": "Facção",
+"valor": -114492.31
+},
+{
+"mes": "2024-06",
+"plano": "Fgts / Inss / Irrf / Irpf/darf",
+"valor": -11441.8
+},
+{
+"mes": "2024-06",
+"plano": "Frete Venda",
+"valor": -106.7
+},
+{
+"mes": "2024-06",
+"plano": "Frete e Transporte de Mercadorias",
+"valor": -5397.44
+},
+{
+"mes": "2024-06",
+"plano": "Inadimplência / Ch dvlvd",
+"valor": -7835.61
+},
+{
+"mes": "2024-06",
+"plano": "Investimentos Tecnologia",
+"valor": -14.9
+},
+{
+"mes": "2024-06",
+"plano": "Juros Cheque Especial",
+"valor": -2214.05
+},
+{
+"mes": "2024-06",
+"plano": "Juros Desconto de Cheques",
+"valor": -24496.41
+},
+{
+"mes": "2024-06",
+"plano": "Juros de Empréstimos",
+"valor": -21884.39
+},
+{
+"mes": "2024-06",
+"plano": "Lanches / Refeições",
+"valor": -1812.44
+},
+{
+"mes": "2024-06",
+"plano": "Manutenção de Imóveis",
+"valor": -17.5
+},
+{
+"mes": "2024-06",
+"plano": "Manutenção de Máquinas e Peças",
+"valor": -750.0
+},
+{
+"mes": "2024-06",
+"plano": "Manutenção de Veiculos e Estacionamento",
+"valor": -1885.53
+},
+{
+"mes": "2024-06",
+"plano": "Marketing",
+"valor": -6330.0
+},
+{
+"mes": "2024-06",
+"plano": "Material de Copa e Cozinha",
+"valor": -652.05
+},
+{
+"mes": "2024-06",
+"plano": "Material de Escritório",
+"valor": -475.3
+},
+{
+"mes": "2024-06",
+"plano": "Material de Limpeza e Higiene",
+"valor": -178.07
+},
+{
+"mes": "2024-06",
+"plano": "Melhorias / Reformas e Construção",
+"valor": -10903.07
+},
+{
+"mes": "2024-06",
+"plano": "Multas e Juros Recebidos",
+"valor": 177.9
+},
+{
+"mes": "2024-06",
+"plano": "Multas e Juros por Atraso",
+"valor": -2472.11
+},
+{
+"mes": "2024-06",
+"plano": "Outros Insumos",
+"valor": -303.83
+},
+{
+"mes": "2024-06",
+"plano": "Pro Labore Sócios Erisvânia",
+"valor": -10000.0
+},
+{
+"mes": "2024-06",
+"plano": "Pro Labore Sócios Jean",
+"valor": -18568.56
+},
+{
+"mes": "2024-06",
+"plano": "Produção Externa",
+"valor": -10551.34
+},
+{
+"mes": "2024-06",
+"plano": "Recebimento de Adiantamento Colaboradores",
+"valor": 12177.77
+},
+{
+"mes": "2024-06",
+"plano": "Recebimento de Inadimplência",
+"valor": 4315.06
+},
+{
+"mes": "2024-06",
+"plano": "Recebimento de adiantamento Fornecedores",
+"valor": 3734.85
+},
+{
+"mes": "2024-06",
+"plano": "Receita com Aplicações",
+"valor": 0.61
+},
+{
+"mes": "2024-06",
+"plano": "Recuperação de despesas",
+"valor": 3782.23
+},
+{
+"mes": "2024-06",
+"plano": "Reembolso Frete Venda",
+"valor": 258.9
+},
+{
+"mes": "2024-06",
+"plano": "Reembolsos Diversos",
+"valor": -4328.55
+},
+{
+"mes": "2024-06",
+"plano": "Salarios e Ordenados",
+"valor": -60696.65
+},
+{
+"mes": "2024-06",
+"plano": "Segurança e Monitoramento",
+"valor": -703.56
+},
+{
+"mes": "2024-06",
+"plano": "Taxas Bancárias",
+"valor": -1465.06
+},
+{
+"mes": "2024-06",
+"plano": "Taxas Boletos Bancários",
+"valor": -179.3
+},
+{
+"mes": "2024-06",
+"plano": "Taxas Site / Market Place",
+"valor": -5419.74
+},
+{
+"mes": "2024-06",
+"plano": "Taxas de Recebimento de Cartão / Pic Pay",
+"valor": -2160.54
+},
+{
+"mes": "2024-06",
+"plano": "Taxi e Moto-taxi",
+"valor": -20.0
+},
+{
+"mes": "2024-06",
+"plano": "Tecidos",
+"valor": -205046.82
+},
+{
+"mes": "2024-06",
+"plano": "Telefonia Fixa e Internet",
+"valor": -370.11
+},
+{
+"mes": "2024-06",
+"plano": "Telefonia Móvel",
+"valor": -445.99
+},
+{
+"mes": "2024-06",
+"plano": "Travete",
+"valor": -890.19
+},
+{
+"mes": "2024-06",
+"plano": "Vale Transporte",
+"valor": -3064.8
+},
+{
+"mes": "2024-06",
+"plano": "Vendas",
+"valor": 664526.58
+},
+{
+"mes": "2024-06",
+"plano": "Viagens e Estadias",
+"valor": -1525.8
+},
+{
+"mes": "2024-06",
+"plano": "Web Site / Sistema ERP / Software",
+"valor": -1377.99
+},
+{
+"mes": "2024-06",
+"plano": "Água e Esgoto",
+"valor": -529.96
+}
+],
+"drJunho": {
+"mes": "2024-06",
+"linhas": [
+[
+"RECEITA OPERACIONAL",
+672882.7699999991
+],
+[
+"Vendas",
+664526.579999999
+],
+[
+"Recebimento de Inadimplência",
+4315.060000000001
+],
+[
+"Recuperação de despesas",
+3782.23
+],
+[
+"Reembolso Frete Venda",
+258.9
+],
+[
+"DESPESA COM PESSOAL",
+-128213.11
+],
+[
+"Salarios e Ordenados",
+-60696.649999999994
+],
+[
+"Acertos e Recisões",
+-18268.969999999998
+],
+[
+"Ajuda de Custo",
+-4099.99
+],
+[
+"Bonificação",
+-259.9
+],
+[
+"Fgts / Inss / Irrf / Irpf/darf",
+-11441.8
+],
+[
+"Lanches / Refeições",
+-1812.4400000000003
+],
+[
+"Pro Labore Sócios Erisvânia",
+-10000.0
+],
+[
+"Pro Labore Sócios Jean",
+-18568.559999999998
+],
+[
+"Vale Transporte",
+-3064.7999999999997
+],
+[
+"DESPESAS ADMINISTRATIVAS",
+-45919.21000000001
+],
+[
+"Água e Esgoto",
+-529.96
+],
+[
+"Aluguéis e Condomínios",
+-21608.0
+],
+[
+"Combustíveis",
+-1465.7
+],
+[
+"Consulta de Crédito Cliente",
+-1240.9
+],
+[
+"Coquetéis, festas  e outros eventos",
+-388.62
+],
+[
+"Despesas com Documentos e Xerox",
+-8.42
+],
+[
+"Energia Elétrica",
+-2549.72
+],
+[
+"Frete e Transporte de Mercadorias",
+-5397.44
+],
+[
+"Manutenção de Imóveis",
+-17.5
+],
+[
+"Manutenção de Máquinas e Peças",
+-750.0
+],
+[
+"Manutenção de Veiculos e Estacionamento",
+-1885.53
+],
+[
+"Material de Copa e Cozinha",
+-652.0500000000001
+],
+[
+"Material de Escritório",
+-475.3
+],
+[
+"Material de Limpeza e Higiene",
+-178.07000000000002
+],
+[
+"Reembolsos Diversos",
+-4328.55
+],
+[
+"Segurança e Monitoramento",
+-703.56
+],
+[
+"Taxi e Moto-taxi",
+-20.0
+],
+[
+"Telefonia Fixa e Internet",
+-370.11
+],
+[
+"Telefonia Móvel",
+-445.99
+],
+[
+"Viagens e Estadias",
+-1525.8
+],
+[
+"Web Site / Sistema ERP / Software",
+-1377.99
+],
+[
+"CUSTO DE PRODUÇÃO",
+-389812.41
+],
+[
+"Acabamento Externo",
+-5798.9
+],
+[
+"Aviamentos e Acessórios",
+-25522.6
+],
+[
+"Bordado Industrial",
+-14359.779999999999
+],
+[
+"Comissão Produtividade",
+-286.0
+],
+[
+"Embalagens",
+-4736.92
+],
+[
+"Etiquetas",
+-7823.72
+],
+[
+"Facção",
+-114492.31
+],
+[
+"Outros Insumos",
+-303.83
+],
+[
+"Produção Externa",
+-10551.34
+],
+[
+"Tecidos",
+-205046.82000000004
+],
+[
+"Travete",
+-890.19
+],
+[
+"DESPESAS COM VENDAS",
+-28382.500000000004
+],
+[
+"Comissão de Assessores",
+-10885.85
+],
+[
+"Comissão de Vendedores",
+-884.5
+],
+[
+"Frete Venda",
+-106.70000000000002
+],
+[
+"Inadimplência / Ch dvlvd",
+-7835.610000000001
+],
+[
+"Marketing",
+-6330.0
+],
+[
+"Taxas Boletos Bancários",
+-179.3
+],
+[
+"Taxas de Recebimento de Cartão / Pic Pay",
+-2160.54
+],
+[
+"INVESTIMENTOS E RETIRADAS",
+-98512.43
+],
+[
+"Amortização de Emprestimos",
+-1828.61
+],
+[
+"Aplicações Financeiras",
+-3846.0
+],
+[
+"Compra de Computadores e Eletrônicos",
+-2631.5
+],
+[
+"Compra de Móveis e Utensilios",
+-548.99
+],
+[
+"Compra de Veículos",
+-3309.76
+],
+[
+"Consórcio",
+-7491.05
+],
+[
+"Empréstimos de Terceiros",
+-67938.55
+],
+[
+"Investimentos Tecnologia",
+-14.9
+],
+[
+"Melhorias / Reformas e Construção",
+-10903.07
+],
+[
+"RECEITA NÃO-OPERACIONAL",
+29560.520000000004
+],
+[
+"Entrada de Empréstimos",
+29382.010000000002
+],
+[
+"Multas e Juros Recebidos",
+177.89999999999998
+],
+[
+"Receita com Aplicações",
+0.61
+],
+[
+"DESPESAS FINANCEIRAS",
+-52532.01999999999
+],
+[
+"Juros Cheque Especial",
+-2214.05
+],
+[
+"Juros de Empréstimos",
+-21884.39
+],
+[
+"Juros Desconto de Cheques",
+-24496.409999999996
+],
+[
+"Multas e Juros por Atraso",
+-2472.1100000000006
+],
+[
+"Taxas Bancárias",
+-1465.0600000000002
+],
+[
+"TRANSITÓRIO ENTRADA",
+15912.62
+],
+[
+"Recebimento de Adiantamento Colaboradores",
+12177.77
+],
+[
+"Recebimento de adiantamento Fornecedores",
+3734.85
+],
+[
+"TRANSITÓRIO SAÍDA",
+-9561.0
+],
+[
+"Adiantamento a Colaboradores",
+-9240.0
+],
+[
+"Adiantamento a Fornecedores",
+-321.0
+],
+[
+"Taxas Site / Market Place",
+-5419.74
+],
+[
+"Taxas Site / Market Place",
+-5419.74
+],
+[
+"Total geral",
+-39996.51000000092
+]
+]
+}
+}

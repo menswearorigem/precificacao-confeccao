@@ -70,6 +70,7 @@ const precoPorCanalRoutes = require('./routes/precoPorCanal.routes');
 const saudeIntegracaoRoutes = require('./routes/saudeIntegracao.routes');
 const financeiroRoutes = require('./routes/financeiro.routes');
 const financeiroNucleoRoutes = require('./routes/financeiroNucleo.routes');
+const fechamentoMesRoutes = require('./routes/fechamentoMes.routes');
 const financeiroPonteRoutes = require('./routes/financeiroPonte.routes');
 const auditoriaRoutes = require('./routes/auditoria.routes');
 const emailRoutes = require('./routes/email.routes');
@@ -396,6 +397,9 @@ function createApp() {
   // fluxo de caixa e DRE. Mesma chave de modulo `financeiro` -- nenhuma
   // permissao existente muda (REGRA 4). Nao emite documento fiscal.
   app.use('/api/financeiro-nucleo', requireAuth, requireModulo('financeiro'), financeiroNucleoRoutes);
+  // Fechamento do Mês (24/10/2026): o resultado mensal da Matriz e do
+  // Marketplace no modelo da planilha do financeiro. Mesma chave `financeiro`.
+  app.use('/api/financeiro-fechamento', requireAuth, requireModulo('financeiro'), fechamentoMesRoutes);
   // Ponte financeira (09/09/2026): a Caixa de Entrada (o que a operacao
   // comprometeu e o financeiro ainda nao registrou), a Cobertura (o que moveu
   // dinheiro e nao chegou ao financeiro por caminho nenhum) e o catalogo de

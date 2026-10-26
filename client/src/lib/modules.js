@@ -7,7 +7,7 @@ import {
   LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer,
   Banknote, MapPin, Gauge, PackageCheck, FileSpreadsheet,
   Inbox, Radar, Megaphone, Scissors, PackageOpen, HeartPulse, Calculator,
-  BookUser, Send, Sparkles, MessageSquareWarning, BellRing, ListChecks, UsersRound, LayoutList } from 'lucide-react';
+  BookUser, Send, Sparkles, MessageSquareWarning, BellRing, ListChecks, UsersRound, LayoutList, CalendarCheck } from 'lucide-react';
 
 /* ---------------------------------------------------------------------------
  * NAVEGAÇÃO EM TRÊS NÍVEIS (14/09/2026)
@@ -279,6 +279,7 @@ export const MODULES = [
         label: 'Resultado',
         icon: BarChart3,
         paginas: [
+          { to: '/financeiro/fechamento', label: 'Fechamento do Mês', icon: CalendarCheck },
           { to: '/financeiro/fluxo-caixa', label: 'Fluxo de Caixa', icon: LineChart },
           { to: '/financeiro/dre', label: 'DRE Gerencial', icon: BarChart3 },
         ],

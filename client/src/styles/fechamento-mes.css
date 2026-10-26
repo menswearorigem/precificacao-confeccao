@@ -1,0 +1,112 @@
+/* Fechamento do Mês (24/10/2026) — só o que as peças da casa não cobrem.
+   Todo o resto (indicadores, cartões, tabela, gavetas, botões) é o mesmo
+   visual de Títulos, Repasses e Resultado. */
+
+.fm-pagina table.data-table th.num,
+.fm-pagina table.data-table td.num { text-align: right; white-space: nowrap; }
+.fm-pagina .fm-neg { color: var(--danger); }
+.fm-pagina .fm-pos { color: var(--success); }
+.fm-pagina .fm-suave { color: var(--ink-faint); }
+.fm-pagina .fm-bom, .fm-pagina table.data-table td.fm-bom { color: var(--success); font-weight: 600; }
+.fm-pagina .fm-ruim, .fm-pagina table.data-table td.fm-ruim { color: var(--danger); font-weight: 600; }
+.fm-pagina table.data-table td.fm-neg { color: var(--danger); }
+.fm-pagina table.data-table td.fm-pos { color: var(--success); }
+
+/* Barra: unidade + mês + ações */
+.fm-barra { flex-wrap: wrap; gap: 10px; }
+.fm-mes { display: inline-flex; align-items: center; gap: 4px; }
+.fm-mes-rotulo {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 168px; padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-raised); font-weight: 600; color: var(--ink); cursor: pointer;
+}
+.fm-mes-rotulo input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.fm-mes .stamp { margin-left: 6px; gap: 4px; }
+
+/* Seis indicadores numa linha só em tela larga */
+.indicadores-faixa.fm-indicadores { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 900px) { .indicadores-faixa.fm-indicadores { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .indicadores-faixa.fm-indicadores { grid-template-columns: 1fr; } }
+.indicadores-faixa.fm-indicadores .indicador-explicacao { font-size: 11.5px; }
+
+/* Gráficos lado a lado */
+.fm-graficos { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; }
+.fm-duas { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .fm-graficos, .fm-duas { grid-template-columns: 1fr; } }
+
+/* DR: grupo que abre e fecha */
+.fm-dr tr.fm-grupo { cursor: pointer; }
+.fm-dr tr.fm-grupo:hover td { background: var(--row-hover); }
+.fm-grupo-nome { display: inline-flex; align-items: center; gap: 6px; }
+.fm-grupo-nome small { color: var(--ink-faint); font-weight: 400; font-size: 11px; }
+.fm-seta { transition: transform 0.2s var(--ease); transform: rotate(-90deg); color: var(--ink-faint); flex-shrink: 0; }
+.fm-seta.aberta { transform: rotate(0deg); }
+.fm-dr tr.fm-grupo-nao-op td:first-child strong { color: var(--ink-soft); }
+.fm-dr tr.fm-conta td:first-child { padding-left: 34px; color: var(--ink-soft); }
+.fm-dr tr.fm-total td { border-top: 2px solid var(--border); }
+.fm-dr tr.fm-grupo-alerta td { color: var(--warning); }
+
+/* Saldo de abertura e a classificar */
+.fm-saldo-abertura { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-color: var(--warning-ring); background: var(--warning-bg); }
+.fm-saldo-campo { display: flex; gap: 8px; align-items: center; min-width: 280px; }
+.fm-classificar { border-color: var(--warning-ring); }
+
+/* Vendas e posição */
+.fm-lista { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; margin: 0 0 12px; font-size: 13px; }
+.fm-lista dt { color: var(--ink-soft); }
+.fm-lista dd { margin: 0; text-align: right; font-weight: 600; }
+.fm-lista dt small { color: var(--ink-faint); }
+.fm-fora { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); }
+.fm-lucro {
+  display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 2px 12px;
+  padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+}
+.fm-lucro span { font-weight: 600; color: var(--ink); }
+.fm-lucro strong { font-size: 20px; }
+.fm-lucro small { grid-column: 1 / -1; color: var(--ink-soft); }
+.fm-lucro-pos { background: var(--success-bg); border-color: var(--success-ring); }
+.fm-lucro-pos strong { color: var(--success); }
+.fm-lucro-neg { background: var(--danger-bg); border-color: var(--danger-ring); }
+.fm-lucro-neg strong { color: var(--danger); }
+.fm-posicao .num-input, .fm-posicao input { max-width: 150px; margin-left: auto; }
+.fm-acoes-dir { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+
+/* Origem do lançamento */
+.fm-origem { display: inline-flex; flex-direction: column; gap: 2px; }
+.fm-origem small { color: var(--ink-faint); font-size: 11px; }
+.fm-busca { min-width: 260px; }
+
+/* Histórico: um quadro de 12 meses por ano */
+.fm-hist { display: flex; flex-direction: column; gap: 14px; }
+.fm-hist-topo { display: flex; gap: 12px; align-items: baseline; margin-bottom: 6px; flex-wrap: wrap; }
+.fm-hist-topo strong { font-family: var(--font-display); font-size: 16px; color: var(--ink); }
+.fm-hist-topo span { font-size: 12px; }
+.fm-hist-meses { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 6px; }
+.fm-hist-mes {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px;
+  border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-raised);
+  cursor: pointer; transition: transform 0.15s var(--vivo-mola, var(--ease)), box-shadow 0.15s var(--ease);
+}
+.fm-hist-mes span { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); }
+.fm-hist-mes small { font-size: 11.5px; font-weight: 700; }
+.fm-hist-mes:hover:not(:disabled) { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+.fm-hist-mes.pos { background: var(--success-bg); border-color: var(--success-ring); }
+.fm-hist-mes.pos small { color: var(--success); }
+.fm-hist-mes.neg { background: var(--danger-bg); border-color: var(--danger-ring); }
+.fm-hist-mes.neg small { color: var(--danger); }
+.fm-hist-mes.vazio { background: var(--border-soft); color: var(--ink-faint); }
+.fm-hist-mes.vazio small { color: var(--ink-faint); font-weight: 400; }
+.fm-hist-mes.ativo { outline: 2px solid var(--terracotta); outline-offset: 1px; }
+.fm-hist-mes:disabled { opacity: 0.35; cursor: default; }
+@media (max-width: 720px) { .fm-hist-meses { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+
+/* Gavetas */
+.fm-form { display: flex; flex-direction: column; gap: 12px; }
+.fm-form-duas { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.fm-inverter { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-soft); }
+.fm-feitos { border-top: 1px dashed var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--success); }
+.fm-feitos small { color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.05em; font-size: 10.5px; }
+.fm-config-topo { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.fm-config-topo .fm-busca { margin-left: auto; min-width: 200px; }
+.fm-config td { vertical-align: middle; }
+

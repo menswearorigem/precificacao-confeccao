@@ -122,6 +122,7 @@ const ConciliacaoBancariaPage = lazy(() => import('./pages/ConciliacaoBancariaPa
 const ContasBancariasPage = lazy(() => import('./pages/ContasBancariasPage'));
 const FluxoCaixaPage = lazy(() => import('./pages/FluxoCaixaPage'));
 const DrePage = lazy(() => import('./pages/DrePage'));
+const FechamentoMesPage = lazy(() => import('./pages/FechamentoMesPage'));
 const CaixaEntradaFinanceiroPage = lazy(() => import('./pages/CaixaEntradaFinanceiroPage'));
 const CoberturaFinanceiraPage = lazy(() => import('./pages/CoberturaFinanceiraPage'));
 const ViagensListPage = lazy(() => import('./pages/ViagensListPage'));
@@ -300,6 +301,7 @@ function AppRoutes() {
                   <Route path="/financeiro/conciliacao-bancaria" element={<ConciliacaoBancariaPage />} />
                   <Route path="/financeiro/fluxo-caixa" element={<FluxoCaixaPage />} />
                   <Route path="/financeiro/dre" element={<DrePage />} />
+                  <Route path="/financeiro/fechamento" element={<FechamentoMesPage />} />
                   {/* A ponte com os módulos (09/09/2026). A Caixa de Entrada é
                       o que a operação comprometeu e o financeiro ainda não
                       registrou; a Cobertura é a varredura que prova que nada
