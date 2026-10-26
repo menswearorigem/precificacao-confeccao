@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ChevronLeft, ChevronRight, ChevronDown, Plus, Lock, Unlock, Settings2, Scale, Wallet, Trash2,
   AlertTriangle, CheckCircle2, Info, History, ShoppingBag, Sparkles, ListTree, ReceiptText,
+  BookOpenCheck, Copy,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { brl, formatQtd, numeroBr } from '../lib/format';
@@ -83,6 +84,7 @@ export default function FechamentoMesPage() {
   const [gavetaLancar, setGavetaLancar] = useState(false);
   const [gavetaConfig, setGavetaConfig] = useState(false);
   const [exportando, setExportando] = useState(false);
+  const [explicando, setExplicando] = useState(false);
   const [recarregar, setRecarregar] = useState(0);
   const refSerie = useRefGrafico();
   const refRosca = useRefGrafico();
@@ -191,6 +193,7 @@ export default function FechamentoMesPage() {
           {loading && <span className="page-sub" style={{ margin: 0 }}>Atualizando…</span>}
           <button type="button" className="btn btn-ghost" onClick={() => setGavetaConfig(true)}><Settings2 size={14} /> Fatias e metas</button>
           <button type="button" className="btn btn-ghost" onClick={() => setExportando(true)}><FileTypeIcon extensao="xlsx" size={18} /> Baixar Excel</button>
+          <button type="button" className="btn btn-ghost" onClick={() => setExplicando(true)} title="Arquivo que explica cada número, abre fora do Hub"><BookOpenCheck size={14} /> Baixar Explicador</button>
           {!consolidado && (fechado
             ? <button type="button" className="btn btn-ghost" onClick={reabrirMes}><Unlock size={14} /> Reabrir mês</button>
             : <button type="button" className="btn btn-ghost" onClick={fecharMes}><Lock size={14} /> Fechar mês</button>)}
@@ -488,6 +491,7 @@ export default function FechamentoMesPage() {
         mes={mes} cadastro={cadastro} onLancado={(t) => { setAviso(t); atualizar(); }} />
       <GavetaConfig aberta={gavetaConfig} onFechar={() => setGavetaConfig(false)} cadastro={cadastro}
         onSalvo={(t) => { setAviso(t); atualizar(); }} />
+      <DialogoExplicador aberto={explicando} onFechar={() => setExplicando(false)} mes={mes} />
       <DialogoExportar aberto={exportando} onFechar={() => setExportando(false)} unidade={unidade} mes={mes} nomeUnidade={nomeUnidade} />
     </div>
   );
@@ -583,6 +587,82 @@ function ContraIdeal({ dif, entrada, receita }) {
 // ---------------------------------------------------------------------------
 // Baixar Excel — só com a senha do próprio perfil
 // ---------------------------------------------------------------------------
+
+// Explicador do Fechamento: arquivo HTML com os últimos 3 meses, cifrado.
+// A senha do ARQUIVO aparece uma única vez aqui — o Hub não guarda.
+function DialogoExplicador({ aberto, onFechar, mes }) {
+  const [senha, setSenha] = useState('');
+  const [erro, setErro] = useState('');
+  const [baixando, setBaixando] = useState(false);
+  const [senhaArquivo, setSenhaArquivo] = useState('');
+  const [copiado, setCopiado] = useState(false);
+  useEffect(() => { if (aberto) { setSenha(''); setErro(''); setBaixando(false); setSenhaArquivo(''); setCopiado(false); } }, [aberto]);
+
+  async function baixar(e) {
+    e?.preventDefault();
+    if (!senha) return;
+    setErro(''); setBaixando(true);
+    try {
+      const res = await fetch(`/api${BASE}/explicador`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mes, senha }),
+      });
+      const corpo = await res.json().catch(() => null);
+      if (!res.ok || !corpo?.html) throw new Error(corpo?.error || `Não consegui gerar o explicador (erro ${res.status}).`);
+      const url = URL.createObjectURL(new Blob([corpo.html], { type: 'text/html' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = corpo.nome || `EXPLICADOR_FECHAMENTO_${mes}.html`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      setSenhaArquivo(corpo.senha);
+    } catch (err) {
+      setErro(err.message); setSenha('');
+    } finally { setBaixando(false); }
+  }
+
+  async function copiar() {
+    try { await navigator.clipboard.writeText(senhaArquivo); setCopiado(true); } catch { setCopiado(false); }
+  }
+
+  return (
+    <Gaveta aberta={aberto} onFechar={baixando ? undefined : onFechar} Icone={BookOpenCheck} titulo="Baixar o Explicador"
+      subtitulo={`Últimos 3 meses até ${rotuloMes(mes)} · Matriz, Marketplace e Consolidado.`}
+      rodape={senhaArquivo ? (
+        <button type="button" className="btn btn-primary" onClick={onFechar}>Já anotei a senha</button>
+      ) : (
+        <>
+          <button type="button" className="btn btn-ghost" onClick={onFechar} disabled={baixando}>Cancelar</button>
+          <button type="submit" form="fm-form-explicador" className="btn btn-primary" disabled={!senha || baixando}>
+            {baixando ? 'Montando o arquivo…' : 'Confirmar e baixar'}
+          </button>
+        </>
+      )}>
+      {senhaArquivo ? (
+        <div className="fm-form">
+          <p className="page-sub" style={{ margin: 0 }}>O arquivo foi baixado. Para abrir, use esta senha — ela aparece <b>só agora</b>, o Hub não guarda:</p>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <code style={{ fontSize: 18, letterSpacing: 1, padding: '8px 12px', border: '1px solid var(--border, #ddd)', borderRadius: 8, userSelect: 'all' }}>{senhaArquivo}</code>
+            <button type="button" className="btn btn-ghost" onClick={copiar}><Copy size={14} /> {copiado ? 'Copiado' : 'Copiar'}</button>
+          </div>
+          <p className="page-sub" style={{ margin: 0 }}>Mande o arquivo e a senha por caminhos diferentes (ex.: arquivo por e-mail, senha por mensagem).</p>
+        </div>
+      ) : (
+        <form id="fm-form-explicador" className="fm-form" onSubmit={baixar}>
+          <p className="page-sub" style={{ margin: 0 }}>
+            Arquivo que abre no navegador, sem o Hub: explica cada número da tela, simula mudanças e lê prints. Os dados vão protegidos por uma senha própria do arquivo. O download fica registrado no histórico com o seu nome.
+          </p>
+          <Field label="Sua senha do Hub">
+            <input className="input" type="password" autoComplete="current-password" autoFocus value={senha}
+              onChange={(e) => setSenha(e.target.value)} disabled={baixando} />
+          </Field>
+          {erro && <div className="aviso-compacto tone-prejuizo">{erro}</div>}
+          {baixando && <p className="page-sub" style={{ margin: 0 }}>Calculando 3 meses × 3 visões — pode levar até um minuto.</p>}
+        </form>
+      )}
+    </Gaveta>
+  );
+}
 
 function DialogoExportar({ aberto, onFechar, unidade, mes, nomeUnidade }) {
   const [senha, setSenha] = useState('');

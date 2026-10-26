@@ -476,4 +476,4 @@ async function exportarFechamentoExcel({ unidade, mes }) {
   return { buffer, nome: `RESULTADO_FINANCEIRO_${nomeU}_${mes.replace('-', '_')}.xlsx` };
 }
 
-module.exports = { exportarFechamentoExcel };
+module.exports = { exportarFechamentoExcel, agruparExtrato };

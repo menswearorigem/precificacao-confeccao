@@ -8,6 +8,7 @@ const express = require('express');
 const f = require('../lib/fechamentoMes');
 const pool = require('../db/pool');
 const { exportarFechamentoExcel } = require('../lib/fechamentoExcel');
+const { gerarExplicador } = require('../lib/fechamentoExplicador');
 const { verificarSenha } = require('../lib/senha');
 const { verificarBloqueio, registrarFalha, registrarSucesso } = require('../lib/loginRateLimit');
 const { registrar } = require('../lib/auditoria');
@@ -87,23 +88,32 @@ router.put('/conta-bancaria/:id/unidade', async (req, res, next) => {
 // pedido do dono: "dificulta o vazamento dos dados da empresa"). POST, para a
 // senha não ir na URL nem no histórico do navegador; a auditoria já esconde o
 // campo `senha`. Cinco senhas erradas bloqueiam a exportação por 15 minutos.
+// Confere a senha do perfil antes de deixar dados saírem do Hub (Excel e
+// Explicador). Devolve null se passou; senão já respondeu o erro.
+async function exigirSenhaDoPerfil(req, res, chaveBase, oQue) {
+  const usuario = req.user;
+  const chave = `${chaveBase}:${usuario?.id}`;
+  const bloqueio = verificarBloqueio(chave);
+  if (bloqueio.bloqueado) {
+    res.status(429).json({ error: `Muitas senhas erradas. Tente de novo em ${bloqueio.minutosRestantes} minuto(s).` });
+    return false;
+  }
+  const senha = String(req.body?.senha || '');
+  if (!senha) { res.status(400).json({ error: `Digite a sua senha para baixar ${oQue}.` }); return false; }
+  const { rows } = await pool.query('SELECT senha_hash FROM usuarios WHERE id = $1 AND ativo', [usuario?.id]);
+  if (!rows.length || !(await verificarSenha(senha, rows[0].senha_hash))) {
+    registrarFalha(chave);
+    await registrar(req, { acao: 'exportou', entidade: 'fechamento_mes', descricao: `Senha errada ao baixar ${oQue} do Fechamento do Mês.`, sucesso: false });
+    res.status(401).json({ error: 'Senha incorreta.' });
+    return false;
+  }
+  registrarSucesso(chave);
+  return true;
+}
+
 router.post('/exportar', async (req, res, next) => {
   try {
-    const usuario = req.user;
-    const chave = `exportar-fechamento:${usuario?.id}`;
-    const bloqueio = verificarBloqueio(chave);
-    if (bloqueio.bloqueado) {
-      return res.status(429).json({ error: `Muitas senhas erradas. Tente de novo em ${bloqueio.minutosRestantes} minuto(s).` });
-    }
-    const senha = String(req.body?.senha || '');
-    if (!senha) return res.status(400).json({ error: 'Digite a sua senha para baixar a planilha.' });
-    const { rows } = await pool.query('SELECT senha_hash FROM usuarios WHERE id = $1 AND ativo', [usuario?.id]);
-    if (!rows.length || !(await verificarSenha(senha, rows[0].senha_hash))) {
-      registrarFalha(chave);
-      await registrar(req, { acao: 'exportou', entidade: 'fechamento_mes', descricao: 'Senha errada ao baixar a planilha do Fechamento do Mês.', sucesso: false });
-      return res.status(401).json({ error: 'Senha incorreta.' });
-    }
-    registrarSucesso(chave);
+    if (!(await exigirSenhaDoPerfil(req, res, 'exportar-fechamento', 'a planilha'))) return;
     const unidade = req.body?.unidade || 'marketplace';
     const mes = req.body?.mes || mesAtual();
     const { buffer, nome } = await exportarFechamentoExcel({ unidade, mes });
@@ -112,6 +122,21 @@ router.post('/exportar', async (req, res, next) => {
     res.setHeader('Content-Disposition', `attachment; filename="${nome}"`);
     res.setHeader('Cache-Control', 'no-store');
     res.send(Buffer.from(buffer));
+  } catch (err) { responderErro(res, next, err); }
+});
+
+// Explicador do Fechamento (26/10/2026): um arquivo HTML que abre fora do Hub,
+// com os últimos 3 meses (Matriz, Marketplace e Consolidado) cifrados com
+// AES-256-GCM. A senha do ARQUIVO é gerada aqui e devolvida uma única vez —
+// o Hub não guarda. Mesma trava de senha do perfil do Excel.
+router.post('/explicador', async (req, res, next) => {
+  try {
+    if (!(await exigirSenhaDoPerfil(req, res, 'explicador-fechamento', 'o explicador'))) return;
+    const mes = /^\d{4}-\d{2}$/.test(String(req.body?.mes || '')) ? req.body.mes : mesAtual();
+    const { html, senha, nome } = await gerarExplicador({ mesFinal: mes, geradoPor: req.user?.nome || req.user?.email || null });
+    await registrar(req, { acao: 'exportou', entidade: 'fechamento_mes', descricao: `Baixou o explicador ${nome}.`, sucesso: true });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ nome, senha, html });
   } catch (err) { responderErro(res, next, err); }
 });
 

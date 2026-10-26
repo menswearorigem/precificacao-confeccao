@@ -322,6 +322,12 @@ async function main() {
   conferir('Excel com a senha certa devolve o arquivo', r5.status === 200 && r5.corpo.length > 5000 && /spreadsheetml/.test(r5.headers['content-type']), `${r5.status} ${r5.corpo.length}`);
   const r5c = await chamar(porta, '/api/financeiro-fechamento/exportar.xlsx?unidade=marketplace&mes=2024-06', { cookie });
   conferir('o download antigo sem senha não existe mais', !/spreadsheetml/.test(r5c.headers['content-type'] || ''), `${r5c.status}`);
+  const r6a = await chamar(porta, '/api/financeiro-fechamento/explicador', { metodo: 'POST', cookie, dados: { mes: '2024-06', senha: 'errada' } });
+  conferir('Explicador com senha errada = 401, sem arquivo', r6a.status === 401 && !/html/.test(r6a.corpo.toString()), `${r6a.status}`);
+  const r6 = await chamar(porta, '/api/financeiro-fechamento/explicador', { metodo: 'POST', cookie, dados: { mes: '2024-06', senha: cred.senha } });
+  const j6 = r6.status === 200 ? JSON.parse(r6.corpo.toString()) : {};
+  conferir('Explicador com a senha certa devolve HTML e senha do arquivo', r6.status === 200 && /^[A-Z2-9]{4}(-[A-Z2-9]{4}){3}$/.test(j6.senha || '') && /<html/i.test(j6.html || '') && !(j6.html || '').includes('__COFRE__'), `${r6.status}`);
+  conferir('Explicador não leva dados em texto aberto', !(j6.html || '').includes('Energia') || !(j6.html || '').includes('teste do fechamento'), '');
   const { rows: aud } = await pool.query("SELECT sucesso FROM auditoria WHERE entidade = 'fechamento_mes' ORDER BY id");
   conferir('auditoria registra a senha errada e o download', aud.some((a) => a.sucesso === false) && aud.some((a) => a.sucesso === true), JSON.stringify(aud));
   const { rows: vaz } = await pool.query("SELECT COUNT(*)::int AS n FROM auditoria WHERE dados_depois::text LIKE '%teste do fechamento 123%'");

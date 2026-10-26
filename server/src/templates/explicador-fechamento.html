@@ -1,0 +1,1485 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Explicador do Fechamento · HBN Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f3ede0;--surface:#fffdf9;--surface-alt:#ece2cc;--ink:#2a1d10;--ink-soft:#6b5d4d;--ink-faint:#8a7d6d;
+  --leather:#6b4423;--leather-dark:#422a15;--leather-deep:#2f1c0d;--terracotta:#b5651d;--brass:#9c7a3c;
+  --border:#ddd0b4;--border-soft:#ebe2cd;--success:#2e6b3a;--success-bg:#e2eedb;--warning:#7a5a12;--warning-bg:#f6e7c4;
+  --danger:#8a2a1d;--danger-bg:#f6ddd4;--info:#2d5a7a;--info-bg:#dfeaf3;--mc:#2e8b57;--mc-leve:#e3f2e9;
+  --font-display:'Fraunces',Georgia,serif;--font-body:'Inter',-apple-system,'Segoe UI',sans-serif;
+  --radius:12px;--radius-sm:8px;--shadow:0 1px 2px rgba(47,28,13,.06),0 4px 14px rgba(47,28,13,.06);
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#1c1409;--surface:#2a1f13;--surface-alt:#362818;--ink:#f5ebda;--ink-soft:#cbb99e;--ink-faint:#9c8a73;
+  --border:#54422d;--border-soft:#3f2f1d;--success:#7cc48a;--success-bg:#22331f;--warning:#e2bb5c;--warning-bg:#3a2e14;
+  --danger:#f0907a;--danger-bg:#3d1f17;--info:#8cc0e6;--info-bg:#1b2a36;--mc:#5dbb7e;--mc-leve:#1f3326;--terracotta:#d9832f;--brass:#c49a4f;
+}}
+:root[data-theme="dark"]{
+  --bg:#1c1409;--surface:#2a1f13;--surface-alt:#362818;--ink:#f5ebda;--ink-soft:#cbb99e;--ink-faint:#9c8a73;
+  --border:#54422d;--border-soft:#3f2f1d;--success:#7cc48a;--success-bg:#22331f;--warning:#e2bb5c;--warning-bg:#3a2e14;
+  --danger:#f0907a;--danger-bg:#3d1f17;--info:#8cc0e6;--info-bg:#1b2a36;--mc:#5dbb7e;--mc-leve:#1f3326;--terracotta:#d9832f;--brass:#c49a4f;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:14px;line-height:1.5}
+button,input,select,textarea{font:inherit;color:inherit}
+h1,h2,h3{font-family:var(--font-display);font-weight:600;margin:0}
+.oculto{display:none!important}
+.mono{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+a{color:var(--terracotta)}
+
+/* barra do topo, igual ao Hub */
+.topo{background:linear-gradient(180deg,var(--leather-dark),var(--leather-deep));color:#f5ebda;border-bottom:2px solid var(--terracotta)}
+.topo-int{max-width:1240px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.marca{display:flex;align-items:center;gap:10px}
+.marca img{width:38px;height:38px;border-radius:10px;background:#fff}
+.marca b{font-family:var(--font-display);font-size:19px;display:block;line-height:1.1}
+.marca small{font-size:10px;letter-spacing:.12em;text-transform:uppercase;opacity:.75}
+.topo .info{margin-left:auto;font-size:12px;opacity:.85;text-align:right}
+
+.pagina{max-width:1240px;margin:0 auto;padding:18px 16px 60px}
+.titulo-pg h1{font-size:26px}
+.titulo-pg p{color:var(--ink-soft);margin:4px 0 14px;max-width:900px}
+
+.barra{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:none;padding:7px 12px;font-size:12.5px;color:var(--ink-soft);cursor:pointer}
+.seg button+button{border-left:1px solid var(--border)}
+.seg button.ativo{background:var(--terracotta);color:#fff}
+select.campo,input.campo,textarea.campo{border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);padding:8px 10px;min-width:0}
+textarea.campo{width:100%;resize:vertical}
+.btn{border:1px solid var(--border);background:var(--surface);border-radius:var(--radius-sm);padding:8px 14px;cursor:pointer;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{background:var(--surface-alt)}
+.btn.prim{background:linear-gradient(180deg,var(--leather),var(--leather-dark));color:#fff;border-color:var(--leather-dark)}
+.btn.prim:hover{filter:brightness(1.08)}
+.btn.sm{padding:4px 10px;font-size:12px}
+
+.abas{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:6px 0 18px;overflow-x:auto}
+.abas button{border:0;background:none;padding:10px 14px;font-weight:600;color:var(--ink-soft);border-bottom:3px solid transparent;margin-bottom:-1px;cursor:pointer;white-space:nowrap}
+.abas button.ativa{color:var(--mc);border-bottom-color:var(--mc)}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow);margin-bottom:14px}
+.card h2{font-size:17px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.card h2::before{content:"";width:4px;height:18px;border-radius:2px;background:var(--mc)}
+.sub{color:var(--ink-soft);margin:0 0 10px}
+.duas{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+@media (max-width:900px){.duas{grid-template-columns:1fr}}
+
+/* números clicáveis */
+.n{all:unset;cursor:pointer;border-bottom:1px dashed currentColor;font-variant-numeric:tabular-nums}
+.n:hover{background:var(--mc-leve);border-radius:4px}
+.neg{color:var(--danger)}.pos{color:var(--success)}
+.selo{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;letter-spacing:.03em;padding:2px 8px;border-radius:999px;text-transform:uppercase;white-space:nowrap}
+.selo.ok{background:var(--success-bg);color:var(--success)}
+.selo.atencao{background:var(--warning-bg);color:var(--warning)}
+.selo.nao{background:var(--danger-bg);color:var(--danger)}
+.selo.info{background:var(--info-bg);color:var(--info)}
+
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px}
+.kpi span{font-size:12px;font-weight:600;color:var(--ink-soft);display:flex;justify-content:space-between;gap:6px}
+.kpi strong{display:block;font-size:22px;margin:4px 0 2px}
+.kpi small{color:var(--ink-faint);font-size:11.5px}
+@media (max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:520px){.kpis{grid-template-columns:1fr}}
+
+table.t{width:100%;border-collapse:collapse;font-size:13px}
+table.t th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);border-bottom:2px solid var(--border);padding:8px 8px}
+table.t td{border-bottom:1px solid var(--border-soft);padding:7px 8px;vertical-align:top}
+table.t td.num,table.t th.num{text-align:right;white-space:nowrap}
+table.t tr.grupo td{background:var(--surface-alt);font-weight:700;cursor:pointer}
+table.t tr.total td{font-weight:700;border-top:2px solid var(--border)}
+.rolagem{overflow-x:auto}
+
+/* perguntar */
+.pergunta{display:flex;gap:10px;align-items:flex-start}
+.pergunta img{width:52px;height:52px;border-radius:50%;border:2px solid var(--mc);background:var(--surface)}
+.pergunta .caixa{flex:1}
+.pergunta input{width:100%;font-size:16px;padding:12px 14px;border-radius:var(--radius);border:2px solid var(--border)}
+.pergunta input:focus{outline:none;border-color:var(--mc)}
+.exemplos{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.exemplos button{border:1px solid var(--border);background:var(--surface);border-radius:999px;padding:4px 10px;font-size:12px;cursor:pointer;color:var(--ink-soft)}
+.exemplos button:hover{border-color:var(--mc);color:var(--ink)}
+.resposta{margin-top:14px}
+.resp-bloco{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--mc);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px}
+.resp-bloco h3{font-size:16px;margin-bottom:4px}
+.resp-bloco .direto{font-size:15px;margin:6px 0 10px}
+.passos{margin:6px 0 0;padding-left:20px}
+.passos li{margin:4px 0}
+.formula{background:var(--surface-alt);border-radius:var(--radius-sm);padding:8px 12px;font-variant-numeric:tabular-nums;margin:8px 0;font-size:13.5px;overflow-x:auto}
+.nota{font-size:12.5px;color:var(--ink-soft);margin-top:8px}
+.confianca{margin-top:10px;padding:8px 12px;border-radius:var(--radius-sm);font-size:13px}
+.confianca.ok{background:var(--success-bg)}.confianca.atencao{background:var(--warning-bg)}.confianca.nao{background:var(--danger-bg)}
+.tambem{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.tambem button{border:1px dashed var(--border);background:none;border-radius:999px;padding:3px 10px;font-size:12px;cursor:pointer;color:var(--ink-soft)}
+
+/* gaveta de explicação */
+.gaveta-fundo{position:fixed;inset:0;background:rgba(20,12,4,.45);display:flex;justify-content:flex-end;z-index:50}
+.gaveta{width:min(680px,100%);height:100%;background:var(--bg);overflow-y:auto;padding:16px;box-shadow:-10px 0 30px rgba(0,0,0,.2)}
+.gaveta-topo{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+
+/* escada e por 100 */
+.degrau{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) auto;gap:10px;align-items:center;padding:6px 2px;border-bottom:1px dashed var(--border-soft)}
+.degrau.total{border-top:2px solid var(--border);font-weight:700}
+.trilho{height:10px;background:var(--border-soft);border-radius:999px;overflow:hidden;position:relative}
+.trilho i{display:block;height:100%;border-radius:999px}
+.trilho i.p{background:var(--success)}.trilho i.m{background:var(--danger);opacity:.85}
+.p100{display:grid;grid-template-columns:130px minmax(0,1fr) 150px;gap:12px;align-items:center;margin:10px 0}
+.p100 .trilho{height:16px;overflow:visible}
+.p100 .trilho i{position:absolute;left:0;top:0;bottom:0}
+.p100 b{position:absolute;top:-4px;bottom:-4px;width:3px;border-radius:2px}
+.p100 b.ideal{background:var(--ink)}.p100 b.media{background:var(--ink-faint)}
+@media (max-width:640px){.p100{grid-template-columns:1fr}}
+
+.alerta{display:flex;gap:8px;padding:9px 12px;border-radius:var(--radius-sm);margin:6px 0;font-size:13px;border:1px solid var(--border)}
+.alerta.ruim{background:var(--danger-bg)}.alerta.atencao{background:var(--warning-bg)}.alerta.bom{background:var(--success-bg)}
+
+/* simulador */
+.sim-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end}
+.sim-form label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--ink-soft)}
+.sim-lista li{margin:4px 0}
+.diff-up{color:var(--success)}.diff-down{color:var(--danger)}
+
+/* trava */
+.trava{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.trava .card{max-width:440px;width:100%;text-align:center}
+.trava img{width:64px;height:64px;border-radius:14px}
+.trava input{width:100%;text-align:center;font-size:18px;letter-spacing:.08em;margin:12px 0}
+.erro{color:var(--danger);font-size:13px;min-height:18px}
+.lido{white-space:pre-wrap;font-size:12px;max-height:220px;overflow:auto;background:var(--surface-alt);padding:8px;border-radius:var(--radius-sm)}
+.drop{border:2px dashed var(--border);border-radius:var(--radius);padding:26px;text-align:center;color:var(--ink-soft);cursor:pointer}
+.drop.sobre{border-color:var(--mc);background:var(--mc-leve)}
+.kbd{font-size:11px;border:1px solid var(--border);border-radius:4px;padding:0 4px}
+@media print{.topo,.abas,.barra,.gaveta-fundo{display:none!important}}
+</style>
+</head>
+<body>
+<div id="trava" class="trava">
+  <div class="card">
+    <img src="data:image/png;base64,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" alt="">
+    <h1 style="font-size:22px;margin-top:10px">Explicador do Fechamento</h1>
+    <p class="sub" id="trava-sub">Este arquivo tem os números financeiros da empresa e está protegido. Digite a senha do arquivo (ela aparece no Hub na hora do download).</p>
+    <form id="form-senha" autocomplete="off">
+      <input id="senha" class="campo" type="password" placeholder="XXXX-XXXX-XXXX-XXXX" autofocus>
+      <div class="erro" id="erro-senha"></div>
+      <button class="btn prim" style="width:100%;justify-content:center" type="submit">Abrir</button>
+    </form>
+    <p class="nota">Sem a senha você ainda pode ler <a href="#" id="so-explicacoes">como os números são calculados</a> (sem os valores).</p>
+  </div>
+</div>
+
+<div id="app" class="oculto">
+  <header class="topo"><div class="topo-int">
+    <div class="marca"><img src="data:image/png;base64,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" alt=""><div><b>HBN Hub</b><small>Financeiro · Fechamento do Mês</small></div></div>
+    <div class="info" id="info-geracao"></div>
+  </div></header>
+  <main class="pagina">
+    <div class="titulo-pg">
+      <h1>Explicador do Fechamento do Mês</h1>
+      <p>Pergunte de onde veio qualquer número da tela, clique nos números para ver a conta, simule mudanças e leia um print. Tudo funciona com este arquivo aberto no computador, sem o Hub.</p>
+    </div>
+    <div class="barra" id="barra-filtros">
+      <div class="seg" id="seg-unidade"></div>
+      <select class="campo" id="sel-mes" aria-label="Mês"></select>
+      <span id="selo-contexto"></span>
+      <span style="margin-left:auto"></span>
+      <button class="btn sm" id="btn-tema" type="button">Tema</button>
+    </div>
+    <nav class="abas" id="abas"></nav>
+    <section id="v-perguntar"></section>
+    <section id="v-tela" class="oculto"></section>
+    <section id="v-simular" class="oculto"></section>
+    <section id="v-print" class="oculto"></section>
+    <section id="v-confianca" class="oculto"></section>
+    <section id="v-como" class="oculto"></section>
+    <section id="v-nao" class="oculto"></section>
+  </main>
+</div>
+<div id="gaveta" class="gaveta-fundo oculto"><aside class="gaveta" role="dialog" aria-modal="true"><div class="gaveta-topo"><span class="selo info" id="gaveta-selo">Explicação</span><button class="btn sm" id="gaveta-fechar" type="button">Fechar ✕</button></div><div id="gaveta-corpo"></div></aside></div>
+
+<script id="cofre" type="application/json">"__COFRE__"</script>
+<script id="publico" type="application/json">"__PUBLICO__"</script>
+<script>
+const MANU_IMG = 'data:image/png;base64,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';
+</script>
+<script>
+// ===========================================================================
+// Explicador do Fechamento do Mês — HBN Hub
+// Este arquivo é autossuficiente: decifra os dados com a senha e responde,
+// sem internet, de onde veio cada número. O cálculo abaixo é cópia fiel do
+// cálculo do Hub (server/src/lib/fechamentoMes.js) e é conferido contra os
+// números que o Hub gravou no pacote: se algum não bater, o arquivo avisa.
+// ===========================================================================
+'use strict';
+
+// ---------------------------------------------------------------- utilidades
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const norm = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9%,.\- ]+/g, ' ').replace(/\s+/g, ' ').trim();
+const normNome = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const CENT = 0.005;
+const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const arred = (v) => Math.round(num(v) * 100) / 100;
+const brl = (v) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+const nbr = (v, c = 2) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c }));
+const pctTxt = (v, c = 2) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? '—' : `${nbr(v, c)}%`);
+const por100 = (v) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? '—' : `R$ ${nbr(Math.abs(v), 2)}`);
+const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const mesTxt = (m) => (m ? `${MESES[Number(m.slice(5, 7)) - 1]} de ${m.slice(0, 4)}` : '');
+const dataBr = (d) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : '');
+const UNID = { matriz: 'Matriz', marketplace: 'Marketplace', consolidado: 'Consolidado (Matriz + Marketplace)' };
+const UNID_CURTO = { matriz: 'Matriz', marketplace: 'Marketplace', consolidado: 'Consolidado' };
+
+// Os grupos da planilha, na ordem da DR, com o nome que a tela usa.
+const GRUPOS = [
+  { nome: 'RECEITA OPERACIONAL', tela: 'Entrou da operação', op: true, entrada: true },
+  { nome: 'DESPESA COM PESSOAL', tela: 'Pessoal', op: true, fixo: true },
+  { nome: 'DESPESAS ADMINISTRATIVAS', tela: 'Administrativas', op: true, fixo: true },
+  { nome: 'CUSTO DE PRODUÇÃO', tela: 'Produção', op: true },
+  { nome: 'DESPESAS COM VENDAS', tela: 'Vendas', op: true },
+  { nome: 'INVESTIMENTOS E RETIRADAS', tela: 'Investimentos e retiradas' },
+  { nome: 'RECEITA NÃO-OPERACIONAL', tela: 'Outras entradas', entrada: true },
+  { nome: 'ENTRADA DE ATIVOS', tela: 'Venda de bens e aportes', entrada: true },
+  { nome: 'DESPESAS FINANCEIRAS', tela: 'Juros e tarifas' },
+  { nome: 'TRANSITÓRIO ENTRADA', tela: 'Adiantamentos devolvidos', entrada: true },
+  { nome: 'TRANSITÓRIO SAÍDA', tela: 'Adiantamentos dados' },
+];
+const GRUPO = Object.fromEntries(GRUPOS.map((g) => [g.nome, g]));
+const nomeGrupo = (g) => GRUPO[g]?.tela || g;
+
+// ------------------------------------------------------------------ estado
+let P = null;            // o pacote decifrado
+let PUB = {};            // dados públicos (data de geração)
+const S = { u: 'matriz', m: null, aba: 'perguntar', sim: { ajustes: [], orc: {}, saldo: null, fatia: {} } };
+
+// ------------------------------------------------------------ decifrar
+async function decifrar(senha) {
+  const cofre = JSON.parse($('#cofre').textContent);
+  const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(senha.trim().toUpperCase()), 'PBKDF2', false, ['deriveKey']);
+  const chave = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b64(cofre.sal), iterations: cofre.it, hash: 'SHA-256' },
+    base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+  const claro = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(cofre.iv) }, chave, b64(cofre.dados));
+  const fluxo = new Blob([claro]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return JSON.parse(await new Response(fluxo).text());
+}
+
+// --------------------------------------------------------- acesso aos dados
+const chaveCtx = (u, m) => `${u}|${m}`;
+const fech = (u = S.u, m = S.m) => P.contextos[chaveCtx(u, m)];
+function lancs(u = S.u, m = S.m) {
+  const exp = (l) => ({ tipo: l.t, data: l.d, unidade: l.u, pessoa: l.p, descricao: l.ds, conta: l.c, grupo: l.g, planoNome: l.pl,
+    banco: l.b, valor: l.v, doWik: !!l.w, fatia: l.f, qtd: l.q, obs: l.o });
+  if (u === 'consolidado') return [...(P.lancamentos[chaveCtx('matriz', m)] || []), ...(P.lancamentos[chaveCtx('marketplace', m)] || [])].map(exp);
+  return (P.lancamentos[chaveCtx(u, m)] || []).map(exp);
+}
+const contaMeta = (id) => P.contas.find((c) => c.id === id);
+const contaPorNome = (nome) => P.contas.find((c) => normNome(c.nome) === normNome(nome));
+function orcDe(u, contaId, simOrc) {
+  if (simOrc && simOrc[contaId] !== undefined) return simOrc[contaId];
+  const c = contaMeta(contaId);
+  if (!c) return undefined;
+  if (u === 'consolidado') {
+    const a = c.orcamento.matriz; const b = c.orcamento.marketplace;
+    if (a === null && b === null) return undefined;
+    return num(a) + num(b);
+  }
+  return c.orcamento[u] === null ? undefined : c.orcamento[u];
+}
+
+// ============================================================ O MOTOR
+// Recalcula a tela inteira a partir dos totais por conta. Sem simulação, tem
+// de dar exatamente o que o Hub mostrou (conferido em conferirMotor()).
+function base(u = S.u, m = S.m) {
+  const f = fech(u, m);
+  const valores = new Map(); const medias = new Map();
+  for (const g of f.dr) for (const i of g.itens) { valores.set(i.contaId, num(i.valor)); medias.set(i.contaId, num(i.media)); }
+  const mediaGrupo = new Map(f.dr.map((g) => [g.nome, num(g.media)]));
+  return {
+    u, m, f, valores, medias, mediaGrupo,
+    classificar: f.aClassificar.reduce((s, c) => s + num(c.valor), 0),
+    n: f.resumo.mesesNaMedia || 0,
+    mediaReceita: num(f.resumo.mediaReceita), mediaResultado: num(f.resumo.mediaResultado),
+    saldoInicial: f.resumo.saldoInicial,
+    entradas: num(f.resumo.entradas), saidas: num(f.resumo.saidas),
+  };
+}
+
+function calcular(b, sim = { ajustes: [], orc: {}, saldo: null, fatia: {} }) {
+  const valores = new Map(b.valores);
+  let classificar = b.classificar;
+  let entradas = b.entradas; let saidas = b.saidas;
+  const delta = new Map();
+  const somar = (id, v) => {
+    if (id === 'classificar') classificar += v; else valores.set(id, num(valores.get(id)) + v);
+    delta.set(id, num(delta.get(id)) + v);
+    if (v > 0) entradas += v; else saidas += v;
+  };
+  for (const a of sim.ajustes || []) somar(a.conta, num(a.valor));
+  // Fatia simulada: a parte da Matriz que muda de unidade.
+  for (const [id, nova] of Object.entries(sim.fatia || {})) {
+    const cid = Number(id); const c = contaMeta(cid); if (!c || b.u === 'consolidado') continue;
+    const antiga = num(c.fatia) / 100; const nv = num(nova) / 100;
+    const origem = origemMatriz(cid, b.m);
+    if (origem === null) continue;
+    const mudanca = origem * (nv - antiga);
+    somar(cid, b.u === 'marketplace' ? mudanca : -mudanca);
+  }
+  const porGrupo = new Map(GRUPOS.map((g) => [g.nome, 0]));
+  for (const [id, v] of valores) { const c = contaMeta(id); if (c && porGrupo.has(c.grupo)) porGrupo.set(c.grupo, porGrupo.get(c.grupo) + v); }
+  const receita = porGrupo.get('RECEITA OPERACIONAL');
+  const opGr = GRUPOS.filter((g) => g.op).map((g) => g.nome);
+  const lucroOp = opGr.reduce((s, g) => s + porGrupo.get(g), 0);
+  const custoFixo = porGrupo.get('DESPESA COM PESSOAL') + porGrupo.get('DESPESAS ADMINISTRATIVAS');
+  const resultado = [...porGrupo.values()].reduce((s, v) => s + v, 0) + classificar;
+  const n = Math.max(1, b.n || 1);
+  const medias = new Map(b.medias);
+  for (const [id, d] of delta) if (id !== 'classificar') medias.set(id, num(medias.get(id)) + d / n);
+  const mediaGrupo = new Map(b.mediaGrupo);
+  for (const [id, d] of delta) { const c = contaMeta(id); if (c) mediaGrupo.set(c.grupo, num(mediaGrupo.get(c.grupo)) + d / n); }
+  const dReceita = receita - num(b.f.resumo.receita);
+  const mediaReceita = b.mediaReceita + dReceita / n;
+  const mediaResultado = b.mediaResultado + (resultado - num(b.f.resumo.resultado)) / n;
+  // Orçamento e receita orçada
+  const orc = (id) => orcDe(b.u, id, sim.orc);
+  const receitaMeta = P.contas.filter((c) => c.grupo === 'RECEITA OPERACIONAL').reduce((s, c) => s + num(orc(c.id)), 0);
+  const pctSobre = (v, base_) => (base_ > CENT ? (v / base_) * 100 : null);
+  const grupos = [];
+  for (const g of GRUPOS) {
+    const itens = P.contas.filter((c) => c.grupo === g.nome).map((c) => {
+      const valor = arred(valores.get(c.id) || 0); const media = arred(medias.get(c.id) || 0);
+      const o = orc(c.id); const pct = pctSobre(valor, receita);
+      const ideal = o !== undefined && receitaMeta > 0 ? (o / receitaMeta) * 100 : null;
+      return { contaId: c.id, nome: c.nome, valor, media, pct, pctMedia: pctSobre(media, mediaReceita), ideal, orc: o,
+        dif: pct !== null && ideal !== null ? pct - ideal : null };
+    }).filter((i) => Math.abs(i.valor) >= CENT || Math.abs(i.media) >= CENT || (i.ideal !== null && Math.abs(i.ideal) > 0));
+    const valor = arred(porGrupo.get(g.nome));
+    const orcG = P.contas.filter((c) => c.grupo === g.nome).reduce((s, c) => s + num(orc(c.id)), 0);
+    const ideal = receitaMeta > 0 && orcG !== 0 ? (orcG / receitaMeta) * 100 : null;
+    const pct = pctSobre(valor, receita); const media = arred(mediaGrupo.get(g.nome) || 0);
+    if (itens.length || Math.abs(valor) >= CENT) {
+      grupos.push({ nome: g.nome, tela: g.tela, op: !!g.op, fixo: !!g.fixo, valor, pct, media, pctMedia: pctSobre(media, mediaReceita),
+        ideal, orc: orcG, dif: pct !== null && ideal !== null ? pct - ideal : null, itens });
+    }
+  }
+  const saldoInicial = sim.saldo !== null && sim.saldo !== undefined ? num(sim.saldo) : b.saldoInicial;
+  const r = {
+    receita: arred(receita), lucroOp: arred(lucroOp), gastosOp: arred(lucroOp - receita), resultado: arred(resultado),
+    custoFixo: arred(custoFixo), custoFixoPct: pctSobre(-custoFixo, receita),
+    custoFixoIdeal: receitaMeta > 0 ? (-P.contas.filter((c) => GRUPO[c.grupo]?.fixo).reduce((s, c) => s + num(orc(c.id)), 0) / receitaMeta) * 100 : null,
+    custoFixoMedio: mediaReceita > CENT ? ((-(mediaGrupo.get('DESPESA COM PESSOAL') || 0) - (mediaGrupo.get('DESPESAS ADMINISTRATIVAS') || 0)) / mediaReceita) * 100 : null,
+    margem: pctSobre(lucroOp, receita), mediaReceita: arred(mediaReceita), mediaResultado: arred(mediaResultado), n: b.n,
+    saldoInicial, saldoFinal: saldoInicial === null || saldoInicial === undefined ? null : arred(saldoInicial + resultado),
+    receitaMeta, classificar: arred(classificar), entradas: arred(entradas), saidas: arred(saidas),
+  };
+  const out = { b, r, grupos, porGrupo, valores, sim };
+  out.analise = analisar(out);
+  return out;
+}
+
+// Valor da conta no lado da Matriz ANTES da fatia (para simular fatia).
+function origemMatriz(contaId, m) {
+  const fm = fech('matriz', m); const c = contaMeta(contaId); if (!fm || !c) return null;
+  let v = 0;
+  for (const g of fm.dr) for (const i of g.itens) if (i.contaId === contaId) v = num(i.valor);
+  const fat = num(c.fatia) / 100;
+  if (fat >= 1) return null;
+  return v / (1 - fat);
+}
+
+const grupoDe = (calc, nome) => calc.grupos.find((g) => g.nome === nome) || { valor: 0, media: 0, ideal: null, itens: [], pctMedia: null };
+
+// A leitura pronta (cópia de montarAnalise do Hub).
+function analisar(calc) {
+  const { r, b } = calc; const g = (n) => grupoDe(calc, n); const f = b.f;
+  const soma = (ns) => ns.reduce((s, n) => s + g(n).valor, 0);
+  const escada = [
+    { k: 'receita', rot: 'Entrou da operação (vendas e recebimentos)', v: r.receita, tipo: 'entrada', grupos: ['RECEITA OPERACIONAL'] },
+    { k: 'pessoal', rot: 'Pessoal', v: g('DESPESA COM PESSOAL').valor, tipo: 'saida', grupos: ['DESPESA COM PESSOAL'] },
+    { k: 'adm', rot: 'Administrativas', v: g('DESPESAS ADMINISTRATIVAS').valor, tipo: 'saida', grupos: ['DESPESAS ADMINISTRATIVAS'] },
+    { k: 'producao', rot: 'Produção', v: g('CUSTO DE PRODUÇÃO').valor, tipo: 'saida', grupos: ['CUSTO DE PRODUÇÃO'] },
+    { k: 'vendas', rot: 'Vendas (taxas, comissão, frete, marketing)', v: g('DESPESAS COM VENDAS').valor, tipo: 'saida', grupos: ['DESPESAS COM VENDAS'] },
+    { k: 'lucroOp', rot: 'Sobrou da operação', v: r.lucroOp, tipo: 'total' },
+    { k: 'financeiro', rot: 'Juros e tarifas', v: g('DESPESAS FINANCEIRAS').valor, tipo: 'saida', grupos: ['DESPESAS FINANCEIRAS'] },
+    { k: 'investimentos', rot: 'Investimentos, empréstimos pagos e retiradas', v: g('INVESTIMENTOS E RETIRADAS').valor, tipo: 'saida', grupos: ['INVESTIMENTOS E RETIRADAS'] },
+    { k: 'outras', rot: 'Outras entradas (empréstimos recebidos, aplicações, venda de ativo)', v: soma(['RECEITA NÃO-OPERACIONAL', 'ENTRADA DE ATIVOS']), tipo: 'entrada', grupos: ['RECEITA NÃO-OPERACIONAL', 'ENTRADA DE ATIVOS'] },
+    { k: 'adiant', rot: 'Adiantamentos dados e devolvidos', v: soma(['TRANSITÓRIO ENTRADA', 'TRANSITÓRIO SAÍDA']), tipo: 'neutro', grupos: ['TRANSITÓRIO ENTRADA', 'TRANSITÓRIO SAÍDA'] },
+    { k: 'classificar', rot: 'A classificar', v: r.classificar, tipo: 'alerta' },
+    { k: 'resultado', rot: 'Resultado do caixa no mês', v: r.resultado, tipo: 'total' },
+  ].filter((l) => l.tipo === 'total' || l.k === 'receita' || Math.abs(l.v) >= CENT).map((l) => ({ ...l, v: arred(l.v) }));
+  const ROT = { 'DESPESA COM PESSOAL': 'Pessoal', 'DESPESAS ADMINISTRATIVAS': 'Administrativas', 'CUSTO DE PRODUÇÃO': 'Produção', 'DESPESAS COM VENDAS': 'Vendas', 'DESPESAS FINANCEIRAS': 'Juros e tarifas' };
+  const p100 = Object.keys(ROT).map((nome) => {
+    const x = g(nome);
+    return { grupo: nome, rot: ROT[nome], real: r.receita > CENT ? (-x.valor / r.receita) * 100 : null,
+      ideal: x.ideal === null || x.ideal === undefined ? null : -x.ideal, media: x.pctMedia === null || x.pctMedia === undefined ? null : -x.pctMedia, valor: x.valor };
+  }).filter((x) => Math.abs(x.valor) >= CENT || x.ideal);
+  const atencao = [];
+  if (r.saldoInicial === null && b.u !== 'consolidado') atencao.push({ tom: 'atencao', imp: Infinity, regra: 'saldo', txt: 'Falta informar o saldo de abertura — sem ele não há saldo final para levar ao mês seguinte.' });
+  if (f.aClassificar.length) atencao.push({ tom: 'atencao', imp: Math.abs(r.classificar) + 1e9, regra: 'classificar', txt: `${brl(r.classificar)} em ${f.aClassificar.length} conta(s) ainda sem lugar no plano.` });
+  if (r.receita > CENT && r.mediaReceita > CENT && r.receita < r.mediaReceita * 0.85) {
+    atencao.push({ tom: 'ruim', imp: r.mediaReceita - r.receita, regra: 'receita', txt: `Entrou ${brl(r.receita)}, ${Math.round((1 - r.receita / r.mediaReceita) * 100)}% abaixo da média dos últimos meses (${brl(r.mediaReceita)}).` });
+  }
+  if (r.receita > CENT) {
+    for (const grp of calc.grupos) {
+      if (GRUPO[grp.nome]?.entrada) continue;
+      for (const i of grp.itens) {
+        if (i.valor >= 0) continue;
+        if (i.ideal !== null && i.pct !== null && i.pct < i.ideal - 0.05) {
+          const exc = ((i.ideal - i.pct) / 100) * r.receita;
+          if (exc >= 100) atencao.push({ tom: 'ruim', imp: exc, regra: 'ideal', conta: i.nome, contaId: i.contaId, exc,
+            txt: `${i.nome}: gastou ${brl(-i.valor)} (${nbr(-i.pct, 1)}% do que entrou). O ideal é ${nbr(-i.ideal, 1)}% — ${brl(exc)} acima.` });
+        } else if (i.media < 0 && i.valor < i.media * 1.3 && i.media - i.valor >= 1000) {
+          atencao.push({ tom: 'atencao', imp: i.media - i.valor, regra: 'media', conta: i.nome, contaId: i.contaId,
+            txt: `${i.nome}: ${brl(-i.valor)} no mês, bem acima da média de ${brl(-i.media)}.` });
+        }
+      }
+    }
+  }
+  if (Array.isArray(f.extrato)) for (const l of f.extrato) if (l.fechado === false) atencao.push({ tom: 'ruim', imp: Math.abs(l.diferenca) + 1e8, regra: 'extrato', txt: `O extrato da ${l.loja} não fecha no centavo: diferença de ${brl(l.diferenca)}.` });
+  const bons = [];
+  if (r.receita > CENT) for (const x of p100) if (x.ideal !== null && x.real !== null && x.real < x.ideal - 0.5) bons.push(`${x.rot}: ${nbr(x.real, 1)}% do que entrou, abaixo do ideal de ${nbr(x.ideal, 1)}%.`);
+  let frase;
+  if (!f.resumo.temDado && !(calc.sim.ajustes || []).length) frase = 'Nenhum lançamento neste mês.';
+  else if (r.receita <= CENT) frase = `Não entrou receita da operação neste mês; o caixa ${r.resultado >= 0 ? 'fechou positivo' : 'fechou negativo'} em ${brl(r.resultado)}.`;
+  else {
+    frase = `Entrou ${brl(r.receita)} da operação. Depois de pessoal, administrativas, produção e vendas, `
+      + (r.lucroOp >= 0 ? `sobraram ${brl(r.lucroOp)} — ${Math.round((r.lucroOp / r.receita) * 100)} de cada R$ 100.` : `faltaram ${brl(-r.lucroOp)}.`)
+      + ` Com juros, investimentos, retiradas e o resto, o caixa do mês ${r.resultado >= 0 ? 'fechou positivo' : 'fechou negativo'} em ${brl(r.resultado)}.`;
+  }
+  return { escada, p100, atencao: atencao.sort((a, c) => c.imp - a.imp).slice(0, 8), bons: bons.slice(0, 4), frase };
+}
+
+// Confere o motor contra o que o Hub calculou. Diferença = aviso no arquivo.
+function conferirMotor(u, m) {
+  const c = calcular(base(u, m)); const f = fech(u, m); const dif = [];
+  const cmp = (rot, a, b) => { if (Math.abs(num(a) - num(b)) > 0.02) dif.push(`${rot}: arquivo ${brl(a)} × Hub ${brl(b)}`); };
+  cmp('Entrou da operação', c.r.receita, f.resumo.receita);
+  cmp('Sobrou da operação', c.r.lucroOp, f.resumo.lucroOperacional);
+  cmp('Caixa do mês', c.r.resultado, f.resumo.resultado);
+  for (const g of f.dr) cmp(g.nome, grupoDe(c, g.nome).valor, g.valor);
+  return dif;
+}
+
+// ============================================================ CONFIABILIDADE
+// Cada número recebe um selo: confiável, atenção ou não confiável — sempre
+// com o motivo escrito. As regras ficam todas aqui, num lugar só.
+
+function geradoMes() { return (P.geradoEm || '').slice(0, 7); }
+
+function flagsCtx(u = S.u, m = S.m) {
+  const f = fech(u, m); const c = calcular(base(u, m)); const fl = [];
+  const ger = new Date(P.geradoEm);
+  if (m === geradoMes() && !f.fechado) fl.push({ nivel: 'atencao', chave: 'aberto', txt: `O mês ainda estava em andamento quando o arquivo foi gerado (${ger.toLocaleDateString('pt-BR')} às ${ger.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}). Todos os números deste mês ainda vão mudar.` });
+  if (f.mudouDepoisDeFechar !== null && f.mudouDepoisDeFechar !== undefined) fl.push({ nivel: 'atencao', chave: 'mudou', txt: `O mês foi fechado, mas lançamentos mudaram depois (diferença de ${brl(f.mudouDepoisDeFechar)}). O saldo levado adiante é o da foto do fechamento.` });
+  if (Math.abs(c.r.classificar) >= CENT) fl.push({ nivel: 'atencao', chave: 'classificar', txt: `${brl(c.r.classificar)} estão "a classificar": estão no Caixa do mês, mas em nenhum grupo. Os grupos e os percentuais ficam incompletos até alguém ligar essas contas.` });
+  if (c.r.saldoInicial === null || c.r.saldoInicial === undefined) fl.push({ nivel: 'nao', chave: 'saldo', txt: 'Não há saldo de abertura informado nem mês fechado antes deste: o saldo final não existe (não é zero — é desconhecido).' });
+  if (c.r.receita <= CENT) fl.push({ nivel: 'nao', chave: 'semReceita', txt: 'Não entrou receita da operação: nenhum percentual "de cada R$ 100" pode ser calculado.' });
+  if (u === 'marketplace') {
+    const fatProd = P.contas.some((x) => x.grupo === 'CUSTO DE PRODUÇÃO' && num(x.fatia) > 0);
+    if (!fatProd) fl.push({ nivel: 'nao', chave: 'semFatia', txt: 'O Marketplace não tem fatia de Produção (tecido, facção, aviamentos). O custo das peças é pago pela Matriz, então o "Sobrou da operação" do Marketplace NÃO é lucro. Para lucro, use o "Lucro das vendas".' });
+    if (!(c.r.receitaMeta > 0)) fl.push({ nivel: 'atencao', chave: 'semMeta', txt: 'O Marketplace ainda não tem meta (orçamento): a coluna Ideal fica vazia e não há alerta de "acima do ideal".' });
+  }
+  if (c.r.n > 0 && c.r.n < 12) fl.push({ nivel: c.r.n < 3 ? 'nao' : 'atencao', chave: 'mediaCurta', txt: `A média usa só ${c.r.n} mês(es) com lançamento (o ideal são 12). Ela ainda pode estar puxada por um mês fora do normal.` });
+  if (Array.isArray(f.extrato)) {
+    const nf = f.extrato.filter((l) => l.fechado === false);
+    if (nf.length) fl.push({ nivel: 'nao', chave: 'extrato', txt: `Extrato que não fecha no centavo: ${nf.map((l) => `${l.loja} (${brl(l.diferenca)})`).join(', ')}. Falta ou sobra linha da plataforma — a receita do Marketplace pode estar errada.` });
+    const ss = f.extrato.filter((l) => l.fechado === null && l.linhas > 0 && l.marketplace !== 'tiktok_shop');
+    if (ss.length) fl.push({ nivel: 'atencao', chave: 'extratoSemSaldo', txt: `Sem saldo no extrato para conferir: ${ss.map((l) => l.loja).join(', ')}. A conta não pôde ser conferida no centavo.` });
+  }
+  if (f.vendas?.erro) fl.push({ nivel: 'nao', chave: 'vendasErro', txt: `O quadro de vendas não pôde ser calculado: ${f.vendas.erro}` });
+  else if (f.vendas?.pedidosSemCusto > 0) fl.push({ nivel: 'atencao', chave: 'semCusto', txt: `${f.vendas.pedidosSemCusto} pedido(s) sem custo completo ficaram fora do Lucro das vendas — o lucro está um pouco maior do que o real.` });
+  const atip = atipicas(c);
+  if (atip.length) fl.push({ nivel: 'atencao', chave: 'atipico', txt: `Valores muito fora do normal (confira no Wik se estão certos): ${atip.slice(0, 5).map((a) => `${a.nome} ${brl(a.valor)} contra média de ${brl(a.media)}`).join('; ')}.` });
+  const motor = conferirMotor(u, m);
+  if (motor.length) fl.push({ nivel: 'nao', chave: 'motor', txt: `O recálculo deste arquivo não bateu com o Hub em: ${motor.join('; ')}.` });
+  return fl;
+}
+
+function atipicas(calc) {
+  const out = [];
+  for (const g of calc.grupos) for (const i of g.itens) {
+    if (Math.abs(i.valor) >= 20000 && Math.abs(i.media) > 0 && Math.abs(i.valor) >= 3 * Math.abs(i.media) && Math.abs(i.valor - i.media) >= 20000) out.push(i);
+  }
+  return out.sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor));
+}
+
+// Selo de um tipo de número, dadas as bandeiras do contexto.
+function selo(tipo, extra = {}) {
+  const fl = flagsCtx(); const tem = (k) => fl.find((x) => x.chave === k);
+  const mot = []; let nivel = 'ok';
+  const sobe = (n, t) => { if (t) mot.push(t.txt || t); if (n === 'nao' || (n === 'atencao' && nivel === 'ok')) nivel = n; };
+  if (tem('aberto')) sobe('atencao', tem('aberto'));
+  if (tem('motor')) sobe('nao', tem('motor'));
+  switch (tipo) {
+    case 'receita': if (tem('extrato')) sobe('nao', tem('extrato')); break;
+    case 'grupo': case 'gastos': if (tem('classificar')) sobe('atencao', tem('classificar')); break;
+    case 'sobrou': if (tem('classificar')) sobe('atencao', tem('classificar')); if (tem('semFatia')) sobe('nao', tem('semFatia')); break;
+    case 'pct': if (tem('semReceita')) sobe('nao', tem('semReceita')); if (tem('classificar')) sobe('atencao', tem('classificar')); break;
+    case 'ideal': if (tem('semMeta')) sobe('nao', tem('semMeta')); else sobe('ok', 'O Ideal vem do orçamento cadastrado no Hub (planilha do financeiro): é uma meta, não um fato.'); break;
+    case 'media': if (tem('mediaCurta')) sobe(tem('mediaCurta').nivel, tem('mediaCurta')); break;
+    case 'saldo': if (tem('saldo')) sobe('nao', tem('saldo')); if (tem('mudou')) sobe('atencao', tem('mudou')); break;
+    case 'caixa': if (tem('extrato')) sobe('nao', tem('extrato')); break;
+    case 'vendas': if (tem('vendasErro')) sobe('nao', tem('vendasErro')); if (tem('semCusto')) sobe('atencao', tem('semCusto')); break;
+    case 'conta': {
+      const i = extra.item;
+      if (i && Math.abs(i.valor) >= 20000 && Math.abs(i.media) > 0 && Math.abs(i.valor) >= 3 * Math.abs(i.media)) sobe('atencao', `${i.nome} está ${nbr(Math.abs(i.valor / i.media), 1)}× acima da própria média — confira no Wik se o lançamento está na conta certa e no mês certo.`);
+      break;
+    }
+    default: break;
+  }
+  return { nivel, mot };
+}
+const SELO_TXT = { ok: 'Confiável', atencao: 'Atenção', nao: 'Não confiável' };
+function seloHtml(s) { return `<span class="selo ${s.nivel}" title="${esc(s.mot.join(' '))}">${SELO_TXT[s.nivel]}</span>`; }
+function confHtml(s) {
+  if (!s) return '';
+  const cab = { ok: 'Número confiável.', atencao: 'Atenção ao usar este número:', nao: 'Este número NÃO é confiável agora:' }[s.nivel];
+  return `<div class="confianca ${s.nivel}"><b>${cab}</b>${s.mot.length ? `<ul class="passos">${s.mot.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}</div>`;
+}
+
+// ============================================================ EXPLICAÇÕES
+// Cada função devolve { tit, direto, formula, passos, lista, conf, rel } e o
+// renderizador monta o HTML. Os números saem sempre do mesmo motor.
+
+const ctxTxt = () => `${UNID[S.u]} · ${mesTxt(S.m)}`;
+const calcAtual = () => calcular(base());
+
+function tabelaLanc(lista, limite = 12, titulo = 'Lançamentos que formam este número') {
+  if (!lista.length) return '<p class="nota">Nenhum lançamento.</p>';
+  const ord = lista.slice().sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor));
+  const linhas = ord.slice(0, limite).map((l) => `<tr><td>${dataBr(l.data)}</td><td>${esc(l.pessoa || '—')}${l.descricao && l.descricao !== l.conta ? `<br><small class="nota">${esc(l.descricao)}</small>` : ''}</td><td>${esc(l.conta || ('A classificar: ' + (l.planoNome || 'sem conta')))}</td><td>${origemTxt(l)}</td><td class="num ${l.valor < 0 ? 'neg' : 'pos'}">${brl(l.valor)}</td></tr>`).join('');
+  const total = lista.reduce((s, l) => s + l.valor, 0);
+  return `<h3 style="font-size:14px;margin:12px 0 4px">${titulo} (${lista.length})</h3><div class="rolagem"><table class="t"><thead><tr><th>Data do pagamento</th><th>Pessoa</th><th>Conta</th><th>Origem</th><th class="num">Valor</th></tr></thead><tbody>${linhas}<tr class="total"><td colspan="4">Soma de ${lista.length} lançamento(s)${lista.length > limite ? ` — mostrando os ${limite} maiores` : ''}</td><td class="num">${brl(total)}</td></tr></tbody></table></div>`;
+}
+function origemTxt(l) {
+  if (l.tipo === 'extrato') return `Extrato da plataforma${l.qtd ? ` (${l.qtd} linhas somadas)` : ''}`;
+  if (l.tipo === 'fatia') return `Fatia de ${nbr(l.fatia, 0)}% da Matriz`;
+  if (l.doWik) return 'Wik' + (S.u === 'consolidado' ? ` · ${UNID_CURTO[l.unidade]}` : '');
+  return 'Lançado no Hub' + (S.u === 'consolidado' ? ` · ${UNID_CURTO[l.unidade]}` : '');
+}
+const lancDaConta = (nome) => lancs().filter((l) => l.conta === nome);
+const lancDoGrupo = (g) => lancs().filter((l) => l.grupo === g);
+const lancClassificar = () => lancs().filter((l) => !l.conta);
+
+const REGRA_FONTE = 'Os lançamentos vêm do Wik (sincronizado com o Hub a cada 15 minutos), do que foi lançado no próprio Hub e, no Marketplace, do extrato das plataformas. O mês de cada lançamento é o mês da DATA DO PAGAMENTO (regime de caixa).';
+
+function expResumo(campo) {
+  const c = calcAtual(); const r = c.r; const g = (n) => grupoDe(c, n).valor;
+  const E = {
+    receita: () => ({ tit: 'Entrou da operação', direto: `${brl(r.receita)} — é a soma do grupo Receita Operacional em ${ctxTxt()}.`,
+      formula: grupoDe(c, 'RECEITA OPERACIONAL').itens.filter((i) => Math.abs(i.valor) >= CENT).map((i) => `${i.nome} ${brl(i.valor)}`).join(' + ') + ` = ${brl(r.receita)}`,
+      passos: [REGRA_FONTE, 'Recebimento do Wik sem conta do plano conta como Vendas (no Wik, a conta a receber de cliente não leva plano).', S.u !== 'matriz' ? 'No Marketplace, Vendas = dinheiro que a plataforma LIBEROU no mês, já sem comissão e frete; devoluções entram negativas em "Devoluções de Vendas".' : null, `Média dos meses: ${brl(r.mediaReceita)} = soma do que entrou nos ${r.n} meses com lançamento ÷ ${r.n}.`],
+      lista: tabelaLanc(lancDoGrupo('RECEITA OPERACIONAL')), conf: selo('receita'), rel: ['Por que a receita é diferente do faturamento?', 'De onde vem a média?'] }),
+    gastos: () => ({ tit: 'Gastos da operação', direto: `${brl(r.gastosOp)} — Pessoal + Administrativas + Produção + Vendas.`,
+      formula: `${brl(g('DESPESA COM PESSOAL'))} + ${brl(g('DESPESAS ADMINISTRATIVAS'))} + ${brl(g('CUSTO DE PRODUÇÃO'))} + ${brl(g('DESPESAS COM VENDAS'))} = ${brl(r.gastosOp)}`,
+      passos: [REGRA_FONTE, 'Juros, investimentos, retiradas e adiantamentos NÃO estão aqui — eles entram só no Caixa do mês.'], conf: selo('gastos'), rel: ['Quanto foi de pessoal?', 'Como o mês fechou?'] }),
+    sobrou: () => ({ tit: 'Sobrou da operação', direto: `${brl(r.lucroOp)} — o que entrou da operação menos os gastos da operação.`,
+      formula: `${brl(r.receita)} ${r.gastosOp < 0 ? '−' : '+'} ${brl(Math.abs(r.gastosOp))} = ${brl(r.lucroOp)}\nDe cada R$ 100: ${brl(r.lucroOp)} ÷ ${brl(r.receita)} × 100 = ${r.margem === null ? '—' : 'R$ ' + nbr(r.margem, 2)}`,
+      passos: ['É visão de CAIXA: dinheiro que sobrou no mês depois de pagar a operação. Não é lucro contábil.', S.u === 'marketplace' ? 'No Marketplace, sem fatia de Produção, este número não inclui o custo das peças — para lucro use "Lucro das vendas".' : null],
+      conf: selo('sobrou'), rel: ['Qual a diferença entre Sobrou e Caixa do mês?', 'Lucro das vendas'] }),
+    caixa: () => ({ tit: 'Caixa do mês (Resultado do caixa)', direto: `${brl(r.resultado)} — tudo que entrou menos tudo que saiu em ${ctxTxt()}. É o "Total geral" da DR da planilha.`,
+      formula: c.grupos.map((x) => `${x.tela} ${brl(x.valor)}`).join('\n+ ') + (Math.abs(r.classificar) >= CENT ? `\n+ A classificar ${brl(r.classificar)}` : '') + `\n= ${brl(r.resultado)}`,
+      passos: [REGRA_FONTE, `Pela escada: Sobrou da operação ${brl(r.lucroOp)}; depois juros e tarifas ${brl(g('DESPESAS FINANCEIRAS'))}, investimentos e retiradas ${brl(g('INVESTIMENTOS E RETIRADAS'))}, outras entradas ${brl(g('RECEITA NÃO-OPERACIONAL') + g('ENTRADA DE ATIVOS'))}, adiantamentos ${brl(g('TRANSITÓRIO ENTRADA') + g('TRANSITÓRIO SAÍDA'))}${Math.abs(r.classificar) >= CENT ? ` e a classificar ${brl(r.classificar)}` : ''}.`, 'Saque, Pix entre contas, maquininha e transferência entre contas da própria empresa NÃO entram: é dinheiro mudando de bolso.'],
+      conf: selo('caixa'), rel: ['Como o mês fechou?', 'Saldo final'] }),
+    saldoFinal: () => ({ tit: 'Saldo final do mês', direto: r.saldoFinal === null ? 'Não existe: falta o saldo de abertura.' : `${brl(r.saldoFinal)} = saldo de abertura ${brl(r.saldoInicial)} + caixa do mês ${brl(r.resultado)}.`,
+      formula: r.saldoFinal === null ? 'saldo de abertura (desconhecido) + caixa do mês = desconhecido' : `${brl(r.saldoInicial)} + ${brl(r.resultado)} = ${brl(r.saldoFinal)}`,
+      passos: ['O saldo de abertura vem do saldo final do último mês FECHADO antes deste; se não houver, do saldo informado à mão num mês (só é preciso uma vez); a partir dele, cada mês soma seu caixa e passa adiante.', 'É o saldo GERENCIAL. Só bate com o banco se a abertura informada for o saldo real do banco e todos os pagamentos estiverem lançados.', origemSaldoTxt()],
+      conf: selo('saldo'), rel: ['Saldo de abertura', 'Caixa do mês'] }),
+    saldoInicial: () => ({ tit: 'Saldo de abertura', direto: r.saldoInicial === null ? 'Não informado.' : `${brl(r.saldoInicial)}.`, passos: [origemSaldoTxt()], conf: selo('saldo') }),
+    custoFixo: () => ({ tit: 'Custo fixo', direto: `${pctTxt(r.custoFixoPct)} do que entrou foi para Pessoal + Administrativas.`,
+      formula: `(${brl(-g('DESPESA COM PESSOAL'))} + ${brl(-g('DESPESAS ADMINISTRATIVAS'))}) ÷ ${brl(r.receita)} × 100 = ${pctTxt(r.custoFixoPct)}\nIdeal: orçamento de Pessoal + Administrativas ÷ receita orçada = ${pctTxt(r.custoFixoIdeal)}\nMédia: (média de Pessoal + média de Administrativas) ÷ média do que entrou = ${pctTxt(r.custoFixoMedio)}`,
+      passos: ['É a aba CUSTO FIXO da planilha; lá o percentual era digitado, aqui é calculado.'], conf: selo('pct') }),
+    mediaReceita: () => ({ tit: 'Média do que entrou', direto: `${brl(r.mediaReceita)} por mês.`, formula: serieTxt('receita'), passos: ['Últimos 12 meses contando o mês da tela, mas só os meses que tiveram lançamento. Mês vazio não entra como zero.'], conf: selo('media') }),
+  };
+  return (E[campo] || E.caixa)();
+}
+function serieTxt(k) {
+  const s = fech().serie.filter((x) => x.temDado);
+  if (!s.length) return 'Sem meses com lançamento.';
+  const tot = s.reduce((a, x) => a + num(x[k]), 0);
+  return s.map((x) => `${x.mes.slice(5)}/${x.mes.slice(2, 4)}: ${brl(x[k])}`).join(' + ') + `\n= ${brl(tot)} ÷ ${s.length} meses = ${brl(tot / s.length)}`;
+}
+function origemSaldoTxt() {
+  const o = fech().resumo.origemSaldo || [];
+  return o.map((x) => x.tipo === 'sem_ancora' ? `${UNID_CURTO[x.unidade]}: nenhum saldo informado e nenhum mês fechado antes.` : x.tipo === 'mes_fechado' ? `${UNID_CURTO[x.unidade]}: parte do saldo final do mês fechado ${x.mes} (${brl(x.saldo)}).` : `${UNID_CURTO[x.unidade]}: parte do saldo informado à mão em ${x.mes} (${brl(x.saldo)}) e soma o caixa de cada mês desde então.`).join(' ');
+}
+
+function expGrupo(nome) {
+  const c = calcAtual(); const g = grupoDe(c, nome); const r = c.r; const ent = GRUPO[nome]?.entrada;
+  const itens = g.itens.filter((i) => Math.abs(i.valor) >= CENT).sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor));
+  const reais = g.dif !== null && r.receita > 0 ? Math.abs(g.dif / 100) * r.receita : null;
+  return {
+    tit: `${nomeGrupo(nome)} (${nome})`, direto: `${brl(g.valor)} em ${ctxTxt()} — ${por100(g.pct)} de cada R$ 100 que entrou${g.ideal !== null ? `; o ideal é ${por100(g.ideal)}` : ''}.`,
+    formula: `No mês: ${itens.map((i) => `${i.nome} ${brl(i.valor)}`).join(' + ') || '0'} = ${brl(g.valor)}\nDe cada R$ 100: ${brl(Math.abs(g.valor))} ÷ ${brl(r.receita)} × 100 = ${por100(g.pct)}`
+      + (g.ideal !== null ? `\nIdeal: orçamento do grupo ${brl(Math.abs(g.orc))} ÷ receita orçada ${brl(r.receitaMeta)} × 100 = ${por100(g.ideal)}` : '\nIdeal: sem orçamento cadastrado para este grupo')
+      + (reais !== null ? `\nContra o ideal: (${nbr(Math.abs(g.pct), 2)} − ${nbr(Math.abs(g.ideal), 2)}) ÷ 100 × ${brl(r.receita)} = ${brl(reais)} ${ent ? (g.dif > 0 ? 'acima da meta' : 'abaixo da meta') : (g.dif < 0 ? 'gastos a mais' : 'economizados')}` : '')
+      + `\nMédia do mês: ${brl(g.media)} (média de ${r.n} mês(es) com lançamento)`,
+    passos: [REGRA_FONTE, 'As contas do Wik caem nas contas da planilha por: ligação manual → mesmo nome → apelido conhecido → começo do nome igual → grupo do próprio Wik.'],
+    lista: tabelaLanc(lancDoGrupo(nome), 15), conf: selo('grupo'),
+    rel: itens.slice(0, 4).map((i) => `Como chegou em ${i.nome}?`),
+  };
+}
+
+function expConta(id) {
+  const c = calcAtual(); const r = c.r; let item = null; let grupo = null;
+  for (const g of c.grupos) for (const i of g.itens) if (i.contaId === id) { item = i; grupo = g; }
+  const meta = contaMeta(id);
+  if (!item) item = { contaId: id, nome: meta?.nome || '?', valor: 0, media: 0, pct: null, ideal: null, dif: null, orc: undefined };
+  const ent = GRUPO[meta?.grupo]?.entrada;
+  const lista = lancDaConta(item.nome);
+  const reais = item.dif !== null && r.receita > 0 ? Math.abs(item.dif / 100) * r.receita : null;
+  const fat = num(meta?.fatia);
+  return {
+    tit: `${item.nome}`, direto: `${brl(item.valor)} em ${ctxTxt()} — conta do grupo ${nomeGrupo(meta?.grupo)} (${meta?.grupo}).`,
+    formula: `No mês: soma de ${lista.length} lançamento(s) = ${brl(item.valor)}\nDe cada R$ 100: ${brl(Math.abs(item.valor))} ÷ ${brl(r.receita)} × 100 = ${por100(item.pct)}`
+      + (item.ideal !== null ? `\nIdeal: orçamento ${brl(Math.abs(item.orc))} ÷ receita orçada ${brl(r.receitaMeta)} × 100 = ${por100(item.ideal)}` : '\nIdeal: esta conta não tem orçamento (meta) cadastrado')
+      + (reais !== null ? `\nContra o ideal: (${nbr(Math.abs(item.pct), 2)} − ${nbr(Math.abs(item.ideal), 2)}) ÷ 100 × ${brl(r.receita)} = ${brl(reais)} ${ent ? (item.dif > 0 ? 'acima da meta' : 'abaixo da meta') : (item.dif < 0 ? 'gastos a mais que o ideal' : 'economizados')}` : '')
+      + `\nMédia do mês: ${brl(item.media)} (${r.n} mês(es) com lançamento)`,
+    passos: [REGRA_FONTE, fat > 0 ? `Esta conta tem fatia de ${nbr(fat, 1)}%: o Marketplace leva ${nbr(fat, 1)}% de cada pagamento da Matriz nela e a Matriz fica com ${nbr(100 - fat, 1)}%. O Consolidado mostra o valor inteiro.` : null,
+      contasDoWik(lista)],
+    lista: tabelaLanc(lista, 15), conf: selo('conta', { item }), rel: [`O que é o grupo ${nomeGrupo(meta?.grupo)}?`, 'De onde vem o Ideal?'],
+  };
+}
+function contasDoWik(lista) {
+  const nomes = [...new Set(lista.map((l) => l.planoNome).filter(Boolean))];
+  if (!nomes.length) return null;
+  return `Contas do Wik que caíram aqui: ${nomes.slice(0, 8).map((n) => `"${n}"`).join(', ')}.`;
+}
+
+const APELIDOS = { 'juros renegociacao': 'Juros de Empréstimos', 'despesas com cartao': 'Taxas de Recebimento de Cartão / Pic Pay', 'antecipacao de cartoes': 'Taxas de Recebimento de Cartão / Pic Pay', 'renegociacao de cheques devolvidos': 'Inadimplência / Ch dvlvd', 'pagto cheques devolvidos': 'Inadimplência / Ch dvlvd', 'cheque devolvido': 'Inadimplência / Ch dvlvd', 'desconto cheques': 'Juros Desconto de Cheques', 'prorrogacao de cheques': 'Juros Desconto de Cheques', 'devolucao de vales e adiantamentos': 'Recebimento de Adiantamento Colaboradores', 'vales e adiantamentos': 'Adiantamento a Colaboradores', 'golas ribanas e insumos em gerais': 'Aviamentos e Acessórios', 'receita de emprestimos': 'Entrada de Empréstimos', 'venda imobilizado': 'Venda de Móveis, Máquinas e Equipamentos', darf: 'Fgts / Inss / Irrf / Irpf/darf', 'gasto com reforma': 'Melhorias / Reformas e Construção', 'reforma loja': 'Melhorias / Reformas e Construção' };
+const TIPO_EXTRATO = { Vendas: 'venda liberada (repasse de venda)', 'Devoluções de Vendas': 'devolução/estorno ao comprador', Marketing: 'Ads cobrado pela plataforma', 'Taxas Site / Market Place': 'taxa, ajuste ou antecipação cobrados pela plataforma', 'Receita com Aplicações': 'rendimento do saldo', 'Entrada de Empréstimos': 'empréstimo recebido na conta da plataforma', 'Amortização de Emprestimos': 'parcela de empréstimo da plataforma' };
+
+function regraDaConta(l) {
+  if (l.tipo === 'extrato') return `Linha do extrato da plataforma do tipo "${TIPO_EXTRATO[l.conta] || 'outros'}" → conta "${l.conta}" (regra fixa do Hub para o extrato).`;
+  if (l.tipo === 'fatia') return `É a fatia de ${nbr(l.fatia, 0)}% que o Marketplace assume de um pagamento da Matriz na conta "${l.conta}".`;
+  if (!l.conta) return `A conta do Wik "${l.planoNome || '(sem conta)'}" não foi reconhecida: está "a classificar" até alguém ligar.`;
+  if (!l.planoNome) return l.valor > 0 ? 'Recebimento do Wik sem conta do plano → Vendas (no Wik, conta a receber de cliente não leva plano de contas).' : `Lançado no Hub direto na conta "${l.conta}".`;
+  const a = normNome(l.planoNome); const b = normNome(l.conta);
+  if (a === b) return `Conta do Wik "${l.planoNome}" → conta "${l.conta}" (mesmo nome).`;
+  if (APELIDOS[a] && normNome(APELIDOS[a]) === b) return `Conta do Wik "${l.planoNome}" → "${l.conta}" (apelido conhecido do plano do Wik).`;
+  if (a.startsWith(b + ' ') || b.startsWith(a + ' ')) return `Conta do Wik "${l.planoNome}" → "${l.conta}" (começo do nome igual).`;
+  return `Conta do Wik "${l.planoNome}" → "${l.conta}" (ligação manual feita na tela ou conta criada no grupo que o Wik indica).`;
+}
+
+function expLancamento(l) {
+  const c = calcAtual(); const r = c.r;
+  const totConta = l.conta ? lancDaConta(l.conta).reduce((s, x) => s + x.valor, 0) : r.classificar;
+  const parte = totConta ? (l.valor / totConta) * 100 : null;
+  return {
+    tit: `Lançamento de ${brl(l.valor)} — ${l.pessoa || 'sem pessoa'}`,
+    direto: `Pago/recebido em ${dataBr(l.data)}, na conta "${l.conta || 'a classificar'}" (${nomeGrupo(l.grupo)}), unidade ${UNID_CURTO[l.unidade]}.`,
+    formula: `Este lançamento: ${brl(l.valor)}\nTotal da conta "${l.conta || 'A classificar'}" no mês: ${brl(totConta)}${parte !== null ? ` (este é ${nbr(parte, 1)}% dela)` : ''}\nDe cada R$ 100 que entrou: ${r.receita > 0 ? por100((l.valor / r.receita) * 100) : '—'}`,
+    passos: [
+      `Origem: ${origemTxt(l)}${l.banco ? ` · conta bancária/loja: ${l.banco}` : ''}.`,
+      `Por que este mês: a data do PAGAMENTO é ${dataBr(l.data)} (regime de caixa — vencimento e emissão não importam).`,
+      `Por que esta unidade: ${l.tipo === 'extrato' ? 'linha do extrato de uma plataforma é sempre do Marketplace.' : l.tipo === 'fatia' ? 'é a fatia do Marketplace.' : l.unidade === 'marketplace' ? 'foi pago/recebido numa conta bancária marcada como do Marketplace ou lançado no Hub para o Marketplace.' : 'veio do Wik (a Matriz) ou foi lançado no Hub para a Matriz.'}`,
+      `Por que esta conta: ${regraDaConta(l)}`,
+      l.descricao ? `Descrição: ${l.descricao}.` : null, l.obs ? `Observação: ${l.obs}.` : null,
+    ], conf: selo(l.conta ? 'conta' : 'grupo', { item: null }),
+    rel: l.conta ? [`Como chegou em ${l.conta}?`] : [],
+  };
+}
+
+function expPessoa(nome, lista) {
+  const tot = lista.reduce((s, l) => s + l.valor, 0);
+  const porConta = new Map();
+  for (const l of lista) porConta.set(l.conta || 'A classificar', num(porConta.get(l.conta || 'A classificar')) + l.valor);
+  return {
+    tit: `${nome}`, direto: `${lista.length} lançamento(s) em ${ctxTxt()}, somando ${brl(tot)}.`,
+    formula: [...porConta.entries()].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).map(([k, v]) => `${k}: ${brl(v)}`).join('\n'),
+    passos: [REGRA_FONTE], lista: tabelaLanc(lista, 25, 'Lançamentos desta pessoa/banco'), conf: selo('conta', {}),
+  };
+}
+
+function expEscada() {
+  const c = calcAtual();
+  return { tit: 'Como o mês fechou (a escada)', direto: c.analise.frase,
+    formula: c.analise.escada.map((l) => `${l.tipo === 'total' ? '= ' : l.tipo === 'saida' ? '− ' : l.k === 'receita' ? '  ' : l.v >= 0 ? '+ ' : '− '}${l.rot.padEnd(46, ' ')} ${brl(l.v)}`).join('\n'),
+    passos: ['Cada degrau é a soma de um grupo da DR da planilha (ou de dois grupos juntos). "Sobrou da operação" soma os cinco primeiros; "Resultado do caixa" soma todos.', 'A barra de cada degrau só mostra o tamanho comparado ao maior degrau.', 'Degrau sem valor no mês não aparece.'],
+    conf: selo('caixa'), rel: ['Entrou da operação', 'Sobrou da operação', 'Caixa do mês'] };
+}
+
+function expPor100(grupo) {
+  const c = calcAtual(); const x = c.analise.p100.find((p) => p.grupo === grupo) || c.analise.p100[0];
+  if (!x) return { tit: 'De cada R$ 100', direto: 'Sem receita da operação no mês.', conf: selo('pct') };
+  const g = grupoDe(c, x.grupo);
+  return { tit: `De cada R$ 100 — ${x.rot}`, direto: `De cada R$ 100 que entrou, ${x.real === null ? '—' : 'R$ ' + nbr(x.real, 2)} foram para ${x.rot}. O ideal é ${x.ideal === null ? 'sem meta' : 'R$ ' + nbr(x.ideal, 2)}; a média dos meses é ${x.media === null ? '—' : 'R$ ' + nbr(x.media, 2)}.`,
+    formula: `Barra (Real): ${brl(Math.abs(g.valor))} ÷ ${brl(c.r.receita)} × 100 = ${x.real === null ? '—' : nbr(x.real, 2)}\nTraço preto (Ideal): orçamento ${brl(Math.abs(g.orc))} ÷ receita orçada ${brl(c.r.receitaMeta)} × 100 = ${x.ideal === null ? '—' : nbr(x.ideal, 2)}\nTraço cinza (Média): média do grupo ${brl(Math.abs(g.media))} ÷ média do que entrou ${brl(c.r.mediaReceita)} × 100 = ${x.media === null ? '—' : nbr(x.media, 2)}\nCor: ${x.ideal !== null && x.real !== null && x.real > x.ideal + 0.05 ? 'vermelha (passou do ideal)' : 'verde (no ideal ou abaixo)'}`,
+    passos: ['"R$ X de cada R$ 100" é o mesmo que "X% do que entrou" — escrito em reais para ficar fácil de explicar.', 'A média é "média do gasto ÷ média da receita", não a média dos percentuais: assim um mês de receita baixa não distorce.'],
+    conf: selo('pct'), rel: GRUPOS.filter((gg) => gg.op && !gg.entrada).map((gg) => `De cada 100, ${gg.tela.toLowerCase()}`) };
+}
+
+function expAlerta(a) {
+  const c = calcAtual();
+  const regras = {
+    ideal: 'Aparece quando o % da conta passa do Ideal em mais de 0,05 ponto E o excesso é de pelo menos R$ 100. Excesso = (Ideal − Real) ÷ 100 × Entrou da operação.',
+    media: 'Aparece quando uma conta (sem ideal ou dentro dele) gastou mais de 1,3× a própria média E pelo menos R$ 1.000 a mais.',
+    receita: 'Aparece quando o que entrou ficou mais de 15% abaixo da média dos meses.',
+    classificar: 'Aparece quando existe pagamento cuja conta do Wik não foi reconhecida.',
+    saldo: 'Aparece quando a unidade nunca teve saldo informado nem mês fechado.',
+    extrato: 'Aparece quando, numa loja, saldo inicial + movimento ≠ saldo final do extrato.',
+  };
+  let formula = '';
+  if (a.regra === 'ideal' && a.contaId) {
+    const it = c.grupos.flatMap((g) => g.itens).find((i) => i.contaId === a.contaId);
+    if (it) formula = `Real: ${brl(-it.valor)} ÷ ${brl(c.r.receita)} × 100 = ${nbr(-it.pct, 2)}%\nIdeal: ${brl(Math.abs(it.orc))} ÷ ${brl(c.r.receitaMeta)} × 100 = ${nbr(-it.ideal, 2)}%\nExcesso: (${nbr(-it.pct, 2)} − ${nbr(-it.ideal, 2)}) ÷ 100 × ${brl(c.r.receita)} = ${brl(a.exc)}`;
+  }
+  return { tit: 'Alerta: ' + a.txt.split(':')[0], direto: a.txt, formula, passos: [regras[a.regra] || '', 'A lista mostra no máximo 8 alertas, do maior impacto em reais para o menor; saldo faltando e a classificar vêm primeiro.'], conf: selo('pct'),
+    rel: a.contaId ? [`Como chegou em ${a.conta}?`] : [] };
+}
+
+function expPosicao(chave) {
+  const f = fech(); const l = f.posicao.linhas.find((x) => x.chave === chave);
+  if (!l) return null;
+  return { tit: `Posição: ${l.rotulo}`, direto: `Atual ${brl(l.atual)} · anterior ${brl(l.anterior)} · variação ${brl(l.variacao)}.`,
+    formula: l.automatico ? `Títulos da unidade emitidos até o último dia do mês, com saldo nessa data:\nvalor − retenções − pagamentos feitos até o último dia.${chave.includes('Vencidas') ? '\nSó os com vencimento antes do último dia do mês.' : '\nSó os que ainda não tinham vencido.'}\nVariação = Atual − Anterior` : 'Valor DIGITADO no fechamento (botão "Informar estoques").\nVariação = Atual − Anterior',
+    passos: ['Não entram títulos "previstos" nem cancelados até a data.', l.automatico ? 'Contas a pagar aparecem negativas (é dinheiro que vai sair).' : 'Valor informado: o arquivo não tem como conferir — é o que foi digitado.'],
+    conf: { nivel: l.atual === null ? 'nao' : l.automatico ? 'ok' : 'atencao', mot: l.atual === null ? ['Não informado neste mês.'] : l.automatico ? [] : ['Valor digitado à mão no fechamento.'] } };
+}
+
+function expVendas(campo) {
+  const v = fech().vendas;
+  if (!v || v.erro) return { tit: 'Vendas do mês', direto: v?.erro ? `Não calculado: ${v.erro}` : 'Sem dados de vendas.', conf: selo('vendas') };
+  const linhas = {
+    faturamento: ['Faturamento', brl(v.faturamento), 'Soma do valor dos pedidos do mês (pela DATA DO PEDIDO) que são venda — troca, devolução, bonificação, amostra ficam fora — e não cancelados.'],
+    pedidos: ['Vendas (pedidos)', nbr(v.pedidos, 0), 'Quantidade desses pedidos.'],
+    pecas: ['Peças', nbr(v.pecas, 0), 'Soma das peças dos pedidos.'],
+    precoMedio: ['Preço médio', brl(v.precoMedio), `Faturamento ÷ Peças = ${brl(v.faturamento)} ÷ ${nbr(v.pecas, 0)}`],
+    ticketReais: ['Ticket médio (R$)', brl(v.ticketReais), `Faturamento ÷ Pedidos = ${brl(v.faturamento)} ÷ ${nbr(v.pedidos, 0)}`],
+    ticketPecas: ['Ticket médio (peças)', nbr(v.ticketPecas, 1), `Peças ÷ Pedidos = ${nbr(v.pecas, 0)} ÷ ${nbr(v.pedidos, 0)}`],
+    lucro: ['Lucro das vendas', brl(v.lucro), `Motor da Lucratividade: venda − custo das peças (${brl(v.custoPecas)}) − taxa da plataforma − frete − Ads (rateado por anúncio e dia) − embalagem/imposto quando cobrados à parte.`],
+    margem: ['Margem das vendas', pctTxt(v.margem, 1), `Lucro ÷ Faturamento × 100 = ${brl(v.lucro)} ÷ ${brl(v.faturamento)} × 100`],
+  };
+  const x = linhas[campo] || linhas.faturamento;
+  return { tit: x[0], direto: `${x[1]} em ${ctxTxt()}.`, formula: x[2],
+    passos: ['Este quadro NÃO é caixa: é pela data do pedido. Por isso o Faturamento nunca bate com o "Entrou da operação" (a plataforma libera o dinheiro dias depois e já desconta comissão e frete).', S.u === 'matriz' ? 'Matriz = pedidos que não são de marketplace (inclui os do Wik).' : S.u === 'marketplace' ? 'Marketplace = pedidos das plataformas.' : 'Consolidado = os dois.', v.pedidosSemCusto ? `${v.pedidosSemCusto} pedido(s) sem custo completo ficaram fora do lucro.` : null],
+    conf: selo('vendas'), rel: ['Por que a receita é diferente do faturamento?'] };
+}
+
+function expExtrato(loja) {
+  const l = (fech().extrato || []).find((x) => x.loja === loja);
+  if (!l) return null;
+  return { tit: `Conferência do extrato — ${loja}`, direto: l.fechado === true ? 'Fecha no centavo.' : l.fechado === false ? `NÃO fecha: diferença de ${brl(l.diferenca)}.` : 'Sem saldo no extrato para conferir.',
+    formula: `Saldo inicial ${brl(l.saldoInicial)} + soma das ${l.linhas} linhas do mês = saldo final ${brl(l.saldoFinal)}?${l.diferenca !== null ? `\nDiferença: ${brl(l.diferenca)}` : ''}`,
+    passos: ['O Mercado Pago e a Shopee informam o saldo depois de cada linha; o Hub confere se a soma das linhas é exatamente a diferença entre o saldo do fim e o do começo. Linha faltando, repetida ou sobrescrita quebra a conta.', 'A TikTok não informa saldo: lá a conferência é contra os repasses.'],
+    conf: { nivel: l.fechado === true ? 'ok' : l.fechado === false ? 'nao' : 'atencao', mot: [] } };
+}
+
+function expClassificar() {
+  const f = fech();
+  return { tit: 'A classificar', direto: `${brl(f.aClassificar.reduce((s, c) => s + c.valor, 0))} em ${f.aClassificar.length} conta(s).`,
+    formula: f.aClassificar.map((c) => `${c.nome}: ${brl(c.valor)}`).join('\n') || 'Nada a classificar.',
+    passos: ['São pagamentos cuja conta do Wik não foi reconhecida por nenhuma regra. O dinheiro ESTÁ no Caixa do mês, só não está em nenhum grupo.', 'No Hub: Conta por conta › A classificar › escolha a conta › Ligar. Vale para sempre.'],
+    lista: tabelaLanc(lancClassificar(), 15), conf: { nivel: f.aClassificar.length ? 'atencao' : 'ok', mot: [] } };
+}
+
+function expSerie(mes) {
+  const s = fech().serie.find((x) => x.mes === mes);
+  if (!s) return null;
+  return { tit: `Histórico — ${mesTxt(mes)}`, direto: s.temDado ? `Entrou ${brl(s.receita)}; caixa do mês ${brl(s.resultado)}.` : 'Mês sem nenhum lançamento (sem dado, não zero).',
+    passos: ['Cada barra do gráfico de 12 meses é o mesmo cálculo da tela, feito para aquele mês.'], conf: { nivel: s.temDado ? 'ok' : 'atencao', mot: [] } };
+}
+
+// ============================================================ CONHECIMENTO GERAL
+// Respostas que não dependem de número: como funciona, o que não mostra etc.
+// Cada artigo tem MUITAS formas de perguntar (palavras-chave) para achar a
+// resposta independente de como a pessoa escreve.
+const KB = [
+  { id: 'automacao', tit: 'Como os números são feitos (tudo automático)', chaves: ['automatico', 'automacao', 'como foi feito', 'como funciona', 'de onde vem', 'de onde vieram', 'origem', 'sistema calcula', 'quem calcula', 'calculado', 'manual', 'digitado', 'puxa', 'integracao', 'sincroniza'],
+    html: () => `<ol class="passos">
+<li><b>Wik → Hub (automático, a cada 15 minutos).</b> O Hub entra no Wik com o login exclusivo do Hub e copia o financeiro da matriz: contas a pagar e a receber, os pagamentos (baixas) com data e valor, o plano de contas e as contas bancárias. Nada é digitado.</li>
+<li><b>Plataformas → Hub (automático).</b> O extrato do Mercado Pago/Mercado Livre, da Shopee e da TikTok é lido das próprias plataformas, linha a linha, com o saldo depois de cada linha.</li>
+<li><b>Cada lançamento ganha uma conta da planilha.</b> Ordem das regras: ligação feita à mão → mesmo nome (sem acento/maiúscula) → apelido conhecido → começo do nome igual → conta criada no grupo que o próprio Wik indica. Recebimento sem conta = Vendas. Pagamento sem conta = A classificar.</li>
+<li><b>Cada lançamento ganha uma unidade.</b> A da conta bancária quando ela tem dono (Mercado Pago = Marketplace); senão, a do título (Wik = Matriz). Extrato de plataforma = Marketplace. Conta com fatia divide entre as duas.</li>
+<li><b>Cada lançamento ganha um mês</b> = o mês da data do pagamento (regime de caixa).</li>
+<li><b>Soma.</b> Conta → grupo → os números da tela (Entrou, Sobrou, Caixa), os percentuais (÷ o que entrou), o Ideal (orçamento ÷ receita orçada), a média (12 meses com lançamento) e o saldo (abertura + caixa).</li>
+<li><b>Leitura pronta.</b> A frase, a escada e os alertas saem de regras fixas sobre esses números (sem opinião, sem IA).</li>
+<li><b>Este arquivo.</b> No download, o Hub roda exatamente o mesmo cálculo para os 3 meses, nas 3 unidades, guarda os resultados e os lançamentos, comprime e tranca com uma senha (AES-256). O arquivo refaz as contas sozinho e confere contra o que o Hub calculou; se não bater, avisa.</li></ol>
+<p class="nota">O que é manual: o saldo de abertura (uma vez), os estoques e aplicações da posição do mês, as fatias, as metas e ligar uma conta "a classificar".</p>` },
+  { id: 'nao', tit: 'O que estes números NÃO mostram', chaves: ['nao mostra', 'nao faz', 'nao da', 'limite', 'limitacao', 'nao serve', 'cuidado', 'nao pode', 'restricao', 'nao calcula'],
+    html: () => naoMostraHtml() },
+  { id: 'regime', tit: 'Regime de caixa: por que o mês é o mês do pagamento', chaves: ['regime', 'caixa ou competencia', 'competencia', 'data do pagamento', 'vencimento', 'por que este mes', 'mes errado', 'pagou em outro mes'],
+    html: () => '<p>O mês de cada lançamento é o mês em que o dinheiro entrou ou saiu do banco (data da baixa). Uma compra de tecido com nota em julho, paga em agosto, pesa em agosto. É o mesmo critério da planilha do financeiro. Por isso um mês pode ter muito tecido e o seguinte quase nada — não quer dizer que se produziu menos.</p>' },
+  { id: 'ideal', tit: 'De onde vem o Ideal', chaves: ['ideal', 'meta', 'orcamento', 'orcado', 'previsto', 'planejado', 'como chegou no ideal', 'quem definiu'],
+    html: () => `<p>O Ideal é o <b>orçamento</b> da planilha do financeiro (aba ORÇAMENTO 1), carregado no Hub como meta. A planilha orça uma receita de <b>R$ 770.000/mês</b> e um valor mensal para cada conta.</p><div class="formula">Ideal = orçamento mensal da conta ÷ receita orçada × 100</div><p>Ex.: Salários orçados R$ 45.000 ÷ 770.000 × 100 = 5,84. Pessoal (grupo) = R$ 91.055 ÷ 770.000 = 11,83. Custo fixo = (91.055 + 35.400) ÷ 770.000 = 16,42%.</p><p class="nota">O Marketplace começa sem meta até alguém preencher em Fatias e metas. O Consolidado soma as metas das duas unidades. Conta sem orçamento mostra "—" e não gera alerta de "acima do ideal".</p>` },
+  { id: 'media', tit: 'Como é calculada a média', chaves: ['media', 'como chegou na media', 'de onde vem a media', 'vem a media', 'calcula a media', 'como e a media', 'qual a media', 'media de que', 'normal', 'costuma', 'meses da media', 'media anual', 'media mensal'],
+    html: () => '<p>Média = soma dos últimos 12 meses (contando o mês da tela) ÷ quantidade de meses que tiveram pelo menos um lançamento naquela unidade. Mês sem lançamento é "sem dado", não "zero" — se entrasse como zero, a média ficaria falsa para baixo.</p><p>Os percentuais da média ("% média", traço cinza) são <b>média do gasto ÷ média do que entrou</b>, para que um mês de receita baixa não distorça.</p>' },
+  { id: 'fatia', tit: 'O que é a fatia', chaves: ['fatia', 'rateio', 'divide', 'dividir', 'parte do aluguel', 'marketplace paga', 'custo compartilhado'],
+    html: () => '<p>Fatia é a parte de uma conta da Matriz que o Marketplace assume (ex.: 20% do aluguel). De cada pagamento da Matriz naquela conta, a fatia vai para o Marketplace e o resto fica na Matriz. O Consolidado soma os dois e volta ao valor inteiro — nada é contado duas vezes.</p><p class="nota">Sem fatia de Produção, o Marketplace não carrega custo de peça: o "Sobrou" dele não é lucro.</p>' },
+  { id: 'unidade', tit: 'Matriz, Marketplace e Consolidado', chaves: ['unidade', 'matriz', 'marketplace', 'consolidado', 'separado', 'diferenca entre matriz', 'o que e cada'],
+    html: () => '<p><b>Matriz</b>: o financeiro que está no Wik. <b>Marketplace</b>: o que vive no Hub — extrato das plataformas, lançamentos feitos no Hub para o Marketplace, o que foi pago numa conta bancária do Marketplace e as fatias. <b>Consolidado</b>: as duas juntas, para apresentação.</p><p class="nota">Recebimento do Wik que caiu no Mercado Pago não soma de novo no Marketplace: a venda já está no extrato.</p>' },
+  { id: 'classificar', tit: 'O que é "A classificar"', chaves: ['classificar', 'sem conta', 'sem plano', 'nao reconhecida', 'nao classificado'], html: () => renderExp(expClassificar()) },
+  { id: 'receitaFat', tit: 'Por que a receita é diferente do faturamento', chaves: ['diferente do faturamento', 'receita e faturamento', 'faturamento maior', 'nao bate com as vendas', 'liberado', 'nao bate com o faturamento'],
+    html: () => '<p>"Entrou da operação" é dinheiro que <b>caiu no caixa</b> no mês. "Faturamento" é o valor dos <b>pedidos feitos</b> no mês. No Marketplace a diferença vem de: (1) a plataforma libera o dinheiro dias depois — parte das vendas do mês cai no mês seguinte; (2) o valor liberado já vem sem comissão e frete; (3) Ads, devoluções e ajustes saem em linhas próprias.</p>' },
+  { id: 'sobrouCaixa', tit: 'Diferença entre Sobrou da operação e Caixa do mês', chaves: ['diferenca entre sobrou e caixa', 'sobrou e caixa', 'lucro e caixa', 'por que o caixa e menor', 'por que o caixa e negativo'],
+    html: () => '<p><b>Sobrou da operação</b> = o que entrou − pessoal − administrativas − produção − vendas. <b>Caixa do mês</b> = Sobrou + tudo o que não é operação: juros e tarifas, investimentos, empréstimos pagos e recebidos, retiradas de sócio, adiantamentos e o que está a classificar.</p>' },
+  { id: 'lucro', tit: 'Qual lucro usar', chaves: ['lucro', 'lucro real', 'deu lucro', 'esse lucro e lucro', 'ganhou', 'prejuizo'],
+    html: () => '<p>"Quanto a venda deu de lucro" → <b>Lucro das vendas</b> (motor da Lucratividade, com custo das peças). "Quanto sobrou de dinheiro" → <b>Sobrou da operação</b> / <b>Caixa do mês</b>. Na Matriz, use o Sobrou; no Marketplace sem fatia de Produção, use o Lucro das vendas.</p>' },
+  { id: 'senha', tit: 'Senha e segurança deste arquivo', chaves: ['senha', 'seguranca', 'vazamento', 'protegido', 'criptograf', 'quem baixou'],
+    html: () => '<p>Os números ficam trancados dentro do arquivo com criptografia AES-256 (chave derivada da senha por PBKDF2 com 250.000 rodadas). Sem a senha, o arquivo só mostra as explicações gerais. A senha é criada pelo Hub no download e mostrada uma vez; cada download fica registrado no histórico do Hub com o nome de quem baixou.</p>' },
+  { id: 'simular', tit: 'Como simular', chaves: ['simular', 'simulacao', 'e se', 'se eu', 'se tiver', 'quanto vai', 'quanto fica', 'hipotese', 'cenario'],
+    html: () => '<p>Na aba <b>Simular</b>: escolha uma conta e um valor (nova despesa, nova receita, novo total da conta, nova meta, novo saldo de abertura ou nova fatia). O arquivo refaz todas as contas e mostra o antes e o depois de cada número da tela. Você também pode perguntar direto, ex.: <i>"e se tiver uma despesa de 5 mil em aluguel?"</i>.</p>' },
+  { id: 'print', tit: 'Como ler um print', chaves: ['print', 'foto', 'imagem', 'captura', 'screenshot'],
+    html: () => '<p>Na aba <b>Ler um print</b>, solte a imagem da tela do Hub. O arquivo lê o texto (precisa de internet só nessa hora), reconhece em que parte da tela está, de qual unidade e mês, e explica cada número que achou. Sem internet, cole o texto do print na caixa.</p>' },
+];
+
+function naoMostraHtml() {
+  return `<ul class="passos">
+<li><b>Não é contabilidade.</b> É caixa: pesa no mês em que o dinheiro andou. Não serve para balanço, imposto ou DRE contábil.</li>
+<li><b>Não mostra o lucro do Marketplace pelo caixa</b> enquanto não houver fatia de Produção — o custo das peças fica todo na Matriz.</li>
+<li><b>O Ideal é o orçamento de 2024</b> (receita de R$ 770 mil). Em mês de receita muito diferente, contas fixas mudam de % sem mudar em reais.</li>
+<li><b>Não corrige o Wik.</b> Pagamento na conta errada no Wik aparece no grupo errado; pagamento não baixado no Wik não aparece no mês.</li>
+<li><b>Não conhece o futuro:</b> não há previsão de contas a pagar no resultado (só na posição do fim do mês).</li>
+<li><b>O saldo final não é o saldo do banco</b> — é abertura informada + resultado. Só bate se a abertura for o saldo real e tudo estiver lançado.</li>
+<li><b>O histórico do Marketplace vai até 1 ano</b> (é o que o extrato das plataformas fornece).</li>
+<li><b>Estoques e aplicações são digitados</b> no fechamento; o arquivo não tem como conferir.</li>
+<li><b>Venda da Matriz pode incluir marketplace</b> se o lote do marketplace for bipado no Wik como venda (só no quadro Vendas; no caixa, a regra do Mercado Pago evita dobrar).</li>
+<li><b>Este arquivo é uma foto</b> do dia em que foi baixado: lançamentos feitos depois não aparecem. Para números de hoje, baixe outro.</li>
+<li><b>Não mostra quem lançou</b> nem altera nada no Hub: é só leitura.</li></ul>`;
+}
+
+// ============================================================ REGISTRO DE NÚMEROS
+// Todo número que aparece na tela, com o rótulo e a explicação. É o que liga
+// "617.352,28" (digitado ou lido de um print) ao lugar certo.
+const cacheReg = new Map();
+function registro(u = S.u, m = S.m) {
+  const k = chaveCtx(u, m);
+  if (cacheReg.has(k)) return cacheReg.get(k);
+  const salvo = { u: S.u, m: S.m }; S.u = u; S.m = m;
+  const c = calcular(base(u, m)); const r = c.r; const f = fech(u, m); const R = [];
+  const add = (v, rot, area, exp, peso = 1, ehPct = false) => { if (v === null || v === undefined || !Number.isFinite(Number(v))) return; R.push({ v: Number(v), rot, area, exp, peso, ehPct, u, m }); };
+  add(r.receita, 'Entrou da operação', 'Resumo do mês', () => expResumo('receita'), 10);
+  add(r.gastosOp, 'Gastos da operação', 'Resumo do mês', () => expResumo('gastos'), 10);
+  add(r.lucroOp, 'Sobrou da operação', 'Resumo do mês', () => expResumo('sobrou'), 10);
+  add(r.resultado, 'Caixa do mês (resultado do caixa)', 'Resumo / Caixa e saldos', () => expResumo('caixa'), 10);
+  add(r.saldoFinal, 'Saldo final do mês', 'Caixa e saldos', () => expResumo('saldoFinal'), 9);
+  add(r.saldoInicial, 'Saldo de abertura', 'Caixa e saldos', () => expResumo('saldoInicial'), 9);
+  add(r.mediaReceita, 'Média do que entrou', 'Resumo do mês', () => expResumo('mediaReceita'), 6);
+  add(r.margem, 'Sobrou de cada R$ 100', 'Resumo do mês', () => expResumo('sobrou'), 6, true);
+  add(r.custoFixoPct, 'Custo fixo (%)', 'Resumo', () => expResumo('custoFixo'), 5, true);
+  add(r.custoFixoIdeal, 'Custo fixo ideal (%)', 'Resumo', () => expResumo('custoFixo'), 4, true);
+  for (const l of c.analise.escada) add(l.v, `Escada: ${l.rot}`, 'Como o mês fechou', () => (l.grupos?.length === 1 ? expGrupo(l.grupos[0]) : expEscada()), 8);
+  for (const x of c.analise.p100) {
+    add(x.real, `De cada R$ 100: ${x.rot} (real)`, 'De cada R$ 100', () => expPor100(x.grupo), 7, true);
+    add(x.ideal, `De cada R$ 100: ${x.rot} (ideal)`, 'De cada R$ 100', () => expPor100(x.grupo), 6, true);
+    add(x.media, `De cada R$ 100: ${x.rot} (média)`, 'De cada R$ 100', () => expPor100(x.grupo), 5, true);
+  }
+  for (const a of c.analise.atencao) { if (a.exc) add(a.exc, `Alerta: ${a.conta} acima do ideal`, 'O que olhar primeiro', () => expAlerta(a), 6); }
+  for (const g of c.grupos) {
+    add(g.valor, `Grupo ${g.tela}`, 'Conta por conta', () => expGrupo(g.nome), 8);
+    add(g.media, `Média do grupo ${g.tela}`, 'Conta por conta', () => expGrupo(g.nome), 4);
+    add(g.pct, `${g.tela}: de cada R$ 100`, 'Conta por conta', () => expGrupo(g.nome), 5, true);
+    add(g.ideal, `${g.tela}: ideal`, 'Conta por conta', () => expGrupo(g.nome), 4, true);
+    if (g.dif !== null && r.receita > 0) add(Math.abs(g.dif / 100) * r.receita, `${g.tela}: contra o ideal (R$)`, 'Conta por conta', () => expGrupo(g.nome), 5);
+    for (const i of g.itens) {
+      add(i.valor, `Conta ${i.nome}`, 'Conta por conta', () => expConta(i.contaId), 7);
+      add(i.media, `Média de ${i.nome}`, 'Conta por conta', () => expConta(i.contaId), 3);
+      add(i.pct, `${i.nome}: de cada R$ 100`, 'Conta por conta', () => expConta(i.contaId), 3, true);
+      add(i.ideal, `${i.nome}: ideal`, 'Conta por conta', () => expConta(i.contaId), 3, true);
+      if (i.dif !== null && r.receita > 0) add(Math.abs(i.dif / 100) * r.receita, `${i.nome}: contra o ideal (R$)`, 'Conta por conta', () => expConta(i.contaId), 4);
+    }
+  }
+  for (const l of f.posicao.linhas) {
+    add(l.atual, `Posição: ${l.rotulo} (atual)`, 'Caixa e saldos', () => expPosicao(l.chave), 5);
+    add(l.anterior, `Posição: ${l.rotulo} (anterior)`, 'Caixa e saldos', () => expPosicao(l.chave), 3);
+    add(l.variacao, `Posição: ${l.rotulo} (variação)`, 'Caixa e saldos', () => expPosicao(l.chave), 3);
+  }
+  add(f.posicao.totalAtual, 'Posição: total geral', 'Caixa e saldos', () => expPosicao(f.posicao.linhas[0].chave), 3);
+  if (f.vendas && !f.vendas.erro) for (const k of ['faturamento', 'pedidos', 'pecas', 'precoMedio', 'ticketReais', 'ticketPecas', 'lucro', 'margem']) add(f.vendas[k], `Vendas: ${k}`, 'Vendas do mês', () => expVendas(k), 5, k === 'margem');
+  for (const l of f.extrato || []) { add(l.saldoInicial, `Extrato ${l.loja}: saldo inicial`, 'Conferência', () => expExtrato(l.loja), 3); add(l.saldoFinal, `Extrato ${l.loja}: saldo final`, 'Conferência', () => expExtrato(l.loja), 3); add(l.diferenca, `Extrato ${l.loja}: diferença`, 'Conferência', () => expExtrato(l.loja), 3); }
+  for (const x of f.foraDoResultado || []) add(x.valor, `Fora do resultado: ${x.rotulo}`, 'Caixa e saldos', () => ({ tit: x.rotulo, direto: `${brl(x.valor)} em ${x.qtd} linha(s) — passou pela conta da plataforma, mas não é resultado.`, passos: ['Saque, Pix, dinheiro retido, maquininha e recebimentos do Wik já contados no extrato não entram no Caixa do mês: é dinheiro mudando de bolso. Ficam à vista para conferir se cada Pix pago foi lançado.'], conf: { nivel: 'ok', mot: [] } }), 3);
+  for (const x of f.aClassificar) add(x.valor, `A classificar: ${x.nome}`, 'Conta por conta', () => expClassificar(), 5);
+  for (const s of f.serie) if (s.temDado) { add(s.receita, `Histórico ${s.mes}: entrou`, 'Histórico', () => expSerie(s.mes), 2); add(s.resultado, `Histórico ${s.mes}: caixa`, 'Histórico', () => expSerie(s.mes), 2); }
+  for (const l of lancs(u, m)) add(l.valor, `Lançamento: ${l.pessoa || ''} · ${l.conta || 'a classificar'} · ${dataBr(l.data)}`, 'Lançamentos', () => expLancamento(l), 2);
+  S.u = salvo.u; S.m = salvo.m;
+  cacheReg.set(k, R);
+  return R;
+}
+
+// ============================================================ PERGUNTAS
+// Lê a pergunta, acha unidade, mês, números, contas, grupos, pessoas e o
+// assunto, e responde com a explicação mais provável + "veja também".
+
+function numerosDaFrase(txt) {
+  const out = [];
+  const re = /(-?\s*r?\$?\s*-?\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|-?\s*r?\$?\s*-?\d+(?:,\d{1,2})?)(\s*(?:mil|k|mi|milhao|milhoes)\b)?(\s*%)?/gi;
+  let mm;
+  while ((mm = re.exec(txt))) {
+    let bruto = mm[1].replace(/r?\$|\s/gi, '');
+    const neg = bruto.includes('-'); bruto = bruto.replace(/-/g, '');
+    if (!bruto) continue;
+    const temDec = bruto.includes(',');
+    let v = Number(bruto.replace(/\./g, '').replace(',', '.'));
+    if (!Number.isFinite(v)) continue;
+    const mult = (mm[2] || '').trim().toLowerCase();
+    let tol = temDec ? 0.006 : 0.51;
+    if (mult === 'mil' || mult === 'k') { v *= 1000; tol = temDec ? 50 : 500; }
+    else if (mult.startsWith('mi')) { v *= 1e6; tol = 5000; }
+    if (!mult && !temDec && v >= 1990 && v <= 2100) continue; // ano
+    if (!mult && !temDec && v <= 31 && /\/\d/.test(txt.slice(mm.index + mm[0].length, mm.index + mm[0].length + 3))) continue; // dia de data
+    out.push({ v: neg ? -v : v, abs: Math.abs(v), tol, pct: !!mm[3], txt: mm[0].trim() });
+  }
+  return out.filter((n) => n.abs > 0);
+}
+
+function acharMes(q) {
+  const qn = norm(q);
+  for (let i = 0; i < 12; i += 1) {
+    const nome = normNome(MESES[i]); const curto = nome.slice(0, 3);
+    const re = new RegExp(`\\b(${nome}|${curto})\\b(?:\\s*(?:de|/)?\\s*(20\\d\\d))?`);
+    const mm = qn.match(re);
+    if (mm && !(curto === 'mai' && /\bmais\b/.test(qn) && !qn.includes('maio'))) {
+      const ano = mm[2] || (P.meses.find((x) => Number(x.slice(5)) === i + 1) || '').slice(0, 4) || P.meses[P.meses.length - 1].slice(0, 4);
+      const k = `${ano}-${String(i + 1).padStart(2, '0')}`;
+      if (P.meses.includes(k)) return k;
+    }
+  }
+  const mm2 = qn.match(/\b(0?[1-9]|1[0-2])\s*\/\s*(20\d\d)\b/);
+  if (mm2) { const k = `${mm2[2]}-${mm2[1].padStart(2, '0')}`; if (P.meses.includes(k)) return k; }
+  if (/mes passado|mes anterior/.test(qn)) return P.meses[Math.max(0, P.meses.indexOf(S.m) - 1)];
+  return null;
+}
+function acharUnidade(q) {
+  const qn = norm(q);
+  if (/consolidad|tudo junto|as duas|grupo todo|empresa toda|geral da empresa/.test(qn)) return 'consolidado';
+  if (/\bmatriz\b|fabrica|\bwik\b/.test(qn)) return 'matriz';
+  if (/marketplace|plataforma|shopee|tiktok|mercado livre|\bmeli\b|\bml\b/.test(qn)) return 'marketplace';
+  return null;
+}
+
+const ASSUNTOS = [
+  { k: 'escada', chaves: ['como o mes fechou', 'escada', 'passo a passo', 'como fechou o mes', 'como terminou o mes', 'fechamento do mes'] },
+  { k: 'por100', chaves: ['cada 100', 'cada cem', 'cada r 100', 'r 100', 'cada real', 'para cada lado', 'cada lado', 'porcentagem', 'percentual', 'de cada'] },
+  { k: 'receita', chaves: ['entrou', 'receita', 'recebeu', 'recebido', 'recebimento', 'entrada da operacao', 'faturou no caixa', 'quanto entrou'] },
+  { k: 'gastos', chaves: ['gastos da operacao', 'gasto da operacao', 'gastou na operacao', 'custo da operacao', 'despesa da operacao', 'despesas da operacao'] },
+  { k: 'sobrou', chaves: ['sobrou', 'sobra', 'lucro operacional', 'margem operacional', 'resultado operacional', 'margem'] },
+  { k: 'caixa', chaves: ['caixa do mes', 'resultado do caixa', 'total geral', 'resultado do mes', 'caixa e saldo', 'caixas e saldos', 'fechou em', 'caixa fechou', 'caixa negativo', 'caixa positivo', 'caixa'] },
+  { k: 'saldoFinal', chaves: ['saldo final', 'saldo do mes', 'fecha o mes com', 'saldo', 'quanto tem em caixa'] },
+  { k: 'saldoInicial', chaves: ['saldo de abertura', 'saldo inicial', 'abriu o mes', 'abertura'] },
+  { k: 'custoFixo', chaves: ['custo fixo', 'custos fixos', 'fixo'] },
+  { k: 'mediaReceita', chaves: ['media do que entrou', 'media da receita', 'media dos meses'] },
+  { k: 'atencao', chaves: ['olhar primeiro', 'alerta', 'atencao', 'acima do ideal', 'problema', 'gastou a mais', 'estourou'] },
+  { k: 'classificar', chaves: ['classificar', 'sem conta', 'nao classificado'] },
+  { k: 'vendas', chaves: ['faturamento', 'pedido', 'pedidos', 'pecas', 'ticket', 'preco medio', 'lucro das vendas', 'margem das vendas', 'vendas do mes'] },
+  { k: 'posicao', chaves: ['contas a pagar', 'contas a receber', 'a pagar', 'a receber', 'vencidas', 'vencido', 'estoque', 'posicao', 'aplicacoes', 'aplicacao'] },
+  { k: 'extrato', chaves: ['extrato', 'confere', 'conferencia', 'fecha no centavo', 'saque', 'pix', 'maquininha'] },
+  { k: 'confianca', chaves: ['confiavel', 'confiaveis', 'confianca', 'confiar', 'pode confiar', 'esta certo', 'esta errado', 'estao certos', 'bate', 'falho', 'falha', 'confiabilidade', 'seguro usar', 'posso usar'] },
+];
+const SINON_GRUPO = {
+  'DESPESA COM PESSOAL': ['pessoal', 'folha', 'funcionario', 'funcionarios', 'equipe', 'gente'],
+  'DESPESAS ADMINISTRATIVAS': ['administrativa', 'administrativas', 'administrativo', 'adm', 'estrutura'],
+  'CUSTO DE PRODUCAO': ['producao', 'custo de producao', 'fabricacao'],
+  'DESPESAS COM VENDAS': ['despesas com vendas', 'despesa com vendas', 'gastos com vendas', 'vendas grupo'],
+  'INVESTIMENTOS E RETIRADAS': ['investimento', 'investimentos', 'retirada', 'retiradas', 'emprestimos pagos'],
+  'RECEITA NAO-OPERACIONAL': ['outras entradas', 'nao operacional'],
+  'DESPESAS FINANCEIRAS': ['juros e tarifas', 'despesas financeiras', 'financeiro', 'financeiras', 'tarifas'],
+  'TRANSITORIO SAIDA': ['adiantamento', 'adiantamentos', 'transitorio'],
+};
+const grupoReal = (semAcento) => GRUPOS.find((g) => normNome(g.nome) === normNome(semAcento))?.nome;
+
+// Pontua quantas formas de perguntar aparecem na frase: a frase inteira
+// (vale mais), pedaço dela, ou a raiz das palavras ("confiaveis" acha
+// "confiavel", "gastei" acha "gastos").
+function pontuarTexto(qn, chaves) {
+  let s = 0; const qws = qn.split(' ').filter((w) => w.length >= 4);
+  const raiz = (w) => w.slice(0, Math.max(4, w.length - 2));
+  for (const c of chaves) {
+    const cn = normNome(c); if (!cn) continue;
+    if (` ${qn} `.includes(` ${cn} `)) { s += 2 + cn.split(' ').length; continue; }
+    if (qn.includes(cn)) { s += 1 + cn.split(' ').length * 0.5; continue; }
+    const ws = cn.split(' ').filter((w) => w.length >= 4);
+    if (ws.length && ws.every((w) => qws.some((q) => q.startsWith(raiz(w)) || w.startsWith(raiz(q))))) s += 0.8 * ws.length;
+  }
+  return s;
+}
+
+function responder(q) {
+  const qn = normNome(q); const qnn = norm(q);
+  const respostas = [];
+  const u = acharUnidade(q); const m = acharMes(q);
+  if (u && u !== S.u) S.u = u;
+  if (m && m !== S.m) S.m = m;
+  atualizarBarra();
+  const ctxAviso = (u || m) ? `<p class="nota">Respondendo para <b>${ctxTxt()}</b>${u || m ? ' (entendido na pergunta)' : ''}.</p>` : `<p class="nota">Respondendo para <b>${ctxTxt()}</b> (o que está selecionado no topo).</p>`;
+  const ehCada100 = /cada\s*(r\$\s*)?(100|cem)\b|\b(100|cem)\s*reais/.test(qnn);
+  const nums = numerosDaFrase(q.replace(/\b\d{1,2}\/\d{1,2}(\/\d{2,4})?\b/g, ' ')).filter((n) => !(ehCada100 && n.abs === 100));
+  const reg = registro();
+
+  // 1) simulação pedida na pergunta ("e se", "se tiver")
+  if (/\be se\b|\bse tiver\b|\bse eu\b|\bse gastar\b|\bse entrar\b|\bsimul/.test(qnn) && nums.length) {
+    const conta = acharConta(qn);
+    if (conta) {
+      const valor = nums[0].abs; const ehReceita = /receb|entrar|entrada|vend|receita/.test(qnn) && !/despesa|gast|pag/.test(qnn);
+      const sinal = conta.entrada || ehReceita ? valor : -valor;
+      respostas.push({ score: 100, html: renderSimRapida({ ajustes: [{ conta: conta.id, valor: sinal, rot: `${sinal < 0 ? 'Despesa' : 'Entrada'} de ${brl(Math.abs(sinal))} em ${conta.nome}` }], orc: {}, saldo: null, fatia: {} }) });
+    }
+  }
+
+  // 2) números citados
+  for (const n of nums) {
+    const cand = reg.filter((x) => Math.abs(Math.abs(x.v) - n.abs) <= (x.ehPct ? Math.max(n.tol, 0.006) : n.tol) && (!n.pct || x.ehPct));
+    const qtdTexto = (x) => pontuarTexto(qn, normNome(x.rot).split(' ').filter((w) => w.length > 3));
+    cand.sort((a, b) => (b.peso + qtdTexto(b)) - (a.peso + qtdTexto(a)));
+    if (cand.length) {
+      const top = cand[0];
+      respostas.push({ score: 60 + top.peso + qtdTexto(top), html: renderExp(top.exp(), `O número ${esc(n.txt)} é: <b>${esc(top.rot)}</b> (${esc(top.area)})`),
+        extra: cand.slice(1, 6).map((x) => ({ rot: `${x.rot} (${brl(x.v)})`, fn: x.exp })) });
+    } else {
+      // procura em outros meses/unidades
+      const outros = [];
+      for (const mm of P.meses) for (const uu of ['matriz', 'marketplace', 'consolidado']) {
+        if (uu === S.u && mm === S.m) continue;
+        for (const x of registro(uu, mm)) if (Math.abs(Math.abs(x.v) - n.abs) <= n.tol && x.peso >= 3) outros.push(x);
+      }
+      if (outros.length) {
+        outros.sort((a, b) => b.peso - a.peso);
+        const x = outros[0];
+        respostas.push({ score: 50 + x.peso, html: `<div class="resp-bloco"><h3>${esc(n.txt)} não aparece em ${ctxTxt()}</h3><p class="direto">Mas aparece em <b>${UNID[x.u]} · ${mesTxt(x.m)}</b>: ${esc(x.rot)}.</p><button class="btn sm" data-ir="${x.u}|${x.m}" data-q="${esc(q)}">Responder para ${UNID_CURTO[x.u]} · ${mesTxt(x.m)}</button></div>` });
+      } else {
+        respostas.push({ score: 20, html: `<div class="resp-bloco"><h3>Não achei ${esc(n.txt)} nos números</h3><p class="direto">Esse valor não aparece em nenhum número da tela nem em nenhum lançamento dos meses deste arquivo (${P.meses.map(mesTxt).join(', ')}).</p><p class="nota">Pode ser de outro mês, de um filtro diferente, ou de um momento depois que este arquivo foi gerado (${new Date(P.geradoEm).toLocaleString('pt-BR')}). Confira o número exato (com centavos) ou baixe o arquivo de novo.</p></div>` });
+      }
+    }
+  }
+
+  // 3) pessoas e bancos citados
+  const pessoas = acharPessoas(qn);
+  if (pessoas.length) {
+    const p = pessoas[0];
+    let lista = lancs().filter((l) => normNome(`${l.pessoa} ${l.banco}`).includes(p));
+    const conta = acharConta(qn);
+    if (conta) { const f2 = lista.filter((l) => l.conta === conta.nome); if (f2.length) lista = f2; }
+    if (nums.length) { const f3 = lista.filter((l) => nums.some((n) => Math.abs(Math.abs(l.valor) - n.abs) <= n.tol)); if (f3.length) lista = f3; }
+    if (lista.length === 1) respostas.push({ score: 90, html: renderExp(expLancamento(lista[0])) });
+    else if (lista.length) respostas.push({ score: 70, html: renderExp(expPessoa(p.toUpperCase(), lista)) });
+  }
+
+  // 4) conta e grupo citados
+  const conta = acharConta(qn);
+  if (conta && !respostas.some((r) => r.score >= 90)) respostas.push({ score: 55 + (nums.length ? 0 : 10), html: renderExp(expConta(conta.id)) });
+  for (const [g, sins] of Object.entries(SINON_GRUPO)) {
+    const s = pontuarTexto(qn, sins);
+    if (s > 0) {
+      const gr = grupoReal(g);
+      const ehPor100 = pontuarTexto(qn, ASSUNTOS.find((a) => a.k === 'por100').chaves) > 0;
+      if (gr) respostas.push({ score: 45 + s + (ehPor100 ? 40 : 0), html: renderExp(ehPor100 && !GRUPO[gr]?.entrada ? expPor100(gr) : expGrupo(gr)) });
+    }
+  }
+
+  // 5) assuntos da tela
+  for (const a of ASSUNTOS) {
+    const s = pontuarTexto(qn, a.chaves);
+    if (!s) continue;
+    let e = null;
+    if (['receita', 'gastos', 'sobrou', 'caixa', 'saldoFinal', 'saldoInicial', 'custoFixo', 'mediaReceita'].includes(a.k)) e = expResumo(a.k);
+    else if (a.k === 'escada') e = expEscada();
+    else if (a.k === 'por100') e = { tit: 'De cada R$ 100 que entrou, quanto foi para cada lado', direto: calcAtual().analise.p100.map((x) => `${x.rot}: ${x.real === null ? '—' : 'R$ ' + nbr(x.real, 2)} (ideal ${x.ideal === null ? '—' : 'R$ ' + nbr(x.ideal, 2)})`).join(' · '), formula: 'Para cada grupo: gasto do grupo no mês ÷ o que entrou da operação × 100.\nIdeal: orçamento do grupo ÷ receita orçada × 100.\nMédia: média do gasto ÷ média do que entrou × 100.', passos: ['Clique num grupo abaixo para ver a conta com os valores.'], conf: selo('pct'), rel: calcAtual().analise.p100.map((x) => `De cada 100, ${x.rot.toLowerCase()}`) };
+    else if (a.k === 'atencao') e = { tit: 'O que olhar primeiro', direto: calcAtual().analise.atencao.map((x) => x.txt).join(' · ') || 'Nenhum alerta.', passos: ['Cada alerta sai de uma regra fixa (veja a explicação de cada um clicando na aba A tela).', 'Acima do ideal: % da conta passou do Ideal em mais de 0,05 ponto e o excesso é ≥ R$ 100. Excesso = (Ideal − Real) ÷ 100 × o que entrou.', 'Acima da média: gastou mais de 1,3× a média e ≥ R$ 1.000 a mais.', 'Receita fraca: mais de 15% abaixo da média.'], conf: selo('pct') };
+    else if (a.k === 'classificar') e = expClassificar();
+    else if (a.k === 'vendas') { const k = /ticket/.test(qn) ? (/peca/.test(qn) ? 'ticketPecas' : 'ticketReais') : /preco medio/.test(qn) ? 'precoMedio' : /peca/.test(qn) ? 'pecas' : /pedido/.test(qn) ? 'pedidos' : /margem/.test(qn) ? 'margem' : /lucro/.test(qn) ? 'lucro' : 'faturamento'; e = expVendas(k); }
+    else if (a.k === 'posicao') { const k = /receber/.test(qn) ? (/vencid/.test(qn) ? 'receberVencidas' : 'receber') : /pagar/.test(qn) ? (/vencid/.test(qn) ? 'pagarVencidas' : 'pagar') : /pa\b|acabado/.test(qn) ? 'estoquePA' : /mp\b|materia/.test(qn) ? 'estoqueMP' : /cf\b|em producao/.test(qn) ? 'estoqueCF' : /aplica/.test(qn) ? 'aplicacoes' : 'pagar'; e = expPosicao(k); }
+    else if (a.k === 'extrato') { const l = (fech().extrato || [])[0]; e = l ? expExtrato(l.loja) : { tit: 'Conferência do extrato', direto: 'Não há extrato de plataforma nesta unidade (a conferência é do Marketplace).', conf: { nivel: 'ok', mot: [] } }; }
+    else if (a.k === 'confianca') e = { tit: `O quanto confiar nos números de ${ctxTxt()}`, direto: flagsCtx().length ? 'Há pontos de atenção:' : 'Nenhum problema encontrado nas regras de confiabilidade.', passos: flagsCtx().map((x) => `${SELO_TXT[x.nivel]}: ${x.txt}`), conf: null };
+    if (e) respostas.push({ score: 30 + s * 3, html: renderExp(e) });
+  }
+
+  // 6) artigos gerais
+  for (const a of KB) { const s = pontuarTexto(qn, a.chaves); if (s) respostas.push({ score: 25 + s * 2, html: `<div class="resp-bloco"><h3>${esc(a.tit)}</h3>${a.html()}</div>` }); }
+
+  if (!respostas.length) {
+    // última tentativa: palavras soltas em contas e lançamentos
+    const palavras = qn.split(' ').filter((w) => w.length >= 4);
+    const lista = lancs().filter((l) => palavras.some((w) => normNome(`${l.pessoa} ${l.conta} ${l.planoNome} ${l.descricao} ${l.banco}`).includes(w)));
+    if (lista.length) respostas.push({ score: 10, html: renderExp({ tit: 'Lançamentos que combinam com a pergunta', direto: `${lista.length} lançamento(s) em ${ctxTxt()} têm essas palavras.`, lista: tabelaLanc(lista, 20), conf: null }) });
+  }
+  respostas.sort((a, b) => b.score - a.score);
+  // tira duplicadas (mesmo HTML)
+  const vistos = new Set(); const finais = [];
+  for (const r of respostas) { const k = r.html.slice(0, 200); if (vistos.has(k)) continue; vistos.add(k); finais.push(r); }
+  return { ctxAviso, finais };
+}
+
+const PALAVRAS_DE_CONTEXTO = /\b(marketplace|matriz|consolidado|janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro|shopee|tiktok|plataforma)\b/g;
+function acharConta(qn) {
+  qn = qn.replace(PALAVRAS_DE_CONTEXTO, ' ').replace(/\s+/g, ' ');
+  let melhor = null; let ms = 0;
+  for (const c of P.contas) {
+    const cn = normNome(c.nome);
+    if (!cn) continue;
+    let s = 0;
+    if (` ${qn} `.includes(` ${cn} `)) s = 100 + cn.length;
+    else {
+      const ws = cn.split(' ').filter((w) => w.length >= 4 && !['sobre', 'para', 'socios', 'contas', 'outras', 'outros', 'despesa', 'despesas', 'compra', 'taxas', 'vendas', 'caixa', 'caixas', 'saldo', 'media', 'ideal', 'resultado', 'receita', 'entrada', 'recebimento'].includes(w));
+      const hit = ws.filter((w) => qn.includes(w.slice(0, Math.max(4, w.length - 2))));
+      if (ws.length && hit.length && (hit.length / ws.length >= 0.66 || hit.some((w) => w.length >= 6))) s = (hit.length / ws.length) * 50 + hit.length * 5 + (hit.some((w) => w.length >= 6) ? 15 : 0);
+    }
+    if (c.nome === 'Vendas' && !/\bvendas\b/.test(qn)) s = 0;
+    if (s > ms) { ms = s; melhor = c; }
+  }
+  return ms >= 30 ? melhor : null;
+}
+
+let cachePessoas = new Map();
+function acharPessoas(qn) {
+  const k = chaveCtx(S.u, S.m);
+  if (!cachePessoas.has(k)) {
+    const set = new Set();
+    for (const l of lancs()) for (const t of [l.pessoa, l.banco]) { const n = normNome(t); if (n) set.add(n); }
+    cachePessoas.set(k, [...set]);
+  }
+  const todas = cachePessoas.get(k);
+  const palavras = qn.split(' ').filter((w) => w.length >= 4 && !['banco', 'conta', 'juros', 'cheque', 'especial', 'como', 'chegou', 'valor', 'quanto', 'lancamento', 'pagamento', 'mercado', 'outubro', 'setembro', 'agosto', 'marketplace', 'matriz', 'consolidado', 'equipe', 'clientes', 'diversos', 'fornecedor', 'vendas', 'venda', 'medio', 'ticket', 'saldo', 'caixa', 'resultado', 'entrou', 'sobrou', 'ideal', 'media'].includes(w));
+  const achadas = [];
+  for (const w of palavras) {
+    const p = todas.filter((n) => ` ${n} `.includes(` ${w} `));
+    if (p.length) achadas.push(w);
+  }
+  return achadas;
+}
+
+// ============================================================ DESENHO
+function renderExp(e, cabeca) {
+  if (!e) return '';
+  const passos = (e.passos || []).filter(Boolean);
+  const rel = (e.rel || []).filter(Boolean);
+  return `<div class="resp-bloco">${cabeca ? `<p class="nota" style="margin-top:0">${cabeca}</p>` : ''}<h3>${esc(e.tit)}</h3>
+  <p class="direto">${esc(e.direto || '')}</p>
+  ${e.formula ? `<div class="formula">${esc(e.formula).replace(/\n/g, '<br>')}</div>` : ''}
+  ${passos.length ? `<ul class="passos">${passos.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}
+  ${e.lista || ''}
+  ${e.conf ? confHtml(e.conf) : ''}
+  ${rel.length ? `<div class="tambem">${rel.map((r) => `<button type="button" data-q="${esc(r)}">${esc(r)}</button>`).join('')}</div>` : ''}</div>`;
+}
+
+const EXPS = new Map(); let expSeq = 0;
+function nBtn(valor, fn, classe = '', texto) {
+  const id = `e${++expSeq}`; EXPS.set(id, fn);
+  const t = texto !== undefined ? texto : brl(valor);
+  return `<button type="button" class="n ${classe}" data-exp="${id}">${esc(t)}</button>`;
+}
+function abrirGaveta(html) { $('#gaveta-corpo').innerHTML = html; $('#gaveta').classList.remove('oculto'); $('#gaveta .gaveta').scrollTop = 0; }
+function fecharGaveta() { $('#gaveta').classList.add('oculto'); }
+
+// ---------------------------------------------------------------- barra
+function atualizarBarra() {
+  $$('#seg-unidade button').forEach((b) => b.classList.toggle('ativo', b.dataset.u === S.u));
+  $('#sel-mes').value = S.m;
+  const fl = flagsCtx(); const pior = fl.some((x) => x.nivel === 'nao') ? 'nao' : fl.length ? 'atencao' : 'ok';
+  $('#selo-contexto').innerHTML = `<span class="selo ${pior}" title="Veja a aba Confiabilidade">${pior === 'ok' ? 'Números confiáveis' : pior === 'nao' ? 'Há números não confiáveis' : 'Há pontos de atenção'}</span>`;
+}
+function trocarContexto() { cachePessoas = new Map(); atualizarBarra(); desenhar(); }
+
+// ---------------------------------------------------------------- abas
+const ABAS = [
+  ['perguntar', 'Perguntar'], ['tela', 'A tela, número por número'], ['simular', 'Simular'], ['print', 'Ler um print'],
+  ['confianca', 'Confiabilidade'], ['como', 'Como é feito (automático)'], ['nao', 'O que não mostra'],
+];
+function desenhar() {
+  for (const [k] of ABAS) $(`#v-${k}`).classList.toggle('oculto', k !== S.aba);
+  $$('#abas button').forEach((b) => b.classList.toggle('ativa', b.dataset.aba === S.aba));
+  EXPS.clear();
+  ({ perguntar: vPerguntar, tela: vTela, simular: vSimular, print: vPrint, confianca: vConfianca, como: vComo, nao: vNao })[S.aba]();
+}
+
+// ---------------------------------------------------------------- Perguntar
+const EXEMPLOS = [
+  'Como chegou no resultado de cada 100 reais que entrou?', 'Como o mês fechou?', 'Como chegou no gasto com pessoal?',
+  'De onde veio o caixa do mês?', 'Como chegou no ideal?', 'Por que a receita é diferente do faturamento?',
+  'E se tiver uma despesa de 5 mil em aluguel?', 'Esses números são confiáveis?', 'O que esses números não mostram?', 'Como isso é calculado automaticamente?',
+];
+function vPerguntar() {
+  const el = $('#v-perguntar');
+  if (!el.dataset.pronto) {
+    el.innerHTML = `<div class="card"><div class="pergunta"><img src="${MANU_IMG}" alt="Manu"><div class="caixa">
+      <form id="form-q"><input id="q" placeholder="Pergunte de qualquer jeito: de onde veio 617.352,28? como chegou nos 115 mil de pessoal? juros cheque especial do Itaú de 35,91?" autocomplete="off"></form>
+      <div class="exemplos">${EXEMPLOS.map((x) => `<button type="button" data-q="${esc(x)}">${esc(x)}</button>`).join('')}</div></div></div></div>
+      <div class="resposta" id="resposta"></div>`;
+    el.dataset.pronto = '1';
+    $('#form-q').addEventListener('submit', (ev) => { ev.preventDefault(); perguntar($('#q').value); });
+  }
+}
+function perguntar(q) {
+  if (!q || !q.trim()) return;
+  S.aba = 'perguntar'; desenhar(); $('#q').value = q;
+  const { ctxAviso, finais } = responder(q);
+  const out = $('#resposta');
+  if (!finais.length) { out.innerHTML = `${ctxAviso}<div class="resp-bloco"><h3>Não entendi a pergunta</h3><p>Tente citar o número (com centavos), a conta (ex.: aluguel, salários), o assunto (sobrou, caixa, saldo, ideal, média, de cada 100) ou a pessoa/banco.</p></div>`; return; }
+  const extra = finais[0].extra || [];
+  out.innerHTML = ctxAviso + finais[0].html
+    + (extra.length ? `<div class="card"><h2>Esse número também aparece em</h2>${extra.map((x, i) => `<button class="btn sm" style="margin:3px" data-extra="${i}">${esc(x.rot)}</button>`).join('')}</div>` : '')
+    + (finais.length > 1 ? `<details class="card"><summary><b>Outras respostas possíveis (${finais.length - 1})</b></summary>${finais.slice(1, 6).map((r) => r.html).join('')}</details>` : '');
+  $$('[data-extra]', out).forEach((b) => b.addEventListener('click', () => abrirGaveta(renderExp(extra[Number(b.dataset.extra)].fn()))));
+  out.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ---------------------------------------------------------------- A tela
+function vTela() {
+  const c = calcAtual(); const r = c.r; const f = fech(); const an = c.analise;
+  const sel = (t, x) => seloHtml(selo(t, x));
+  const maior = Math.max(1, ...an.escada.map((l) => Math.abs(l.v)));
+  const maxP = Math.max(10, ...an.p100.flatMap((x) => [x.real || 0, x.ideal || 0, x.media || 0]));
+  const kpi = (rot, v, fn, t, rod) => `<div class="kpi"><span>${rot} ${sel(t)}</span><strong class="${v < 0 ? 'neg' : ''}">${nBtn(v, fn)}</strong><small>${rod || ''}</small></div>`;
+  let html = `<div class="card"><h2>Resumo do mês</h2><p class="sub">${esc(an.frase)}</p><p class="nota">Clique em qualquer número sublinhado para ver de onde ele veio.</p></div>
+  <div class="kpis">${kpi('Entrou da operação', r.receita, () => expResumo('receita'), 'receita', `média ${brl(r.mediaReceita)}`)}${kpi('Gastos da operação', r.gastosOp, () => expResumo('gastos'), 'gastos', 'pessoal + adm. + produção + vendas')}${kpi('Sobrou da operação', r.lucroOp, () => expResumo('sobrou'), 'sobrou', r.margem === null ? '' : `R$ ${nbr(r.margem, 2)} de cada R$ 100`)}${kpi('Caixa do mês', r.resultado, () => expResumo('caixa'), 'caixa', r.saldoFinal === null ? 'saldo: falta a abertura' : `saldo final ${brl(r.saldoFinal)}`)}</div>
+  <div class="duas"><div class="card"><h2>Como o mês fechou ${nBtn(0, () => expEscada(), '', '?')}</h2>${an.escada.map((l) => `<div class="degrau ${l.tipo === 'total' ? 'total' : ''}"><span>${l.tipo === 'saida' ? '− ' : l.tipo === 'total' ? '= ' : ''}${esc(l.rot)}</span><span class="trilho"><i class="${l.v < 0 ? 'm' : 'p'}" style="width:${Math.max(1.5, (Math.abs(l.v) / maior) * 100)}%"></i></span><span class="${l.v < 0 ? 'neg' : ''}">${nBtn(l.v, () => (l.grupos?.length === 1 ? expGrupo(l.grupos[0]) : l.k === 'classificar' ? expClassificar() : l.k === 'lucroOp' ? expResumo('sobrou') : l.k === 'resultado' ? expResumo('caixa') : l.k === 'receita' ? expResumo('receita') : expEscada()))}</span></div>`).join('')}</div>
+  <div class="card"><h2>O que olhar primeiro</h2>${an.atencao.map((a) => `<div class="alerta ${a.tom}"><span>⚠</span><span style="flex:1">${esc(a.txt)}</span>${nBtn(0, () => expAlerta(a), '', 'por quê?')}</div>`).join('') || '<p class="nota">Nenhum alerta.</p>'}${an.bons.map((b) => `<div class="alerta bom"><span>✓</span><span>${esc(b)}</span></div>`).join('')}</div></div>
+  <div class="card"><h2>De cada R$ 100 que entrou</h2><p class="sub">Barra = real · traço preto = ideal · traço cinza = média. Clique no valor.</p>${an.p100.map((x) => `<div class="p100"><b style="position:static;width:auto;background:none">${esc(x.rot)}</b><span class="trilho"><i style="width:${Math.min(100, ((x.real || 0) / maxP) * 100)}%;background:${x.ideal !== null && x.real > x.ideal + 0.05 ? 'var(--danger)' : 'var(--success)'}"></i>${x.media !== null ? `<b class="media" style="left:${Math.min(100, (x.media / maxP) * 100)}%"></b>` : ''}${x.ideal !== null ? `<b class="ideal" style="left:${Math.min(100, (x.ideal / maxP) * 100)}%"></b>` : ''}</span><span style="text-align:right">${nBtn(x.real, () => expPor100(x.grupo), '', x.real === null ? '—' : `R$ ${nbr(x.real, 2)}`)}<br><small class="nota">ideal ${x.ideal === null ? '—' : 'R$ ' + nbr(x.ideal, 2)} · média ${x.media === null ? '—' : 'R$ ' + nbr(x.media, 2)}</small></span></div>`).join('')}</div>`;
+  // Conta por conta
+  html += `<div class="card"><h2>Conta por conta</h2><p class="sub">Clique no grupo para abrir as contas; clique em qualquer valor para ver a conta feita.</p><div class="rolagem"><table class="t"><thead><tr><th>Conta</th><th class="num">No mês</th><th class="num">De cada R$ 100</th><th class="num">Ideal</th><th class="num">Contra o ideal</th><th class="num">Média</th><th></th></tr></thead><tbody>`;
+  for (const g of c.grupos) {
+    const reais = g.dif !== null && r.receita > 0 ? (g.dif / 100) * r.receita : null;
+    html += `<tr class="grupo" data-grupo="${esc(g.nome)}"><td>▸ ${esc(g.tela)} <small class="nota">${g.itens.length} conta(s)</small></td><td class="num ${g.valor < 0 ? 'neg' : ''}">${nBtn(g.valor, () => expGrupo(g.nome))}</td><td class="num">${nBtn(g.pct, () => expGrupo(g.nome), '', por100(g.pct))}</td><td class="num">${por100(g.ideal)}</td><td class="num ${reais === null ? '' : reais < 0 ? 'neg' : 'pos'}">${reais === null ? '—' : brl(Math.abs(reais)) + (reais < 0 ? (GRUPO[g.nome]?.entrada ? ' abaixo' : ' a mais') : (GRUPO[g.nome]?.entrada ? ' acima' : ' economia'))}</td><td class="num">${brl(g.media)}</td><td>${sel('grupo')}</td></tr>`;
+    for (const i of g.itens) {
+      const ri = i.dif !== null && r.receita > 0 ? (i.dif / 100) * r.receita : null;
+      html += `<tr class="item oculto" data-de="${esc(g.nome)}"><td style="padding-left:24px">${esc(i.nome)}</td><td class="num ${i.valor < 0 ? 'neg' : ''}">${Math.abs(i.valor) < CENT ? '—' : nBtn(i.valor, () => expConta(i.contaId))}</td><td class="num">${Math.abs(i.valor) < CENT ? '—' : por100(i.pct)}</td><td class="num">${por100(i.ideal)}</td><td class="num ${ri === null ? '' : ri < 0 ? 'neg' : 'pos'}">${ri === null ? '—' : brl(Math.abs(ri)) + (ri < 0 ? (GRUPO[g.nome]?.entrada ? ' abaixo' : ' a mais') : (GRUPO[g.nome]?.entrada ? ' acima' : ' economia'))}</td><td class="num">${Math.abs(i.media) < CENT ? '—' : nBtn(i.media, () => expConta(i.contaId))}</td><td>${sel('conta', { item: i })}</td></tr>`;
+    }
+  }
+  if (Math.abs(r.classificar) >= CENT) html += `<tr class="grupo"><td>A classificar</td><td class="num">${nBtn(r.classificar, () => expClassificar())}</td><td colspan="5"></td></tr>`;
+  html += `<tr class="total"><td>Sobrou da operação</td><td class="num">${nBtn(r.lucroOp, () => expResumo('sobrou'))}</td><td class="num">${r.margem === null ? '—' : (r.margem < 0 ? '−' : '') + por100(r.margem)}</td><td colspan="4"></td></tr><tr class="total"><td>Caixa do mês (tudo junto)</td><td class="num">${nBtn(r.resultado, () => expResumo('caixa'))}</td><td colspan="3"></td><td class="num">${brl(r.mediaResultado)}</td><td></td></tr></tbody></table></div></div>`;
+  // Caixa e saldos + vendas
+  html += `<div class="duas"><div class="card"><h2>Caixa e saldos</h2><table class="t"><tbody>
+    <tr><td>Abriu o mês com</td><td class="num">${r.saldoInicial === null ? '—' : nBtn(r.saldoInicial, () => expResumo('saldoInicial'))}</td><td>${sel('saldo')}</td></tr>
+    <tr><td>Caixa do mês</td><td class="num">${nBtn(r.resultado, () => expResumo('caixa'))}</td><td>${sel('caixa')}</td></tr>
+    <tr class="total"><td>Fecha o mês com</td><td class="num">${r.saldoFinal === null ? nBtn(0, () => expResumo('saldoFinal'), '', '— (por quê?)') : nBtn(r.saldoFinal, () => expResumo('saldoFinal'))}</td><td>${sel('saldo')}</td></tr></tbody></table>
+    <h3 style="font-size:14px;margin:14px 0 4px">Posição no fim do mês</h3><table class="t"><thead><tr><th>Conta</th><th class="num">Anterior</th><th class="num">Atual</th><th class="num">Variação</th></tr></thead><tbody>${f.posicao.linhas.map((l) => `<tr><td>${esc(l.rotulo)}${l.automatico ? '' : ' <small class="nota">informado</small>'}</td><td class="num">${brl(l.anterior)}</td><td class="num">${l.atual === null ? '—' : nBtn(l.atual, () => expPosicao(l.chave))}</td><td class="num">${brl(l.variacao)}</td></tr>`).join('')}<tr class="total"><td>Total geral</td><td class="num">${brl(f.posicao.totalAnterior)}</td><td class="num">${brl(f.posicao.totalAtual)}</td><td class="num">${brl(f.posicao.variacao)}</td></tr></tbody></table>
+    ${(f.extrato && f.extrato.length) ? `<h3 style="font-size:14px;margin:14px 0 4px">Conferência do extrato</h3><table class="t"><tbody>${f.extrato.filter((l) => l.linhas > 0 || l.saldoFinal !== null).map((l) => `<tr><td>${esc(l.loja)}</td><td class="num">${brl(l.saldoInicial)} → ${brl(l.saldoFinal)}</td><td>${nBtn(0, () => expExtrato(l.loja), '', l.fechado === true ? 'fecha no centavo' : l.fechado === false ? `não fecha (${brl(l.diferenca)})` : 'sem saldo para conferir')}</td></tr>`).join('')}</tbody></table>` : ''}
+    ${(f.foraDoResultado || []).length ? `<h3 style="font-size:14px;margin:14px 0 4px">Passou pela conta, mas não é resultado</h3><table class="t"><tbody>${f.foraDoResultado.map((x) => `<tr><td>${esc(x.rotulo)} <small class="nota">(${x.qtd})</small></td><td class="num">${brl(x.valor)}</td></tr>`).join('')}</tbody></table>` : ''}</div>
+    <div class="card"><h2>Vendas do mês ${sel('vendas')}</h2>${f.vendas && !f.vendas.erro ? `<table class="t"><tbody>${[['Faturamento', 'faturamento', brl(f.vendas.faturamento)], ['Vendas (pedidos)', 'pedidos', nbr(f.vendas.pedidos, 0)], ['Peças', 'pecas', nbr(f.vendas.pecas, 0)], ['Preço médio', 'precoMedio', brl(f.vendas.precoMedio)], ['Ticket médio (R$)', 'ticketReais', brl(f.vendas.ticketReais)], ['Ticket médio (peças)', 'ticketPecas', nbr(f.vendas.ticketPecas, 1)], ['Lucro das vendas', 'lucro', brl(f.vendas.lucro)], ['Margem', 'margem', pctTxt(f.vendas.margem, 1)]].map(([rot, k, t]) => `<tr><td>${rot}</td><td class="num">${nBtn(0, () => expVendas(k), '', t)}</td></tr>`).join('')}</tbody></table><p class="nota">Pela data do pedido — não é caixa.</p>` : `<p class="nota">${esc(f.vendas?.erro || 'Sem dados.')}</p>`}
+    <h3 style="font-size:14px;margin:14px 0 4px">Últimos 12 meses</h3><table class="t"><thead><tr><th>Mês</th><th class="num">Entrou</th><th class="num">Caixa</th></tr></thead><tbody>${f.serie.map((s) => `<tr><td>${s.mes.slice(5)}/${s.mes.slice(0, 4)}</td><td class="num">${s.temDado ? nBtn(s.receita, () => expSerie(s.mes)) : 'sem dado'}</td><td class="num ${s.resultado < 0 ? 'neg' : ''}">${s.temDado ? brl(s.resultado) : '—'}</td></tr>`).join('')}</tbody></table></div></div>`;
+  $('#v-tela').innerHTML = html;
+  $$('#v-tela tr.grupo[data-grupo]').forEach((tr) => tr.addEventListener('click', (ev) => {
+    if (ev.target.closest('.n')) return;
+    const abre = $$(`#v-tela tr.item[data-de="${CSS.escape(tr.dataset.grupo)}"]`);
+    const fechado = abre[0]?.classList.contains('oculto');
+    abre.forEach((x) => x.classList.toggle('oculto', !fechado));
+    tr.firstElementChild.firstChild.textContent = (fechado ? '▾ ' : '▸ ') + tr.firstElementChild.firstChild.textContent.slice(2);
+  }));
+}
+
+// ---------------------------------------------------------------- Simular
+function opcoesContas(valorSel) {
+  return GRUPOS.map((g) => `<optgroup label="${esc(g.tela)}">${P.contas.filter((c) => c.grupo === g.nome).map((c) => `<option value="${c.id}" ${String(valorSel) === String(c.id) ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</optgroup>`).join('');
+}
+function vSimular() {
+  const el = $('#v-simular');
+  el.innerHTML = `<div class="card"><h2>Simular</h2><p class="sub">Monte um cenário e veja como cada número da tela mudaria em ${esc(ctxTxt())}. Nada aqui altera o Hub.</p>
+  <div class="sim-form">
+    <label>O que simular<select class="campo" id="sim-tipo"><option value="despesa">Nova despesa (sai dinheiro)</option><option value="receita">Nova entrada (entra dinheiro)</option><option value="total">Novo total da conta no mês</option><option value="meta">Nova meta (orçamento mensal)</option>${S.u !== 'consolidado' ? '<option value="fatia">Nova fatia do Marketplace (%)</option>' : ''}<option value="saldo">Novo saldo de abertura</option></select></label>
+    <label id="sim-conta-l">Conta<select class="campo" id="sim-conta">${opcoesContas()}</select></label>
+    <label>Valor<input class="campo" id="sim-valor" inputmode="decimal" placeholder="ex.: 5.000,00"></label>
+    <button class="btn prim" id="sim-add" type="button">Adicionar ao cenário</button>
+  </div>
+  <ul class="sim-lista" id="sim-lista"></ul>
+  <button class="btn sm" id="sim-limpar" type="button">Limpar cenário</button></div>
+  <div id="sim-resultado"></div>`;
+  $('#sim-tipo').addEventListener('change', () => { $('#sim-conta-l').classList.toggle('oculto', $('#sim-tipo').value === 'saldo'); });
+  $('#sim-add').addEventListener('click', () => {
+    const tipo = $('#sim-tipo').value; const cid = Number($('#sim-conta').value);
+    const v = numerosDaFrase($('#sim-valor').value)[0]; if (!v) { $('#sim-valor').focus(); return; }
+    const c = contaMeta(cid);
+    if (tipo === 'despesa') S.sim.ajustes.push({ conta: cid, valor: -v.abs, rot: `Despesa de ${brl(v.abs)} em ${c.nome}` });
+    if (tipo === 'receita') S.sim.ajustes.push({ conta: cid, valor: v.abs, rot: `Entrada de ${brl(v.abs)} em ${c.nome}` });
+    if (tipo === 'total') { const atual = num(base().valores.get(cid)); const alvo = (c.entrada ? 1 : -1) * v.abs; S.sim.ajustes.push({ conta: cid, valor: alvo - atual, rot: `${c.nome}: total do mês de ${brl(atual)} para ${brl(alvo)}` }); }
+    if (tipo === 'meta') { S.sim.orc[cid] = (c.entrada ? 1 : -1) * v.abs; }
+    if (tipo === 'fatia') { S.sim.fatia[cid] = v.abs; }
+    if (tipo === 'saldo') { S.sim.saldo = v.v; }
+    $('#sim-valor').value = '';
+    desenharSim();
+  });
+  $('#sim-limpar').addEventListener('click', () => { S.sim = { ajustes: [], orc: {}, saldo: null, fatia: {} }; desenharSim(); });
+  desenharSim();
+}
+function itensSim(sim) {
+  const l = sim.ajustes.map((a, i) => ({ t: a.rot, rm: () => sim.ajustes.splice(i, 1) }));
+  for (const [id, v] of Object.entries(sim.orc)) l.push({ t: `Meta de ${contaMeta(Number(id))?.nome}: ${brl(Math.abs(v))}/mês`, rm: () => delete sim.orc[id] });
+  for (const [id, v] of Object.entries(sim.fatia)) l.push({ t: `Fatia de ${contaMeta(Number(id))?.nome}: ${nbr(v, 1)}%`, rm: () => delete sim.fatia[id] });
+  if (sim.saldo !== null) l.push({ t: `Saldo de abertura: ${brl(sim.saldo)}`, rm: () => { sim.saldo = null; } });
+  return l;
+}
+function desenharSim() {
+  const itens = itensSim(S.sim);
+  $('#sim-lista').innerHTML = itens.map((x, i) => `<li>${esc(x.t)} <button class="btn sm" data-rm="${i}" type="button">remover</button></li>`).join('') || '<li class="nota">Cenário vazio — adicione uma mudança acima.</li>';
+  $$('#sim-lista [data-rm]').forEach((b) => b.addEventListener('click', () => { itens[Number(b.dataset.rm)].rm(); desenharSim(); }));
+  $('#sim-resultado').innerHTML = itens.length ? renderSim(S.sim) : '';
+}
+function linhaDif(rot, a, d, tipo = 'brl', bomSobe = true) {
+  const fmt = (v) => (v === null || v === undefined ? '—' : tipo === 'pct' ? `${nbr(v, 2)}%` : tipo === 'p100' ? (v === null ? '—' : `R$ ${nbr(Math.abs(v), 2)}`) : brl(v));
+  const delta = a === null || d === null || a === undefined || d === undefined ? null : d - a;
+  const cls = delta === null || Math.abs(delta) < 0.005 ? '' : (delta > 0) === bomSobe ? 'diff-up' : 'diff-down';
+  return `<tr><td>${rot}</td><td class="num">${fmt(a)}</td><td class="num">${fmt(d)}</td><td class="num ${cls}">${delta === null || Math.abs(delta) < 0.005 ? '—' : (delta > 0 ? '+' : '') + (tipo === 'brl' ? brl(delta) : nbr(delta, 2))}</td></tr>`;
+}
+function renderSim(sim) {
+  const b = base(); const A = calcular(b); const D = calcular(b, sim);
+  let h = `<div class="card"><h2>Antes e depois — ${esc(ctxTxt())}</h2><div class="rolagem"><table class="t"><thead><tr><th>Número</th><th class="num">Hoje</th><th class="num">No cenário</th><th class="num">Diferença</th></tr></thead><tbody>`;
+  h += linhaDif('Entrou da operação', A.r.receita, D.r.receita);
+  h += linhaDif('Gastos da operação', A.r.gastosOp, D.r.gastosOp);
+  h += linhaDif('Sobrou da operação', A.r.lucroOp, D.r.lucroOp);
+  h += linhaDif('Sobrou de cada R$ 100', A.r.margem, D.r.margem, 'pct');
+  h += linhaDif('Caixa do mês', A.r.resultado, D.r.resultado);
+  h += linhaDif('Saldo final', A.r.saldoFinal, D.r.saldoFinal);
+  h += linhaDif('Custo fixo (%)', A.r.custoFixoPct, D.r.custoFixoPct, 'pct', false);
+  h += linhaDif('Média do que entrou', A.r.mediaReceita, D.r.mediaReceita);
+  for (const x of A.analise.p100) { const y = D.analise.p100.find((z) => z.grupo === x.grupo); h += linhaDif(`De cada R$ 100: ${x.rot}`, x.real, y?.real ?? null, 'pct', false); }
+  const mexidas = new Set([...sim.ajustes.map((a) => a.conta), ...Object.keys(sim.orc).map(Number), ...Object.keys(sim.fatia).map(Number)]);
+  for (const id of mexidas) {
+    const ia = A.grupos.flatMap((g) => g.itens).find((i) => i.contaId === id) || { valor: 0, pct: null, ideal: null };
+    const id2 = D.grupos.flatMap((g) => g.itens).find((i) => i.contaId === id) || { valor: 0, pct: null, ideal: null };
+    const nome = contaMeta(id)?.nome || 'A classificar';
+    h += linhaDif(`${esc(nome)}: no mês`, ia.valor, id2.valor);
+    h += linhaDif(`${esc(nome)}: de cada R$ 100`, ia.pct === null ? null : Math.abs(ia.pct), id2.pct === null ? null : Math.abs(id2.pct), 'pct', false);
+    h += linhaDif(`${esc(nome)}: ideal`, ia.ideal === null ? null : Math.abs(ia.ideal), id2.ideal === null ? null : Math.abs(id2.ideal), 'pct');
+  }
+  h += '</tbody></table></div>';
+  const novos = D.analise.atencao.filter((x) => !A.analise.atencao.some((y) => y.txt.split(':')[0] === x.txt.split(':')[0]));
+  const sumiram = A.analise.atencao.filter((x) => !D.analise.atencao.some((y) => y.txt.split(':')[0] === x.txt.split(':')[0]));
+  h += `<h3 style="font-size:14px;margin:12px 0 4px">A frase do mês no cenário</h3><p>${esc(D.analise.frase)}</p>`;
+  if (novos.length) h += `<h3 style="font-size:14px;margin:12px 0 4px">Alertas que aparecem</h3>${novos.map((a) => `<div class="alerta ${a.tom}">${esc(a.txt)}</div>`).join('')}`;
+  if (sumiram.length) h += `<h3 style="font-size:14px;margin:12px 0 4px">Alertas que somem</h3>${sumiram.map((a) => `<div class="alerta bom">${esc(a.txt)}</div>`).join('')}`;
+  h += `<h3 style="font-size:14px;margin:12px 0 4px">Como o cenário foi calculado</h3><ul class="passos"><li>Cada mudança soma (ou tira) o valor da conta escolhida no mês. A conta muda o grupo dela; o grupo muda Entrou/Gastos/Sobrou (se for da operação) e sempre o Caixa do mês.</li><li>Os percentuais são refeitos dividindo pelo novo "Entrou da operação"; o Ideal é refeito com a nova meta (se mudou), dividida pela receita orçada.</li><li>A média recebe a diferença dividida pelos ${A.r.n} meses da média (o mês da tela está dentro dela).</li><li>Saldo final = saldo de abertura + novo caixa do mês.</li>${Object.keys(sim.fatia).length ? '<li>Fatia: o valor da conta na Matriz antes da fatia × (fatia nova − fatia atual) muda de uma unidade para a outra. O Consolidado não muda.</li>' : ''}</ul>`;
+  h += '<p class="nota">Simulação é estimativa: ela não sabe de juros, impostos ou efeitos que uma despesa nova traria em outras contas.</p></div>';
+  return h;
+}
+function renderSimRapida(sim) {
+  return `<div class="resp-bloco"><h3>Simulação: ${esc(sim.ajustes[0].rot)}</h3><p class="nota">Feita na hora sobre ${esc(ctxTxt())}. Para montar cenários maiores, use a aba Simular.</p>${renderSim(sim).replace('<div class="card">', '<div>')}</div>`;
+}
+
+// ---------------------------------------------------------------- Print
+const AREAS_PRINT = [
+  { area: 'Resumo do mês', chaves: ['resumo do mes', 'entrou da operacao', 'gastos da operacao', 'sobrou da operacao', 'caixa do mes', 'como o mes fechou', 'o que olhar primeiro', 'de cada r 100'] },
+  { area: 'Conta por conta', chaves: ['conta por conta', 'contra o ideal', 'no mes', 'media do mes', 'abrir todos os grupos', 'de cada r 100'] },
+  { area: 'Lançamentos', chaves: ['lancamentos do mes', 'pessoa', 'origem', 'lancado aqui', 'wik', 'extrato'] },
+  { area: 'Caixa e saldos', chaves: ['caixa e saldos', 'abriu o mes com', 'fecha o mes com', 'posicao no fim do mes', 'conferencia do caixa', 'para onde o dinheiro foi', 'contas a pagar'] },
+  { area: 'Histórico', chaves: ['historico', 'sem dado'] },
+  { area: 'Vendas do mês', chaves: ['vendas do mes', 'faturamento', 'ticket medio', 'lucro das vendas', 'preco medio'] },
+];
+function vPrint() {
+  const el = $('#v-print');
+  if (el.dataset.pronto) return;
+  el.dataset.pronto = '1';
+  el.innerHTML = `<div class="card"><h2>Ler um print da tela</h2><p class="sub">Solte aqui um print do Fechamento do Mês. O arquivo lê o texto da imagem, descobre a parte da tela, a unidade e o mês, e explica cada número que encontrar.</p>
+  <label class="drop" id="drop"><input type="file" id="arq-print" accept="image/*" hidden>Solte a imagem aqui, cole com <span class="kbd">Ctrl</span>+<span class="kbd">V</span> ou clique para escolher</label>
+  <p class="nota">Ler a imagem precisa de internet (o leitor de texto é baixado na hora, uma vez). Sem internet: cole abaixo o texto que aparece no print.</p>
+  <textarea class="campo" id="texto-print" rows="4" placeholder="Ou cole/digite aqui o que aparece no print..."></textarea>
+  <button class="btn prim" id="btn-texto-print" type="button" style="margin-top:8px">Explicar este texto</button>
+  <div id="print-status" class="nota"></div></div><div id="print-resultado"></div>`;
+  const drop = $('#drop'); const inp = $('#arq-print');
+  drop.addEventListener('click', () => inp.click());
+  drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('sobre'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('sobre'));
+  drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('sobre'); const f = e.dataTransfer.files[0]; if (f) lerImagem(f); });
+  inp.addEventListener('change', () => { if (inp.files[0]) lerImagem(inp.files[0]); });
+  document.addEventListener('paste', (e) => { if (S.aba !== 'print') return; const it = [...(e.clipboardData?.items || [])].find((x) => x.type.startsWith('image/')); if (it) lerImagem(it.getAsFile()); });
+  $('#btn-texto-print').addEventListener('click', () => explicarTextoPrint($('#texto-print').value));
+}
+function carregarScript(src) { return new Promise((ok, erro) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => erro(new Error('sem internet ou bloqueado')); document.head.appendChild(s); }); }
+async function lerImagem(arquivo) {
+  const st = $('#print-status');
+  try {
+    st.textContent = 'Baixando o leitor de texto (só na primeira vez)…';
+    if (!window.Tesseract) await carregarScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
+    st.textContent = 'Lendo o texto da imagem… (10 a 40 segundos)';
+    const res = await window.Tesseract.recognize(arquivo, 'por', { logger: (m) => { if (m.status === 'recognizing text') st.textContent = `Lendo o texto da imagem… ${Math.round(m.progress * 100)}%`; } });
+    $('#texto-print').value = res.data.text;
+    st.textContent = 'Texto lido. Confira abaixo se algum número saiu errado e clique em "Explicar este texto" de novo se corrigir.';
+    explicarTextoPrint(res.data.text);
+  } catch (e) {
+    st.innerHTML = `<span class="neg">Não consegui ler a imagem (${esc(e.message)}). Cole o texto do print na caixa e clique em "Explicar este texto".</span>`;
+  }
+}
+function explicarTextoPrint(texto) {
+  if (!texto || !texto.trim()) return;
+  const tn = normNome(texto);
+  const u = acharUnidade(texto.match(/marketplace|matriz|consolidado/i)?.[0] || '') || S.u;
+  const m = acharMes(texto) || S.m;
+  S.u = u; S.m = m; atualizarBarra();
+  const areas = AREAS_PRINT.map((a) => ({ a: a.area, s: pontuarTexto(tn, a.chaves) })).filter((x) => x.s).sort((a, b) => b.s - a.s);
+  const nums = numerosDaFrase(texto.replace(/\b\d{1,2}\/\d{1,2}(\/\d{2,4})?\b/g, ' ')).filter((n) => n.abs >= 1 || n.pct);
+  const reg = registro(); const achados = []; const vistos = new Set();
+  for (const n of nums) {
+    const k = `${n.abs}|${n.pct}`; if (vistos.has(k)) continue; vistos.add(k);
+    const cand = reg.filter((x) => Math.abs(Math.abs(x.v) - n.abs) <= Math.max(n.tol, 0.006) && (!n.pct || x.ehPct));
+    if (!cand.length) { achados.push({ n, x: null }); continue; }
+    const areaTop = areas[0]?.a;
+    cand.sort((a, b) => ((b.area.includes(areaTop || '§') ? 5 : 0) + b.peso) - ((a.area.includes(areaTop || '§') ? 5 : 0) + a.peso));
+    achados.push({ n, x: cand[0], outros: cand.length - 1 });
+  }
+  const bons = achados.filter((a) => a.x);
+  EXPS.clear();
+  $('#print-resultado').innerHTML = `<div class="card"><h2>O que este print mostra</h2>
+  <p><b>Unidade:</b> ${UNID[u]} · <b>Mês:</b> ${mesTxt(m)} · <b>Parte da tela:</b> ${areas.length ? esc(areas.slice(0, 2).map((x) => x.a).join(' / ')) : 'não identificada'}</p>
+  <p class="nota">${bons.length} de ${achados.length} número(s) do print foram reconhecidos. Clique em "como chegou" para ver a conta de cada um.</p>
+  <div class="rolagem"><table class="t"><thead><tr><th>No print</th><th>É o número</th><th>Onde</th><th></th></tr></thead><tbody>
+  ${achados.map((a) => `<tr><td class="num">${esc(a.n.txt)}</td><td>${a.x ? esc(a.x.rot) + (a.outros ? ` <small class="nota">(+${a.outros} lugar(es) com o mesmo valor)</small>` : '') : '<span class="nota">não reconhecido — pode ser leitura errada da imagem, outro mês ou um valor de depois que o arquivo foi gerado</span>'}</td><td>${a.x ? esc(a.x.area) : ''}</td><td>${a.x ? nBtn(0, a.x.exp, '', 'como chegou') : ''}</td></tr>`).join('')}
+  </tbody></table></div></div>`;
+}
+
+// ---------------------------------------------------------------- Confiabilidade, Como, Não
+function vConfianca() {
+  let h = `<div class="card"><h2>Confiabilidade dos números</h2><p class="sub">Cada número da tela recebe um selo: <span class="selo ok">Confiável</span> <span class="selo atencao">Atenção</span> <span class="selo nao">Não confiável</span>. Abaixo, os motivos em cada unidade e mês deste arquivo.</p></div>`;
+  for (const m of P.meses.slice().reverse()) for (const u of ['matriz', 'marketplace', 'consolidado']) {
+    const salvo = { u: S.u, m: S.m }; S.u = u; S.m = m; const fl = flagsCtx(); S.u = salvo.u; S.m = salvo.m;
+    h += `<div class="card"><h2>${UNID[u]} · ${mesTxt(m)}</h2>${fl.length ? fl.map((x) => `<div class="alerta ${x.nivel === 'nao' ? 'ruim' : 'atencao'}"><span class="selo ${x.nivel}">${SELO_TXT[x.nivel]}</span><span>${esc(x.txt)}</span></div>`).join('') : '<div class="alerta bom">Nenhum problema encontrado: os números deste mês passaram em todas as regras.</div>'}</div>`;
+  }
+  h += `<div class="card"><h2>As regras</h2><ul class="passos"><li>Mês em andamento → atenção em tudo (vai mudar).</li><li>Valor a classificar → atenção nos grupos e percentuais.</li><li>Sem saldo de abertura → saldo final não confiável.</li><li>Sem receita no mês → percentuais não confiáveis.</li><li>Marketplace sem fatia de Produção → "Sobrou" não é lucro.</li><li>Marketplace sem meta → sem Ideal.</li><li>Média com menos de 12 meses → atenção (menos de 3 → não confiável).</li><li>Extrato que não fecha no centavo → receita e caixa do Marketplace não confiáveis.</li><li>Conta com valor ≥ 3× a própria média e ≥ R$ 20 mil → atenção (confira no Wik).</li><li>Pedidos sem custo → lucro das vendas com atenção.</li><li>O arquivo refaz as contas e compara com o Hub; se não bater, não confiável.</li></ul></div>`;
+  $('#v-confianca').innerHTML = h;
+}
+function vComo() { $('#v-como').innerHTML = `<div class="card"><h2>Como os números são feitos — tudo automático</h2>${KB.find((k) => k.id === 'automacao').html()}</div>` + ['regime', 'ideal', 'media', 'fatia', 'unidade', 'senha'].map((id) => { const k = KB.find((x) => x.id === id); return `<div class="card"><h2>${esc(k.tit)}</h2>${k.html()}</div>`; }).join(''); }
+function vNao() { $('#v-nao').innerHTML = `<div class="card"><h2>O que estes números NÃO mostram</h2><p class="sub">Para ninguém tirar do número uma conclusão que ele não permite.</p>${naoMostraHtml()}</div>`; }
+
+// ============================================================ INÍCIO
+const memoFlags = new Map();
+const _flags = flagsCtx;
+// eslint-disable-next-line no-func-assign
+flagsCtx = function (u = S.u, m = S.m) { const k = chaveCtx(u, m); if (!memoFlags.has(k)) memoFlags.set(k, _flags(u, m)); return memoFlags.get(k); };
+
+function iniciarApp() {
+  $('#trava').classList.add('oculto'); $('#app').classList.remove('oculto');
+  S.m = P.meses[P.meses.length - 1];
+  const g = new Date(P.geradoEm);
+  $('#info-geracao').innerHTML = `Dados de ${g.toLocaleDateString('pt-BR')} às ${g.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}${P.geradoPor ? `<br>baixado por ${esc(P.geradoPor)}` : ''}`;
+  $('#seg-unidade').innerHTML = ['matriz', 'marketplace', 'consolidado'].map((u) => `<button type="button" data-u="${u}">${UNID_CURTO[u]}</button>`).join('');
+  $('#sel-mes').innerHTML = P.meses.slice().reverse().map((m) => `<option value="${m}">${mesTxt(m)}</option>`).join('');
+  $('#abas').innerHTML = ABAS.map(([k, t]) => `<button type="button" data-aba="${k}">${t}</button>`).join('');
+  $('#seg-unidade').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { S.u = b.dataset.u; trocarContexto(); } });
+  $('#sel-mes').addEventListener('change', () => { S.m = $('#sel-mes').value; trocarContexto(); });
+  $('#abas').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { S.aba = b.dataset.aba; desenhar(); } });
+  document.addEventListener('click', (e) => {
+    const n = e.target.closest('[data-exp]'); if (n && EXPS.has(n.dataset.exp)) { abrirGaveta(renderExp(EXPS.get(n.dataset.exp)())); return; }
+    const q = e.target.closest('[data-q]'); if (q) { const ir = q.dataset.ir; if (ir) { [S.u, S.m] = ir.split('|'); atualizarBarra(); } fecharGaveta(); perguntar(q.dataset.q); }
+  });
+  $('#gaveta-fechar').addEventListener('click', fecharGaveta);
+  $('#gaveta').addEventListener('mousedown', (e) => { if (e.target.id === 'gaveta') fecharGaveta(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fecharGaveta(); });
+  atualizarBarra(); desenhar();
+  window.__explicador = { responder, calcular, base, registro, flagsCtx, conferirMotor, explicarTextoPrint, S, P };
+}
+
+function modoSemDados() {
+  $('#trava').classList.add('oculto'); $('#app').classList.remove('oculto');
+  $('#barra-filtros').classList.add('oculto');
+  $('#abas').innerHTML = '<button class="ativa" type="button">Como é feito</button>';
+  $('#v-perguntar').innerHTML = `<div class="card"><h2>Como os números são feitos</h2>${KB[0].html()}</div>` + ['regime', 'media', 'fatia', 'unidade', 'senha'].map((id) => { const k = KB.find((x) => x.id === id); return `<div class="card"><h2>${esc(k.tit)}</h2>${k.html()}</div>`; }).join('') + `<div class="card"><h2>O que estes números NÃO mostram</h2>${naoMostraHtml()}</div>`;
+}
+
+(function () {
+  try { PUB = JSON.parse($('#publico').textContent); } catch { PUB = {}; }
+  if (PUB.geradoEm) $('#trava-sub').textContent = `Números de ${(PUB.meses || []).map(mesTxt).join(', ')}, gerados em ${new Date(PUB.geradoEm).toLocaleString('pt-BR')}. Digite a senha do arquivo (o Hub mostra na hora do download).`;
+  let tema = null; try { tema = localStorage.getItem('explicador-tema'); } catch { /* sem armazenamento */ }
+  if (tema) document.documentElement.dataset.theme = tema;
+  $('#btn-tema').addEventListener('click', () => { const novo = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = novo; try { localStorage.setItem('explicador-tema', novo); } catch { /* ok */ } });
+  $('#so-explicacoes').addEventListener('click', (e) => { e.preventDefault(); modoSemDados(); });
+  $('#form-senha').addEventListener('submit', async (e) => {
+    e.preventDefault(); const erro = $('#erro-senha'); erro.textContent = 'Abrindo…';
+    try { P = await decifrar($('#senha').value); erro.textContent = ''; iniciarApp(); } catch (err) { erro.textContent = 'Senha incorreta (ou arquivo danificado).'; }
+  });
+}());
+
+</script>
+</body>
+</html>
