@@ -25,7 +25,7 @@
 //     mais vendeu nos últimos 30 dias naquele bloco. Por isso o bloco de kit
 //     mostra a foto do kit (as cinco peças) e o de unitário mostra a peça
 //     sozinha. Sem foto de anúncio, cai na foto do cadastro (`produto_fotos`).
-//  F. CORES: uma por linha, na faixa R:U, só o nome da cor.
+//  F. CORES: tabela em duas colunas (R:S e T:U), só o nome da cor; "LD" não é cor.
 //  G. O NOME ocupa G:I (mesclado), tanto no cabeçalho quanto na linha do
 //     produto.
 //
@@ -73,16 +73,15 @@ const PCT_ACRESCIMO_PADRAO = 42.9;
 
 // Geometria pedida, em PIXEL. O Excel guarda largura em caracteres e altura
 // em pontos — conversão em `larguraEmCaracteres` / `alturaEmPontos`.
-const LARGURA_PX = { referencia: 23, loja: 60, valores: 50 };
+const LARGURA_PX = { referencia: 25, loja: 60, valores: 50, ads: 180 };
 const ALTURA_LINHA_PX = 18;
 const COLUNAS_REFERENCIA = ['A', 'B', 'C', 'D', 'E', 'F'];
 const COLUNAS_LOJA = ['G', 'H', 'I'];
 const COLUNAS_VALORES = ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'];
-// A coluna V (ADS) não estava na lista de larguras do dono — fica como estava.
-const LARGURA_ADS_CARACTERES = 14.57;
+const LARGURA_ADS_CARACTERES = Math.round(((LARGURA_PX.ads - 5) / 7) * 100) / 100;
 
 // Largura da área da foto: A..F. A altura muda com o tamanho do bloco.
-const FOTO_LARGURA_PX = COLUNAS_REFERENCIA.length * LARGURA_PX.referencia; // 138
+const FOTO_LARGURA_PX = COLUNAS_REFERENCIA.length * LARGURA_PX.referencia; // 150
 
 // Títulos das colunas de valor, do print.
 const TITULOS_UNITARIO = [
@@ -98,14 +97,25 @@ const TITULOS_KIT = [
 const VALORES_UNITARIO = ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q'];
 const VALORES_KIT = ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S'];
 
-const FONTE = { name: 'Calibri', size: 7, bold: true };
-const FONTE_VERMELHA = { ...FONTE, color: { argb: 'FFFF0000' } };
-const BORDA_FINA = {
-  top: { style: 'thin' }, left: { style: 'thin' },
-  bottom: { style: 'thin' }, right: { style: 'thin' },
+// Mesmas fontes do Hub: Inter no corpo, Fraunces nos títulos. (Se a máquina
+// não tiver a fonte instalada, o Excel troca por uma parecida.)
+const FONTE_CORPO = 'Inter';
+const FONTE_TITULO = 'Fraunces';
+// Paleta do Hub (theme.css).
+const COR = {
+  couro: 'FF422A15', creme: 'FFECE2CC', cremeFundo: 'FFF3EDE0', borda: 'FFC9B88F', branco: 'FFFFFDF9',
 };
+const FONTE = { name: FONTE_CORPO, size: 7, bold: true, color: { argb: 'FF2A1D10' } };
+const FILL_CABECALHO = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR.couro } };
+const FILL_PRODUTO = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR.creme } };
+const FILL_LOJA = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR.cremeFundo } };
+const FONTE_CABECALHO = { name: FONTE_TITULO, size: 8, bold: true, color: { argb: COR.branco } };
+const FONTE_VERMELHA = { ...FONTE, color: { argb: 'FFFF0000' } };
+const LADO = { style: 'thin', color: { argb: COR.borda } };
+const BORDA_FINA = { top: LADO, left: LADO, bottom: LADO, right: LADO };
 const CENTRO = { horizontal: 'center', vertical: 'center' };
 const ESQUERDA = { horizontal: 'left', vertical: 'center' };
+const CENTRO_QUEBRA = { horizontal: 'center', vertical: 'center', wrapText: true };
 const MEIO = { vertical: 'center' };
 
 // Fórmulas de "V. RECE." (valor que a plataforma repassa), copiadas letra por
@@ -539,7 +549,7 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
   for (const v of variantes) {
     if (!coresPorProduto.has(v.produto_id)) coresPorProduto.set(v.produto_id, []);
     const nome = String(v.cor || '').trim();
-    if (nome) coresPorProduto.get(v.produto_id).push(nome.toUpperCase());
+    if (nome && !/^LD$/i.test(nome)) coresPorProduto.get(v.produto_id).push(nome.toUpperCase());
   }
 
   // Foto do cadastro — o plano B quando o anúncio não tem foto que dê pra
@@ -780,11 +790,14 @@ function notaDaCelula(celula) {
 // Peças comuns aos dois blocos
 // ---------------------------------------------------------------------------
 function escreverCabecalhoBloco(ws, linha) {
-  estiloCelula(ws.getCell(`A${linha}`), { fonte: FONTE_VERMELHA, alinhamento: CENTRO }).value = 'Nº';
+  const cab = { fonte: FONTE_CABECALHO };
+  estiloCelula(ws.getCell(`A${linha}`), { ...cab, alinhamento: CENTRO }).value = 'Nº';
   ws.mergeCells(`B${linha}:F${linha}`);
-  estiloCelula(ws.getCell(`B${linha}`), { alinhamento: ESQUERDA }).value = 'REFERÊNCIA';
+  estiloCelula(ws.getCell(`B${linha}`), { ...cab, alinhamento: ESQUERDA }).value = 'REFERÊNCIA';
   ws.mergeCells(`G${linha}:I${linha}`);
-  estiloCelula(ws.getCell(`G${linha}`), { alinhamento: ESQUERDA }).value = 'NOME';
+  estiloCelula(ws.getCell(`G${linha}`), { ...cab, alinhamento: ESQUERDA }).value = 'NOME';
+  for (const col of ['A', 'B', 'G']) ws.getCell(`${col}${linha}`).fill = FILL_CABECALHO;
+  ws.getRow(linha).height = alturaEmPontos(ALTURA_LINHA_PX + 4);
 }
 
 // A linha do produto: número (só no bloco do unitário), referência, gênero,
@@ -807,7 +820,9 @@ function escreverLinhaProduto(ws, { linha, numero, referencia, genero, nome, tit
   }
 
   ws.mergeCells(`G${linha}:I${linha}`);
-  estiloCelula(ws.getCell(`G${linha}`), { alinhamento: ESQUERDA }).value = nome || '';
+  estiloCelula(ws.getCell(`G${linha}`), {
+    alinhamento: { horizontal: 'left', vertical: 'center', wrapText: true },
+  }).value = nome || '';
 
   for (const [col, texto] of titulos) {
     estiloCelula(ws.getCell(`${col}${linha}`), {
@@ -815,6 +830,9 @@ function escreverLinhaProduto(ws, { linha, numero, referencia, genero, nome, tit
       alinhamento: CENTRO,
     }).value = texto;
   }
+  // Faixa creme na linha do produto, como o cabeçalho das tabelas do Hub.
+  for (const col of ['A', 'B', 'F', 'G', ...titulos.map(([c]) => c)]) ws.getCell(`${col}${linha}`).fill = FILL_PRODUTO;
+  ws.getRow(linha).height = alturaEmPontos(ALTURA_LINHA_PX + 8);
 }
 
 // A foto entra NO TAMANHO da área reservada, sem esticar: o maior retângulo
@@ -898,7 +916,12 @@ function marcarLucro(ws, colInicio, colFim, primeira, ultima) {
 }
 
 function ajustarAlturas(ws, primeira, ultima) {
-  for (let l = primeira; l <= ultima; l += 1) ws.getRow(l).height = alturaEmPontos(ALTURA_LINHA_PX);
+  // A linha do cabeçalho e a do produto são mais altas (título e nome que
+  // quebram em duas linhas); as demais ficam em 18 px.
+  for (let l = primeira; l <= ultima; l += 1) {
+    const extra = l === primeira ? 4 : (l === primeira + 1 ? 8 : 0);
+    ws.getRow(l).height = alturaEmPontos(ALTURA_LINHA_PX + extra);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -934,7 +957,8 @@ function escreverBlocoUnitario(ws, { numero, produto, grade, calculo, cores, fot
     const primeiraDaPlataforma = linha;
     for (const marca of MARCAS) {
       // Coluna I: ORIGEM na primeira linha do par, HOGGAR na segunda.
-      estiloCelula(ws.getCell(`I${linha}`), { alinhamento: ESQUERDA }).value = marca;
+      estiloCelula(ws.getCell(`I${linha}`), { alinhamento: CENTRO_QUEBRA }).value = marca;
+      ws.getCell(`I${linha}`).fill = FILL_LOJA;
 
       const celula = grade.get(`${plataforma.chave}|${marca}`);
       if (!celula) {
@@ -965,7 +989,8 @@ function escreverBlocoUnitario(ws, { numero, produto, grade, calculo, cores, fot
     }
     // G:H mesclado nas DUAS linhas da plataforma, com o nome centralizado.
     ws.mergeCells(`G${primeiraDaPlataforma}:H${linha - 1}`);
-    estiloCelula(ws.getCell(`G${primeiraDaPlataforma}`), { alinhamento: CENTRO }).value = plataforma.rotulo;
+    estiloCelula(ws.getCell(`G${primeiraDaPlataforma}`), { alinhamento: CENTRO_QUEBRA }).value = plataforma.rotulo;
+    ws.getCell(`G${primeiraDaPlataforma}`).fill = FILL_LOJA;
   }
 
   escreverCores(ws, cores, primeira, ultima);
@@ -974,19 +999,23 @@ function escreverBlocoUnitario(ws, { numero, produto, grade, calculo, cores, fot
   return ultima;
 }
 
-// CORES: uma por linha, na faixa R:U, só o nome — como no print. Sobrando
-// cor além das linhas do bloco, a última célula junta o resto em vez de
-// deixar a cor sumir da planilha (REGRA 2).
+// CORES: tabela em duas colunas — a 1ª em R:S e a 2ª em T:U, só o nome da cor.
+// "LD" não é cor (é sigla de estoque) e não entra. Sobrando cor além das
+// vagas das duas colunas, a última célula junta o resto em vez de deixar a
+// cor sumir da planilha (REGRA 2).
 function escreverCores(ws, cores, primeira, ultima) {
-  const vagas = ultima - primeira + 1;
+  const vagas = (ultima - primeira + 1) * 2;
   const lista = cores.length > vagas
     ? [...cores.slice(0, vagas - 1), cores.slice(vagas - 1).join(' · ')]
     : cores;
+  const porColuna = ultima - primeira + 1;
 
   for (let l = primeira; l <= ultima; l += 1) {
-    const faixa = `R${l}:U${l}`;
-    ws.mergeCells(faixa);
-    estiloCelula(ws.getCell(`R${l}`), { alinhamento: ESQUERDA }).value = lista[l - primeira] ?? null;
+    const n = l - primeira;
+    for (const [de, ate, indice] of [['R', 'S', n], ['T', 'U', porColuna + n]]) {
+      ws.mergeCells(`${de}${l}:${ate}${l}`);
+      estiloCelula(ws.getCell(`${de}${l}`), { alinhamento: CENTRO_QUEBRA }).value = lista[indice] ?? null;
+    }
   }
 }
 
@@ -1025,7 +1054,8 @@ function escreverBlocoKit(ws, { produto, gradePorTamanho, tamanhos, calculo, fot
     for (const marca of MARCAS) {
       const primeiraDaMarca = linha;
       for (const quantidade of tamanhos) {
-        estiloCelula(ws.getCell(`I${linha}`), { alinhamento: CENTRO }).value = `KIT - ${quantidade}`;
+        estiloCelula(ws.getCell(`I${linha}`), { alinhamento: CENTRO_QUEBRA }).value = `KIT - ${quantidade}`;
+        ws.getCell(`I${linha}`).fill = FILL_LOJA;
 
         const celula = gradePorTamanho.get(quantidade)?.get(`${plataforma.chave}|${marca}`);
         if (!celula) {
@@ -1060,11 +1090,13 @@ function escreverBlocoKit(ws, { produto, gradePorTamanho, tamanhos, calculo, fot
       }
       // H: a marca, mesclada na altura dos tamanhos daquela loja.
       if (linha - 1 > primeiraDaMarca) ws.mergeCells(`H${primeiraDaMarca}:H${linha - 1}`);
-      estiloCelula(ws.getCell(`H${primeiraDaMarca}`), { alinhamento: CENTRO }).value = marca;
+      estiloCelula(ws.getCell(`H${primeiraDaMarca}`), { alinhamento: CENTRO_QUEBRA }).value = marca;
+      ws.getCell(`H${primeiraDaMarca}`).fill = FILL_LOJA;
     }
     // G: a plataforma, mesclada na altura das duas marcas.
     if (linha - 1 > primeiraDaPlataforma) ws.mergeCells(`G${primeiraDaPlataforma}:G${linha - 1}`);
-    estiloCelula(ws.getCell(`G${primeiraDaPlataforma}`), { alinhamento: CENTRO }).value = plataforma.rotulo;
+    estiloCelula(ws.getCell(`G${primeiraDaPlataforma}`), { alinhamento: CENTRO_QUEBRA }).value = plataforma.rotulo;
+    ws.getCell(`G${primeiraDaPlataforma}`).fill = FILL_LOJA;
   }
 
   ajustarAlturas(ws, linhaCabecalho, ultima);

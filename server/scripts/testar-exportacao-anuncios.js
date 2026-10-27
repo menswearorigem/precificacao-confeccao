@@ -144,7 +144,7 @@ const PRODUTOS = [
   { id: 7, referencia: 'VM034', descricao: 'BERMUDA MOLETOM', categoria: 'BERMUDA', empresa_id: 1 },
 ];
 
-const CORES = ['PRETO', 'MARINHO', 'VERDE', 'MARSALA', 'BRANCO', 'MESCLA', 'VERMELHO'];
+const CORES = ['PRETO', 'MARINHO', 'VERDE', 'MARSALA', 'BRANCO', 'MESCLA', 'VERMELHO', 'CINZA', 'AZUL', 'BEGE'];
 
 // ---------------------------------------------------------------------------
 // Dublês do banco e da rede
@@ -163,7 +163,7 @@ function consultar(sql, vals) {
   if (/FROM materiais/.test(sql)) return { rows: [] };
   if (/FROM custos_industriais/.test(sql)) return { rows: [] };
   if (/FROM estoque_variantes/.test(sql)) {
-    return { rows: CORES.map((cor) => ({ produto_id: 1, cor })) };
+    return { rows: [...CORES, 'LD'].map((cor) => ({ produto_id: 1, cor })) };
   }
   if (/FROM produto_fotos/.test(sql)) {
     return { rows: [{ produto_id: 1, dados: PNG_CADASTRO, mime_type: 'image/png' }] };
@@ -317,7 +317,7 @@ teste('unitário: G:H com a plataforma de duas em duas linhas, 3 a 10', () => {
   for (const faixa of ['G3:H4', 'G5:H6', 'G7:H8', 'G9:H10']) {
     assert.ok(ws.merges.includes(faixa), `faltou o merge ${faixa}`);
   }
-  assert.deepStrictEqual(ws.getCell('G3').alignment, { horizontal: 'center', vertical: 'center' });
+  assert.deepStrictEqual(ws.getCell('G3').alignment, { horizontal: 'center', vertical: 'center', wrapText: true });
 });
 
 teste('unitário: coluna I alterna ORIGEM/HOGGAR de I3 a I10', () => {
@@ -522,14 +522,18 @@ teste('"kit" sem quantidade não vira linha de peça: vai para a aba FORA DA PLA
   assert.match(motivos[0], /sem dizer quantas peças/);
 });
 
-teste('cores: uma por linha, em R:U, só o nome', () => {
+teste('cores: duas colunas (R:S e T:U), só o nome, sem "LD"', () => {
   const b = acharBloco(ws, 'OG1620', 'unitario');
+  const vagas = b.ultima - b.primeira + 1;
   for (let i = 0; i < CORES.length; i += 1) {
-    assert.strictEqual(ws.getCell(`R${b.primeira + i}`).value, CORES[i]);
-    assert.ok(ws.merges.includes(`R${b.primeira + i}:U${b.primeira + i}`));
+    const col = i < vagas ? ['R', 'S'] : ['T', 'U'];
+    const l = b.primeira + (i % vagas);
+    assert.strictEqual(ws.getCell(`${col[0]}${l}`).value, CORES[i]);
+    assert.ok(ws.merges.includes(`${col[0]}${l}:${col[1]}${l}`));
   }
-  // A oitava linha sobra vazia (são 7 cores) e continua com moldura.
-  assert.strictEqual(ws.getCell(`R${b.ultima}`).value, null);
+  const todas = [];
+  for (let l = b.primeira; l <= b.ultima; l += 1) todas.push(ws.getCell(`R${l}`).value, ws.getCell(`T${l}`).value);
+  assert.ok(!todas.includes('LD'), 'LD não é cor');
   // No bloco de kit não existe coluna de cores — R é PLATAF.
   const kit = acharBloco(ws, 'OG1620', 'kit');
   assert.strictEqual(ws.getCell(`R${kit.linhaProduto}`).value, 'PLATAF');
@@ -542,16 +546,16 @@ teste('foto: a do anúncio, sem esticar, centralizada, e diferente no kit', () =
   assert.ok(ws.merges.includes(`A${kit.primeira}:F${kit.ultima}`));
 
   const daUnidade = ws.imagens.find((im) => Math.abs(im.opts.tl.row - (uni.primeira - 1)) < 8);
-  // PNG 4×2 numa caixa de 138×144: encaixa pela largura → 138×69, centralizada.
+  // PNG 4×2 numa caixa de 150×144: encaixa pela largura → 150×75, centralizada.
   assert.ok(!daUnidade.opts.br, 'a foto não pode ser ancorada de canto a canto (estica)');
-  assert.strictEqual(daUnidade.opts.ext.width, 138);
-  assert.strictEqual(daUnidade.opts.ext.height, 69);
-  assert.ok(Math.abs(daUnidade.opts.tl.row - ((uni.primeira - 1) + 37.5 / 18)) < 0.01);
+  assert.strictEqual(daUnidade.opts.ext.width, 150);
+  assert.strictEqual(daUnidade.opts.ext.height, 75);
+  assert.ok(Math.abs(daUnidade.opts.tl.row - ((uni.primeira - 1) + 34.5 / 18)) < 0.01);
 
-  // A do kit é quadrada (2×2) numa caixa de 138 × (24×18=432) → 138×138.
+  // A do kit é quadrada (2×2) numa caixa de 150 × (24×18=432) → 150×150.
   const doKit = ws.imagens.find((im) => im.opts.tl.row >= kit.primeira - 1);
-  assert.strictEqual(doKit.opts.ext.width, 138);
-  assert.strictEqual(doKit.opts.ext.height, 138);
+  assert.strictEqual(doKit.opts.ext.width, 150);
+  assert.strictEqual(doKit.opts.ext.height, 150);
 
   // E foram baixadas as fotos dos anúncios campeões, não a do cadastro.
   assert.ok(BAIXADOS.some((u) => u.endsWith('/unidade.png')), BAIXADOS.join(', '));
@@ -564,19 +568,21 @@ teste('sem foto de anúncio, cai na foto do cadastro', async () => {
   ANUNCIOS.forEach((a) => { delete a.foto_url; });
   const livro = await lib.montarPlanilhaAnuncios({});
   ANUNCIOS.forEach((a, i) => { if (semUrl[i]) a.foto_url = semUrl[i]; });
-  // O cadastro tem 10×10 → quadrado de 138×138 no bloco do unitário.
+  // O cadastro tem 10×10 → quadrado de 144×144 (limitado pela altura) no bloco do unitário.
   const p = livro.planilhas[0];
   const b = blocos(p).find((x) => x.referencia === 'OG1620' && x.tipo === 'unitario');
   const im = p.imagens.find((x) => Math.abs(x.opts.tl.row - (b.primeira - 1)) < 8);
-  assert.strictEqual(im.opts.ext.width, 138);
-  assert.strictEqual(im.opts.ext.height, 138);
+  assert.strictEqual(im.opts.ext.width, 144);
+  assert.strictEqual(im.opts.ext.height, 144);
 });
 
 teste('larguras e alturas aplicadas', () => {
-  for (const c of ['A', 'B', 'C', 'D', 'E', 'F']) assert.strictEqual(ws.getColumn(c).width, 2.57, c);
+  for (const c of ['A', 'B', 'C', 'D', 'E', 'F']) assert.strictEqual(ws.getColumn(c).width, 2.86, c);
   for (const c of ['G', 'H', 'I']) assert.strictEqual(ws.getColumn(c).width, 7.86, c);
   for (const c of ['J', 'O', 'U']) assert.strictEqual(ws.getColumn(c).width, 6.43, c);
-  for (let l = 1; l <= 10; l += 1) assert.strictEqual(ws.getRow(l).height, 13.5, `linha ${l}`);
+  assert.strictEqual(ws.getColumn('V').width, 25, 'V = 180 px');
+  const alturas = { 1: 16.5, 2: 19.5 };
+  for (let l = 1; l <= 10; l += 1) assert.strictEqual(ws.getRow(l).height, alturas[l] || 13.5, `linha ${l}`);
 });
 
 teste('Mercado Livre sem regra fechada usa o valor observado', () => {
