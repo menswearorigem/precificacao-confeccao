@@ -960,6 +960,17 @@ function proximaLinhaDeBloco(ws) {
   return separador + 1;
 }
 
+// Linhas alternadas pra leitura: uma bege um pouco mais escura, a outra branca,
+// de I até V. A plataforma (G:H no unitário, G e H no kit) mantém o bege fixo.
+const FILL_BRANCO = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } };
+function alternarLinhas(ws, primeira, ultima) {
+  const colunas = 'IJKLMNOPQRSTUV'.split('');
+  for (let l = primeira; l <= ultima; l += 1) {
+    const fill = (l - primeira) % 2 === 0 ? FILL_LOJA : FILL_BRANCO;
+    for (const col of colunas) ws.getCell(`${col}${l}`).fill = fill;
+  }
+}
+
 function ajustarAlturas(ws, primeira, ultima) {
   for (let l = primeira; l <= ultima; l += 1) ws.getRow(l).height = alturaEmPontos(ALTURA_LINHA_PX);
 }
@@ -1034,6 +1045,7 @@ function escreverBlocoUnitario(ws, { numero, produto, grade, calculo, cores, fot
   }
 
   escreverCores(ws, cores, primeira, ultima);
+  alternarLinhas(ws, primeira, ultima);
   ajustarAlturas(ws, linhaCabecalho, ultima);
   marcarLucro(ws, 'N', 'O', primeira, ultima);
   (ws.blocosDaPlanilha ||= []).push({ inicio: linhaCabecalho, fim: ultima });
@@ -1139,6 +1151,7 @@ function escreverBlocoKit(ws, { numero, produto, gradePorTamanho, tamanhos, calc
     ws.getCell(`G${primeiraDaPlataforma}`).fill = FILL_LOJA;
   }
 
+  alternarLinhas(ws, primeira, ultima);
   ajustarAlturas(ws, linhaCabecalho, ultima);
   marcarLucro(ws, 'O', 'Q', primeira, ultima);
   (ws.blocosDaPlanilha ||= []).push({ inicio: linhaCabecalho, fim: ultima });
