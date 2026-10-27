@@ -118,10 +118,10 @@ const FONTE_CABECALHO = { name: FONTE_TITULO, size: 8, bold: true, color: { argb
 const FONTE_VERMELHA = { ...FONTE, color: { argb: 'FFFF0000' } };
 const LADO = { style: 'thin', color: { argb: COR.borda } };
 const BORDA_FINA = { top: LADO, left: LADO, bottom: LADO, right: LADO };
-const CENTRO = { horizontal: 'center', vertical: 'center' };
-const ESQUERDA = { horizontal: 'left', vertical: 'center' };
-const CENTRO_QUEBRA = { horizontal: 'center', vertical: 'center', wrapText: true };
-const MEIO = { vertical: 'center' };
+const CENTRO = { horizontal: 'center', vertical: 'middle' };
+const ESQUERDA = { horizontal: 'left', vertical: 'middle' };
+const CENTRO_QUEBRA = { horizontal: 'center', vertical: 'middle', wrapText: true };
+const MEIO = { vertical: 'middle' };
 
 // Fórmulas de "V. RECE." (valor que a plataforma repassa), copiadas letra por
 // letra do arquivo modelo. `col` é a coluna do preço anunciado (L nos dois
@@ -830,7 +830,7 @@ function escreverLinhaProduto(ws, { linha, numero, referencia, genero, titulos, 
 
   if (kit) {
     // Coluna estreita: o texto encolhe pra caber em vez de ser cortado.
-    const ENCOLHE = { horizontal: 'center', vertical: 'center', shrinkToFit: true };
+    const ENCOLHE = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
     estiloCelula(ws.getCell(`G${linha}`), { alinhamento: ENCOLHE }).value = 'PLATAFORMA';
     estiloCelula(ws.getCell(`H${linha}`), { alinhamento: ENCOLHE }).value = 'LOJA';
     estiloCelula(ws.getCell(`I${linha}`), { alinhamento: ENCOLHE }).value = 'QTD.';
@@ -897,13 +897,28 @@ function colocarFoto(ws, livro, foto, primeira, ultima) {
   const largura = Math.max(1, Math.round(largura0 * escala));
   const altura = Math.max(1, Math.round(altura0 * escala));
 
-  // A sobra vira recuo, em fração de coluna e de linha, pra foto ficar no meio
-  // do espaço em vez de encostada no canto.
-  const recuoCol = ((AREA_FOTO_LARGURA_PX - largura) / 2) / LARGURA_PX.referencia;
-  const recuoLin = ((alturaCaixa - altura) / 2) / ALTURA_LINHA_PX;
+  // A sobra vira recuo em PIXEL (convertido pra EMU, a unidade do Excel), pra
+  // foto ficar no meio de A:F × linhas do bloco. Âncora nativa: o ExcelJS,
+  // quando recebe fração de coluna/linha, calcula o recuo pela largura da
+  // coluna e deixava a foto fora do centro.
+  const EMU_POR_PX = 9525;
+  const recuoX = Math.max(0, (AREA_FOTO_LARGURA_PX - largura) / 2);
+  let recuoY = Math.max(0, (alturaCaixa + FOTO_RESPIRO_ALTURA_PX - altura) / 2);
+  let linhaDaFoto = primeira; // 1-based
+  while (linhaDaFoto < ultima) {
+    const hPx = (ws.getRow(linhaDaFoto).height || alturaEmPontos(ALTURA_LINHA_PX)) / 0.75;
+    if (recuoY < hPx) break;
+    recuoY -= hPx;
+    linhaDaFoto += 1;
+  }
 
   ws.addImage(imagemId, {
-    tl: { col: recuoCol, row: (primeira - 1) + recuoLin },
+    tl: {
+      nativeCol: 0,
+      nativeColOff: Math.round(recuoX * EMU_POR_PX),
+      nativeRow: linhaDaFoto - 1,
+      nativeRowOff: Math.round(recuoY * EMU_POR_PX),
+    },
     ext: { width: largura, height: altura },
     editAs: 'oneCell',
   });
@@ -1033,7 +1048,7 @@ function escreverBlocoUnitario(ws, { numero, produto, grade, calculo, cores, fot
         estiloCelula(ws.getCell(`Q${linha}`), { fonte: FONTE_VERMELHA, alinhamento: CENTRO, formato: '0.0' }).value = { formula: `((P${linha}/L${linha})*100)` };
         estiloCelula(ws.getCell(`V${linha}`), {
           fonte: { ...FONTE, bold: false },
-          alinhamento: { horizontal: 'left', vertical: 'center', wrapText: true },
+          alinhamento: { horizontal: 'left', vertical: 'middle', wrapText: true },
         }).value = textoAds(anuncio);
       }
       linha += 1;
@@ -1135,7 +1150,7 @@ function escreverBlocoKit(ws, { numero, produto, gradePorTamanho, tamanhos, calc
           ws.mergeCells(`T${linha}:V${linha}`);
           estiloCelula(ws.getCell(`T${linha}`), {
             fonte: { ...FONTE, bold: false },
-            alinhamento: { horizontal: 'left', vertical: 'center', wrapText: true },
+            alinhamento: { horizontal: 'left', vertical: 'middle', wrapText: true },
           }).value = textoAds(anuncio);
         }
         linha += 1;

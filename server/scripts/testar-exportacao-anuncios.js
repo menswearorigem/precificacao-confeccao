@@ -322,7 +322,7 @@ teste('unitário: G:H com a plataforma de duas em duas linhas, 3 a 10', () => {
   for (const faixa of ['G3:H4', 'G5:H6', 'G7:H8', 'G9:H10']) {
     assert.ok(ws.merges.includes(faixa), `faltou o merge ${faixa}`);
   }
-  assert.deepStrictEqual(ws.getCell('G3').alignment, { horizontal: 'center', vertical: 'center', wrapText: true });
+  assert.deepStrictEqual(ws.getCell('G3').alignment, { horizontal: 'center', vertical: 'middle', wrapText: true });
 });
 
 teste('unitário: coluna I alterna ORIGEM/HOGGAR de I3 a I10', () => {
@@ -555,15 +555,18 @@ teste('foto: a do anúncio, sem esticar, centralizada, e diferente no kit', () =
   assert.ok(ws.merges.includes(`A${uni.primeira}:F${uni.ultima}`));
   assert.ok(ws.merges.includes(`A${kit.primeira}:F${kit.ultima}`));
 
-  const daUnidade = ws.imagens.find((im) => Math.abs(im.opts.tl.row - (uni.primeira - 1)) < 8);
+  const daUnidade = ws.imagens.find((im) => Math.abs(im.opts.tl.nativeRow - (uni.primeira - 1)) < 8);
   // PNG 4×2 numa caixa de 167 (90% de A:F) × 138 (8 linhas de 18 px menos 6 de respiro): encaixa pela largura → 167×84 (83,5 arredondado).
   assert.ok(!daUnidade.opts.br, 'a foto não pode ser ancorada de canto a canto (estica)');
   assert.strictEqual(daUnidade.opts.ext.width, 167);
   assert.strictEqual(daUnidade.opts.ext.height, 84);
-  assert.ok(Math.abs(daUnidade.opts.tl.row - ((uni.primeira - 1) + 27 / 18)) < 0.01);
+  // Centralizada: recuo horizontal (186-167)/2 px e vertical 30 px = 1 linha + 12 px.
+  assert.strictEqual(daUnidade.opts.tl.nativeColOff, Math.round(9.5 * 9525));
+  assert.strictEqual(daUnidade.opts.tl.nativeRow, uni.primeira);
+  assert.strictEqual(daUnidade.opts.tl.nativeRowOff, 12 * 9525);
 
   // A do kit é quadrada (2×2) numa caixa de 150 × (24×18=432) → 167×167.
-  const doKit = ws.imagens.find((im) => im.opts.tl.row >= kit.primeira - 1);
+  const doKit = ws.imagens.find((im) => im.opts.tl.nativeRow >= kit.primeira - 1);
   assert.strictEqual(doKit.opts.ext.width, 167);
   assert.strictEqual(doKit.opts.ext.height, 167);
 
@@ -581,7 +584,7 @@ teste('sem foto de anúncio, cai na foto do cadastro', async () => {
   // O cadastro tem 10×10 → quadrado de 138×138 (limitado pela altura) no bloco do unitário.
   const p = livro.planilhas[0];
   const b = blocos(p).find((x) => x.referencia === 'OG1620' && x.tipo === 'unitario');
-  const im = p.imagens.find((x) => Math.abs(x.opts.tl.row - (b.primeira - 1)) < 8);
+  const im = p.imagens.find((x) => Math.abs(x.opts.tl.nativeRow - (b.primeira - 1)) < 8);
   assert.strictEqual(im.opts.ext.width, 138);
   assert.strictEqual(im.opts.ext.height, 138);
 });
