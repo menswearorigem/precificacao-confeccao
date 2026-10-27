@@ -363,7 +363,7 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
             ml.valor_recebido_unitario,
             COALESCE(v.unidades, 0) AS unidades_vendidas,
             COALESCE(v.pedidos, 0) AS pedidos_no_periodo,
-            po.produto_id_pedidos, po.sku_pedidos
+            po.produto_id_pedidos, po.sku_pedidos, po.sku_kit_pedidos
        FROM anuncios_marketplace a
        JOIN integracoes_marketplace im ON im.id = a.origem_integracao_id
        LEFT JOIN empresas e ON e.id = im.empresa_id
@@ -394,7 +394,12 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
          SELECT MODE() WITHIN GROUP (ORDER BY pi.produto_id)
                   FILTER (WHERE pi.produto_id IS NOT NULL) AS produto_id_pedidos,
                 MODE() WITHIN GROUP (ORDER BY pi.sku_externo)
-                  FILTER (WHERE pi.sku_externo IS NOT NULL AND pi.sku_externo <> '') AS sku_pedidos
+                  FILTER (WHERE pi.sku_externo IS NOT NULL AND pi.sku_externo <> '') AS sku_pedidos,
+                -- SKU de KIT visto nas vendas ("Kit-3-OG1620-Preto-G"). Na Shopee o
+                -- SKU do ANÚNCIO é só a referência ("OG1620") mesmo quando o anúncio
+                -- é de kit; quem diz que é kit, e de quantos, é o SKU do pedido.
+                MODE() WITHIN GROUP (ORDER BY pi.sku_externo)
+                  FILTER (WHERE pi.sku_externo ~* '^kit-[0-9]') AS sku_kit_pedidos
            FROM pedido_itens pi
            JOIN pedidos_venda pv ON pv.id = pi.pedido_id
           WHERE pi.anuncio_id_marketplace = a.anuncio_id_externo
@@ -441,6 +446,13 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
     // Anúncio sem SKU (Mercado Livre): o SKU das vendas diz se é kit
     // ("Kit-5-OG1620-...") e de que quantidade, melhor do que ler o título.
     if (!String(a.sku_externo || '').trim() && a.sku_pedidos) a.sku_externo = a.sku_pedidos;
+    if (kitSemQuantidade(a)) {
+      a.kitSemQuantidade = true;
+      if (Number(a.unidades_vendidas) > 0) {
+        foraDaPlanilha.push({ anuncio: a, motivo: 'Vendeu, mas o título diz "kit" sem dizer quantas peças tem e o SKU não é de kit. Não dá para saber em qual linha de kit entra.' });
+      }
+      continue;
+    }
     if (a.produto_id) continue;
     if (a.produto_id_pedidos) {
       a.produto_id = a.produto_id_pedidos;
@@ -461,13 +473,14 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
   // com PROD., (+30%) e CLIE. PG em branco — o "sem preço" que o dono reclamou
   // em 26/10/2026. Agora o anúncio ativo leva o preço que está no ar, e a nota
   // da célula diz que não vendeu na janela (REGRA 2: dado real, avisado).
-  let anunciosNaJanela = anuncios;
+  const anunciosUteis = anuncios.filter((a) => !a.kitSemQuantidade);
+  let anunciosNaJanela = anunciosUteis;
   if (vendidosEmDias > 0) {
     const chaveDoBloco = (a) => `${a.produto_id}|${quantidadeDoKit(a) == null ? 'U' : 'K'}`;
     const blocosQueVenderam = new Set(
-      anuncios.filter((a) => Number(a.unidades_vendidas) > 0).map(chaveDoBloco)
+      anunciosUteis.filter((a) => Number(a.unidades_vendidas) > 0).map(chaveDoBloco)
     );
-    anunciosNaJanela = anuncios.filter((a) => blocosQueVenderam.has(chaveDoBloco(a)));
+    anunciosNaJanela = anunciosUteis.filter((a) => blocosQueVenderam.has(chaveDoBloco(a)));
   }
 
   const idsProduto = [...new Set(anunciosNaJanela.map((a) => a.produto_id).filter(Boolean))];
@@ -632,18 +645,33 @@ function escolherPrincipal(candidatos) {
   })[0];
 }
 
+// Quantas peças tem o anúncio de kit, ou null se ele é unitário. Três fontes, da
+// mais para a menos confiável:
+//   1. o SKU do anúncio ("KIT-3-OG1620-PRETO-M");
+//   2. o SKU de kit que apareceu nos PEDIDOS desse anúncio — na Shopee o SKU do
+//      anúncio é só a referência ("OG1620") e o kit só aparece no pedido; no
+//      Mercado Livre o anúncio vem sem SKU;
+//   3. o título ("Kit 3 Camisa Gola Polo"), mesmo com SKU preenchido: sem isto o
+//      kit de 3 da Shopee caía na linha da PEÇA, com o preço do kit no lugar do
+//      preço da unidade, e a linha do kit ficava vazia (26/10/2026).
+// Nunca chuta quantidade: título que diz "kit" sem número não entra aqui — ver
+// `kitSemQuantidade`.
+const REGEX_KIT_NO_TITULO = /\bkit\s*(?:de|com|c\/)?\s*(\d{1,2})\b/i;
+
 function quantidadeDoKit(anuncio) {
-  const kit = partirSkuKit(anuncio.sku_externo || '');
-  if (kit) return kit.quantidade;
-  // Anúncio SEM SKU (comum no Mercado Livre) não diz que é kit pelo SKU: sem
-  // isso o "Kit 5 Camisa Polo" cairia na linha da peça unitária, com o preço
-  // do kit no lugar do preço da unidade. Só lê o título quando o SKU está
-  // vazio; SKU preenchido que não é de kit continua valendo como unitário.
-  if (!String(anuncio.sku_externo || '').trim()) {
-    const m = /\bkit\s+(?:de\s+)?(\d{1,2})\b/i.exec(String(anuncio.titulo || ''));
-    if (m && Number(m[1]) > 1) return Number(m[1]);
-  }
+  const doSku = partirSkuKit(anuncio.sku_externo || '');
+  if (doSku) return doSku.quantidade;
+  const doPedido = partirSkuKit(anuncio.sku_kit_pedidos || '');
+  if (doPedido) return doPedido.quantidade;
+  const m = REGEX_KIT_NO_TITULO.exec(String(anuncio.titulo || ''));
+  if (m && Number(m[1]) > 1) return Number(m[1]);
   return null;
+}
+
+// Anúncio que se chama "kit" mas não diz quantas peças tem (ex.: "Kit Casal"):
+// não é unitário e não dá para escolher a linha de kit sem adivinhar (REGRA 2).
+function kitSemQuantidade(anuncio) {
+  return /\bkit\b/i.test(String(anuncio.titulo || '')) && quantidadeDoKit(anuncio) == null;
 }
 
 // Monta o mapa `plataforma|marca` → { anuncio, alternativos } de um conjunto de

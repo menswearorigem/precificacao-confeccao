@@ -124,6 +124,12 @@ const ANUNCIOS = [
   { id: 29, produto_id: null, marketplace: 'mercado_livre', origem_integracao_id: 3, anuncio_id_externo: 'A29', sku_externo: 'SEM-VINCULO', titulo: 'Anúncio órfão', preco: 77.7, unidades_vendidas: 2, pedidos_no_periodo: 2 },
   // Kit SEM SKU no Mercado Livre: o título diz "Kit 3" e os pedidos dizem o produto.
   { id: 30, produto_id: null, produto_id_pedidos: 1, sku_pedidos: 'Kit-3-OG1620-Verde-Bege-Marrom-G', marketplace: 'mercado_livre', origem_integracao_id: 5, anuncio_id_externo: 'A30', sku_externo: null, titulo: 'Camisa Gola Polo Premium Masculina', preco: 149.9, unidades_vendidas: 1, pedidos_no_periodo: 1 },
+  // SHOPEE: o SKU do ANÚNCIO é só a referência ('OG1620') mesmo sendo kit; o kit aparece no
+  // SKU do pedido (sku_kit_pedidos) ou, se nunca vendeu, só no título.
+  { id: 31, produto_id: 1, marketplace: 'shopee', origem_integracao_id: 2, anuncio_id_externo: 'A31', sku_externo: 'OG1620', sku_kit_pedidos: 'Kit-5-OG1620-Preto-Mescla-Verde-Bege-Branco-G', titulo: 'Kit 5 Camisa Gola Polo Masculina', preco: 149.9, unidades_vendidas: 5, pedidos_no_periodo: 5 },
+  { id: 32, produto_id: 1, marketplace: 'shopee', origem_integracao_id: 2, anuncio_id_externo: 'A32', sku_externo: 'OG1620', titulo: 'Kit 2 Camisa Gola Polo Masculina', preco: 79.9, unidades_vendidas: 0, pedidos_no_periodo: 0 },
+  // Título diz 'kit' mas não diz quantas peças: não é unitário e não cabe numa linha de kit.
+  { id: 33, produto_id: 1, marketplace: 'shopee', origem_integracao_id: 1, anuncio_id_externo: 'A33', sku_externo: 'OG1620', titulo: 'Kit Casal Camisa Gola Polo', preco: 88.8, unidades_vendidas: 3, pedidos_no_periodo: 3 },
   // NÃO vendeu — precisa ficar de fora da planilha.
   { id: 25, produto_id: 6, marketplace: 'shopee', origem_integracao_id: 1, anuncio_id_externo: 'A25', sku_externo: '36144-PRETO-M', titulo: 'Jaqueta', preco: 199.9, unidades_vendidas: 0, pedidos_no_periodo: 0 },
 ];
@@ -476,7 +482,8 @@ teste('o que vendeu e não coube na planilha vai para a aba FORA DA PLANILHA, co
   assert.strictEqual(aba.getCell('C2').value, 'A29');
   assert.strictEqual(aba.getCell('F2').value, 77.7);
   assert.match(String(aba.getCell('H2').value), /não está vinculado/);
-  assert.strictEqual(aba.getCell('C3').value, null, 'só o órfão entra na aba');
+  assert.strictEqual(aba.getCell('C3').value, 'A33', 'o "kit" sem quantidade também entra na aba');
+  assert.strictEqual(aba.getCell('C4').value, null, 'e mais nada');
 });
 
 teste('kit sem SKU no anúncio: o SKU das variações vendidas (pedidos) manda para o bloco de kit', () => {
@@ -488,6 +495,31 @@ teste('kit sem SKU no anúncio: o SKU das variações vendidas (pedidos) manda p
   const linha = kit.primeira + 10;
   assert.strictEqual(ws.getCell(`I${linha}`).value, 'KIT - 3');
   assert.strictEqual(ws.getCell(`L${linha}`).value, 149.9);
+});
+
+teste('Shopee: kit com SKU de anúncio só de referência vai para a linha do kit, não para a da peça', () => {
+  const uni = acharBloco(ws, 'OG1620', 'unitario');
+  const kit = acharBloco(ws, 'OG1620', 'kit');
+  // Unitário, SHOPEE HOGGAR (2ª linha de loja): o preço da PEÇA, nunca o do kit.
+  assert.strictEqual(ws.getCell(`I${uni.primeira + 1}`).value, 'HOGGAR');
+  assert.strictEqual(ws.getCell(`L${uni.primeira + 1}`).value, 39.9);
+  // Kit, SHOPEE HOGGAR: tamanhos 2, 3 e 5 nas linhas 4, 5 e 6 do bloco.
+  const linha = (n) => kit.primeira + 3 + [2, 3, 5].indexOf(n);
+  assert.strictEqual(ws.getCell(`I${linha(5)}`).value, 'KIT - 5');
+  assert.strictEqual(ws.getCell(`L${linha(5)}`).value, 149.9, 'kit 5 pelo SKU de kit dos pedidos');
+  assert.strictEqual(ws.getCell(`I${linha(2)}`).value, 'KIT - 2');
+  assert.strictEqual(ws.getCell(`L${linha(2)}`).value, 79.9, 'kit 2 só pelo título, anúncio que não vendeu');
+});
+
+teste('"kit" sem quantidade não vira linha de peça: vai para a aba FORA DA PLANILHA', async () => {
+  const uni = acharBloco(ws, 'OG1620', 'unitario');
+  assert.notStrictEqual(ws.getCell(`L${uni.primeira}`).value, 88.8, 'o preço do "Kit Casal" não pode ocupar a linha da peça');
+  const livro = await lib.montarPlanilhaAnuncios({});
+  const aba = livro.planilhas[1];
+  const motivos = [];
+  for (let l = 2; l < 10; l += 1) if (aba.getCell(`C${l}`).value === 'A33') motivos.push(String(aba.getCell(`H${l}`).value));
+  assert.strictEqual(motivos.length, 1);
+  assert.match(motivos[0], /sem dizer quantas peças/);
 });
 
 teste('cores: uma por linha, em R:U, só o nome', () => {
