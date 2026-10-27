@@ -73,7 +73,7 @@ const PCT_ACRESCIMO_PADRAO = 42.9;
 
 // Geometria pedida, em PIXEL. O Excel guarda largura em caracteres e altura
 // em pontos — conversão em `larguraEmCaracteres` / `alturaEmPontos`.
-const LARGURA_PX = { referencia: 25, loja: 60, valores: 50, ads: 180 };
+const LARGURA_PX = { referencia: 31, loja: 60, valores: 50, ads: 180 };
 const ALTURA_LINHA_PX = 18;
 const COLUNAS_REFERENCIA = ['A', 'B', 'C', 'D', 'E', 'F'];
 const COLUNAS_LOJA = ['G', 'H', 'I'];
@@ -81,7 +81,12 @@ const COLUNAS_VALORES = ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 
 const LARGURA_ADS_CARACTERES = Math.round(((LARGURA_PX.ads - 5) / 7) * 100) / 100;
 
 // Largura da área da foto: A..F. A altura muda com o tamanho do bloco.
-const FOTO_LARGURA_PX = COLUNAS_REFERENCIA.length * LARGURA_PX.referencia; // 150
+const AREA_FOTO_LARGURA_PX = COLUNAS_REFERENCIA.length * LARGURA_PX.referencia; // 186
+// A foto ocupa ~90% da largura de A:F: o Excel, o LibreOffice e as
+// impressoras não concordam no pixel exato da coluna, e a sobra impede a foto
+// de invadir PLATAFORMA/NOME quando a coluna sai um pouco mais estreita.
+const FOTO_LARGURA_PX = Math.floor(AREA_FOTO_LARGURA_PX * 0.9); // 167
+const FOTO_RESPIRO_ALTURA_PX = 6;
 
 // Títulos das colunas de valor, do print.
 const TITULOS_UNITARIO = [
@@ -789,7 +794,7 @@ function notaDaCelula(celula) {
 // ---------------------------------------------------------------------------
 // Peças comuns aos dois blocos
 // ---------------------------------------------------------------------------
-function escreverCabecalhoBloco(ws, linha) {
+function escreverCabecalhoBloco(ws, linha, nome) {
   const cab = { fonte: FONTE_CABECALHO };
   estiloCelula(ws.getCell(`A${linha}`), { ...cab, alinhamento: CENTRO }).value = 'Nº';
   ws.mergeCells(`B${linha}:F${linha}`);
@@ -797,15 +802,19 @@ function escreverCabecalhoBloco(ws, linha) {
   ws.mergeCells(`G${linha}:I${linha}`);
   estiloCelula(ws.getCell(`G${linha}`), { ...cab, alinhamento: ESQUERDA }).value = 'NOME';
   for (const col of ['A', 'B', 'G']) ws.getCell(`${col}${linha}`).fill = FILL_CABECALHO;
-  ws.getRow(linha).height = alturaEmPontos(ALTURA_LINHA_PX + 4);
+  // O NOME do produto fica na frente do rótulo "NOME", na mesma linha escura
+  // do cabeçalho, ocupando J..V.
+  ws.mergeCells(`J${linha}:V${linha}`);
+  const celNome = estiloCelula(ws.getCell(`J${linha}`), { alinhamento: ESQUERDA });
+  celNome.value = nome || '';
+  celNome.fill = FILL_PRODUTO;
 }
 
-// A linha do produto: número (só no bloco do unitário), referência, gênero,
-// nome e os títulos das colunas de valor.
-function escreverLinhaProduto(ws, { linha, numero, referencia, genero, nome, titulos }) {
+// A linha do produto: número, referência, gênero e, embaixo do nome,
+// PLATAFORMA / LOJA (e QTD. no kit) com os títulos das colunas de valor.
+function escreverLinhaProduto(ws, { linha, numero, referencia, genero, titulos, kit }) {
   const celNumero = estiloCelula(ws.getCell(`A${linha}`), { fonte: FONTE_VERMELHA, alinhamento: CENTRO });
-  // O bloco de kit NÃO repete o Nº: é a mesma referência do bloco de cima, e é
-  // pela referência que se sabe que os dois são o mesmo produto.
+  // A numeração segue a ordem da planilha, unitários e kits na mesma fila.
   celNumero.value = numero == null ? '' : numero;
 
   ws.mergeCells(`B${linha}:E${linha}`);
@@ -819,10 +828,17 @@ function escreverLinhaProduto(ws, { linha, numero, referencia, genero, nome, tit
       + 'lê esta célula (R$ 4 masculino, R$ 5 feminino).';
   }
 
-  ws.mergeCells(`G${linha}:I${linha}`);
-  estiloCelula(ws.getCell(`G${linha}`), {
-    alinhamento: { horizontal: 'left', vertical: 'center', wrapText: true },
-  }).value = nome || '';
+  if (kit) {
+    // Coluna estreita: o texto encolhe pra caber em vez de ser cortado.
+    const ENCOLHE = { horizontal: 'center', vertical: 'center', shrinkToFit: true };
+    estiloCelula(ws.getCell(`G${linha}`), { alinhamento: ENCOLHE }).value = 'PLATAFORMA';
+    estiloCelula(ws.getCell(`H${linha}`), { alinhamento: ENCOLHE }).value = 'LOJA';
+    estiloCelula(ws.getCell(`I${linha}`), { alinhamento: ENCOLHE }).value = 'QTD.';
+  } else {
+    ws.mergeCells(`G${linha}:H${linha}`);
+    estiloCelula(ws.getCell(`G${linha}`), { alinhamento: CENTRO_QUEBRA }).value = 'PLATAFORMA';
+    estiloCelula(ws.getCell(`I${linha}`), { alinhamento: CENTRO_QUEBRA }).value = 'LOJA';
+  }
 
   for (const [col, texto] of titulos) {
     estiloCelula(ws.getCell(`${col}${linha}`), {
@@ -830,9 +846,12 @@ function escreverLinhaProduto(ws, { linha, numero, referencia, genero, nome, tit
       alinhamento: CENTRO,
     }).value = texto;
   }
-  // Faixa creme na linha do produto, como o cabeçalho das tabelas do Hub.
-  for (const col of ['A', 'B', 'F', 'G', ...titulos.map(([c]) => c)]) ws.getCell(`${col}${linha}`).fill = FILL_PRODUTO;
-  ws.getRow(linha).height = alturaEmPontos(ALTURA_LINHA_PX + 8);
+  // Faixa creme na linha dos títulos, de A até V.
+  for (const col of 'ABCDEFGHIJKLMNOPQRSTUV') {
+    const c = ws.getCell(`${col}${linha}`);
+    c.fill = FILL_PRODUTO;
+    c.border = BORDA_FINA;
+  }
 }
 
 // A foto entra NO TAMANHO da área reservada, sem esticar: o maior retângulo
@@ -849,8 +868,24 @@ function inserirFoto(ws, livro, foto, primeira, ultima) {
     return;
   }
 
+  // A imagem só entra depois da paginação (colocarFotos): a altura das linhas
+  // pode mudar pra o bloco caber na folha, e a foto acompanha.
+  (ws.fotosPendentes ||= []).push({ foto, primeira, ultima });
+}
+
+function colocarFotos(ws, livro) {
+  for (const { foto, primeira, ultima } of ws.fotosPendentes || []) {
+    colocarFoto(ws, livro, foto, primeira, ultima);
+  }
+}
+
+function colocarFoto(ws, livro, foto, primeira, ultima) {
   const imagemId = livro.addImage({ buffer: foto.dados, extension: foto.extensao });
-  const alturaCaixa = (ultima - primeira + 1) * ALTURA_LINHA_PX;
+  let alturaCaixa = 0;
+  for (let l = primeira; l <= ultima; l += 1) {
+    alturaCaixa += (ws.getRow(l).height || alturaEmPontos(ALTURA_LINHA_PX)) / 0.75;
+  }
+  alturaCaixa = Math.max(1, alturaCaixa - FOTO_RESPIRO_ALTURA_PX);
 
   const natural = dimensoesDaImagem(foto.dados);
   // Sem cabeçalho legível, o palpite menos arriscado é o quadrado — que é o
@@ -864,7 +899,7 @@ function inserirFoto(ws, livro, foto, primeira, ultima) {
 
   // A sobra vira recuo, em fração de coluna e de linha, pra foto ficar no meio
   // do espaço em vez de encostada no canto.
-  const recuoCol = ((FOTO_LARGURA_PX - largura) / 2) / LARGURA_PX.referencia;
+  const recuoCol = ((AREA_FOTO_LARGURA_PX - largura) / 2) / LARGURA_PX.referencia;
   const recuoLin = ((alturaCaixa - altura) / 2) / ALTURA_LINHA_PX;
 
   ws.addImage(imagemId, {
@@ -915,32 +950,37 @@ function marcarLucro(ws, colInicio, colFim, primeira, ultima) {
   });
 }
 
+// Primeira linha livre do próximo bloco. Entre dois blocos há UMA linha
+// separadora, baixinha (6 pt), pra não sobrar espaço na impressão.
+const ALTURA_SEPARADOR_PT = 6;
+function proximaLinhaDeBloco(ws) {
+  if (ws.rowCount === 0) return 1;
+  const separador = ws.rowCount + 1;
+  ws.getRow(separador).height = ALTURA_SEPARADOR_PT;
+  return separador + 1;
+}
+
 function ajustarAlturas(ws, primeira, ultima) {
-  // A linha do cabeçalho e a do produto são mais altas (título e nome que
-  // quebram em duas linhas); as demais ficam em 18 px.
-  for (let l = primeira; l <= ultima; l += 1) {
-    const extra = l === primeira ? 4 : (l === primeira + 1 ? 8 : 0);
-    ws.getRow(l).height = alturaEmPontos(ALTURA_LINHA_PX + extra);
-  }
+  for (let l = primeira; l <= ultima; l += 1) ws.getRow(l).height = alturaEmPontos(ALTURA_LINHA_PX);
 }
 
 // ---------------------------------------------------------------------------
 // Bloco do UNITÁRIO — 10 linhas: cabeçalho, produto e 8 lugares de loja
 // ---------------------------------------------------------------------------
 function escreverBlocoUnitario(ws, { numero, produto, grade, calculo, cores, foto, livro, genero }) {
-  const linhaCabecalho = ws.rowCount + (ws.rowCount === 0 ? 1 : 2);
+  const linhaCabecalho = proximaLinhaDeBloco(ws);
   const linhaProduto = linhaCabecalho + 1;
   const primeira = linhaProduto + 1;
   const ultima = primeira + LUGARES_DE_LOJA - 1;
 
-  escreverCabecalhoBloco(ws, linhaCabecalho);
+  escreverCabecalhoBloco(ws, linhaCabecalho, produto.descricao || '');
   escreverLinhaProduto(ws, {
     linha: linhaProduto,
     numero,
     referencia: produto.referencia,
     genero,
-    nome: produto.descricao || '',
     titulos: TITULOS_UNITARIO,
+    kit: false,
   });
   // CORES ocupa R:U; ADS fica sozinha em V.
   ws.mergeCells(`R${linhaProduto}:U${linhaProduto}`);
@@ -996,6 +1036,7 @@ function escreverBlocoUnitario(ws, { numero, produto, grade, calculo, cores, fot
   escreverCores(ws, cores, primeira, ultima);
   ajustarAlturas(ws, linhaCabecalho, ultima);
   marcarLucro(ws, 'N', 'O', primeira, ultima);
+  (ws.blocosDaPlanilha ||= []).push({ inicio: linhaCabecalho, fim: ultima });
   return ultima;
 }
 
@@ -1024,21 +1065,20 @@ function escreverCores(ws, cores, primeira, ultima) {
 // ---------------------------------------------------------------------------
 // Para cada um dos 8 lugares de loja há uma linha por tamanho de kit. G leva a
 // plataforma e H a marca, ambos mesclados na altura do grupo; I leva "KIT - n".
-function escreverBlocoKit(ws, { produto, gradePorTamanho, tamanhos, calculo, foto, livro, genero, nomeDoKit }) {
-  const linhaCabecalho = ws.rowCount + (ws.rowCount === 0 ? 1 : 2);
+function escreverBlocoKit(ws, { numero, produto, gradePorTamanho, tamanhos, calculo, foto, livro, genero, nomeDoKit }) {
+  const linhaCabecalho = proximaLinhaDeBloco(ws);
   const linhaProduto = linhaCabecalho + 1;
   const primeira = linhaProduto + 1;
   const ultima = primeira + (LUGARES_DE_LOJA * tamanhos.length) - 1;
 
-  escreverCabecalhoBloco(ws, linhaCabecalho);
+  escreverCabecalhoBloco(ws, linhaCabecalho, nomeDoKit);
   escreverLinhaProduto(ws, {
     linha: linhaProduto,
-    // Sem Nº: a referência é a mesma do bloco de cima.
-    numero: null,
+    numero,
     referencia: produto.referencia,
     genero,
-    nome: nomeDoKit,
     titulos: TITULOS_KIT,
+    kit: true,
   });
   ws.mergeCells(`T${linhaProduto}:V${linhaProduto}`);
   estiloCelula(ws.getCell(`T${linhaProduto}`), { alinhamento: CENTRO }).value = 'ADS (30 dias)';
@@ -1101,6 +1141,7 @@ function escreverBlocoKit(ws, { produto, gradePorTamanho, tamanhos, calculo, fot
 
   ajustarAlturas(ws, linhaCabecalho, ultima);
   marcarLucro(ws, 'O', 'Q', primeira, ultima);
+  (ws.blocosDaPlanilha ||= []).push({ inicio: linhaCabecalho, fim: ultima });
   return ultima;
 }
 
@@ -1111,6 +1152,71 @@ function nomeDoKitDoProduto(anunciosDeKit, produto) {
   const campeao = escolherPrincipal(anunciosDeKit.filter((a) => a.titulo));
   if (campeao?.titulo) return String(campeao.titulo).toUpperCase();
   return `KIT ${produto.descricao || produto.referencia || ''}`.trim().toUpperCase();
+}
+
+// ---------------------------------------------------------------------------
+// Impressão: nenhuma referência é cortada entre duas folhas
+// ---------------------------------------------------------------------------
+// A4 paisagem, largura ajustada a 1 folha (≈ 94% — as colunas somam 1146 px) e
+// margens de 0,4" em cima e embaixo. O que sobra de altura útil, medido em
+// pontos da planilha, é CAPACIDADE_FOLHA_PT (com uma folguinha de segurança).
+const CAPACIDADE_FOLHA_PT = 560;
+// Se o bloco estoura a folha por pouco, as linhas daquela folha são
+// comprimidas até este mínimo (em vez de empurrar o bloco pra folha de baixo).
+const ALTURA_MINIMA_LINHA_PT = 12.2;
+
+function alturaDaLinha(ws, l) {
+  return ws.getRow(l).height || alturaEmPontos(ALTURA_LINHA_PX);
+}
+
+// Guloso, bloco a bloco: se cabe na folha, fica; se falta pouco, comprime a
+// folha; se falta muito, o bloco inteiro vai pra folha de baixo (quebra
+// manual antes dele). Um bloco maior que uma folha inteira (muitos tamanhos de
+// kit) começa numa folha nova e o Excel quebra onde precisar.
+function paginarParaImpressao(ws) {
+  const blocos = ws.blocosDaPlanilha || [];
+  if (blocos.length === 0) return;
+
+  const somar = (b, f) => {
+    let t = 0;
+    for (let l = b.inicio; l <= b.fim; l += 1) t += f(alturaDaLinha(ws, l));
+    return t;
+  };
+  const normal = (b) => somar(b, (h) => h);
+  const comprimido = (b) => somar(b, (h) => Math.min(h, ALTURA_MINIMA_LINHA_PT));
+
+  const folhas = [];
+  let atual = null;
+  for (const b of blocos) {
+    const sep = atual ? ALTURA_SEPARADOR_PT : 0;
+    if (atual
+      && (atual.normal + sep + normal(b) <= CAPACIDADE_FOLHA_PT
+        || atual.minimo + sep + comprimido(b) <= CAPACIDADE_FOLHA_PT)) {
+      atual.blocos.push(b);
+      atual.normal += sep + normal(b);
+      atual.minimo += sep + comprimido(b);
+    } else {
+      atual = { blocos: [b], normal: normal(b), minimo: comprimido(b) };
+      folhas.push(atual);
+    }
+  }
+
+  folhas.forEach((folha, n) => {
+    if (folha.normal > CAPACIDADE_FOLHA_PT && folha.blocos.length > 0) {
+      // Falta pouco: comprime as linhas de dados da folha (não os separadores)
+      // na proporção exata que faz tudo caber.
+      const separadores = (folha.blocos.length - 1) * ALTURA_SEPARADOR_PT;
+      const dados = folha.normal - separadores;
+      const fator = Math.min(1, (CAPACIDADE_FOLHA_PT - separadores) / dados);
+      for (const b of folha.blocos) {
+        for (let l = b.inicio; l <= b.fim; l += 1) {
+          ws.getRow(l).height = Math.floor(alturaDaLinha(ws, l) * fator * 100) / 100;
+        }
+      }
+    }
+    // Quebra de página depois do separador que antecede a folha.
+    if (n > 0) ws.getRow(folha.blocos[0].inicio - 1).addPageBreak();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1134,7 +1240,15 @@ async function montarPlanilhaAnuncios({
   livro.created = new Date();
   const ws = livro.addWorksheet('Planilha1', {
     views: [{ showGridLines: false }],
-    pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+    pageSetup: {
+      paperSize: 9, // A4
+      orientation: 'landscape',
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      horizontalCentered: true,
+      margins: { left: 0.25, right: 0.25, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 },
+    },
   });
 
   // Larguras em pixel, como o dono pediu.
@@ -1172,63 +1286,72 @@ async function montarPlanilhaAnuncios({
   const cacheDeFotos = new Map();
   let numero = 1;
 
-  for (const produto of dados.produtos) {
+  // ORDEM DA PLANILHA: primeiro TODOS os unitários, um embaixo do outro; só
+  // depois TODOS os kits. O Nº segue essa fila de cima pra baixo — o primeiro
+  // bloco é 1, o segundo 2 e assim por diante, seja unitário ou kit.
+  const fichas = dados.produtos.map((produto) => {
     const doProduto = dados.anuncios.filter((a) => a.produto_id === produto.id);
-    const unitarios = doProduto.filter((a) => quantidadeDoKit(a) == null);
-    const deKit = doProduto.filter((a) => quantidadeDoKit(a) != null);
+    return {
+      produto,
+      unitarios: doProduto.filter((a) => quantidadeDoKit(a) == null),
+      deKit: doProduto.filter((a) => quantidadeDoKit(a) != null),
+      genero: generoDoProduto(produto, doProduto.map((a) => a.titulo).filter(Boolean)),
+      calculo: dados.calculoPorProduto.get(produto.id),
+      fotoCadastro: dados.fotos.get(produto.id) || null,
+    };
+  });
 
-    const genero = generoDoProduto(produto, doProduto.map((a) => a.titulo).filter(Boolean));
-    const calculo = dados.calculoPorProduto.get(produto.id);
-    const fotoCadastro = dados.fotos.get(produto.id) || null;
-
-    // Bloco do unitário — só existe se a referência tem anúncio de unidade.
-    if (unitarios.length > 0) {
-      escreverBlocoUnitario(ws, {
-        numero,
-        produto,
-        grade: montarGrade(unitarios, dados.lojas),
-        calculo,
-        cores: dados.coresPorProduto.get(produto.id) || [],
-        // A foto do bloco é a do anúncio de unidade que mais vendeu.
-        foto: await fotoDoBloco(unitarios, fotoCadastro, cacheDeFotos),
-        livro,
-        genero,
-      });
-    }
-
-    // Bloco do kit, logo abaixo, com todos os tamanhos do menor pro maior.
-    const tamanhos = tamanhosDeKit(deKit);
-    if (tamanhos.length > 0) {
-      const gradePorTamanho = new Map();
-      for (const quantidade of tamanhos) {
-        gradePorTamanho.set(
-          quantidade,
-          montarGrade(deKit.filter((a) => quantidadeDoKit(a) === quantidade), dados.lojas)
-        );
-      }
-      escreverBlocoKit(ws, {
-        produto,
-        gradePorTamanho,
-        tamanhos,
-        calculo,
-        // E a do bloco de kit é a do anúncio de KIT que mais vendeu — por isso
-        // ela mostra o kit montado, e não a peça sozinha.
-        foto: await fotoDoBloco(deKit, fotoCadastro, cacheDeFotos),
-        livro,
-        genero,
-        nomeDoKit: nomeDoKitDoProduto(deKit, produto),
-      });
-    }
-
+  for (const f of fichas) {
+    if (f.unitarios.length === 0) continue;
+    escreverBlocoUnitario(ws, {
+      numero,
+      produto: f.produto,
+      grade: montarGrade(f.unitarios, dados.lojas),
+      calculo: f.calculo,
+      cores: dados.coresPorProduto.get(f.produto.id) || [],
+      // A foto do bloco é a do anúncio de unidade que mais vendeu.
+      foto: await fotoDoBloco(f.unitarios, f.fotoCadastro, cacheDeFotos),
+      livro,
+      genero: f.genero,
+    });
     numero += 1;
   }
 
+  for (const f of fichas) {
+    const tamanhos = tamanhosDeKit(f.deKit);
+    if (tamanhos.length === 0) continue;
+    const gradePorTamanho = new Map();
+    for (const quantidade of tamanhos) {
+      gradePorTamanho.set(
+        quantidade,
+        montarGrade(f.deKit.filter((a) => quantidadeDoKit(a) === quantidade), dados.lojas)
+      );
+    }
+    escreverBlocoKit(ws, {
+      numero,
+      produto: f.produto,
+      gradePorTamanho,
+      tamanhos,
+      calculo: f.calculo,
+      // A do bloco de kit é a do anúncio de KIT que mais vendeu — por isso
+      // ela mostra o kit montado, e não a peça sozinha.
+      foto: await fotoDoBloco(f.deKit, f.fotoCadastro, cacheDeFotos),
+      livro,
+      genero: f.genero,
+      nomeDoKit: nomeDoKitDoProduto(f.deKit, f.produto),
+    });
+    numero += 1;
+  }
+
+  paginarParaImpressao(ws);
+  colocarFotos(ws, livro);
   escreverForaDaPlanilha();
   return livro;
 }
 
 module.exports = {
   montarPlanilhaAnuncios,
+  paginarParaImpressao,
   generoDoProduto,
   pctAcrescimoDoCusto,
   percentualDaFormula,

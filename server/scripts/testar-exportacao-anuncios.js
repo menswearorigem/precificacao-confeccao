@@ -29,6 +29,7 @@ class PlanilhaFake {
     this.formatacaoCondicional = [];
     this.properties = {};
     this.maiorLinha = 0;
+    this.quebras = [];
   }
 
   get rowCount() { return this.maiorLinha; }
@@ -57,7 +58,11 @@ class PlanilhaFake {
 
   addImage(id, opts) { this.imagens.push({ id, opts }); }
   getColumn(c) { if (!this.colunas.has(c)) this.colunas.set(c, {}); return this.colunas.get(c); }
-  getRow(l) { this._marcar(`A${l}`); if (!this.linhas.has(l)) this.linhas.set(l, {}); return this.linhas.get(l); }
+  getRow(l) {
+    this._marcar(`A${l}`);
+    if (!this.linhas.has(l)) this.linhas.set(l, { addPageBreak: () => this.quebras.push(l) });
+    return this.linhas.get(l);
+  }
   addConditionalFormatting(cf) { this.formatacaoCondicional.push(cf); }
 }
 
@@ -332,8 +337,12 @@ teste('cabeçalho do bloco: Nº, REFERÊNCIA em B:F e NOME em G:I', () => {
   assert.strictEqual(ws.getCell('G1').value, 'NOME');
   assert.ok(ws.merges.includes('B1:F1'));
   assert.ok(ws.merges.includes('G1:I1'));
-  // Na linha do produto o nome também ocupa G:I.
-  assert.ok(ws.merges.includes('G2:I2'));
+  // O NOME vem na frente do rótulo, na mesma linha, ocupando J:V.
+  assert.ok(ws.merges.includes('J1:V1'));
+  // E embaixo dele: PLATAFORMA (G:H) e LOJA (I).
+  assert.ok(ws.merges.includes('G2:H2'));
+  assert.strictEqual(ws.getCell('G2').value, 'PLATAFORMA');
+  assert.strictEqual(ws.getCell('I2').value, 'LOJA');
 });
 
 teste('a célula do gênero traz M de masculino e F de feminino', () => {
@@ -422,22 +431,23 @@ teste('a referência é a MESMA nos dois blocos; o que muda é o NOME', () => {
   const kit = acharBloco(ws, 'OG1620', 'kit');
   assert.strictEqual(ws.getCell(`B${uni.linhaProduto}`).value, 'OG1620');
   assert.strictEqual(ws.getCell(`B${kit.linhaProduto}`).value, 'OG1620');
-  assert.strictEqual(ws.getCell(`G${uni.linhaProduto}`).value, 'CAM. GOLA POLO FIO 30');
-  assert.strictEqual(ws.getCell(`G${kit.linhaProduto}`).value, 'KIT CAMISETA GOLA POLO MC');
+  assert.strictEqual(ws.getCell(`J${uni.linhaProduto - 1}`).value, 'CAM. GOLA POLO FIO 30');
+  assert.strictEqual(ws.getCell(`J${kit.linhaProduto - 1}`).value, 'KIT CAMISETA GOLA POLO MC');
+  // No kit: G PLATAFORMA, H LOJA, I QTD.
+  assert.deepStrictEqual(['G', 'H', 'I'].map((c) => ws.getCell(`${c}${kit.linhaProduto}`).value), ['PLATAFORMA', 'LOJA', 'QTD.']);
 });
 
-teste('o Nº aparece só no bloco do unitário', () => {
-  const uni = acharBloco(ws, 'OG1620', 'unitario');
-  const kit = acharBloco(ws, 'OG1620', 'kit');
-  assert.strictEqual(typeof ws.getCell(`A${uni.linhaProduto}`).value, 'number');
-  assert.strictEqual(ws.getCell(`A${kit.linhaProduto}`).value, '');
+teste('o Nº segue a ordem da planilha, unitários e kits na mesma fila', () => {
+  const nums = blocos(ws).map((b) => ws.getCell(`A${b.linhaProduto}`).value);
+  assert.deepStrictEqual(nums, nums.map((_, i) => i + 1));
 });
 
-teste('o bloco de kit vem logo abaixo do unitário da mesma referência', () => {
-  const lista = blocos(ws);
-  const i = lista.findIndex((b) => b.referencia === 'OG1620' && b.tipo === 'unitario');
-  assert.strictEqual(lista[i + 1].referencia, 'OG1620');
-  assert.strictEqual(lista[i + 1].tipo, 'kit');
+teste('todos os unitários primeiro; só depois todos os kits', () => {
+  const tipos = blocos(ws).map((b) => b.tipo);
+  const primeiroKit = tipos.indexOf('kit');
+  assert.ok(primeiroKit > 0);
+  assert.ok(tipos.slice(0, primeiroKit).every((t) => t === 'unitario'));
+  assert.ok(tipos.slice(primeiroKit).every((t) => t === 'kit'));
 });
 
 teste('referência só com kit não gera bloco de unitário vazio', () => {
@@ -448,7 +458,7 @@ teste('referência só com kit não gera bloco de unitário vazio', () => {
 
 teste('a ordem dos blocos segue o menor número primeiro', () => {
   assert.deepStrictEqual(blocos(ws).map((b) => `${b.referencia}${b.tipo === 'kit' ? ' (kit)' : ''}`), [
-    '3681', 'VM002', 'VM034 (kit)', 'OG1620', 'OG1620 (kit)', 'MM6232', 'MM62115',
+    '3681', 'VM002', 'OG1620', 'MM6232', 'MM62115', 'VM034 (kit)', 'OG1620 (kit)',
   ]);
 });
 
@@ -546,16 +556,16 @@ teste('foto: a do anúncio, sem esticar, centralizada, e diferente no kit', () =
   assert.ok(ws.merges.includes(`A${kit.primeira}:F${kit.ultima}`));
 
   const daUnidade = ws.imagens.find((im) => Math.abs(im.opts.tl.row - (uni.primeira - 1)) < 8);
-  // PNG 4×2 numa caixa de 150×144: encaixa pela largura → 150×75, centralizada.
+  // PNG 4×2 numa caixa de 167 (90% de A:F) × 138 (8 linhas de 18 px menos 6 de respiro): encaixa pela largura → 167×84 (83,5 arredondado).
   assert.ok(!daUnidade.opts.br, 'a foto não pode ser ancorada de canto a canto (estica)');
-  assert.strictEqual(daUnidade.opts.ext.width, 150);
-  assert.strictEqual(daUnidade.opts.ext.height, 75);
-  assert.ok(Math.abs(daUnidade.opts.tl.row - ((uni.primeira - 1) + 34.5 / 18)) < 0.01);
+  assert.strictEqual(daUnidade.opts.ext.width, 167);
+  assert.strictEqual(daUnidade.opts.ext.height, 84);
+  assert.ok(Math.abs(daUnidade.opts.tl.row - ((uni.primeira - 1) + 27 / 18)) < 0.01);
 
-  // A do kit é quadrada (2×2) numa caixa de 150 × (24×18=432) → 150×150.
+  // A do kit é quadrada (2×2) numa caixa de 150 × (24×18=432) → 167×167.
   const doKit = ws.imagens.find((im) => im.opts.tl.row >= kit.primeira - 1);
-  assert.strictEqual(doKit.opts.ext.width, 150);
-  assert.strictEqual(doKit.opts.ext.height, 150);
+  assert.strictEqual(doKit.opts.ext.width, 167);
+  assert.strictEqual(doKit.opts.ext.height, 167);
 
   // E foram baixadas as fotos dos anúncios campeões, não a do cadastro.
   assert.ok(BAIXADOS.some((u) => u.endsWith('/unidade.png')), BAIXADOS.join(', '));
@@ -568,21 +578,65 @@ teste('sem foto de anúncio, cai na foto do cadastro', async () => {
   ANUNCIOS.forEach((a) => { delete a.foto_url; });
   const livro = await lib.montarPlanilhaAnuncios({});
   ANUNCIOS.forEach((a, i) => { if (semUrl[i]) a.foto_url = semUrl[i]; });
-  // O cadastro tem 10×10 → quadrado de 144×144 (limitado pela altura) no bloco do unitário.
+  // O cadastro tem 10×10 → quadrado de 138×138 (limitado pela altura) no bloco do unitário.
   const p = livro.planilhas[0];
   const b = blocos(p).find((x) => x.referencia === 'OG1620' && x.tipo === 'unitario');
   const im = p.imagens.find((x) => Math.abs(x.opts.tl.row - (b.primeira - 1)) < 8);
-  assert.strictEqual(im.opts.ext.width, 144);
-  assert.strictEqual(im.opts.ext.height, 144);
+  assert.strictEqual(im.opts.ext.width, 138);
+  assert.strictEqual(im.opts.ext.height, 138);
+});
+
+teste('impressão: separador baixinho entre blocos e nenhum bloco cortado entre folhas', () => {
+  const lista = blocos(ws);
+  // Separador de 6 pt entre um bloco e o seguinte.
+  for (let i = 0; i + 1 < lista.length; i += 1) {
+    const sep = lista[i].ultima + 1;
+    assert.strictEqual(ws.getRow(sep).height, 6, `separador na linha ${sep}`);
+  }
+  // Toda quebra de página cai num separador (nunca no meio de um bloco).
+  for (const q of ws.quebras) {
+    assert.ok(lista.some((b) => b.ultima + 1 === q), `quebra na linha ${q} cortaria um bloco`);
+  }
+});
+
+function planilhaComBlocos(tamanhos) {
+  const w = new PlanilhaFake();
+  w.blocosDaPlanilha = [];
+  let linha = 1;
+  for (const n of tamanhos) {
+    if (linha > 1) { w.getRow(linha).height = 6; linha += 1; }
+    for (let l = linha; l < linha + n; l += 1) w.getRow(l).height = 13.5;
+    w.blocosDaPlanilha.push({ inicio: linha, fim: linha + n - 1 });
+    linha += n;
+  }
+  return w;
+}
+
+teste('impressão: sobra pouco → comprime a folha; sobra muito → bloco inteiro vai pra folha de baixo', () => {
+  // 4 blocos de 10 linhas cabem justinhos numa folha, sem comprimir.
+  const a = planilhaComBlocos([10, 10, 10, 10, 10]);
+  lib.paginarParaImpressao(a);
+  assert.deepStrictEqual(a.quebras, [44], 'o 5º bloco vai pra folha de baixo');
+  assert.strictEqual(a.getRow(1).height, 13.5);
+  // 3 blocos de 10 + 1 de 11 passam um pouco da folha: comprime em vez de quebrar.
+  const b = planilhaComBlocos([10, 10, 10, 11]);
+  lib.paginarParaImpressao(b);
+  assert.deepStrictEqual(b.quebras, []);
+  assert.ok(b.getRow(1).height < 13.5 && b.getRow(1).height >= 12.2, `altura ${b.getRow(1).height}`);
+  assert.strictEqual(b.getRow(11).height, 6, 'separador não comprime');
+  // 3 blocos de 10 + 1 de 16 não cabem nem comprimidos: o de 16 vai pra folha nova.
+  const c = planilhaComBlocos([10, 10, 10, 16]);
+  lib.paginarParaImpressao(c);
+  assert.deepStrictEqual(c.quebras, [33]);
+  assert.strictEqual(c.getRow(1).height, 13.5);
 });
 
 teste('larguras e alturas aplicadas', () => {
-  for (const c of ['A', 'B', 'C', 'D', 'E', 'F']) assert.strictEqual(ws.getColumn(c).width, 2.86, c);
+  for (const c of ['A', 'B', 'C', 'D', 'E', 'F']) assert.strictEqual(ws.getColumn(c).width, 3.71, c);
   for (const c of ['G', 'H', 'I']) assert.strictEqual(ws.getColumn(c).width, 7.86, c);
   for (const c of ['J', 'O', 'U']) assert.strictEqual(ws.getColumn(c).width, 6.43, c);
   assert.strictEqual(ws.getColumn('V').width, 25, 'V = 180 px');
-  const alturas = { 1: 16.5, 2: 19.5 };
-  for (let l = 1; l <= 10; l += 1) assert.strictEqual(ws.getRow(l).height, alturas[l] || 13.5, `linha ${l}`);
+  for (let l = 1; l <= 10; l += 1) assert.strictEqual(ws.getRow(l).height, 13.5, `linha ${l}`);
 });
 
 teste('Mercado Livre sem regra fechada usa o valor observado', () => {
