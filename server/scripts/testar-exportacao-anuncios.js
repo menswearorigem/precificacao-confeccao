@@ -135,6 +135,10 @@ const ANUNCIOS = [
   { id: 32, produto_id: 1, marketplace: 'shopee', origem_integracao_id: 2, anuncio_id_externo: 'A32', sku_externo: 'OG1620', titulo: 'Kit 2 Camisa Gola Polo Masculina', preco: 79.9, unidades_vendidas: 0, pedidos_no_periodo: 0 },
   // Título diz 'kit' mas não diz quantas peças: não é unitário e não cabe numa linha de kit.
   { id: 33, produto_id: 1, marketplace: 'shopee', origem_integracao_id: 1, anuncio_id_externo: 'A33', sku_externo: 'OG1620', titulo: 'Kit Casal Camisa Gola Polo', preco: 88.8, unidades_vendidas: 3, pedidos_no_periodo: 3 },
+  // Referência NOVA que só vendeu KIT: tem anúncio de unidade ativo que não vendeu.
+  // Ela entra inteira — bloco do unitário (com a nota "não vendeu") e o do kit.
+  { id: 34, produto_id: 8, marketplace: 'shopee', origem_integracao_id: 1, anuncio_id_externo: 'A34', sku_externo: 'OG1627-PRETO-M', titulo: 'Blusa Feminina Dry Fit', preco: 59.9, unidades_vendidas: 0, pedidos_no_periodo: 0 },
+  { id: 35, produto_id: 8, marketplace: 'shopee', origem_integracao_id: 1, anuncio_id_externo: 'A35', sku_externo: 'KIT-5-OG1627-PRETO-M', titulo: 'Kit 5 Blusa Dry Fit', preco: 199.9, unidades_vendidas: 4, pedidos_no_periodo: 4 },
   // NÃO vendeu — precisa ficar de fora da planilha.
   { id: 25, produto_id: 6, marketplace: 'shopee', origem_integracao_id: 1, anuncio_id_externo: 'A25', sku_externo: '36144-PRETO-M', titulo: 'Jaqueta', preco: 199.9, unidades_vendidas: 0, pedidos_no_periodo: 0 },
 ];
@@ -146,6 +150,7 @@ const PRODUTOS = [
   { id: 4, referencia: 'VM002', descricao: 'BERMUDA SARJA', categoria: 'BERMUDA', empresa_id: 1 },
   { id: 5, referencia: '3681', descricao: 'CALCA JEANS', categoria: 'CALCA', empresa_id: 1 },
   { id: 6, referencia: '36144', descricao: 'JAQUETA', categoria: 'JAQUETA', empresa_id: 1 },
+  { id: 8, referencia: 'OG1627', descricao: 'BLUSA DRY FIT RAGLAN', categoria: 'BLUSA', empresa_id: 1 },
   { id: 7, referencia: 'VM034', descricao: 'BERMUDA MOLETOM', categoria: 'BERMUDA', empresa_id: 1 },
 ];
 
@@ -458,8 +463,17 @@ teste('referência só com kit não gera bloco de unitário vazio', () => {
 
 teste('a ordem dos blocos segue o menor número primeiro', () => {
   assert.deepStrictEqual(blocos(ws).map((b) => `${b.referencia}${b.tipo === 'kit' ? ' (kit)' : ''}`), [
-    '3681', 'VM002', 'OG1620', 'MM6232', 'MM62115', 'VM034 (kit)', 'OG1620 (kit)',
+    '3681', 'VM002', 'OG1620', 'OG1627', 'MM6232', 'MM62115', 'VM034 (kit)', 'OG1620 (kit)', 'OG1627 (kit)',
   ]);
+});
+
+teste('referência nova que só vendeu kit entra inteira: unitário com a nota + kit', () => {
+  const uni = acharBloco(ws, 'OG1627', 'unitario');
+  const kit = acharBloco(ws, 'OG1627', 'kit');
+  assert.ok(uni && kit);
+  assert.strictEqual(ws.getCell(`L${uni.primeira}`).value, 59.9, 'preço do unitário que está no ar');
+  assert.match(String(ws.getCell(`J${uni.primeira}`).note), /NÃO vendeu no período/);
+  assert.strictEqual(ws.getCell(`L${kit.primeira}`).value, 199.9);
 });
 
 teste('anúncio que não vendeu nos 30 dias fica de fora', () => {

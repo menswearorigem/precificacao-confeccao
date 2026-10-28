@@ -491,11 +491,15 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
   const anunciosUteis = anuncios.filter((a) => !a.kitSemQuantidade);
   let anunciosNaJanela = anunciosUteis;
   if (vendidosEmDias > 0) {
-    const chaveDoBloco = (a) => `${a.produto_id}|${quantidadeDoKit(a) == null ? 'U' : 'K'}`;
-    const blocosQueVenderam = new Set(
-      anunciosUteis.filter((a) => Number(a.unidades_vendidas) > 0).map(chaveDoBloco)
+    // O corte é por PRODUTO, não por bloco: referência que vendeu (em unitário
+    // OU em kit) entra inteira — o bloco do unitário e os de kit, com os
+    // anúncios ativos de cada um (os que não venderam levam a nota). Antes o
+    // corte era por bloco, e referência nova que só vendeu kit (OG1625, OG1627,
+    // OG1629...) ficava sem o bloco do unitário, parecendo que não tinha entrado.
+    const produtosQueVenderam = new Set(
+      anunciosUteis.filter((a) => Number(a.unidades_vendidas) > 0).map((a) => a.produto_id)
     );
-    anunciosNaJanela = anunciosUteis.filter((a) => blocosQueVenderam.has(chaveDoBloco(a)));
+    anunciosNaJanela = anunciosUteis.filter((a) => produtosQueVenderam.has(a.produto_id));
   }
 
   const idsProduto = [...new Set(anunciosNaJanela.map((a) => a.produto_id).filter(Boolean))];
