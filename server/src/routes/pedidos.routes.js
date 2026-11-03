@@ -1,6 +1,7 @@
 const { condMulti } = require('../lib/filtrosMulti');
 const { aplicarFiltroFull, CONDICAO_ANUNCIO_NO_FULL } = require('../lib/filtroFull');
 const { condOperacaoVenda } = require('../lib/operacaoVenda');
+const { reembolsosDosPedidos, reembolsoEhTotal } = require('../lib/reembolsoMarketplace');
 const { pecasDoItemSql } = require('../lib/vendasEmPecas');
 const express = require('express');
 const multer = require('multer');
@@ -1361,7 +1362,29 @@ async function calcularRelatorioPedidos({
     // vão para `totalGeral.devolvidos`, com o frete de devolução cobrado
     // (repasse negativo) mostrado à parte. O gasto de Ads que estava rateado
     // neles continua no total: o dinheiro do anúncio saiu de verdade.
-    const ehDevolvido = (p) => p.calculoReal && p.valorRecebido !== null && p.valorRecebido <= 0;
+    //
+    // REEMBOLSADO PELA PLATAFORMA (03/11/2026). A regra acima só enxerga o
+    // repasse gravado — e ele fica velho: a Shopee devolve o dinheiro depois
+    // de ler o escrow, e o Mercado Livre deixa o pedido "pago" depois de uma
+    // reclamação que devolveu o dinheiro. Na auditoria de outubro/2026 eram 72
+    // pedidos (R$ 7,8 mil de venda) reembolsados e ainda contados. O Pós-venda
+    // já grava a devolução/reclamação de cada pedido; quando ela diz que a
+    // plataforma devolveu a venda inteira, o pedido sai da conta do mesmo
+    // jeito. Reembolso PARCIAL não tira o pedido (ver lib/reembolsoMarketplace).
+    const reembolsos = await reembolsosDosPedidos(pedidos);
+    for (const p of todosOsPedidos) {
+      const info = reembolsos.get(p.id);
+      if (!info) continue;
+      p.reembolsoPlataforma = {
+        situacao: info.situacao,
+        valorReembolsado: info.valorDesconhecido ? null : Math.round(info.valorReembolsado * 100) / 100,
+        valorEmDevolucao: Math.round(info.valorEmDevolucao * 100) / 100,
+        total: reembolsoEhTotal(info, p.receita),
+      };
+    }
+    const devolvidoPeloRepasse = (p) => p.calculoReal && p.valorRecebido !== null && p.valorRecebido <= 0;
+    const reembolsadoPelaPlataforma = (p) => Boolean(p.reembolsoPlataforma && p.reembolsoPlataforma.total);
+    const ehDevolvido = (p) => devolvidoPeloRepasse(p) || reembolsadoPelaPlataforma(p);
     const pedidosDevolvidos = todosOsPedidos.filter(ehDevolvido);
     const resultado = todosOsPedidos.filter((p) => !ehDevolvido(p));
     const adsDosDevolvidos = pedidosDevolvidos.reduce((s, p) => s + (p.custoAds || 0), 0);
@@ -1464,10 +1487,30 @@ async function calcularRelatorioPedidos({
       // Repasse negativo = a plataforma cobrou o frete da devolução.
       freteDevolucao: pedidosDevolvidos.reduce((s, p) => s + Math.min(0, p.valorRecebido || 0), 0),
       adsMovidosParaSemVenda: adsDosDevolvidos,
+      // Quantos saíram porque a plataforma informou o reembolso, e não pelo
+      // repasse zerado (03/11/2026).
+      pedidosReembolsoPlataforma: pedidosDevolvidos.filter((p) => !devolvidoPeloRepasse(p)).length,
+      receitaReembolsoPlataforma: pedidosDevolvidos.filter((p) => !devolvidoPeloRepasse(p)).reduce((s, p) => s + p.receita, 0),
       lista: pedidosDevolvidos.slice(0, 500).map((p) => ({
         id: p.id, numeroExibicao: p.numeroExibicao, data_pedido: p.data_pedido,
         canal_venda: p.canal_venda, receita: p.receita, valorRecebido: p.valorRecebido,
+        motivo: devolvidoPeloRepasse(p) ? 'repasse_zero' : 'reembolso_plataforma',
+        valorReembolsado: p.reembolsoPlataforma?.valorReembolsado ?? null,
       })),
+    };
+    // Ainda em devolução (o dinheiro não voltou): FICA na conta, mas a tela
+    // mostra quanto da receita ainda pode sair. Reembolso parcial idem.
+    const emDevolucao = resultado.filter((p) => p.reembolsoPlataforma?.situacao === 'em_devolucao');
+    const reembolsoParcial = resultado.filter((p) => p.reembolsoPlataforma?.situacao === 'reembolsado' && !p.reembolsoPlataforma.total);
+    totalGeral.emDevolucao = {
+      pedidos: emDevolucao.length,
+      receita: emDevolucao.reduce((s, p) => s + p.receita, 0),
+      lista: emDevolucao.slice(0, 500).map((p) => ({ id: p.id, numeroExibicao: p.numeroExibicao, data_pedido: p.data_pedido, canal_venda: p.canal_venda, receita: p.receita })),
+    };
+    totalGeral.reembolsoParcial = {
+      pedidos: reembolsoParcial.length,
+      valorReembolsado: reembolsoParcial.reduce((s, p) => s + (p.reembolsoPlataforma.valorReembolsado || 0), 0),
+      lista: reembolsoParcial.slice(0, 500).map((p) => ({ id: p.id, numeroExibicao: p.numeroExibicao, data_pedido: p.data_pedido, canal_venda: p.canal_venda, receita: p.receita, valorReembolsado: p.reembolsoPlataforma.valorReembolsado })),
     };
     totalGeral.acrescimoCustoAtivo = acrescimoCustoDoRelatorio.ativo;
     totalGeral.acrescimoCustoPctPadrao = acrescimoCustoDoRelatorio.pctPadrao;

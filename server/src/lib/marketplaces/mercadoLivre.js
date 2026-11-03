@@ -1883,10 +1883,18 @@ async function responderPergunta({ accessToken, perguntaId, texto }) {
 
 // Reclamações (claims) em que o vendedor é o reclamado. Traz o motivo em
 // `reason_id` e o item pela ordem (`resource_id` = order id, resource='order').
-async function buscarReclamacoes({ accessToken, desdeIso = null, limite = 300 }) {
+// Filtro por papel (03/11/2026): o nome do parâmetro na busca de reclamações
+// é `player_role` (+ `player_user_id`), como na documentação. Com o antigo
+// `player.role` a API passou a responder "atLeastOneFilterProvided" e o
+// Pós-venda das duas contas do Mercado Livre ficava sem reclamação nenhuma —
+// e, por tabela, a Lucratividade sem saber quais vendas tinham sido
+// reembolsadas. `sellerId` é opcional para não quebrar quem chama sem ele.
+async function buscarReclamacoes({ accessToken, sellerId = null, desdeIso = null, limite = 600 }) {
   const reclamacoes = [];
   for (let offset = 0; offset < limite; offset += 30) {
-    const q = new URLSearchParams({ 'player.role': 'respondent', limit: '30', offset: String(offset), sort: 'date_created:desc' });
+    const filtros = { player_role: 'respondent', limit: '30', offset: String(offset), sort: 'date_created:desc' };
+    if (sellerId) filtros.player_user_id = String(sellerId);
+    const q = new URLSearchParams(filtros);
     const data = await chamarApi(`/post-purchase/v1/claims/search?${q}`, accessToken);
     const lista = data.data || data.results || [];
     for (const c of lista) {

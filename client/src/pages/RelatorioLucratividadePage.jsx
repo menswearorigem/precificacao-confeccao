@@ -1250,6 +1250,28 @@ export default function RelatorioLucratividadePage({ origemFiltro }) {
                         <span className="mono">{relatorio.totalGeral.devolvidos.freteDevolucao < 0 ? brl(relatorio.totalGeral.devolvidos.freteDevolucao) : '—'}</span>
                       </div>
                     )}
+                    {/* Reembolso que a plataforma informou no Pós-venda
+                        (03/11/2026): o que já saiu está somado na linha de
+                        cima; o que ainda está em devolução continua na conta
+                        e aparece aqui para ninguém achar que é venda certa. */}
+                    {relatorio.totalGeral.devolvidos?.pedidosReembolsoPlataforma > 0 && (
+                      <div className="row-line">
+                        <span>· destes, reembolsados pela plataforma: {plural(relatorio.totalGeral.devolvidos.pedidosReembolsoPlataforma, 'pedido')}</span>
+                        <span className="mono">{brl(relatorio.totalGeral.devolvidos.receitaReembolsoPlataforma)}</span>
+                      </div>
+                    )}
+                    {relatorio.totalGeral.emDevolucao?.pedidos > 0 && (
+                      <div className="row-line">
+                        <span>Em devolução, ainda na conta (pode sair): {plural(relatorio.totalGeral.emDevolucao.pedidos, 'pedido')}</span>
+                        <span className="mono">{brl(relatorio.totalGeral.emDevolucao.receita)}</span>
+                      </div>
+                    )}
+                    {relatorio.totalGeral.reembolsoParcial?.pedidos > 0 && (
+                      <div className="row-line">
+                        <span>Reembolso parcial (a venda continua): {plural(relatorio.totalGeral.reembolsoParcial.pedidos, 'pedido')}</span>
+                        <span className="mono">{brl(relatorio.totalGeral.reembolsoParcial.valorReembolsado)}</span>
+                      </div>
+                    )}
                     <SeloDeConfianca
                       considerado={relatorio.totalGeral.pedidosConsiderados}
                       total={relatorio.totalGeral.totalPedidosPeriodo}

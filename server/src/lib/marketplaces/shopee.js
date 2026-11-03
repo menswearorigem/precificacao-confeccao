@@ -547,18 +547,36 @@ async function buscarDevolucoes({ partnerId, partnerKey, accessToken, shopId, de
   const fim = ateUnix || Math.floor(Date.now() / 1000);
   const vistos = new Map(); // return_sn -> devolução (a mesma pode aparecer em dois pedaços se foi atualizada)
   let inicioJanela = desdeUnix;
+  // A paginação do get_return_list começa em ZERO (03/11/2026). Começando em
+  // 1, a primeira página de cada janela de 15 dias nunca era lida: janela com
+  // até 100 devoluções voltava VAZIA, e as maiores perdiam as 100 primeiras.
+  // Em produção, nenhuma devolução da Shopee criada depois de 15/10/2026 tinha
+  // chegado ao Pós-venda, e a leitura ao vivo dos últimos 20 dias voltava
+  // zerada. Se a API um dia recusar o 0, cai para 1 em vez de parar a leitura.
+  let primeiraPagina = 0;
   while (inicioJanela < fim) {
     const fimJanela = Math.min(inicioJanela + JANELA_MAXIMA_SEGUNDOS, fim);
     for (let pagina = 0; pagina < 20; pagina += 1) {
-      const data = await chamarDaLoja('/api/v2/returns/get_return_list', {
+      const pedirPagina = (n) => chamarDaLoja('/api/v2/returns/get_return_list', {
         ...credenciais,
         query: {
-          page_no: String(pagina + 1),
+          page_no: String(n),
           page_size: '100',
           create_time_from: String(inicioJanela),
           create_time_to: String(fimJanela),
         },
       });
+      let data;
+      try {
+        data = await pedirPagina(primeiraPagina + pagina);
+      } catch (err) {
+        if (primeiraPagina === 0 && pagina === 0 && /page_no|page/i.test(String(err.message || ''))) {
+          primeiraPagina = 1;
+          data = await pedirPagina(1);
+        } else {
+          throw err;
+        }
+      }
       const lista = data.response?.return || data.response?.return_list || [];
       for (const d of lista) vistos.set(d.return_sn || `${d.order_sn}-${d.create_time}`, d);
       if (!data.response?.more) break;

@@ -150,7 +150,7 @@ async function sincronizarPosVendaDaIntegracao(integracaoId) {
         return abertas.length + respondidas.length;
       });
       await fonte('reclamacao', async () => {
-        const lista = await mercadoLivre.buscarReclamacoes({ accessToken: integracao.access_token, desdeIso });
+        const lista = await mercadoLivre.buscarReclamacoes({ accessToken: integracao.access_token, sellerId: integracao.conta_externa_id, desdeIso });
         for (const c of lista) {
           const ehDevolucao = /return/i.test(c.tipo || '');
           await gravar(client, integracao, {
