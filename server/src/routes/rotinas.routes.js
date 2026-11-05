@@ -782,9 +782,10 @@ router.get('/modelos', requireAdmin, a(async (req, res) => {
     quando: rec.descrever(m.recorrencia),
     horaLimite: m.hora_limite ? String(m.hora_limite).slice(0, 5) : null,
     proximas: m.status === 'ativo' ? rec.proximas(m.recorrencia, hoje, 3) : [],
-    responsaveis: (m.responsaveis || []).map((id) => nome.get(id) || '—'),
-    responsaveisIds: m.responsaveis || [],
-    pessoas: (m.responsaveis || []).map((id) => ({ id, nome: nome.get(id) || '—' })),
+    // Só quem ainda existe: perfil excluído não vira avatar "— —" nem entra na conta.
+    responsaveis: (m.responsaveis || []).filter((id) => nome.has(id)).map((id) => nome.get(id)),
+    responsaveisIds: (m.responsaveis || []).filter((id) => nome.has(id)),
+    pessoas: (m.responsaveis || []).filter((id) => nome.has(id)).map((id) => ({ id, nome: nome.get(id) })),
     horarios: m.recorrencia?.horarios || (m.hora_limite ? [String(m.hora_limite).slice(0, 5)] : []),
     variasVezes: Boolean(m.recorrencia?.horarios),
     tipo: m.modo_atribuicao === 'evento' ? 'evento' : 'tarefa',

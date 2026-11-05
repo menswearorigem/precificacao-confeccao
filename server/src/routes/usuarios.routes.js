@@ -4,6 +4,7 @@ const { hashSenha } = require('../lib/senha');
 const { conferirSenha } = require('../lib/senhaPolitica');
 const { requireAdmin } = require('../middleware/auth');
 const { registrar, diferenca } = require('../lib/auditoria');
+const { removerUsuarioDasRotinas } = require('../lib/rotinas');
 
 const router = express.Router();
 
@@ -228,6 +229,9 @@ router.delete('/:id', async (req, res, next) => {
         error: 'Este é o único administrador ativo. Promova outra pessoa antes de excluir esta conta.',
       });
     }
+    // Rotinas guardam responsáveis num JSON (sem chave estrangeira): se não
+    // tirarmos a pessoa de lá, o vínculo fica órfão e trava a edição da rotina.
+    await removerUsuarioDasRotinas(pool, alvo.id);
     await pool.query('DELETE FROM usuarios WHERE id = $1', [req.params.id]);
     await registrar(req, {
       acao: 'excluiu',

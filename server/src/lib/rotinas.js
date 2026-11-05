@@ -83,6 +83,49 @@ function idsInteiros(lista) {
   return [...new Set((Array.isArray(lista) ? lista : []).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
 }
 
+// Dos ids recebidos, só os que ainda existem E estão ativos, na mesma ordem.
+async function usuariosAtivosDe(db, ids) {
+  const lista = idsInteiros(ids);
+  if (!lista.length) return [];
+  const { rows } = await db.query('SELECT id FROM usuarios WHERE id = ANY($1) AND ativo', [lista]);
+  const vivos = new Set(rows.map((x) => x.id));
+  return lista.filter((id) => vivos.has(id));
+}
+
+// Dos ids recebidos, só os que ainda EXISTEM (ativo ou não — quem está só
+// desativado continua aparecendo na rotina até alguém decidir tirá-lo).
+async function usuariosExistentesDe(db, ids) {
+  const lista = idsInteiros(ids);
+  if (!lista.length) return [];
+  const { rows } = await db.query('SELECT id FROM usuarios WHERE id = ANY($1)', [lista]);
+  const existem = new Set(rows.map((x) => x.id));
+  return lista.filter((id) => existem.has(id));
+}
+
+// Chamada ao EXCLUIR um usuário: tira a pessoa dos responsáveis de todas as
+// rotinas e desliga a correção automática que apontava para ela. Rotina que
+// ficar sem ninguém continua existindo (e editável); só não gera tarefa até
+// alguém escolher quem faz.
+async function removerUsuarioDasRotinas(db, usuarioId) {
+  const id = Number(usuarioId);
+  const { rowCount } = await db.query(
+    `UPDATE rotina_modelos
+        SET responsaveis = COALESCE((
+              SELECT jsonb_agg(x.v ORDER BY x.ord)
+                FROM jsonb_array_elements(responsaveis) WITH ORDINALITY AS x(v, ord)
+               WHERE (x.v #>> '{}') <> $1::text
+            ), '[]'::jsonb)
+      WHERE responsaveis @> to_jsonb(ARRAY[$1::int])`,
+    [id]
+  );
+  await db.query(
+    `UPDATE rotina_modelos SET correcao_automatica = NULL
+      WHERE correcao_automatica->>'responsavelId' = $1::text`,
+    [id]
+  );
+  return rowCount;
+}
+
 // ---------------------------------------------------------------------------
 // Validação do modelo
 // ---------------------------------------------------------------------------
@@ -188,10 +231,20 @@ async function normalizarModelo(body, db = pool, { avulsa = false } = {}) {
     throw new ErroRotina('"Comparar com o estoque do sistema" só funciona em passo por produto.');
   }
 
-  const responsaveis = idsInteiros(body.responsaveis);
-  if (!responsaveis.length) throw new ErroRotina(evento ? 'Escolha quem vê o evento.' : 'Escolha quem faz a tarefa.');
-  const { rows: pessoas } = await db.query('SELECT id, role, ativo FROM usuarios WHERE id = ANY($1)', [responsaveis]);
-  if (pessoas.length !== responsaveis.length || pessoas.some((p) => !p.ativo)) throw new ErroRotina('Algum responsável não existe mais ou está desativado.');
+  // Quem foi excluído (ou desativado) depois que a rotina foi escrita NÃO
+  // trava mais o salvamento: some da lista em silêncio. Antes, o vínculo
+  // ficava escondido no formulário (a tela não desenha quem não existe) e a
+  // pessoa não tinha como desmarcá-lo — a rotina virava impossível de editar.
+  // Só barra quando não sobra NINGUÉM.
+  const responsaveisPedidos = idsInteiros(body.responsaveis);
+  const responsaveis = await usuariosAtivosDe(db, responsaveisPedidos);
+  if (!responsaveis.length) {
+    throw new ErroRotina(
+      responsaveisPedidos.length
+        ? 'As pessoas escolhidas foram excluídas ou desativadas. Escolha quem ' + (evento ? 'vê o evento.' : 'faz a tarefa.')
+        : (evento ? 'Escolha quem vê o evento.' : 'Escolha quem faz a tarefa.')
+    );
+  }
 
   let recorrencia = rec.normalizar(avulsa ? { tipo: 'uma_vez', data: body.recorrencia?.data } : body.recorrencia);
   // Semanal sem início: conta a partir desta semana.
@@ -215,9 +268,10 @@ async function normalizarModelo(body, db = pool, { avulsa = false } = {}) {
   let correcao = null;
   if (!evento && body.correcaoAutomatica?.responsavelId) {
     const id = Number(body.correcaoAutomatica.responsavelId);
+    // Quem corrigia foi excluído/desativado: a correção automática simplesmente
+    // deixa de existir (mesma regra dos responsáveis), em vez de travar o save.
     const { rows } = await db.query('SELECT 1 FROM usuarios WHERE id = $1 AND ativo', [id]);
-    if (!rows.length) throw new ErroRotina('Quem corrige o problema não existe mais ou está desativado.');
-    correcao = { responsavelId: id };
+    if (rows.length) correcao = { responsavelId: id };
   }
 
   return {
@@ -371,8 +425,10 @@ async function carregarModelo(id, db = pool) {
       [id]
     ),
   ]);
+  // Quem foi excluído depois não pode aparecer (nem ser contado) no formulário.
+  const linha = { ...rows[0], responsaveis: await usuariosExistentesDe(db, rows[0].responsaveis) };
   return linhaParaModelo(
-    rows[0],
+    linha,
     passos.map(linhaParaPasso),
     produtos.map((p) => ({
       produtoId: p.produto_id, varianteId: p.variante_id, referencia: p.referencia, descricao: p.descricao,
@@ -839,6 +895,7 @@ module.exports = {
   eventosDoDia,
   SETORES, MARCAS, CANAIS, TIPOS_PASSO, PROVAS, PRIORIDADES, PESO_PRIORIDADE, ABERTOS, MOTIVOS_NAO_FEITA,
   ErroRotina, sanitizarInstrucao, escaparHtml, normalizarModelo, salvarModelo, carregarModelo, linhaParaPasso,
+  usuariosAtivosDe, usuariosExistentesDe, removerUsuarioDasRotinas,
   catalogo, previaFiltro, variantesDe, resolverProdutos, chavesDeProduto, curvasAbc, limparCacheCurva,
   snapshotDoModelo, gerarDia, jobGerarDoDia, sqlPrazo,
   respondida, avaliarResposta, faltasParaConcluir, progresso, fotosDe, podeExecutar, situacao,
