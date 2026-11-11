@@ -54,8 +54,7 @@
    antiga. Não pegam clique. */
 .painel-vivo::before,
 .painel-vivo::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 40; }
-.painel-vivo::before { background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.022) 0 1px, transparent 1px 3px); }
-.painel-vivo::after { background: radial-gradient(ellipse at center, transparent 58%, rgba(0, 0, 0, 0.42) 100%); }
+.painel-vivo::after { background: radial-gradient(ellipse at center, transparent 58%, rgba(0, 0, 0, 0.3) 100%); }
 
 .painel-vivo.tela-cheia {
   width: 100vw; height: 100vh; min-height: 0; border-radius: 0; border: 0;
@@ -231,12 +230,6 @@
 .pv-et-vendeu .pv-et-placa { fill: linear-gradient(0deg, red, red); fill: color-mix(in srgb, var(--brass-bright) 88%, var(--surface-alt)); stroke: color-mix(in srgb, var(--brass-bright) 75%, #000); }
 .pv-et-vendeu .pv-et-uf { fill: var(--on-accent); stroke: none; }
 .pv-et-n { font: 800 17px var(--font-display); fill: var(--on-accent); }
-.pv-rosa-aro { fill: none; stroke: color-mix(in srgb, var(--brass) 55%, transparent); stroke-width: 1.4; stroke-dasharray: 1 4; }
-.pv-rosa-eixo { fill: color-mix(in srgb, var(--brass) 38%, transparent); stroke: color-mix(in srgb, var(--brass-bright) 60%, transparent); stroke-width: 0.8; }
-.pv-rosa-eixo2 { fill: color-mix(in srgb, var(--brass) 20%, transparent); }
-.pv-rosa-norte { fill: var(--terracotta-bright); }
-.pv-rosa-n { font: 800 15px var(--font-display); fill: var(--brass-bright); }
-.pv-parafuso-barra { fill: color-mix(in srgb, var(--bg-deep) 55%, var(--brass)); stroke: rgba(0, 0, 0, 0.7); stroke-width: 1; }
 .pv-mapa-lado { display: flex; flex-direction: column; gap: 0.45em; min-width: 0; }
 .pv-escala-calor { display: flex; align-items: center; gap: 0.5em; font-size: 0.62em; color: var(--ink-faint); font-family: var(--font-codigo); }
 .pv-escala-calor i { flex: 1; height: 0.5em; border-radius: 1em; background: linear-gradient(90deg, var(--surface-alt), var(--brass-bright)); }
@@ -285,7 +278,6 @@
 .pv-linha-hoje { fill: none; stroke: var(--terracotta-bright); stroke-width: 2.6; stroke-linejoin: round; stroke-linecap: round; }
 .pv-linha-ontem { fill: none; stroke: var(--mod-marketplace); stroke-width: 1.8; stroke-dasharray: 6 5; opacity: 0.85; }
 .pv-ponta { fill: var(--knob); stroke: var(--terracotta-bright); stroke-width: 2; }
-.pv-ponta-onda { fill: none; stroke: var(--terracotta-bright); stroke-width: 1.5; transform-box: fill-box; transform-origin: center; animation: pv-onda 1.8s ease-out infinite; }
 .pv-mira { stroke: var(--ink-faint); stroke-width: 1; stroke-dasharray: 3 3; }
 .pv-legenda-linhas { position: absolute; top: 0.4em; left: 4.6em; display: flex; gap: 1.1em; font-size: 0.7em; color: var(--ink-soft); pointer-events: none; }
 .pv-legenda-linhas span { display: inline-flex; align-items: center; gap: 0.45em; }
@@ -353,7 +345,7 @@
 @keyframes pv-pisca { 50% { opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .pv-flap-face, .pv-lampada i, .pv-ponta-onda, .pv-ligando span { animation: none; }
+  .pv-flap-face, .pv-lampada i, .pv-ligando span { animation: none; }
   .pv-agulha, .pv-rel-s, .pv-rosca-seg, .pv-led i, .pv-uf { transition: none; }
 }
 
@@ -383,12 +375,6 @@
     repeating-linear-gradient(90deg, rgba(255, 238, 205, 0.045) 0 1px, transparent 1px 3px),
     var(--pv-latao-fundo);
   box-shadow: inset 0 1px 0 rgba(255, 238, 205, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.5);
-}
-.painel-vivo::before {
-  background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E") 0 0 / 160px,
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.022) 0 1px, transparent 1px 3px);
-  opacity: 0.55; mix-blend-mode: overlay;
 }
 
 /* Parafusos de fenda (no lugar dos rebites lisos) */
@@ -518,8 +504,6 @@
 .pv-rosca-friso { stroke: rgba(0, 0, 0, 0.75); stroke-width: 1.2; }
 .pv-rosca-friso-ext { stroke: rgba(255, 238, 205, 0.18); stroke-width: 0.8; }
 .pv-rosca-borda { stroke: rgba(0, 0, 0, 0.7); stroke-width: 1; }
-.pv-rosca-parafuso { fill: color-mix(in srgb, var(--ink-soft) 70%, #000); stroke: rgba(0, 0, 0, 0.75); stroke-width: 0.8; }
-.pv-rosca-fenda { stroke: rgba(0, 0, 0, 0.85); stroke-width: 0.9; }
 .pv-rosca-cubo-aro { fill: none; stroke: rgba(255, 255, 255, 0.28); stroke-width: 1; }
 .pv-rosca-janela { fill: #050403; stroke: color-mix(in srgb, var(--ink-soft) 65%, #000); stroke-width: 2; }
 .pv-rosca-janela-vidro { fill: url(#pv-vidro); fill: rgba(255, 255, 255, 0.05); stroke: none; }
@@ -595,7 +579,6 @@
 .pv-visor-svg-d.pv-desce { fill: var(--danger); }
 .pv-visor-svg-r { fill: color-mix(in srgb, var(--brass-bright) 55%, transparent); font: 500 7px var(--font-codigo); letter-spacing: 0.06em; }
 .pv-linha-ontem { filter: drop-shadow(0 0 3px color-mix(in srgb, var(--mod-marketplace) 60%, transparent)); }
-.pv-tique-fino { stroke: color-mix(in srgb, var(--brass-bright) 28%, transparent); }
 .pv-visor-svg-r .pv-sobe { fill: var(--success); }
 .pv-visor-svg-r .pv-desce { fill: var(--danger); }
 
@@ -618,8 +601,7 @@
   box-shadow: 0 0.18em 0.45em rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -1px 0 rgba(0, 0, 0, 0.55);
 }
 .pv-boca-fenda { flex: 1; height: 0.42em; border-radius: 0.3em; background: #030201; box-shadow: inset 0 0.1em 0.2em #000, 0 1px 0 rgba(255, 255, 255, 0.3); }
-.pv-boca-led { flex: none; width: 0.6em; height: 0.6em; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff 0 8%, var(--success) 40%, color-mix(in srgb, var(--success) 40%, #000)); box-shadow: 0 0 0.6em var(--success), 0 0 0 1px rgba(0, 0, 0, 0.7); animation: pv-pulsa 2.4s ease-in-out infinite; }
-.pv-boca-rotulo { flex: none; font: 700 0.56em var(--font-codigo); letter-spacing: 0.22em; text-transform: uppercase; color: color-mix(in srgb, var(--bg-deep) 85%, transparent); text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35); }
+.pv-boca-led { flex: none; width: 0.6em; height: 0.6em; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff 0 8%, var(--success) 40%, color-mix(in srgb, var(--success) 40%, #000)); box-shadow: 0 0 0.6em var(--success), 0 0 0 1px rgba(0, 0, 0, 0.7); }
 
 /* o papel: fosco, mais estreito que a boca, com a sombra da boca caindo nele */
 .pv-papel {
@@ -669,14 +651,9 @@
 .pv-placa-mapa .pv-placa-corpo { gap: 0.55em; }
 .pv-mapa-linha { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); align-items: stretch; gap: 0.8em; }
 .pv-mapa { height: 100%; max-width: 100%; aspect-ratio: 700 / 639; justify-self: center; align-self: center; }
-.pv-mapa-regua line { stroke: color-mix(in srgb, var(--brass-bright) 45%, transparent); stroke-width: 1.2; }
-.pv-oceano { font: 500 italic 13px var(--font-display); letter-spacing: 0.4em; fill: color-mix(in srgb, var(--mod-marketplace) 45%, transparent); }
 .pv-rot-uf, .pv-et-uf { font-size: 14px; }
 .pv-rot-n { font-size: 25px; }
 .pv-et-n { font-size: 19px; }
-.pv-radar { fill: none; stroke: var(--terracotta-bright); stroke-width: 2; transform-box: fill-box; transform-origin: center; animation: pv-onda 2.4s ease-out infinite; }
-.pv-radar-2 { animation-delay: 1.2s; }
-@media (prefers-reduced-motion: reduce) { .pv-radar { animation: none; opacity: 0.6; } }
 
 /* lado direito: termômetro + canais, no mesmo idioma de "Vendas de loja" */
 .pv-mapa-lado { gap: 0.5em; justify-content: space-between; }
@@ -727,7 +704,6 @@
 .pv-rel-marca { stroke: color-mix(in srgb, var(--ink-soft) 65%, transparent); stroke-width: 0.5; }
 .pv-rel-marca-g { stroke: var(--brass-bright); stroke-width: 2.2; stroke-linecap: butt; filter: drop-shadow(0 0.4px 0 rgba(0, 0, 0, 0.8)); }
 .pv-rel-num { font: 700 9.5px var(--font-display); fill: var(--brass-bright); paint-order: stroke; stroke: rgba(0, 0, 0, 0.8); stroke-width: 0.9px; }
-.pv-rel-marca-nome { font: 700 3.4px var(--font-codigo); letter-spacing: 0.5px; fill: color-mix(in srgb, var(--brass-bright) 65%, transparent); }
 .pv-rel-h, .pv-rel-m { stroke: rgba(0, 0, 0, 0.55); stroke-width: 0.35; stroke-linejoin: round; }
 .pv-rel-s { stroke: var(--terracotta-bright); stroke-width: 0.9; }
 .pv-rel-s line { stroke-width: 0.9; }
@@ -771,11 +747,6 @@
   position: relative; padding: 0.28em; border-radius: 0.75em; background: var(--pv-chapa);
   box-shadow: 0 0.3em 0.9em rgba(0, 0, 0, 0.75), 0 0 2.4em -0.2em color-mix(in srgb, var(--brass-bright) 50%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -1px 0 rgba(0, 0, 0, 0.55);
 }
-.pv-dial::before, .pv-dial::after {
-  content: ''; position: absolute; top: 50%; width: 0.6em; height: 0.6em; margin-top: -0.3em; border-radius: 50%; z-index: 4;
-  background: radial-gradient(circle at 35% 30%, var(--knob), var(--ink-faint) 55%, #000); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
-}
-.pv-dial::before { left: -0.35em; } .pv-dial::after { right: -0.35em; }
 .pv-dial-vidro {
   position: relative; overflow: hidden; padding: 0.35em 2.2em 0.28em; border-radius: 0.5em; isolation: isolate;
   background:
@@ -907,17 +878,12 @@
 }
 .pv-placa::before { height: 3px; background: linear-gradient(90deg, transparent, var(--pv-acento), transparent); box-shadow: 0 0 0.8em var(--pv-acento); }
 .pv-placa-titulo { position: relative; overflow: hidden; background: linear-gradient(90deg, color-mix(in srgb, var(--pv-acento) 42%, transparent), transparent 52%), var(--pv-latao); }
-.pv-placa-titulo::after {
-  content: ''; position: absolute; top: 0; bottom: 0; left: -45%; width: 28%; pointer-events: none; transform: skewX(-18deg);
-  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.5), transparent);
-  animation: pv-brilha 9s ease-in-out infinite; animation-delay: calc(2.2s + var(--pv-i, 0) * 1.4s);
-}
 .pv-lampinha {
   flex: none; width: 0.72em; height: 0.72em; border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.85), transparent 42%), var(--pv-acento);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75), 0 0 0 0.12em color-mix(in srgb, var(--bg-deep) 70%, #000), 0 0 0.9em var(--pv-acento);
-  animation: pv-lampinha-liga 0.7s ease-out backwards, pv-respira 3.4s ease-in-out 1.4s infinite;
-  animation-delay: calc(0.5s + var(--pv-i, 0) * 0.11s), 0s;
+  animation: pv-lampinha-liga 0.7s ease-out backwards;
+  animation-delay: calc(0.5s + var(--pv-i, 0) * 0.11s);
 }
 .pv-placa:hover .pv-lampinha { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75), 0 0 0 0.12em color-mix(in srgb, var(--bg-deep) 70%, #000), 0 0 1.5em 0.1em var(--pv-acento); }
 
@@ -953,7 +919,6 @@
 .pv-agora-linha { stroke: color-mix(in srgb, var(--pv-neon-ambar) 75%, transparent); }
 .pv-agora-tag { fill: var(--pv-neon-ambar); }
 .pv-ponta { stroke: var(--pv-neon-ambar); }
-.pv-ponta-onda { stroke: var(--pv-neon-ambar); }
 .pv-faixa { fill: color-mix(in srgb, var(--pv-neon-verde) 20%, transparent); }
 .pv-faixa-atras { fill: color-mix(in srgb, var(--pv-neon-vermelho) 24%, transparent); }
 .pv-mira { stroke: var(--pv-neon-amarelo); stroke-width: 1.4; filter: drop-shadow(0 0 3px var(--pv-neon-amarelo)); }
@@ -972,7 +937,6 @@
 .pv-linha-hoje, .pv-linha-hoje-nucleo { stroke-dasharray: 1; animation: pv-traca 1.9s cubic-bezier(0.4, 0, 0.2, 1) 0.7s backwards; }
 .pv-linha-pedidos { stroke-dasharray: 1; animation: pv-traca 1.5s cubic-bezier(0.4, 0, 0.2, 1) 1.1s backwards; }
 .pv-area-hoje { animation: pv-aparece 1s ease-out 1.5s backwards; }
-.pv-ponta, .pv-ponta-onda { animation-delay: 2.5s; }
 .pv-ponta { animation: pv-aparece 0.4s ease-out 2.5s backwards; }
 
 /* rosca */
@@ -990,7 +954,7 @@
 
 .pv-uf-foco { stroke: #fff; stroke-width: 3; stroke-linejoin: round; filter: drop-shadow(0 0 6px var(--pv-neon-amarelo)); animation: pv-uf-pulsa 0.7s ease-in-out infinite alternate; }
 .pv-mapa:has(.pv-uf-foco) .pv-uf:not(.is-foco) { opacity: 0.72; }
-.pv-mapa-rotulos, .pv-rosa { pointer-events: none; animation: pv-aparece 0.6s ease-out 1.5s backwards; }
+.pv-mapa-rotulos { pointer-events: none; animation: pv-aparece 0.6s ease-out 1.5s backwards; }
 .pv-termometro i { background: linear-gradient(in oklch 90deg, var(--pv-neon-ciano), var(--pv-neon-laranja)); }
 
 /* ranking (recibo), lojas e estados */
@@ -1019,8 +983,6 @@ li:hover > .pv-medalha { transform: rotate(-12deg) scale(1.12); }
 
 @keyframes pv-placa-entra { from { opacity: 0; transform: translateY(1.5em) scale(0.95); filter: brightness(2.4) saturate(1.5); } 60% { filter: brightness(1.4); } }
 @keyframes pv-lampinha-liga { 0% { filter: brightness(0.15); box-shadow: none; } 55% { filter: brightness(2.2); } }
-@keyframes pv-respira { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(0.7); } }
-@keyframes pv-brilha { 0%, 62% { left: -45%; } 100% { left: 130%; } }
 @keyframes pv-aparece { from { opacity: 0; } }
 @keyframes pv-sobe { from { transform: scaleY(0); } }
 @keyframes pv-traca { from { stroke-dashoffset: 1; } }
@@ -1102,7 +1064,7 @@ li:hover > .pv-medalha { transform: rotate(-12deg) scale(1.12); }
 
 /* blocos */
 .pv-placa { transition: transform 0.3s var(--pv-mola), box-shadow 0.3s, filter 0.25s; }
-.pv-placa:hover { transform: scale(1.012); z-index: 6; }
+.pv-placa:hover { z-index: 6; }
 
 /* mapa: o estado salta para frente e a dica segue o mouse */
 .pv-uf { transition: fill 0.8s, opacity 0.25s; }
@@ -1141,3 +1103,45 @@ li:hover > .pv-medalha { transform: rotate(-12deg) scale(1.12); }
 @keyframes pv-troca { from { opacity: 0; transform: scale(0.88); } }
 
 .pv-rosca-hit { cursor: pointer; }
+
+/* ondas de "ao vivo": camadas leves FORA dos SVGs (só transform/opacity, sem redesenhar o metal) */
+.pv-onda-html, .pv-radar-html { position: absolute; z-index: 2; pointer-events: none; border-radius: 50%; border: 2px solid var(--pv-neon-ambar); transform: translate(-50%, -50%); will-change: transform, opacity; animation: pv-onda-h 1.9s ease-out infinite; }
+.pv-radar-html { width: 4.2%; aspect-ratio: 1; animation-duration: 2.4s; }
+.pv-grafico { position: relative; }
+@keyframes pv-onda-h { from { transform: translate(-50%, -50%) scale(1); opacity: 0.9; } to { transform: translate(-50%, -50%) scale(3.4); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .pv-onda-html, .pv-radar-html { animation: none; opacity: 0.6; } }
+
+/* ---------- legibilidade (versão enxuta) ----------
+   Piso de tamanho para leitura à distância: nada de texto miúdo decorativo. */
+.painel-vivo .pv-placa-titulo h2 { font-size: 1.05em; }
+.painel-vivo .pv-placa-titulo h2 small { font-size: 0.78em; }
+.painel-vivo .pv-subtitulo { font-size: 0.8em; letter-spacing: 0.18em; }
+.painel-vivo .pv-hora-janela small { font-size: 0.7em; letter-spacing: 0.14em; }
+.painel-vivo .pv-data span.pv-data-placa { font-size: 0.82em; }
+.painel-vivo .pv-atualizado { font-size: 0.8em; }
+.painel-vivo .pv-lista-cab { font-size: 0.78em; }
+.painel-vivo .pv-rank-cod { font-size: 0.86em; }
+.painel-vivo .pv-medalha { font-size: 0.92em; }
+.painel-vivo .pv-var { font-size: 1.02em; }
+.painel-vivo .pv-kpi-comparo { font-size: 0.95em; }
+.painel-vivo .pv-eixo { font-size: 0.86em; }
+.painel-vivo .pv-agora-hora { font-size: 12px; }
+.painel-vivo .pv-dia-rotulo { font-size: 0.9em; }
+.painel-vivo .pv-rodape, .painel-vivo .pv-ultima { font-size: 0.92em; }
+.painel-vivo .pv-termometro { font-size: 0.76em; }
+.painel-vivo .pv-rosca-rot { font-size: 8.5px; }
+.painel-vivo .pv-rot-uf, .painel-vivo .pv-et-uf { font-size: 16px; }
+.painel-vivo .pv-rot-n { font-size: 28px; }
+.painel-vivo .pv-et-n { font-size: 22px; }
+.painel-vivo .pv-dial-num { font-size: 11.5px; }
+.painel-vivo .pv-gm-txt { font-size: 12px; }
+.painel-vivo .pv-gm-rotulo { font-size: 9.5px; letter-spacing: 0.1em; }
+.painel-vivo .pv-rel-num { font-size: 12.5px; }
+.painel-vivo .pv-rot-uf, .painel-vivo .pv-et-uf { font-size: 20px; }
+.painel-vivo .pv-rot-n { font-size: 34px; }
+.painel-vivo .pv-et-n { font-size: 26px; }
+.painel-vivo .pv-medalha { font-size: 1.1em; }
+.painel-vivo .pv-rosca-rot { font-size: 10px; }
+/* ajustes após conferir a imagem: eixo do gráfico de 7 dias e rótulo do centro da rosca estouravam */
+.painel-vivo .pv-eixo { font-size: 0.7em; }
+.painel-vivo .pv-rosca-rot { font-size: 7.4px; letter-spacing: 0.04em; }

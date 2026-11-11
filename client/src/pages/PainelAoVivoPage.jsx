@@ -125,7 +125,6 @@ function Placa({ titulo, detalhe, direita, className = '', acento = 'ambar', ord
         <span className="pv-lampinha" aria-hidden="true" />
         <h2>{titulo}{detalhe ? <small>{detalhe}</small> : null}</h2>
         {direita}
-        <span className="pv-rebite" aria-hidden="true" />
       </header>
       <div className="pv-placa-corpo">{children}</div>
     </section>
@@ -248,7 +247,6 @@ function Relogio({ agoraMs }) {
       {Array.from({ length: 60 }, (_, i) => (i % 5 === 0 ? null : <line key={i} x1="50" y1="11.5" x2="50" y2="14.2" className="pv-rel-marca" transform={`rotate(${i * 6} 50 50)`} />))}
       {Array.from({ length: 12 }, (_, i) => (i % 3 === 0 ? null : <line key={i} x1="50" y1="10.8" x2="50" y2="18" className="pv-rel-marca-g" transform={`rotate(${i * 30} 50 50)`} />))}
       {num(12, 50, 27)}{num(3, 79, 54)}{num(6, 50, 82)}{num(9, 21, 54)}
-      <text x="50" y="38" textAnchor="middle" className="pv-rel-marca-nome">HBN</text>
       <g filter="url(#pv-rel-sombra)">
         <path d="M 48.2 55 L 49 31 L 50 28.5 L 51 31 L 51.8 55 Z" fill="url(#pv-rel-ponteiro)" className="pv-rel-h" style={{ transform: `rotate(${dh}deg)` }} />
         <path d="M 48.7 56 L 49.3 20 L 50 17 L 50.7 20 L 51.3 56 Z" fill="url(#pv-rel-ponteiro)" className="pv-rel-m" style={{ transform: `rotate(${dm}deg)` }} />
@@ -432,9 +430,6 @@ function GraficoHoje({ curva, metrica, escala }) {
               {hh % 3 === 0 && <line x1={X(hh * 60)} x2={X(hh * 60)} y1={mt} y2={mt + alt} className="pv-grade-linha pv-grade-v" />}
             </g>
           ))}
-          {Array.from({ length: 21 }, (_, k) => (
-            <line key={`y${k}`} x1={X(720) - (k % 5 === 0 ? 4 : 2) * escala} x2={X(720) + (k % 5 === 0 ? 4 : 2) * escala} y1={mt + (alt * k) / 20} y2={mt + (alt * k) / 20} className="pv-tique pv-tique-fino" />
-          ))}
           {[0, 180, 360, 540, 720, 900, 1080, 1260, 1440].map((m) => (
             <text key={m} x={X(m)} y={h - 6 * escala} textAnchor={m === 0 ? 'start' : m === 1440 ? 'end' : 'middle'} className="pv-eixo">{hhmm(m)}</text>
           ))}
@@ -450,7 +445,6 @@ function GraficoHoje({ curva, metrica, escala }) {
             <rect width={40 * escala} height={15 * escala} rx={3 * escala} className="pv-agora-tag" />
             <text x={20 * escala} y={11 * escala} textAnchor="middle" className="pv-agora-hora" style={{ fontSize: 10 * escala }}>{hhmm(agora.min)}</text>
           </g>
-          <circle cx={X(ultimo[0])} cy={Y(ultimo[1])} r={5 * escala} className="pv-ponta-onda" />
           <circle cx={X(ultimo[0])} cy={Y(ultimo[1])} r={4 * escala} className="pv-ponta" />
           {/* visor: valor de agora e folga sobre ontem no mesmo horário */}
           {(() => {
@@ -480,6 +474,8 @@ function GraficoHoje({ curva, metrica, escala }) {
         <span><i className="pv-leg-hoje" />Hoje</span>
         <span><i className="pv-leg-ontem" />Ontem</span>
       </div>
+      {/* a onda do "ao vivo" fica FORA do SVG, em camada própria: dentro dele redesenharia o gráfico inteiro a cada quadro */}
+      {w > 0 && <span className="pv-onda-html" style={{ left: X(ultimo[0]), top: Y(ultimo[1]), width: 10 * escala, height: 10 * escala }} aria-hidden="true" />}
       {pf && (
         <div className="pv-dica" style={{ left: `${Math.min(Math.max(X(pf.min), 90), w - 90)}px` }}>
           <b>{hhmm(pf.min)}</b>
@@ -546,8 +542,6 @@ function GraficoSeteDias({ dias, escala }) {
               </g>
               <rect x={cx(i) - larguraBarra / 2} y={Yv(d.valor)} width={larguraBarra} height={5 * escala} rx={2.5 * escala} className="pv-barra-tampa" />
               <line x1={cx(i) - larguraBarra / 2 + 1} x2={cx(i) - larguraBarra / 2 + 1} y1={Yv(d.valor) + 5 * escala} y2={Yv(0) - 2} className="pv-barra-quina" />
-              <circle cx={cx(i) - larguraBarra / 2 + 6 * escala} cy={Yv(d.valor) + 7 * escala} r={2.2 * escala} className="pv-parafuso-barra" />
-              <circle cx={cx(i) + larguraBarra / 2 - 6 * escala} cy={Yv(d.valor) + 7 * escala} r={2.2 * escala} className="pv-parafuso-barra" />
               </g>
               <foreignObject x={cx(i) - passoSlot / 2} y={mt + alt + 5 * escala} width={passoSlot} height={mb - 5 * escala}>
                 <div className="pv-dia-rotulo" xmlns="http://www.w3.org/1999/xhtml">
@@ -643,17 +637,6 @@ function Rosca({ itens, total, foco, onFoco }) {
         <circle cx="100" cy="100" r="99.6" fill="none" className="pv-rosca-friso pv-rosca-friso-ext" />
       </g>
       <circle cx="100" cy="100" r="90" fill="url(#pv-mostrador)" />
-      {[[100, 5], [195, 100], [100, 195], [5, 100]].map(([x, y], i) => (
-        <g key={i} transform={`rotate(${45 + i * 90} 100 100) translate(0 0)`}>
-          <circle cx="100" cy="100" r="0" />
-        </g>
-      ))}
-      {[45, 135, 225, 315].map((g) => (
-        <g key={g} transform={`rotate(${g} 100 100)`}>
-          <circle cx="100" cy="5.4" r="2.6" className="pv-rosca-parafuso" />
-          <line x1="98.4" y1="5.4" x2="101.6" y2="5.4" className="pv-rosca-fenda" />
-        </g>
-      ))}
       {Array.from({ length: 72 }, (_, i) => (
         <line key={i} x1="100" y1="12" x2="100" y2={i % 6 === 0 ? 20 : 16.5} className={i % 6 === 0 ? 'pv-gm-g' : 'pv-gm'} transform={`rotate(${i * 5} 100 100)`} />
       ))}
@@ -760,14 +743,6 @@ function MapaUF({ estados }) {
           </filter>
         </defs>
         <g>{grade}</g>
-        {/* régua de carta náutica nas bordas */}
-        <g className="pv-mapa-regua" aria-hidden="true">
-          {Array.from({ length: 29 }, (_, k) => <line key={`rt${k}`} x1={k * 25} x2={k * 25} y1="0" y2={k % 4 === 0 ? 11 : 6} />)}
-          {Array.from({ length: 26 }, (_, k) => <line key={`rl${k}`} x1="0" x2={k % 4 === 0 ? 11 : 6} y1={k * 25} y2={k * 25} />)}
-          {Array.from({ length: 29 }, (_, k) => <line key={`rb${k}`} x1={k * 25} x2={k * 25} y1="639" y2={639 - (k % 4 === 0 ? 11 : 6)} />)}
-        </g>
-        <text x="650" y="545" textAnchor="end" className="pv-oceano" aria-hidden="true">OCEANO</text>
-        <text x="650" y="565" textAnchor="end" className="pv-oceano" aria-hidden="true">ATLÂNTICO</text>
         <g filter="url(#pv-relevo)">
           <g filter="url(#pv-aco-mapa)">
             {ordem.map((uf, k) => {
@@ -784,15 +759,10 @@ function MapaUF({ estados }) {
           {ordem.map((uf) => <path key={uf} d={BRASIL_UF[uf].d} fill="url(#pv-reflexo-mapa)" />)}
         </g>
         {foco && <path key={foco} d={BRASIL_UF[foco].d} className={`pv-uf pv-uf-foco${(mapa.get(foco) || 0) > 0 ? ' pv-uf-vendeu' : ''}`} style={{ '--quente': `${(mapa.get(foco) || 0) > 0 ? 100 * ((mapa.get(foco) || 0) / max) : 0}%` }} pointerEvents="none" aria-hidden="true" />}
-        {topUF && (
-          <g transform={`translate(${BRASIL_UF[topUF].x} ${BRASIL_UF[topUF].y})`} aria-hidden="true">
-            <circle r="9" className="pv-radar" />
-            <circle r="9" className="pv-radar pv-radar-2" />
-          </g>
-        )}
         <g className="pv-mapa-rotulos" aria-hidden="true">
           {Object.keys(BRASIL_UF).map((uf) => {
             const n = mapa.get(uf) || 0;
+            if (n <= 0) return null; // enxuto: só rotula quem vendeu
             const { x, y } = BRASIL_UF[uf];
             const et = ETIQUETA_UF[uf];
             if (et) {
@@ -815,15 +785,8 @@ function MapaUF({ estados }) {
             );
           })}
         </g>
-        {/* rosa dos ventos, só enfeite de carta náutica */}
-        <g transform="translate(70 560)" className="pv-rosa" aria-hidden="true">
-          <circle r="30" className="pv-rosa-aro" />
-          <path d="M0 -30 L6 0 L0 30 L-6 0 Z" className="pv-rosa-eixo" />
-          <path d="M-30 0 L0 -5 L30 0 L0 5 Z" className="pv-rosa-eixo pv-rosa-eixo2" />
-          <path d="M0 -30 L6 0 L-6 0 Z" className="pv-rosa-norte" />
-          <text y="-36" textAnchor="middle" className="pv-rosa-n">N</text>
-        </g>
       </svg>
+      {topUF && <span className="pv-radar-html" style={{ left: `${(BRASIL_UF[topUF].x / 700) * 100}%`, top: `${(BRASIL_UF[topUF].y / Number(BRASIL_VIEWBOX.split(' ')[3])) * 100}%` }} aria-hidden="true" />}
       {foco && pos && (
         <div className={`pv-mapa-dica${pos.x > pos.larg * 0.55 ? ' pv-dica-esq' : ''}`} style={{ left: pos.x, top: pos.y }} aria-hidden="true">
           <b>{NOMES_UF[foco]}</b>
@@ -1090,7 +1053,6 @@ export default function PainelAoVivoPage() {
               <div className="pv-boca" aria-hidden="true">
                 <span className="pv-boca-led" />
                 <i className="pv-boca-fenda" />
-                <span className="pv-boca-rotulo">Térmica</span>
               </div>
               <div className="pv-papel">
               <div className="pv-lista-cab"><span>Posição</span><span>{rankNivel === 'anuncio' ? 'Anúncios' : 'Variações'}</span><span>Qtd. de pedidos</span></div>
