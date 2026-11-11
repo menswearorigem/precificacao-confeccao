@@ -280,7 +280,10 @@
     --mkt-shein-suave: #26241f;
   }
 }
-:root[data-theme="dark"] {
+/* O painel ao vivo (Marketplace) é SEMPRE escuro, como uma sala de controle: ele
+   herda os tokens do escuro por esta lista de seletores, sem copiar valor nenhum. */
+:root[data-theme="dark"],
+.painel-vivo {
   --producao-azul: #6fa8e0;
   --bg: #1c1409;
   --bg-deep: #120b05;

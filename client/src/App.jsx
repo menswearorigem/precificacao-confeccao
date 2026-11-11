@@ -83,6 +83,7 @@ const PedidosCompraPage = lazy(() => import('./pages/PedidosCompraPage'));
 const RecebimentosPage = lazy(() => import('./pages/RecebimentosPage'));
 const RelatorioLucratividadePage = lazy(() => import('./pages/RelatorioLucratividadePage'));
 const MetricasMarketplacePage = lazy(() => import('./pages/MetricasMarketplacePage'));
+const PainelAoVivoPage = lazy(() => import('./pages/PainelAoVivoPage'));
 const AnunciosPage = lazy(() => import('./pages/AnunciosPage'));
 const CoberturaEstoquePage = lazy(() => import('./pages/CoberturaEstoquePage'));
 const ProducaoPage = lazy(() => import('./pages/ProducaoPage'));
@@ -270,6 +271,7 @@ function AppRoutes() {
                   <Route path="/marketplace/full" element={<FullPage />} />
                   <Route path="/marketplace/pedidos" element={<PedidosListPage origemFiltro="marketplace" />} />
                   <Route path="/marketplace/lucratividade" element={<RelatorioLucratividadePage origemFiltro="marketplace" />} />
+                  <Route path="/marketplace/painel" element={<PainelAoVivoPage />} />
                   <Route path="/marketplace/metricas" element={<MetricasMarketplacePage />} />
                   <Route path="/marketplace/taxas" element={<RelatorioTaxasPage />} />
                   <Route path="/marketplace/importar-pedidos" element={<ImportarPedidosPage />} />

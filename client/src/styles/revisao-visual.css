@@ -116,7 +116,8 @@
     --producao-azul: #6fa8e0;
   }
 }
-:root[data-theme="dark"] {
+:root[data-theme="dark"],
+.painel-vivo {
   --success: #7fd39c;
   --success-bg: #1b3325;
   --success-ring: #5dbb7e;

@@ -31,6 +31,7 @@ const { router: pedidosCompraRoutes } = require('./routes/pedidosCompra.routes')
 const recebimentosRoutes = require('./routes/recebimentos.routes');
 const integracoesRoutes = require('./routes/integracoes.routes');
 const marketplaceTaxasRoutes = require('./routes/marketplaceTaxas.routes');
+const painelAoVivoRoutes = require('./routes/painelAoVivo.routes');
 const viagensRoutes = require('./routes/viagens.routes');
 const wikRoutes = require('./routes/wik.routes');
 const conferenciaDadosRoutes = require('./routes/conferenciaDados.routes');
@@ -225,6 +226,9 @@ function createApp() {
   // cuida de anúncio precisa disto no dia a dia, e nenhuma permissão
   // existente muda por causa desta rota nova.
   app.use('/api/anuncios', requireAuth, requireModulo('marketplace'), anunciosRoutes);
+  // Painel de vendas ao vivo (Marketplace, 11/11/2026): só LÊ pedidos do dia.
+  // Mesmo módulo de permissão do resto do Marketplace; nenhuma chave nova.
+  app.use('/api/painel-ao-vivo', requireAuth, requireModulo('marketplace'), painelAoVivoRoutes);
   // Etiquetas: ZPL -> PDF, impressao em lote e lista de separacao
   // (09/09/2026). Pedido de 03/09 que estava adiado. Fica sob `marketplace`,
   // que e' de onde vem a etiqueta -- nenhuma chave de modulo nova (REGRA 4).

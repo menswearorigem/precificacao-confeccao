@@ -1,0 +1,430 @@
+/* ============================================================================
+   PAINEL AO VIVO (Marketplace) — 11/11/2026
+
+   Uma sala de controle analógica feita com o que o hub já tem:
+     · placas de LATÃO (var(--brass*)) com rebites, como as plaquetas gravadas
+       de um painel de máquina;
+     · contador de PLACAS GIRANTES (aeroporto/estação) para vendas e pedidos;
+     · PONTEIRO de ritmo e RELÓGIO de parede;
+     · gráfico em FÓSFORO ÂMBAR (a linha de hoje brilha, a de ontem é
+       pontilhada), grade de papel milimetrado;
+     · BARRAS DE LED para o ranking de lojas.
+   A cor do módulo Marketplace (violeta, var(--mod-marketplace)) entra no
+   brilho do fundo e nos filetes; o resto é couro e latão do hub.
+
+   A tela é SEMPRE escura: `.painel-vivo` está na lista de seletores do escuro
+   em theme.css e revisao-visual.css, então todos os tokens abaixo já chegam
+   com o valor do tema escuro, não importa o tema de quem abriu.
+
+   TUDO em `em`: o .painel-vivo ajusta o próprio font-size à largura da tela
+   (--pv-escala, calculada em JS: 1 = 1920 px), e a TV inteira escala junto.
+   Sem cor solta: só variáveis do tema (REGRA 3). Exceção declarada: os pretos
+   puros de sombra e o marfim das placas (#f3e8d6 = --knob).
+   ========================================================================== */
+
+.painel-vivo {
+  --pv-latao-fio: color-mix(in srgb, var(--brass) 42%, transparent);
+  --pv-latao-fundo: linear-gradient(180deg, color-mix(in srgb, var(--brass) 22%, transparent), color-mix(in srgb, var(--brass) 5%, transparent));
+  --pv-poco: color-mix(in srgb, var(--bg-deep) 88%, #000);
+  --pv-brilho: color-mix(in srgb, var(--terracotta-bright) 55%, transparent);
+
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75em;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: calc(100vh - 150px);
+  padding: 1em 1.15em 0.8em;
+  font-size: calc(16px * var(--pv-escala, 1));
+  font-family: var(--font-body);
+  color: var(--ink);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  background:
+    radial-gradient(70em 22em at 50% -8%, color-mix(in srgb, var(--mod-marketplace) 30%, transparent), transparent 72%),
+    radial-gradient(50em 30em at 100% 108%, color-mix(in srgb, var(--terracotta) 13%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--bg-deep), var(--bg));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brass) 14%, transparent), var(--shadow-md);
+}
+
+/* Linhas de varredura e vinheta de tubo: bem leves, só para dar o ar de tela
+   antiga. Não pegam clique. */
+.painel-vivo::before,
+.painel-vivo::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 40; }
+.painel-vivo::before { background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.022) 0 1px, transparent 1px 3px); }
+.painel-vivo::after { background: radial-gradient(ellipse at center, transparent 58%, rgba(0, 0, 0, 0.42) 100%); }
+
+.painel-vivo.tela-cheia {
+  width: 100vw; height: 100vh; min-height: 0; border-radius: 0; border: 0;
+}
+
+/* ---------- topo: relógio · título · instrumentos ---------- */
+.pv-topo {
+  position: relative; z-index: 1;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 1em;
+}
+.pv-topo-esq { display: flex; align-items: center; gap: 0.8em; min-width: 0; }
+.pv-data { display: flex; flex-direction: column; min-width: 0; }
+.pv-hora {
+  font-family: var(--font-display); font-weight: 600; font-size: 1.9em; line-height: 1;
+  font-variant-numeric: tabular-nums; letter-spacing: 0.02em; color: var(--brass-bright);
+  text-shadow: 0 0 0.6em var(--pv-brilho);
+}
+.pv-data span { font-family: var(--font-codigo); font-size: 0.72em; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); margin-top: 0.3em; white-space: nowrap; }
+
+.pv-relogio { width: 4.6em; height: 4.6em; flex: none; filter: drop-shadow(0 0.15em 0.3em rgba(0, 0, 0, 0.6)); }
+.pv-rel-aro { fill: var(--brass); stroke: var(--brass-bright); stroke-width: 1.2; }
+.pv-rel-face { fill: var(--pv-poco); stroke: rgba(0, 0, 0, 0.7); stroke-width: 1.6; }
+.pv-rel-marca { stroke: var(--ink-faint); stroke-width: 0.8; }
+.pv-rel-marca-g { stroke: var(--ink); stroke-width: 2; }
+.pv-rel-h, .pv-rel-m, .pv-rel-s { transform-origin: 50px 50px; transform-box: view-box; }
+.pv-rel-h { stroke: var(--ink); stroke-width: 3.6; stroke-linecap: round; }
+.pv-rel-m { stroke: var(--ink); stroke-width: 2.4; stroke-linecap: round; }
+.pv-rel-s { stroke: var(--terracotta-bright); fill: var(--terracotta-bright); transition: transform 0.28s cubic-bezier(0.4, 2.3, 0.5, 1); }
+.pv-rel-s line { stroke-width: 1.2; }
+
+.pv-titulo { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 0.9em; text-align: center; min-width: 0; }
+.pv-titulo h1 {
+  margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 2.7em; line-height: 1.05; letter-spacing: 0.01em; white-space: nowrap;
+  background: linear-gradient(180deg, var(--brass-bright) 8%, var(--brass) 58%, var(--leather) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0.06em 0 rgba(0, 0, 0, 0.55)) drop-shadow(0 0 0.5em color-mix(in srgb, var(--brass) 28%, transparent));
+}
+.pv-titulo p { grid-column: 1 / -1; margin: -0.1em 0 0; font-family: var(--font-codigo); font-size: 0.7em; letter-spacing: 0.32em; text-transform: uppercase; color: var(--mod-marketplace); }
+.pv-titulo-fio { height: 0.42em; border-block: 1px solid var(--pv-latao-fio); position: relative; min-width: 2em; }
+.pv-titulo-fio::after { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: var(--pv-latao-fio); }
+
+.pv-topo-dir { display: flex; align-items: center; justify-content: flex-end; gap: 1em; min-width: 0; }
+.pv-controles { display: flex; flex-direction: column; align-items: flex-end; gap: 0.4em; }
+
+.pv-lampada { display: inline-flex; align-items: center; gap: 0.5em; font-family: var(--font-codigo); font-size: 0.8em; font-weight: 700; letter-spacing: 0.18em; }
+.pv-lampada i { width: 0.85em; height: 0.85em; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff9, transparent 40%), var(--lamp, var(--dot-ok)); box-shadow: 0 0 0.9em var(--lamp, var(--dot-ok)), inset 0 0 0 1px rgba(0, 0, 0, 0.4); animation: pv-pulsa 2.2s ease-in-out infinite; }
+.pv-lampada b { color: var(--lamp, var(--dot-ok)); }
+.pv-lampada-ok, .pv-lampada-espera { --lamp: var(--dot-ok); }
+.pv-lampada-atraso { --lamp: var(--dot-warn); }
+.pv-lampada-falha { --lamp: var(--dot-bad); }
+.pv-lampada-falha i { animation-duration: 0.9s; }
+.pv-atualizado { font-size: 0.78em; color: var(--ink-soft); white-space: nowrap; }
+.pv-botoes { display: flex; gap: 0.4em; }
+.pv-botoes button {
+  display: inline-flex; align-items: center; gap: 0.45em; padding: 0.45em 0.7em; border-radius: 0.5em; cursor: pointer;
+  font: 600 0.78em var(--font-body); color: var(--ink);
+  background: linear-gradient(180deg, var(--surface-raised), var(--surface));
+  border: 1px solid var(--border); box-shadow: 0 0.12em 0 rgba(0, 0, 0, 0.55), var(--shadow-inset);
+  transition: transform 0.08s var(--ease), box-shadow 0.08s var(--ease), border-color 0.15s;
+}
+.pv-botoes button:hover { border-color: var(--brass); }
+.pv-botoes button:active { transform: translateY(0.1em); box-shadow: 0 0 0 rgba(0, 0, 0, 0.55), var(--shadow-inset); }
+.pv-botoes button[aria-pressed="true"] { color: var(--on-accent); background: linear-gradient(180deg, var(--brass-bright), var(--brass)); border-color: var(--brass-bright); }
+.pv-botoes button:focus-visible, .pv-chaves button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+/* ponteiro de ritmo */
+.pv-ponteiro { position: relative; width: 11.5em; flex: none; }
+.pv-ponteiro svg { display: block; width: 100%; height: auto; overflow: visible; }
+.pv-arco-abaixo, .pv-arco-acima { fill: none; stroke-width: 7; stroke-linecap: butt; opacity: 0.85; }
+.pv-arco-abaixo { stroke: var(--danger-ring); }
+.pv-arco-acima { stroke: var(--success-ring); }
+.pv-gm { stroke: var(--ink-faint); stroke-width: 1; }
+.pv-gm-g { stroke: var(--ink-soft); stroke-width: 2; }
+.pv-gm-txt { fill: var(--ink-soft); font: 600 9px var(--font-codigo); }
+.pv-agulha { transform-origin: 100px 104px; transform-box: view-box; transition: transform 1.4s cubic-bezier(0.3, 1.7, 0.5, 1), opacity 0.4s; }
+.pv-agulha line { stroke: var(--terracotta-bright); stroke-width: 2.4; stroke-linecap: round; }
+.pv-agulha polygon { fill: var(--terracotta-bright); }
+.pv-pino { fill: var(--brass-bright); stroke: rgba(0, 0, 0, 0.6); stroke-width: 1.5; }
+.pv-ponteiro-leitura { position: absolute; left: 0; right: 0; bottom: -0.2em; display: flex; justify-content: center; align-items: baseline; gap: 0.5em; }
+.pv-ponteiro-rotulo { font-family: var(--font-codigo); font-size: 0.6em; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint); }
+.pv-ponteiro-leitura strong { font-family: var(--font-display); font-weight: 700; font-size: 1.2em; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* ---------- grade ---------- */
+.pv-grade {
+  position: relative; z-index: 1; flex: 1; min-height: 0;
+  display: grid; grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.5fr) minmax(0, 0.92fr); gap: 0.75em;
+}
+.pv-coluna { display: flex; flex-direction: column; gap: 0.75em; min-width: 0; min-height: 0; }
+
+/* ---------- placa (cartão de console) ---------- */
+.pv-placa {
+  position: relative; display: flex; flex-direction: column; min-height: 0; min-width: 0; flex: 1 1 0;
+  border-radius: 0.8em; border: 1px solid var(--border);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, #000), color-mix(in srgb, var(--bg-deep) 40%, var(--surface)));
+  box-shadow: var(--card-shadow), inset 0 0 0 1px color-mix(in srgb, var(--brass) 8%, transparent), 0 0.9em 1.6em -1em rgba(0, 0, 0, 0.8);
+}
+.pv-placa::before {
+  content: ''; position: absolute; inset: 0 0 auto 0; height: 2px; border-radius: 0.8em 0.8em 0 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--mod-marketplace) 75%, transparent), transparent);
+}
+.pv-placa-titulo {
+  display: flex; align-items: center; gap: 0.6em; padding: 0.55em 0.8em; min-height: 2.5em; box-sizing: border-box;
+  background: var(--pv-latao-fundo); border-bottom: 1px solid var(--pv-latao-fio); border-radius: 0.8em 0.8em 0 0;
+}
+.pv-placa-titulo h2 {
+  margin: 0; flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 0.6em; white-space: nowrap;
+  font-family: var(--font-codigo); font-weight: 700; font-size: 0.8em; letter-spacing: 0.15em; text-transform: uppercase; color: var(--brass-bright);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.7);
+}
+.pv-placa-titulo h2 small { font-size: 0.82em; font-weight: 500; color: var(--ink-soft); letter-spacing: 0.1em; }
+.pv-rebite {
+  flex: none; width: 0.55em; height: 0.55em; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--brass-bright), var(--brass) 55%, rgba(0, 0, 0, 0.6));
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), inset 0 -1px 1px rgba(0, 0, 0, 0.5);
+}
+.pv-placa-corpo { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0.7em 0.9em 0.8em; gap: 0.4em; }
+
+/* chaves seletoras (interruptores de teclas) */
+.pv-chaves { display: inline-flex; padding: 0.16em; gap: 0.12em; border-radius: 0.55em; background: var(--pv-poco); box-shadow: inset 0 0.12em 0.3em rgba(0, 0, 0, 0.75), 0 1px 0 rgba(255, 226, 190, 0.07); }
+.pv-chaves button {
+  appearance: none; border: 0; cursor: pointer; padding: 0.38em 0.8em; border-radius: 0.42em;
+  font: 600 0.72em var(--font-body); color: var(--ink-soft); background: transparent; transition: color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.pv-chaves button:hover { color: var(--ink); }
+.pv-chaves button.ligada {
+  color: var(--on-accent); background: linear-gradient(180deg, var(--brass-bright), var(--brass));
+  box-shadow: 0 0.1em 0 rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.pv-lista-cab { display: flex; justify-content: space-between; gap: 0.6em; padding: 0 0.1em 0.35em; font-family: var(--font-codigo); font-size: 0.62em; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); border-bottom: 1px dashed var(--border); }
+.pv-lista-cab span:nth-child(2):not(:last-child) { flex: 1; margin-left: 2.4em; }
+.pv-vazio { margin: 0.6em 0; font-size: 0.82em; color: var(--ink-soft); }
+.pv-nota { margin: 0; font-size: 0.68em; color: var(--ink-faint); }
+
+/* medalhas de posição */
+.pv-medalha {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; width: 1.85em; height: 1.85em; border-radius: 50%;
+  font: 700 0.78em var(--font-display); font-variant-numeric: tabular-nums; color: var(--on-accent);
+  box-shadow: 0 0.1em 0.25em rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -1px 1px rgba(0, 0, 0, 0.35);
+}
+.pv-medalha-ouro { background: radial-gradient(circle at 35% 28%, var(--brass-bright), var(--brass) 62%, color-mix(in srgb, var(--brass) 55%, #000)); }
+.pv-medalha-estanho { background: radial-gradient(circle at 35% 28%, var(--ink-soft), var(--ink-faint) 62%, color-mix(in srgb, var(--ink-faint) 50%, #000)); }
+
+/* ---------- ranking ---------- */
+.pv-rank, .pv-estados, .pv-lojas, .pv-legenda { list-style: none; margin: 0; padding: 0; }
+.pv-rank { display: flex; flex-direction: column; flex: 1; justify-content: space-around; min-height: 0; }
+.pv-rank li { display: flex; align-items: center; gap: 0.7em; padding: 0.35em 0.1em; border-bottom: 1px solid var(--border-soft); }
+.pv-rank li:last-child { border-bottom: 0; }
+.pv-foto { flex: none; width: 2.9em; height: 2.9em; object-fit: cover; border-radius: 0.4em; background: var(--pv-poco); border: 1px solid var(--border); box-shadow: 0 0.1em 0.3em rgba(0, 0, 0, 0.6); }
+.pv-foto-vazia { display: inline-flex; align-items: center; justify-content: center; color: var(--ink-faint); }
+.pv-rank-texto { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15em; }
+.pv-rank-titulo { font-size: 0.9em; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+.pv-rank-cod { display: inline-flex; align-items: center; gap: 0.4em; font-family: var(--font-codigo); font-size: 0.7em; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pv-rank-qtd { flex: none; min-width: 1.6em; text-align: right; font-family: var(--font-display); font-weight: 700; font-size: 1.5em; font-variant-numeric: tabular-nums; color: var(--ink); text-shadow: 0 0 0.6em var(--pv-brilho); }
+
+/* ---------- mapa de blocos ---------- */
+.pv-mapa-linha { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 0.9em; }
+.pv-mapa { display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(8, 1fr); gap: 0.18em; align-self: stretch; min-height: 0; padding: 0.4em; border-radius: 0.5em; background: var(--pv-poco); box-shadow: inset 0 0.15em 0.4em rgba(0, 0, 0, 0.7); }
+.pv-uf { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 0.28em; background: rgba(255, 244, 224, 0.045); color: var(--ink-faint); min-height: 0; line-height: 1; transition: background 0.6s; }
+.pv-uf b { font: 700 0.56em var(--font-codigo); letter-spacing: 0.02em; }
+.pv-uf em { font: 700 0.62em var(--font-display); font-style: normal; margin-top: 0.1em; }
+.pv-uf-vendeu { color: var(--on-accent); background: color-mix(in srgb, var(--brass-bright) var(--calor), var(--surface-alt)); box-shadow: 0 0 0.8em -0.1em color-mix(in srgb, var(--terracotta-bright) var(--calor), transparent); }
+.pv-mapa-lado { display: flex; flex-direction: column; gap: 0.45em; min-width: 0; }
+.pv-escala-calor { display: flex; align-items: center; gap: 0.5em; font-size: 0.62em; color: var(--ink-faint); font-family: var(--font-codigo); }
+.pv-escala-calor i { flex: 1; height: 0.5em; border-radius: 1em; background: linear-gradient(90deg, var(--surface-alt), var(--brass-bright)); }
+.pv-estados { display: flex; flex-direction: column; gap: 0.35em; }
+.pv-estados li { display: flex; align-items: center; gap: 0.6em; font-size: 0.86em; padding: 0.15em 0; border-bottom: 1px solid var(--border-soft); }
+.pv-estados li span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-estados li strong { font-family: var(--font-display); font-size: 1.2em; font-variant-numeric: tabular-nums; }
+
+/* ---------- contador de placas girantes ---------- */
+.pv-kpis { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 0.75em; flex: 0 0 auto; }
+.pv-placa-kpi { flex: 0 0 auto; }
+.pv-placa-kpi .pv-placa-corpo { container-type: inline-size; align-items: flex-start; gap: 0.55em; padding-block: 0.9em; }
+.pv-placar { --chars: 8; display: inline-flex; align-items: center; white-space: nowrap; font-family: var(--font-display); font-weight: 700; font-size: min(4.4em, calc((100cqw - 0.4em) / (var(--chars) * 0.8))); line-height: 1; }
+/* Odômetro mecânico: cada dígito é uma roda (fita 0–9) atrás de uma janela de
+   vidro com moldura de latão. A sombra em cima e embaixo dá a curva do cilindro. */
+.pv-roda {
+  position: relative; display: inline-block; width: 0.72em; height: 1.1em; margin: 0 0.03em; overflow: hidden; border-radius: 0.12em;
+  color: var(--knob); text-shadow: 0 0 0.3em var(--pv-brilho); text-align: center; line-height: 1.1em; font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--bg-deep) 82%, #1a1410);
+  box-shadow: 0 0 0 0.04em color-mix(in srgb, var(--brass) 70%, #000), 0 0 0 0.07em rgba(0, 0, 0, 0.7), inset 0 0 0.25em rgba(0, 0, 0, 0.9), 0 0.07em 0.16em rgba(0, 0, 0, 0.8);
+}
+.pv-roda::before { content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.78) 0, rgba(0, 0, 0, 0.12) 24%, rgba(255, 255, 255, 0.08) 46%, transparent 52%, rgba(0, 0, 0, 0.14) 76%, rgba(0, 0, 0, 0.8) 100%); }
+.pv-roda::after { content: ''; position: absolute; inset: 0.05em 0.06em auto; height: 0.28em; z-index: 3; pointer-events: none; border-radius: 0.1em; background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent); }
+.pv-roda-fita { display: block; transform: translateY(calc(var(--d, 0) * -1.1em)); transition: transform 1.15s cubic-bezier(0.25, 1.35, 0.4, 1); }
+.pv-roda-fita b, .pv-roda-sep b { display: block; height: 1.1em; font-weight: 700; }
+.pv-roda-sep { width: 0.34em; color: var(--brass-bright); background: transparent; box-shadow: none; overflow: visible; }
+.pv-roda-sep::before, .pv-roda-sep::after { display: none; }
+@media (prefers-reduced-motion: reduce) { .pv-roda-fita { transition: none; } }
+.pv-kpi-comparo { display: flex; align-items: center; gap: 0.8em; margin: 0; font-size: 0.82em; color: var(--ink-soft); }
+.pv-kpi-comparo b { color: var(--ink); font-variant-numeric: tabular-nums; margin-left: 0.2em; }
+.pv-var { display: inline-flex; align-items: center; gap: 0.15em; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pv-var-sobe { color: var(--success); }
+.pv-var-desce { color: var(--danger); }
+.pv-var-nula { color: var(--ink-faint); }
+
+/* ---------- gráficos ---------- */
+.pv-placa-grafico { flex: 1 1 0; min-height: 10em; }
+.pv-placa-grafico .pv-placa-corpo { padding: 0.5em 0.7em 0.6em; }
+.pv-grafico { position: relative; flex: 1; min-height: 8em; border-radius: 0.5em; background: var(--pv-poco); box-shadow: inset 0 0.15em 0.4em rgba(0, 0, 0, 0.7); touch-action: pan-y; }
+.pv-grafico > svg { position: absolute; left: 0; top: 0; overflow: visible; }
+.pv-grade-linha { stroke: color-mix(in srgb, var(--brass) 20%, transparent); stroke-width: 1; stroke-dasharray: 2 4; }
+.pv-grade-v { stroke: color-mix(in srgb, var(--brass) 14%, transparent); }
+.pv-eixo { fill: var(--ink-soft); font: 500 0.66em var(--font-codigo); }
+.pv-eixo-dir { fill: var(--ink-faint); }
+.pv-linha-hoje { fill: none; stroke: var(--terracotta-bright); stroke-width: 2.6; stroke-linejoin: round; stroke-linecap: round; }
+.pv-linha-ontem { fill: none; stroke: var(--mod-marketplace); stroke-width: 1.8; stroke-dasharray: 6 5; opacity: 0.85; }
+.pv-ponta { fill: var(--knob); stroke: var(--terracotta-bright); stroke-width: 2; }
+.pv-ponta-onda { fill: none; stroke: var(--terracotta-bright); stroke-width: 1.5; transform-box: fill-box; transform-origin: center; animation: pv-onda 1.8s ease-out infinite; }
+.pv-mira { stroke: var(--ink-faint); stroke-width: 1; stroke-dasharray: 3 3; }
+.pv-legenda-linhas { position: absolute; top: 0.4em; left: 4.6em; display: flex; gap: 1.1em; font-size: 0.7em; color: var(--ink-soft); pointer-events: none; }
+.pv-legenda-linhas span { display: inline-flex; align-items: center; gap: 0.45em; }
+.pv-legenda-linhas i { display: inline-block; width: 1.5em; height: 0; border-top: 2px solid; }
+.pv-leg-hoje { border-color: var(--terracotta-bright); }
+.pv-leg-ontem { border-color: var(--mod-marketplace); border-top-style: dashed !important; }
+.pv-leg-barra { height: 0.7em !important; width: 0.7em !important; border: 0 !important; border-radius: 0.15em; background: linear-gradient(180deg, var(--brass-bright), var(--terracotta)); }
+.pv-leg-pedidos { border-color: var(--knob); }
+.pv-dica { position: absolute; top: 1.6em; transform: translateX(-50%); display: flex; flex-direction: column; gap: 0.1em; padding: 0.4em 0.65em; border-radius: 0.4em; font-size: 0.72em; white-space: nowrap; pointer-events: none; background: var(--surface-raised); border: 1px solid var(--brass); box-shadow: var(--shadow-md); z-index: 3; }
+.pv-dica b { font-family: var(--font-codigo); color: var(--brass-bright); }
+.pv-barra { fill: url(#pv-barra); stroke: color-mix(in srgb, var(--brass-bright) 55%, transparent); stroke-width: 1; }
+.pv-linha-pedidos { fill: none; stroke: var(--knob); stroke-width: 2; stroke-linejoin: round; opacity: 0.9; }
+.pv-ponto-pedidos { fill: var(--pv-poco); stroke: var(--knob); stroke-width: 2; }
+.pv-dia-rotulo { display: flex; flex-direction: column; align-items: center; gap: 0.1em; font-size: 0.72em; line-height: 1.15; color: var(--ink-soft); font-family: var(--font-body); }
+.pv-dia-rotulo b { color: var(--ink); font-family: var(--font-codigo); font-weight: 600; letter-spacing: 0.02em; }
+.pv-dia-rotulo b em { font-style: normal; color: var(--ink-faint); font-weight: 500; margin-left: 0.25em; }
+.pv-dia-rotulo span { font-variant-numeric: tabular-nums; color: var(--brass-bright); font-weight: 600; }
+.pv-dia-ped { color: var(--ink-soft) !important; font-weight: 500 !important; }
+
+/* ---------- lojas e rosca ---------- */
+.pv-lojas { display: flex; flex-direction: column; flex: 1; justify-content: space-around; }
+.pv-lojas li { display: flex; align-items: center; gap: 0.7em; padding: 0.4em 0.1em; border-bottom: 1px solid var(--border-soft); }
+.pv-lojas li:last-child { border-bottom: 0; }
+.pv-loja-texto { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.3em; }
+.pv-loja-texto > span { font-size: 0.95em; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pv-led { display: flex; gap: 0.14em; }
+.pv-led i { flex: 1; max-width: 0.9em; height: 0.5em; border-radius: 0.1em; background: rgba(255, 244, 224, 0.07); box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.5); transition: background 0.4s, box-shadow 0.4s; }
+.pv-led i.aceso { background: linear-gradient(180deg, var(--brass-bright), var(--terracotta)); box-shadow: 0 0 0.5em color-mix(in srgb, var(--terracotta-bright) 70%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.4); }
+
+.pv-placa-rosca .pv-placa-corpo { align-items: stretch; }
+.pv-rosca { flex: 1; min-height: 0; width: 100%; max-height: 17em; margin: 0 auto; }
+.pv-rosca-fundo { fill: none; stroke: var(--pv-poco); }
+.pv-rosca-seg { transition: stroke-dasharray 0.8s var(--ease), stroke-dashoffset 0.8s var(--ease); }
+.pv-rosca-rot { fill: var(--ink-faint); font: 500 8px var(--font-codigo); letter-spacing: 0.08em; text-transform: uppercase; }
+.pv-rosca-valor { fill: var(--ink); font: 700 21px var(--font-display); font-variant-numeric: tabular-nums; }
+.pv-legenda { display: flex; flex-direction: column; gap: 0.3em; padding-top: 0.2em; }
+.pv-legenda li { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 0.6em; font-size: 0.88em; padding: 0.2em 0; }
+.pv-legenda li i { width: 0.7em; height: 0.7em; border-radius: 50%; box-shadow: 0 0 0.5em currentColor; }
+.pv-legenda li b { font-variant-numeric: tabular-nums; }
+.pv-legenda li em { font-style: normal; min-width: 3.6em; text-align: right; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+
+/* ---------- avisos e rodapé ---------- */
+.pv-aviso { position: relative; z-index: 1; padding: 0.55em 0.9em; border-radius: 0.5em; font-size: 0.85em; color: var(--danger); background: var(--danger-bg); border: 1px solid var(--danger-ring); }
+.pv-ligando { position: relative; z-index: 1; flex: 1; display: flex; align-items: center; justify-content: center; font-family: var(--font-codigo); letter-spacing: 0.2em; text-transform: uppercase; color: var(--brass-bright); font-size: 1.1em; }
+.pv-ligando span { animation: pv-pisca 1s steps(2) infinite; }
+.pv-rodape { position: relative; z-index: 2; display: flex; align-items: flex-start; justify-content: space-between; gap: 1em; font-size: 0.78em; color: var(--ink-soft); }
+.pv-ultima b { color: var(--brass-bright); font-family: var(--font-codigo); }
+.pv-como { text-align: right; max-width: 52em; }
+.pv-como summary { cursor: pointer; display: inline-block; color: var(--ink-faint); }
+.pv-como summary:hover { color: var(--ink); }
+.pv-como ul { margin: 0.5em 0 0; padding: 0.7em 1em 0.7em 1.6em; text-align: left; border-radius: 0.5em; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-md); }
+.pv-como li { margin: 0.25em 0; }
+.painel-vivo.tela-cheia .pv-como[open] { position: absolute; right: 1.1em; bottom: 2.4em; }
+
+/* ---------- movimento ---------- */
+@keyframes pv-virar {
+  0% { transform: perspective(24em) rotateX(-92deg); opacity: 0.1; }
+  55% { transform: perspective(24em) rotateX(10deg); opacity: 1; }
+  100% { transform: perspective(24em) rotateX(0); }
+}
+@keyframes pv-pulsa { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@keyframes pv-onda { 0% { transform: scale(1); opacity: 0.9; } 100% { transform: scale(3.2); opacity: 0; } }
+@keyframes pv-pisca { 50% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .pv-flap-face, .pv-lampada i, .pv-ponta-onda, .pv-ligando span { animation: none; }
+  .pv-agulha, .pv-rel-s, .pv-rosca-seg, .pv-led i, .pv-uf { transition: none; }
+}
+
+/* ---------- telas pequenas: uma coluna, sem a escala da TV ---------- */
+@media (max-width: 1100px) {
+  .painel-vivo { font-size: 15px; min-height: 0; }
+  .pv-topo { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+  .pv-topo-esq, .pv-topo-dir { justify-content: center; flex-wrap: wrap; }
+  .pv-titulo h1 { font-size: 2em; white-space: normal; }
+  .pv-grade { grid-template-columns: 1fr; }
+  .pv-placa { flex: none; }
+  .pv-grafico { min-height: 14em; }
+  .pv-mapa-linha { grid-template-columns: 1fr; }
+  .pv-mapa { min-height: 16em; }
+  .pv-rodape { flex-direction: column; }
+  .pv-como { text-align: left; }
+}
+
+
+/* ============================================================================
+   Acabamento analógico (11/11/2026, 2ª passada)
+   ========================================================================== */
+
+/* Metal escovado nas placas de título + grão de filme sobre tudo */
+.pv-placa-titulo {
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 238, 205, 0.045) 0 1px, transparent 1px 3px),
+    var(--pv-latao-fundo);
+  box-shadow: inset 0 1px 0 rgba(255, 238, 205, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+}
+.painel-vivo::before {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E") 0 0 / 160px,
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.022) 0 1px, transparent 1px 3px);
+  opacity: 0.55; mix-blend-mode: overlay;
+}
+
+/* Parafusos de fenda (no lugar dos rebites lisos) */
+.pv-rebite {
+  position: relative; width: 0.72em; height: 0.72em;
+  background: radial-gradient(circle at 35% 30%, var(--brass-bright), var(--brass) 52%, color-mix(in srgb, var(--brass) 45%, #000));
+}
+.pv-rebite::after { content: ''; position: absolute; left: 12%; right: 12%; top: calc(50% - 0.04em); height: 0.09em; background: rgba(0, 0, 0, 0.75); box-shadow: 0 0.05em 0 rgba(255, 238, 205, 0.25); transform: rotate(var(--giro, 28deg)); }
+.pv-placa-titulo .pv-rebite:last-child { --giro: -52deg; }
+
+/* Parafusos nos cantos de baixo de cada placa */
+.pv-placa::after {
+  content: ''; position: absolute; left: 0.5em; right: 0.5em; bottom: 0.45em; height: 0.5em; pointer-events: none; z-index: 2;
+  background:
+    radial-gradient(circle at 50% 50%, var(--brass) 0 0.2em, rgba(0, 0, 0, 0.6) 0.21em 0.26em, transparent 0.27em) left center / 0.55em 0.55em no-repeat,
+    radial-gradient(circle at 50% 50%, var(--brass) 0 0.2em, rgba(0, 0, 0, 0.6) 0.21em 0.26em, transparent 0.27em) right center / 0.55em 0.55em no-repeat;
+  opacity: 0.8;
+}
+.pv-placa-corpo { padding-bottom: 1.15em; }
+
+/* Vidro de tubo nos gráficos e no mapa: moldura grossa, reflexo curvo, canto arredondado */
+.pv-grafico, .pv-mapa {
+  border-radius: 0.9em / 0.7em;
+  border: 0.22em solid color-mix(in srgb, var(--bg-deep) 60%, #000);
+  box-shadow: inset 0 0 1.6em rgba(0, 0, 0, 0.85), inset 0 0 0 1px color-mix(in srgb, var(--brass) 28%, transparent), 0 1px 0 rgba(255, 238, 205, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.7);
+}
+.pv-grafico::after, .pv-mapa::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 5; border-radius: inherit;
+  background:
+    radial-gradient(120% 70% at 28% -12%, rgba(255, 255, 255, 0.11), transparent 55%),
+    radial-gradient(ellipse at center, transparent 62%, rgba(0, 0, 0, 0.5) 100%);
+}
+.pv-mapa { position: relative; }
+.pv-grafico path, .pv-grafico polyline { filter: drop-shadow(0 0 0.18em var(--pv-brilho)); }
+
+/* Ranking como recibo de papel térmico */
+.pv-papel {
+  position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0.3em; padding: 0.7em 0.9em 1.2em;
+  color: var(--bg-deep);
+  background:
+    repeating-linear-gradient(0deg, rgba(60, 40, 10, 0.035) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, color-mix(in srgb, var(--knob) 94%, #fff), color-mix(in srgb, var(--knob) 88%, #b89a6a));
+  box-shadow: 0 0.25em 0.6em rgba(0, 0, 0, 0.65);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 0.5em), 97.5% 100%, 95% calc(100% - 0.5em), 92.5% 100%, 90% calc(100% - 0.5em), 87.5% 100%, 85% calc(100% - 0.5em), 82.5% 100%, 80% calc(100% - 0.5em), 77.5% 100%, 75% calc(100% - 0.5em), 72.5% 100%, 70% calc(100% - 0.5em), 67.5% 100%, 65% calc(100% - 0.5em), 62.5% 100%, 60% calc(100% - 0.5em), 57.5% 100%, 55% calc(100% - 0.5em), 52.5% 100%, 50% calc(100% - 0.5em), 47.5% 100%, 45% calc(100% - 0.5em), 42.5% 100%, 40% calc(100% - 0.5em), 37.5% 100%, 35% calc(100% - 0.5em), 32.5% 100%, 30% calc(100% - 0.5em), 27.5% 100%, 25% calc(100% - 0.5em), 22.5% 100%, 20% calc(100% - 0.5em), 17.5% 100%, 15% calc(100% - 0.5em), 12.5% 100%, 10% calc(100% - 0.5em), 7.5% 100%, 5% calc(100% - 0.5em), 2.5% 100%, 0 calc(100% - 0.5em));
+  font-family: var(--font-codigo);
+}
+.pv-papel .pv-lista-cab { color: color-mix(in srgb, var(--bg-deep) 70%, transparent); border-bottom: 2px dashed color-mix(in srgb, var(--bg-deep) 45%, transparent); }
+.pv-papel .pv-vazio { color: var(--bg-deep); }
+.pv-papel .pv-rank li { border-bottom: 1px dashed color-mix(in srgb, var(--bg-deep) 35%, transparent); }
+.pv-papel .pv-rank-titulo { color: var(--bg-deep); font-family: var(--font-codigo); font-weight: 700; letter-spacing: 0.01em; }
+.pv-papel .pv-rank-cod { color: color-mix(in srgb, var(--bg-deep) 68%, transparent); }
+.pv-papel .pv-rank-qtd { color: var(--bg-deep); text-shadow: none; font-family: var(--font-codigo); }
+.pv-papel .pv-foto { filter: grayscale(1) contrast(1.15); mix-blend-mode: multiply; border-color: color-mix(in srgb, var(--bg-deep) 40%, transparent); box-shadow: none; }
+.pv-papel .pv-medalha { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5); }
+
+/* recibo: em telas pequenas as 5 linhas precisam caber sem cortar */
+.pv-papel .pv-rank { justify-content: space-between; }
+.pv-papel .pv-rank li { padding: 0.2em 0.1em; }
+.pv-papel .pv-foto { width: 2.4em; height: 2.4em; }
+.pv-papel { padding-bottom: 1em; }

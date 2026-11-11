@@ -7,7 +7,7 @@ import {
   LayoutTemplate, Wallet, ArrowLeftRight, Scale, ScanLine, Tag, Timer,
   Banknote, MapPin, Gauge, PackageCheck, FileSpreadsheet,
   Inbox, Radar, Megaphone, Scissors, PackageOpen, HeartPulse, Calculator,
-  BookUser, Send, Sparkles, MessageSquareWarning, BellRing, ListChecks, UsersRound, LayoutList, CalendarCheck } from 'lucide-react';
+  BookUser, Radio, Send, Sparkles, MessageSquareWarning, BellRing, ListChecks, UsersRound, LayoutList, CalendarCheck } from 'lucide-react';
 
 /* ---------------------------------------------------------------------------
  * NAVEGAÇÃO EM TRÊS NÍVEIS (14/09/2026)
@@ -201,6 +201,10 @@ export const MODULES = [
           { to: '/marketplace/romaneio', label: 'Romaneio', icon: ClipboardList },
         ],
       },
+      // 11/11/2026: o painel que fica na TV — vendas do dia ao vivo. Não é a
+      // primeira entrada de propósito: clicar em "Marketplace" continua abrindo
+      // a Expedição, que é o que a equipe usa o dia inteiro.
+      { to: '/marketplace/painel', label: 'Painel ao vivo', icon: Radio },
       { to: '/marketplace/pedidos', label: 'Pedidos', icon: ClipboardList },
       // 21/09/2026: o que o cliente diz DEPOIS do pedido — devolução,
       // reclamação, pergunta, avaliação — mora ao lado dos pedidos.
