@@ -32,7 +32,11 @@ const SQL_MIN = `(EXTRACT(HOUR FROM (${MOMENTO} AT TIME ZONE '${FUSO}')) * 60 + 
 const SQL_HORA_OK = `((${MOMENTO} AT TIME ZONE '${FUSO}')::date = pv.data_pedido)`;
 
 const VALIDOS = `pv.origem_marketplace IS NOT NULL AND pv.situacao <> 'cancelado' AND pv.cancelado_em IS NULL`;
-const GRUPO = `COALESCE(pv.pack_id_marketplace, 'pedido:' || pv.id)`;
+// ATENÇÃO: no Mercado Livre o pedido que NÃO é de carrinho vem com
+// pack_id_marketplace = '' (texto vazio), não NULL. COALESCE sozinho trataria
+// o vazio como se fosse um carrinho e juntaria todos esses pedidos numa venda
+// só (na Hoggar, 32 pedidos viravam 1 — 11/11/2026). NULLIF(TRIM()) resolve.
+const GRUPO = `COALESCE(NULLIF(TRIM(pv.pack_id_marketplace), ''), 'pedido:' || pv.id)`;
 
 async function lerPainel() {
   const hoje = hojeEmBrasilia();

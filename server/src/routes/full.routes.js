@@ -857,7 +857,7 @@ router.get('/anuncios/:integracaoId/:anuncioIdExterno/vendas', async (req, res, 
         `SELECT pv.data_pedido AS data,
                 SUM(pi.quantidade)::numeric AS unidades,
                 SUM(pi.total)::numeric AS receita,
-                COUNT(DISTINCT COALESCE(pv.pack_id_marketplace, pv.id::text)) AS pedidos
+                COUNT(DISTINCT COALESCE(NULLIF(TRIM(pv.pack_id_marketplace), ''), pv.id::text)) AS pedidos
            FROM pedido_itens pi
            JOIN pedidos_venda pv ON pv.id = pi.pedido_id
           WHERE pi.anuncio_id_marketplace = $2
@@ -885,7 +885,7 @@ router.get('/anuncios/:integracaoId/:anuncioIdExterno/vendas', async (req, res, 
       pool.query(
         `SELECT SUM(pi.quantidade)::numeric AS unidades,
                 SUM(pi.total)::numeric AS receita,
-                COUNT(DISTINCT COALESCE(pv.pack_id_marketplace, pv.id::text)) AS pedidos,
+                COUNT(DISTINCT COALESCE(NULLIF(TRIM(pv.pack_id_marketplace), ''), pv.id::text)) AS pedidos,
                 COUNT(DISTINCT pv.data_pedido) AS dias_com_venda,
                 MIN(pv.data_pedido) AS primeira, MAX(pv.data_pedido) AS ultima
            FROM pedido_itens pi

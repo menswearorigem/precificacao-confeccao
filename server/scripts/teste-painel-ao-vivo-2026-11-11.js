@@ -230,6 +230,17 @@ async function parteBanco() {
   conferir('atualizado-em vem da última sincronização (≈ 2 min)', p.atualizadoEm && Math.abs(Date.now() - new Date(p.atualizadoEm).getTime() - 120000) < 60000, p.atualizadoEm);
   conferir('nenhuma credencial de loja vaza na resposta', !/SEGREDO-NAO-PODE-VAZAR|ID-SECRETO/.test(r.texto));
 
+  // O caso real de 11/11/2026: o ML manda pack_id = '' (vazio, não NULL) nos
+  // pedidos que não são de carrinho. Cada um é UMA venda; antes todos viravam 1.
+  const antes = p.hojeTotais.pedidos; const valorAntes = p.hojeTotais.valor;
+  await semear({ dia: hoje, integracao: ml, valor: 10, pack: '' });
+  await semear({ dia: hoje, integracao: ml, valor: 20, pack: '' });
+  await semear({ dia: hoje, integracao: ml, valor: 30, pack: '   ' });
+  const r2 = await pedir(porta, 'GET', '/api/painel-ao-vivo?fresco=1', { cookie });
+  const p2 = JSON.parse(r2.texto);
+  conferir('pack vazio (\'\') NÃO junta pedidos: +3 vendas, +R$ 60', p2.hojeTotais.pedidos === antes + 3 && perto(p2.hojeTotais.valor, valorAntes + 60), p2.hojeTotais);
+  conferir('loja Hoggar passa de 1 para 4 vendas', p2.lojas.find((l) => l.nome === 'Hoggar')?.pedidos === 4, p2.lojas);
+
   servidor.close();
   await pool.end();
 }
