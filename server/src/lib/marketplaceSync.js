@@ -1920,7 +1920,87 @@ function sincronizarSeNecessario() {
   });
 }
 
+// Corrige o valor das peças dos pedidos Shein já importados (17/11/2026):
+// a primeira versão gravou o preço "de" do anúncio, não o preço vendido (ver
+// precoVendidoDaPeca em marketplaces/shein.js). importarPedido nunca reescreve
+// pedido existente, então a correção é este passo próprio, chamado uma vez
+// pela tela. Só mexe em pedido ainda ABERTO (faturado ou cancelado fica
+// como está) e só quando as peças batem uma a uma pelo SKU — se não baterem,
+// o pedido é listado em `pulados` com o motivo, nunca corrigido no chute.
+async function corrigirValoresShein(integracaoId, { desdeData }) {
+  const { rows } = await pool.query('SELECT * FROM integracoes_marketplace WHERE id = $1', [integracaoId]);
+  const integracao = rows[0];
+  if (!integracao || integracao.marketplace !== 'shein') throw new Error('Essa correção é só para conexão Shein.');
+  const { rows: pedidos } = await pool.query(
+    `SELECT id, origem_pedido_id, situacao FROM pedidos_venda
+      WHERE origem_integracao_id = $1 AND origem_marketplace = 'shein' AND data_pedido >= $2
+      ORDER BY id`,
+    [integracaoId, desdeData]
+  );
+  const abertos = pedidos.filter((p) => p.situacao !== 'faturado' && p.situacao !== 'cancelado');
+  const detalhes = await shein.buscarDetalhes(integracao, abertos.map((p) => p.origem_pedido_id));
+  const porNumero = new Map(detalhes.map((d) => [String(d.orderNo), d]));
+
+  let corrigidos = 0;
+  const pulados = [];
+  const amostra = [];
+  for (const pedido of abertos) {
+    const detalhe = porNumero.get(String(pedido.origem_pedido_id));
+    if (!detalhe) { pulados.push({ pedido: pedido.origem_pedido_id, motivo: 'a Shein não devolveu o detalhe' }); continue; }
+    const generico = shein.mapearPedido(detalhe);
+    if (amostra.length < 3) {
+      const g = (detalhe.orderGoodsInfoList || [])[0] || {};
+      amostra.push({
+        pedido: pedido.origem_pedido_id,
+        precoCheio: g.sellerCurrencyPrice, precoComDesconto: g.sellerCurrencyDiscountPrice,
+        cupom: g.orderCurrencyStoreCouponPrice, campanha: g.orderCurrencyPromotionPrice,
+        receitaEstimada: detalhe.estimatedGrossIncome, valorGravado: generico.itens[0]?.valorUnitario,
+      });
+    }
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows: itens } = await client.query(
+        'SELECT id, sku_externo, quantidade FROM pedido_itens WHERE pedido_id = $1 ORDER BY ordem, id', [pedido.id]
+      );
+      const novos = removerItensFantasmaDuplicados(generico.itens);
+      const batem = itens.length === novos.length && itens.every((it, i) => (
+        normalizarComparacao(it.sku_externo) === normalizarComparacao(novos[i].skuExterno)
+      ));
+      if (!batem) {
+        await client.query('ROLLBACK');
+        pulados.push({ pedido: pedido.origem_pedido_id, motivo: 'as peças do Hub não batem com as da Shein' });
+        continue;
+      }
+      for (let i = 0; i < itens.length; i += 1) {
+        const valor = Number(novos[i].valorUnitario) || 0;
+        await client.query(
+          'UPDATE pedido_itens SET valor_unitario = $2, total = $2 * quantidade WHERE id = $1',
+          [itens[i].id, valor]
+        );
+      }
+      await client.query(
+        `UPDATE pedidos_venda SET taxa_marketplace = $2,
+                valor_recebido_marketplace = CASE WHEN valor_recebido_status = 'liberado' THEN valor_recebido_marketplace ELSE $3 END,
+                updated_at = now()
+          WHERE id = $1`,
+        [pedido.id, generico.taxaMarketplace, generico.valorRecebido]
+      );
+      await recalcularTotais(client, pedido.id);
+      await client.query('COMMIT');
+      corrigidos += 1;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      pulados.push({ pedido: pedido.origem_pedido_id, motivo: err.message });
+    } finally {
+      client.release();
+    }
+  }
+  return { pedidosNoPeriodo: pedidos.length, abertos: abertos.length, corrigidos, pulados, amostra };
+}
+
 module.exports = {
+  corrigirValoresShein,
   sincronizarIntegracao,
   _gravarMetricasAdsDoDia: gravarMetricasAdsDoDia,
   sincronizarTodasAtivas,

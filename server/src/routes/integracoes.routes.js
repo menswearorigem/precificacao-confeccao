@@ -7,7 +7,7 @@ const tiktokShop = require('../lib/marketplaces/tiktokShop');
 const tiktokAds = require('../lib/marketplaces/tiktokAds');
 const shein = require('../lib/marketplaces/shein');
 const {
-  sincronizarIntegracao, sincronizarSeNecessario, garantirTokenValido, sincronizarAdsDias,
+  sincronizarIntegracao, sincronizarSeNecessario, garantirTokenValido, sincronizarAdsDias, corrigirValoresShein,
   garantirAnuncianteTikTok,
 } = require('../lib/marketplaceSync');
 
@@ -245,6 +245,18 @@ router.post('/:id/sincronizar', async (req, res, next) => {
     // `desde` (AAAA-MM-DD, opcional): busca retroativa — ver sincronizarIntegracao.
     const resultado = await sincronizarIntegracao(req.params.id, { desdeData: req.body?.desde || null });
     res.json(resultado);
+  } catch (err) {
+    res.status(422).json({ error: err.message });
+  }
+});
+
+// Correção única dos valores das peças da Shein (preço vendido em vez do
+// preço "de"). Ver corrigirValoresShein.
+router.post('/:id/shein/corrigir-valores', async (req, res) => {
+  try {
+    const desde = req.body?.desde;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(desde || ''))) return res.status(400).json({ error: 'Informe a data inicial (AAAA-MM-DD).' });
+    res.json(await corrigirValoresShein(req.params.id, { desdeData: desde }));
   } catch (err) {
     res.status(422).json({ error: err.message });
   }

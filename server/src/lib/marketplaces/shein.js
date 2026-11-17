@@ -283,6 +283,27 @@ function somarOuNulo(...valores) {
   return validos.length ? validos.reduce((s, v) => s + v, 0) : null;
 }
 
+// Preço pelo qual a peça foi VENDIDA (17/11/2026). `sellerCurrencyPrice` é o
+// preço "de" do anúncio — na Shein ele fica bem acima do que o cliente paga
+// (ex.: R$ 369,90 cheio para uma venda que rendeu R$ 98,12), porque o
+// desconto da campanha e o cupom da loja vêm separados. Usar o preço cheio
+// inflava o faturamento, o ticket médio e a curva ABC. Ordem de preferência:
+// 1. sellerCurrencyDiscountPrice — "preço após o desconto", que a doc diz
+//    vir só em autooperação (o nosso caso), quando é coerente (> 0 e não
+//    maior que o preço cheio);
+// 2. preço cheio − cupom da loja − desconto de campanha da peça;
+// 3. preço cheio, se nada disso vier.
+function precoVendidoDaPeca(g) {
+  const cheio = numeroOuNulo(g.sellerCurrencyPrice);
+  const comDesconto = numeroOuNulo(g.sellerCurrencyDiscountPrice);
+  if (comDesconto !== null && comDesconto > 0 && (cheio === null || comDesconto <= cheio)) return comDesconto;
+  if (cheio === null) return 0;
+  const cupom = numeroOuNulo(g.orderCurrencyStoreCouponPrice) || 0;
+  const campanha = numeroOuNulo(g.orderCurrencyPromotionPrice) || 0;
+  const liquido = cheio - cupom - campanha;
+  return liquido > 0 ? Math.round(liquido * 100) / 100 : cheio;
+}
+
 // payMethod da SHEIN: 17 = Pix (tabela da doc do order-detail).
 function formaPagamento(detalhe) {
   return String(detalhe?.paymentInfo?.payMethod || '') === '17' ? 'pix' : 'outro';
@@ -301,7 +322,7 @@ function mapearPedido(detalhe) {
       eanExterno: null,
       tituloExterno: [g.goodsTitle, pt?.attrName].filter(Boolean).join(' - ') || null,
       quantidade: 1,
-      valorUnitario: numeroOuNulo(g.sellerCurrencyPrice) ?? 0,
+      valorUnitario: precoVendidoDaPeca(g),
       // SPU da SHEIN = o anúncio (as cores são SKCs dentro dele).
       anuncioIdExterno: g.spuName ? String(g.spuName) : (g.skc ? String(g.skc) : null),
     };
@@ -348,6 +369,7 @@ module.exports = {
   buscarPedidoPorId,
   buscarIdsPedidosCancelados,
   mapearPedido,
+  buscarDetalhes,
   // expostos para o script de verificação
   _decifrarSecretKey: decifrarSecretKey,
   _assinar: assinar,
