@@ -242,7 +242,8 @@ router.get('/:id/conectar-ads', async (req, res, next) => {
 
 router.post('/:id/sincronizar', async (req, res, next) => {
   try {
-    const resultado = await sincronizarIntegracao(req.params.id);
+    // `desde` (AAAA-MM-DD, opcional): busca retroativa — ver sincronizarIntegracao.
+    const resultado = await sincronizarIntegracao(req.params.id, { desdeData: req.body?.desde || null });
     res.json(resultado);
   } catch (err) {
     res.status(422).json({ error: err.message });

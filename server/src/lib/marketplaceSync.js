@@ -1772,7 +1772,12 @@ async function reimportarPedidoFalho(falha, integracao) {
   }
 }
 
-async function sincronizarIntegracao(integracaoId) {
+// `desdeData` (AAAA-MM-DD, opcional): busca a partir desse dia em vez da
+// janela normal de 7 dias — é o "puxar o mês inteiro" da tela. Só AMPLIA a
+// janela (nunca encurta), e no máximo 90 dias para trás. Pedido já importado
+// continua sendo ignorado, então repetir não duplica nada.
+const BUSCA_RETROATIVA_MAX_DIAS = 90;
+async function sincronizarIntegracao(integracaoId, { desdeData = null } = {}) {
   const { rows } = await pool.query('SELECT * FROM integracoes_marketplace WHERE id = $1', [integracaoId]);
   const integracao = rows[0];
   if (!integracao) throw new Error('Integração não encontrada.');
@@ -1782,9 +1787,18 @@ async function sincronizarIntegracao(integracaoId) {
   try {
     await garantirTokenValido(integracao);
     const janelaMinima = new Date(Date.now() - JANELA_RESSINCRONIZACAO_MS);
-    const desde = integracao.ultima_sincronizacao && new Date(integracao.ultima_sincronizacao) < janelaMinima
+    let desde = integracao.ultima_sincronizacao && new Date(integracao.ultima_sincronizacao) < janelaMinima
       ? new Date(integracao.ultima_sincronizacao)
       : janelaMinima;
+    if (desdeData) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(desdeData))) throw new Error('Data inicial inválida (use AAAA-MM-DD).');
+      // Meia-noite de Brasília (UTC-3) do dia pedido.
+      const pedido = new Date(`${desdeData}T03:00:00Z`);
+      const limite = new Date(Date.now() - BUSCA_RETROATIVA_MAX_DIAS * 24 * 60 * 60 * 1000);
+      if (Number.isNaN(pedido.getTime())) throw new Error('Data inicial inválida.');
+      if (pedido < limite) throw new Error(`A busca retroativa vai no máximo ${BUSCA_RETROATIVA_MAX_DIAS} dias para trás.`);
+      if (pedido < desde) desde = pedido;
+    }
 
     const pedidosGenericos = await buscarPedidosDoMarketplace(integracao, desde);
 
