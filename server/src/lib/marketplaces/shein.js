@@ -283,25 +283,31 @@ function somarOuNulo(...valores) {
   return validos.length ? validos.reduce((s, v) => s + v, 0) : null;
 }
 
-// Preço pelo qual a peça foi VENDIDA (17/11/2026). `sellerCurrencyPrice` é o
-// preço "de" do anúncio — na Shein ele fica bem acima do que o cliente paga
-// (ex.: R$ 369,90 cheio para uma venda que rendeu R$ 98,12), porque o
-// desconto da campanha e o cupom da loja vêm separados. Usar o preço cheio
-// inflava o faturamento, o ticket médio e a curva ABC. Ordem de preferência:
-// 1. sellerCurrencyDiscountPrice — "preço após o desconto", que a doc diz
-//    vir só em autooperação (o nosso caso), quando é coerente (> 0 e não
-//    maior que o preço cheio);
-// 2. preço cheio − cupom da loja − desconto de campanha da peça;
-// 3. preço cheio, se nada disso vier.
+// Preço pelo qual a peça foi VENDIDA, do ponto de vista da loja (17/11/2026).
+// `sellerCurrencyPrice` é o preço "de" do anúncio — na Shein ele fica bem
+// acima do que o cliente paga (ex.: R$ 369,90 cheio numa venda que rendeu
+// R$ 98,12). Usar o preço cheio inflava o faturamento, o ticket médio e a
+// curva ABC.
+//
+// A conta certa é a mesma que a Shein usa na receita estimada: preço cheio −
+// cupom da loja − desconto de campanha. Conferido nos 123 pedidos de
+// novembro: com ela, venda = valor recebido + comissão + taxa de serviço, ao
+// centavo. O campo `sellerCurrencyDiscountPrice` ("preço após desconto") NÃO
+// serve de base: em 15 desses pedidos ele vinha bem menor, porque já
+// descontava cupom pago pela própria SHEIN — o que deixava o valor recebido
+// maior que a venda. Ele fica só como último recurso, quando os campos de
+// cupom/campanha não vêm.
 function precoVendidoDaPeca(g) {
   const cheio = numeroOuNulo(g.sellerCurrencyPrice);
+  const cupom = numeroOuNulo(g.orderCurrencyStoreCouponPrice);
+  const campanha = numeroOuNulo(g.orderCurrencyPromotionPrice);
+  if (cheio !== null && (cupom !== null || campanha !== null)) {
+    const liquido = cheio - (cupom || 0) - (campanha || 0);
+    if (liquido > 0) return Math.round(liquido * 100) / 100;
+  }
   const comDesconto = numeroOuNulo(g.sellerCurrencyDiscountPrice);
   if (comDesconto !== null && comDesconto > 0 && (cheio === null || comDesconto <= cheio)) return comDesconto;
-  if (cheio === null) return 0;
-  const cupom = numeroOuNulo(g.orderCurrencyStoreCouponPrice) || 0;
-  const campanha = numeroOuNulo(g.orderCurrencyPromotionPrice) || 0;
-  const liquido = cheio - cupom - campanha;
-  return liquido > 0 ? Math.round(liquido * 100) / 100 : cheio;
+  return cheio ?? 0;
 }
 
 // payMethod da SHEIN: 17 = Pix (tabela da doc do order-detail).
