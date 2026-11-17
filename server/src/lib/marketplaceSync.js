@@ -7,6 +7,9 @@ const pool = require('../db/pool');
 const mercadoLivre = require('./marketplaces/mercadoLivre');
 const shopee = require('./marketplaces/shopee');
 const tiktokShop = require('./marketplaces/tiktokShop');
+// Shein (17/11/2026): par fixo openKeyId/secretKey, sem token que vence —
+// ver o cabeçalho de marketplaces/shein.js.
+const shein = require('./marketplaces/shein');
 // Publicidade da TikTok mora numa API SEPARADA da que traz os pedidos (Ads
 // Manager x TikTok Shop Open API), com credenciais próprias — por isso um
 // cliente próprio. Ver o cabeçalho de marketplaces/tiktokAds.js.
@@ -16,7 +19,7 @@ const { sincronizarEnvios } = require('./expedicaoSync');
 const { registrarMovimento } = require('./estoqueMovimento');
 const { categorizarErro, JANELA_RESSINCRONIZACAO_DIAS } = require('./saudeIntegracao');
 
-const LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee', tiktok_shop: 'TikTok Shop' };
+const LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee', tiktok_shop: 'TikTok Shop', shein: 'Shein' };
 
 // Toda sincronização reexamina pelo menos essa janela pra trás, mesmo que o
 // último ciclo tenha rodado há poucos minutos — pedido criado hoje mas que só
@@ -35,6 +38,9 @@ const LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee', tiktok_shop: '
 const JANELA_RESSINCRONIZACAO_MS = JANELA_RESSINCRONIZACAO_DIAS * 24 * 60 * 60 * 1000;
 
 async function garantirTokenValido(integracao) {
+  // A Shein não tem token que vence nem refresh: o openKeyId/secretKey da
+  // loja valem até a loja desautorizar o app. Nada a renovar.
+  if (integracao.marketplace === 'shein') return integracao;
   const expiraEm = integracao.token_expira_em ? new Date(integracao.token_expira_em).getTime() : 0;
   const margem = 5 * 60 * 1000; // renova com 5min de folga
   if (!integracao.access_token || Date.now() > expiraEm - margem) {
@@ -118,6 +124,22 @@ async function buscarPedidosDoMarketplace(integracao, desde) {
       jaImportados: new Set(existentes.map((r) => r.origem_pedido_id)),
     });
     return orders.map(shopee.mapearPedido);
+  }
+  if (integracao.marketplace === 'shein') {
+    // Mesmo filtro de "já importado": na Shein ele economiza a chamada de
+    // detalhe, que é onde vêm itens e valores.
+    const { rows: existentesShein } = await pool.query(
+      `SELECT origem_pedido_id FROM pedidos_venda
+        WHERE origem_marketplace = 'shein' AND origem_pedido_id IS NOT NULL
+          AND origem_integracao_id IS NOT NULL -- planilha: a API completa (25/09/2026)
+          AND data_pedido >= $1`,
+      [new Date(desde.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)]
+    );
+    const detalhes = await shein.buscarPedidos(integracao, {
+      desde,
+      jaImportados: new Set(existentesShein.map((r) => r.origem_pedido_id)),
+    });
+    return detalhes.map(shein.mapearPedido);
   }
   // Mesmo filtro de "já importado" da Shopee. Na TikTok a busca de pedidos
   // devolve tudo numa chamada só (não tem passo de detalhe por pedido), então
@@ -1578,6 +1600,10 @@ async function sincronizarCancelamentos(integracao) {
       shopCipher: integracao.shop_cipher,
       desdeUnix: Math.floor(desde.getTime() / 1000),
     });
+  } else if (integracao.marketplace === 'shein') {
+    // Na Shein o "cancelado" é o pedido reembolsado (orderStatus 6) — a
+    // lista de pedidos não tem um status de cancelamento separado.
+    idsCancelados = await shein.buscarIdsPedidosCancelados(integracao, { desde });
   } else {
     return 0;
   }
@@ -1720,6 +1746,9 @@ async function reimportarPedidoFalho(falha, integracao) {
   } else if (integracao.marketplace === 'tiktok_shop') {
     bruto = await tiktokShop.buscarPedidoPorId({ ...credenciaisTikTok(integracao), orderId: falha.id_externo });
     generico = tiktokShop.mapearPedido(bruto);
+  } else if (integracao.marketplace === 'shein') {
+    bruto = await shein.buscarPedidoPorId(integracao, falha.id_externo);
+    generico = shein.mapearPedido(bruto);
   } else {
     throw new Error(`Não sei buscar um pedido avulso em ${integracao.marketplace}.`);
   }

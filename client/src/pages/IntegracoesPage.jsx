@@ -12,6 +12,7 @@ import WikFichaCustoDiagnosticoCard from '../components/WikFichaCustoDiagnostico
 import logoMercadoLivre from '../assets/logos/mercado-livre.png';
 import logoShopee from '../assets/logos/shopee.png';
 import logoTiktokShop from '../assets/logos/tiktok-shop.svg';
+import logoShein from '../assets/logos/shein.svg';
 import logoWikSistemas from '../assets/logos/wik.png';
 import { CampoTextoLimitado } from '../components/campos';
 import ErroIntegracao from '../components/ErroIntegracao';
@@ -44,6 +45,17 @@ const MARKETPLACES = {
     campoServiceId: 'Service ID',
     ajuda: 'Crie o app em Partner Center → App & Service e registre o App Key/Secret e o Service ID aqui.',
     logo: logoTiktokShop,
+  },
+  // Shein (17/11/2026): APP_ID e APP_Secretkey ficam em open.sheincorp.com →
+  // Gerenciamento de aplicativos → HBN Hub → Informações básicas. O símbolo é
+  // um selo neutro na cor da marca, não o logotipo da Shein.
+  shein: {
+    label: 'Shein',
+    corTag: 'tone-neutro',
+    campoId: 'APP_ID',
+    campoSecret: 'APP_Secretkey',
+    ajuda: 'Em open.sheincorp.com → Gerenciamento de aplicativos → HBN Hub → Informações básicas, copie o APP_ID e o APP_Secretkey (botão "Visualizar"). Depois de salvar, clique em "Conectar" estando logado com a conta PRINCIPAL da loja no painel do vendedor da Shein.',
+    logo: logoShein,
   },
 };
 
@@ -263,7 +275,7 @@ export default function IntegracoesPage() {
         <div>
           <h1>Integrações com Marketplaces</h1>
           <p className="page-sub">
-            Conecte o Mercado Livre, a Shopee e a TikTok Shop pra puxar os pedidos pagos automaticamente pra dentro
+            Conecte o Mercado Livre, a Shopee, a TikTok Shop e a Shein pra puxar os pedidos pagos automaticamente pra dentro
             do sistema (a cada 5 minutos), como pedidos de venda em aberto, prontos pra revisar e faturar.
           </p>
         </div>

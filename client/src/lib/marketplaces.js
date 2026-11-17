@@ -6,6 +6,7 @@ export const PLATAFORMA_LABEL = {
   mercado_livre: 'Mercado Livre',
   shopee: 'Shopee',
   tiktok_shop: 'TikTok Shop',
+  shein: 'Shein',
 };
 
 // Canais que informam quanto o marketplace repassou de verdade pela venda —

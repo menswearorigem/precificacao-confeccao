@@ -42,7 +42,9 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 // FÓRMULA DE LUCRO É EXATAMENTE A MESMA NOS TRÊS. O que muda é só de onde
 // veio o valor recebido; nada no motor de cálculo foi tocado pra incluir a
 // TikTok (REGRA 1).
-const CANAIS_COM_VALOR_RECEBIDO = ['Mercado Livre', 'Shopee', 'TikTok Shop'];
+// Shein (17/11/2026): receita estimada que a própria SHEIN calcula no
+// detalhe do pedido (estimatedGrossIncome) — mesmo papel do escrow da Shopee.
+const CANAIS_COM_VALOR_RECEBIDO = ['Mercado Livre', 'Shopee', 'TikTok Shop', 'Shein'];
 
 // "Este pedido é de marketplace?" — a pergunta que decide se a venda gera
 // contas a receber própria ou entra pelo repasse da plataforma.

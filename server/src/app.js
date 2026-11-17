@@ -429,6 +429,7 @@ function createApp() {
   app.use('/api/integracoes/mercado_livre/callback', integracoesRoutes.callbackMercadoLivre);
   app.use('/api/integracoes/shopee/callback', integracoesRoutes.callbackShopee);
   app.use('/api/integracoes/tiktok_shop/callback', integracoesRoutes.callbackTikTokShop);
+  app.use('/api/integracoes/shein/callback', integracoesRoutes.callbackShein);
   // Publicidade da TikTok é um app separado, com autorização própria — daí
   // um callback próprio, e não um ramo dentro do callback da loja.
   app.use('/api/integracoes/tiktok_ads/callback', integracoesRoutes.callbackTikTokAds);

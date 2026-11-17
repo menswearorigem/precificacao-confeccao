@@ -696,6 +696,11 @@ async function sincronizarExtratoIntegracao(integracaoId, { forcar = false, desd
   if (!integracao) throw new Error('Conexão de marketplace não encontrada.');
   if (!integracao.ativo) throw new Error('Essa conexão está desativada.');
   if (!integracao.access_token) throw new Error('Essa conexão ainda não foi autorizada.');
+  // Shein (17/11/2026): a primeira entrega traz só os PEDIDOS. As faturas
+  // (finance/get-check-order-list) já estão liberadas no app e são a fase 2;
+  // até lá a loja é pulada em silêncio, em vez de gravar "erro" no
+  // Financeiro a cada ciclo.
+  if (integracao.marketplace === 'shein') return { pulado: true, motivo: 'extrato da Shein ainda não implementado' };
 
   if (!forcar) {
     const ultima = ultimaSincronizacaoPorIntegracao.get(integracaoId) || 0;

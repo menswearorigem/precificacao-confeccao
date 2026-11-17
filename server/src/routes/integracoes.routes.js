@@ -5,6 +5,7 @@ const mercadoLivre = require('../lib/marketplaces/mercadoLivre');
 const shopee = require('../lib/marketplaces/shopee');
 const tiktokShop = require('../lib/marketplaces/tiktokShop');
 const tiktokAds = require('../lib/marketplaces/tiktokAds');
+const shein = require('../lib/marketplaces/shein');
 const {
   sincronizarIntegracao, sincronizarSeNecessario, garantirTokenValido, sincronizarAdsDias,
   garantirAnuncianteTikTok,
@@ -12,7 +13,7 @@ const {
 
 const router = express.Router();
 
-const MARKETPLACES_VALIDOS = ['mercado_livre', 'shopee', 'tiktok_shop'];
+const MARKETPLACES_VALIDOS = ['mercado_livre', 'shopee', 'tiktok_shop', 'shein'];
 
 function urlBase(req) {
   return process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
@@ -184,6 +185,15 @@ router.get('/:id/conectar', async (req, res, next) => {
         partnerId: integracao.client_id,
         partnerKey: integracao.client_secret,
         redirectUri: `${urlBase(req)}/api/integracoes/shopee/callback?state=${state}`,
+      });
+    } else if (integracao.marketplace === 'shein') {
+      // A Shein não tem Redirect URL cadastrado no app: ele vai no próprio
+      // link, em base64. Quem abre o link precisa estar logado com a conta
+      // PRINCIPAL da loja no painel do vendedor.
+      url = shein.buildAuthorizeUrl({
+        appId: integracao.client_id,
+        redirectUri: `${urlBase(req)}/api/integracoes/shein/callback`,
+        state,
       });
     } else {
       if (!integracao.tiktok_service_id) {
@@ -794,7 +804,57 @@ callbackTikTokAds.get('/', async (req, res) => {
   }
 });
 
+// Callback da Shein. A SHEIN volta com appid, tempToken (vale 10 minutos) e
+// o state. O tempToken é trocado na hora pelo par fixo da loja — openKeyId e
+// secretKey, esta já decifrada com o APP_Secretkey (ver
+// lib/marketplaces/shein.js). Não existe validade: token_expira_em fica NULL.
+const callbackShein = express.Router();
+callbackShein.get('/', async (req, res) => {
+  const { tempToken, state, appid: appId } = req.query;
+  try {
+    if (!tempToken) throw new Error('A SHEIN não devolveu a autorização (tempToken). Tente conectar de novo.');
+    const integracaoId = await consumirState(state);
+    if (!integracaoId) throw new Error('Link de autorização expirado ou inválido. Tente conectar novamente.');
+
+    const { rows } = await pool.query('SELECT * FROM integracoes_marketplace WHERE id = $1', [integracaoId]);
+    const integracao = rows[0];
+    if (!integracao) throw new Error('Integração não encontrada.');
+    if (integracao.marketplace !== 'shein') throw new Error('Esse retorno da SHEIN não pertence a uma conexão Shein.');
+    if (appId && String(appId) !== String(integracao.client_id)) {
+      throw new Error('A SHEIN autorizou outro aplicativo (APP_ID diferente do cadastrado nesta conexão).');
+    }
+
+    const { openKeyId, secretKey } = await shein.trocarTempToken({
+      appId: integracao.client_id,
+      appSecret: integracao.client_secret,
+      tempToken,
+    });
+
+    // Código da loja, só para identificar na tela. Falhar aqui não desfaz a
+    // conexão — o par de chaves já está certo.
+    let codigoLoja = null;
+    try {
+      const info = await shein.buscarInfoLoja({ access_token: openKeyId, refresh_token: secretKey });
+      codigoLoja = info?.storeCode ?? info?.supplierId ?? info?.storeId ?? null;
+    } catch (err) {
+      console.error('[shein] não li a informação da loja:', err.message);
+    }
+
+    await pool.query(
+      `UPDATE integracoes_marketplace
+       SET access_token = $1, refresh_token = $2, token_expira_em = NULL, conta_externa_id = COALESCE($3, conta_externa_id),
+           ativo = TRUE, ultimo_erro = NULL, atualizado_em = now()
+       WHERE id = $4`,
+      [openKeyId, secretKey, codigoLoja != null ? String(codigoLoja) : null, integracaoId]
+    );
+    res.redirect('/integracoes?conectado=shein');
+  } catch (err) {
+    res.redirect(`/integracoes?erro=${encodeURIComponent(err.message)}`);
+  }
+});
+
 module.exports.callbackMercadoLivre = callbackMercadoLivre;
+module.exports.callbackShein = callbackShein;
 module.exports.callbackShopee = callbackShopee;
 module.exports.callbackTikTokShop = callbackTikTokShop;
 module.exports.callbackTikTokAds = callbackTikTokAds;
