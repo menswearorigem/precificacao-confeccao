@@ -846,11 +846,12 @@ function AbaRepasses({ base, versao, contexto, periodo, montarRef }) {
     navigate(`/financeiro/movimentacao?${new URLSearchParams({ busca: r.repasse_id_externo, de: periodo.inicio, ate: periodo.fim })}`);
   }
 
-  const ICONE = { mercado_livre: Landmark, shopee: Wallet, tiktok_shop: Banknote };
+  const ICONE = { mercado_livre: Landmark, shopee: Wallet, tiktok_shop: Banknote, shein: Banknote };
   const FRASE = {
     mercado_livre: 'Saques do Mercado Pago para a conta da empresa — o que aparece no extrato do banco.',
     shopee: 'Saques da Shopee. Caem no Mercado Pago da mesma empresa, não direto no banco.',
     tiktok_shop: 'Repasses da TikTok para a carteira da loja na própria TikTok.',
+    shein: 'Pagamentos da Shein (relatórios de pagamento) para a conta cadastrada no painel da Shein.',
   };
   const inicioPag = (pagina - 1) * porPagina;
   const ordenarPor = (coluna) => setOrdem((o) => ({ coluna, direcao: o.coluna === coluna && o.direcao === 'desc' ? 'asc' : 'desc' }));

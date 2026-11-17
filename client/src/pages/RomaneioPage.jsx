@@ -201,12 +201,17 @@ function AbaHoje({ hoje, pend, agora, indiceLojas, aoMudarCorte }) {
     <>
       <div className="exp-lojas">
         {hoje.cartoes.map((c) => <CartaoLoja key={c.integracao_id} c={c} agora={agora} />)}
-        <div className="exp-loja exp-shein exp-loja-off">
-          <div className="exp-loja-topo"><SeloPlataforma chave="shein" size={20} /><strong>Shein</strong></div>
-          <div className="exp-loja-num">—</div>
-          <p>Sem integração com o Hub ainda.</p>
-          {hoje.shein.corte_casa && <p>Corte da casa {hoje.shein.corte_casa}</p>}
-        </div>
+        {/* Shein integrada desde 17/11/2026: entra em hoje.cartoes como as
+            outras lojas. O cartão fixo só aparece se nenhuma loja Shein
+            estiver conectada. */}
+        {!hoje.cartoes.some((c) => c.canal === 'shein') && (
+          <div className="exp-loja exp-shein exp-loja-off">
+            <div className="exp-loja-topo"><SeloPlataforma chave="shein" size={20} /><strong>Shein</strong></div>
+            <div className="exp-loja-num">—</div>
+            <p>Nenhuma loja Shein conectada.</p>
+            {hoje.shein.corte_casa && <p>Corte da casa {hoje.shein.corte_casa}</p>}
+          </div>
+        )}
       </div>
 
       {hoje.sem_loja?.pendentes > 0 && (

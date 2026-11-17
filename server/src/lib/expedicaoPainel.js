@@ -13,7 +13,7 @@ const { ALMOCO, cruzaAlmoco, minutosDoDia } = require('./expedicaoEnvio');
 const FUSO = 'America/Sao_Paulo';
 const DIA = (col) => `(${col} AT TIME ZONE '${FUSO}')::date`;
 const HORA = (col) => `to_char(${col} AT TIME ZONE '${FUSO}', 'HH24:MI')`;
-const CANAIS = ['mercado_livre', 'shopee', 'tiktok_shop'];
+const CANAIS = ['mercado_livre', 'shopee', 'tiktok_shop', 'shein'];
 const ROTULO = { mercado_livre: 'Mercado Livre', shopee: 'Shopee', tiktok_shop: 'TikTok Shop', shein: 'Shein' };
 
 // A hora "de verdade" em que o pedido saiu, e de onde ela veio.
@@ -169,7 +169,7 @@ async function painelHoje() {
   const semLoja = cont.find((c) => c.origem_integracao_id === null);
   return {
     hoje, agora: new Date().toISOString(), almoco: ALMOCO, cortes: corte,
-    shein: { integrada: false, corte_casa: corte.shein || null },
+    shein: { integrada: true, corte_casa: corte.shein || null },
     cartoes,
     sem_loja: semLoja ? { pendentes: semLoja.pendentes } : null,
   };

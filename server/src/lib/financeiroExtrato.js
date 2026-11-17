@@ -29,9 +29,10 @@ const pool = require('../db/pool');
 const mercadoLivre = require('./marketplaces/mercadoLivre');
 const shopee = require('./marketplaces/shopee');
 const tiktokShop = require('./marketplaces/tiktokShop');
+const shein = require('./marketplaces/shein');
 const { garantirTokenValido } = require('./marketplaceSync');
 
-const LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee', tiktok_shop: 'TikTok Shop' };
+const LABEL = { mercado_livre: 'Mercado Livre', shopee: 'Shopee', tiktok_shop: 'TikTok Shop', shein: 'Shein' };
 
 // Toda sincronização relê esta janela pra trás, sempre. Plataforma insere
 // lançamento com data retroativa o tempo todo (estorno de venda antiga,
@@ -55,6 +56,8 @@ const JANELA_MAXIMA_DIAS = {
   mercado_livre: 80,
   shopee: 180,
   tiktok_shop: 180,
+  // Shein: a API aceita 7 dias por chamada; o cliente quebra a janela.
+  shein: 90,
 };
 
 // Até onde pra trás o histórico é buscado sozinho, andando um pedaço por
@@ -687,6 +690,83 @@ async function sincronizarExtratoTikTok(integracao, { inicio, fim }, estado) {
 }
 
 // ---------------------------------------------------------------------------
+// Shein — extratos de conta (17/11/2026)
+// ---------------------------------------------------------------------------
+// Cada linha do extrato da Shein já vem com o pedido (bzOrderNo) e o
+// repasse (reportOrderNo) em que foi paga. A data que vale é a do PAGAMENTO
+// (completedPayTime); linha ainda não paga entra como PENDENTE, na data
+// prevista de pagamento — nunca somada com o liberado (princípio 3).
+// Os repasses são montados pela soma das linhas; quando a Shein informa o
+// relatório de pagamento (report-order-list), o valor e a data oficiais dele
+// prevalecem, e a diferença para a soma das linhas fica registrada no detalhe.
+async function sincronizarExtratoShein(integracao, { inicio, fim }, estado) {
+  const de = new Date(`${inicio}T00:00:00-03:00`);
+  const ate = new Date(Math.min(new Date(`${fim}T23:59:59-03:00`).getTime(), Date.now()));
+  const linhas = await shein.buscarExtrato(integracao, { desde: de, ate });
+
+  let descartadas = 0;
+  const lancamentos = [];
+  const porRepasse = new Map();
+  for (const l of linhas) {
+    const quando = l.pago ? l.pagoEm : (l.previstoEm || l.geradoEm);
+    const dia = quando ? diaBrasilia(Math.floor(new Date(quando).getTime() / 1000)) : null;
+    if (l.valor === null || !dia) { descartadas += 1; continue; }
+    lancamentos.push({
+      idExterno: l.idExterno,
+      tipo: l.tipo,
+      descricaoExterna: l.descricaoExterna,
+      dataLiberacao: dia,
+      dataEvento: quando,
+      valor: l.valor,
+      moeda: l.moeda,
+      pedidoIdExterno: l.pedidoIdExterno,
+      repasseIdExterno: l.repasseIdExterno,
+      status: l.pago ? 'liberado' : 'pendente',
+      detalhe: { origem: 'check_order', tipoShein: l.tipoShein, statusShein: l.statusShein, geradoEm: l.geradoEm, previstoEm: l.previstoEm },
+    });
+    if (l.repasseIdExterno) {
+      const r = porRepasse.get(l.repasseIdExterno) || { soma: 0, todosPagos: true, pagoEm: null, linhas: 0 };
+      r.soma = Math.round((r.soma + l.valor) * 100) / 100;
+      r.todosPagos = r.todosPagos && l.pago;
+      r.pagoEm = r.pagoEm || l.pagoEm;
+      r.linhas += 1;
+      porRepasse.set(l.repasseIdExterno, r);
+    }
+  }
+  const gravados = await gravarLancamentos(integracao.id, 'shein', lancamentos);
+
+  let oficiais = new Map();
+  try {
+    const lista = await shein.buscarRepassesPagos(integracao, { desde: de, ate });
+    oficiais = new Map(lista.map((r) => [r.idExterno, r]));
+  } catch (err) {
+    console.error(`[financeiro-extrato] repasses da Shein (conexão ${integracao.id}):`, err.message);
+  }
+  for (const [id, r] of porRepasse) {
+    const oficial = oficiais.get(id);
+    const pagoEm = oficial?.pagoEm || r.pagoEm;
+    await gravarRepasse(integracao.id, 'shein', {
+      idExterno: id,
+      dataLiberacao: pagoEm ? diaBrasilia(Math.floor(new Date(pagoEm).getTime() / 1000)) : null,
+      dataEvento: pagoEm,
+      valorLiquido: oficial?.valor ?? r.soma,
+      moeda: oficial?.moeda || 'BRL',
+      status: (oficial ? oficial.status === 2 : r.todosPagos) ? 'pago' : 'processando',
+      detalhe: { origem: oficial ? 'report_order' : 'soma_das_linhas', somaLinhas: r.soma, linhas: r.linhas, conta: oficial?.conta || null, forma: oficial?.forma || null },
+    });
+  }
+
+  await gravarEstado(integracao.id, {
+    ...cursoresApos(estado, { inicio, fim }),
+    ultimo_erro: null,
+    ultimo_aviso: descartadas > 0
+      ? `${descartadas} linha(s) do extrato da Shein vieram sem valor ou sem data e ficaram FORA do extrato — não foram lançadas como R$ 0,00.`
+      : null,
+  });
+  return { gravados, descartadas, repasses: porRepasse.size, janela: { inicio, fim } };
+}
+
+// ---------------------------------------------------------------------------
 // Orquestração
 // ---------------------------------------------------------------------------
 
@@ -696,11 +776,6 @@ async function sincronizarExtratoIntegracao(integracaoId, { forcar = false, desd
   if (!integracao) throw new Error('Conexão de marketplace não encontrada.');
   if (!integracao.ativo) throw new Error('Essa conexão está desativada.');
   if (!integracao.access_token) throw new Error('Essa conexão ainda não foi autorizada.');
-  // Shein (17/11/2026): a primeira entrega traz só os PEDIDOS. As faturas
-  // (finance/get-check-order-list) já estão liberadas no app e são a fase 2;
-  // até lá a loja é pulada em silêncio, em vez de gravar "erro" no
-  // Financeiro a cada ciclo.
-  if (integracao.marketplace === 'shein') return { pulado: true, motivo: 'extrato da Shein ainda não implementado' };
 
   if (!forcar) {
     const ultima = ultimaSincronizacaoPorIntegracao.get(integracaoId) || 0;
@@ -738,6 +813,8 @@ async function sincronizarExtratoIntegracao(integracaoId, { forcar = false, desd
       resultado = await sincronizarExtratoShopee(integracao, { inicio, fim }, estado);
     } else if (integracao.marketplace === 'tiktok_shop') {
       resultado = await sincronizarExtratoTikTok(integracao, { inicio, fim }, estado);
+    } else if (integracao.marketplace === 'shein') {
+      resultado = await sincronizarExtratoShein(integracao, { inicio, fim }, estado);
     } else {
       throw new Error(`Extrato ainda não implementado para "${integracao.marketplace}".`);
     }

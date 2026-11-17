@@ -100,7 +100,7 @@ async function lerRespostaJson(res, path) {
 
 // `modo: 'app'` assina com o APP_ID/APP_Secretkey (só a troca do tempToken);
 // `modo: 'loja'` assina com openKeyId/secretKey (todo o resto).
-async function chamarApi(path, { modo, id, chave, body = {} }) {
+async function chamarApi(path, { modo, id, chave, body = {}, cabecalhos = {} }) {
   let ultimoErro = null;
   for (let tentativa = 0; tentativa < 3; tentativa += 1) {
     const timestamp = String(Date.now());
@@ -111,6 +111,7 @@ async function chamarApi(path, { modo, id, chave, body = {} }) {
     };
     if (modo === 'app') headers['x-lt-appid'] = id;
     else headers['x-lt-openKeyId'] = id;
+    Object.assign(headers, cabecalhos);
 
     const res = await fetch(`${HOST_API}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
     const data = await lerRespostaJson(res, path);
@@ -366,8 +367,397 @@ function mapearPedido(detalhe) {
   };
 }
 
+// ===========================================================================
+// FINANCEIRO (17/11/2026)
+// ===========================================================================
+// finance/get-check-order-list: cada linha é um "extrato" (receita do
+// pedido, devolução, taxa, ajuste…) com o número do pedido (bzOrderNo), o
+// número do REPASSE em que foi pago (reportOrderNo) e o estado:
+// 1 aguardando · 2 próximo a pagar · 3 PAGO · 4 pagamento com problema.
+// Consulta por data de geração, no máximo 7 dias por chamada, 30 por página.
+// É a fonte do "valor que a Shein repassou oficialmente" de cada pedido.
+const PATH_EXTRATO = '/open-api/finance/get-check-order-list';
+const PATH_REPASSES = '/open-api/finance/report-order-list';
+const JANELA_EXTRATO_MS = 7 * 24 * 60 * 60 * 1000;
+
+// secondOrderType → tipo do extrato do Hub (financeiroExtrato.TIPOS_VALIDOS).
+const TIPO_EXTRATO = {
+  1: 'repasse_venda', 71: 'repasse_venda',
+  2: 'devolucao', 4: 'devolucao', 27: 'devolucao', 72: 'devolucao', 24: 'devolucao', 25: 'devolucao', 26: 'devolucao',
+  3: 'ajuste', 11: 'ajuste', 39: 'ajuste', 69: 'ajuste', 70: 'ajuste', 81: 'ajuste', 82: 'ajuste', 83: 'ajuste', 84: 'ajuste',
+  12: 'taxa', 13: 'taxa', 14: 'taxa', 15: 'taxa', 16: 'taxa', 17: 'taxa', 18: 'taxa', 22: 'taxa', 23: 'taxa',
+  34: 'taxa', 36: 'taxa', 37: 'taxa', 38: 'taxa', 44: 'taxa', 46: 'taxa', 62: 'taxa', 65: 'taxa', 68: 'taxa',
+  73: 'taxa', 76: 'taxa', 79: 'taxa', 80: 'taxa', 85: 'taxa',
+};
+const NOME_TIPO_EXTRATO = {
+  1: 'Receita de pedido', 2: 'Devolução de pedido', 3: 'Ajuste de pedido', 4: 'Devolução ao armazém',
+  5: 'Reembolso por perda de mercadoria', 6: 'Reembolso por anomalia de pedido', 8: 'Débito por anomalia de pedido',
+  12: 'Taxa de serviço de fulfillment', 13: 'Taxa de fulfillment de devolução', 14: 'Estorno da taxa de fulfillment',
+  15: 'Reembolso de taxa de fulfillment', 16: 'Débito de taxa de fulfillment', 17: 'Reembolso de penalidade', 18: 'Penalidade por infração',
+  19: 'Incentivo da plataforma', 20: 'Débito de incentivo da plataforma', 21: 'Reembolso de impostos', 22: 'Débito de impostos',
+  23: 'Taxa de operação de estocagem', 27: 'Reembolso por cancelamento de pedido', 34: 'Taxa de processamento de devolução',
+  35: 'Reembolso de GNRE', 36: 'Débito de GNRE', 54: 'Subsídio de impostos', 59: 'Subsídio de frete', 60: 'Devolução de subsídio de frete',
+  61: 'Subsídio de frete de devolução', 62: 'Taxa de serviço de cobrança', 63: 'Congelamento por penalidade', 64: 'Descongelamento de penalidade',
+  65: 'Sobretaxa de fulfillment', 68: 'Débito de IVA DIFAL', 69: 'Ajuste positivo de custo', 70: 'Ajuste negativo de custo',
+  71: 'Liquidação por pedido', 72: 'Liquidação de devolução', 73: 'Taxa de processamento de pagamento',
+  75: 'Reembolso de comissão de afiliado', 76: 'Comissão de afiliado', 79: 'Frete de envio', 80: 'Frete de devolução', 85: 'Taxa de cancelamento de fulfillment',
+};
+
+// Valor ASSINADO: receita positiva, despesa negativa (incomeExpenditureType
+// 1 = receita, 2 = despesa). A doc não diz se a despesa já vem negativa —
+// por isso o sinal vem do tipo, e não do número.
+function valorAssinado(linha) {
+  const v = numeroOuNulo(linha.estimateIncomeMoneyTotal);
+  if (v === null) return null;
+  return Number(linha.incomeExpenditureType) === 2 ? -Math.abs(v) : Math.abs(v);
+}
+
+function mapearLinhaExtrato(l) {
+  const tipoNum = Number(l.secondOrderType);
+  const pago = Number(l.checkStatus) === 3;
+  const pagoEm = lerDataShein(l.completedPayTime);
+  const previsto = lerDataShein(l.estimatePayTime);
+  const gerado = lerDataShein(l.businessCompletedTime);
+  return {
+    idExterno: String(l.checkOrderNo),
+    tipo: TIPO_EXTRATO[tipoNum] || (Number(l.incomeExpenditureType) === 2 ? 'taxa' : 'outros'),
+    tipoShein: tipoNum,
+    descricaoExterna: NOME_TIPO_EXTRATO[tipoNum] || `Tipo ${l.secondOrderType}`,
+    valor: valorAssinado(l),
+    moeda: l.currencyCode || 'BRL',
+    pedidoIdExterno: l.bzOrderNo ? String(l.bzOrderNo) : null,
+    repasseIdExterno: l.reportOrderNo ? String(l.reportOrderNo) : null,
+    pago,
+    statusShein: Number(l.checkStatus),
+    pagoEm: pagoEm ? pagoEm.toISOString() : null,
+    previstoEm: previsto ? previsto.toISOString() : null,
+    geradoEm: gerado ? gerado.toISOString() : null,
+  };
+}
+
+async function buscarExtrato(integracao, { desde, ate = new Date() }) {
+  const linhas = [];
+  const vistos = new Set();
+  for (let inicio = desde.getTime(); inicio < ate.getTime(); inicio += JANELA_EXTRATO_MS) {
+    const fim = Math.min(inicio + JANELA_EXTRATO_MS - 1000, ate.getTime());
+    for (let page = 1; page <= 500; page += 1) {
+      const info = await chamarApi(PATH_EXTRATO, {
+        modo: 'loja', ...credenciaisLoja(integracao),
+        body: { startAddTime: paraTextoPequim(new Date(inicio)), endAddTime: paraTextoPequim(new Date(fim)), page, pageSize: 30 },
+      });
+      const lista = info?.list || [];
+      for (const l of lista) {
+        if (!l?.checkOrderNo || vistos.has(l.checkOrderNo)) continue;
+        vistos.add(l.checkOrderNo);
+        linhas.push(mapearLinhaExtrato(l));
+      }
+      if (lista.length < 30) break;
+    }
+  }
+  return linhas;
+}
+
+// Os repasses (relatórios de pagamento) já PAGOS no período — valor e data
+// oficiais da transferência. Falha aqui não derruba o extrato.
+async function buscarRepassesPagos(integracao, { desde, ate = new Date() }) {
+  const repasses = [];
+  for (let page = 1; page <= 100; page += 1) {
+    const info = await chamarApi(PATH_REPASSES, {
+      modo: 'loja', ...credenciaisLoja(integracao),
+      body: { page, pageSize: 30, completedPayTimeStart: paraTextoPequim(desde), completedPayTimeEnd: paraTextoPequim(ate) },
+    });
+    const lista = info?.list || [];
+    for (const r of lista) {
+      const pagoEm = lerDataShein(r.completedPayTime);
+      repasses.push({
+        idExterno: String(r.reportOrderNo),
+        valor: numeroOuNulo(r.income),
+        moeda: r.currencyCode || 'BRL',
+        status: Number(r.reportStatus),
+        pagoEm: pagoEm ? pagoEm.toISOString() : null,
+        conta: r.rxAcct || null,
+        forma: Number(r.paymentMethod) === 2 ? 'carteira' : (Number(r.paymentMethod) === 1 ? 'transferencia' : null),
+      });
+    }
+    if (lista.length < 30) break;
+  }
+  return repasses;
+}
+
+// ===========================================================================
+// DEVOLUÇÕES (17/11/2026)
+// ===========================================================================
+// return-order/list (janela de 48 h, 30 por página, horário de Pequim) dá os
+// números; return-order/details (30 por vez) dá pedido, itens, motivo e o
+// valor estimado que sai da loja. Uma linha por peça (goodsId).
+const PATH_DEVOLUCOES = '/open-api/return-order/list';
+const PATH_DEVOLUCAO_DETALHE = '/open-api/return-order/details';
+// 1 fechado · 2 solicitado · 3 cancelado · 5 recebido · 6 entregue ·
+// 7 aguardando entrega · 8 a caminho do armazém SHEIN · 9 concluído
+const DEVOLUCAO_ABERTA = new Set([2, 5, 6, 7, 8]);
+const STATUS_DEVOLUCAO = {
+  1: 'fechada', 2: 'solicitada', 3: 'cancelada', 5: 'recebida', 6: 'entregue',
+  7: 'aguardando entrega', 8: 'a caminho do armazém SHEIN', 9: 'concluída',
+};
+
+async function buscarDevolucoes(integracao, { desde, ate = new Date() }) {
+  const numeros = new Set();
+  for (let inicio = desde.getTime(); inicio < ate.getTime(); inicio += JANELA_MAX_MS) {
+    const fim = Math.min(inicio + JANELA_MAX_MS - 1000, ate.getTime());
+    for (let page = 1; page <= 200; page += 1) {
+      const info = await chamarApi(PATH_DEVOLUCOES, {
+        modo: 'loja', ...credenciaisLoja(integracao),
+        body: { queryType: 3, startTime: paraTextoPequim(new Date(inicio)), endTime: paraTextoPequim(new Date(fim)), page, pageSize: 30 },
+      });
+      const lista = info?.returnOrderList || [];
+      for (const r of lista) if (r?.returnOrderNo) numeros.add(String(r.returnOrderNo));
+      if (lista.length < 30) break;
+    }
+  }
+  const todos = [...numeros];
+  const detalhes = [];
+  for (let i = 0; i < todos.length; i += 30) {
+    const info = await chamarApi(PATH_DEVOLUCAO_DETALHE, { modo: 'loja', ...credenciaisLoja(integracao), body: { returnOrderNoList: todos.slice(i, i + 30) } });
+    detalhes.push(...(Array.isArray(info) ? info : []));
+  }
+  return detalhes.map((d) => {
+    const status = Number(d.returnOrderStatus);
+    const itens = (d.returnGoodsInfoList || []).map((g) => ({
+      goodsId: g.goodsId != null ? String(g.goodsId) : null,
+      sku: g.sku || null,
+      skuExterno: g.skuSn || g.goodsSn || null,
+      titulo: g.goodsTitle || null,
+      motivo: textoPt((g.returnReasonList || []).map((r) => ({ ...r, language: String(r.language || '').toLowerCase() })), 'reason'),
+      valor: numeroOuNulo(g.estimateIncomeMoney),
+    }));
+    const criada = lerDataShein(d.requestReturnTime) || lerDataShein(d.allocateTime);
+    const atualizada = lerDataShein(d.lastUpdateTime);
+    return {
+      id: String(d.returnOrderNo),
+      orderId: d.orderNo ? String(d.orderNo) : null,
+      status,
+      statusTexto: STATUS_DEVOLUCAO[status] || String(d.returnOrderStatus ?? ''),
+      aberto: DEVOLUCAO_ABERTA.has(status),
+      semDevolverPeca: Number(d.noReturnGoodsSign) === 1,
+      criadaEm: criada ? criada.toISOString() : null,
+      atualizadaEm: atualizada ? atualizada.toISOString() : null,
+      itens,
+      bruto: { returnOrderNo: d.returnOrderNo, orderNo: d.orderNo, status: d.returnOrderStatus, expressNo: d.platformExpressNo || null, transportadora: d.expressCompanyName || null },
+    };
+  });
+}
+
+// ===========================================================================
+// ANÚNCIOS (17/11/2026)
+// ===========================================================================
+// Na Shein o anúncio é o SPU; as cores são SKCs dentro dele e cada tamanho é
+// um SKU. O Hub guarda o SPU como anúncio (mesmo id que entra nos itens de
+// pedido como anuncio_id_marketplace) e cada SKU como variação.
+//
+// A busca é a `goods/searchProduct`: até 10 SPUs por página, já com preço por
+// site (basePrice = preço cheio, specialPrice = preço promocional; 0 = sem
+// promoção) e estoque por armazém. Só lojas em autooperação recebem preço.
+const PATH_BUSCA_PRODUTO = '/open-api/goods/searchProduct';
+const PATH_PRECO = '/open-api/openapi-business-backend/product/price/save';
+const PATH_ESTOQUE = '/open-api/stock/change-inventory/v2';
+const SITE_BR = 'shein-br';
+
+function textoPt(lista, campo) {
+  const arr = Array.isArray(lista) ? lista : [];
+  const pt = arr.find((x) => String(x.language || '').toLowerCase().startsWith('pt'));
+  return (pt || arr[0] || {})[campo] || null;
+}
+
+function precoDoSite(sku) {
+  const lista = Array.isArray(sku.priceList) ? sku.priceList : [];
+  const br = lista.find((p) => p.site === SITE_BR) || lista.find((p) => String(p.currency || '').toUpperCase() === 'BRL') || null;
+  if (!br) return { preco: null, precoCheio: null, promocional: null, site: null, moeda: null };
+  const cheio = numeroOuNulo(br.basePrice);
+  const promo = numeroOuNulo(br.specialPrice);
+  return {
+    preco: promo && promo > 0 ? promo : cheio,
+    precoCheio: cheio,
+    promocional: promo && promo > 0 ? promo : null,
+    site: br.site || SITE_BR,
+    moeda: br.currency || 'BRL',
+  };
+}
+
+function estoqueDoSku(sku) {
+  const lista = Array.isArray(sku.inventoryList) ? sku.inventoryList : [];
+  if (!lista.length) return { estoque: null, armazem: null };
+  return {
+    estoque: lista.reduce((s, i) => s + (Number(i.inventoryNum) || 0), 0),
+    // Um armazém só é o caso comum; com mais de um, a escrita usa o primeiro
+    // e a tela é avisada (ver atualizarEstoqueShein).
+    armazem: lista[0]?.warehouseId ? String(lista[0].warehouseId) : null,
+    armazens: lista.length,
+  };
+}
+
+function mapearAnuncioShein(spu) {
+  const skcs = Array.isArray(spu.skcList) ? spu.skcList : [];
+  const variacoes = [];
+  for (const skc of skcs) {
+    const cor = textoPt(skc.skcSalesAttribute, 'attributeValueName');
+    for (const sku of skc.skuList || []) {
+      const tamanho = textoPt(sku.skuSalesAttributeList, 'attributeValueName');
+      const p = precoDoSite(sku);
+      const e = estoqueDoSku(sku);
+      variacoes.push({
+        variacaoIdExterna: String(sku.skuCode),
+        skuExterno: sku.supplierSku || skc.supplierCode || null,
+        cor,
+        tamanho,
+        preco: p.preco,
+        precoOriginal: p.promocional ? p.precoCheio : null,
+        estoque: e.estoque,
+        bruto: { skc: skc.skcName, sku: sku.skuCode, preco: p, armazem: e.armazem, armazens: e.armazens },
+      });
+    }
+  }
+  const precos = variacoes.map((v) => v.preco).filter((v) => v != null);
+  const estoques = variacoes.map((v) => v.estoque).filter((v) => v != null);
+  const primeira = skcs[0] || {};
+  return {
+    anuncioIdExterno: String(spu.spuName),
+    titulo: textoPt(primeira.skcTitle, 'title'),
+    skuExterno: variacoes[0]?.skuExterno || null,
+    preco: precos.length ? Math.min(...precos) : null,
+    precoOriginal: null,
+    estoque: estoques.length ? estoques.reduce((s, x) => s + x, 0) : null,
+    status: Number(spu.spuShelfStatus) === 1 ? 'ativo' : 'pausado',
+    statusExterno: spu.spuShelfStatus != null ? String(spu.spuShelfStatus) : null,
+    url: null,
+    fotoUrl: primeira.skcMainPicUrl || null,
+    categoriaExterna: spu.categoryId ? String(spu.categoryId) : null,
+    tipoAnuncio: variacoes.length > 1 ? 'com_variacao' : 'simples',
+    // A busca da Shein não devolve vendas nem visitas: nulo = não informado.
+    vendasTotal: null,
+    visitas: null,
+    curtidas: null,
+    criadoEmPlataforma: null,
+    atualizadoEmPlataforma: null,
+    variacoes,
+    bruto: { spuName: spu.spuName, skcs: skcs.map((k) => k.skcName), travas: skcs.map((k) => ({ skc: k.skcName, travas: k.activityLockList || [] })) },
+  };
+}
+
+async function buscarPaginaProdutos(integracao, filtro, pageNum) {
+  return chamarApi(PATH_BUSCA_PRODUTO, {
+    modo: 'loja',
+    ...credenciaisLoja(integracao),
+    cabecalhos: { language: 'pt-br' },
+    body: { pageNum, pageSize: 10, languageList: ['pt-br'], ...filtro },
+  });
+}
+
+async function buscarAnuncios(integracao) {
+  const anuncios = [];
+  const falhas = [];
+  for (let pagina = 1; pagina <= 500; pagina += 1) {
+    const info = await buscarPaginaProdutos(integracao, {}, pagina);
+    const lista = info?.data || [];
+    for (const spu of lista) {
+      try { anuncios.push(mapearAnuncioShein(spu)); } catch (err) { falhas.push({ id: String(spu?.spuName), erro: err.message }); }
+    }
+    if (lista.length < 10) break;
+  }
+  return { anuncios, falhas };
+}
+
+// O SPU como está AGORA na Shein — a escrita lê na hora, igual a Shopee,
+// para não mandar preço/armazém de uma sincronização velha.
+async function buscarAnuncioAtual(integracao, spuName) {
+  const info = await buscarPaginaProdutos(integracao, { spuNameList: [String(spuName)] }, 1);
+  const spu = (info?.data || [])[0];
+  if (!spu) throw erroComStatus(`O anúncio ${spuName} não foi encontrado na Shein (pode ter sido excluído ou estar em revisão).`, 404);
+  return mapearAnuncioShein(spu);
+}
+
+// Preço: a Shein guarda preço cheio (shopPrice) e promocional (specialPrice).
+// Se o specialPrice NÃO for enviado, ela zera a promoção — por isso ele vai
+// sempre. Regra do Hub: o preço digitado é o preço de VENDA.
+//  · abaixo do cheio atual → cheio fica, promocional = novo preço;
+//  · igual ou acima do cheio → cheio = novo preço, promocional = 0.
+// Aumento pode ser recusado se o SKC estiver travado em campanha, e pode ir
+// para revisão (status 2) — os dois casos voltam na resposta.
+async function atualizarPrecoShein(integracao, { spuName, itens }) {
+  const atual = await buscarAnuncioAtual(integracao, spuName);
+  const porSku = new Map(atual.variacoes.map((v) => [v.variacaoIdExterna, v]));
+  const lista = [];
+  for (const item of itens) {
+    const v = porSku.get(String(item.variacaoIdExterna));
+    if (!v) throw erroComStatus(`O SKU ${item.variacaoIdExterna} não existe mais neste anúncio da Shein.`, 409);
+    const novo = Math.round(Number(item.preco) * 100) / 100;
+    if (!(novo > 0)) throw erroComStatus('Preço inválido.', 400);
+    const cheio = v.bruto?.preco?.precoCheio;
+    const subiu = cheio == null || novo >= cheio;
+    lista.push({
+      productCode: v.variacaoIdExterna,
+      currencyCode: v.bruto?.preco?.moeda || 'BRL',
+      site: v.bruto?.preco?.site || SITE_BR,
+      shopPrice: subiu ? novo : cheio,
+      specialPrice: subiu ? 0 : novo,
+      ...(subiu && cheio != null && novo > cheio ? { riseReason: '4' } : {}),
+    });
+  }
+  const resultados = [];
+  for (let i = 0; i < lista.length; i += 100) {
+    const info = await chamarApi(PATH_PRECO, { modo: 'loja', ...credenciaisLoja(integracao), body: { productPriceList: lista.slice(i, i + 100) } });
+    resultados.push(...(info?.data || []));
+  }
+  const recusados = resultados.filter((r) => r.success === false || Number(r.status) === 0);
+  if (recusados.length) {
+    throw erroComStatus(recusados.map((r) => `${r.productCode}: ${r.message || 'recusado'}`).join(' · '), 422);
+  }
+  const emRevisao = resultados.filter((r) => Number(r.status) === 2).map((r) => r.productCode);
+  return { emRevisao };
+}
+
+// Estoque: SOBRESCREVE o estoque virtual do armazém do lojista (VI). A chave
+// de idempotência leva o instante, então repetir de propósito funciona e um
+// clique duplo no mesmo milissegundo não aplica duas vezes.
+async function atualizarEstoqueShein(integracao, { spuName, itens }) {
+  const atual = await buscarAnuncioAtual(integracao, spuName);
+  const porSku = new Map(atual.variacoes.map((v) => [v.variacaoIdExterna, v]));
+  const agora = Date.now();
+  const pedidos = itens.map((item) => {
+    const v = porSku.get(String(item.variacaoIdExterna));
+    if (!v) throw erroComStatus(`O SKU ${item.variacaoIdExterna} não existe mais neste anúncio da Shein.`, 409);
+    const qtd = Math.trunc(Number(item.estoque));
+    if (!(qtd >= 0)) throw erroComStatus('Estoque inválido.', 400);
+    return {
+      idempotencyKey: `hbn-${v.variacaoIdExterna}-${agora}`,
+      skuCode: v.variacaoIdExterna,
+      invType: 'VI',
+      ...(v.bruto?.armazem ? { warehouseCode: v.bruto.armazem } : {}),
+      changeType: 'OVERWRITE',
+      changeQuantity: qtd,
+      changeReason: 'HBN Hub',
+    };
+  });
+  const falhas = [];
+  for (let i = 0; i < pedidos.length; i += 100) {
+    const info = await chamarApi(PATH_ESTOQUE, { modo: 'loja', ...credenciaisLoja(integracao), body: { updateSkuInventoryQuantityRequests: pedidos.slice(i, i + 100) } });
+    falhas.push(...(info?.failedList || []));
+  }
+  if (falhas.length) throw erroComStatus(falhas.map((f) => `${f.skuCode}: ${f.reason || f.code}`).join(' · '), 422);
+  const variosArmazens = atual.variacoes.some((v) => (v.bruto?.armazens || 0) > 1);
+  return { variosArmazens };
+}
+
 module.exports = {
   HOST_API,
+  buscarExtrato,
+  buscarRepassesPagos,
+  _mapearLinhaExtrato: mapearLinhaExtrato,
+  buscarDevolucoes,
+  buscarAnuncios,
+  buscarAnuncioAtual,
+  atualizarPrecoShein,
+  atualizarEstoqueShein,
+  _mapearAnuncioShein: mapearAnuncioShein,
   buildAuthorizeUrl,
   trocarTempToken,
   buscarInfoLoja,

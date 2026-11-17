@@ -5,7 +5,7 @@
 // ("reserve_for_dispute", "ESCROW_VERIFIED_ADD") para português de quem não é
 // do financeiro. A tela e o relatório leem daqui — o mesmo texto nos dois.
 
-export const PLATAFORMAS = ['mercado_livre', 'shopee', 'tiktok_shop'];
+export const PLATAFORMAS = ['mercado_livre', 'shopee', 'tiktok_shop', 'shein'];
 
 // Grupos: espelham GRUPOS_TIPO do servidor (lib/financeiroExtrato.js).
 //   marketplace — o que a plataforma pagou ou descontou pela venda
@@ -41,6 +41,9 @@ export const DESTINO_SAQUE = {
   mercado_livre: 'Banco da empresa',
   shopee: 'Mercado Pago',
   tiktok_shop: 'Carteira TikTok',
+  // A Shein paga por relatório de pagamento, na conta cadastrada no painel
+  // dela (transferência ou carteira) — o Hub não sabe qual banco é.
+  shein: 'Conta cadastrada na Shein',
 };
 
 // Códigos do Mercado Pago (DESCRIPTION) e da Shopee (transaction_type) em

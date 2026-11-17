@@ -12,7 +12,8 @@
 //   Shopee — devoluções (/returns) com motivo e SKU; avaliações da loja com
 //   texto e item_id. Sem perguntas por API.
 //   TikTok — devoluções/reembolsos com motivo. Sem perguntas nem reviews.
-//   Shein — nada por API.
+//   Shein — devoluções (return-order) com motivo e SKU (17/11/2026). Sem
+//   perguntas, reclamações nem avaliações por API.
 // A tela mostra, por loja, o que a plataforma NÃO dá, para ninguém achar que
 // "zero reclamações no TikTok" é mérito.
 //
@@ -26,6 +27,7 @@ const pool = require('../db/pool');
 const mercadoLivre = require('./marketplaces/mercadoLivre');
 const shopee = require('./marketplaces/shopee');
 const tiktokShop = require('./marketplaces/tiktokShop');
+const shein = require('./marketplaces/shein');
 const { garantirTokenValido, encontrarVariante } = require('./marketplaceSync');
 const { classificarMotivo } = require('./posVenda');
 
@@ -212,6 +214,26 @@ async function sincronizarPosVendaDaIntegracao(integracaoId) {
               anuncioIdExterno: it.productId || null, variacaoIdExterna: it.skuId || null, skuExterno: it.skuExterno || null, pedidoCanalId: d.orderId,
               motivoCodigo: d.motivoCodigo, motivoTexto: d.motivoTexto, statusExterno: d.status, aberto: ABERTO_TIKTOK.has(String(d.status || '').toUpperCase()),
               quantidade: it.quantidade || null, valor: d.valor || null, compradorId: d.compradorId, ocorridoEm: d.criadaEm, atualizadoEm: d.atualizadaEm, bruto: { ...d, itens: undefined, item: it },
+            });
+          }
+        }
+        return lista.length;
+      });
+      fontes.pergunta = 'sem_api'; fontes.reclamacao = 'sem_api'; fontes.avaliacao = 'sem_api';
+    } else if (integracao.marketplace === 'shein') {
+      // Shein (17/11/2026): devoluções por API; perguntas, reclamações e
+      // avaliações a Shein não expõe.
+      await fonte('devolucao', async () => {
+        const lista = await shein.buscarDevolucoes(integracao, { desde });
+        for (const d of lista) {
+          const itens = d.itens.length ? d.itens : [{}];
+          for (const [i, it] of itens.entries()) {
+            await gravar(client, integracao, {
+              tipo: 'devolucao', id: itens.length > 1 ? `${d.id}#${it.goodsId || i}` : d.id,
+              anuncioIdExterno: null, variacaoIdExterna: it.sku || null, skuExterno: it.skuExterno || null, pedidoCanalId: d.orderId,
+              motivoCodigo: it.motivo || null, motivoTexto: it.motivo || null, statusExterno: d.statusTexto, aberto: d.aberto,
+              quantidade: itens.length > 1 || it.goodsId ? 1 : null, valor: it.valor ?? null, ocorridoEm: d.criadaEm, atualizadoEm: d.atualizadaEm,
+              bruto: { ...d.bruto, semDevolverPeca: d.semDevolverPeca, item: it },
             });
           }
         }

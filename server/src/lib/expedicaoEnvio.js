@@ -211,6 +211,64 @@ function normalizarEnvioTikTok(order = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Shein (17/11/2026)
+// ---------------------------------------------------------------------------
+// Vem do próprio detalhe do pedido (/open-api/order/order-detail): não há
+// API de envio separada. Datas no formato "2025-07-25T17:22:11.000+0800"
+// (horário de Pequim, com fuso explícito).
+const ETAPA_SHEIN = {
+  1: 'a_enviar', // pendente
+  2: 'a_enviar', // aguardando envio
+  3: 'pronto',   // aguardando envio pela SHEIN
+  7: 'pronto',   // aguardando coleta
+  4: 'enviado',
+  8: 'enviado',  // reportado como danificado no transporte
+  5: 'entregue',
+  6: 'cancelado', // reembolsado
+  9: 'cancelado', // recusado pelo comprador
+};
+
+function dataShein(valor) {
+  if (!valor) return null;
+  const t = String(valor).trim();
+  if (!t) return null;
+  return dataOuNulo(t.replace(/([+-]\d{2})(\d{2})$/, '$1:$2'));
+}
+
+function normalizarEnvioShein(d = {}) {
+  const pacote = Array.isArray(d.packageWaybillList) ? d.packageWaybillList.find((p) => p?.waybillNo) || d.packageWaybillList[0] : null;
+  const prazos = [];
+  for (const g of d.orderGoodsInfoList || []) for (const t of g.timeOutList || []) prazos.push(t);
+  const prazoDe = (...tipos) => {
+    const datas = prazos.filter((t) => tipos.includes(Number(t.timeOutType))).map((t) => dataShein(t.timeOutTime)).filter(Boolean).sort();
+    return datas[0] || null;
+  };
+  // 1 = ponto de coleta (a loja leva), 2 = coleta porta a porta.
+  const padrao = Number(d.declareCollectionPattern);
+  const modalidade = padrao === 2 ? 'coleta' : (padrao === 1 ? 'agencia' : null);
+  return {
+    envio_id_externo: pacote?.packageNo ? texto(pacote.packageNo, 80) : null,
+    modalidade,
+    modalidade_bruta: texto([padrao ? `coleta ${padrao}` : null, d.deliveryServiceType ? `entrega ${d.deliveryServiceType}` : null].filter(Boolean).join(' / '), 60),
+    status_plataforma: d.orderStatus != null ? texto(String(d.orderStatus), 60) : null,
+    substatus_plataforma: Array.isArray(d.unProcessReason) && d.unProcessReason.length ? texto(d.unProcessReason.join(','), 60) : null,
+    etapa: ETAPA_SHEIN[Number(d.orderStatus)] || null,
+    // O prazo que pesa: a coleta exigida; sem ela, o prazo de cancelamento
+    // por atraso (tipos 7 e 2 da SHEIN); por último o envio exigido.
+    despachar_ate: dataShein(d.requestHandoverTime) || prazoDe(7, 2, 35, 36) || dataShein(d.needDeliveryTime),
+    pronto_ate: dataShein(d.requestPrintTime) || prazoDe(1),
+    pronto_em: dataShein(d.printingTime),
+    enviado_em: dataShein(d.pickUpTime) || dataShein(d.sellerDeliveryTime),
+    entregue_em: dataShein(d.orderReceiptTime),
+    cancelado_em: dataShein(d.orderReturnTime) || dataShein(d.orderRejectionTime),
+    transportadora: texto(pacote?.carrier),
+    codigo_rastreio: texto(pacote?.waybillNo, 80),
+    sla_plataforma: null,
+    pago_em: dataShein(d.paymentTime),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Janela de almoço da casa
 // ---------------------------------------------------------------------------
 // Ninguém fica na empresa entre 12:00 e 13:15 para atender a coleta. Coleta
@@ -232,6 +290,6 @@ function cruzaAlmoco(de, ate = de) {
 }
 
 module.exports = {
-  normalizarEnvioML, normalizarEnvioShopee, normalizarEnvioTikTok, lerAgendaML,
+  normalizarEnvioML, normalizarEnvioShopee, normalizarEnvioTikTok, normalizarEnvioShein, lerAgendaML,
   etapaML, ALMOCO, cruzaAlmoco, minutosDoDia, dataOuNulo, unixOuNulo,
 };

@@ -14,7 +14,7 @@ export const PLATAFORMA_LABEL = {
 // lucratividade em vez da estimativa. Espelha CANAIS_COM_VALOR_RECEBIDO em
 // server/src/routes/pedidos.routes.js: Mercado Livre pelo valor líquido do
 // pagamento, Shopee pelo valor da conciliação (escrow).
-export const CANAIS_COM_REPASSE = [PLATAFORMA_LABEL.mercado_livre, PLATAFORMA_LABEL.shopee];
+export const CANAIS_COM_REPASSE = [PLATAFORMA_LABEL.mercado_livre, PLATAFORMA_LABEL.shopee, PLATAFORMA_LABEL.shein];
 
 // Marketplaces com API de publicidade integrada aqui.
 export const PLATAFORMAS_COM_ADS = ['mercado_livre', 'shopee'];

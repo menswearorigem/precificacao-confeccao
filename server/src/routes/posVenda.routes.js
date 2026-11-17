@@ -143,7 +143,7 @@ async function calcularPainel(j) {
         'Taxa de devolução = peças devolvidas (plataforma + registradas no Hub) ÷ peças vendidas na mesma janela, com o kit aberto. Referência com menos de 20 peças vendidas aparece com a taxa, mas marcada como amostra pequena.',
         'O motivo vem do código da plataforma quando ela dá um; senão do texto do cliente, por palavra; senão fica "sem classificar" — e a lista de eventos deixa você classificar à mão. O classificado à mão nunca é sobrescrito.',
         'Sinal de modelagem: num tamanho, pelo menos 3 devoluções por "ficou pequeno" e 3× mais que "ficou grande" (ou o inverso). Menos que isso é acaso.',
-        'O que cada loja não dá: Shopee e TikTok não expõem perguntas por API; TikTok não expõe avaliações; Shein não expõe nada. O quadro de lojas diz fonte por fonte.',
+        'O que cada loja não dá: Shopee e TikTok não expõem perguntas por API; TikTok não expõe avaliações; Shein expõe só as devoluções. O quadro de lojas diz fonte por fonte.',
       ],
     };
   }

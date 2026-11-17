@@ -26,8 +26,9 @@ const pool = require('../db/pool');
 const mercadoLivre = require('./marketplaces/mercadoLivre');
 const shopee = require('./marketplaces/shopee');
 const tiktokShop = require('./marketplaces/tiktokShop');
+const shein = require('./marketplaces/shein');
 const {
-  normalizarEnvioML, normalizarEnvioShopee, normalizarEnvioTikTok, lerAgendaML,
+  normalizarEnvioML, normalizarEnvioShopee, normalizarEnvioTikTok, normalizarEnvioShein, lerAgendaML,
 } = require('./expedicaoEnvio');
 
 const LIMITE_ML = 120;
@@ -230,15 +231,45 @@ async function sincronizarTikTok(integracao, pedidos) {
   return { ok, ultimoErro };
 }
 
+// ---------------------------------------------------------------- Shein
+// 1 chamada a cada 30 pedidos (order-detail aceita 30 por vez).
+async function sincronizarShein(integracao, pedidos) {
+  const porId = new Map(pedidos.map((p) => [String(p.origem_pedido_id), p]));
+  let ok = 0; let ultimoErro = null;
+  try {
+    const detalhes = await shein.buscarDetalhes(integracao, [...porId.keys()]);
+    for (const d of detalhes) {
+      const p = porId.get(String(d.orderNo));
+      if (!p) continue;
+      porId.delete(String(d.orderNo));
+      await gravarEnvio(p.id, integracao, normalizarEnvioShein(d), {
+        orderStatus: d.orderStatus, packageWaybillList: d.packageWaybillList,
+        requestPrintTime: d.requestPrintTime, requestHandoverTime: d.requestHandoverTime,
+        // O Painel ao vivo lê o estado de destino deste caminho (mesmo da
+        // Shopee). A Shein só manda a região quando a logística não é a dela.
+        ...(d.receiveMsg?.province ? { recipient_address: { state: d.receiveMsg.province, city: d.receiveMsg.city || null } } : {}),
+      });
+      ok += 1;
+    }
+    for (const p of porId.values()) {
+      await gravarEnvio(p.id, integracao, null, null, 'A Shein não devolveu este pedido na consulta de envio.');
+    }
+  } catch (err) {
+    ultimoErro = err.message;
+  }
+  return { ok, ultimoErro };
+}
+
 // ---------------------------------------------------------------- orquestra
 async function sincronizarEnvios(integracao) {
-  if (!['mercado_livre', 'shopee', 'tiktok_shop'].includes(integracao.marketplace)) return null;
+  if (!['mercado_livre', 'shopee', 'tiktok_shop', 'shein'].includes(integracao.marketplace)) return null;
   const limite = integracao.marketplace === 'mercado_livre' ? LIMITE_ML : LIMITE_LOTE;
   const pedidos = await pedidosParaConsultar(integracao.id, limite);
   let resultado = { ok: 0, ultimoErro: null };
   if (pedidos.length) {
     if (integracao.marketplace === 'mercado_livre') resultado = await sincronizarML(integracao, pedidos);
     else if (integracao.marketplace === 'shopee') resultado = await sincronizarShopee(integracao, pedidos);
+    else if (integracao.marketplace === 'shein') resultado = await sincronizarShein(integracao, pedidos);
     else resultado = await sincronizarTikTok(integracao, pedidos);
   }
   if (integracao.marketplace === 'mercado_livre') {

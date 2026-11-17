@@ -18,6 +18,7 @@ const mercadoLivre = require('./marketplaces/mercadoLivre');
 const shopee = require('./marketplaces/shopee');
 const tiktokShop = require('./marketplaces/tiktokShop');
 const tiktokAds = require('./marketplaces/tiktokAds');
+const shein = require('./marketplaces/shein');
 const {
   garantirTokenValido,
   normalizarComparacao,
@@ -153,9 +154,10 @@ async function lerAnunciosDaLoja(integracao) {
       shopCipher: integracao.shop_cipher,
     });
   }
-  // Shein ainda não tem integração. Em vez de fingir que leu zero anúncio
-  // (o que a tela mostraria como "loja sem anúncios"), a varredura recusa
-  // explicitamente e a tela diz que a loja não está conectada.
+  // Shein (17/11/2026): SPU = anúncio, SKU = variação. Ver marketplaces/shein.js.
+  if (integracao.marketplace === 'shein') {
+    return shein.buscarAnuncios(integracao);
+  }
   const e = new Error(`Não existe leitura de anúncios para "${integracao.marketplace}" ainda.`);
   e.status = 400;
   throw e;

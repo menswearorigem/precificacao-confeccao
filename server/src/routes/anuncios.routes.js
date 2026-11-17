@@ -22,6 +22,7 @@ const { garantirTokenValido } = require('../lib/marketplaceSync');
 const mercadoLivre = require('../lib/marketplaces/mercadoLivre');
 const shopee = require('../lib/marketplaces/shopee');
 const tiktokShop = require('../lib/marketplaces/tiktokShop');
+const shein = require('../lib/marketplaces/shein');
 const { montarPlanilhaAnuncios } = require('../lib/anunciosExportacao');
 const { idsDoFiltro, chavesDoFiltro } = require('../lib/filtrosMulti');
 const { paraHttps } = require('../lib/fotoMarketplace');
@@ -788,6 +789,36 @@ async function alterarAnuncioNaPlataforma(req, anuncioId, { preco, estoque, titu
         });
       }
       enviado.push('tiktok_shop');
+    } else if (integracao.marketplace === 'shein') {
+      // Shein (17/11/2026): preço e estoque por SKU, lidos na hora da Shein
+      // (preço cheio, promoção e armazém atuais). Ver marketplaces/shein.js.
+      if (titulo != null || situacao != null) {
+        const e = new Error('Na Shein, título e situação (publicar/despublicar) ainda se alteram só no painel da Shein. Preço e estoque dá para alterar por aqui.');
+        Object.assign(e, { status: 400, paraUsuario: true });
+        throw e;
+      }
+      if ((preco != null || estoque != null) && !alvoVariacoes.length) {
+        const e = new Error('Este anúncio da Shein está sem os SKUs no Hub. Rode a sincronização de anúncios e tente de novo.');
+        Object.assign(e, { status: 409, paraUsuario: true });
+        throw e;
+      }
+      if (preco != null) {
+        const r = await shein.atualizarPrecoShein(integracao, {
+          spuName: linha.anuncio_id_externo,
+          itens: alvoVariacoes.map((v) => ({ variacaoIdExterna: v.variacaoIdExterna, preco: v.preco ?? preco })),
+        });
+        if (r.emRevisao.length) {
+          avisos.push(`A Shein mandou ${r.emRevisao.length} preço(s) para revisão (aumento de preço). O preço novo só vale depois que ela aprovar.`);
+        }
+      }
+      if (estoque != null) {
+        const r = await shein.atualizarEstoqueShein(integracao, {
+          spuName: linha.anuncio_id_externo,
+          itens: alvoVariacoes.map((v) => ({ variacaoIdExterna: v.variacaoIdExterna, estoque: v.estoque ?? estoque })),
+        });
+        if (r.variosArmazens) avisos.push('Este anúncio tem estoque em mais de um armazém na Shein; o Hub gravou no primeiro.');
+      }
+      enviado.push('shein');
     } else {
       const e = new Error(`Ainda não dá para alterar anúncio de "${integracao.marketplace}" por aqui.`);
       e.status = 400;
@@ -853,7 +884,7 @@ async function alterarAnuncioNaPlataforma(req, anuncioId, { preco, estoque, titu
     // Shopee/ML/TikTok caía no tratador genérico e virava "Erro interno do
     // servidor, código QBAD6M" — o motivo só existia no log do Render.
     if (err && plataformaDoErro && !err.exige && !err.paraUsuario && err.message) {
-      const nomes = { mercado_livre: 'O Mercado Livre', shopee: 'A Shopee', tiktok_shop: 'A TikTok Shop' };
+      const nomes = { mercado_livre: 'O Mercado Livre', shopee: 'A Shopee', tiktok_shop: 'A TikTok Shop', shein: 'A Shein' };
       const quem = nomes[plataformaDoErro] || 'A plataforma';
       const status = Number(err.status);
       err.message = `${quem} recusou a alteração: ${err.message}`;

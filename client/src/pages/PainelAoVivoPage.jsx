@@ -1203,7 +1203,7 @@ export default function PainelAoVivoPage() {
                   : 'Todas as vendas de hoje e de ontem têm hora confiável.'}
               </li>
               <li>Mapa: contornos dos estados do projeto @svg-maps/brazil (licença CC BY 4.0).</li>
-              <li>A Shein não entra: o Hub ainda não tem integração com ela, então o painel mostra Mercado Livre, Shopee e TikTok Shop.</li>
+              <li>A Shein entra desde 17/11/2026. O estado de destino dos pedidos dela só aparece quando a Shein informa a região (na logística da própria Shein, ela não informa).</li>
               <li>O estado de destino vem do endereço que as plataformas informaram na consulta de envio; pedido sem endereço lido fica fora do mapa.</li>
             </ul>
           </details>

@@ -1482,7 +1482,55 @@ async function atualizarValoresRecebidosTikTok(integracao, { forcar = false } = 
   }
 }
 
+// Shein (17/11/2026): o valor que a Shein REPASSOU oficialmente por pedido.
+// Vem do extrato de conta (finance/get-check-order-list), que o
+// lib/financeiroExtrato.js grava em fin_extrato_lancamentos com o número do
+// pedido. Aqui só se lê essa tabela — nenhuma chamada a mais na Shein.
+//   · soma de TODAS as linhas do pedido (receita, devolução, taxas, ajustes);
+//   · só troca a estimativa quando já existe a linha de RECEITA do pedido
+//     (sem ela, uma taxa solta deixaria o recebido negativo);
+//   · "liberado" quando todas as linhas estão pagas, com a data do último
+//     pagamento; senão "confirmado" (valor oficial, dinheiro ainda não pago).
+async function atualizarValoresRecebidosShein(integracao) {
+  try {
+    const { rowCount } = await pool.query(
+      `WITH oficial AS (
+         SELECT l.pedido_id_externo,
+                ROUND(SUM(l.valor)::numeric, 2) AS valor,
+                BOOL_AND(l.status = 'liberado') AS todos_pagos,
+                MAX(l.data_evento) FILTER (WHERE l.status = 'liberado') AS pago_em
+           FROM fin_extrato_lancamentos l
+          WHERE l.origem_integracao_id = $1 AND l.marketplace = 'shein' AND l.pedido_id_externo IS NOT NULL
+          GROUP BY l.pedido_id_externo
+         HAVING BOOL_OR(l.tipo = 'repasse_venda')
+       )
+       UPDATE pedidos_venda p
+          SET valor_recebido_marketplace = o.valor,
+              valor_recebido_status = CASE WHEN o.todos_pagos THEN 'liberado' ELSE 'confirmado' END,
+              valor_recebido_liberacao_em = CASE WHEN o.todos_pagos THEN o.pago_em ELSE NULL END,
+              valor_recebido_atualizado_em = now(),
+              updated_at = now()
+         FROM oficial o
+        WHERE p.origem_integracao_id = $1
+          AND p.origem_marketplace = 'shein'
+          AND p.origem_pedido_id = o.pedido_id_externo
+          AND (p.valor_recebido_marketplace IS DISTINCT FROM o.valor
+               OR p.valor_recebido_status IS DISTINCT FROM (CASE WHEN o.todos_pagos THEN 'liberado' ELSE 'confirmado' END))`,
+      [integracao.id]
+    );
+    await pool.query(
+      'UPDATE integracoes_marketplace SET ultimo_erro_faturamento = NULL WHERE id = $1 AND ultimo_erro_faturamento IS NOT NULL',
+      [integracao.id]
+    ).catch(() => {});
+    return { atualizados: rowCount };
+  } catch (err) {
+    await pool.query('UPDATE integracoes_marketplace SET ultimo_erro_faturamento = $1 WHERE id = $2', [err.message, integracao.id]).catch(() => {});
+    return { atualizados: 0, erro: err.message };
+  }
+}
+
 async function atualizarValoresRecebidos(integracao) {
+  if (integracao.marketplace === 'shein') return atualizarValoresRecebidosShein(integracao);
   if (integracao.marketplace === 'shopee') return atualizarValoresRecebidosShopee(integracao);
   if (integracao.marketplace === 'tiktok_shop') return atualizarValoresRecebidosTikTok(integracao);
   if (integracao.marketplace !== 'mercado_livre') return;
@@ -2014,6 +2062,7 @@ module.exports = {
   atualizarValoresRecebidos,
   atualizarValoresRecebidosShopee,
   atualizarValoresRecebidosTikTok,
+  atualizarValoresRecebidosShein,
   garantirAnuncianteTikTok,
   corrigirPagamentosHistorico,
   sincronizarCancelamentos,

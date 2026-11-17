@@ -46,7 +46,7 @@ const AVISO_SEM_LEITURA = {
   tiktok_shop: 'O FBT da TikTok Shop ainda não é lido por aqui: a resposta de produto não separa o saldo '
     + 'do armazém deles do saldo da casa, e ler por armazém exige um cadastro que esta conta ainda não tem. '
     + 'Nenhum número da TikTok aparece nesta aba — em vez de aparecer errado.',
-  shein: 'A Shein ainda não é integrada ao sistema, então não há o que ler do fulfillment dela.',
+  shein: 'A loja Shein envia do armazém da casa: o Hub não lê fulfillment (estoque no armazém da Shein) dela.',
 };
 
 // Quanto o saldo precisa subir de um dia para o outro para ser tratado como

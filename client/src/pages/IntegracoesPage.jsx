@@ -209,12 +209,12 @@ export default function IntegracoesPage() {
     }
   }
 
-  async function sincronizar(id) {
+  async function sincronizar(id, desde = null) {
     setErro('');
     setAviso('');
     setSincronizandoId(id);
     try {
-      const resultado = await api.post(`/integracoes/${id}/sincronizar`, {});
+      const resultado = await api.post(`/integracoes/${id}/sincronizar`, desde ? { desde } : {});
       const cancelados = resultado.pedidosCancelados > 0 ? ` ${plural(resultado.pedidosCancelados, 'pedido')} cancelado(s) no marketplace foi(ram) atualizado(s) aqui também.` : '';
       setAviso(`${plural(resultado.pedidosImportados, 'pedido')} novo(s) importado(s) (${resultado.pedidosEncontrados} encontrado(s) no total).${cancelados}`);
       load();
@@ -487,6 +487,31 @@ export default function IntegracoesPage() {
                                 />
                               </Field>
                             </div>
+                            {item.conectado && (
+                              // Busca retroativa (17/11/2026): a sincronização normal relê só os
+                              // últimos 7 dias. Daqui dá para puxar desde um dia escolhido (até
+                              // 90 dias para trás); pedido que já está no Hub não duplica.
+                              <div className="form-grid" style={{ margin: '0 0 8px', alignItems: 'end' }}>
+                                <Field label="Buscar pedidos desde (até 90 dias atrás)">
+                                  <input
+                                    type="date"
+                                    value={item.buscaDesde || ''}
+                                    max={new Date().toISOString().slice(0, 10)}
+                                    min={new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)}
+                                    onChange={(e) => editarCampoLocal(item.id, 'buscaDesde', e.target.value)}
+                                  />
+                                </Field>
+                                <div>
+                                  <button
+                                    type="button" className="btn btn-ghost"
+                                    disabled={!item.buscaDesde || sincronizandoId === item.id}
+                                    onClick={() => sincronizar(item.id, item.buscaDesde)}
+                                  >
+                                    <RefreshCw size={13} /> {sincronizandoId === item.id ? 'Buscando…' : 'Buscar desde essa data'}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                             {item.ultimoErro && (
                               <div className="login-error">Última tentativa falhou. <ErroIntegracao erro={item.ultimoErro} sistema="a plataforma" /></div>
                             )}
