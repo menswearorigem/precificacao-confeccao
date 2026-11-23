@@ -192,8 +192,10 @@ async function main() {
   checa('/hoje: corte da casa do ML = 14:00', cML.corte_casa === '14:00', cML.corte_casa);
   const cTt = hoje.body.cartoes.find((c) => c.integracao_id === lojaTt.id);
   checa('/hoje: TikTok passou hoje', !!cTt.passou_hoje && cTt.enviados_hoje === 1, cTt);
-  // Shein integrada desde 17/11/2026: o bloco continua trazendo o corte da casa.
-  checa('/hoje: Shein aparece como integrada, com o corte da casa', hoje.body.shein.integrada === true && hoje.body.shein.corte_casa === '15:00');
+  // Shein: "integrada" reflete se há loja Shein ativa no banco (antes era
+  // fixo em true). O corte da casa continua vindo de qualquer jeito.
+  const { rows: [lojaShein] } = await pool.query(`SELECT EXISTS (SELECT 1 FROM integracoes_marketplace WHERE marketplace = 'shein' AND ativo) AS tem`);
+  checa('/hoje: "Shein integrada" segue o banco, com o corte da casa', hoje.body.shein.integrada === lojaShein.tem && hoje.body.shein.corte_casa === '15:00');
   checa('/hoje: janela do ML 12:30 cruza o almoço (dia útil)', [0, 6].includes(new Date().getDay()) || cML.alerta_almoco === true, cML.agenda_hoje);
 
   const pend = await get('/api/rom/expedicao/pendencias');

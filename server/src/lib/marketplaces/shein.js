@@ -251,13 +251,16 @@ function pedidoImportavel(detalhe) {
 async function buscarPedidos(integracao, { desde, jaImportados }) {
   const conhecidos = jaImportados instanceof Set ? jaImportados : new Set(jaImportados || []);
   const lista = await listarPedidos(integracao, { desde, queryType: 1 });
-  const novos = lista
-    .filter((p) => Number(p.orderStatus) !== STATUS_REEMBOLSADO)
+  const validos = lista.filter((p) => Number(p.orderStatus) !== STATUS_REEMBOLSADO);
+  const novos = validos
     .map((p) => String(p.orderNo))
     .filter((n) => !conhecidos.has(n));
-  if (novos.length === 0) return [];
-  const detalhes = await buscarDetalhes(integracao, novos);
-  return detalhes.filter(pedidoImportavel);
+  // Quantos a Shein devolveu no período, contando os que já estavam no Hub.
+  // Sem isso a tela dizia "0 encontrado(s)" numa busca que achou dezenas de
+  // pedidos, todos já importados (pendência de 18/11/2026).
+  const resultado = novos.length === 0 ? [] : (await buscarDetalhes(integracao, novos)).filter(pedidoImportavel);
+  resultado.naPlataforma = validos.length;
+  return resultado;
 }
 
 async function buscarPedidoPorId(integracao, orderNo) {

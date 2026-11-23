@@ -209,6 +209,26 @@ export default function IntegracoesPage() {
     }
   }
 
+  // Shein: corrige o valor de pedidos ABERTOS importados com o preço "de"
+  // (17/11/2026). Só mexe quando as peças batem uma a uma pelo SKU.
+  async function corrigirValoresShein(id, desde) {
+    setErro('');
+    setAviso('');
+    setSincronizandoId(id);
+    try {
+      const r = await api.post(`/integracoes/${id}/shein/corrigir-valores`, { desde });
+      const pulados = r.pulados?.length
+        ? ` ${plural(r.pulados.length, 'pedido ficou', 'pedidos ficaram')} como estava(m): ${r.pulados.slice(0, 5).map((p) => `${p.pedido} (${p.motivo})`).join('; ')}${r.pulados.length > 5 ? '…' : ''}.`
+        : '';
+      setAviso(`${plural(r.pedidosNoPeriodo, 'pedido')} no período, ${plural(r.abertos, 'aberto')}: ${plural(r.corrigidos, 'corrigido')}.${pulados}`);
+      load();
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setSincronizandoId(null);
+    }
+  }
+
   async function sincronizar(id, desde = null) {
     setErro('');
     setAviso('');
@@ -216,7 +236,12 @@ export default function IntegracoesPage() {
     try {
       const resultado = await api.post(`/integracoes/${id}/sincronizar`, desde ? { desde } : {});
       const cancelados = resultado.pedidosCancelados > 0 ? ` ${plural(resultado.pedidosCancelados, 'pedido')} cancelado(s) no marketplace foi(ram) atualizado(s) aqui também.` : '';
-      setAviso(`${plural(resultado.pedidosImportados, 'pedido')} novo(s) importado(s) (${resultado.pedidosEncontrados} encontrado(s) no total).${cancelados}`);
+      if (resultado.pedidosNaPlataforma != null) {
+        const jaNoHub = Math.max(0, resultado.pedidosNaPlataforma - resultado.pedidosImportados);
+        setAviso(`${plural(resultado.pedidosNaPlataforma, 'pedido')} na plataforma no período: ${plural(resultado.pedidosImportados, 'novo importado', 'novos importados')}, ${plural(jaNoHub, 'já estava', 'já estavam')} no Hub.${cancelados}`);
+      } else {
+        setAviso(`${plural(resultado.pedidosImportados, 'pedido')} novo(s) importado(s) (${resultado.pedidosEncontrados} encontrado(s) no total).${cancelados}`);
+      }
       load();
     } catch (err) {
       setErro(err.message);
@@ -509,6 +534,16 @@ export default function IntegracoesPage() {
                                   >
                                     <RefreshCw size={13} /> {sincronizandoId === item.id ? 'Buscando…' : 'Buscar desde essa data'}
                                   </button>
+                                  {item.marketplace === 'shein' && (
+                                    <button
+                                      type="button" className="btn btn-ghost"
+                                      disabled={!item.buscaDesde || sincronizandoId === item.id}
+                                      title="Relê na Shein os pedidos ainda abertos desde essa data e grava o preço vendido certo. Pedido faturado ou cancelado não muda."
+                                      onClick={() => corrigirValoresShein(item.id, item.buscaDesde)}
+                                    >
+                                      Corrigir valores desde essa data
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             )}

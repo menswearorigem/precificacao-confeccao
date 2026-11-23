@@ -169,7 +169,8 @@ async function painelHoje() {
   const semLoja = cont.find((c) => c.origem_integracao_id === null);
   return {
     hoje, agora: new Date().toISOString(), almoco: ALMOCO, cortes: corte,
-    shein: { integrada: true, corte_casa: corte.shein || null },
+    // Integrada = existe loja Shein ativa (antes era fixo em true).
+    shein: { integrada: ls.some((l) => l.marketplace === 'shein'), corte_casa: corte.shein || null },
     cartoes,
     sem_loja: semLoja ? { pendentes: semLoja.pendentes } : null,
   };

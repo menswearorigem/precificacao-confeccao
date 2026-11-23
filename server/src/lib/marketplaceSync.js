@@ -139,7 +139,9 @@ async function buscarPedidosDoMarketplace(integracao, desde) {
       desde,
       jaImportados: new Set(existentesShein.map((r) => r.origem_pedido_id)),
     });
-    return detalhes.map(shein.mapearPedido);
+    const mapeados = detalhes.map(shein.mapearPedido);
+    mapeados.naPlataforma = detalhes.naPlataforma;
+    return mapeados;
   }
   // Mesmo filtro de "já importado" da Shopee. Na TikTok a busca de pedidos
   // devolve tudo numa chamada só (não tem passo de detalhe por pedido), então
@@ -1914,7 +1916,15 @@ async function sincronizarIntegracao(integracaoId, { desdeData = null } = {}) {
       `UPDATE integracoes_marketplace SET ultima_sincronizacao = now(), ultimo_erro = $1, atualizado_em = now() WHERE id = $2`,
       [ultimoErroImportacao || avisoTeto, integracaoId]
     );
-    return { pedidosEncontrados: pedidosGenericos.length, pedidosImportados: importados, pedidosCancelados: cancelados };
+    return {
+      pedidosEncontrados: pedidosGenericos.length,
+      // Só a Shein informa (por enquanto): total que a plataforma devolveu no
+      // período, já importados inclusive. Nas outras fica nulo e a tela usa a
+      // frase antiga.
+      pedidosNaPlataforma: pedidosGenericos.naPlataforma ?? null,
+      pedidosImportados: importados,
+      pedidosCancelados: cancelados,
+    };
   } catch (err) {
     await pool.query(
       `UPDATE integracoes_marketplace SET ultimo_erro = $1, atualizado_em = now() WHERE id = $2`,

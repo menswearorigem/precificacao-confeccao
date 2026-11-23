@@ -222,6 +222,12 @@ async function main() {
   conferir('devolução ligada ao pedido e ao produto', ev && ev.pedido_id === p.id && ev.produto_id === produtoId);
   conferir('motivo e situação', ev && /pequeno/i.test(ev.motivo_externo || '') && ev.aberto === true, ev?.motivo_externo);
 
+
+  console.log('\n6. Busca de novo (nada novo)');
+  // Segunda busca: nada novo, mas a tela precisa saber que a Shein devolveu
+  // o pedido (antes aparecia "0 encontrado(s)").
+  const r2 = await sincronizarIntegracao(integ.id);
+  conferir('rebusca conta os pedidos que já estavam no Hub', r2.pedidosImportados === 0 && r2.pedidosNaPlataforma >= 1, JSON.stringify(r2));
   console.log(`\n${falhas ? `${falhas} FALHA(S)` : 'Tudo certo.'}`);
   await pool.end();
   process.exit(falhas ? 1 : 0);

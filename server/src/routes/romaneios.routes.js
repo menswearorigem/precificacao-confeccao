@@ -91,7 +91,7 @@ router.post('/expedicao/sincronizar', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
       `SELECT * FROM integracoes_marketplace
-        WHERE ativo AND access_token IS NOT NULL AND marketplace IN ('mercado_livre','shopee','tiktok_shop')`
+        WHERE ativo AND access_token IS NOT NULL AND marketplace IN ('mercado_livre','shopee','tiktok_shop','shein')`
     );
     const resultado = [];
     for (const integracao of rows) {
