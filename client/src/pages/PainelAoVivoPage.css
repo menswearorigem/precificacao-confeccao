@@ -1145,3 +1145,157 @@ li:hover > .pv-medalha { transform: rotate(-12deg) scale(1.12); }
 /* ajustes após conferir a imagem: eixo do gráfico de 7 dias e rótulo do centro da rosca estouravam */
 .painel-vivo .pv-eixo { font-size: 0.7em; }
 .painel-vivo .pv-rosca-rot { font-size: 7.4px; letter-spacing: 0.04em; }
+
+/* ==========================================================================
+   VERSÃO CLARA  (.painel-vivo.claro.marfim) — opção secundária; o escuro é o padrão
+   Mesma bancada retrô, de dia, com os INSTRUMENTOS também claros: mostradores
+   de vidro claro com número preto; papel, marfim e latão polido.
+   Exceção declarada à regra "só tokens": tons de papel fixos, no escopo deste
+   seletor. --pv-sombra é um trio R, G, B usado em rgba(var(--pv-sombra), a).
+   ========================================================================== */
+.painel-vivo.claro.marfim {
+  --ink: #2a1d10; --ink-soft: #5f5142; --ink-faint: #75695b; --border: #d6c8aa; --border-soft: #e6dcc4;
+  --pv-sombra: 90, 60, 20;
+  --pv-fundo-a: #f6f0e2; --pv-fundo-b: #eae1cb; --pv-placa-a: #fffdf8; --pv-placa-b: #f1e7d2;
+  --pv-poco-a: #f7f0e0; --pv-poco-b: #efe5cf; --pv-poco: #f3ebd8;
+  --pv-vidro: linear-gradient(180deg, #fbf6e8, #efe4cb); --pv-vidro-flat: #f6eedb; --pv-aro-vidro: #b9a67a;
+  --pv-num: #1f1409; --pv-acento-i: #a85a10; --pv-led-fundo: #e4d8bd; --pv-uf: #ddd0b3; --pv-chaves: #e4d8bd;
+  --pv-aro-rel: #d2ae62; --pv-tit-tinta: #2a1204; --pv-violeta-i: #5b3f99;
+  --pv-chapa: var(--pv-reflexo), var(--pv-riscos) 0 0 / 260px 260px, linear-gradient(160deg, #d8cfbc, #bdb19a 55%, #a99d86);
+  --pv-latao: var(--pv-reflexo), var(--pv-riscos) 0 0 / 260px 260px, linear-gradient(160deg, #e2bf73, #c49a4f 52%, #9c7a3c);
+}
+.painel-vivo.claro {
+  --success: #1f7a47; --danger: #b23a26;
+  --pv-neon-verde: #1f7a47; --pv-neon-vermelho: #b23a26; --pv-neon-magenta: #b23a26;
+  --pv-brilho: color-mix(in srgb, var(--pv-neon-ambar) 40%, transparent);
+  background:
+    radial-gradient(70em 22em at 50% -8%, color-mix(in srgb, var(--mod-marketplace) 12%, transparent), transparent 72%),
+    radial-gradient(50em 30em at 100% 108%, color-mix(in srgb, var(--pv-neon-laranja) 9%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--pv-fundo-a), var(--pv-fundo-b)) padding-box,
+    var(--pv-latao) border-box;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5), 0 0.4em 1.4em rgba(var(--pv-sombra), 0.22);
+}
+.painel-vivo.claro::after { background: radial-gradient(ellipse at center, transparent 62%, rgba(var(--pv-sombra), 0.1) 100%); }
+
+/* placas */
+.painel-vivo.claro .pv-placa {
+  background: linear-gradient(180deg, var(--pv-placa-a), var(--pv-placa-b)) padding-box, var(--pv-chapa) border-box;
+  box-shadow: 0 0.35em 0.9em -0.3em rgba(var(--pv-sombra), 0.4), 0 1px 0 rgba(255, 255, 255, 0.7) inset;
+}
+.painel-vivo.claro .pv-placa-titulo { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), inset 0 -1px 0 rgba(var(--pv-sombra), 0.45), 0 0.1em 0.25em rgba(var(--pv-sombra), 0.3); }
+.painel-vivo.claro .pv-placa-titulo h2 { color: var(--pv-tit-tinta); text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55); }
+.painel-vivo.claro .pv-placa-titulo h2 small { color: color-mix(in srgb, var(--pv-tit-tinta) 70%, transparent); }
+.painel-vivo.claro .pv-placa-titulo .pv-rebite { background: radial-gradient(circle at 35% 30%, #fff, #b9ad97 55%, #8a7d66); }
+
+/* poços de gráfico e mapa */
+.painel-vivo.claro .pv-grafico, .painel-vivo.claro .pv-mapa, .painel-vivo.claro .pv-placa-hoje .pv-grafico {
+  background: linear-gradient(var(--pv-poco-a), var(--pv-poco-b)) padding-box, var(--pv-chapa) border-box;
+  box-shadow: inset 0 0.15em 0.4em rgba(var(--pv-sombra), 0.25);
+}
+.painel-vivo.claro .pv-grade-linha { stroke: rgba(var(--pv-sombra), 0.28); }
+.painel-vivo.claro .pv-grade-v { stroke: rgba(var(--pv-sombra), 0.18); }
+.painel-vivo.claro .pv-linha-pedidos, .painel-vivo.claro .pv-linha-hoje-nucleo { stroke: var(--pv-num); }
+.painel-vivo.claro .pv-ponta { stroke: var(--pv-num); }
+.painel-vivo.claro .pv-ponto-pedidos { fill: #fff; stroke: var(--pv-neon-ciano); }
+.painel-vivo.claro .pv-leg-pedidos { border-color: var(--pv-num); }
+.painel-vivo.claro .pv-dia-rotulo span { color: var(--pv-acento-i); }
+.painel-vivo.claro .pv-eixo { fill: var(--ink-soft); }
+
+/* linhas de loja / estado */
+.painel-vivo.claro .pv-lojas li, .painel-vivo.claro .pv-estados li {
+  background: linear-gradient(180deg, rgba(var(--pv-sombra), 0.16), rgba(var(--pv-sombra), 0.05));
+  box-shadow: inset 0 0.12em 0.35em rgba(var(--pv-sombra), 0.26), inset 0 0 0 1px rgba(var(--pv-sombra), 0.26), 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+.painel-vivo.claro .pv-loja-lider {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--brass-bright) 36%, #fff), color-mix(in srgb, var(--brass-bright) 12%, #fff)) !important;
+  box-shadow: inset 0 0.1em 0.3em rgba(var(--pv-sombra), 0.3), inset 0 0 0 1px color-mix(in srgb, var(--brass) 70%, transparent), 0 0 1em -0.3em var(--pv-brilho) !important;
+}
+.painel-vivo.claro .pv-loja-lider .pv-loja-texto > span, .painel-vivo.claro .pv-estado-lider .pv-loja-texto > span { color: var(--pv-acento-i); text-shadow: none; }
+.painel-vivo.claro .pv-lojas li:hover, .painel-vivo.claro .pv-estados li:hover { box-shadow: 0 0.5em 1em -0.3em rgba(var(--pv-sombra), 0.5); }
+.painel-vivo.claro .pv-led { background: var(--pv-led-fundo); box-shadow: inset 0 0.1em 0.25em rgba(var(--pv-sombra), 0.35), 0 1px 0 rgba(255, 255, 255, 0.8); }
+.painel-vivo.claro .pv-led i:not(.aceso) { background: rgba(var(--pv-sombra), 0.15); box-shadow: inset 0 1px 1px rgba(var(--pv-sombra), 0.25); }
+.painel-vivo.claro .pv-led i.aceso { box-shadow: 0 0 0.35em color-mix(in srgb, var(--pv-neon-ambar) 55%, transparent); }
+
+/* chaves, botões, controles */
+.painel-vivo.claro .pv-chaves { background: var(--pv-chaves); box-shadow: inset 0 0.12em 0.3em rgba(var(--pv-sombra), 0.35), 0 1px 0 rgba(255, 255, 255, 0.8); }
+.painel-vivo.claro .pv-chaves button { color: var(--ink-soft); }
+.painel-vivo.claro .pv-chaves button[aria-pressed="true"], .painel-vivo.claro .pv-chaves button.ativa { color: var(--pv-tit-tinta); }
+.painel-vivo.claro .pv-controles { background: var(--pv-vidro); box-shadow: inset 0 0 0.6em rgba(var(--pv-sombra), 0.2), 0 0 0 1px rgba(var(--pv-sombra), 0.4), 0 0 0 0.2em var(--pv-aro-vidro), 0 1px 0 0.2em rgba(255, 255, 255, 0.7); }
+.painel-vivo.claro .pv-botoes button { color: var(--ink); background: linear-gradient(180deg, #fff, var(--pv-poco-b)); border: 1px solid var(--pv-aro-vidro); box-shadow: 0 0.12em 0 rgba(var(--pv-sombra), 0.35); }
+.painel-vivo.claro .pv-botoes button[aria-pressed="true"] { background: var(--pv-latao); color: var(--pv-tit-tinta); border: 0; }
+.painel-vivo.claro .pv-lampada i { box-shadow: 0 0 0 0.16em #fff, 0 0 0 0.24em var(--pv-aro-vidro), 0 0 1em var(--lamp, var(--dot-ok)), inset 0 -0.15em 0.3em rgba(var(--pv-sombra), 0.3); }
+
+/* relógio de parede */
+.painel-vivo.claro .pv-relogio { filter: drop-shadow(0 0.2em 0.35em rgba(var(--pv-sombra), 0.45)); }
+.painel-vivo.claro .pv-rel-aro { fill: var(--pv-aro-rel); stroke: #fff; }
+.painel-vivo.claro .pv-rel-face { fill: var(--pv-vidro-flat); stroke: rgba(var(--pv-sombra), 0.5); }
+.painel-vivo.claro .pv-rel-friso { stroke: rgba(var(--pv-sombra), 0.35); }
+.painel-vivo.claro .pv-rel-marca { stroke: rgba(var(--pv-sombra), 0.5); }
+.painel-vivo.claro .pv-rel-marca-g { stroke: var(--pv-num); filter: none; }
+.painel-vivo.claro .pv-rel-num { fill: var(--pv-num); stroke: none; }
+.painel-vivo.claro .pv-rel-h, .painel-vivo.claro .pv-rel-m { fill: var(--pv-num); stroke: var(--pv-num); stroke-width: 0.5; }
+.painel-vivo.claro .pv-rel-pino { fill: var(--pv-num); stroke: #fff; }
+.painel-vivo.claro .pv-rel-vidro { fill: rgba(255, 255, 255, 0.22); }
+.painel-vivo.claro .pv-rel-vinheta { opacity: 0.12; }
+
+/* janela da hora */
+.painel-vivo.claro .pv-hora-vidro { background: var(--pv-vidro); background-clip: padding-box; box-shadow: 0 0 0 0.16em var(--pv-aro-vidro), inset 0 0 0.5em rgba(var(--pv-sombra), 0.25), 0 0.12em 0.3em 0.16em rgba(var(--pv-sombra), 0.3), 0 1px 0 0.16em rgba(255, 255, 255, 0.7); }
+.painel-vivo.claro .pv-hora-vidro::after { background: linear-gradient(180deg, rgba(255, 255, 255, 0.55), transparent); }
+.painel-vivo.claro .pv-hora { color: var(--pv-num); text-shadow: none; }
+.painel-vivo.claro .pv-hora-fantasma { color: rgba(var(--pv-sombra), 0.07); }
+.painel-vivo.claro .pv-hora-janela small { color: var(--ink-soft); }
+
+/* odômetro dos totais */
+.painel-vivo.claro .pv-roda {
+  color: var(--pv-num); text-shadow: none; background: var(--pv-vidro);
+  box-shadow: 0 0 0 0.04em var(--pv-aro-vidro), 0 0 0 0.07em rgba(var(--pv-sombra), 0.35), inset 0 0 0.2em rgba(var(--pv-sombra), 0.3), 0 0.07em 0.16em rgba(var(--pv-sombra), 0.4);
+}
+.painel-vivo.claro .pv-roda::before { background: linear-gradient(180deg, rgba(var(--pv-sombra), 0.4) 0, rgba(var(--pv-sombra), 0.04) 24%, rgba(255, 255, 255, 0.35) 46%, transparent 52%, rgba(var(--pv-sombra), 0.06) 76%, rgba(var(--pv-sombra), 0.4) 100%); }
+.painel-vivo.claro .pv-roda::after { background: linear-gradient(180deg, rgba(255, 255, 255, 0.55), transparent); }
+.painel-vivo.claro .pv-roda-sep { color: var(--pv-acento-i); }
+
+/* visores */
+.painel-vivo.claro :is(.pv-visor, .pv-mini-visor) { background: var(--pv-vidro); box-shadow: 0 0 0 0.14em var(--pv-aro-vidro), inset 0 0 0.4em rgba(var(--pv-sombra), 0.22), 0 1px 0 0.14em rgba(255, 255, 255, 0.7); }
+.painel-vivo.claro .pv-visor strong, .painel-vivo.claro .pv-mini-visor strong { color: var(--pv-num); text-shadow: none; }
+.painel-vivo.claro .pv-visor small, .painel-vivo.claro .pv-mini-visor small { color: var(--ink-soft); }
+.painel-vivo.claro .pv-visor-svg { fill: var(--pv-vidro-flat); stroke: var(--pv-aro-vidro); }
+.painel-vivo.claro .pv-visor-svg-n { fill: var(--pv-num); filter: none; }
+.painel-vivo.claro .pv-visor-svg-r { fill: var(--ink-soft); }
+.painel-vivo.claro .pv-subtitulo { background: var(--pv-vidro); color: var(--pv-violeta-i); text-shadow: none; box-shadow: inset 0 0.1em 0.3em rgba(var(--pv-sombra), 0.25), 0 0 0 0.12em var(--pv-aro-vidro), 0 1px 0 0.12em rgba(255, 255, 255, 0.7); }
+
+/* balões de dica */
+.painel-vivo.claro .pv-dica, .painel-vivo.claro .pv-mapa-dica { background: var(--pv-vidro-flat); box-shadow: 0 0.4em 1em rgba(var(--pv-sombra), 0.4); }
+.painel-vivo.claro .pv-dica b, .painel-vivo.claro .pv-mapa-dica b { color: var(--pv-acento-i); }
+
+/* mapa */
+.painel-vivo.claro .pv-uf:not(.pv-uf-vendeu) { fill: var(--pv-uf); stroke: rgba(255, 255, 255, 0.9); }
+.painel-vivo.claro .pv-uf-vendeu { stroke: rgba(255, 255, 255, 0.95); }
+.painel-vivo.claro .pv-rot-uf, .painel-vivo.claro .pv-et-uf { stroke: rgba(255, 255, 255, 0.7); }
+.painel-vivo.claro .pv-rot-vendeu .pv-rot-uf, .painel-vivo.claro .pv-rot-n, .painel-vivo.claro .pv-et-uf, .painel-vivo.claro .pv-et-n { fill: var(--pv-num); }
+.painel-vivo.claro .pv-et-placa { fill: var(--pv-placa-b); }
+.painel-vivo.claro .pv-escala-calor { color: var(--ink-soft); }
+
+/* rosca */
+.painel-vivo.claro .pv-rosca-fundo { stroke: var(--pv-chaves); }
+.painel-vivo.claro .pv-rosca-borda { stroke: rgba(var(--pv-sombra), 0.4); }
+.painel-vivo.claro .pv-rosca-janela { fill: var(--pv-vidro-flat); stroke: var(--pv-aro-vidro); }
+.painel-vivo.claro .pv-rosca-janela-vidro { fill: rgba(255, 255, 255, 0.25); }
+.painel-vivo.claro .pv-rosca-rot { fill: var(--ink-soft); }
+.painel-vivo.claro .pv-rosca-valor { fill: var(--pv-num); stroke: none; filter: none; }
+
+/* papel do ranking e rodapé */
+.painel-vivo.claro .pv-papel { box-shadow: 0 0.25em 0.6em -0.2em rgba(var(--pv-sombra), 0.5), inset 0 0 0 1px rgba(var(--pv-sombra), 0.25); }
+.painel-vivo.claro :is(.pv-rodape, .pv-ultima, .pv-kpi-comparo, .pv-termometro) { color: var(--ink-soft); }
+.painel-vivo.claro .pv-ultima b { color: var(--pv-acento-i); }
+.painel-vivo.claro .pv-lampinha { box-shadow: 0 0 0 1px rgba(var(--pv-sombra), 0.6), 0 0 0 0.12em #bfb29a, 0 0 0.9em var(--pv-acento); }
+
+/* mostradores desenhados com fill em atributo (relógio, rosca) e leitura do vúmetro */
+.painel-vivo.claro svg circle[fill="url(#pv-rel-mostrador)"], .painel-vivo.claro svg circle[fill="url(#pv-mostrador)"] { fill: var(--pv-vidro-flat); }
+.painel-vivo.claro .pv-rosca-friso { stroke: rgba(var(--pv-sombra), 0.4); }
+.painel-vivo.claro .pv-rosca-friso-ext { stroke: rgba(255, 255, 255, 0.5); }
+.painel-vivo.claro .pv-rosca-torneado { stroke: rgba(var(--pv-sombra), 0.12); }
+.painel-vivo.claro .pv-rosca-brilho { stroke: rgba(255, 255, 255, 0.7); }
+.painel-vivo.claro .pv-ponteiro-leitura strong { color: var(--pv-num); text-shadow: none; background: var(--pv-vidro); box-shadow: 0 0 0 0.14em var(--pv-aro-vidro), inset 0 0 0.4em rgba(var(--pv-sombra), 0.22), 0 1px 0 0.14em rgba(255, 255, 255, 0.7); }
+.painel-vivo.claro svg circle[stroke="url(#pv-cromo)"] { stroke: var(--pv-aro-rel); }
+.painel-vivo.claro svg circle[fill="url(#pv-rel-cromo)"] { fill: var(--pv-aro-rel); }
+.painel-vivo.claro .pv-mini-visor :is(span, em, i) { color: var(--ink-soft); }

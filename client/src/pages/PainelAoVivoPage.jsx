@@ -19,7 +19,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BRASIL_UF, BRASIL_VIEWBOX } from '../lib/brasilMapa.js';
-import { ArrowDown, ArrowUp, ImageOff, Maximize2, Minimize2, RefreshCw, Volume2, VolumeX } from 'lucide-react';
+import { ArrowDown, ArrowUp, ImageOff, Maximize2, Minimize2, RefreshCw, Sun, Moon, Volume2, VolumeX } from 'lucide-react';
 import { api } from '../api/client';
 import { SeloPlataforma, nomeDaLoja } from '../lib/canalMarketplace';
 import { PLATAFORMA_LABEL } from '../lib/marketplaces';
@@ -833,6 +833,16 @@ function lerSom() {
   try { return localStorage.getItem('hbn_painel_som') === '1'; } catch { return false; }
 }
 
+const TEMAS = ['escuro', 'marfim'];
+const TEMA_ROTULO = { escuro: 'Escuro', marfim: 'Claro' };
+function lerTema() {
+  try {
+    const t = localStorage.getItem('hbn_painel_tema');
+    if (t === 'claro') return 'marfim';
+    return TEMAS.includes(t) ? t : 'escuro';
+  } catch { return 'escuro'; }
+}
+
 // ---------- tela ----------
 export default function PainelAoVivoPage() {
   const raiz = useRef(null);
@@ -842,6 +852,7 @@ export default function PainelAoVivoPage() {
   const [lidoEm, setLidoEm] = useState(null);
   const [telaCheia, setTelaCheia] = useState(false);
   const [som, setSom] = useState(lerSom);
+  const [tema, setTema] = useState(lerTema);
   const [metrica, setMetrica] = useState('pedidos');
   const [rankNivel, setRankNivel] = useState('anuncio');
   const [roscaModo, setRoscaModo] = useState('plataformas');
@@ -976,7 +987,7 @@ export default function PainelAoVivoPage() {
   const maxEstado = Math.max(1, ...topEstados.map((e) => e.pedidos));
 
   return (
-    <div ref={raiz} className={`painel-vivo${telaCheia ? ' tela-cheia' : ''}`} style={{ '--pv-escala': escala }}>
+    <div ref={raiz} className={`painel-vivo${tema !== 'escuro' ? ` claro ${tema}` : ''}${telaCheia ? ' tela-cheia' : ''}`} style={{ '--pv-escala': escala }}>
       <header className="pv-topo">
         <div className="pv-topo-esq">
           <Relogio agoraMs={agoraMs} />
@@ -1023,6 +1034,9 @@ export default function PainelAoVivoPage() {
               <button type="button" onClick={carregar} title="Atualizar agora" aria-label="Atualizar agora"><RefreshCw size={16} /></button>
               <button type="button" onClick={alternarSom} title={som ? 'Som de venda ligado' : 'Tocar um sino a cada venda nova'} aria-pressed={som} aria-label="Som de venda nova">
                 {som ? <Volume2 size={16} /> : <VolumeX size={16} />}
+              </button>
+              <button type="button" onClick={() => setTema((t) => { const n = TEMAS[(TEMAS.indexOf(t) + 1) % TEMAS.length]; try { localStorage.setItem('hbn_painel_tema', n); } catch { /* vale só agora */ } return n; })} title={`Visual: ${TEMA_ROTULO[tema]} (clique para trocar)`} aria-label={`Trocar o visual do painel. Atual: ${TEMA_ROTULO[tema]}`}>
+                {tema === 'escuro' ? <Moon size={16} /> : <Sun size={16} />}<span>{TEMA_ROTULO[tema]}</span>
               </button>
               <button type="button" onClick={alternarTelaCheia} title={telaCheia ? 'Sair da tela cheia' : 'Tela cheia (para a TV)'} aria-label="Tela cheia">
                 {telaCheia ? <Minimize2 size={16} /> : <Maximize2 size={16} />}<span>Tela cheia</span>
