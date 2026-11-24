@@ -814,7 +814,9 @@ const COR_PLATAFORMA = {
   shopee: 'var(--pv-neon-laranja)',
   tiktok_shop: 'var(--pv-neon-ciano)',
   shein: 'var(--pv-neon-magenta)',
+  direta: 'var(--pv-neon-verde)',
 };
+const ROTULO_PLATAFORMA = { ...PLATAFORMA_LABEL, direta: 'Venda direta' };
 
 // ---------- sons ----------
 function tocarSino(ctx) {
@@ -860,7 +862,7 @@ const PERFIS = {
     lojasTitulo: 'Vendas de loja', lojasCab: 'Lojas', lojasVazio: 'Nenhuma loja vendeu hoje ainda.',
     roscaUm: 'Plataformas', roscaDois: 'Lojas',
     syncRotulo: 'lojas', limiteOk: 10 * MIN_MS, limiteAtraso: 30 * MIN_MS,
-    selos: true,
+    selos: true, selosRank: true, corMod: 'var(--mod-marketplace)',
     comoConta: [
       'Mesma regra das Métricas: pedido cancelado fica de fora e os pedidos do mesmo carrinho do Mercado Livre contam como uma venda só.',
       'A tela relê o Hub a cada 30 segundos. O Hub busca pedidos nas lojas a cada 5 minutos, por isso o painel mostra “lojas há N min”.',
@@ -878,7 +880,7 @@ const PERFIS = {
     lojasTitulo: 'Vendas por vendedor', lojasCab: 'Vendedores', lojasVazio: 'Nenhum vendedor vendeu hoje ainda.',
     roscaUm: 'Canais', roscaDois: 'Vendedores',
     syncRotulo: 'Wik', limiteOk: 45 * MIN_MS, limiteAtraso: 100 * MIN_MS,
-    selos: false,
+    selos: false, selosRank: false, corMod: 'var(--mod-vendas)',
     comoConta: [
       'Mesma regra das Métricas de Vendas: só venda direta (a do Marketplace tem painel próprio); cancelado, devolução, troca e bonificação ficam de fora; pedido ainda em aberto conta; o valor é o total líquido do pedido.',
       'A tela relê o Hub a cada 30 segundos, mas o Hub só busca as vendas no Wik a cada 30 minutos, por isso o painel mostra “Wik há N min”: uma venda feita agora pode levar até esse tempo para aparecer.',
@@ -888,6 +890,24 @@ const PERFIS = {
       'Mapa: contornos dos estados do projeto @svg-maps/brazil (licença CC BY 4.0).',
       'O estado é o do cadastro do cliente; venda de cliente sem estado cadastrado fica fora do mapa.',
       'Vendedor: o do cadastro; sem ele, o nome que o Wik trouxe; sem nenhum dos dois, “Sem vendedor”.',
+    ],
+  },
+  geral: {
+    endpoint: '/analises-painel-ao-vivo', subtitulo: 'Geral · HBN Hub',
+    rankTitulo: 'Vendas de produtos', rankNivelUm: 'Produtos',
+    lojasTitulo: 'Vendas por origem', lojasCab: 'Lojas e venda direta', lojasVazio: 'Nada vendeu hoje ainda.',
+    roscaUm: 'Plataformas', roscaDois: 'Origens',
+    syncRotulo: 'Wik', limiteOk: 45 * MIN_MS, limiteAtraso: 100 * MIN_MS,
+    selos: true, selosRank: false, corMod: 'var(--mod-analises)',
+    comoConta: [
+      'Soma as duas fontes: marketplace (Mercado Livre, Shopee, TikTok Shop) e venda direta (atacado, varejo, WhatsApp). Cancelado, devolução, troca e bonificação ficam de fora; pedidos do mesmo carrinho do Mercado Livre contam como uma venda só.',
+      'Para não contar em dobro, venda direta cujo canal é Shopee, Mercado Livre ou TikTok (lançada à mão ou vinda do Wik) fica de fora: ela já está no lado do marketplace.',
+      'As lojas são lidas a cada 5 minutos e o Wik a cada 30. A lâmpada segue a fonte mais lenta (o Wik) e o topo mostra a idade de cada uma. A curva do dia usa a hora do pagamento ou de chegada do pedido ao Hub; no Wik, que só informa o dia, sobe em degraus de até 30 minutos.',
+    ],
+    comoContaFim: [
+      'Valor: no marketplace, a soma dos itens do pedido; na venda direta, o total líquido do pedido (as mesmas contas dos painéis do Marketplace e de Vendas).',
+      'Produtos: o mesmo produto vendido nos dois lados soma numa linha só, pela referência; anúncio sem referência ligada aparece pelo anúncio.',
+      'Mapa: contornos dos estados do projeto @svg-maps/brazil (licença CC BY 4.0). O estado vem do endereço de envio (marketplace) ou do cadastro do cliente (venda direta).',
     ],
   },
 };
@@ -999,11 +1019,13 @@ export function PainelAoVivo({ perfil = 'marketplace' }) {
     return () => window.removeEventListener('pointerdown', destravar);
   }, [som]);
 
-  const lojaNome = useCallback((l) => (perfil === 'direta'
-    ? (l.nome || l.canalGenerico || 'Sem vendedor')
-    : l.nome
+  const lojaNome = useCallback((l) => {
+    if (perfil === 'direta') return l.nome || l.canalGenerico || 'Sem vendedor';
+    if (perfil === 'geral' && l.plataforma === 'direta') return 'Venda direta';
+    return l.nome
       ? nomeDaLoja({ marketplace: l.plataforma, nome: l.nome }, PLATAFORMA_LABEL[l.plataforma])
-      : (l.canalGenerico || 'Sem loja')), [perfil]);
+      : (l.canalGenerico || 'Sem loja');
+  }, [perfil]);
 
   const valorRolando = useRolagem(dados?.hojeTotais.valor ?? 0);
   const pedidosRolando = useRolagem(dados?.hojeTotais.pedidos ?? 0, 700);
@@ -1024,7 +1046,7 @@ export function PainelAoVivo({ perfil = 'marketplace' }) {
     if (!d) return [];
     if (roscaModo === 'plataformas') {
       return d.plataformas.map((p, i) => ({
-        chave: p.plataforma, nome: PLATAFORMA_LABEL[p.plataforma] || p.plataforma, valor: p.valor, pct: p.pct,
+        chave: p.plataforma, nome: ROTULO_PLATAFORMA[p.plataforma] || p.plataforma, valor: p.valor, pct: p.pct,
         cor: perfil === 'direta' ? CORES_LOJA[i % CORES_LOJA.length] : (COR_PLATAFORMA[p.plataforma] || 'var(--ink-faint)'),
       }));
     }
@@ -1039,7 +1061,7 @@ export function PainelAoVivo({ perfil = 'marketplace' }) {
   const maxEstado = Math.max(1, ...topEstados.map((e) => e.pedidos));
 
   return (
-    <div ref={raiz} className={`painel-vivo${tema !== 'escuro' ? ` claro ${tema}` : ''}${telaCheia ? ' tela-cheia' : ''}`} style={{ '--pv-escala': escala, '--pv-mod': perfil === 'direta' ? 'var(--mod-vendas)' : 'var(--mod-marketplace)' }}>
+    <div ref={raiz} className={`painel-vivo${tema !== 'escuro' ? ` claro ${tema}` : ''}${telaCheia ? ' tela-cheia' : ''}`} style={{ '--pv-escala': escala, '--pv-mod': P.corMod }}>
       <header className="pv-topo">
         <div className="pv-topo-esq">
           <Relogio agoraMs={agoraMs} />
@@ -1080,7 +1102,9 @@ export function PainelAoVivo({ perfil = 'marketplace' }) {
             </div>
             <span className="pv-atualizado">
               Tela {idadeLeitura === null ? '—' : `há ${tempoCurto(idadeLeitura)}`}
-              {idadeSync !== null ? <> · {P.syncRotulo} há {tempoCurto(idadeSync)}</> : null}
+              {d?.fontesSync
+                ? d.fontesSync.filter((f) => f.em).map((f) => <span key={f.rotulo}> · {f.rotulo} há {tempoCurto(agoraMs - new Date(f.em).getTime())}</span>)
+                : idadeSync !== null ? <> · {P.syncRotulo} há {tempoCurto(idadeSync)}</> : null}
             </span>
             <div className="pv-botoes">
               <button type="button" onClick={carregar} title="Atualizar agora" aria-label="Atualizar agora"><RefreshCw size={16} /></button>
@@ -1130,7 +1154,7 @@ export function PainelAoVivo({ perfil = 'marketplace' }) {
                     <FotoMiniatura src={r.foto} />
                     <div className="pv-rank-texto">
                       <span className="pv-rank-titulo" title={r.titulo || ''}>{r.titulo || 'Sem título'}</span>
-                      <span className="pv-rank-cod">{P.selos && <SeloPlataforma chave={r.plataforma} size={13} />}{r.codigo || '—'}</span>
+                      <span className="pv-rank-cod">{P.selosRank && <SeloPlataforma chave={r.plataforma} size={13} />}{r.codigo || '—'}</span>
                     </div>
                     <strong className="pv-rank-qtd">{nf0.format(r.pedidos)}</strong>
                   </li>
@@ -1212,7 +1236,7 @@ export function PainelAoVivo({ perfil = 'marketplace' }) {
                 {lojasTop.map((l, i) => (
                   <li key={`${l.lojaId}|${l.canalGenerico}`} className={i === 0 ? 'pv-loja-lider' : ''} style={{ '--i': i }}>
                     <Medalha n={i + 1} />
-                    <span className="pv-bisel">{P.selos ? <SeloPlataforma chave={l.plataforma} size={24} /> : <span className="pv-inicial" aria-hidden="true">{(lojaNome(l).trim()[0] || '?').toUpperCase()}</span>}</span>
+                    <span className="pv-bisel">{P.selos ? <SeloPlataforma chave={l.plataforma} size={24} title={ROTULO_PLATAFORMA[l.plataforma]} /> : <span className="pv-inicial" aria-hidden="true">{(lojaNome(l).trim()[0] || '?').toUpperCase()}</span>}</span>
                     <div className="pv-loja-texto">
                       <span>{lojaNome(l)}</span>
                       <LedBarra valor={l.pedidos} max={maxLoja} />
@@ -1254,7 +1278,7 @@ export function PainelAoVivo({ perfil = 'marketplace' }) {
         <footer className="pv-rodape">
           <span className="pv-ultima">
             {d.ultimaVenda
-              ? <>Última venda <b>{hhmm(d.ultimaVenda.min)}</b> · {lojaNome({ plataforma: d.ultimaVenda.plataforma, nome: d.lojasCadastradas.find((l) => l.id === d.ultimaVenda.lojaId)?.nome, canalGenerico: perfil === 'direta' ? d.ultimaVenda.plataforma : PLATAFORMA_LABEL[d.ultimaVenda.plataforma] })} · R$ {nf2.format(d.ultimaVenda.valor)}</>
+              ? <>Última venda <b>{hhmm(d.ultimaVenda.min)}</b> · {lojaNome({ plataforma: d.ultimaVenda.plataforma, nome: d.lojasCadastradas.find((l) => l.id === d.ultimaVenda.lojaId)?.nome, canalGenerico: perfil === 'direta' ? d.ultimaVenda.plataforma : ROTULO_PLATAFORMA[d.ultimaVenda.plataforma] })} · R$ {nf2.format(d.ultimaVenda.valor)}</>
               : 'Ainda sem venda com hora registrada hoje.'}
           </span>
           <details className="pv-como">

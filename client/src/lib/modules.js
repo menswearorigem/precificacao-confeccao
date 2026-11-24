@@ -350,6 +350,7 @@ export const MODULES = [
     color: 'var(--mod-analises)',
     entradas: [
       { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { to: '/analises/painel', label: 'Painel ao vivo', icon: Radio },
       { to: '/alertas', label: 'Central de Alertas', icon: AlertTriangle },
       // As três abriam com o MESMO seletor "Selecione uma referência…" e
       // ~80% de tela vazia até alguém escolher. Agora se escolhe uma vez e

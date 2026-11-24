@@ -85,6 +85,7 @@ const RelatorioLucratividadePage = lazy(() => import('./pages/RelatorioLucrativi
 const MetricasMarketplacePage = lazy(() => import('./pages/MetricasMarketplacePage'));
 const PainelAoVivoPage = lazy(() => import('./pages/PainelAoVivoPage'));
 const PainelVendasAoVivoPage = lazy(() => import('./pages/PainelVendasAoVivoPage'));
+const PainelGeralAoVivoPage = lazy(() => import('./pages/PainelGeralAoVivoPage'));
 const AnunciosPage = lazy(() => import('./pages/AnunciosPage'));
 const CoberturaEstoquePage = lazy(() => import('./pages/CoberturaEstoquePage'));
 const ProducaoPage = lazy(() => import('./pages/ProducaoPage'));
@@ -192,6 +193,7 @@ function AppRoutes() {
                   {/* Mix B2B × B2C (07/09/2026). Fica em Análises porque é
                       leitura sobre o faturamento que já existe — não cria
                       módulo novo nem mexe em permissão (REGRA 4). */}
+                  <Route path="/analises/painel" element={<PainelGeralAoVivoPage />} />
                   <Route path="/analises/mix-tributario" element={<MixTributarioPage />} />
                   <Route path="/analises/preco-por-canal" element={<PrecoPorCanalPage />} />
                   <Route path="/estoque/parado" element={<EstoqueParadoPage />} />
