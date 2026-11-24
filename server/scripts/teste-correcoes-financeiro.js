@@ -129,6 +129,17 @@ async function main() {
 
   // ------------------------------------------------------------------
   console.log('\n== 4. UM SAQUE DA SHOPEE SAI DO CAIXA UMA VEZ ==');
+  // Atualizado em 24/11/2026 para o formato REAL da carteira da Shopee,
+  // conferido no saldo em 20/10/2026 (ver financeiroExtrato.js e o comentário
+  // dos totais em financeiro.routes.js):
+  //   · WITHDRAWAL_CREATED traz o valor — é ela que tira o dinheiro do saldo;
+  //   · WITHDRAWAL_COMPLETED vem com valor ZERO, só avisa que caiu;
+  //   · o saque da Shopee vai para o Mercado Pago da mesma empresa, não para
+  //     o banco (SAQUE_VAI_PARA_O_MERCADO_PAGO) — "transferido para o banco"
+  //     somaria o mesmo real duas vezes com o saque do Mercado Pago.
+  // A versão de 14/09 punha −70,90 nas DUAS linhas e esperava o valor em
+  // "transferido para o banco"; esse formato não existe na Shopee e a regra
+  // de destino mudou em 20/10 — por isso a suíte falhava.
   const integShopee = (await pool.query(
     `INSERT INTO integracoes_marketplace (marketplace, nome, empresa_id, conta_externa_id)
      VALUES ('shopee','CFIN Shopee',$1,'CFIN-SHP') RETURNING id`, [empresa]
@@ -138,18 +149,33 @@ async function main() {
       (origem_integracao_id, marketplace, lancamento_id_externo, tipo, descricao_externa,
        data_liberacao, valor, moeda, status, repasse_id_externo)
      VALUES ($1,'shopee','SHP-1','repasse_venda','Pedido liberado','2026-09-08',70.90,'BRL','liberado',NULL),
-            ($1,'shopee','SHP-2','saque','WITHDRAWAL_CREATED','2026-09-09',-70.90,'BRL','pendente','CFIN-WD'),
-            ($1,'shopee','SHP-3','saque','WITHDRAWAL_COMPLETED','2026-09-09',-70.90,'BRL','liberado','CFIN-WD')`,
+            ($1,'shopee','SHP-2','saque','WITHDRAWAL_CREATED','2026-09-09',-70.90,'BRL','liberado',NULL),
+            ($1,'shopee','SHP-3','saque','WITHDRAWAL_COMPLETED','2026-09-09',0,'BRL','liberado',NULL)`,
     [integShopee]);
   const ext = await req('GET', '/api/financeiro/extrato?data_inicio=2026-09-01&data_fim=2026-09-30&marketplace=shopee');
   const t = ext.body.totais;
-  checa('⚠️ transferido para o banco: R$ 70,90', perto(t.transferidoBanco, 70.9), t.transferidoBanco);
+  checa('⚠️ enviado para o Mercado Pago: R$ 70,90 (uma vez só)', perto(t.enviadoMercadoPago, 70.9), t.enviadoMercadoPago);
+  checa('⚠️ e nada "transferido para o banco" — o saque da Shopee não vai direto ao banco',
+    perto(t.transferidoBanco, 0), t.transferidoBanco);
   checa('⚠️ e NADA em trânsito — o mesmo saque não está nos dois estados',
     perto(t.transferenciaEmAndamento, 0), t.transferenciaEmAndamento);
   checa('a soma do que saiu é R$ 70,90, não R$ 141,80',
-    perto(Number(t.transferidoBanco) + Number(t.transferenciaEmAndamento), 70.9),
-    { banco: t.transferidoBanco, andamento: t.transferenciaEmAndamento });
+    perto(Number(t.enviadoMercadoPago) + Number(t.transferidoBanco) + Number(t.transferenciaEmAndamento), 70.9),
+    { mp: t.enviadoMercadoPago, banco: t.transferidoBanco, andamento: t.transferenciaEmAndamento });
   checa('o liberado pelo marketplace não muda (R$ 70,90)', perto(t.liberado, 70.9), t.liberado);
+
+  // Saque ainda em processamento: só a CREATED existe e a Shopee não deu
+  // COMPLETED. Fica em trânsito e não em "enviado".
+  await pool.query(
+    `INSERT INTO fin_extrato_lancamentos
+      (origem_integracao_id, marketplace, lancamento_id_externo, tipo, descricao_externa,
+       data_liberacao, valor, moeda, status, repasse_id_externo)
+     VALUES ($1,'shopee','SHP-4','saque','WITHDRAWAL_CREATED','2026-09-20',-15.00,'BRL','pendente',NULL)`,
+    [integShopee]);
+  const ext2 = await req('GET', '/api/financeiro/extrato?data_inicio=2026-09-01&data_fim=2026-09-30&marketplace=shopee');
+  checa('saque em processamento aparece em trânsito (R$ 15,00)', perto(ext2.body.totais.transferenciaEmAndamento, 15), ext2.body.totais.transferenciaEmAndamento);
+  checa('…e não soma no enviado (continua R$ 70,90)', perto(ext2.body.totais.enviadoMercadoPago, 70.9), ext2.body.totais.enviadoMercadoPago);
+  await pool.query("DELETE FROM fin_extrato_lancamentos WHERE lancamento_id_externo = 'SHP-4'");
   checa('…e as duas linhas continuam visíveis na lista detalhada',
     ext.body.lancamentos.filter((l) => l.tipo === 'saque').length === 2,
     ext.body.lancamentos.filter((l) => l.tipo === 'saque').length);

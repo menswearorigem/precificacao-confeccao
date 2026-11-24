@@ -340,7 +340,7 @@ function estiloCelula(cel, { fonte = FONTE, alinhamento = MEIO, formato } = {}) 
 // ---------------------------------------------------------------------------
 // Leitura dos dados
 // ---------------------------------------------------------------------------
-async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsDias, vendidosEmDias }) {
+async function carregarDados({ produtoIds, anuncioIdsSemVinculo, marketplace, integracaoId, janelaAdsDias, vendidosEmDias }) {
   const { rows: lojas } = await pool.query(
     `SELECT im.id, im.marketplace, im.nome, e.nome AS empresa_nome
        FROM integracoes_marketplace im
@@ -351,7 +351,16 @@ async function carregarDados({ produtoIds, marketplace, integracaoId, janelaAdsD
   const cond = ['a.ativo'];
   const vals = [];
   let i = 1;
-  if (produtoIds) { cond.push(`a.produto_id = ANY($${i})`); vals.push(produtoIds); i += 1; }
+  // A exportação pela TELA manda dois recortes: os produtos que a tela mostra
+  // (todos os anúncios deles entram) e os anúncios SEM VÍNCULO que a tela
+  // mostra. Antes só ia a lista de produtos, e o anúncio sem vínculo — que
+  // não tem produto — nunca chegava aqui: vendia e não aparecia nem na
+  // Planilha1 nem na aba FORA DA PLANILHA (24/11/2026).
+  if (produtoIds && anuncioIdsSemVinculo) {
+    cond.push(`(a.produto_id = ANY($${i}::int[]) OR (a.produto_id IS NULL AND a.id = ANY($${i + 1}::int[])))`);
+    vals.push(produtoIds, anuncioIdsSemVinculo);
+    i += 2;
+  } else if (produtoIds) { cond.push(`a.produto_id = ANY($${i})`); vals.push(produtoIds); i += 1; }
   // Plataforma e loja aceitam VÁRIOS valores desde 10/09/2026 (a tela deixa
   // marcar mais de uma loja, como no UpSeller). A exportação recebe os mesmos
   // filtros da tela, então precisa ler o mesmo formato — senão "exportar o que
@@ -1148,7 +1157,11 @@ function escreverBlocoKit(ws, { numero, produto, gradePorTamanho, tamanhos, calc
           estiloCelula(ws.getCell(`N${linha}`), { formato: '0.00' }).value = { formula: `(M${linha}/${quantidade})` };
           estiloCelula(ws.getCell(`O${linha}`), { formato: '0.00' }).value = { formula: `(N${linha}-K${linha})` };
           estiloCelula(ws.getCell(`P${linha}`), { formato: '0.00' }).value = { formula: `(O${linha}*${quantidade})` };
-          estiloCelula(ws.getCell(`Q${linha}`), { alinhamento: CENTRO, formato: '0.0' }).value = { formula: `((P${linha}/M${linha})*100)` };
+          // "%" do kit divide pelo V. RECE. (M). Quando a loja não tem valor
+          // recebido para o kit (Mercado Livre sem pedido conciliado), a
+          // célula saía "#DIV/0!" na impressão — achado no teste de impressão
+          // de 24/11/2026. Sem divisor, fica vazia.
+          estiloCelula(ws.getCell(`Q${linha}`), { alinhamento: CENTRO, formato: '0.0' }).value = { formula: `IF(N(M${linha})=0,"",(P${linha}/M${linha})*100)` };
           estiloCelula(ws.getCell(`R${linha}`), { formato: '0.00' }).value = { formula: `(L${linha}-M${linha})` };
           estiloCelula(ws.getCell(`S${linha}`), { alinhamento: CENTRO, formato: '0.0' }).value = { formula: `((R${linha}/L${linha})*100)` };
           ws.mergeCells(`T${linha}:V${linha}`);
@@ -1256,6 +1269,7 @@ function paginarParaImpressao(ws) {
 // ---------------------------------------------------------------------------
 async function montarPlanilhaAnuncios({
   produtoIds,
+  anuncioIdsSemVinculo,
   marketplace,
   integracaoId,
   janelaAdsDias = 30,
@@ -1265,7 +1279,7 @@ async function montarPlanilhaAnuncios({
   vendidosEmDias = 30,
 } = {}) {
   const dados = await carregarDados({
-    produtoIds, marketplace, integracaoId, janelaAdsDias, vendidosEmDias,
+    produtoIds, anuncioIdsSemVinculo, marketplace, integracaoId, janelaAdsDias, vendidosEmDias,
   });
   const livro = new ExcelJS.Workbook();
   livro.creator = 'HBN Hub';

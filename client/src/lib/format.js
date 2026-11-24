@@ -3,8 +3,14 @@
 // a diferença de arredondamento da redistribuição de custo, que precisa ser
 // mostrada com precisão para se poder afirmar que ela é zero. Sem argumento,
 // o comportamento é exatamente o de sempre — R$ com duas casas.
+// Valor que ARREDONDA para zero sai sem sinal (24/11/2026). O Intl mantém o
+// sinal de −0,004 e escrevia "-R$ 0,00" / "-0,0%", que lê como prejuízo onde
+// não há nada. Só muda o que já seria mostrado como zero.
+const semMenosZero = (v, casas) => (Math.round(Math.abs(v) * 10 ** casas) === 0 ? 0 : v);
+const finito = (n) => (Number.isFinite(Number(n)) ? Number(n) : 0);
+
 export const brl = (n, casas) =>
-  (Number.isFinite(Number(n)) ? Number(n) : 0).toLocaleString('pt-BR', {
+  semMenosZero(finito(n), casas === undefined ? 2 : casas).toLocaleString('pt-BR', {
     style: 'currency',
     currency: 'BRL',
     ...(casas === undefined ? {} : { minimumFractionDigits: casas, maximumFractionDigits: casas }),
@@ -26,7 +32,7 @@ export const brlEixo = (n) => {
 };
 
 export const pct = (n, digits = 1) =>
-  `${((Number.isFinite(Number(n)) ? Number(n) : 0) * 100).toLocaleString('pt-BR', {
+  `${semMenosZero(finito(n) * 100, digits).toLocaleString('pt-BR', {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   })}%`;
@@ -41,7 +47,7 @@ export const formatQtd = (n) =>
 // (markup "2,35x") e notas (avaliação "4,8") que hoje usavam .toFixed() puro
 // e saíam com ponto.
 export const numeroBr = (n, digits = 2) =>
-  (Number.isFinite(Number(n)) ? Number(n) : 0).toLocaleString('pt-BR', {
+  semMenosZero(finito(n), digits).toLocaleString('pt-BR', {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   });

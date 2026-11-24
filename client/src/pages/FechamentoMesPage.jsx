@@ -5,6 +5,7 @@ import {
   BookOpenCheck, Copy,
 } from 'lucide-react';
 import { api } from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 import { brl, formatQtd, numeroBr } from '../lib/format';
 import DataTable from '../components/DataTable';
 import Gaveta from '../components/Gaveta';
@@ -69,6 +70,9 @@ const ABAS = [
 ];
 
 export default function FechamentoMesPage() {
+  // Fechar e reabrir o mês é só do administrador (o servidor recusa com 403).
+  const { user } = useAuth();
+  const souAdmin = user?.role === 'admin';
   const [unidade, setUnidadeEstado] = useState(() => lerPreferencia('fm-unidade', 'marketplace'));
   const [aba, setAbaEstado] = useState(() => lerPreferencia('fm-aba', 'resumo'));
   const [mes, setMes] = useState(mesAtual());
@@ -194,12 +198,12 @@ export default function FechamentoMesPage() {
           <button type="button" className="btn btn-ghost" onClick={() => setGavetaConfig(true)}><Settings2 size={14} /> Fatias e metas</button>
           <button type="button" className="btn btn-ghost" onClick={() => setExportando(true)}><FileTypeIcon extensao="xlsx" size={18} /> Baixar Excel</button>
           <button type="button" className="btn btn-ghost" onClick={() => setExplicando(true)} title="Arquivo que explica cada número, abre fora do Hub"><BookOpenCheck size={14} /> Baixar Explicador</button>
-          {!consolidado && (fechado
+          {!consolidado && souAdmin && (fechado
             ? <button type="button" className="btn btn-ghost" onClick={reabrirMes}><Unlock size={14} /> Reabrir mês</button>
             : <button type="button" className="btn btn-ghost" onClick={fecharMes}><Lock size={14} /> Fechar mês</button>)}
           {!consolidado && (
             <button type="button" className="btn btn-primary" onClick={() => setGavetaLancar(true)} disabled={fechado}
-              title={fechado ? 'Mês fechado — reabra para lançar' : undefined}>
+              title={fechado ? (souAdmin ? 'Mês fechado — reabra para lançar' : 'Mês fechado — só um administrador reabre') : undefined}>
               <Plus size={14} /> Lançar
             </button>
           )}

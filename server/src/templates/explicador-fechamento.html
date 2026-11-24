@@ -227,8 +227,11 @@ const normNome = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '')
 const CENT = 0.005;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const arred = (v) => Math.round(num(v) * 100) / 100;
-const brl = (v) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
-const nbr = (v, c = 2) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c }));
+// Valor que arredonda para zero sai sem sinal: "-0,00%" e "-R$ 0,00" (o Intl
+// mantém o sinal de −0,004) liam como prejuízo onde não há nada (24/11/2026).
+const semMenosZero = (v, c) => (Math.round(Math.abs(Number(v)) * 10 ** c) === 0 ? 0 : Number(v));
+const brl = (v) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? '—' : semMenosZero(v, 2).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+const nbr = (v, c = 2) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? '—' : semMenosZero(v, c).toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c }));
 const pctTxt = (v, c = 2) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? '—' : `${nbr(v, c)}%`);
 const por100 = (v) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? '—' : `R$ ${nbr(Math.abs(v), 2)}`);
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];

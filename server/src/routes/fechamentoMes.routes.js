@@ -3,6 +3,7 @@
 //
 // Montado em /api/financeiro-fechamento com a chave do módulo `financeiro`
 // (REGRA 4: nenhuma permissão nova — quem já vê o Financeiro vê a aba).
+// Fechar e reabrir o mês usam o requireAdmin que já existe (24/11/2026).
 
 const express = require('express');
 const f = require('../lib/fechamentoMes');
@@ -12,6 +13,7 @@ const { gerarExplicador } = require('../lib/fechamentoExplicador');
 const { verificarSenha } = require('../lib/senha');
 const { verificarBloqueio, registrarFalha, registrarSucesso } = require('../lib/loginRateLimit');
 const { registrar } = require('../lib/auditoria');
+const { requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -68,11 +70,15 @@ router.put('/mes', async (req, res, next) => {
   try { await f.salvarMes(req.body || {}); res.json({ ok: true }); } catch (err) { responderErro(res, next, err); }
 });
 
-router.post('/mes/fechar', async (req, res, next) => {
+// Fechar e reabrir o mês é só do administrador (24/11/2026). Fechar trava os
+// lançamentos e guarda a foto do resultado; reabrir destrava um mês que já foi
+// apresentado. Quem tem o módulo Financeiro continua vendo, lançando no mês
+// aberto e baixando — só não fecha nem reabre.
+router.post('/mes/fechar', requireAdmin, async (req, res, next) => {
   try { res.json(await f.fecharMes(req.body || {}, req.user?.id)); } catch (err) { responderErro(res, next, err); }
 });
 
-router.post('/mes/reabrir', async (req, res, next) => {
+router.post('/mes/reabrir', requireAdmin, async (req, res, next) => {
   try { await f.reabrirMes(req.body || {}); res.json({ ok: true }); } catch (err) { responderErro(res, next, err); }
 });
 

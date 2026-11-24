@@ -26,6 +26,7 @@ import { exportarCsv, exportarXlsx } from '../lib/exportar';
 import { definicaoMovimentacao, definicaoRepasses, definicaoConferencia } from '../lib/relatorioFinanceiro';
 import ErroIntegracao from '../components/ErroIntegracao';
 import { TIPOS, TIPO, rotuloTipo, descricaoHumana, idCurto, DESTINO_SAQUE, mesCurto } from '../lib/financeiroRepasses';
+import { SITUACAO_SALDO, situacaoDoMes, contarSituacoes } from '../lib/conferenciaSaldo';
 import '../styles/financeiro-repasses.css';
 
 // "Repasses de marketplace" — 21/10/2026, segunda versão.
@@ -564,20 +565,29 @@ function NotaConferencia({ lojas }) {
   if (!lojas) return null;
   const itens = lojas.flatMap((l) => l.meses.filter((m) => m.linhas > 0).map((m) => ({ ...m, loja: l.loja })));
   if (!itens.length) return null;
-  const ruins = itens.filter((i) => i.fechado === false);
+  // "Sem dado" (a plataforma não informou saldo) NÃO é "fecha": a nota só
+  // diz "Número conferido" quando todo mês do período foi comparado e fechou.
+  const { naoFecham: ruins, semDado } = contarSituacoes(itens);
+  const nomes = (lista) => lista.map((i) => `${i.loja} ${mesCurto(i.mes)}`).join(' · ');
   return (
     <div className={'nota-precisao' + (ruins.length ? ' fr-nota-ruim' : '')}>
-      {ruins.length ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
+      {ruins.length || semDado.length ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
       <span>
         {ruins.length ? (
           <>
             <strong>Atenção:</strong> {ruins.map((r) => `${r.loja} (${mesCurto(r.mes)}, diferença de ${brl(r.diferenca)})`).join(', ')}{' '}
             não fecha{ruins.length > 1 ? 'm' : ''} com o saldo da plataforma — veja a aba <Link to="/financeiro/conferencia">Conferência</Link>.
+            {semDado.length > 0 && <> Sem dado para conferir: {nomes(semDado)}.</>}
+          </>
+        ) : semDado.length ? (
+          <>
+            <strong>Conferência incompleta.</strong> Sem dado para conferir o saldo de {nomes(semDado)}
+            {semDado.length < itens.length && <> — o resto fecha no centavo</>}. Veja a aba <Link to="/financeiro/conferencia">Conferência</Link>.
           </>
         ) : (
           <>
             <strong>Número conferido.</strong> O saldo de cada loja fecha no centavo neste período:{' '}
-            {itens.map((i) => `${i.loja} ${mesCurto(i.mes)}`).join(' · ')}. Nada contado duas vezes, nada faltando.
+            {nomes(itens)}. Nada contado duas vezes, nada faltando.
           </>
         )}
       </span>
@@ -963,7 +973,7 @@ function AbaConferencia({ base, versao, contexto, montarRef }) {
   const meses = (fech.dados?.lojas || []).flatMap((l) => l.meses
     .filter((m) => m.linhas > 0 || m.quantidadeRepasses)
     .map((m) => ({ ...m, loja: l.loja, plataforma: l.marketplace, id: `${l.integracaoId}-${m.mes}` })));
-  const ruins = meses.filter((m) => m.fechado === false);
+  const { fecham, naoFecham: ruins, semDado } = contarSituacoes(meses);
   const linhas = conc.dados?.linhas || [];
   const visiveis = soDivergentes === 'sim' ? linhas.filter((l) => l.confere === false) : linhas;
   const bate = linhas.filter((l) => l.confere === true).length;
@@ -977,13 +987,21 @@ function AbaConferencia({ base, versao, contexto, montarRef }) {
       <div className="indicadores-faixa">
         <IndicadorDestaque
           destaque
-          Icone={ruins.length ? AlertTriangle : CheckCircle2}
-          tom={ruins.length ? 'negativo' : meses.length ? 'positivo' : undefined}
+          Icone={ruins.length || semDado.length ? AlertTriangle : CheckCircle2}
+          tom={ruins.length ? 'negativo' : semDado.length ? 'atencao' : meses.length ? 'positivo' : undefined}
           rotulo="Lojas e meses que fecham"
-          valor={meses.length ? `${meses.length - ruins.length} de ${meses.length}` : '—'}
+          valor={meses.length ? `${fecham.length} de ${meses.length}` : '—'}
           explicacao={ruins.length
-            ? 'Algum mês não fecha com o saldo da plataforma: falta ou sobra linha. Veja a diferença na tabela.'
-            : 'Saldo no começo + tudo que entrou − tudo que saiu = saldo no fim, no centavo.'}
+            ? `Algum mês não fecha com o saldo da plataforma: falta ou sobra linha. Veja a diferença na tabela.${semDado.length ? ` ${semDado.length} sem dado para conferir.` : ''}`
+            : semDado.length
+              ? `${semDado.length} ${semDado.length === 1 ? 'mês está' : 'meses estão'} sem dado para conferir — não conta como "fecha".`
+              : 'Saldo no começo + tudo que entrou − tudo que saiu = saldo no fim, no centavo.'}
+        />
+        <IndicadorDestaque
+          Icone={Info}
+          rotulo="Sem dado para conferir"
+          valor={meses.length ? String(semDado.length) : '—'}
+          explicacao="A plataforma não informou o saldo daquele mês. Não é diferença, mas também não é conferido."
         />
         <IndicadorDestaque
           Icone={CheckCircle2}
@@ -1038,8 +1056,8 @@ function AbaConferencia({ base, versao, contexto, montarRef }) {
                   <td className="mono num">{brl(m.saque.total)}</td>
                   <td className="mono num">{m.conferencia === 'repasses' ? brl(m.somaRepasses) : m.saldoFinal === null ? '—' : brl(m.saldoFinal)}</td>
                   <td>
-                    <span className={'stamp sm ' + (m.fechado === true ? 'tone-saudavel' : m.fechado === false ? 'tone-prejuizo' : 'tone-neutro')}>
-                      {m.fechado === true ? 'Fecha no centavo' : m.fechado === false ? `Diferença ${brl(m.diferenca)}` : 'Sem dado'}
+                    <span className={'stamp sm ' + SITUACAO_SALDO[situacaoDoMes(m)].tom}>
+                      {situacaoDoMes(m) === 'nao_fecha' ? `Diferença ${brl(m.diferenca)}` : SITUACAO_SALDO[situacaoDoMes(m)].rotulo}
                     </span>
                   </td>
                 </tr>

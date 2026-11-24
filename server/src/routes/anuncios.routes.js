@@ -970,17 +970,25 @@ router.get('/exportacao/planilha', async (req, res, next) => {
     // anúncios — a exportação quebrava justamente quando era mais útil.
     const { cond, vals } = filtrosDaConsulta(req.query);
     const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
+    //
+    // Dois recortes, o mesmo filtro: os produtos da tela e os anúncios SEM
+    // VÍNCULO da tela (24/11/2026). Só com os produtos, o anúncio sem vínculo
+    // que vendeu não chegava à exportação e sumia da aba FORA DA PLANILHA.
+    // E as duas listas vão sempre, mesmo vazias: com `null` a exportação
+    // trazia o catálogo INTEIRO — filtrar "sem vínculo" exportava tudo.
     const { rows } = await pool.query(
-      `SELECT DISTINCT a.produto_id
+      `SELECT DISTINCT a.produto_id, CASE WHEN a.produto_id IS NULL THEN a.id END AS anuncio_sem_vinculo
          FROM anuncios_marketplace a
          LEFT JOIN produtos p ON p.id = a.produto_id
          ${where}`,
       vals
     );
-    const produtoIds = rows.map((r) => r.produto_id).filter(Boolean);
+    const produtoIds = [...new Set(rows.map((r) => r.produto_id).filter(Boolean))];
+    const anuncioIdsSemVinculo = rows.map((r) => r.anuncio_sem_vinculo).filter(Boolean);
 
     const livro = await montarPlanilhaAnuncios({
-      produtoIds: produtoIds.length ? produtoIds : null,
+      produtoIds,
+      anuncioIdsSemVinculo,
       marketplace: req.query.marketplace || null,
       integracaoId: req.query.integracao_id || null,
       // A planilha da casa tem a coluna de Ads em JANELA DE DIAS, e é assim
