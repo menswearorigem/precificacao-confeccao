@@ -804,6 +804,10 @@ function FotoMiniatura({ src }) {
   return <span className="pv-foto-caixa"><img className="pv-foto" src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFalhou(true)} /></span>;
 }
 
+export default function PainelAoVivoPage() {
+  return <PainelAoVivo perfil="marketplace" />;
+}
+
 const CORES_LOJA = ['var(--pv-neon-ambar)', 'var(--pv-neon-ciano)', 'var(--pv-neon-magenta)', 'var(--pv-neon-verde)', 'var(--pv-neon-violeta)', 'var(--pv-neon-laranja)'];
 const COR_PLATAFORMA = {
   mercado_livre: 'var(--pv-neon-amarelo)',
@@ -843,8 +847,54 @@ function lerTema() {
   } catch { return 'escuro'; }
 }
 
+// ---------- perfis: a MESMA tela serve o Marketplace e a venda direta ----------
+// O que muda entre os dois é só de onde vem o dado e como as coisas se chamam.
+// No Marketplace: lojas = lojas das plataformas, plataformas = Mercado Livre /
+// Shopee / TikTok. Na venda direta (Wik): "lojas" = vendedores e "plataformas"
+// = canais de venda (Atacado, Varejo...). A conta é a mesma lib no servidor.
+const MIN_MS = 60e3;
+const PERFIS = {
+  marketplace: {
+    endpoint: '/painel-ao-vivo', subtitulo: 'Marketplace · HBN Hub',
+    rankTitulo: 'Vendas de pedidos', rankNivelUm: 'Anúncios',
+    lojasTitulo: 'Vendas de loja', lojasCab: 'Lojas', lojasVazio: 'Nenhuma loja vendeu hoje ainda.',
+    roscaUm: 'Plataformas', roscaDois: 'Lojas',
+    syncRotulo: 'lojas', limiteOk: 10 * MIN_MS, limiteAtraso: 30 * MIN_MS,
+    selos: true,
+    comoConta: [
+      'Mesma regra das Métricas: pedido cancelado fica de fora e os pedidos do mesmo carrinho do Mercado Livre contam como uma venda só.',
+      'A tela relê o Hub a cada 30 segundos. O Hub busca pedidos nas lojas a cada 5 minutos, por isso o painel mostra “lojas há N min”.',
+      'A hora da venda é a do pagamento (Shopee e TikTok Shop) ou a de chegada do pedido ao Hub (Mercado Livre), no máximo 5 minutos depois.',
+    ],
+    comoContaFim: [
+      'Mapa: contornos dos estados do projeto @svg-maps/brazil (licença CC BY 4.0).',
+      'A Shein entra desde 17/11/2026. O estado de destino dos pedidos dela só aparece quando a Shein informa a região (na logística da própria Shein, ela não informa).',
+      'O estado de destino vem do endereço que as plataformas informaram na consulta de envio; pedido sem endereço lido fica fora do mapa.',
+    ],
+  },
+  direta: {
+    endpoint: '/vendas-painel-ao-vivo', subtitulo: 'Vendas · HBN Hub',
+    rankTitulo: 'Vendas de produtos', rankNivelUm: 'Produtos',
+    lojasTitulo: 'Vendas por vendedor', lojasCab: 'Vendedores', lojasVazio: 'Nenhum vendedor vendeu hoje ainda.',
+    roscaUm: 'Canais', roscaDois: 'Vendedores',
+    syncRotulo: 'Wik', limiteOk: 45 * MIN_MS, limiteAtraso: 100 * MIN_MS,
+    selos: false,
+    comoConta: [
+      'Mesma regra das Métricas de Vendas: só venda direta (a do Marketplace tem painel próprio); cancelado, devolução, troca e bonificação ficam de fora; pedido ainda em aberto conta; o valor é o total líquido do pedido.',
+      'A tela relê o Hub a cada 30 segundos, mas o Hub só busca as vendas no Wik a cada 30 minutos, por isso o painel mostra “Wik há N min”: uma venda feita agora pode levar até esse tempo para aparecer.',
+      'O Wik informa o dia da venda, não a hora. A hora usada na curva é a de chegada do pedido ao Hub, então a curva sobe em degraus de até 30 minutos.',
+    ],
+    comoContaFim: [
+      'Mapa: contornos dos estados do projeto @svg-maps/brazil (licença CC BY 4.0).',
+      'O estado é o do cadastro do cliente; venda de cliente sem estado cadastrado fica fora do mapa.',
+      'Vendedor: o do cadastro; sem ele, o nome que o Wik trouxe; sem nenhum dos dois, “Sem vendedor”.',
+    ],
+  },
+};
+
 // ---------- tela ----------
-export default function PainelAoVivoPage() {
+export function PainelAoVivo({ perfil = 'marketplace' }) {
+  const P = PERFIS[perfil];
   const raiz = useRef(null);
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState(null);
@@ -870,7 +920,7 @@ export default function PainelAoVivoPage() {
     if (carregando.current) return;
     carregando.current = true;
     try {
-      const d = await api.get('/painel-ao-vivo');
+      const d = await api.get(P.endpoint);
       compensacao.current = new Date(d.geradoEm).getTime() - Date.now();
       if (pedidosAntes.current !== null && d.hojeTotais.pedidos > pedidosAntes.current) {
         setFaisca((n) => n + 1); // venda nova: os contadores dão uma faísca
@@ -949,9 +999,11 @@ export default function PainelAoVivoPage() {
     return () => window.removeEventListener('pointerdown', destravar);
   }, [som]);
 
-  const lojaNome = useCallback((l) => (l.nome
-    ? nomeDaLoja({ marketplace: l.plataforma, nome: l.nome }, PLATAFORMA_LABEL[l.plataforma])
-    : (l.canalGenerico || 'Sem loja')), []);
+  const lojaNome = useCallback((l) => (perfil === 'direta'
+    ? (l.nome || l.canalGenerico || 'Sem vendedor')
+    : l.nome
+      ? nomeDaLoja({ marketplace: l.plataforma, nome: l.nome }, PLATAFORMA_LABEL[l.plataforma])
+      : (l.canalGenerico || 'Sem loja')), [perfil]);
 
   const valorRolando = useRolagem(dados?.hojeTotais.valor ?? 0);
   const pedidosRolando = useRolagem(dados?.hojeTotais.pedidos ?? 0, 700);
@@ -959,7 +1011,7 @@ export default function PainelAoVivoPage() {
   const idadeLeitura = lidoEm ? agoraMs - (lidoEm + compensacao.current) : null;
   const idadeSync = dados?.atualizadoEm ? agoraMs - new Date(dados.atualizadoEm).getTime() : null;
   // Lâmpada: verde = o Hub falou com as lojas há pouco; âmbar = atrasado; vermelha = sem conexão ou muito atrasado.
-  const estadoLampada = erro ? 'falha' : idadeSync === null ? 'espera' : idadeSync <= 10 * 60e3 ? 'ok' : idadeSync <= 30 * 60e3 ? 'atraso' : 'falha';
+  const estadoLampada = erro ? 'falha' : idadeSync === null ? 'espera' : idadeSync <= P.limiteOk ? 'ok' : idadeSync <= P.limiteAtraso ? 'atraso' : 'falha';
   const rotuloLampada = { ok: 'AO VIVO', espera: 'AO VIVO', atraso: 'ATRASADO', falha: erro ? 'SEM CONEXÃO' : 'SEM SINAL' }[estadoLampada];
 
   const d = dados;
@@ -971,23 +1023,23 @@ export default function PainelAoVivoPage() {
   const itensRosca = useMemo(() => {
     if (!d) return [];
     if (roscaModo === 'plataformas') {
-      return d.plataformas.map((p) => ({
+      return d.plataformas.map((p, i) => ({
         chave: p.plataforma, nome: PLATAFORMA_LABEL[p.plataforma] || p.plataforma, valor: p.valor, pct: p.pct,
-        cor: COR_PLATAFORMA[p.plataforma] || 'var(--ink-faint)',
+        cor: perfil === 'direta' ? CORES_LOJA[i % CORES_LOJA.length] : (COR_PLATAFORMA[p.plataforma] || 'var(--ink-faint)'),
       }));
     }
     return d.lojas.map((l, i) => ({
       chave: `${l.lojaId ?? l.canalGenerico}`, nome: lojaNome(l), valor: l.valor, pct: l.pct,
       cor: CORES_LOJA[i % CORES_LOJA.length],
     }));
-  }, [d, roscaModo, lojaNome]);
+  }, [d, roscaModo, lojaNome, perfil]);
 
   const estados = d?.estados;
   const topEstados = estados ? estados.lista.slice(0, 5) : [];
   const maxEstado = Math.max(1, ...topEstados.map((e) => e.pedidos));
 
   return (
-    <div ref={raiz} className={`painel-vivo${tema !== 'escuro' ? ` claro ${tema}` : ''}${telaCheia ? ' tela-cheia' : ''}`} style={{ '--pv-escala': escala }}>
+    <div ref={raiz} className={`painel-vivo${tema !== 'escuro' ? ` claro ${tema}` : ''}${telaCheia ? ' tela-cheia' : ''}`} style={{ '--pv-escala': escala, '--pv-mod': perfil === 'direta' ? 'var(--mod-vendas)' : 'var(--mod-marketplace)' }}>
       <header className="pv-topo">
         <div className="pv-topo-esq">
           <Relogio agoraMs={agoraMs} />
@@ -1016,7 +1068,7 @@ export default function PainelAoVivoPage() {
               <MostradorHoras agoraMs={agoraMs} />
             </div>
           </div>
-          <p className="pv-subtitulo"><i aria-hidden="true" />Marketplace · HBN Hub<i aria-hidden="true" /></p>
+          <p className="pv-subtitulo"><i aria-hidden="true" />{P.subtitulo}<i aria-hidden="true" /></p>
         </div>
 
         <div className="pv-topo-dir">
@@ -1028,7 +1080,7 @@ export default function PainelAoVivoPage() {
             </div>
             <span className="pv-atualizado">
               Tela {idadeLeitura === null ? '—' : `há ${tempoCurto(idadeLeitura)}`}
-              {idadeSync !== null ? <> · lojas há {tempoCurto(idadeSync)}</> : null}
+              {idadeSync !== null ? <> · {P.syncRotulo} há {tempoCurto(idadeSync)}</> : null}
             </span>
             <div className="pv-botoes">
               <button type="button" onClick={carregar} title="Atualizar agora" aria-label="Atualizar agora"><RefreshCw size={16} /></button>
@@ -1059,8 +1111,8 @@ export default function PainelAoVivoPage() {
           {/* ===== coluna da esquerda ===== */}
           <div className="pv-coluna">
             <Placa
-              acento="laranja" ordem={0} titulo="Vendas de pedidos" detalhe="Top 5"
-              direita={<Chaves rotulo="Agrupar por" valor={rankNivel} onChange={setRankNivel} opcoes={[{ valor: 'anuncio', rotulo: 'Anúncios' }, { valor: 'variacao', rotulo: 'Variações' }]} />}
+              acento="laranja" ordem={0} titulo={P.rankTitulo} detalhe="Top 5"
+              direita={<Chaves rotulo="Agrupar por" valor={rankNivel} onChange={setRankNivel} opcoes={[{ valor: 'anuncio', rotulo: P.rankNivelUm }, { valor: 'variacao', rotulo: 'Variações' }]} />}
               className="pv-placa-rank"
             >
               <div className="pv-impressora">
@@ -1069,7 +1121,7 @@ export default function PainelAoVivoPage() {
                 <i className="pv-boca-fenda" />
               </div>
               <div className="pv-papel">
-              <div className="pv-lista-cab"><span>Posição</span><span>{rankNivel === 'anuncio' ? 'Anúncios' : 'Variações'}</span><span>Qtd. de pedidos</span></div>
+              <div className="pv-lista-cab"><span>Posição</span><span>{rankNivel === 'anuncio' ? P.rankNivelUm : 'Variações'}</span><span>Qtd. de pedidos</span></div>
               {ranking.length === 0 && <p className="pv-vazio">Nenhum pedido hoje ainda.</p>}
               <ol className="pv-rank">
                 {ranking.map((r, i) => (
@@ -1078,7 +1130,7 @@ export default function PainelAoVivoPage() {
                     <FotoMiniatura src={r.foto} />
                     <div className="pv-rank-texto">
                       <span className="pv-rank-titulo" title={r.titulo || ''}>{r.titulo || 'Sem título'}</span>
-                      <span className="pv-rank-cod"><SeloPlataforma chave={r.plataforma} size={13} />{r.codigo || '—'}</span>
+                      <span className="pv-rank-cod">{P.selos && <SeloPlataforma chave={r.plataforma} size={13} />}{r.codigo || '—'}</span>
                     </div>
                     <strong className="pv-rank-qtd">{nf0.format(r.pedidos)}</strong>
                   </li>
@@ -1153,14 +1205,14 @@ export default function PainelAoVivoPage() {
 
           {/* ===== coluna da direita ===== */}
           <div className="pv-coluna">
-            <Placa acento="magenta" ordem={1} titulo="Vendas de loja" detalhe="Top 5" className="pv-placa-lojas">
-              <div className="pv-lista-cab"><span>Posição</span><span>Lojas</span><span>Qtd. de pedidos</span></div>
-              {lojasTop.length === 0 && <p className="pv-vazio">Nenhuma loja vendeu hoje ainda.</p>}
+            <Placa acento="magenta" ordem={1} titulo={P.lojasTitulo} detalhe="Top 5" className="pv-placa-lojas">
+              <div className="pv-lista-cab"><span>Posição</span><span>{P.lojasCab}</span><span>Qtd. de pedidos</span></div>
+              {lojasTop.length === 0 && <p className="pv-vazio">{P.lojasVazio}</p>}
               <ol className="pv-lojas">
                 {lojasTop.map((l, i) => (
                   <li key={`${l.lojaId}|${l.canalGenerico}`} className={i === 0 ? 'pv-loja-lider' : ''} style={{ '--i': i }}>
                     <Medalha n={i + 1} />
-                    <span className="pv-bisel"><SeloPlataforma chave={l.plataforma} size={24} /></span>
+                    <span className="pv-bisel">{P.selos ? <SeloPlataforma chave={l.plataforma} size={24} /> : <span className="pv-inicial" aria-hidden="true">{(lojaNome(l).trim()[0] || '?').toUpperCase()}</span>}</span>
                     <div className="pv-loja-texto">
                       <span>{lojaNome(l)}</span>
                       <LedBarra valor={l.pedidos} max={maxLoja} />
@@ -1176,11 +1228,11 @@ export default function PainelAoVivoPage() {
 
             <Placa
               acento="violeta" ordem={4} titulo="Percentual de vendas"
-              direita={<Chaves rotulo="Dividir por" valor={roscaModo} onChange={setRoscaModo} opcoes={[{ valor: 'plataformas', rotulo: 'Plataformas' }, { valor: 'lojas', rotulo: 'Lojas' }]} />}
+              direita={<Chaves rotulo="Dividir por" valor={roscaModo} onChange={setRoscaModo} opcoes={[{ valor: 'plataformas', rotulo: P.roscaUm }, { valor: 'lojas', rotulo: P.roscaDois }]} />}
               className="pv-placa-rosca"
             >
               <Rosca itens={itensRosca} total={d.hojeTotais.valor} foco={roscaFoco} onFoco={setRoscaFoco} />
-              <div className="pv-lista-cab"><span>{roscaModo === 'plataformas' ? 'Plataformas' : 'Lojas'}</span><span>Valor total de vendas (R$) / Percentual</span></div>
+              <div className="pv-lista-cab"><span>{roscaModo === 'plataformas' ? P.roscaUm : P.roscaDois}</span><span>Valor total de vendas (R$) / Percentual</span></div>
               <ul className="pv-legenda">
                 {itensRosca.slice(0, 6).map((it) => (
                   <li key={it.chave} className={roscaFoco === it.chave ? 'is-foco' : roscaFoco ? 'is-fora' : ''} style={{ '--cor': it.cor }}
@@ -1202,23 +1254,19 @@ export default function PainelAoVivoPage() {
         <footer className="pv-rodape">
           <span className="pv-ultima">
             {d.ultimaVenda
-              ? <>Última venda <b>{hhmm(d.ultimaVenda.min)}</b> · {lojaNome({ plataforma: d.ultimaVenda.plataforma, nome: d.lojasCadastradas.find((l) => l.id === d.ultimaVenda.lojaId)?.nome, canalGenerico: PLATAFORMA_LABEL[d.ultimaVenda.plataforma] })} · R$ {nf2.format(d.ultimaVenda.valor)}</>
+              ? <>Última venda <b>{hhmm(d.ultimaVenda.min)}</b> · {lojaNome({ plataforma: d.ultimaVenda.plataforma, nome: d.lojasCadastradas.find((l) => l.id === d.ultimaVenda.lojaId)?.nome, canalGenerico: perfil === 'direta' ? d.ultimaVenda.plataforma : PLATAFORMA_LABEL[d.ultimaVenda.plataforma] })} · R$ {nf2.format(d.ultimaVenda.valor)}</>
               : 'Ainda sem venda com hora registrada hoje.'}
           </span>
           <details className="pv-como">
             <summary>Como este painel conta</summary>
             <ul>
-              <li>Mesma regra das Métricas: pedido cancelado fica de fora e os pedidos do mesmo carrinho do Mercado Livre contam como uma venda só.</li>
-              <li>A tela relê o Hub a cada 30 segundos. O Hub busca pedidos nas lojas a cada 5 minutos, por isso o painel mostra “lojas há N min”.</li>
-              <li>A hora da venda é a do pagamento (Shopee e TikTok Shop) ou a de chegada do pedido ao Hub (Mercado Livre), no máximo 5 minutos depois.</li>
+              {P.comoConta.map((t) => <li key={t}>{t}</li>)}
               <li>
                 {d.semHora.hoje > 0 || d.semHora.ontem > 0
                   ? `${nf0.format(d.semHora.hoje)} venda(s) de hoje e ${nf0.format(d.semHora.ontem)} de ontem estão sem hora confiável: entram nos totais, mas não na curva nem na comparação com ontem.`
                   : 'Todas as vendas de hoje e de ontem têm hora confiável.'}
               </li>
-              <li>Mapa: contornos dos estados do projeto @svg-maps/brazil (licença CC BY 4.0).</li>
-              <li>A Shein entra desde 17/11/2026. O estado de destino dos pedidos dela só aparece quando a Shein informa a região (na logística da própria Shein, ela não informa).</li>
-              <li>O estado de destino vem do endereço que as plataformas informaram na consulta de envio; pedido sem endereço lido fica fora do mapa.</li>
+              {P.comoContaFim.map((t) => <li key={t}>{t}</li>)}
             </ul>
           </details>
         </footer>

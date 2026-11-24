@@ -32,6 +32,7 @@ const recebimentosRoutes = require('./routes/recebimentos.routes');
 const integracoesRoutes = require('./routes/integracoes.routes');
 const marketplaceTaxasRoutes = require('./routes/marketplaceTaxas.routes');
 const painelAoVivoRoutes = require('./routes/painelAoVivo.routes');
+const vendasPainelAoVivoRoutes = require('./routes/vendasPainelAoVivo.routes');
 const viagensRoutes = require('./routes/viagens.routes');
 const wikRoutes = require('./routes/wik.routes');
 const conferenciaDadosRoutes = require('./routes/conferenciaDados.routes');
@@ -368,6 +369,8 @@ function createApp() {
   // Painel do módulo Vendas — métricas, lucratividade com comissão e o
   // lançamento das despesas de publicidade do mês.
   app.use('/api/vendas', requireAuth, requireModulo('vendas'), vendasRoutes);
+  // Painel ao vivo da venda direta (24/11/2026): só LÊ; mesmo módulo de Vendas.
+  app.use('/api/vendas-painel-ao-vivo', requireAuth, requireModulo('vendas'), vendasPainelAoVivoRoutes);
   app.use('/api/fornecedores', requireAuth, requireModulo('compras'), fornecedoresRoutes);
   app.use('/api/compras', requireAuth, requireModulo('compras'), comprasRoutes);
   app.use('/api/viagens', requireAuth, requireModulo('viagens'), viagensRoutes);

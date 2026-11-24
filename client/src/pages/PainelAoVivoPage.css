@@ -9,7 +9,7 @@
      · gráfico em FÓSFORO ÂMBAR (a linha de hoje brilha, a de ontem é
        pontilhada), grade de papel milimetrado;
      · BARRAS DE LED para o ranking de lojas.
-   A cor do módulo Marketplace (violeta, var(--mod-marketplace)) entra no
+   A cor do módulo Marketplace (violeta, var(--pv-mod, var(--mod-marketplace))) entra no
    brilho do fundo e nos filetes; o resto é couro e latão do hub.
 
    A tela é SEMPRE escura: `.painel-vivo` está na lista de seletores do escuro
@@ -44,7 +44,7 @@
   border: 1px solid var(--border);
   overflow: hidden;
   background:
-    radial-gradient(70em 22em at 50% -8%, color-mix(in srgb, var(--mod-marketplace) 30%, transparent), transparent 72%),
+    radial-gradient(70em 22em at 50% -8%, color-mix(in srgb, var(--pv-mod, var(--mod-marketplace)) 30%, transparent), transparent 72%),
     radial-gradient(50em 30em at 100% 108%, color-mix(in srgb, var(--terracotta) 13%, transparent), transparent 70%),
     linear-gradient(180deg, var(--bg-deep), var(--bg));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brass) 14%, transparent), var(--shadow-md);
@@ -92,7 +92,7 @@
   -webkit-background-clip: text; background-clip: text; color: transparent;
   filter: drop-shadow(0 0.06em 0 rgba(0, 0, 0, 0.55)) drop-shadow(0 0 0.5em color-mix(in srgb, var(--brass) 28%, transparent));
 }
-.pv-titulo p { grid-column: 1 / -1; margin: -0.1em 0 0; font-family: var(--font-codigo); font-size: 0.7em; letter-spacing: 0.32em; text-transform: uppercase; color: var(--mod-marketplace); }
+.pv-titulo p { grid-column: 1 / -1; margin: -0.1em 0 0; font-family: var(--font-codigo); font-size: 0.7em; letter-spacing: 0.32em; text-transform: uppercase; color: var(--pv-mod, var(--mod-marketplace)); }
 .pv-titulo-fio { height: 0.42em; border-block: 1px solid var(--pv-latao-fio); position: relative; min-width: 2em; }
 .pv-titulo-fio::after { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: var(--pv-latao-fio); }
 
@@ -153,7 +153,7 @@
 }
 .pv-placa::before {
   content: ''; position: absolute; inset: 0 0 auto 0; height: 2px; border-radius: 0.8em 0.8em 0 0;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--mod-marketplace) 75%, transparent), transparent);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--pv-mod, var(--mod-marketplace)) 75%, transparent), transparent);
 }
 .pv-placa-titulo {
   display: flex; align-items: center; gap: 0.6em; padding: 0.55em 0.8em; min-height: 2.5em; box-sizing: border-box;
@@ -276,14 +276,14 @@
 .pv-eixo { fill: var(--ink-soft); font: 500 0.66em var(--font-codigo); }
 .pv-eixo-dir { fill: var(--ink-faint); }
 .pv-linha-hoje { fill: none; stroke: var(--terracotta-bright); stroke-width: 2.6; stroke-linejoin: round; stroke-linecap: round; }
-.pv-linha-ontem { fill: none; stroke: var(--mod-marketplace); stroke-width: 1.8; stroke-dasharray: 6 5; opacity: 0.85; }
+.pv-linha-ontem { fill: none; stroke: var(--pv-mod, var(--mod-marketplace)); stroke-width: 1.8; stroke-dasharray: 6 5; opacity: 0.85; }
 .pv-ponta { fill: var(--knob); stroke: var(--terracotta-bright); stroke-width: 2; }
 .pv-mira { stroke: var(--ink-faint); stroke-width: 1; stroke-dasharray: 3 3; }
 .pv-legenda-linhas { position: absolute; top: 0.4em; left: 4.6em; display: flex; gap: 1.1em; font-size: 0.7em; color: var(--ink-soft); pointer-events: none; }
 .pv-legenda-linhas span { display: inline-flex; align-items: center; gap: 0.45em; }
 .pv-legenda-linhas i { display: inline-block; width: 1.5em; height: 0; border-top: 2px solid; }
 .pv-leg-hoje { border-color: var(--terracotta-bright); }
-.pv-leg-ontem { border-color: var(--mod-marketplace); border-top-style: dashed !important; }
+.pv-leg-ontem { border-color: var(--pv-mod, var(--mod-marketplace)); border-top-style: dashed !important; }
 .pv-leg-barra { height: 0.7em !important; width: 0.7em !important; border: 0 !important; border-radius: 0.15em; background: linear-gradient(180deg, var(--brass-bright), var(--terracotta)); }
 .pv-leg-pedidos { border-color: var(--knob); }
 .pv-dica { position: absolute; top: 1.6em; transform: translateX(-50%); display: flex; flex-direction: column; gap: 0.1em; padding: 0.4em 0.65em; border-radius: 0.4em; font-size: 0.72em; white-space: nowrap; pointer-events: none; background: var(--surface-raised); border: 1px solid var(--brass); box-shadow: var(--shadow-md); z-index: 3; }
@@ -578,7 +578,7 @@
 .pv-visor-svg-d.pv-sobe { fill: var(--success); }
 .pv-visor-svg-d.pv-desce { fill: var(--danger); }
 .pv-visor-svg-r { fill: color-mix(in srgb, var(--brass-bright) 55%, transparent); font: 500 7px var(--font-codigo); letter-spacing: 0.06em; }
-.pv-linha-ontem { filter: drop-shadow(0 0 3px color-mix(in srgb, var(--mod-marketplace) 60%, transparent)); }
+.pv-linha-ontem { filter: drop-shadow(0 0 3px color-mix(in srgb, var(--pv-mod, var(--mod-marketplace)) 60%, transparent)); }
 .pv-visor-svg-r .pv-sobe { fill: var(--success); }
 .pv-visor-svg-r .pv-desce { fill: var(--danger); }
 
@@ -773,11 +773,11 @@
 /* subtítulo: tira gravada com dois LEDs violeta (cor do módulo) */
 .pv-subtitulo {
   grid-column: auto; margin: 0; display: inline-flex; align-items: center; gap: 0.9em; padding: 0.22em 1em; border-radius: 0.3em;
-  font: 700 0.66em var(--font-codigo); letter-spacing: 0.3em; text-transform: uppercase; color: color-mix(in srgb, var(--mod-marketplace) 75%, var(--knob));
+  font: 700 0.66em var(--font-codigo); letter-spacing: 0.3em; text-transform: uppercase; color: color-mix(in srgb, var(--pv-mod, var(--mod-marketplace)) 75%, var(--knob));
   background: #050403; box-shadow: inset 0 0.1em 0.3em #000, 0 0 0 0.12em color-mix(in srgb, var(--ink-soft) 50%, #000), 0 1px 0 0.12em rgba(255, 238, 205, 0.18);
-  text-shadow: 0 0 0.6em color-mix(in srgb, var(--mod-marketplace) 70%, transparent);
+  text-shadow: 0 0 0.6em color-mix(in srgb, var(--pv-mod, var(--mod-marketplace)) 70%, transparent);
 }
-.pv-subtitulo i { width: 0.55em; height: 0.55em; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff 0 10%, var(--mod-marketplace) 45%, color-mix(in srgb, var(--mod-marketplace) 40%, #000)); box-shadow: 0 0 0.6em var(--mod-marketplace), 0 0 0 1px rgba(0, 0, 0, 0.7); }
+.pv-subtitulo i { width: 0.55em; height: 0.55em; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff 0 10%, var(--pv-mod, var(--mod-marketplace)) 45%, color-mix(in srgb, var(--pv-mod, var(--mod-marketplace)) 40%, #000)); box-shadow: 0 0 0.6em var(--pv-mod, var(--mod-marketplace)), 0 0 0 1px rgba(0, 0, 0, 0.7); }
 
 
 /* ============================================================================
@@ -1016,7 +1016,7 @@ li:hover > .pv-medalha { transform: rotate(-12deg) scale(1.12); }
 .pv-ac-ouro, .pv-ac-laranja, .pv-ac-verde, .pv-ac-ciano, .pv-ac-magenta, .pv-ac-violeta { --pv-acento: var(--pv-neon-ambar); }
 .painel-vivo {
   background:
-    radial-gradient(62em 24em at 50% -6%, color-mix(in srgb, var(--mod-marketplace) 30%, transparent), transparent 70%),
+    radial-gradient(62em 24em at 50% -6%, color-mix(in srgb, var(--pv-mod, var(--mod-marketplace)) 30%, transparent), transparent 70%),
     radial-gradient(50em 30em at 100% 108%, color-mix(in srgb, var(--pv-neon-laranja) 12%, transparent), transparent 70%),
     linear-gradient(180deg, var(--bg-deep), var(--bg)) padding-box,
     var(--pv-latao) border-box;
@@ -1160,7 +1160,7 @@ li:hover > .pv-medalha { transform: rotate(-12deg) scale(1.12); }
   --pv-poco-a: #f7f0e0; --pv-poco-b: #efe5cf; --pv-poco: #f3ebd8;
   --pv-vidro: linear-gradient(180deg, #fbf6e8, #efe4cb); --pv-vidro-flat: #f6eedb; --pv-aro-vidro: #b9a67a;
   --pv-num: #1f1409; --pv-acento-i: #a85a10; --pv-led-fundo: #e4d8bd; --pv-uf: #ddd0b3; --pv-chaves: #e4d8bd;
-  --pv-aro-rel: #d2ae62; --pv-tit-tinta: #2a1204; --pv-violeta-i: #5b3f99;
+  --pv-aro-rel: #d2ae62; --pv-tit-tinta: #2a1204; --pv-violeta-i: color-mix(in srgb, var(--pv-mod, var(--mod-marketplace)) 65%, #1a0f05);
   --pv-chapa: var(--pv-reflexo), var(--pv-riscos) 0 0 / 260px 260px, linear-gradient(160deg, #d8cfbc, #bdb19a 55%, #a99d86);
   --pv-latao: var(--pv-reflexo), var(--pv-riscos) 0 0 / 260px 260px, linear-gradient(160deg, #e2bf73, #c49a4f 52%, #9c7a3c);
 }
@@ -1169,7 +1169,7 @@ li:hover > .pv-medalha { transform: rotate(-12deg) scale(1.12); }
   --pv-neon-verde: #1f7a47; --pv-neon-vermelho: #b23a26; --pv-neon-magenta: #b23a26;
   --pv-brilho: color-mix(in srgb, var(--pv-neon-ambar) 40%, transparent);
   background:
-    radial-gradient(70em 22em at 50% -8%, color-mix(in srgb, var(--mod-marketplace) 12%, transparent), transparent 72%),
+    radial-gradient(70em 22em at 50% -8%, color-mix(in srgb, var(--pv-mod, var(--mod-marketplace)) 12%, transparent), transparent 72%),
     radial-gradient(50em 30em at 100% 108%, color-mix(in srgb, var(--pv-neon-laranja) 9%, transparent), transparent 70%),
     linear-gradient(180deg, var(--pv-fundo-a), var(--pv-fundo-b)) padding-box,
     var(--pv-latao) border-box;
@@ -1299,3 +1299,10 @@ li:hover > .pv-medalha { transform: rotate(-12deg) scale(1.12); }
 .painel-vivo.claro svg circle[stroke="url(#pv-cromo)"] { stroke: var(--pv-aro-rel); }
 .painel-vivo.claro svg circle[fill="url(#pv-rel-cromo)"] { fill: var(--pv-aro-rel); }
 .painel-vivo.claro .pv-mini-visor :is(span, em, i) { color: var(--ink-soft); }
+
+/* Venda direta: no lugar do logo da loja, a inicial do vendedor num disco de latão */
+.pv-inicial {
+  display: grid; place-items: center; width: 1.7em; height: 1.7em; box-sizing: border-box; border-radius: 0.35em;
+  font: 800 1em var(--font-display); color: #2a1204; text-shadow: 0 1px 0 rgba(255, 238, 205, 0.5);
+  background: var(--pv-latao);
+}

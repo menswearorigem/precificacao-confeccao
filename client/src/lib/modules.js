@@ -165,6 +165,9 @@ export const MODULES = [
       { to: '/pedidos', label: 'Pedidos de Venda', icon: ClipboardList },
       { to: '/clientes', label: 'Clientes', icon: Users },
       { to: '/ficha-venda', label: 'Ficha de Venda', icon: Printer },
+      // 24/11/2026: o painel da TV para a venda direta (o do Marketplace fica no
+      // módulo dele). Não é a primeira entrada: clicar em "Vendas" abre Pedidos.
+      { to: '/vendas/painel', label: 'Painel ao vivo', icon: Radio },
       // Métricas responde "quanto vendi", Lucratividade "quanto sobrou" e
       // Publicidade é o formulário de UM campo da Lucratividade (o próprio
       // subtítulo da tela diz isso). São o mesmo fechamento.

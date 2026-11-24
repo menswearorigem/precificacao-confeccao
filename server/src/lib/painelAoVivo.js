@@ -74,12 +74,13 @@ function normalizarUF(valor) {
 //   sh  — recipient_address.state                 ('São Paulo')
 //   tk  — recipient_address.district_info         ([{ address_level_name: 'State', address_name: '...' }])
 //   tk2 — recipient_address.state                 (quando vier direto)
+//   uf  — sigla do cadastro do cliente (painel da venda direta)
 // Só o formato do Mercado Livre foi conferido contra a documentação; os da
 // Shopee e da TikTok são lidos de forma tolerante e, se não reconhecidos, o
 // pedido fica "sem estado" — nunca com estado inventado.
 function ufDoEndereco(endereco) {
   if (!endereco) return null;
-  const direta = normalizarUF(endereco.ml) || normalizarUF(endereco.sh) || normalizarUF(endereco.tk2);
+  const direta = normalizarUF(endereco.ml) || normalizarUF(endereco.sh) || normalizarUF(endereco.tk2) || normalizarUF(endereco.uf);
   if (direta) return direta;
   const niveis = Array.isArray(endereco.tk) ? endereco.tk : [];
   const estado = niveis.find((n) => /^(state|estado|province|provincia)$/i.test(String(n?.address_level_name || '').trim()))
